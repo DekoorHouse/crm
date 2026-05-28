@@ -118,6 +118,35 @@ export default function CampanasPage() {
     return idx;
   }, [pedidos]);
 
+  // Campañas virtuales: campana_ids presentes en pedidos pero sin doc en la colección.
+  // Tipicamente "tpl:<templateName>" — pedidos taggeados con plantilla de Meta directamente.
+  const campanasVirtuales = useMemo<Campana[]>(() => {
+    const realIds = new Set(campanas.map((c) => c.id));
+    const virtualIds = Object.keys(pedidosIndex).filter((id) => !realIds.has(id));
+    return virtualIds.map((id) => {
+      // Cada plantilla_origen única que aparezca en pedidos de esta campana_id
+      const plantillas: Record<string, { contactados: number; notas: string }> = {};
+      Object.keys(pedidosIndex[id] || {}).forEach((p) => {
+        plantillas[p] = { contactados: 0, notas: "" };
+      });
+      const isTpl = id.startsWith("tpl:");
+      return {
+        id,
+        nombre: isTpl ? `📨 ${id.slice(4)}` : `Campaña ${id.slice(0, 8)}`,
+        fecha_inicio: null,
+        fecha_fin: null,
+        estatus: "activa",
+        plantillas,
+        notas: "",
+        creada_por: "",
+        creada_en: null,
+      } as Campana;
+    });
+  }, [campanas, pedidosIndex]);
+
+  // Lista combinada (reales + virtuales) para renderizar
+  const allCampanas = useMemo(() => [...campanas, ...campanasVirtuales], [campanas, campanasVirtuales]);
+
   function getKPIsForCampana(c: Campana): {
     plantillas: PlantillaKPI[];
     totalContactados: number;
@@ -255,7 +284,7 @@ export default function CampanasPage() {
         <div className="bg-surface-container-low/50 rounded-2xl p-12 text-center text-sm text-on-surface-variant">
           Cargando campañas...
         </div>
-      ) : campanas.length === 0 ? (
+      ) : allCampanas.length === 0 ? (
         <div className="bg-surface-container-low/50 rounded-2xl p-12 text-center">
           <span className="material-symbols-outlined text-on-surface-variant/40" style={{ fontSize: 48 }}>campaign</span>
           <p className="text-sm text-on-surface-variant mt-2">No hay campañas todavía.</p>
@@ -263,7 +292,7 @@ export default function CampanasPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {campanas.map((c) => {
+          {allCampanas.map((c) => {
             const kpis = getKPIsForCampana(c);
             const isOpen = expanded[c.id] ?? false;
             return (
@@ -379,22 +408,26 @@ export default function CampanasPage() {
 
                     {/* Acciones */}
                     <div className="flex flex-wrap items-center gap-2 mt-4">
-                      <button
-                        onClick={() => handleEditar(c)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-bold text-on-surface bg-surface-container-high hover:bg-surface-container-highest transition-all flex items-center gap-1.5"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>edit</span>
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleToggleEstatus(c)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-bold text-on-surface bg-surface-container-high hover:bg-surface-container-highest transition-all flex items-center gap-1.5"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
-                          {c.estatus === "activa" ? "lock" : "lock_open"}
-                        </span>
-                        {c.estatus === "activa" ? "Cerrar campaña" : "Reabrir"}
-                      </button>
+                      {!c.id.startsWith("tpl:") && (
+                        <>
+                          <button
+                            onClick={() => handleEditar(c)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-on-surface bg-surface-container-high hover:bg-surface-container-highest transition-all flex items-center gap-1.5"
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>edit</span>
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => handleToggleEstatus(c)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-on-surface bg-surface-container-high hover:bg-surface-container-highest transition-all flex items-center gap-1.5"
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                              {c.estatus === "activa" ? "lock" : "lock_open"}
+                            </span>
+                            {c.estatus === "activa" ? "Cerrar campaña" : "Reabrir"}
+                          </button>
+                        </>
+                      )}
                       <button
                         onClick={() => handleExportCSV(c)}
                         className="px-3 py-1.5 rounded-lg text-xs font-bold text-on-surface bg-surface-container-high hover:bg-surface-container-highest transition-all flex items-center gap-1.5"
@@ -402,13 +435,21 @@ export default function CampanasPage() {
                         <span className="material-symbols-outlined" style={{ fontSize: 14 }}>download</span>
                         Exportar CSV
                       </button>
-                      <button
-                        onClick={() => handleEliminar(c)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-bold text-error hover:bg-error/10 transition-all flex items-center gap-1.5"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>delete</span>
-                        Eliminar
-                      </button>
+                      {!c.id.startsWith("tpl:") && (
+                        <button
+                          onClick={() => handleEliminar(c)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-error hover:bg-error/10 transition-all flex items-center gap-1.5"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>delete</span>
+                          Eliminar
+                        </button>
+                      )}
+                      {c.id.startsWith("tpl:") && (
+                        <span className="px-3 py-1.5 rounded-lg text-xs font-medium text-on-surface-variant bg-surface-container-low flex items-center gap-1.5">
+                          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>auto_awesome</span>
+                          Campaña automática (basada en plantilla)
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
