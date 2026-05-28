@@ -46,6 +46,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let sortOrder = 'fecha-desc'; // 'fecha-desc' | 'fecha-asc' | 'nombre-asc'
     let ocultarYaEnviados = false;
     let purchaseFilter = ''; // '' | 'con' | 'sin' | 'registered' | 'completed'
+    let visiblesActuales = []; // Snapshot del listado filtrado+ordenado actualmente en pantalla
+    let lastCheckedIdx = null; // Índice del último checkbox clickeado (para shift+click)
     let modoEnvio = 'ia'; // 'ia' | 'plantilla'
     let plantillasDisponibles = [];
     let plantillaSeleccionada = null;
@@ -481,6 +483,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const visibles = aplicarOrden(contactosEncontrados.filter(contactoCoincideFiltro));
+        visiblesActuales = visibles; // snapshot accesible para el shift+click delegado
+        lastCheckedIdx = null; // se reinicia cuando el set visible cambia (filtros/orden)
 
         // Limpiar selección de contactos que ya no son visibles
         const idsVisibles = new Set(visibles.map(c => c.id));
@@ -513,6 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <input type="checkbox" id="selectAll" ${allChecked ? 'checked' : ''} onchange="toggleSelectAll(this.checked)">
                     <strong>Seleccionar todos (${visibles.length}${ocultarYaEnviados ? ' del filtro' : ''})</strong>
                 </label>
+                <span class="shift-hint" title="Haz clic en un checkbox y luego Shift+clic en otro para seleccionar/deseleccionar todos los que est&aacute;n en medio."><i class="fas fa-keyboard"></i> Tip: Shift+clic para rango</span>
                 <span id="contadorSeleccionados">${contactosSeleccionados.size} seleccionados</span>
             </div>
             <div class="pedido-header nuevos">
@@ -593,6 +598,52 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.pedido-check:not(:disabled)').forEach(cb => cb.checked = checked);
         actualizarBotonEnviar();
     };
+
+    // --- Shift+click para seleccionar/deseleccionar un rango (estilo Gmail) ---
+    // Listener delegado en listaContactos. Funciona aunque el HTML interno se
+    // re-renderee porque el listener vive en el parent.
+    listaContactos.addEventListener('click', (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        if (target.type !== 'checkbox') return;
+        if (!target.classList.contains('pedido-check')) return;
+        if (target.disabled) return;
+
+        const id = target.dataset.id;
+        if (!id) return;
+        const currentIdx = visiblesActuales.findIndex(c => c.id === id);
+        if (currentIdx < 0) return;
+
+        // Shift+clic: aplica el estado del checkbox actual a todo el rango
+        // entre el último clickeado y este.
+        if (e.shiftKey && lastCheckedIdx !== null && lastCheckedIdx !== currentIdx) {
+            const min = Math.min(lastCheckedIdx, currentIdx);
+            const max = Math.max(lastCheckedIdx, currentIdx);
+            const newState = target.checked; // estado YA aplicado al clickeado
+            for (let i = min; i <= max; i++) {
+                const c = visiblesActuales[i];
+                if (!c || c.retargetadoHoy) continue;
+                if (newState) contactosSeleccionados.add(c.id);
+                else contactosSeleccionados.delete(c.id);
+            }
+            // Sincroniza el estado visual de TODOS los checkboxes visibles
+            document.querySelectorAll('.pedido-check:not(:disabled)').forEach(cb => {
+                const cbId = cb.dataset.id;
+                cb.checked = contactosSeleccionados.has(cbId);
+            });
+            // Actualiza el checkbox de "seleccionar todos"
+            const selectAll = document.getElementById('selectAll');
+            if (selectAll) {
+                const seleccionablesVisibles = visiblesActuales.filter(c => !c.retargetadoHoy).length;
+                const seleccionadosVisibles = visiblesActuales.filter(c => contactosSeleccionados.has(c.id)).length;
+                selectAll.checked = seleccionablesVisibles > 0 && seleccionadosVisibles === seleccionablesVisibles;
+            }
+            actualizarBotonEnviar();
+        }
+
+        // Siempre actualiza el ancla al último clickeado (haya sido shift o no)
+        lastCheckedIdx = currentIdx;
+    });
 
     function actualizarBotonEnviar() {
         const count = contactosSeleccionados.size;
