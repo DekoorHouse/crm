@@ -862,7 +862,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 `;
             }
-            resumenHTML = `
+            resumenHTML += `
                 <div class="resumen-meta">
                     <div class="resumen-kpi resumen-kpi-cost">
                         <div class="resumen-label"><i class="fas fa-dollar-sign"></i> Importe gastado</div>
