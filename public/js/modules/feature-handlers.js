@@ -1865,6 +1865,11 @@ async function detectContactadosForRow(button) {
             setTimeout(() => { contactadosInput.style.background = ''; }, 1500);
             showError(`Detectados ${result.count} contactos únicos que recibieron "${template}"${srcInfo}`, 'success');
         }
+
+        // Si hay más de un batch detectado, mostrar selector — la plantilla puede
+        // usarse en retargeting automático recurrente y el usuario debe elegir solo
+        // el batch correspondiente a su campaña piloto.
+        renderBatchPicker(row, template, result.batches || []);
     } catch (err) {
         console.error('Error detectando contactados:', err);
         showError(err.message || 'No se pudo detectar', 'error');
@@ -1875,3 +1880,78 @@ async function detectContactadosForRow(button) {
 }
 
 window.detectContactadosForRow = detectContactadosForRow;
+
+/**
+ * Renderiza el panel "Por batch" debajo del campo Contactados.
+ * Muestra cada batch detectado en el rango con su fecha y conteo de contactos únicos.
+ * Click en un batch → ese conteo se usa como Contactados (la plantilla puede tener
+ * múltiples batches en el rango porque retargeting la usa de forma recurrente).
+ */
+function renderBatchPicker(row, template, batches) {
+    if (!row) return;
+    // Quita el panel anterior si existía
+    const prev = row.parentElement.querySelector(`.batch-picker[data-row-id="${row.dataset.rowIdx || ''}"]`);
+    if (prev) prev.remove();
+
+    // Si solo hay 0 ó 1 batch, no tiene caso mostrar el panel
+    if (!Array.isArray(batches) || batches.length < 2) return;
+
+    const contactadosInput = row.querySelector('.campana-plantilla-contactados');
+
+    const panel = document.createElement('div');
+    panel.className = 'batch-picker';
+    panel.dataset.rowId = row.dataset.rowIdx || '';
+    panel.style.cssText = 'margin:6px 0 10px 8px;padding:10px 12px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:6px;font-size:12px;';
+
+    const fmt = iso => {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    };
+
+    const header = `<div style="font-weight:600;color:#92400e;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+        <i class="fas fa-info-circle"></i> Se detectaron ${batches.length} tandas (batches) de "${escapeHtml(template)}" en este rango.
+        Haz click en la que corresponde a tu campaña:
+    </div>`;
+
+    const list = batches.map(b => `
+        <button type="button" class="batch-pick-item" data-count="${b.count}" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 10px;background:white;border:1px solid #fde68a;border-radius:6px;margin-bottom:4px;cursor:pointer;text-align:left;transition:all 0.15s;" onmouseover="this.style.background='#fef3c7'" onmouseout="this.style.background='white'">
+            <span style="display:flex;align-items:center;gap:8px;">
+                <i class="fas fa-paper-plane" style="color:#81B29A;font-size:11px;"></i>
+                <span>
+                    <strong>${b.count} contactos</strong>
+                    <span style="color:#6b7280;font-size:11px;"> · ${fmt(b.firstSent)} · <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;font-size:10px;">${escapeHtml(b.batchId.slice(0, 16))}…</code></span>
+                </span>
+            </span>
+            <span style="color:#81B29A;font-weight:600;font-size:11px;">Usar este &rarr;</span>
+        </button>
+    `).join('');
+
+    const footer = `<div style="margin-top:6px;font-size:11px;color:#92400e;">
+        <strong>Total combinado:</strong> ${batches.reduce((s,b)=>s+b.count,0)} contactos (lo que está actualmente en el campo)
+    </div>`;
+
+    panel.innerHTML = header + list + footer;
+
+    // Click handler para cada batch
+    panel.querySelectorAll('.batch-pick-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const count = parseInt(btn.dataset.count, 10) || 0;
+            contactadosInput.value = count;
+            contactadosInput.style.background = '#dcfce7';
+            setTimeout(() => { contactadosInput.style.background = ''; }, 1500);
+            // Resalta el batch seleccionado
+            panel.querySelectorAll('.batch-pick-item').forEach(b => {
+                b.style.border = '1px solid #fde68a';
+                b.style.background = 'white';
+            });
+            btn.style.border = '2px solid #81B29A';
+            btn.style.background = '#dcfce7';
+        });
+    });
+
+    // Inserta justo después de la fila
+    row.parentElement.insertBefore(panel, row.nextSibling);
+}
+
+window.renderBatchPicker = renderBatchPicker;

@@ -4685,15 +4685,48 @@ router.post('/campanas/contar-envios', async (req, res) => {
 
         const uniqueContacts = new Set();
         const bySource = { chat: 0, retargeting_plantilla: 0, other: 0 };
+
+        // Agrupacion por batch: cada envio masivo en retargeting/ crea un batchId.
+        // Asi el usuario puede seleccionar el batch especifico de su campana piloto
+        // en lugar de contar todos los envios de la plantilla en el rango.
+        const batchMap = new Map(); // batchId → { contacts:Set, firstSent, source }
+
         snap.docs.forEach(d => {
             const data = d.data();
             const contactId = data?.contactId;
+            const batchId = data?.batchId;
             if (contactId) uniqueContacts.add(contactId);
             const src = data?.source;
             if (src === 'chat') bySource.chat++;
             else if (src === 'retargeting_plantilla') bySource.retargeting_plantilla++;
             else bySource.other++;
+
+            if (batchId) {
+                if (!batchMap.has(batchId)) {
+                    batchMap.set(batchId, {
+                        batchId,
+                        contacts: new Set(),
+                        firstSent: data.sentAt || null,
+                        source: src || 'unknown',
+                    });
+                }
+                const b = batchMap.get(batchId);
+                if (contactId) b.contacts.add(contactId);
+                if (data.sentAt && (!b.firstSent || data.sentAt.toMillis() < b.firstSent.toMillis())) {
+                    b.firstSent = data.sentAt;
+                }
+            }
         });
+
+        // Convertir batches a array, ordenar por fecha asc, transformar Set→count
+        const batches = [...batchMap.values()]
+            .map(b => ({
+                batchId: b.batchId,
+                count: b.contacts.size,
+                firstSent: b.firstSent ? b.firstSent.toDate().toISOString() : null,
+                source: b.source,
+            }))
+            .sort((a, b) => (a.firstSent || '').localeCompare(b.firstSent || ''));
 
         // Diagnostico: si count==0, ver que plantillas SI hubo envios en el rango
         let sampleTemplateNames = [];
@@ -4718,6 +4751,7 @@ router.post('/campanas/contar-envios', async (req, res) => {
             count: uniqueContacts.size,
             totalSendsScanned: snap.size,
             bySource,
+            batches, // [{batchId, count, firstSent, source}] — para seleccionar batch específico
             sampleTemplateNames,
             rango: { desde: fechaInicio, hasta: fechaFin || 'ahora' },
         });
