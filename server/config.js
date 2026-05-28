@@ -6,17 +6,37 @@ const cors = require('cors');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
 
 // --- CONFIGURACIÓN DE FIREBASE ---
+// Estrategia: primero intenta leer la env var (producción/Render); si está
+// vacía o corrupta, busca un archivo serviceAccountKey.json en la raíz
+// (uso local — ya está en .gitignore).
+function loadServiceAccount() {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (raw && raw.trim()) {
+        try { return JSON.parse(raw); }
+        catch (e) { console.warn('[firebase] env var presente pero JSON.parse falló:', e.message); }
+    }
+    const localPath = path.join(__dirname, '..', 'serviceAccountKey.json');
+    if (fs.existsSync(localPath)) {
+        console.log('[firebase] usando serviceAccountKey.json local');
+        return JSON.parse(fs.readFileSync(localPath, 'utf8'));
+    }
+    throw new Error('No se encontró FIREBASE_SERVICE_ACCOUNT_JSON válido ni serviceAccountKey.json local.');
+}
+
 try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    const serviceAccount = loadServiceAccount();
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
       storageBucket: 'pedidos-con-gemini.firebasestorage.app'
     });
     console.log('✅ Conexión con Firebase (Firestore y Storage) establecida.');
 } catch (error) {
-    console.error('❌ ERROR CRÍTICO: No se pudo inicializar Firebase. Revisa la variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON.', error.message);
+    console.error('❌ ERROR CRÍTICO: No se pudo inicializar Firebase.', error.message);
+    console.error('   → En Render: revisa la env var FIREBASE_SERVICE_ACCOUNT_JSON.');
+    console.error('   → En local: descarga la llave desde Firebase Console (Configuración → Cuentas de servicio → Generar nueva clave privada) y guárdala como serviceAccountKey.json en la raíz del proyecto.');
     process.exit(1);
 }
 
