@@ -183,6 +183,28 @@ button.btn-secondary:hover { background: #d1d5db; }
 .meta-stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.4px; color: #6b7280; margin-top: 3px; font-weight: 700; }
 .meta-stat-sub { font-size: 0.68rem; color: #9ca3af; margin-top: 2px; }
 
+/* Resumen global Meta (costo total + KPIs globales) */
+.resumen-meta { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 14px; }
+.resumen-meta-loading { padding: 14px; text-align: center; color: #6b7280; font-size: 0.85rem; background: #f9fafb; border-radius: 8px; margin-bottom: 14px; }
+.resumen-kpi { background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 12px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+.resumen-kpi-cost { background: linear-gradient(135deg, #ecfdf5, #f0fdf4); border-color: #bbf7d0; }
+.resumen-kpi-cpd { background: linear-gradient(135deg, #eff6ff, #f0f9ff); border-color: #bfdbfe; }
+.resumen-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.resumen-label i { color: #16a34a; font-size: 0.78rem; }
+.resumen-kpi-cpd .resumen-label i { color: #2563eb; }
+.resumen-value { font-size: 1.45rem; font-weight: 700; color: #111827; line-height: 1.1; font-family: 'Poppins', sans-serif; }
+.resumen-kpi-cost .resumen-value { color: #166534; }
+.resumen-kpi-cpd .resumen-value { color: #1d4ed8; }
+.resumen-sub { font-size: 0.72rem; color: #9ca3af; }
+
+@media (max-width: 900px) {
+    .resumen-meta { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 540px) {
+    .resumen-meta { grid-template-columns: repeat(2, 1fr); }
+    .resumen-value { font-size: 1.2rem; }
+}
+
 /* Embudo (funnel) */
 .meta-funnel { padding: 10px 14px 12px; background: white; border-bottom: 1px solid #f0f0f0; }
 .meta-funnel-title { font-size: 0.78rem; font-weight: 700; color: #374151; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.4px; }

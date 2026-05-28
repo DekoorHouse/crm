@@ -818,7 +818,60 @@ document.addEventListener('DOMContentLoaded', () => {
             return lastB - lastA;
         });
 
-        container.innerHTML = `<div class="campanas-list">` + plantillasOrdenadas.map(([nombre, tandas]) => {
+        // --- Resumen global (estilo Meta: Importe gastado + Costo por mensaje entregado) ---
+        let resumenHTML = '';
+        if (metaStats) {
+            let totalCost = 0, totalDelivered = 0, totalSent = 0, totalRead = 0, totalClicked = 0, currency = null;
+            for (const m of Object.values(metaStats)) {
+                if (!m) continue;
+                totalCost += Number(m.costValue || 0);
+                totalDelivered += Number(m.delivered || 0);
+                totalSent += Number(m.sent || 0);
+                totalRead += Number(m.read || 0);
+                totalClicked += Number(m.clicked || 0);
+                if (m.costCurrency && !currency) currency = m.costCurrency;
+            }
+            const totalRepliedAll = batches.reduce((s, b) => s + (b.replied || 0), 0);
+            const cpd = totalDelivered ? (totalCost / totalDelivered) : 0;
+            resumenHTML = `
+                <div class="resumen-meta">
+                    <div class="resumen-kpi resumen-kpi-cost">
+                        <div class="resumen-label"><i class="fas fa-dollar-sign"></i> Importe gastado</div>
+                        <div class="resumen-value">${fmtMoney(totalCost, currency)}</div>
+                        <div class="resumen-sub">en ${plantillasOrdenadas.length} plantilla${plantillasOrdenadas.length === 1 ? '' : 's'}</div>
+                    </div>
+                    <div class="resumen-kpi resumen-kpi-cpd">
+                        <div class="resumen-label"><i class="fas fa-receipt"></i> Costo por mensaje entregado</div>
+                        <div class="resumen-value">${fmtMoney(cpd, currency)}</div>
+                        <div class="resumen-sub">${totalDelivered} entregados</div>
+                    </div>
+                    <div class="resumen-kpi">
+                        <div class="resumen-label"><i class="fas fa-paper-plane"></i> Enviados</div>
+                        <div class="resumen-value">${totalSent}</div>
+                        <div class="resumen-sub">${totalDelivered} entregados (${pct(totalDelivered, totalSent)})</div>
+                    </div>
+                    <div class="resumen-kpi">
+                        <div class="resumen-label"><i class="fas fa-eye"></i> Leídos</div>
+                        <div class="resumen-value">${totalRead}</div>
+                        <div class="resumen-sub">${pct(totalRead, totalSent)} de enviados</div>
+                    </div>
+                    <div class="resumen-kpi">
+                        <div class="resumen-label"><i class="fas fa-reply"></i> Respondieron</div>
+                        <div class="resumen-value">${totalRepliedAll}</div>
+                        <div class="resumen-sub">${pct(totalRepliedAll, totalSent)} tasa resp.</div>
+                    </div>
+                    <div class="resumen-kpi">
+                        <div class="resumen-label"><i class="fas fa-hand-pointer"></i> Clics</div>
+                        <div class="resumen-value">${totalClicked}</div>
+                        <div class="resumen-sub">${pct(totalClicked, totalSent)} de enviados</div>
+                    </div>
+                </div>
+            `;
+        } else {
+            resumenHTML = `<div class="resumen-meta-loading"><i class="fas fa-spinner fa-spin"></i> Cargando importe gastado y métricas Meta...</div>`;
+        }
+
+        container.innerHTML = resumenHTML + `<div class="campanas-list">` + plantillasOrdenadas.map(([nombre, tandas]) => {
             const m = metaStats?.[nombre];
             const tasaResp = m ? pct(tandas.reduce((s, b) => s + (b.replied || 0), 0), m.sent) : null;
             const tipoLabels = {
