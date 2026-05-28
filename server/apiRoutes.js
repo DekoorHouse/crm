@@ -9183,6 +9183,125 @@ router.get('/template-metrics/templates', async (_req, res) => {
     }
 });
 
+// === Meta /template_analytics — metricas oficiales del WhatsApp Manager =================
+// Cache nombre→id para no llamar /message_templates cada vez
+const metaTemplateIdsCache = { ids: null, cachedAt: 0 };
+const META_TEMPLATE_IDS_TTL_MS = 60 * 60 * 1000; // 1h
+
+async function getMetaTemplateIdMap() {
+    if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN) {
+        throw new Error('Faltan credenciales de WhatsApp Business.');
+    }
+    const now = Date.now();
+    if (metaTemplateIdsCache.ids && now - metaTemplateIdsCache.cachedAt < META_TEMPLATE_IDS_TTL_MS) {
+        return metaTemplateIdsCache.ids;
+    }
+    const map = new Map(); // name → id
+    let url = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
+    let params = { limit: 200, fields: 'id,name,status' };
+    // Paginar por si hay muchas plantillas
+    for (let i = 0; i < 10; i++) {
+        const resp = await axios.get(url, {
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+            params: i === 0 ? params : undefined
+        });
+        for (const t of (resp.data?.data || [])) {
+            if (t.name && t.id) map.set(t.name, t.id);
+        }
+        const nextUrl = resp.data?.paging?.next;
+        if (!nextUrl) break;
+        url = nextUrl;
+        params = undefined;
+    }
+    metaTemplateIdsCache.ids = map;
+    metaTemplateIdsCache.cachedAt = now;
+    return map;
+}
+
+// Cache de respuestas del endpoint (5 min — Meta tarda algunas horas en actualizar igual)
+const metaAnalyticsCache = new Map();
+const META_ANALYTICS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+// GET /api/template-metrics/meta-stats?from=<ms>&to=<ms>&templates=name1,name2
+// Devuelve { stats: { [templateName]: { sent, delivered, read, clicked, costValue, costCurrency } } }
+router.get('/template-metrics/meta-stats', async (req, res) => {
+    try {
+        const { from, to, templates: namesParam, fresh } = req.query;
+        if (!from || !to || !namesParam) {
+            return res.status(400).json({ success: false, message: 'Faltan from, to o templates' });
+        }
+        const names = String(namesParam).split(',').map(s => s.trim()).filter(Boolean);
+        if (!names.length) return res.json({ success: true, stats: {} });
+
+        const cacheKey = `${from}_${to}_${names.slice().sort().join('|')}`;
+        if (fresh !== '1') {
+            const hit = metaAnalyticsCache.get(cacheKey);
+            if (hit && Date.now() - hit.cachedAt < META_ANALYTICS_CACHE_TTL_MS) {
+                return res.json({ success: true, ...hit.data, fromCache: true, cacheAgeMs: Date.now() - hit.cachedAt });
+            }
+        }
+
+        const nameToId = await getMetaTemplateIdMap();
+        const idToName = new Map();
+        const ids = [];
+        const unresolved = [];
+        for (const name of names) {
+            const id = nameToId.get(name);
+            if (id) { ids.push(id); idToName.set(String(id), name); }
+            else unresolved.push(name);
+        }
+
+        const stats = {};
+        for (const n of names) {
+            stats[n] = { sent: 0, delivered: 0, read: 0, clicked: 0, costValue: 0, costCurrency: null, resolved: !!nameToId.get(n) };
+        }
+
+        if (ids.length) {
+            // Meta requiere segundos UNIX, no millis
+            const startSec = Math.floor(Number(from) / 1000);
+            const endSec = Math.floor(Number(to) / 1000);
+            const url = `https://graph.facebook.com/v22.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/template_analytics`;
+            const resp = await axios.get(url, {
+                headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+                params: {
+                    start: startSec,
+                    end: endSec,
+                    granularity: 'DAILY',
+                    metric_types: JSON.stringify(['SENT', 'DELIVERED', 'READ', 'CLICKED', 'COST']),
+                    template_ids: JSON.stringify(ids)
+                }
+            });
+
+            const dataPoints = resp.data?.data?.[0]?.data_points || [];
+            for (const dp of dataPoints) {
+                const name = idToName.get(String(dp.template_id));
+                if (!name) continue;
+                const s = stats[name];
+                s.sent += Number(dp.sent || 0);
+                s.delivered += Number(dp.delivered || 0);
+                s.read += Number(dp.read || 0);
+                if (Array.isArray(dp.clicked)) {
+                    for (const c of dp.clicked) s.clicked += Number(c.count || 0);
+                }
+                if (Array.isArray(dp.cost)) {
+                    for (const c of dp.cost) {
+                        s.costValue += Number(c.value || 0);
+                        if (c.currency && !s.costCurrency) s.costCurrency = c.currency;
+                    }
+                }
+            }
+        }
+
+        const payload = { stats, unresolved };
+        metaAnalyticsCache.set(cacheKey, { cachedAt: Date.now(), data: payload });
+        res.json({ success: true, ...payload, fromCache: false });
+    } catch (err) {
+        const detail = err.response ? JSON.stringify(err.response.data) : err.message;
+        console.error('Error en template-metrics/meta-stats:', detail);
+        res.status(500).json({ success: false, message: err.message, detail });
+    }
+});
+
 // ============================================
 // SATISFACCION (clasificacion masiva con Gemini)
 // ============================================

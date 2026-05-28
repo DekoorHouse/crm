@@ -712,7 +712,10 @@ document.addEventListener('DOMContentLoaded', () => {
         logRetargeting.scrollTop = logRetargeting.scrollHeight;
     }
 
-    // --- Campañas enviadas (historial con conteos enviados/respondieron) ---
+    // --- Campañas enviadas (historial con métricas oficiales de Meta + tandas internas) ---
+    let campanasUltimoFrom = null;
+    let campanasUltimoTo = null;
+
     window.cargarCampanas = async (forceRefresh) => {
         const container = document.getElementById('campanasContainer');
         if (!container) return;
@@ -722,6 +725,10 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const token = await auth.currentUser.getIdToken();
             const from = Date.now() - dias * 24 * 60 * 60 * 1000;
+            const to = Date.now();
+            campanasUltimoFrom = from;
+            campanasUltimoTo = to;
+
             const params = new URLSearchParams({
                 from: String(from),
                 source: 'retargeting_plantilla'
@@ -734,13 +741,41 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (!res.ok || !data.success) throw new Error(data.message || 'Error cargando campañas');
 
-            renderCampanas(data.batches || []);
+            const batches = data.batches || [];
+            // Render inicial sin métricas Meta (instantáneo)
+            renderCampanas(batches, null);
+
+            // Disparar métricas oficiales de Meta en segundo plano y re-renderizar
+            const templateNames = [...new Set(batches.map(b => b.templateName).filter(Boolean))];
+            if (templateNames.length) {
+                fetchMetaStats(templateNames, from, to, forceRefresh).then(metaStats => {
+                    renderCampanas(batches, metaStats);
+                }).catch(e => {
+                    console.warn('No se pudieron cargar métricas Meta:', e.message);
+                });
+            }
         } catch (e) {
             container.innerHTML = `<div class="campanas-empty" style="color:#dc2626;"><i class="fas fa-exclamation-triangle"></i> ${e.message}</div>`;
         }
     };
 
-    function renderCampanas(batches) {
+    async function fetchMetaStats(templateNames, from, to, forceRefresh) {
+        const token = await auth.currentUser.getIdToken();
+        const params = new URLSearchParams({
+            from: String(from),
+            to: String(to),
+            templates: templateNames.join(',')
+        });
+        if (forceRefresh) params.set('fresh', '1');
+        const res = await fetch(`/api/template-metrics/meta-stats?${params}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.message || 'Error');
+        return data.stats || {};
+    }
+
+    function renderCampanas(batches, metaStats) {
         const container = document.getElementById('campanasContainer');
         if (!container) return;
         if (!batches.length) {
@@ -755,34 +790,70 @@ document.addEventListener('DOMContentLoaded', () => {
                    d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
         };
         const pct = (a, b) => b ? Math.round((a / b) * 100) + '%' : '—';
+        const fmtMoney = (v, cur) => {
+            if (!v) return '$0';
+            const sym = cur === 'USD' ? 'US$' : (cur || '$');
+            return `${sym}${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        };
 
-        container.innerHTML = `<div class="campanas-list">` + batches.map(b => {
-            const enviados = b.sent || 0;
-            const respondieron = b.replied || 0;
-            const tasa = pct(respondieron, enviados);
-            const meta = [
-                `<span><i class="fas fa-clock"></i>${fmtFecha(b.createdAt)}</span>`,
-                b.sentBy ? `<span><i class="fas fa-user"></i>${b.sentBy}</span>` : '',
-                b.templateLanguage ? `<span><i class="fas fa-globe"></i>${b.templateLanguage}</span>` : ''
-            ].filter(Boolean).join('');
+        // Agrupar tandas por plantilla
+        const porPlantilla = new Map();
+        for (const b of batches) {
+            if (!porPlantilla.has(b.templateName)) porPlantilla.set(b.templateName, []);
+            porPlantilla.get(b.templateName).push(b);
+        }
+
+        const plantillasOrdenadas = [...porPlantilla.entries()].sort((a, b) => {
+            const lastA = Math.max(...a[1].map(x => new Date(x.createdAt).getTime() || 0));
+            const lastB = Math.max(...b[1].map(x => new Date(x.createdAt).getTime() || 0));
+            return lastB - lastA;
+        });
+
+        container.innerHTML = `<div class="campanas-list">` + plantillasOrdenadas.map(([nombre, tandas]) => {
+            const m = metaStats?.[nombre];
+            const tasaResp = m ? pct(tandas.reduce((s, b) => s + (b.replied || 0), 0), m.sent) : null;
+            const metaBlock = !metaStats
+                ? `<div class="meta-stats meta-stats-loading"><i class="fas fa-spinner fa-spin"></i> Cargando métricas oficiales...</div>`
+                : !m || !m.sent
+                    ? `<div class="meta-stats meta-stats-empty"><i class="fas fa-info-circle"></i> Meta aún no reporta métricas para esta plantilla en el rango (suele tardar unas horas).</div>`
+                    : `
+                <div class="meta-stats">
+                    <div class="meta-stat"><div class="meta-stat-num">${m.sent}</div><div class="meta-stat-label">Enviados</div></div>
+                    <div class="meta-stat"><div class="meta-stat-num">${m.delivered}</div><div class="meta-stat-label">Entregados</div><div class="meta-stat-sub">${pct(m.delivered, m.sent)}</div></div>
+                    <div class="meta-stat"><div class="meta-stat-num">${m.read}</div><div class="meta-stat-label">Leídos</div><div class="meta-stat-sub">${pct(m.read, m.sent)}</div></div>
+                    <div class="meta-stat"><div class="meta-stat-num">${tandas.reduce((s, b) => s + (b.replied || 0), 0)}</div><div class="meta-stat-label">Respondieron</div><div class="meta-stat-sub">${tasaResp || '—'}</div></div>
+                    <div class="meta-stat"><div class="meta-stat-num">${m.clicked}</div><div class="meta-stat-label">Clics</div><div class="meta-stat-sub">${pct(m.clicked, m.sent)}</div></div>
+                    <div class="meta-stat"><div class="meta-stat-num">${fmtMoney(m.costValue, m.costCurrency)}</div><div class="meta-stat-label">Costo</div><div class="meta-stat-sub">${m.delivered ? fmtMoney(m.costValue / m.delivered, m.costCurrency) + '/msg' : '—'}</div></div>
+                </div>
+            `;
+
+            const tandasHTML = tandas
+                .slice()
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                .map(b => {
+                    const respondieron = b.replied || 0;
+                    const enviadosBatch = b.sent || 0;
+                    const meta = [
+                        `<span><i class="fas fa-clock"></i>${fmtFecha(b.createdAt)}</span>`,
+                        b.sentBy ? `<span><i class="fas fa-user"></i>${b.sentBy}</span>` : ''
+                    ].filter(Boolean).join('');
+                    return `
+                        <div class="tanda-row">
+                            <div class="tanda-meta">${meta}</div>
+                            <div class="tanda-num"><strong>${enviadosBatch}</strong> enviados</div>
+                            <div class="tanda-num"><strong>${respondieron}</strong> resp. <span class="tanda-pct">${pct(respondieron, enviadosBatch)}</span></div>
+                        </div>
+                    `;
+                }).join('');
+
             return `
-                <div class="campana-card">
-                    <div class="campana-main">
-                        <div class="campana-titulo"><i class="fas fa-bullhorn"></i>${b.templateName}</div>
-                        <div class="campana-meta">${meta}</div>
+                <div class="campana-group">
+                    <div class="campana-group-header">
+                        <div class="campana-titulo"><i class="fas fa-bullhorn"></i>${nombre}</div>
+                        <div class="campana-tandas-count">${tandas.length} tanda${tandas.length === 1 ? '' : 's'}</div>
                     </div>
-                    <div class="campana-stat campana-stat-enviados">
-                        <div class="stat-num">${enviados}</div>
-                        <div class="stat-label">Enviados</div>
-                    </div>
-                    <div class="campana-stat campana-stat-respondieron">
-                        <div class="stat-num">${respondieron}</div>
-                        <div class="stat-label">Respondieron</div>
-                    </div>
-                    <div class="campana-stat campana-stat-tasa">
-                        <div class="stat-num">${tasa}</div>
-                        <div class="stat-label">Tasa resp.</div>
-                    </div>
+                    ${metaBlock}
+                    <div class="tandas-list">${tandasHTML}</div>
                 </div>
             `;
         }).join('') + `</div>`;

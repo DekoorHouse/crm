@@ -159,7 +159,7 @@ button.btn-secondary:hover { background: #d1d5db; }
 .log-entry.error { color: #dc2626; }
 .log-entry.skip { color: #f59e0b; }
 
-/* Campañas enviadas (historial con conteos) */
+/* Campañas enviadas (métricas oficiales Meta + tandas internas) */
 .campanas-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
 .campanas-header h2 { margin-bottom: 0; }
 .campanas-acciones { display: flex; gap: 8px; align-items: center; }
@@ -169,24 +169,32 @@ button.btn-secondary:hover { background: #d1d5db; }
 
 .campanas-container { margin-top: 8px; }
 .campanas-empty { padding: 24px; text-align: center; color: #9ca3af; font-size: 0.88rem; }
-.campanas-list { display: flex; flex-direction: column; gap: 8px; }
-.campana-card { display: grid; grid-template-columns: minmax(0, 1fr) 110px 110px 110px; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; transition: background 0.15s; }
-.campana-card:hover { background: #f3f4f6; }
-.campana-main { min-width: 0; }
-.campana-titulo { font-weight: 700; color: #166534; font-size: 0.92rem; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.campana-meta { font-size: 0.76rem; color: #6b7280; margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
-.campana-meta i { margin-right: 3px; }
-.campana-stat { text-align: center; padding: 6px 4px; border-radius: 6px; background: white; border: 1px solid #f0f0f0; }
-.campana-stat .stat-num { font-size: 1.2rem; font-weight: 700; line-height: 1.1; }
-.campana-stat .stat-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; margin-top: 2px; font-weight: 600; }
-.campana-stat .stat-sub { font-size: 0.72rem; color: #9ca3af; margin-top: 2px; }
-.campana-stat-enviados .stat-num { color: #0e7490; }
-.campana-stat-respondieron .stat-num { color: #16a34a; }
-.campana-stat-tasa .stat-num { color: #9333ea; }
+.campanas-list { display: flex; flex-direction: column; gap: 14px; }
+
+.campana-group { border: 1px solid #e5e7eb; border-radius: 10px; background: #fafafa; overflow: hidden; }
+.campana-group-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 14px; background: white; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
+.campana-titulo { font-weight: 700; color: #166534; font-size: 0.95rem; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.campana-tandas-count { font-size: 0.75rem; color: #6b7280; font-weight: 600; background: #f3f4f6; padding: 3px 10px; border-radius: 999px; }
+
+.meta-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; padding: 12px; background: #f0fdf4; border-bottom: 1px solid #f0f0f0; }
+.meta-stats-loading, .meta-stats-empty { display: block; padding: 10px 14px; background: #f9fafb; border-bottom: 1px solid #f0f0f0; font-size: 0.8rem; color: #6b7280; text-align: center; }
+.meta-stat { text-align: center; padding: 8px 4px; border-radius: 6px; background: white; border: 1px solid #dcfce7; }
+.meta-stat-num { font-size: 1.05rem; font-weight: 700; line-height: 1.1; color: #166534; }
+.meta-stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.4px; color: #6b7280; margin-top: 3px; font-weight: 700; }
+.meta-stat-sub { font-size: 0.68rem; color: #9ca3af; margin-top: 2px; }
+
+.tandas-list { display: flex; flex-direction: column; }
+.tanda-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 8px 14px; font-size: 0.82rem; border-top: 1px solid #f0f0f0; }
+.tanda-row:first-child { border-top: none; }
+.tanda-meta { display: flex; gap: 12px; flex-wrap: wrap; color: #6b7280; font-size: 0.78rem; }
+.tanda-meta i { margin-right: 3px; }
+.tanda-num { color: #374151; white-space: nowrap; }
+.tanda-num strong { color: #0e7490; font-size: 0.92rem; }
+.tanda-pct { color: #16a34a; font-weight: 700; margin-left: 4px; }
 
 @media (max-width: 700px) {
-    .campana-card { grid-template-columns: 1fr 1fr 1fr; }
-    .campana-main { grid-column: 1 / -1; }
+    .meta-stats { grid-template-columns: repeat(3, 1fr); }
+    .tanda-row { grid-template-columns: 1fr; gap: 4px; }
 }
 
 @media (max-width: 600px) {
