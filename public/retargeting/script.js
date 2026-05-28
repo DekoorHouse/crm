@@ -1144,6 +1144,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (saved.gasto != null) document.getElementById('calcGasto').value = saved.gasto;
             if (saved.enviados != null) document.getElementById('calcEnviados').value = saved.enviados;
             if (saved.conversiones != null) document.getElementById('calcConversiones').value = saved.conversiones;
+            if (saved.ingreso != null) document.getElementById('calcIngreso').value = saved.ingreso;
             recalcularConversion();
         } catch {}
     }
@@ -1152,40 +1153,79 @@ document.addEventListener('DOMContentLoaded', () => {
         const gasto = parseFloat(document.getElementById('calcGasto').value) || 0;
         const enviados = parseInt(document.getElementById('calcEnviados').value) || 0;
         const conversiones = parseInt(document.getElementById('calcConversiones').value) || 0;
+        const ingreso = parseFloat(document.getElementById('calcIngreso').value) || 0;
 
-        const fmt = (v) => `US$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const fmtUsd = (v) => `US$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const fmt = (v) => `$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
         // Persistir últimos valores
         try {
-            localStorage.setItem(CALC_STORAGE_KEY, JSON.stringify({ gasto, enviados, conversiones }));
+            localStorage.setItem(CALC_STORAGE_KEY, JSON.stringify({ gasto, enviados, conversiones, ingreso }));
         } catch {}
 
         const cpc = conversiones > 0 ? (gasto / conversiones) : null;
         const tasa = enviados > 0 ? (conversiones / enviados * 100) : null;
+        const roas = gasto > 0 ? (ingreso / gasto) : null;
+        const ganancia = ingreso - gasto;
+        const ingresoPorConv = conversiones > 0 ? (ingreso / conversiones) : null;
 
-        const cpcEl = document.getElementById('calcCostoConversion');
-        const cpcSub = document.getElementById('calcCostoConversionSub');
-        const tasaEl = document.getElementById('calcTasaConversion');
-        const tasaSub = document.getElementById('calcTasaConversionSub');
-        const beEl = document.getElementById('calcBreakeven');
+        const setOut = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
         if (cpc != null) {
-            cpcEl.textContent = fmt(cpc);
-            cpcSub.textContent = `${fmt(gasto)} / ${conversiones} conv.`;
+            setOut('calcCostoConversion', fmtUsd(cpc));
+            setOut('calcCostoConversionSub', `${fmtUsd(gasto)} / ${conversiones} conv.`);
         } else {
-            cpcEl.textContent = '—';
-            cpcSub.textContent = 'agrega gasto y conversiones';
+            setOut('calcCostoConversion', '—');
+            setOut('calcCostoConversionSub', 'agrega gasto y conversiones');
         }
+
         if (tasa != null) {
-            tasaEl.textContent = tasa.toFixed(2).replace(/\.00$/, '') + '%';
-            tasaSub.textContent = `${conversiones} de ${enviados} enviados`;
+            setOut('calcTasaConversion', tasa.toFixed(2).replace(/\.00$/, '') + '%');
+            setOut('calcTasaConversionSub', `${conversiones} de ${enviados} enviados`);
         } else {
-            tasaEl.textContent = '—';
-            tasaSub.textContent = 'agrega enviados y conversiones';
+            setOut('calcTasaConversion', '—');
+            setOut('calcTasaConversionSub', 'agrega enviados y conversiones');
         }
-        // Ingreso mínimo: lo mismo que el CPC — para no perder, cada conversión
-        // debe generar al menos el costo que costó conseguirla.
-        beEl.textContent = cpc != null ? fmt(cpc) : '—';
+
+        // ROAS — color cambia según rentabilidad
+        const roasEl = document.getElementById('calcRoas');
+        const roasSubEl = document.getElementById('calcRoasSub');
+        const roasCard = document.querySelector('.calc-output-roas');
+        if (roas != null) {
+            roasEl.textContent = roas.toFixed(2) + 'x';
+            roasSubEl.textContent = ingresoPorConv != null
+                ? `${fmt(ingresoPorConv)} ingreso/conv.`
+                : `${fmt(ingreso)} / ${fmtUsd(gasto)}`;
+            if (roasCard) {
+                roasCard.classList.toggle('roas-good', roas >= 2);
+                roasCard.classList.toggle('roas-warn', roas >= 1 && roas < 2);
+                roasCard.classList.toggle('roas-bad', roas < 1);
+            }
+        } else {
+            roasEl.textContent = '—';
+            roasSubEl.textContent = 'agrega gasto e ingreso';
+            if (roasCard) roasCard.classList.remove('roas-good', 'roas-warn', 'roas-bad');
+        }
+
+        // Ganancia neta
+        const gananciaEl = document.getElementById('calcGanancia');
+        const gananciaSubEl = document.getElementById('calcGananciaSub');
+        const gananciaCard = document.querySelector('.calc-output-ganancia');
+        if (gasto > 0 || ingreso > 0) {
+            gananciaEl.textContent = (ganancia >= 0 ? '+' : '−') + fmt(Math.abs(ganancia));
+            const margen = ingreso > 0 ? (ganancia / ingreso * 100) : 0;
+            gananciaSubEl.textContent = ingreso > 0
+                ? `margen ${margen.toFixed(1)}% · ${conversiones > 0 ? fmt(ganancia / conversiones) + '/conv.' : ''}`.trim()
+                : 'ingreso − gasto';
+            if (gananciaCard) {
+                gananciaCard.classList.toggle('gan-good', ganancia > 0);
+                gananciaCard.classList.toggle('gan-bad', ganancia < 0);
+            }
+        } else {
+            gananciaEl.textContent = '—';
+            gananciaSubEl.textContent = 'ingreso − gasto';
+            if (gananciaCard) gananciaCard.classList.remove('gan-good', 'gan-bad');
+        }
     };
 
     window.prefillCalculadora = () => {

@@ -211,25 +211,51 @@ button.btn-secondary:hover { background: #d1d5db; }
 .calc-input-wrap input { padding-left: 42px; }
 .calc-input input:focus { outline: none; border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.1); }
 
+.calc-grid-4 { grid-template-columns: repeat(4, 1fr); }
 .calc-outputs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.calc-output { padding: 14px; border-radius: 10px; text-align: center; border: 1px solid #e5e7eb; background: white; }
+.calc-outputs-4 { grid-template-columns: repeat(4, 1fr); }
+.calc-output { padding: 14px; border-radius: 10px; text-align: center; border: 1px solid #e5e7eb; background: white; transition: background 0.3s, border-color 0.3s; }
 .calc-output-cpc { background: linear-gradient(135deg, #eff6ff, #f0f9ff); border-color: #bfdbfe; }
 .calc-output-tasa { background: linear-gradient(135deg, #ecfdf5, #f0fdf4); border-color: #bbf7d0; }
 .calc-output-revenue { background: linear-gradient(135deg, #fef3c7, #fef9c3); border-color: #fde047; }
+.calc-output-roas { background: linear-gradient(135deg, #f5f3ff, #faf5ff); border-color: #ddd6fe; }
+.calc-output-ganancia { background: linear-gradient(135deg, #fef3c7, #fef9c3); border-color: #fde047; }
 .calc-output-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; }
 .calc-output-label i { font-size: 0.78rem; }
 .calc-output-cpc .calc-output-label i { color: #2563eb; }
 .calc-output-tasa .calc-output-label i { color: #16a34a; }
 .calc-output-revenue .calc-output-label i { color: #d97706; }
+.calc-output-roas .calc-output-label i { color: #7c3aed; }
+.calc-output-ganancia .calc-output-label i { color: #d97706; }
 .calc-output-value { font-size: 1.8rem; font-weight: 700; line-height: 1.1; font-family: 'Poppins', sans-serif; color: #111827; }
 .calc-output-cpc .calc-output-value { color: #1d4ed8; }
 .calc-output-tasa .calc-output-value { color: #166534; }
 .calc-output-revenue .calc-output-value { color: #92400e; }
+.calc-output-roas .calc-output-value { color: #6d28d9; }
+.calc-output-ganancia .calc-output-value { color: #92400e; }
 .calc-output-sub { font-size: 0.74rem; color: #9ca3af; margin-top: 4px; }
 
+/* Semáforo ROAS y Ganancia */
+.calc-output-roas.roas-good { background: linear-gradient(135deg, #d1fae5, #ecfdf5); border-color: #34d399; }
+.calc-output-roas.roas-good .calc-output-value { color: #047857; }
+.calc-output-roas.roas-warn { background: linear-gradient(135deg, #fef3c7, #fef9c3); border-color: #fbbf24; }
+.calc-output-roas.roas-warn .calc-output-value { color: #b45309; }
+.calc-output-roas.roas-bad { background: linear-gradient(135deg, #fee2e2, #fef2f2); border-color: #f87171; }
+.calc-output-roas.roas-bad .calc-output-value { color: #b91c1c; }
+.calc-output-ganancia.gan-good { background: linear-gradient(135deg, #d1fae5, #ecfdf5); border-color: #34d399; }
+.calc-output-ganancia.gan-good .calc-output-value { color: #047857; }
+.calc-output-ganancia.gan-bad { background: linear-gradient(135deg, #fee2e2, #fef2f2); border-color: #f87171; }
+.calc-output-ganancia.gan-bad .calc-output-value { color: #b91c1c; }
+
+@media (max-width: 900px) {
+    .calc-grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .calc-outputs-4 { grid-template-columns: repeat(2, 1fr); }
+}
 @media (max-width: 700px) {
     .calc-grid { grid-template-columns: 1fr; }
+    .calc-grid-4 { grid-template-columns: 1fr; }
     .calc-outputs { grid-template-columns: 1fr; }
+    .calc-outputs-4 { grid-template-columns: 1fr; }
 }
 
 /* Badge de fuente de datos (Meta oficial vs tracking interno) */
