@@ -8,7 +8,7 @@ import type { SelectOption } from "@/components/ui/Select";
 import { createOrder, updateOrder } from "@/lib/firebase/firestore";
 import { processPhotos } from "@/lib/firebase/storage";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { db } from "@/lib/firebase/config";
+import { db, auth } from "@/lib/firebase/config";
 import { mapCampanaDoc, type Campana } from "@/lib/api/campanas";
 import toast from "react-hot-toast";
 
@@ -63,35 +63,79 @@ export default function OrderModal({ order, onClose, onSaved }: OrderModalProps)
   const promoFileRef = useRef<HTMLInputElement>(null);
 
   // Listener de campañas activas (para mostrar en el selector si el usuario marca el checkbox)
+  // Combina: (1) docs en colección 'campanas' con estatus='activa' (campañas manuales)
+  //          (2) plantillas activas de Meta como "campañas virtuales" (id = "tpl:<templateName>")
   useEffect(() => {
+    let realCampanas: Campana[] = [];
+    let templatesCampanas: Campana[] = [];
+
+    const mergeAndSet = () => {
+      // Evitar duplicados: si una campaña manual usa la misma plantilla, ya cubre esa entrada
+      const usedTemplates = new Set<string>();
+      realCampanas.forEach((c) => Object.keys(c.plantillas).forEach((p) => usedTemplates.add(p)));
+      const filteredTpls = templatesCampanas.filter((tc) => {
+        const tplName = Object.keys(tc.plantillas)[0];
+        return tplName && !usedTemplates.has(tplName);
+      });
+      const list: Campana[] = [...realCampanas, ...filteredTpls];
+
+      // Si estamos editando un pedido cuya campaña ya está cerrada, la incluimos también
+      if (order?.campana_id && !list.find((c) => c.id === order.campana_id)) {
+        list.push({
+          id: order.campana_id,
+          nombre: order.campana_id.startsWith("tpl:")
+            ? `📨 ${order.campana_id.slice(4)}`
+            : `(campaña cerrada · ${order.campana_id.slice(0, 6)})`,
+          fecha_inicio: null,
+          fecha_fin: null,
+          estatus: "cerrada",
+          plantillas: order.plantilla_origen ? { [order.plantilla_origen]: { contactados: 0, notas: "" } } : {},
+          notas: "",
+          creada_por: "",
+          creada_en: null,
+        });
+      }
+      setCampanasActivas(list);
+    };
+
+    // (1) Snapshot real-time de la colección campanas
     const q = query(collection(db, "campanas"), where("estatus", "==", "activa"));
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const list = snap.docs.map((d) => mapCampanaDoc(d.id, d.data()));
-        // Si estamos editando un pedido cuya campaña ya está cerrada, la incluimos también
-        // para no perder el tag retroactivo al re-guardar.
-        if (order?.campana_id && !list.find((c) => c.id === order.campana_id)) {
-          // Cargar esa campaña una sola vez vía snapshot adicional sería overkill; en su lugar
-          // marcamos un placeholder con el id para que el Select muestre algo si es necesario.
-          list.push({
-            id: order.campana_id,
-            nombre: `(campaña cerrada · ${order.campana_id.slice(0, 6)})`,
-            fecha_inicio: null,
-            fecha_fin: null,
-            estatus: "cerrada",
-            plantillas: order.plantilla_origen ? { [order.plantilla_origen]: { contactados: 0, notas: "" } } : {},
-            notas: "",
-            creada_por: "",
-            creada_en: null,
-          });
-        }
-        setCampanasActivas(list);
+        realCampanas = snap.docs.map((d) => mapCampanaDoc(d.id, d.data()));
+        mergeAndSet();
       },
       (err) => {
         console.warn("[OrderModal] Error cargando campañas activas:", err);
       }
     );
+
+    // (2) Fetch one-shot de plantillas aprobadas de Meta como campañas virtuales
+    (async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) return;
+        const res = await fetch("/api/whatsapp-templates", { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        if (!data?.success || !Array.isArray(data.templates)) return;
+        templatesCampanas = data.templates.map((t: { name: string; language?: string }) => ({
+          id: `tpl:${t.name}`,
+          nombre: `📨 ${t.name}`,
+          fecha_inicio: null,
+          fecha_fin: null,
+          estatus: "activa" as const,
+          plantillas: { [t.name]: { contactados: 0, notas: "" } },
+          notas: "",
+          creada_por: "",
+          creada_en: null,
+        }));
+        mergeAndSet();
+      } catch (e) {
+        console.warn("[OrderModal] No se pudieron cargar plantillas de Meta:", e);
+      }
+    })();
+
     return () => unsub();
   }, [order?.campana_id, order?.plantilla_origen]);
 
