@@ -111,14 +111,29 @@ export default function OrderModal({ order, onClose, onSaved }: OrderModalProps)
       }
     );
 
-    // (2) Fetch one-shot de plantillas aprobadas de Meta como campañas virtuales
+    // (2) Fetch one-shot de plantillas aprobadas de Meta como campañas virtuales.
+    // Espera a que Firebase Auth esté listo (currentUser puede ser null en el primer
+    // render); si después de 5s sigue null, hace fetch sin token (el endpoint no exige
+    // autorización en el server, solo usa env vars).
     (async () => {
       try {
-        const token = await auth.currentUser?.getIdToken();
-        if (!token) return;
-        const res = await fetch("/api/whatsapp-templates", { headers: { Authorization: `Bearer ${token}` } });
+        let token: string | undefined;
+        for (let i = 0; i < 50; i++) {
+          if (auth.currentUser) {
+            token = await auth.currentUser.getIdToken();
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        const headers: Record<string, string> = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const res = await fetch("/api/whatsapp-templates", { headers });
         const data = await res.json();
-        if (!data?.success || !Array.isArray(data.templates)) return;
+        if (!data?.success || !Array.isArray(data.templates)) {
+          console.warn("[OrderModal] /api/whatsapp-templates respondió sin templates:", data);
+          return;
+        }
+        console.log("[OrderModal] plantillas cargadas:", data.templates.length);
         templatesCampanas = data.templates.map((t: { name: string; language?: string }) => ({
           id: `tpl:${t.name}`,
           nombre: `📨 ${t.name}`,
