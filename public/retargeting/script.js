@@ -759,6 +759,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    let metaDebugLast = null;
+
     async function fetchMetaStats(templateNames, from, to, forceRefresh) {
         const token = await auth.currentUser.getIdToken();
         const params = new URLSearchParams({
@@ -772,6 +774,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || 'Error');
+        metaDebugLast = data.debug || null;
+        if (metaDebugLast) console.log('[meta-stats] debug:', metaDebugLast);
         return data.stats || {};
     }
 
@@ -839,19 +843,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             ` : '';
 
+            const respondieronTotal = tandas.reduce((s, b) => s + (b.replied || 0), 0);
+
+            // Diagnóstico cuando Meta no devuelve datos
+            let emptyMsg = 'Meta aún no reporta métricas para esta plantilla en el rango (suele tardar unas horas).';
+            if (metaStats && m && !m.resolved) {
+                emptyMsg = `No se encontró la plantilla "${nombre}" en tu cuenta de WhatsApp Business (¿fue borrada o renombrada en Meta?).`;
+            } else if (metaStats && m && m.resolved && !m.sent) {
+                emptyMsg = `Meta ya conoce la plantilla pero todavía no agregó métricas para este rango. Las stats oficiales pueden tardar 24-48h en aparecer.`;
+            }
+
+            const chartId = `chartTrend_${slug(nombre)}`;
+            const funnelHTML = (m && m.sent)
+                ? renderFunnel(m, respondieronTotal)
+                : '';
+            const trendHTML = (m && m.trend && m.trend.length > 1)
+                ? `
+                <div class="meta-chart-block">
+                    <div class="meta-chart-title"><i class="fas fa-chart-line"></i> Tendencia diaria</div>
+                    <div class="meta-chart-wrap"><canvas id="${chartId}"></canvas></div>
+                </div>
+            ` : '';
+
             const metaBlock = !metaStats
                 ? `<div class="meta-stats meta-stats-loading"><i class="fas fa-spinner fa-spin"></i> Cargando métricas oficiales...</div>`
                 : !m || !m.sent
-                    ? `<div class="meta-stats meta-stats-empty"><i class="fas fa-info-circle"></i> Meta aún no reporta métricas para esta plantilla en el rango (suele tardar unas horas).</div>`
+                    ? `<div class="meta-stats meta-stats-empty"><i class="fas fa-info-circle"></i> ${emptyMsg}</div>`
                     : `
                 <div class="meta-stats">
                     <div class="meta-stat"><div class="meta-stat-num">${m.sent}</div><div class="meta-stat-label">Enviados</div></div>
                     <div class="meta-stat"><div class="meta-stat-num">${m.delivered}</div><div class="meta-stat-label">Entregados</div><div class="meta-stat-sub">${pct(m.delivered, m.sent)}</div></div>
                     <div class="meta-stat"><div class="meta-stat-num">${m.read}</div><div class="meta-stat-label">Leídos</div><div class="meta-stat-sub">${pct(m.read, m.sent)}</div></div>
-                    <div class="meta-stat"><div class="meta-stat-num">${tandas.reduce((s, b) => s + (b.replied || 0), 0)}</div><div class="meta-stat-label">Respondieron</div><div class="meta-stat-sub">${tasaResp || '—'}</div></div>
+                    <div class="meta-stat"><div class="meta-stat-num">${respondieronTotal}</div><div class="meta-stat-label">Respondieron</div><div class="meta-stat-sub">${tasaResp || '—'}</div></div>
                     <div class="meta-stat"><div class="meta-stat-num">${m.clicked}</div><div class="meta-stat-label">Clics</div><div class="meta-stat-sub">${pct(m.clicked, m.sent)}</div></div>
                     <div class="meta-stat"><div class="meta-stat-num">${fmtMoney(m.costValue, m.costCurrency)}</div><div class="meta-stat-label">Costo</div><div class="meta-stat-sub">${m.delivered ? fmtMoney(m.costValue / m.delivered, m.costCurrency) + '/msg' : '—'}</div></div>
                 </div>
+                ${funnelHTML}
+                ${trendHTML}
                 ${clicksHTML}
             `;
 
@@ -885,5 +913,80 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         }).join('') + `</div>`;
+
+        // Dibujar todas las gráficas tras insertar el DOM
+        requestAnimationFrame(() => {
+            for (const [nombre, _tandas] of plantillasOrdenadas) {
+                const m = metaStats?.[nombre];
+                if (!m || !m.trend || m.trend.length < 2) continue;
+                const id = `chartTrend_${slug(nombre)}`;
+                const canvas = document.getElementById(id);
+                if (!canvas || !window.Chart) continue;
+                // Destruir gráfica previa si existe
+                const prev = Chart.getChart(canvas);
+                if (prev) prev.destroy();
+                new Chart(canvas, {
+                    type: 'line',
+                    data: {
+                        labels: m.trend.map(t => t.date.slice(5)),
+                        datasets: [
+                            { label: 'Enviados', data: m.trend.map(t => t.sent), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', tension: 0.3, borderWidth: 2 },
+                            { label: 'Entregados', data: m.trend.map(t => t.delivered), borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,0.1)', tension: 0.3, borderWidth: 2 },
+                            { label: 'Leídos', data: m.trend.map(t => t.read), borderColor: '#0e7490', backgroundColor: 'rgba(14,116,144,0.1)', tension: 0.3, borderWidth: 2 },
+                            { label: 'Clics', data: m.trend.map(t => t.clicked), borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.1)', tension: 0.3, borderWidth: 2 }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+                            tooltip: { mode: 'index', intersect: false }
+                        },
+                        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                        scales: {
+                            x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                            y: { beginAtZero: true, ticks: { font: { size: 10 } } }
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    function slug(s) {
+        return String(s).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+    }
+
+    function renderFunnel(m, respondieron) {
+        const steps = [
+            { label: 'Enviados', value: m.sent, color: '#ef4444' },
+            { label: 'Entregados', value: m.delivered, color: '#7c3aed' },
+            { label: 'Leídos', value: m.read, color: '#0e7490' },
+            { label: 'Respondieron', value: respondieron, color: '#16a34a' }
+        ];
+        const max = Math.max(...steps.map(s => s.value), 1);
+        return `
+            <div class="meta-funnel">
+                <div class="meta-funnel-title"><i class="fas fa-filter"></i> Embudo</div>
+                <div class="meta-funnel-bars">
+                    ${steps.map((s, i) => {
+                        const pctMax = Math.round((s.value / max) * 100);
+                        const pctPrev = i === 0 ? 100 : Math.round((s.value / (steps[i - 1].value || 1)) * 100);
+                        return `
+                            <div class="funnel-step">
+                                <div class="funnel-label">${s.label}</div>
+                                <div class="funnel-bar-wrap">
+                                    <div class="funnel-bar" style="width:${Math.max(pctMax, 2)}%;background:${s.color};">
+                                        <span class="funnel-bar-val">${s.value}</span>
+                                    </div>
+                                </div>
+                                <div class="funnel-pct">${i === 0 ? '' : pctPrev + '%'}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
     }
 });

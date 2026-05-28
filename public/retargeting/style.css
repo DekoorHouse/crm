@@ -183,6 +183,24 @@ button.btn-secondary:hover { background: #d1d5db; }
 .meta-stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.4px; color: #6b7280; margin-top: 3px; font-weight: 700; }
 .meta-stat-sub { font-size: 0.68rem; color: #9ca3af; margin-top: 2px; }
 
+/* Embudo (funnel) */
+.meta-funnel { padding: 10px 14px 12px; background: white; border-bottom: 1px solid #f0f0f0; }
+.meta-funnel-title { font-size: 0.78rem; font-weight: 700; color: #374151; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.4px; }
+.meta-funnel-title i { color: #16a34a; margin-right: 5px; }
+.meta-funnel-bars { display: flex; flex-direction: column; gap: 4px; }
+.funnel-step { display: grid; grid-template-columns: 90px 1fr 50px; gap: 8px; align-items: center; font-size: 0.78rem; }
+.funnel-label { color: #6b7280; font-weight: 600; text-align: right; }
+.funnel-bar-wrap { background: #f3f4f6; border-radius: 4px; height: 22px; overflow: hidden; }
+.funnel-bar { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 8px; color: white; font-size: 0.78rem; font-weight: 700; min-width: 30px; transition: width 0.5s ease; }
+.funnel-bar-val { white-space: nowrap; }
+.funnel-pct { font-size: 0.72rem; color: #9ca3af; font-weight: 600; }
+
+/* Tendencia diaria (Chart.js) */
+.meta-chart-block { padding: 10px 14px 14px; background: white; border-bottom: 1px solid #f0f0f0; }
+.meta-chart-title { font-size: 0.78rem; font-weight: 700; color: #374151; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }
+.meta-chart-title i { color: #16a34a; margin-right: 5px; }
+.meta-chart-wrap { position: relative; height: 220px; }
+
 /* Clics por botón */
 .meta-clicks { padding: 10px 14px 12px; background: white; border-bottom: 1px solid #f0f0f0; }
 .meta-clicks-title { font-size: 0.78rem; font-weight: 700; color: #374151; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }

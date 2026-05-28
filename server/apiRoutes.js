@@ -9252,42 +9252,57 @@ router.get('/template-metrics/meta-stats', async (req, res) => {
         }
 
         const stats = {};
-        // Mapa interno para acumular clics por (label|type) por plantilla
+        // Mapa interno para acumular clics y tendencia diaria por plantilla
         const clickedAccum = new Map(); // templateName → Map(key → {label, type, count})
+        const trendAccum = new Map(); // templateName → Map(dateStr → {sent,delivered,read,clicked})
         for (const n of names) {
-            stats[n] = { sent: 0, delivered: 0, read: 0, clicked: 0, clickedBreakdown: [], costValue: 0, costCurrency: null, resolved: !!nameToId.get(n) };
+            stats[n] = { sent: 0, delivered: 0, read: 0, clicked: 0, clickedBreakdown: [], trend: [], costValue: 0, costCurrency: null, resolved: !!nameToId.get(n), templateId: nameToId.get(n) || null };
             clickedAccum.set(n, new Map());
+            trendAccum.set(n, new Map());
         }
+
+        const debug = { totalDataPoints: 0, sampleDataPoint: null, requestUrl: null, idsRequested: ids.length, idsResolved: ids.length, unresolved };
 
         if (ids.length) {
             // Meta requiere segundos UNIX, no millis
             const startSec = Math.floor(Number(from) / 1000);
             const endSec = Math.floor(Number(to) / 1000);
             const url = `https://graph.facebook.com/v22.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/template_analytics`;
+            const reqParams = {
+                start: startSec,
+                end: endSec,
+                granularity: 'DAILY',
+                metric_types: JSON.stringify(['SENT', 'DELIVERED', 'READ', 'CLICKED', 'COST']),
+                template_ids: JSON.stringify(ids)
+            };
+            debug.requestUrl = `${url}?${new URLSearchParams(reqParams).toString()}`;
+
             const resp = await axios.get(url, {
                 headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-                params: {
-                    start: startSec,
-                    end: endSec,
-                    granularity: 'DAILY',
-                    metric_types: JSON.stringify(['SENT', 'DELIVERED', 'READ', 'CLICKED', 'COST']),
-                    template_ids: JSON.stringify(ids)
-                }
+                params: reqParams
             });
 
             const dataPoints = resp.data?.data?.[0]?.data_points || [];
+            debug.totalDataPoints = dataPoints.length;
+            if (dataPoints.length) debug.sampleDataPoint = dataPoints[0];
+
             for (const dp of dataPoints) {
                 const name = idToName.get(String(dp.template_id));
                 if (!name) continue;
                 const s = stats[name];
-                s.sent += Number(dp.sent || 0);
-                s.delivered += Number(dp.delivered || 0);
-                s.read += Number(dp.read || 0);
+                const sent = Number(dp.sent || 0);
+                const delivered = Number(dp.delivered || 0);
+                const read = Number(dp.read || 0);
+                let clickedDp = 0;
+                s.sent += sent;
+                s.delivered += delivered;
+                s.read += read;
                 if (Array.isArray(dp.clicked)) {
                     const acc = clickedAccum.get(name);
                     for (const c of dp.clicked) {
                         const count = Number(c.count || 0);
                         s.clicked += count;
+                        clickedDp += count;
                         const label = c.button_content || c.label || c.text || '(sin etiqueta)';
                         const type = c.type || 'button';
                         const key = `${label}||${type}`;
@@ -9301,15 +9316,30 @@ router.get('/template-metrics/meta-stats', async (req, res) => {
                         if (c.currency && !s.costCurrency) s.costCurrency = c.currency;
                     }
                 }
+                // Tendencia diaria
+                const dateStr = dp.start
+                    ? new Date(dp.start * 1000).toISOString().slice(0, 10)
+                    : null;
+                if (dateStr) {
+                    const tAcc = trendAccum.get(name);
+                    if (!tAcc.has(dateStr)) tAcc.set(dateStr, { date: dateStr, sent: 0, delivered: 0, read: 0, clicked: 0 });
+                    const t = tAcc.get(dateStr);
+                    t.sent += sent;
+                    t.delivered += delivered;
+                    t.read += read;
+                    t.clicked += clickedDp;
+                }
             }
-            // Volcar el desglose ordenado
+            // Volcar el desglose y la tendencia ordenados
             for (const n of names) {
                 stats[n].clickedBreakdown = [...clickedAccum.get(n).values()]
                     .sort((a, b) => b.count - a.count);
+                stats[n].trend = [...trendAccum.get(n).values()]
+                    .sort((a, b) => a.date.localeCompare(b.date));
             }
         }
 
-        const payload = { stats, unresolved };
+        const payload = { stats, unresolved, debug };
         metaAnalyticsCache.set(cacheKey, { cachedAt: Date.now(), data: payload });
         res.json({ success: true, ...payload, fromCache: false });
     } catch (err) {
