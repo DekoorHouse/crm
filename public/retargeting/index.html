@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
-    <link rel="stylesheet" href="/retargeting/style.css?v=9">
+    <link rel="stylesheet" href="/retargeting/style.css?v=10">
 </head>
 <body>
 
@@ -150,9 +150,31 @@
             <p id="progresoTexto">0 / 0 procesados</p>
             <div id="logRetargeting" class="log-container"></div>
         </div>
+
+        <!-- Campañas enviadas (historial con conteos de entregados / respondieron) -->
+        <div class="content-box">
+            <div class="campanas-header">
+                <h2><i class="fas fa-chart-bar"></i> Mis campa&ntilde;as enviadas</h2>
+                <div class="campanas-acciones">
+                    <select id="campanasRango" onchange="cargarCampanas(true)">
+                        <option value="7">&Uacute;ltimos 7 d&iacute;as</option>
+                        <option value="30" selected>&Uacute;ltimos 30 d&iacute;as</option>
+                        <option value="90">&Uacute;ltimos 90 d&iacute;as</option>
+                        <option value="365">&Uacute;ltimo a&ntilde;o</option>
+                    </select>
+                    <button id="btnRecargarCampanas" class="btn-secondary" onclick="cargarCampanas(true)" title="Recargar">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+            <p class="hint">Cada fila es un env&iacute;o masivo. <strong>Enviados</strong> = contactos que recibieron la plantilla. <strong>Respondieron</strong> = contactos que contestaron despu&eacute;s del env&iacute;o.</p>
+            <div id="campanasContainer" class="campanas-container">
+                <div class="campanas-empty"><i class="fas fa-spinner fa-spin"></i> Cargando campa&ntilde;as...</div>
+            </div>
+        </div>
     </div>
 </div>
 
-<script type="module" src="/retargeting/script.js?v=9"></script>
+<script type="module" src="/retargeting/script.js?v=10"></script>
 </body>
 </html>

@@ -208,6 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await cargarInstrucciones();
             cargarPlantillas(false);
             restaurarDesdeCache();
+            cargarCampanas(false);
         } else {
             seccionLogin.style.display = 'block';
             seccionRetargeting.style.display = 'none';
@@ -693,6 +694,9 @@ document.addEventListener('DOMContentLoaded', () => {
             updateCacheInfoUI(loadCache());
             renderPedidos();
 
+            // Refrescar el panel de campañas para mostrar la nueva tanda
+            if (esPlantilla) cargarCampanas(true);
+
         } catch (e) {
             alert('Error general: ' + e.message);
         }
@@ -706,5 +710,81 @@ document.addEventListener('DOMContentLoaded', () => {
         entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
         logRetargeting.appendChild(entry);
         logRetargeting.scrollTop = logRetargeting.scrollHeight;
+    }
+
+    // --- Campañas enviadas (historial con conteos enviados/respondieron) ---
+    window.cargarCampanas = async (forceRefresh) => {
+        const container = document.getElementById('campanasContainer');
+        if (!container) return;
+        const dias = Number(document.getElementById('campanasRango')?.value) || 30;
+        container.innerHTML = '<div class="campanas-empty"><i class="fas fa-spinner fa-spin"></i> Cargando campañas...</div>';
+
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const from = Date.now() - dias * 24 * 60 * 60 * 1000;
+            const params = new URLSearchParams({
+                from: String(from),
+                source: 'retargeting_plantilla'
+            });
+            if (forceRefresh) params.set('fresh', '1');
+
+            const res = await fetch(`/api/template-metrics/batches?${params}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || 'Error cargando campañas');
+
+            renderCampanas(data.batches || []);
+        } catch (e) {
+            container.innerHTML = `<div class="campanas-empty" style="color:#dc2626;"><i class="fas fa-exclamation-triangle"></i> ${e.message}</div>`;
+        }
+    };
+
+    function renderCampanas(batches) {
+        const container = document.getElementById('campanasContainer');
+        if (!container) return;
+        if (!batches.length) {
+            container.innerHTML = '<div class="campanas-empty"><i class="fas fa-inbox"></i> Aún no hay campañas en este rango. Envía una plantilla para empezar a medir.</div>';
+            return;
+        }
+
+        const fmtFecha = (iso) => {
+            if (!iso) return '';
+            const d = new Date(iso);
+            return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ' ' +
+                   d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+        };
+        const pct = (a, b) => b ? Math.round((a / b) * 100) + '%' : '—';
+
+        container.innerHTML = `<div class="campanas-list">` + batches.map(b => {
+            const enviados = b.sent || 0;
+            const respondieron = b.replied || 0;
+            const tasa = pct(respondieron, enviados);
+            const meta = [
+                `<span><i class="fas fa-clock"></i>${fmtFecha(b.createdAt)}</span>`,
+                b.sentBy ? `<span><i class="fas fa-user"></i>${b.sentBy}</span>` : '',
+                b.templateLanguage ? `<span><i class="fas fa-globe"></i>${b.templateLanguage}</span>` : ''
+            ].filter(Boolean).join('');
+            return `
+                <div class="campana-card">
+                    <div class="campana-main">
+                        <div class="campana-titulo"><i class="fas fa-bullhorn"></i>${b.templateName}</div>
+                        <div class="campana-meta">${meta}</div>
+                    </div>
+                    <div class="campana-stat campana-stat-enviados">
+                        <div class="stat-num">${enviados}</div>
+                        <div class="stat-label">Enviados</div>
+                    </div>
+                    <div class="campana-stat campana-stat-respondieron">
+                        <div class="stat-num">${respondieron}</div>
+                        <div class="stat-label">Respondieron</div>
+                    </div>
+                    <div class="campana-stat campana-stat-tasa">
+                        <div class="stat-num">${tasa}</div>
+                        <div class="stat-label">Tasa resp.</div>
+                    </div>
+                </div>
+            `;
+        }).join('') + `</div>`;
     }
 });
