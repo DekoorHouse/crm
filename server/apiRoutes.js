@@ -9487,6 +9487,91 @@ router.post('/template-metrics/enable-meta-insights', async (req, res) => {
     }
 });
 
+// GET /api/retargeting/conversion-stats?templateName=X[&from=ms][&to=ms]
+// Devuelve { enviados, conversiones, ingreso, gasto } para auto-llenar la calculadora.
+// - enviados: contactos únicos en template_sends con templateName=X (menos failed/blocked)
+// - conversiones: pedidos donde campana_id="tpl:X" (opcionalmente filtrados por createdAt en rango)
+// - ingreso: suma de precio en esos pedidos
+// - gasto: enviados × tarifa promedio (USD 0.034 default; override con ?tarifa=)
+router.get('/retargeting/conversion-stats', async (req, res) => {
+    try {
+        const { templateName, from, to, tarifa } = req.query;
+        if (!templateName) {
+            return res.status(400).json({ success: false, message: 'Falta templateName' });
+        }
+        const ratePerMsg = Number(tarifa) || 0.034; // USD por mensaje
+
+        // 1) Enviados: template_sends con templateName + status != failed/blocked
+        let sendsQuery = db.collection('template_sends').where('templateName', '==', templateName);
+        if (from) sendsQuery = sendsQuery.where('sentAt', '>=', admin.firestore.Timestamp.fromMillis(Number(from)));
+        if (to) sendsQuery = sendsQuery.where('sentAt', '<=', admin.firestore.Timestamp.fromMillis(Number(to)));
+        const sendsSnap = await sendsQuery.get();
+
+        const uniqueContacts = new Set();
+        let failed = 0, blocked = 0;
+        for (const d of sendsSnap.docs) {
+            const data = d.data();
+            if (data.contactId) uniqueContacts.add(data.contactId);
+            if (data.status === 'failed') failed++;
+            if (data.blocked) blocked++;
+        }
+        const enviados = Math.max(0, uniqueContacts.size - failed - blocked);
+
+        // 2) Conversiones e ingreso: pedidos con campana_id = "tpl:<templateName>"
+        const campanaId = 'tpl:' + templateName;
+        let pedidosQuery = db.collection('pedidos').where('campana_id', '==', campanaId);
+        if (from) pedidosQuery = pedidosQuery.where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(Number(from)));
+        if (to) pedidosQuery = pedidosQuery.where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(Number(to)));
+        const pedidosSnap = await pedidosQuery.get();
+
+        let conversiones = 0;
+        let ingreso = 0;
+        const pedidosDetalle = [];
+        for (const d of pedidosSnap.docs) {
+            const p = d.data();
+            conversiones++;
+            const precio = parseFloat(p.precio) || 0;
+            ingreso += precio;
+            pedidosDetalle.push({
+                id: d.id,
+                consecutiveOrderNumber: p.consecutiveOrderNumber || null,
+                precio,
+                estatus: p.estatus || null,
+                createdAt: p.createdAt?.toDate?.()?.toISOString?.() || null
+            });
+        }
+
+        // 3) Gasto: estimado por ahora (enviados × tarifa).
+        // Si en el futuro tenemos meta-stats con costo real, se podría obtener de ahí.
+        const gasto = enviados * ratePerMsg;
+
+        res.json({
+            success: true,
+            templateName,
+            enviados,
+            conversiones,
+            ingreso,
+            gasto,
+            tarifa: ratePerMsg,
+            currency: 'USD',
+            pedidos: pedidosDetalle.length <= 50 ? pedidosDetalle : pedidosDetalle.slice(0, 50),
+            pedidosTotal: pedidosDetalle.length,
+            range: { from: from || null, to: to || null }
+        });
+    } catch (err) {
+        console.error('Error en conversion-stats:', err);
+        const msg = err.message || 'Error interno';
+        if (msg.includes('index')) {
+            return res.status(500).json({
+                success: false,
+                message: 'Falta índice Firestore (pedidos por campana_id + createdAt). Revisa logs.',
+                detail: msg
+            });
+        }
+        res.status(500).json({ success: false, message: msg });
+    }
+});
+
 // GET /api/template-metrics/meta-stats?from=<ms>&to=<ms>&templates=name1,name2
 // Devuelve { stats: { [templateName]: { sent, delivered, read, clicked, costValue, costCurrency } } }
 router.get('/template-metrics/meta-stats', async (req, res) => {

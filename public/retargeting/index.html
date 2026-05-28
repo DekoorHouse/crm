@@ -13,7 +13,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/retargeting/style.css?v=18">
+    <link rel="stylesheet" href="/retargeting/style.css?v=19">
     <style>
         .switch-vista {
             display: inline-flex;
@@ -186,7 +186,19 @@
             <div class="calc-header">
                 <h2><i class="fas fa-calculator"></i> Calculadora de conversi&oacute;n</h2>
             </div>
-            <p class="hint">Mete gasto, enviados, conversiones e ingreso generado. Te calcula <strong>costo por conversi&oacute;n</strong>, <strong>% de conversi&oacute;n</strong>, <strong>ROAS</strong> y <strong>ganancia neta</strong> en vivo.</p>
+            <p class="hint">Elige una campa&ntilde;a para auto-llenar los datos, o mete los n&uacute;meros a mano. Te calcula <strong>costo por conversi&oacute;n</strong>, <strong>% de conversi&oacute;n</strong>, <strong>ROAS</strong> y <strong>ganancia neta</strong> en vivo.</p>
+
+            <!-- Selector de campaña para auto-llenar -->
+            <div class="calc-campaign-box">
+                <label for="calcCampanaSelect"><i class="fas fa-bullhorn"></i> Auto-llenar desde campa&ntilde;a:</label>
+                <select id="calcCampanaSelect" onchange="autoLlenarCalculadoraDesdeCampana()">
+                    <option value="">Cargando plantillas...</option>
+                </select>
+                <button type="button" class="btn-secondary" onclick="autoLlenarCalculadoraDesdeCampana(true)" title="Refrescar">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <span id="calcCampanaStatus" class="calc-campaign-status"></span>
+            </div>
             <div class="calc-grid calc-grid-4">
                 <div class="calc-input">
                     <label for="calcGasto"><i class="fas fa-dollar-sign"></i> Importe gastado</label>
@@ -237,6 +249,6 @@
     </div>
 </div>
 
-<script type="module" src="/retargeting/script.js?v=23"></script>
+<script type="module" src="/retargeting/script.js?v=24"></script>
 </body>
 </html>

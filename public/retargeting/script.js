@@ -1226,6 +1226,67 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Restaurar valores guardados al cargar (después de auth)
     onAuthStateChanged(auth, (user) => {
-        if (user) restaurarCalculadora();
+        if (user) {
+            restaurarCalculadora();
+            cargarPlantillasParaCalculadora();
+        }
     });
+
+    // --- Auto-llenar calculadora desde campaña ---
+    async function cargarPlantillasParaCalculadora() {
+        const sel = document.getElementById('calcCampanaSelect');
+        if (!sel) return;
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch('/api/whatsapp-templates', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (!data?.success || !Array.isArray(data.templates)) {
+                sel.innerHTML = '<option value="">No hay plantillas disponibles</option>';
+                return;
+            }
+            sel.innerHTML = '<option value="">— Llenar a mano —</option>' +
+                data.templates.map(t => `<option value="${t.name}">📨 ${t.name}</option>`).join('');
+        } catch (e) {
+            console.warn('[calc] error cargando plantillas:', e);
+            sel.innerHTML = '<option value="">Error cargando plantillas</option>';
+        }
+    }
+
+    window.autoLlenarCalculadoraDesdeCampana = async (forceRefresh) => {
+        const sel = document.getElementById('calcCampanaSelect');
+        const status = document.getElementById('calcCampanaStatus');
+        if (!sel) return;
+        const templateName = sel.value;
+        if (!templateName) {
+            if (status) status.textContent = '';
+            return;
+        }
+        if (status) status.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculando...';
+
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const params = new URLSearchParams({ templateName });
+            if (forceRefresh) params.set('fresh', '1');
+            const res = await fetch(`/api/retargeting/conversion-stats?${params}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || 'Error');
+
+            document.getElementById('calcGasto').value = (data.gasto || 0).toFixed(2);
+            document.getElementById('calcEnviados').value = data.enviados || 0;
+            document.getElementById('calcConversiones').value = data.conversiones || 0;
+            document.getElementById('calcIngreso').value = (data.ingreso || 0).toFixed(2);
+            recalcularConversion();
+
+            if (status) {
+                const tasa = data.enviados > 0 ? Math.round((data.conversiones / data.enviados) * 100) : 0;
+                status.innerHTML = `<i class="fas fa-check-circle" style="color:#16a34a;"></i> ${data.conversiones} pedido(s) · ${data.enviados} enviados · ${tasa}% conversión · gasto estimado @ US$${data.tarifa}/msg`;
+            }
+        } catch (e) {
+            if (status) status.innerHTML = `<i class="fas fa-exclamation-circle" style="color:#dc2626;"></i> ${e.message}`;
+        }
+    };
 });

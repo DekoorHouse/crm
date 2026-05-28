@@ -202,6 +202,14 @@ button.btn-secondary:hover { background: #d1d5db; }
 .calc-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
 .calc-header h2 { margin-bottom: 0; }
 .calc-prefill-btn { padding: 6px 12px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 6px; }
+.calc-campaign-box { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 14px; background: linear-gradient(135deg, #f0fdf4, #ecfdf5); border: 1px solid #bbf7d0; border-radius: 10px; margin-bottom: 14px; }
+.calc-campaign-box label { font-weight: 700; color: #166534; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.calc-campaign-box label i { color: #16a34a; }
+.calc-campaign-box select { flex: 1; min-width: 200px; padding: 8px 10px; border: 1px solid #bbf7d0; border-radius: 6px; font-size: 0.88rem; font-family: inherit; background: white; cursor: pointer; }
+.calc-campaign-box select:focus { outline: none; border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.1); }
+.calc-campaign-box button { padding: 8px 10px; font-size: 0.85rem; }
+.calc-campaign-status { font-size: 0.78rem; color: #6b7280; flex-basis: 100%; }
+.calc-campaign-status i { margin-right: 4px; }
 .calc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
 .calc-input label { display: block; font-size: 0.78rem; font-weight: 700; color: #374151; margin-bottom: 6px; }
 .calc-input label i { color: #16a34a; margin-right: 4px; }
