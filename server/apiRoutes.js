@@ -8738,7 +8738,10 @@ router.get('/retargeting/buscar-nuevos', async (req, res) => {
                         lastMessage: d.lastMessage || '',
                         lastMessageTimestamp: d.lastMessageTimestamp ? d.lastMessageTimestamp.toDate().toISOString() : null,
                         assignedDepartmentId: d.assignedDepartmentId || null,
-                        status: d.status || null
+                        status: d.status || null,
+                        purchaseStatus: d.purchaseStatus || null,
+                        lastOrderNumber: d.lastOrderNumber || null,
+                        purchaseValue: typeof d.purchaseValue === 'number' ? d.purchaseValue : null
                     };
                 })
                 .filter(Boolean);

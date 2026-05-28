@@ -45,6 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let contactosSeleccionados = new Set();
     let sortOrder = 'fecha-desc'; // 'fecha-desc' | 'fecha-asc' | 'nombre-asc'
     let ocultarYaEnviados = false;
+    let purchaseFilter = ''; // '' | 'con' | 'sin' | 'registered' | 'completed'
     let modoEnvio = 'ia'; // 'ia' | 'plantilla'
     let plantillasDisponibles = [];
     let plantillaSeleccionada = null;
@@ -70,8 +71,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return !!c.lastRetargetingDate;
     }
 
+    function tienePedido(c) {
+        return c.purchaseStatus === 'registered' || c.purchaseStatus === 'completed';
+    }
+
     function contactoCoincideFiltro(c) {
         if (ocultarYaEnviados && yaRecibioRetargeting(c)) return false;
+        if (purchaseFilter === 'con' && !tienePedido(c)) return false;
+        if (purchaseFilter === 'sin' && tienePedido(c)) return false;
+        if (purchaseFilter === 'registered' && c.purchaseStatus !== 'registered') return false;
+        if (purchaseFilter === 'completed' && c.purchaseStatus !== 'completed') return false;
         return true;
     }
 
@@ -101,6 +110,28 @@ document.addEventListener('DOMContentLoaded', () => {
         ocultarYaEnviados = !!checked;
         renderContactos();
     };
+
+    window.setPurchaseFilter = (value) => {
+        purchaseFilter = value || '';
+        document.querySelectorAll('.filtros-chips .chip').forEach(c => {
+            c.classList.toggle('chip-active', (c.getAttribute('data-pedido') || '') === purchaseFilter);
+        });
+        renderContactos();
+    };
+
+    function actualizarContadoresPedido() {
+        const counts = { all: contactosEncontrados.length, con: 0, sin: 0, registered: 0, completed: 0 };
+        for (const c of contactosEncontrados) {
+            if (c.purchaseStatus === 'registered') { counts.registered++; counts.con++; }
+            else if (c.purchaseStatus === 'completed') { counts.completed++; counts.con++; }
+            else counts.sin++;
+        }
+        const ids = { all: 'cntPedAll', con: 'cntPedCon', sin: 'cntPedSin', registered: 'cntPedReg', completed: 'cntPedComp' };
+        for (const k of Object.keys(counts)) {
+            const el = document.getElementById(ids[k]);
+            if (el) el.textContent = counts[k];
+        }
+    }
 
     // --- Cache local por (depto + rango) ---
     const CACHE_KEY = 'retargeting:nuevos:v1';
@@ -436,6 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderContactos() {
         resultadosBox.style.display = 'block';
         totalContactosSpan.textContent = contactosEncontrados.length;
+        actualizarContadoresPedido();
 
         if (contactosEncontrados.length === 0) {
             listaContactos.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">No hay contactos nuevos provenientes de anuncios en este rango y departamento.</div>';
@@ -458,7 +490,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (visibles.length === 0) {
-            listaContactos.innerHTML = `<div style="padding:20px;text-align:center;color:#999;">Ningún contacto pendiente de retargeting en este rango.</div>`;
+            const PED_LABELS = { con: 'Con pedido', sin: 'Sin pedido', registered: 'Solo registrados', completed: 'Pagados / Fabricar' };
+            const motivo = purchaseFilter
+                ? `Ningún contacto coincide con el filtro <strong>${PED_LABELS[purchaseFilter] || purchaseFilter}</strong>${ocultarYaEnviados ? ' (y pendientes de retargeting)' : ''}.`
+                : (ocultarYaEnviados ? 'Ningún contacto pendiente de retargeting en este rango.' : 'Ningún contacto coincide con los filtros actuales.');
+            listaContactos.innerHTML = `<div style="padding:20px;text-align:center;color:#999;">${motivo}</div>`;
             actualizarBotonEnviar();
             return;
         }
@@ -498,11 +534,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 : '';
             const escAd = (c.adName || 'Anuncio').replace(/"/g, '&quot;');
             const escMsg = (c.lastMessage || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            // Badge de pedido (estilo corona del CRM)
+            let pedidoBadge = '';
+            if (c.purchaseStatus === 'completed') {
+                const ord = c.lastOrderNumber ? `DH${c.lastOrderNumber}` : 'Pagado / Fabricar';
+                const val = c.purchaseValue ? ` · $${Number(c.purchaseValue).toLocaleString('es-MX', { maximumFractionDigits: 0 })}` : '';
+                pedidoBadge = `<span class="badge-pedido badge-pedido-completed" title="Pedido ${ord}${val}"><i class="fas fa-crown"></i></span>`;
+            } else if (c.purchaseStatus === 'registered') {
+                const ord = c.lastOrderNumber ? `DH${c.lastOrderNumber}` : 'Registrado (sin pagar)';
+                pedidoBadge = `<span class="badge-pedido badge-pedido-registered" title="Pedido ${ord}"><i class="fas fa-clipboard-list"></i></span>`;
+            }
+
             return `
             <div class="pedido-row nuevos ${c.retargetadoHoy ? 'enviado' : ''} ${yaEnviado && !c.retargetadoHoy ? 'historico' : ''}">
                 <input type="checkbox" class="col-check pedido-check" data-id="${c.id}" ${c.retargetadoHoy ? 'disabled' : (isChecked ? 'checked' : '')} onchange="toggleContacto('${c.id}', this.checked)">
                 <span class="col-indice">#${idx + 1}</span>
-                <span class="col-nombre pedido-producto" title="${(c.name || '').replace(/"/g, '&quot;')}">${c.name || 'Sin nombre'}</span>
+                <span class="col-nombre pedido-producto" title="${(c.name || '').replace(/"/g, '&quot;')}">${pedidoBadge}${c.name || 'Sin nombre'}</span>
                 <span class="col-anuncio pedido-anuncio" title="${escAd}"><span class="badge-ad">${escAd}</span></span>
                 <span class="col-mensaje pedido-mensaje" title="${escMsg}">${escMsg || '<span class="muted">—</span>'}</span>
                 <span class="col-fecha pedido-fecha">${fechaTxt}</span>
