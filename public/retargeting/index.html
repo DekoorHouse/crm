@@ -14,6 +14,29 @@
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="/retargeting/style.css?v=18">
+    <style>
+        .switch-vista {
+            display: inline-flex;
+            gap: 6px;
+            margin-bottom: 16px;
+            background: #f3f4f6;
+            padding: 4px;
+            border-radius: 8px;
+        }
+        .switch-vista a {
+            padding: 6px 14px;
+            border-radius: 6px;
+            text-decoration: none;
+            color: #4b5563;
+            font-weight: 600;
+            font-size: 13px;
+        }
+        .switch-vista a.activo {
+            background: white;
+            color: #16a34a;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+        }
+    </style>
 </head>
 <body>
 
@@ -50,6 +73,12 @@
                 <span id="usuarioLogueado"></span>
                 <button id="btnCerrarSesion" onclick="cerrarSesion()" title="Cerrar sesión"><i class="fas fa-sign-out-alt"></i></button>
             </div>
+        </div>
+
+        <!-- Switch entre vistas -->
+        <div class="switch-vista">
+            <a href="/retargeting/" class="activo">Pedidos Pagados</a>
+            <a href="/retargeting/nuevos/">Nuevos (Anuncios)</a>
         </div>
 
         <!-- Modo de envio -->

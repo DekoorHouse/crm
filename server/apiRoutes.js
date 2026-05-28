@@ -8669,6 +8669,112 @@ router.get('/retargeting/buscar-pedidos', async (req, res) => {
     }
 });
 
+// Cache para contactos nuevos por departamento+rango
+const retargetingNuevosCache = new Map();
+function pruneRetargetingNuevosCache() {
+    const now = Date.now();
+    for (const [key, entry] of retargetingNuevosCache) {
+        if (now - entry.cachedAt > RETARGETING_CACHE_TTL_MS) retargetingNuevosCache.delete(key);
+    }
+}
+
+// Buscar contactos NUEVOS por departamento y rango de fecha (provenientes de anuncios de Meta)
+// Devuelve contactos cuyo assignedDepartmentId == X y que tienen adReferral (vinieron de anuncio).
+// El rango de fecha se aplica sobre lastMessageTimestamp (proxy útil de actividad reciente).
+router.get('/retargeting/buscar-nuevos', async (req, res) => {
+    try {
+        const { departmentId, startDate, endDate, fresh } = req.query;
+        if (!departmentId || !startDate || !endDate) {
+            return res.status(400).json({ success: false, message: 'Se requieren departmentId, startDate y endDate.' });
+        }
+
+        const cacheKey = `nuevos_${departmentId}_${dateKeyFromMillis(startDate)}_${dateKeyFromMillis(endDate)}`;
+        const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+        let baseContacts = null;
+        let cachedAt = null;
+        let fromCache = false;
+
+        if (fresh !== '1') {
+            const entry = retargetingNuevosCache.get(cacheKey);
+            if (entry && (Date.now() - entry.cachedAt) < RETARGETING_CACHE_TTL_MS) {
+                baseContacts = entry.contacts;
+                cachedAt = entry.cachedAt;
+                fromCache = true;
+            }
+        }
+
+        if (!baseContacts) {
+            const start = admin.firestore.Timestamp.fromMillis(Number(startDate));
+            const end = admin.firestore.Timestamp.fromMillis(Number(endDate));
+
+            // Soporte multi-departamento (1-10 IDs separados por coma)
+            let query = db.collection('contacts_whatsapp');
+            if (departmentId.includes(',')) {
+                const ids = departmentId.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
+                query = query.where('assignedDepartmentId', 'in', ids);
+            } else {
+                query = query.where('assignedDepartmentId', '==', departmentId);
+            }
+            query = query
+                .where('lastMessageTimestamp', '>=', start)
+                .where('lastMessageTimestamp', '<=', end)
+                .orderBy('lastMessageTimestamp', 'desc');
+
+            const snapshot = await query.get();
+
+            baseContacts = snapshot.docs
+                .map(doc => {
+                    const d = doc.data();
+                    // Solo contactos provenientes de anuncio (que tienen su adReferral guardado)
+                    if (!d.adReferral || !d.adReferral.source_id) return null;
+                    return {
+                        id: doc.id,
+                        telefono: doc.id,
+                        name: d.name || 'Sin nombre',
+                        adName: d.adReferral.ad_name || d.adReferral.headline || d.adReferral.body || `ID: ${d.adReferral.source_id}`,
+                        adId: d.adReferral.source_id || null,
+                        sourceType: d.adReferral.source_type || null,
+                        lastMessage: d.lastMessage || '',
+                        lastMessageTimestamp: d.lastMessageTimestamp ? d.lastMessageTimestamp.toDate().toISOString() : null,
+                        assignedDepartmentId: d.assignedDepartmentId || null,
+                        status: d.status || null
+                    };
+                })
+                .filter(Boolean);
+
+            cachedAt = Date.now();
+            pruneRetargetingNuevosCache();
+            retargetingNuevosCache.set(cacheKey, { cachedAt, contacts: baseContacts });
+        }
+
+        // Refrescar lastRetargetingDate y satisfaction en cada request (no cacheable)
+        const telefonos = [...new Set(baseContacts.map(c => c.telefono).filter(Boolean))];
+        const metaMap = await fetchContactosMetaMap(telefonos);
+
+        const contacts = baseContacts.map(c => {
+            const meta = metaMap[c.telefono] || {};
+            return {
+                ...c,
+                retargetadoHoy: meta.lastRetargetingDate === todayMx,
+                lastRetargetingDate: meta.lastRetargetingDate || null,
+                satisfactionLevel: meta.satisfactionLevel || null
+            };
+        });
+
+        res.json({
+            success: true,
+            contacts,
+            fromCache,
+            cachedAt,
+            cacheAgeMs: Date.now() - cachedAt
+        });
+    } catch (error) {
+        console.error('Error buscando contactos nuevos para retargeting:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // Enviar mensaje de retargeting IA para un contacto
 router.post('/retargeting/enviar', async (req, res) => {
     try {

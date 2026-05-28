@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retargeting Nuevos (Anuncios)</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+    <link rel="stylesheet" href="/retargeting/style.css?v=18">
+    <style>
+        /* Ajustes específicos para la vista de Nuevos */
+        .filtros-grid.con-depto {
+            grid-template-columns: 1.5fr 1fr 1fr;
+        }
+        .pedido-row.nuevos {
+            grid-template-columns: 30px 40px 1.4fr 1.2fr 1.4fr 0.9fr 0.9fr 1fr;
+        }
+        .pedido-header.nuevos {
+            grid-template-columns: 30px 40px 1.4fr 1.2fr 1.4fr 0.9fr 0.9fr 1fr;
+        }
+        .badge-ad {
+            display: inline-block;
+            background: #eef2ff;
+            color: #4338ca;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .pedido-anuncio {
+            min-width: 0;
+        }
+        .pedido-mensaje {
+            color: #555;
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+        .switch-vista {
+            display: inline-flex;
+            gap: 6px;
+            margin-bottom: 16px;
+            background: #f3f4f6;
+            padding: 4px;
+            border-radius: 8px;
+        }
+        .switch-vista a {
+            padding: 6px 14px;
+            border-radius: 6px;
+            text-decoration: none;
+            color: #4b5563;
+            font-weight: 600;
+            font-size: 13px;
+        }
+        .switch-vista a.activo {
+            background: white;
+            color: #16a34a;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading-overlay">
+    <div class="loading-box">
+        <img src="/favicon.png" class="loading-logo" alt="Cargando...">
+    </div>
+</div>
+
+<div class="main-container">
+
+    <div id="seccionLogin">
+        <div class="login-container">
+            <h1><i class="fas fa-bullseye"></i> Retargeting Nuevos (Anuncios)</h1>
+            <form id="formularioLogin">
+                <div>
+                    <label for="email">Correo Electr&oacute;nico:</label>
+                    <input type="email" id="email" required placeholder="tu.correo@ejemplo.com">
+                </div>
+                <div>
+                    <label for="password">Contrase&ntilde;a:</label>
+                    <input type="password" id="password" required placeholder="--------">
+                </div>
+                <div id="mensajeError"></div>
+                <button type="submit"><i class="fas fa-sign-in-alt"></i> Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="seccionRetargeting" style="display:none;">
+        <div class="titulo-container">
+            <h1><i class="fas fa-bullseye" style="color: #16a34a;"></i> Retargeting Nuevos (Anuncios)</h1>
+            <div class="user-info">
+                <span id="usuarioLogueado"></span>
+                <button id="btnCerrarSesion" onclick="cerrarSesion()" title="Cerrar sesi&oacute;n"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <!-- Switch entre vistas -->
+        <div class="switch-vista">
+            <a href="/retargeting/">Pedidos Pagados</a>
+            <a href="/retargeting/nuevos/" class="activo">Nuevos (Anuncios)</a>
+        </div>
+
+        <!-- Modo de envio -->
+        <div class="content-box">
+            <h2><i class="fas fa-cog"></i> Modo de env&iacute;o</h2>
+            <div class="modo-envio">
+                <label><input type="radio" name="modoEnvio" value="ia" checked onchange="setModoEnvio('ia')"> <i class="fas fa-brain"></i> <strong>IA decide</strong> <span class="hint-inline">(la IA arma cada mensaje seg&uacute;n las instrucciones)</span></label>
+                <label><input type="radio" name="modoEnvio" value="plantilla" onchange="setModoEnvio('plantilla')"> <i class="fas fa-file-alt"></i> <strong>Plantilla espec&iacute;fica</strong> <span class="hint-inline">(el mismo template aprobado por Meta para todos)</span></label>
+            </div>
+        </div>
+
+        <!-- Instrucciones de IA -->
+        <div id="seccionInstrucciones" class="content-box">
+            <h2><i class="fas fa-brain"></i> Instrucciones para la IA de retargeting de nuevos</h2>
+            <p class="hint">La IA leer&aacute; la conversaci&oacute;n de cada contacto NUEVO que lleg&oacute; por un anuncio y decidir&aacute; qu&eacute; mensaje enviar (recordatorio, oferta, cierre de venta, etc.) basado en estas instrucciones.</p>
+            <textarea id="instruccionesIA" rows="8" placeholder="Ej: Eres Carmela. Estos contactos vinieron de un anuncio pero a&uacute;n no han comprado. Quiero recordarles que la promoci&oacute;n sigue activa, dar respuesta a sus dudas pendientes y empujar al cierre. Tono cercano y c&aacute;lido. Si llevan m&aacute;s de 48h sin responder, m&aacute;ndales un mensaje suave para reactivar la conversaci&oacute;n."></textarea>
+            <button id="btnGuardarInstrucciones" onclick="guardarInstrucciones()">
+                <i class="fas fa-save"></i> Guardar instrucciones
+            </button>
+        </div>
+
+        <!-- Selector de plantilla -->
+        <div id="seccionPlantilla" class="content-box" style="display:none;">
+            <h2><i class="fas fa-file-alt"></i> Selecciona la plantilla aprobada por Meta</h2>
+            <p class="hint">Esta plantilla se enviar&aacute; tal cual a TODOS los contactos seleccionados. Si la plantilla tiene <code>{{1}}</code>, se sustituye con el nombre del contacto.</p>
+            <div class="plantilla-row">
+                <select id="plantillaSelect" onchange="onPlantillaChange()">
+                    <option value="">Cargando plantillas...</option>
+                </select>
+                <button id="btnRecargarPlantillas" class="btn-secondary" onclick="cargarPlantillas(true)" title="Recargar plantillas desde Meta">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div id="plantillaPreview" class="plantilla-preview" style="display:none;"></div>
+        </div>
+
+        <!-- Seleccion de departamento + rango -->
+        <div class="content-box">
+            <h2><i class="fas fa-filter"></i> Filtrar contactos nuevos</h2>
+            <div class="filtros-grid con-depto">
+                <div class="filtro-item">
+                    <label for="departamentoSelect"><i class="fas fa-building"></i> Departamento:</label>
+                    <select id="departamentoSelect">
+                        <option value="">Cargando departamentos...</option>
+                    </select>
+                </div>
+                <div class="filtro-item">
+                    <label for="fechaInicio"><i class="fas fa-calendar"></i> Desde:</label>
+                    <input type="text" id="fechaInicio" placeholder="Seleccionar fecha">
+                </div>
+                <div class="filtro-item">
+                    <label for="fechaFin"><i class="fas fa-calendar"></i> Hasta:</label>
+                    <input type="text" id="fechaFin" placeholder="Seleccionar fecha">
+                </div>
+            </div>
+            <div class="acciones-busqueda">
+                <button id="btnBuscarContactos" onclick="buscarContactos(false)">
+                    <i class="fas fa-search"></i> Buscar contactos nuevos
+                </button>
+                <button id="btnActualizar" class="btn-secondary" onclick="buscarContactos(true)" style="display:none;">
+                    <i class="fas fa-sync-alt"></i> Actualizar
+                </button>
+                <span id="cacheInfo" class="cache-info"></span>
+            </div>
+        </div>
+
+        <!-- Resultados -->
+        <div id="resultadosBox" class="content-box" style="display:none;">
+            <div class="resultados-header">
+                <h2><i class="fas fa-users"></i> Contactos nuevos: <span id="totalContactos">0</span></h2>
+                <button id="btnEnviarRetargeting" onclick="enviarRetargeting()" disabled>
+                    <i class="fas fa-paper-plane"></i> Enviar Retargeting Masivo
+                </button>
+            </div>
+            <div class="orden-row">
+                <label for="sortOrder" class="orden-label"><i class="fas fa-sort"></i> Ordenar:</label>
+                <select id="sortOrder" onchange="setSortOrder(this.value)">
+                    <option value="fecha-desc">Fecha (m&aacute;s reciente primero)</option>
+                    <option value="fecha-asc">Fecha (m&aacute;s antigua primero)</option>
+                    <option value="nombre-asc">Nombre (A-Z)</option>
+                </select>
+                <label class="orden-check"><input type="checkbox" id="ocultarYaEnviados" onchange="toggleOcultarYaEnviados(this.checked)"> Ocultar los que ya recibieron retargeting</label>
+            </div>
+            <div id="listaContactos" class="pedidos-list"></div>
+        </div>
+
+        <!-- Progreso -->
+        <div id="progresoBox" class="content-box" style="display:none;">
+            <h2><i class="fas fa-spinner fa-spin"></i> Procesando retargeting...</h2>
+            <div class="progress-bar-container">
+                <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+            </div>
+            <p id="progresoTexto">0 / 0 procesados</p>
+            <div id="logRetargeting" class="log-container"></div>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="/retargeting/nuevos/script.js?v=1"></script>
+</body>
+</html>
