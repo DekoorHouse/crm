@@ -766,16 +766,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const params = new URLSearchParams({
             from: String(from),
             to: String(to),
-            templates: templateNames.join(',')
+            templates: templateNames.join(','),
+            fresh: '1'  // mientras debuggeamos, siempre fresco
         });
-        if (forceRefresh) params.set('fresh', '1');
         const res = await fetch(`/api/template-metrics/meta-stats?${params}`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || 'Error');
         metaDebugLast = data.debug || null;
-        if (metaDebugLast) console.log('[meta-stats] debug:', metaDebugLast);
+        if (metaDebugLast) {
+            console.log('[meta-stats] debug:', metaDebugLast);
+            if (metaDebugLast.sampleDataPointJson) {
+                console.log('[meta-stats] sample (json):', metaDebugLast.sampleDataPointJson);
+            }
+        }
         return data.stats || {};
     }
 

@@ -9282,13 +9282,27 @@ router.get('/template-metrics/meta-stats', async (req, res) => {
                 params: reqParams
             });
 
-            const dataPoints = resp.data?.data?.[0]?.data_points || [];
+            // Algunos formatos devuelven multiples entradas en data[], iterar todas
+            const dataPoints = [];
+            for (const entry of (resp.data?.data || [])) {
+                if (Array.isArray(entry?.data_points)) dataPoints.push(...entry.data_points);
+            }
             debug.totalDataPoints = dataPoints.length;
-            if (dataPoints.length) debug.sampleDataPoint = dataPoints[0];
+            debug.rawDataEntries = resp.data?.data?.length || 0;
+            if (dataPoints.length) {
+                debug.sampleDataPoint = dataPoints[0];
+                debug.sampleDataPointJson = JSON.stringify(dataPoints[0]);
+                debug.sampleTemplateIds = [...new Set(dataPoints.map(d => String(d.template_id || d.templateId || '')))].slice(0, 5);
+                debug.idMapKeys = [...idToName.keys()].slice(0, 5);
+            }
+            let matched = 0, unmatched = 0;
 
             for (const dp of dataPoints) {
-                const name = idToName.get(String(dp.template_id));
-                if (!name) continue;
+                // v22.0 puede devolver template_id como number o string; tambien probar templateId
+                const tid = String(dp.template_id ?? dp.templateId ?? '');
+                const name = idToName.get(tid);
+                if (!name) { unmatched++; continue; }
+                matched++;
                 const s = stats[name];
                 const sent = Number(dp.sent || 0);
                 const delivered = Number(dp.delivered || 0);
@@ -9330,6 +9344,8 @@ router.get('/template-metrics/meta-stats', async (req, res) => {
                     t.clicked += clickedDp;
                 }
             }
+            debug.matched = matched;
+            debug.unmatched = unmatched;
             // Volcar el desglose y la tendencia ordenados
             for (const n of names) {
                 stats[n].clickedBreakdown = [...clickedAccum.get(n).values()]
