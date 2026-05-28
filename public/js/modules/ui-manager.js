@@ -3455,20 +3455,72 @@ function togglePedidoCampanaSection(isEdit) {
     }
 }
 
-function populateCampanaSelectorsInOrderModal(isEdit) {
+// Cache de plantillas Meta para el selector del modal (1h)
+let _metaPlantillasCache = null;
+let _metaPlantillasCachedAt = 0;
+const META_PLANTILLAS_TTL_MS = 60 * 60 * 1000;
+
+async function _fetchMetaPlantillasParaModal() {
+    if (_metaPlantillasCache && (Date.now() - _metaPlantillasCachedAt) < META_PLANTILLAS_TTL_MS) {
+        return _metaPlantillasCache;
+    }
+    try {
+        const res = await fetch('/api/whatsapp-templates');
+        const data = await res.json();
+        if (data?.success && Array.isArray(data.templates)) {
+            _metaPlantillasCache = data.templates;
+            _metaPlantillasCachedAt = Date.now();
+            console.log('[OrderModal/clásico] plantillas Meta cargadas:', data.templates.length);
+            return data.templates;
+        }
+        console.warn('[OrderModal/clásico] respuesta sin templates:', data);
+    } catch (e) {
+        console.warn('[OrderModal/clásico] error cargando plantillas:', e);
+    }
+    return [];
+}
+
+async function populateCampanaSelectorsInOrderModal(isEdit) {
     const campId = isEdit ? 'editPedidoCampanaId' : 'pedidoCampanaId';
     const sel = document.getElementById(campId);
     if (!sel) return;
     // Conserva el valor seleccionado si existe
     const prevValue = sel.value;
-    const activas = state.campanasList.filter(c => c.estatus === 'activa');
-    if (activas.length === 0) {
-        sel.innerHTML = '<option value="">Sin campañas activas</option>';
+    const activas = (state.campanasList || []).filter(c => c.estatus === 'activa');
+
+    // Cargar plantillas Meta como campañas virtuales (no bloquea: primer render usa
+    // cache si existe; si no, render con solo reales y luego refresca al llegar la data)
+    const metaPlantillas = _metaPlantillasCache || [];
+    const usedNames = new Set();
+    activas.forEach(c => Object.keys(c.plantillas || {}).forEach(p => usedNames.add(p)));
+    const virtuales = metaPlantillas
+        .filter(t => !usedNames.has(t.name))
+        .map(t => ({
+            id: 'tpl:' + t.name,
+            nombre: '📨 ' + t.name,
+            estatus: 'activa',
+            plantillas: { [t.name]: { contactados: 0, notas: '' } }
+        }));
+
+    const todas = [...activas, ...virtuales];
+    if (todas.length === 0) {
+        sel.innerHTML = '<option value="">Cargando plantillas...</option>';
     } else {
         sel.innerHTML = '<option value="">Seleccionar campaña...</option>' +
-            activas.map(c => `<option value="${c.id}" ${prevValue === c.id ? 'selected' : ''}>${escapeHtmlSafe(c.nombre)}</option>`).join('');
+            todas.map(c => `<option value="${escapeHtmlSafe(c.id)}" ${prevValue === c.id ? 'selected' : ''}>${escapeHtmlSafe(c.nombre)}</option>`).join('');
     }
     onPedidoCampanaChange(isEdit, true);
+
+    // Si no estaba en cache aún, hacer fetch y re-render una vez resuelva
+    if (!_metaPlantillasCache) {
+        const fresh = await _fetchMetaPlantillasParaModal();
+        if (fresh.length && document.getElementById(campId)) {
+            // Re-render con la data nueva (sólo si el modal sigue abierto)
+            populateCampanaSelectorsInOrderModal(isEdit);
+        } else if (!fresh.length && todas.length === 0) {
+            sel.innerHTML = '<option value="">Sin campañas activas</option>';
+        }
+    }
 }
 
 function onPedidoCampanaChange(isEdit, preserveSelectedPlantilla) {
@@ -3478,7 +3530,16 @@ function onPedidoCampanaChange(isEdit, preserveSelectedPlantilla) {
     const plant = document.getElementById(plantId);
     if (!sel || !plant) return;
     const prevPlantilla = preserveSelectedPlantilla ? plant.value : '';
-    const camp = state.campanasList.find(c => c.id === sel.value);
+    const selVal = sel.value;
+
+    // Campañas virtuales tpl:<templateName> → la plantilla origen es la misma plantilla
+    if (selVal && selVal.startsWith('tpl:')) {
+        const tplName = selVal.slice(4);
+        plant.innerHTML = `<option value="${escapeHtmlSafe(tplName)}" selected>${escapeHtmlSafe(tplName)}</option>`;
+        return;
+    }
+
+    const camp = (state.campanasList || []).find(c => c.id === selVal);
     const keys = camp ? Object.keys(camp.plantillas || {}) : [];
     if (keys.length === 0) {
         plant.innerHTML = '<option value="">Elige campaña primero</option>';
