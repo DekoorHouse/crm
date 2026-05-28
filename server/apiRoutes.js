@@ -8688,8 +8688,12 @@ router.get('/retargeting/buscar-nuevos', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Se requieren departmentId, startDate y endDate.' });
         }
 
-        const cacheKey = `nuevos_${departmentId}_${dateKeyFromMillis(startDate)}_${dateKeyFromMillis(endDate)}`;
+        // v2: cache invalidado porque cambió el shape (ahora trae enteredAt y filtra por
+        // fecha de primer mensaje real, no por lastMessageTimestamp).
+        const cacheKey = `nuevos_v2_${departmentId}_${dateKeyFromMillis(startDate)}_${dateKeyFromMillis(endDate)}`;
         const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+        const startMs = Number(startDate);
+        const endMs = Number(endDate);
 
         let baseContacts = null;
         let cachedAt = null;
@@ -8705,10 +8709,14 @@ router.get('/retargeting/buscar-nuevos', async (req, res) => {
         }
 
         if (!baseContacts) {
-            const start = admin.firestore.Timestamp.fromMillis(Number(startDate));
-            const end = admin.firestore.Timestamp.fromMillis(Number(endDate));
+            const start = admin.firestore.Timestamp.fromMillis(startMs);
 
-            // Soporte multi-departamento (1-10 IDs separados por coma)
+            // Pre-filtro coarse por lastMessageTimestamp >= start.
+            // Justificacion: si la ultima actividad del contacto es ANTERIOR a start,
+            // entonces su primer mensaje tambien lo es → no nos sirve. Esto reduce
+            // mucho el set sin perder candidatos validos.
+            // El filtro fino por fecha de PRIMER mensaje (ingreso real al depto) se
+            // hace despues leyendo la subcollection messages de cada candidato.
             let query = db.collection('contacts_whatsapp');
             if (departmentId.includes(',')) {
                 const ids = departmentId.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
@@ -8718,16 +8726,33 @@ router.get('/retargeting/buscar-nuevos', async (req, res) => {
             }
             query = query
                 .where('lastMessageTimestamp', '>=', start)
-                .where('lastMessageTimestamp', '<=', end)
                 .orderBy('lastMessageTimestamp', 'desc');
 
             const snapshot = await query.get();
 
-            baseContacts = snapshot.docs
-                .map(doc => {
+            // Pre-filtra a los que vienen de un anuncio
+            const candidates = snapshot.docs.filter(doc => {
+                const d = doc.data();
+                return d.adReferral && d.adReferral.source_id;
+            });
+
+            // Para cada candidato, lee el primer mensaje de su subcollection y
+            // confirma que cae en [start, end]. Esto es el "ingreso real al depto".
+            const enriched = await Promise.all(candidates.map(async (doc) => {
+                try {
+                    const firstMsgSnap = await doc.ref.collection('messages')
+                        .orderBy('timestamp', 'asc')
+                        .limit(1)
+                        .get();
+
+                    if (firstMsgSnap.empty) return null;
+                    const firstMsgTs = firstMsgSnap.docs[0].data().timestamp;
+                    if (!firstMsgTs || typeof firstMsgTs.toMillis !== 'function') return null;
+
+                    const firstMsgMs = firstMsgTs.toMillis();
+                    if (firstMsgMs < startMs || firstMsgMs > endMs) return null;
+
                     const d = doc.data();
-                    // Solo contactos provenientes de anuncio (que tienen su adReferral guardado)
-                    if (!d.adReferral || !d.adReferral.source_id) return null;
                     return {
                         id: doc.id,
                         telefono: doc.id,
@@ -8737,14 +8762,22 @@ router.get('/retargeting/buscar-nuevos', async (req, res) => {
                         sourceType: d.adReferral.source_type || null,
                         lastMessage: d.lastMessage || '',
                         lastMessageTimestamp: d.lastMessageTimestamp ? d.lastMessageTimestamp.toDate().toISOString() : null,
+                        enteredAt: firstMsgTs.toDate().toISOString(),
                         assignedDepartmentId: d.assignedDepartmentId || null,
                         status: d.status || null,
                         purchaseStatus: d.purchaseStatus || null,
                         lastOrderNumber: d.lastOrderNumber || null,
                         purchaseValue: typeof d.purchaseValue === 'number' ? d.purchaseValue : null
                     };
-                })
-                .filter(Boolean);
+                } catch (e) {
+                    console.warn(`[buscar-nuevos] Error leyendo primer mensaje de ${doc.id}:`, e.message);
+                    return null;
+                }
+            }));
+
+            baseContacts = enriched
+                .filter(Boolean)
+                .sort((a, b) => new Date(b.enteredAt).getTime() - new Date(a.enteredAt).getTime());
 
             cachedAt = Date.now();
             pruneRetargetingNuevosCache();

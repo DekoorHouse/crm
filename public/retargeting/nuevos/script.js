@@ -64,7 +64,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getContactDateMs(c) {
-        return c.lastMessageTimestamp ? new Date(c.lastMessageTimestamp).getTime() : 0;
+        // Usa enteredAt (fecha real de ingreso al depto). Fallback a lastMessageTimestamp
+        // por compatibilidad con cache vieja.
+        const t = c.enteredAt || c.lastMessageTimestamp;
+        return t ? new Date(t).getTime() : 0;
     }
 
     function yaRecibioRetargeting(c) {
@@ -134,7 +137,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Cache local por (depto + rango) ---
-    const CACHE_KEY = 'retargeting:nuevos:v1';
+    // v2: data shape cambió (ahora trae enteredAt), invalidamos caches viejas.
+    const CACHE_KEY = 'retargeting:nuevos:v2';
     const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
 
     function loadCache() {
@@ -517,7 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="col-nombre">Nombre</span>
                 <span class="col-anuncio">Anuncio</span>
                 <span class="col-mensaje">&Uacute;ltimo mensaje</span>
-                <span class="col-fecha">Fecha</span>
+                <span class="col-fecha" title="Fecha en que el contacto entr&oacute; al departamento (primer mensaje del anuncio)">Entr&oacute; el</span>
                 <span class="col-retargeting">Retargeting</span>
                 <span class="col-telefono">Tel&eacute;fono</span>
             </div>
@@ -529,9 +533,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 : (yaEnviado
                     ? `<span class="badge-ya-enviado" title="Última vez: ${c.lastRetargetingDate}"><i class="fas fa-history"></i> ${c.lastRetargetingDate}</span>`
                     : '<span class="muted">—</span>');
-            const fechaTxt = c.lastMessageTimestamp
-                ? new Date(c.lastMessageTimestamp).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
+            // Fecha de ingreso al departamento (primer mensaje desde el anuncio).
+            // Fallback a lastMessageTimestamp solo si cache viejo no trae enteredAt.
+            const fechaIngreso = c.enteredAt || c.lastMessageTimestamp;
+            const fechaTxt = fechaIngreso
+                ? new Date(fechaIngreso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' })
                 : '';
+            const fechaTitle = c.enteredAt
+                ? `Entró al depto el ${new Date(c.enteredAt).toLocaleString('es-MX')}`
+                : (c.lastMessageTimestamp ? `Último mensaje: ${new Date(c.lastMessageTimestamp).toLocaleString('es-MX')}` : '');
             const escAd = (c.adName || 'Anuncio').replace(/"/g, '&quot;');
             const escMsg = (c.lastMessage || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -553,7 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="col-nombre pedido-producto" title="${(c.name || '').replace(/"/g, '&quot;')}">${pedidoBadge}${c.name || 'Sin nombre'}</span>
                 <span class="col-anuncio pedido-anuncio" title="${escAd}"><span class="badge-ad">${escAd}</span></span>
                 <span class="col-mensaje pedido-mensaje" title="${escMsg}">${escMsg || '<span class="muted">—</span>'}</span>
-                <span class="col-fecha pedido-fecha">${fechaTxt}</span>
+                <span class="col-fecha pedido-fecha" title="${fechaTitle}">${fechaTxt}</span>
                 <span class="col-retargeting">${retargetingCell}</span>
                 <span class="col-telefono pedido-telefono">${c.telefono || 'Sin tel'}</span>
             </div>`;
