@@ -261,6 +261,16 @@ export default function CampanasPage() {
 
   return (
     <div className="px-4 sm:px-6 py-5 max-w-7xl mx-auto">
+      {/* Barra de tabs de comunicación masiva (mismo set que /audiencias, /cobranza, etc.) */}
+      <div className="inline-flex flex-wrap gap-1 mb-4 p-1 rounded-lg bg-surface-container-high">
+        <a href="/audiencias/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold text-on-surface-variant hover:bg-surface-container-lowest/60 transition-colors">Audiencias</a>
+        <a href="/cobranza/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold text-on-surface-variant hover:bg-surface-container-lowest/60 transition-colors">Cobranza</a>
+        <a href="/retargeting/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold text-on-surface-variant hover:bg-surface-container-lowest/60 transition-colors">Retargeting (Pagados)</a>
+        <a href="/retargeting/nuevos/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold text-on-surface-variant hover:bg-surface-container-lowest/60 transition-colors">Retargeting (Nuevos)</a>
+        <a href="/retargeting/#calculadora" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold text-on-surface-variant hover:bg-surface-container-lowest/60 transition-colors">Calculadora</a>
+        <span className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold bg-surface-container-lowest text-primary shadow-sm">Campañas</span>
+      </div>
+
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold font-headline text-on-surface flex items-center gap-2">
