@@ -48,6 +48,10 @@ body{
 .uemail{font-size:11px;color:#aab8c6;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btn-ghost{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;font-size:12px;padding:7px 10px;border-radius:8px;cursor:pointer;white-space:nowrap}
 .btn-ghost:hover{background:rgba(255,255,255,.18)}
+.btn-install{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:700}
+.btn-install:hover{background:#e0702c}
+#install-pwa-btn{display:none}
+#install-pwa-btn.is-ready{display:inline-flex;align-items:center;gap:5px}
 /* ---------- Tabs ---------- */
 .tabs{position:sticky;top:0;z-index:40;background:#fff;border-bottom:1px solid var(--line);display:flex;gap:2px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:0 6px;scrollbar-width:thin}
 .tabs::-webkit-scrollbar{height:4px}
@@ -162,6 +166,7 @@ tr.row-done .cin.wide{text-decoration:line-through}
   <header class="appbar">
     <div class="brand">💡 DeKoor <span class="dot">·</span> Día del Padre 2026<small>Plan de venta y control · 1 al 21 de junio</small></div>
     <div class="bar-actions">
+      <button class="btn-ghost btn-install" id="install-pwa-btn" title="Instalar como app">⬇️ Instalar app</button>
       <span id="userEmail" class="uemail"></span>
       <button class="btn-ghost" data-act="export">⭳ Exportar</button>
       <button class="btn-ghost" data-act="import">⭱ Importar</button>
@@ -877,6 +882,33 @@ function registerSW(){
   }
 }
 
+/* ===================== INSTALAR PWA ===================== */
+// Botón "Instalar app" que aparece cuando se puede instalar y desaparece al instalar (o si ya está instalada).
+function setupInstall(){
+  var btn=$('install-pwa-btn'); if(!btn) return;
+  var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+  if(standalone) return; // ya instalada → el botón queda oculto
+  var ua=navigator.userAgent||'';
+  var isIOS=/iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  var isSafari=/^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+  var deferredPrompt=null;
+  window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferredPrompt=e; btn.classList.add('is-ready'); });
+  if(isIOS && isSafari) btn.classList.add('is-ready'); // iOS no dispara el evento; mostramos instrucciones
+  btn.addEventListener('click', async function(e){
+    e.preventDefault();
+    if(deferredPrompt){
+      btn.style.pointerEvents='none';
+      try{ deferredPrompt.prompt(); var c=await deferredPrompt.userChoice; if(c && c.outcome==='accepted') btn.classList.remove('is-ready'); }
+      catch(err){}
+      finally{ deferredPrompt=null; btn.style.pointerEvents=''; }
+      return;
+    }
+    if(isIOS && isSafari){ alert('Para instalar la app en iPhone/iPad:\n\n1. Toca el botón Compartir (⬆️).\n2. Elige "Agregar a inicio".'); return; }
+    alert('Tu navegador no permite instalar directamente. Ábrela en Chrome o Edge (Android) para instalar.');
+  });
+  window.addEventListener('appinstalled', function(){ deferredPrompt=null; btn.classList.remove('is-ready'); flashSaved('App instalada'); });
+}
+
 /* ===================== INIT ===================== */
 function init(){
   loadState();
@@ -887,6 +919,7 @@ function init(){
   window.DPP={compute,recalcAll,exportData,importData,resetData,DEFAULTS,fetchAuto,fetchLeadsCore,fetchPedidosCore,renderMetaResults};
   Object.defineProperty(window.DPP,'STATE',{get:()=>STATE});
   registerSW();
+  setupInstall();
   initAuth();
 }
 init();
