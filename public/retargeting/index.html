@@ -17,11 +17,12 @@
     <style>
         .switch-vista {
             display: inline-flex;
-            gap: 6px;
+            gap: 4px;
             margin-bottom: 16px;
             background: #f3f4f6;
             padding: 4px;
             border-radius: 8px;
+            flex-wrap: wrap;
         }
         .switch-vista a {
             padding: 6px 14px;
@@ -30,12 +31,19 @@
             color: #4b5563;
             font-weight: 600;
             font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.15s, color 0.15s;
         }
+        .switch-vista a:hover { background: rgba(255,255,255,0.6); }
         .switch-vista a.activo {
             background: white;
             color: #16a34a;
             box-shadow: 0 1px 2px rgba(0,0,0,0.08);
         }
+        .switch-vista a i { font-size: 12px; }
+        html { scroll-behavior: smooth; }
     </style>
 </head>
 <body>
@@ -75,10 +83,12 @@
             </div>
         </div>
 
-        <!-- Switch entre vistas -->
+        <!-- Tabs de comunicaci&oacute;n masiva -->
         <div class="switch-vista">
-            <a href="/retargeting/" class="activo">Pedidos Pagados</a>
-            <a href="/retargeting/nuevos/">Nuevos (Anuncios)</a>
+            <a href="/cobranza/"><i class="fas fa-credit-card"></i> Cobranza</a>
+            <a href="/retargeting/" class="activo"><i class="fas fa-bullseye"></i> Retargeting (Pagados)</a>
+            <a href="/retargeting/nuevos/"><i class="fas fa-bullhorn"></i> Retargeting (Nuevos)</a>
+            <a href="#calculadora"><i class="fas fa-calculator"></i> Calculadora</a>
         </div>
 
         <!-- Modo de envio -->
@@ -182,7 +192,7 @@
         </div>
 
         <!-- Calculadora manual de conversi&oacute;n -->
-        <div class="content-box">
+        <div class="content-box" id="calculadora">
             <div class="calc-header">
                 <h2><i class="fas fa-calculator"></i> Calculadora de conversi&oacute;n</h2>
             </div>
