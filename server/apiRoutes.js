@@ -9495,7 +9495,7 @@ router.post('/template-metrics/enable-meta-insights', async (req, res) => {
 const AUDIENCIA_CONFIG = {
     sinPagar: {
         limboHours: 4,
-        listosMaxDays: 7,
+        listosMaxDays: 30, // Ampliado: incluye pedidos viejos sin pagar (no solo 7 días)
         cooldownDays: 3
     },
     sinDatos: {
@@ -9577,24 +9577,27 @@ router.get('/audiencias/conteos', async (req, res) => {
         }
 
         // === 3) GRUPO: SIN PAGAR ===
-        // Pedidos con estatus != Pagado, creados en los últimos N días
+        // Query robusta: por createdAt en últimos 30 días, sin filtrar estatus.
+        // En memoria descartamos los que SÍ pagaron, cancelados, devoluciones y entregados.
+        // Esto evita problemas de índices y maneja docs sin campo estatus.
         const sinPagar = { total: 0, limbo: 0, listos: 0, contactados: 0, montoTotal: 0 };
-        const sinPagarPedidosSnap = await db.collection('pedidos')
-            .where('estatus', '!=', 'Pagado')
-            .orderBy('estatus')
-            .orderBy('createdAt', 'desc')
-            .limit(2000)
-            .get();
         const sinPagarVentanaMs = cfg.sinPagar.listosMaxDays * msD;
+        const sinPagarStartMs = now - sinPagarVentanaMs;
+        const ESTATUS_EXCLUIDOS_SIN_PAGAR = new Set(['Pagado', 'Cancelado', 'Devolucion', 'Devolución', 'Entregado']);
+        const sinPagarPedidosSnap = await db.collection('pedidos')
+            .where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(sinPagarStartMs))
+            .orderBy('createdAt', 'desc')
+            .limit(3000)
+            .get();
         for (const d of sinPagarPedidosSnap.docs) {
             const p = d.data();
             const tel = p.telefono;
             if (!tel || noMolestarSet.has(tel)) continue;
-            if (p.estatus === 'Cancelado' || p.estatus === 'Devolucion' || p.estatus === 'Entregado') continue;
+            const estatus = p.estatus || 'Sin estatus';
+            if (ESTATUS_EXCLUIDOS_SIN_PAGAR.has(estatus)) continue;
             const createdMs = tsToMs(p.createdAt);
             if (!createdMs) continue;
             const ageMs = now - createdMs;
-            if (ageMs > sinPagarVentanaMs) continue; // Fuera de ventana
 
             const monto = parseFloat(p.precio) || 0;
             sinPagar.total++;
@@ -9666,11 +9669,16 @@ router.get('/audiencias/conteos', async (req, res) => {
         const enVistoCooldownMs = cfg.enVisto.cooldownDays * msD;
 
         // Para excluir los que ya tienen pedido activo, necesitamos saber qué teléfonos
-        // tienen pedidos creados en últimos 30 días. Reutilizamos los snaps de arriba +
-        // una query extra ligera.
+        // tienen pedidos creados en últimos 30 días. Reutilizamos los snaps de arriba.
         const telConPedidoReciente = new Set();
-        sinPagarPedidosSnap.docs.forEach(d => { const t = d.data().telefono; if (t) telConPedidoReciente.add(t); });
-        pagadosRecientesSnap.docs.forEach(d => { const t = d.data().telefono; if (t) telConPedidoReciente.add(t); });
+        for (const d of sinPagarPedidosSnap.docs) {
+            const t = d.data().telefono;
+            if (t) telConPedidoReciente.add(t);
+        }
+        for (const d of pagadosRecientesSnap.docs) {
+            const t = d.data().telefono;
+            if (t) telConPedidoReciente.add(t);
+        }
 
         for (const d of contactosActivosSnap.docs) {
             const c = d.data();
