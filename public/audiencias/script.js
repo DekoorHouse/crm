@@ -367,4 +367,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event && event.target !== event.currentTarget) return;
         document.getElementById('modalDetalle').style.display = 'none';
     };
+
+    // Cerrar modal con tecla Esc
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('modalDetalle');
+            if (modal && modal.style.display === 'flex') {
+                modal.style.display = 'none';
+            }
+        }
+    });
 });
