@@ -107,6 +107,17 @@ tr.row-done .cin.wide{text-decoration:line-through}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .sw{width:13px;height:13px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.1)}
 .inline-field{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin:0 0 12px}
+/* meta ads */
+.meta-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:6px}
+.meta-controls label{font-size:12px;font-weight:600;color:var(--navy);display:inline-flex;align-items:center;gap:6px}
+.meta-controls input[type=date]{background:var(--edit-bg);border:1px solid var(--line);border-radius:7px;padding:7px 8px;font-size:13px;color:var(--navy)}
+.btn-primary{background:var(--orange);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer}
+.btn-primary:hover{filter:brightness(1.05)}
+.btn-primary:disabled{opacity:.6;cursor:default}
+.meta-status{font-size:12px;min-height:16px;margin:4px 0}
+.meta-status.loading{color:var(--gray)}
+.meta-status.ok{color:var(--green)}
+.meta-status.err{color:var(--red)}
 /* toast */
 .toast{position:fixed;right:16px;bottom:16px;background:var(--green);color:#fff;padding:10px 16px;border-radius:30px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:.25s;pointer-events:none;z-index:200}
 .toast.show{opacity:1;transform:translateY(0)}
@@ -195,7 +206,7 @@ const SECTIONS = ['global','ventas','ads','capital','calendario','metricas'];
 const KEY = {
   global:'dekoor_dp2026_global', ventas:'dekoor_dp2026_ventas', ads:'dekoor_dp2026_ads',
   capital:'dekoor_dp2026_capital', calendario:'dekoor_dp2026_calendario',
-  metricas:'dekoor_dp2026_metricas', ui:'dekoor_dp2026_ui'
+  metricas:'dekoor_dp2026_metricas', meta:'dekoor_dp2026_meta', ui:'dekoor_dp2026_ui'
 };
 
 /* ===================== DATOS BASE (del Excel) ===================== */
@@ -259,7 +270,8 @@ const DEFAULTS = {
     adsCant:700, adsCosto:180, adsReal:0, nominaCant:1, nominaReal:38800, envioPromedio:95 },
   calendario: CAL.map(([fecha,semana,accion])=>({fecha,semana,accion,responsable:'',done:false})),
   metricas: MET_LABELS.map(fecha=>(
-    {fecha,gasto:0,leads:0,cerrados:0,pedDGO:0,pedNac:0,pedPronto:0,rechazos:0}))
+    {fecha,gasto:0,leads:0,cerrados:0,pedDGO:0,pedNac:0,pedPronto:0,rechazos:0})),
+  meta:{ dateFrom:'2026-06-01', dateTo:'2026-06-21', fetchedAt:null, total:0, campaigns:[], daily:[] }
 };
 
 /* ===================== ESTADO / PERSISTENCIA ===================== */
@@ -269,6 +281,7 @@ function loadState(){
   STATE = freshState();
   SECTIONS.forEach(s=>{ const r=localStorage.getItem(KEY[s]); if(r){ try{ STATE[s]=JSON.parse(r); }catch(e){} } });
   const u=localStorage.getItem(KEY.ui); if(u){ try{ STATE.ui=JSON.parse(u); }catch(e){} }
+  const m=localStorage.getItem(KEY.meta); if(m){ try{ STATE.meta=JSON.parse(m); }catch(e){} }
 }
 function saveSection(s){ try{ localStorage.setItem(KEY[s], JSON.stringify(STATE[s])); }catch(e){} }
 function saveUI(){ try{ localStorage.setItem(KEY.ui, JSON.stringify(STATE.ui)); }catch(e){} }
@@ -606,6 +619,17 @@ function buildMetricas(){
   ].map(r=>`<tr><td class="lbl">${r[0]}</td><td class="sem-verde">${r[1]}</td><td class="sem-amarillo">${r[2]}</td><td class="sem-rojo">${r[3]}</td><td class="lbl small">${r[4]}</td></tr>`).join('');
   return `
   <div class="card">
+    <h2>📣 Gasto de Meta Ads por campaña</h2>
+    <p class="hint">Trae el gasto directo de tu administrador de anuncios (mismas cuentas que admon) y llena el "Gasto ads" diario automáticamente.</p>
+    <div class="meta-controls">
+      <label>Desde <input class="cin txt" type="date" data-path="meta.dateFrom" data-type="text" value="${esc(STATE.meta.dateFrom)}"></label>
+      <label>Hasta <input class="cin txt" type="date" data-path="meta.dateTo" data-type="text" value="${esc(STATE.meta.dateTo)}"></label>
+      <button class="btn-primary" data-act="meta-fetch">🔄 Traer de Meta</button>
+    </div>
+    <div id="metaStatus" class="meta-status"></div>
+    <div id="metaResults"></div>
+  </div>
+  <div class="card">
     <h2>📈 Métricas de control diario</h2>
     <p class="hint">Captura cada noche · CPL y Conversión WA se calculan y colorean solas (21 días).</p>
     <div class="tbl-wrap"><table style="min-width:860px">
@@ -640,6 +664,7 @@ function buildAll(){
   $('panel-capital').innerHTML=buildCapital();
   $('panel-calendario').innerHTML=buildCalendario();
   $('panel-metricas').innerHTML=buildMetricas();
+  renderMetaResults();
 }
 
 /* ===================== INTERACCIÓN ===================== */
@@ -671,6 +696,7 @@ function switchTab(name){
 function exportData(){
   const data={_app:'dekoor_dp2026',_version:1,_exported:new Date().toISOString()};
   SECTIONS.forEach(s=>data[s]=STATE[s]);
+  data.meta=STATE.meta;
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob), a=document.createElement('a');
   a.href=url; a.download='plan-dia-padre-'+new Date().toISOString().slice(0,10)+'.json';
@@ -684,6 +710,7 @@ function importData(file){
       const d=JSON.parse(r.result);
       let n=0;
       SECTIONS.forEach(s=>{ if(d[s]!==undefined){ STATE[s]=d[s]; saveSection(s); n++; } });
+      if(d.meta!==undefined){ STATE.meta=d.meta; saveSection('meta'); }
       if(!n){ alert('El archivo no contiene datos del plan.'); return; }
       buildAll(); switchTab(STATE.ui&&STATE.ui.tab||'resumen'); recalcAll();
       flashSaved('Importado');
@@ -693,9 +720,71 @@ function importData(file){
 }
 function resetData(){
   if(!confirm('¿Borrar todos los datos capturados y volver a los valores iniciales del plan?\n\nEsto no se puede deshacer (exporta antes si quieres respaldo).')) return;
-  SECTIONS.forEach(s=>localStorage.removeItem(KEY[s])); localStorage.removeItem(KEY.ui);
+  SECTIONS.forEach(s=>localStorage.removeItem(KEY[s])); localStorage.removeItem(KEY.ui); localStorage.removeItem(KEY.meta);
   STATE=freshState(); buildAll(); switchTab('resumen'); recalcAll(); flashSaved('Reiniciado');
 }
+
+/* ===================== META ADS (gasto por campaña) ===================== */
+function renderMetaResults(){
+  var box=$('metaResults'); if(!box) return;
+  var m=STATE.meta||{};
+  if(!m.campaigns || !m.campaigns.length){
+    box.innerHTML='<p class="hint" style="margin:8px 0 0">Sin datos aún. Elige el rango y pulsa “Traer de Meta”.</p>';
+    return;
+  }
+  var rows=m.campaigns.map(function(c){
+    return '<tr><td class="lbl">'+esc(c.campaign_name)+'</td><td class="calc">'+fmtMoney(c.spend)+'</td></tr>';
+  }).join('');
+  var when=m.fetchedAt ? new Date(m.fetchedAt).toLocaleString('es-MX') : '';
+  box.innerHTML=
+    '<div class="tbl-wrap" style="margin-top:10px"><table style="min-width:320px">'+
+    '<thead><tr><th>Campaña</th><th>Gasto</th></tr></thead><tbody>'+rows+
+    '<tr class="tot"><td class="lbl">TOTAL</td><td class="calc">'+fmtMoney(m.total||0)+'</td></tr>'+
+    '</tbody></table></div>'+
+    (when?'<p class="hint" style="margin:8px 0 0">Actualizado: '+esc(when)+'</p>':'');
+}
+function fillDailyFromMeta(daily){
+  var map={}; (daily||[]).forEach(function(d){ map[d.date]=d.spend; });
+  var n=0;
+  for(var i=0;i<STATE.metricas.length;i++){
+    var date='2026-06-'+String(i+1).padStart(2,'0');
+    if(map[date]!=null){ STATE.metricas[i].gasto=map[date]; n++; }
+  }
+  if(n){ saveSection('metricas'); recalcAll(); }
+  return n;
+}
+async function fetchMeta(){
+  var status=$('metaStatus'), btn=document.querySelector('[data-act="meta-fetch"]');
+  if(!status) return;
+  status.textContent='Consultando Meta…'; status.className='meta-status loading';
+  if(btn) btn.disabled=true;
+  try{
+    var qs=new URLSearchParams({date_from:STATE.meta.dateFrom||'', date_to:STATE.meta.dateTo||''});
+    var resp=await fetch('/api/meta-ads/campaign-spend?'+qs.toString(), {headers:{'Accept':'application/json'}});
+    if(!resp.ok) throw new Error('El servidor respondió '+resp.status+' (¿abriste la app desde crm-rzon.onrender.com?).');
+    var data=await resp.json();
+    if(!data.success) throw new Error(data.error||'No se pudo obtener el gasto.');
+    STATE.meta.total=data.total||0; STATE.meta.campaigns=data.campaigns||[]; STATE.meta.daily=data.daily||[];
+    STATE.meta.fetchedAt=new Date().toISOString();
+    saveSection('meta');
+    var n=fillDailyFromMeta(data.daily);
+    renderMetaResults();
+    if(!STATE.meta.campaigns.length){
+      status.textContent='Sin gasto en ese rango (¿la campaña aún no arranca o no hay datos?).';
+      status.className='meta-status';
+    } else {
+      status.textContent='✓ '+STATE.meta.campaigns.length+' campañas · '+fmtMoney(STATE.meta.total)+(n?(' · '+n+' días de gasto actualizados'):'');
+      status.className='meta-status ok';
+      flashSaved('Gasto Meta actualizado');
+    }
+  }catch(e){
+    status.textContent='⚠️ '+e.message;
+    status.className='meta-status err';
+  }finally{
+    if(btn) btn.disabled=false;
+  }
+}
+
 function bindEvents(){
   document.addEventListener('input', e=>{ const t=e.target; if(t.dataset&&t.dataset.path&&t.dataset.type!=='bool') onEdit(t); });
   document.addEventListener('change', e=>{ const t=e.target; if(t.dataset&&t.dataset.type==='bool') onEdit(t); });
@@ -705,6 +794,7 @@ function bindEvents(){
     else if(t.dataset.act==='export') exportData();
     else if(t.dataset.act==='import') $('importFile').click();
     else if(t.dataset.act==='reset') resetData();
+    else if(t.dataset.act==='meta-fetch') fetchMeta();
   });
   $('importFile').addEventListener('change', e=>{ if(e.target.files[0]) importData(e.target.files[0]); e.target.value=''; });
 }
@@ -752,7 +842,7 @@ function init(){
   bindEvents();
   switchTab(STATE.ui&&STATE.ui.tab||'resumen');
   recalcAll();
-  window.DPP={compute,recalcAll,exportData,importData,resetData,DEFAULTS};
+  window.DPP={compute,recalcAll,exportData,importData,resetData,DEFAULTS,fetchMeta,renderMetaResults};
   Object.defineProperty(window.DPP,'STATE',{get:()=>STATE});
   registerSW();
   initAuth();

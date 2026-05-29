@@ -386,6 +386,80 @@ router.post('/sync-kpis', asyncHandler(async (req, res) => {
     });
 }));
 
+/**
+ * GET /api/meta-ads/campaign-spend
+ * Gasto de Meta Ads desglosado POR CAMPAÑA (nombre + spend) y total diario,
+ * en un rango de fechas. Suma todas las cuentas configuradas (mismas que los KPIs).
+ * No escribe en Firestore: es solo lectura para mostrar/consumir desde otras apps.
+ *
+ * Query params opcionales: date_from, date_to (YYYY-MM-DD), accountId. Default: mes actual.
+ * Respuesta: { success, dateFrom, dateTo, accountIds, total,
+ *              campaigns:[{campaign_name, spend}], daily:[{date, spend}], errors? }
+ */
+router.get('/campaign-spend', asyncHandler(async (req, res) => {
+    // 1. Resolver cuentas (mismo patrón que /sync-kpis).
+    let accountIds = await svc.getKpiAccountIds();
+    if (accountIds.length === 0) {
+        const settings = await svc.getActiveAccount();
+        const fallback = req.query.accountId || settings?.activeAccountId;
+        if (fallback) accountIds = [String(fallback).replace('act_', '')];
+    }
+    if (accountIds.length === 0) {
+        return res.status(400).json({
+            success: false,
+            error: 'No hay cuentas Meta configuradas. Define settings.kpiAccountIds o una cuenta activa.'
+        });
+    }
+
+    // 2. Rango de fechas (default: mes actual).
+    const today = new Date();
+    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const dateFrom = req.query.date_from || firstOfMonth.toISOString().split('T')[0];
+    const dateTo   = req.query.date_to   || today.toISOString().split('T')[0];
+
+    // 3. Por cada cuenta: insights por campaña + gasto diario. Acumular.
+    const campaignMap = new Map(); // campaign_name -> spend
+    const dailyMap = new Map();    // fecha -> spend
+    const errors = [];
+
+    for (const accId of accountIds) {
+        try {
+            const rows = await svc.getInsightsByLevel(accId, 'campaign', dateFrom, dateTo);
+            for (const r of rows) {
+                const name = r.campaign_name || r.campaign_id || '(sin nombre)';
+                const spend = Number(r.spend) || 0;
+                if (spend <= 0) continue;
+                campaignMap.set(name, (campaignMap.get(name) || 0) + spend);
+            }
+            const daily = await svc.getDailySpend(accId, dateFrom, dateTo);
+            for (const d of daily) {
+                if (!d.date) continue;
+                dailyMap.set(d.date, (dailyMap.get(d.date) || 0) + (Number(d.spend) || 0));
+            }
+        } catch (err) {
+            const msg = err.response?.data?.error?.message || err.message;
+            errors.push({ accountId: accId, error: msg });
+            console.error(`Meta campaign-spend error for account ${accId}:`, err.response?.data || err.message);
+        }
+    }
+
+    const round2 = n => Math.round(n * 100) / 100;
+    const campaigns = [...campaignMap.entries()]
+        .map(([campaign_name, spend]) => ({ campaign_name, spend: round2(spend) }))
+        .sort((a, b) => b.spend - a.spend);
+    const daily = [...dailyMap.entries()]
+        .map(([date, spend]) => ({ date, spend: round2(spend) }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+    const total = round2(campaigns.reduce((s, c) => s + c.spend, 0));
+
+    res.json({
+        success: true,
+        dateFrom, dateTo, accountIds,
+        total, campaigns, daily,
+        errors: errors.length ? errors : undefined
+    });
+}));
+
 // ===================== AUDIENCES / TARGETING =====================
 
 router.get('/audiences/targeting-search', asyncHandler(async (req, res) => {
