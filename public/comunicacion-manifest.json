@@ -1,0 +1,62 @@
+{
+  "name": "Dekoor Retargeting",
+  "short_name": "Retargeting",
+  "description": "Sistema de retargeting Dekoor: audiencias, cobranza, campañas y métricas de conversión.",
+  "start_url": "/audiencias/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f0f2f5",
+  "theme_color": "#16a34a",
+  "lang": "es-MX",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Audiencias",
+      "short_name": "Audiencias",
+      "description": "Ver grupos de clientes",
+      "url": "/audiencias/",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Retargeting Pagados",
+      "short_name": "Retargeting",
+      "description": "Enviar campañas a clientes que ya compraron",
+      "url": "/retargeting/",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Campañas",
+      "short_name": "Campañas",
+      "description": "Métricas de conversión por campaña",
+      "url": "/crm/campanas",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

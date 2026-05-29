@@ -131,6 +131,15 @@ app.get('/crm-sw.js', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'crm-sw.js'));
 });
 
+// --- PWA: Service Worker de Comunicación Masiva (scope raíz para cubrir
+// /audiencias/, /cobranza/, /retargeting/ con una sola app instalable) ---
+app.get('/comunicacion-sw.js', (req, res) => {
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(__dirname, '..', 'public', 'comunicacion-sw.js'));
+});
+
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
