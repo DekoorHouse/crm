@@ -33,6 +33,22 @@ Las celdas **amarillas** se editan; las **grises** se calculan solas. Cada cambi
 - **CPL:** 🟢 menor a $180 · 🟡 $180–$250 · 🔴 mayor a $250
 - **Conversión WA:** 🟢 mayor a 12% · 🟡 8–12% · 🔴 menor a 8%
 
+## Gasto de Meta Ads por campaña (automático)
+
+En la pestaña **Métricas**, arriba, está la card **"Gasto de Meta Ads por campaña"**:
+
+- Elige un rango de fechas y pulsa **"🔄 Traer de Meta"**.
+- Trae el gasto **directo de tu administrador de anuncios** (las mismas cuentas Meta que usa `admon`;
+  el token y las cuentas se resuelven en el servidor — el navegador no maneja secretos).
+- Muestra una tabla **Campaña | Gasto** (con nombre real de cada campaña) + total.
+- **Auto-llena la columna "Gasto ads" diaria** de la tabla de métricas, emparejando por fecha real, y
+  recalcula el CPL. Los días sin gasto en Meta quedan intactos; puedes seguir editando a mano.
+- El último resultado se guarda (entra en Export/Import/Reset).
+
+La tabla de métricas va del **29 may al 21 jun** (incluye días de prueba desde hoy). Para validar con
+datos actuales, deja "Desde" en una fecha de mayo. Técnicamente llama a
+`GET /api/meta-ads/campaign-spend` (servidor del CRM), que reutiliza el mismo servicio Meta de `admon`.
+
 ## Respaldo y traslado entre dispositivos
 
 > ⚠️ **Importante:** los datos se guardan en **cada dispositivo por separado** (no se sincronizan

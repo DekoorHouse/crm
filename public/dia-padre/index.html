@@ -257,7 +257,16 @@ const CAL = [
   ['Vie 26 jun','Cierre','Análisis post-mortem por canal'],
   ['Sáb 27 jun','Cierre','Documentar aprendizajes para Buen Fin/Navidad']
 ];
-const MET_LABELS = ['Lun 1 jun','Mar 2 jun','Mié 3 jun','Jue 4 jun','Vie 5 jun','Sáb 6 jun','Dom 7 jun','Lun 8 jun','Mar 9 jun','Mié 10 jun','Jue 11 jun','Vie 12 jun','Sáb 13 jun','Dom 14 jun','Lun 15 jun','Mar 16 jun','Mié 17 jun','Jue 18 jun','Vie 19 jun','Sáb 20 jun','Dom 21 jun'];
+// Genera días [{date:'YYYY-MM-DD', label:'Vie 29 may'}] en un rango (inclusivo).
+function genDays(startISO,endISO){
+  function iso(x){ return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
+  const dw=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'], mo=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const out=[], d=new Date(startISO+'T12:00:00'), end=new Date(endISO+'T12:00:00');
+  while(d<=end){ out.push({date:iso(d), label:dw[d.getDay()]+' '+d.getDate()+' '+mo[d.getMonth()]}); d.setDate(d.getDate()+1); }
+  return out;
+}
+// Métricas diarias: arranca HOY (29 may, para pruebas) y corre hasta el cierre (21 jun).
+const MET_DAYS = genDays('2026-05-29','2026-06-21');
 
 const DEFAULTS = {
   global:{ prestamo:180000, tasaPct:20, nomina:38800 },
@@ -269,9 +278,9 @@ const DEFAULTS = {
   capital:{ materialCant:700, materialCosto:90, materialReal:0,
     adsCant:700, adsCosto:180, adsReal:0, nominaCant:1, nominaReal:38800, envioPromedio:95 },
   calendario: CAL.map(([fecha,semana,accion])=>({fecha,semana,accion,responsable:'',done:false})),
-  metricas: MET_LABELS.map(fecha=>(
-    {fecha,gasto:0,leads:0,cerrados:0,pedDGO:0,pedNac:0,pedPronto:0,rechazos:0})),
-  meta:{ dateFrom:'2026-06-01', dateTo:'2026-06-21', fetchedAt:null, total:0, campaigns:[], daily:[] }
+  metricas: MET_DAYS.map(d=>(
+    {date:d.date, fecha:d.label, gasto:0,leads:0,cerrados:0,pedDGO:0,pedNac:0,pedPronto:0,rechazos:0})),
+  meta:{ dateFrom:'2026-05-29', dateTo:'2026-06-21', fetchedAt:null, total:0, campaigns:[], daily:[] }
 };
 
 /* ===================== ESTADO / PERSISTENCIA ===================== */
@@ -282,6 +291,10 @@ function loadState(){
   SECTIONS.forEach(s=>{ const r=localStorage.getItem(KEY[s]); if(r){ try{ STATE[s]=JSON.parse(r); }catch(e){} } });
   const u=localStorage.getItem(KEY.ui); if(u){ try{ STATE.ui=JSON.parse(u); }catch(e){} }
   const m=localStorage.getItem(KEY.meta); if(m){ try{ STATE.meta=JSON.parse(m); }catch(e){} }
+  // Migración: si las métricas guardadas son de una versión sin fecha ISO, regenerar.
+  if(!Array.isArray(STATE.metricas) || !STATE.metricas.length || STATE.metricas[0].date===undefined){
+    STATE.metricas = JSON.parse(JSON.stringify(DEFAULTS.metricas));
+  }
 }
 function saveSection(s){ try{ localStorage.setItem(KEY[s], JSON.stringify(STATE[s])); }catch(e){} }
 function saveUI(){ try{ localStorage.setItem(KEY.ui, JSON.stringify(STATE.ui)); }catch(e){} }
@@ -620,7 +633,7 @@ function buildMetricas(){
   return `
   <div class="card">
     <h2>📣 Gasto de Meta Ads por campaña</h2>
-    <p class="hint">Trae el gasto directo de tu administrador de anuncios (mismas cuentas que admon) y llena el "Gasto ads" diario automáticamente.</p>
+    <p class="hint">Trae el gasto directo de tu administrador de anuncios (mismas cuentas que admon) y llena el "Gasto ads" diario automáticamente. El rango arranca el 29 may para que pruebes con datos de hoy; amplía "Desde" (ej. 1 may) para traer más historial.</p>
     <div class="meta-controls">
       <label>Desde <input class="cin txt" type="date" data-path="meta.dateFrom" data-type="text" value="${esc(STATE.meta.dateFrom)}"></label>
       <label>Hasta <input class="cin txt" type="date" data-path="meta.dateTo" data-type="text" value="${esc(STATE.meta.dateTo)}"></label>
@@ -631,7 +644,7 @@ function buildMetricas(){
   </div>
   <div class="card">
     <h2>📈 Métricas de control diario</h2>
-    <p class="hint">Captura cada noche · CPL y Conversión WA se calculan y colorean solas (21 días).</p>
+    <p class="hint">Captura cada noche · CPL y Conversión WA se calculan y colorean solas (29 may – 21 jun).</p>
     <div class="tbl-wrap"><table style="min-width:860px">
       <thead><tr><th>Fecha</th><th>Gasto ads</th><th>Leads WA</th><th>Pedidos cerr.</th><th>CPL</th><th>Conv. WA</th><th>Ped. DGO</th><th>Ped. Nac</th><th>Ped. Pronto</th><th>Rechazos</th></tr></thead>
       <tbody>${rows}
@@ -746,10 +759,9 @@ function renderMetaResults(){
 function fillDailyFromMeta(daily){
   var map={}; (daily||[]).forEach(function(d){ map[d.date]=d.spend; });
   var n=0;
-  for(var i=0;i<STATE.metricas.length;i++){
-    var date='2026-06-'+String(i+1).padStart(2,'0');
-    if(map[date]!=null){ STATE.metricas[i].gasto=map[date]; n++; }
-  }
+  STATE.metricas.forEach(function(row){
+    if(row.date && map[row.date]!=null){ row.gasto=map[row.date]; n++; }
+  });
   if(n){ saveSection('metricas'); recalcAll(); }
   return n;
 }
