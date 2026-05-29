@@ -9525,18 +9525,38 @@ const AUDIENCIA_CONFIG = {
     cooldownGlobalDays: 7 // Cualquier mensaje en los últimos 7 días → en cooldown
 };
 
-const audienciasCache = { data: null, cachedAt: 0 };
+// Cache por rango de fechas (key = `${from}_${to}`)
+const audienciasCacheMap = new Map();
 const AUDIENCIAS_CACHE_TTL_MS = 2 * 60 * 1000; // 2 min
 
-// GET /api/audiencias/conteos
+// GET /api/audiencias/conteos?from=<ms>&to=<ms>
 // Devuelve los conteos de cada grupo y sub-estado.
+// Si se pasa from/to, filtra a personas cuyo "evento de entrada" cae en ese rango:
+//   - Sin Pagar / Sin Datos: createdAt del pedido
+//   - En Visto: lastMessageTimestamp del contacto
+//   - Recompra / Inactivos: createdAt del último pedido pagado del cliente
+// Los sub-estados (Limbo/Listos/Contactados) se calculan SIEMPRE con la fecha actual.
 // Filtra automáticamente por la lista "No Molestar" (contactos con flag noContact=true).
 router.get('/audiencias/conteos', async (req, res) => {
     try {
-        const { fresh } = req.query;
-        if (fresh !== '1' && audienciasCache.data && (Date.now() - audienciasCache.cachedAt) < AUDIENCIAS_CACHE_TTL_MS) {
-            return res.json({ success: true, ...audienciasCache.data, fromCache: true, cacheAgeMs: Date.now() - audienciasCache.cachedAt });
+        const { fresh, from, to } = req.query;
+        const fromMs = from ? Number(from) : null;
+        const toMs = to ? Number(to) : null;
+        const cacheKey = `${fromMs || ''}_${toMs || ''}`;
+        if (fresh !== '1' && audienciasCacheMap.has(cacheKey)) {
+            const cached = audienciasCacheMap.get(cacheKey);
+            if ((Date.now() - cached.cachedAt) < AUDIENCIAS_CACHE_TTL_MS) {
+                return res.json({ success: true, ...cached.data, fromCache: true, cacheAgeMs: Date.now() - cached.cachedAt });
+            }
         }
+        // Helpers de filtro de rango (true = pasa, false = se descarta)
+        const inDateRange = (ms) => {
+            if (!ms) return false;
+            if (fromMs && ms < fromMs) return false;
+            if (toMs && ms > toMs) return false;
+            return true;
+        };
+        const dateRangeIsSet = !!(fromMs || toMs);
 
         const now = Date.now();
         const cfg = AUDIENCIA_CONFIG;
@@ -9597,6 +9617,7 @@ router.get('/audiencias/conteos', async (req, res) => {
             if (ESTATUS_EXCLUIDOS_SIN_PAGAR.has(estatus)) continue;
             const createdMs = tsToMs(p.createdAt);
             if (!createdMs) continue;
+            if (dateRangeIsSet && !inDateRange(createdMs)) continue; // ← filtro de rango
             const ageMs = now - createdMs;
 
             const monto = parseFloat(p.precio) || 0;
@@ -9641,6 +9662,7 @@ router.get('/audiencias/conteos', async (req, res) => {
             if (numerosConDatos.has(consecNum)) continue; // Ya tiene datos
             const createdMs = tsToMs(p.createdAt);
             if (!createdMs) continue;
+            if (dateRangeIsSet && !inDateRange(createdMs)) continue; // ← filtro de rango
             const ageMs = now - createdMs;
             if (ageMs > sinDatosVentanaMs) continue;
 
@@ -9694,6 +9716,7 @@ router.get('/audiencias/conteos', async (req, res) => {
 
             const lastMs = tsToMs(c.lastMessageTimestamp);
             if (!lastMs) continue;
+            if (dateRangeIsSet && !inDateRange(lastMs)) continue; // ← filtro de rango
             const ageMs = now - lastMs;
             if (ageMs > enVistoVentanaMs) continue;
 
@@ -9747,6 +9770,7 @@ router.get('/audiencias/conteos', async (req, res) => {
 
         const recompraCooldownMs = cfg.recompra.cooldownDays * msD;
         for (const [tel, info] of ultimoPedidoPorTel) {
+            if (dateRangeIsSet && !inDateRange(info.createdMs)) continue; // ← filtro de rango
             const daysAgo = (now - info.createdMs) / msD;
             const ultimo = ultimoEnvioPorContacto.get(tel);
             const enCooldownEspecifico = ultimo && (now - ultimo.ms) < recompraCooldownMs;
@@ -9794,6 +9818,7 @@ router.get('/audiencias/conteos', async (req, res) => {
         const payload = {
             calculadoEn: new Date().toISOString(),
             config: cfg,
+            range: { from: fromMs, to: toMs },
             grupos: {
                 sinPagar,
                 sinDatos,
@@ -9805,8 +9830,12 @@ router.get('/audiencias/conteos', async (req, res) => {
             enCooldownGlobal: cooldownSet.size
         };
 
-        audienciasCache.data = payload;
-        audienciasCache.cachedAt = Date.now();
+        audienciasCacheMap.set(cacheKey, { data: payload, cachedAt: Date.now() });
+        // Limitar tamaño del cache (max 20 keys)
+        if (audienciasCacheMap.size > 20) {
+            const firstKey = audienciasCacheMap.keys().next().value;
+            audienciasCacheMap.delete(firstKey);
+        }
         res.json({ success: true, ...payload, fromCache: false });
     } catch (err) {
         console.error('Error en audiencias/conteos:', err);

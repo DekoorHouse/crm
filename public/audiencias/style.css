@@ -37,6 +37,20 @@ h1, h2, h3 { font-family: 'Poppins', sans-serif; }
 .btn-refresh:hover { background: #eff6ff; }
 .cache-info-audiencias { font-size: 0.75rem; color: #6b7280; font-style: italic; flex-basis: 100%; }
 
+/* Filtro de fechas */
+.filtro-fechas-box { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: white; border: 1px solid #e5e7eb; border-radius: 10px; margin-bottom: 16px; font-size: 0.88rem; color: #374151; flex-wrap: wrap; }
+.filtro-fechas-box > i { color: #16a34a; }
+.filtro-fechas-box label { font-weight: 700; color: #374151; }
+.filtro-fechas-box select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.85rem; background: white; cursor: pointer; font-family: inherit; }
+.filtro-fechas-box select:focus { outline: none; border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.1); }
+.filtro-custom { display: inline-flex; align-items: center; gap: 6px; }
+.filtro-custom input[type="date"] { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.85rem; font-family: inherit; }
+.filtro-custom span { color: #6b7280; }
+.btn-aplicar { padding: 6px 14px; background: #16a34a; color: white; border: none; border-radius: 6px; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.btn-aplicar:hover { background: #15803d; }
+.filtro-resumen { font-size: 0.8rem; color: #16a34a; font-weight: 600; }
+.filtro-fechas-box .btn-refresh { margin-left: auto; }
+
 /* Grid de cards */
 .audiencias-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .audiencias-loading { grid-column: 1 / -1; padding: 60px 20px; text-align: center; color: #9ca3af; font-size: 0.95rem; }

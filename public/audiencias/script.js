@@ -64,11 +64,69 @@ document.addEventListener('DOMContentLoaded', () => {
         return `hace ${Math.floor(h / 24)} d`;
     };
 
+    // --- Filtro de fechas ---
+    let filtroFrom = null;
+    let filtroTo = null;
+
+    function presetToRange(preset) {
+        const now = new Date();
+        const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+        switch (preset) {
+            case 'hoy':       return { from: day(now), to: endOfDay(now) };
+            case 'ayer':      { const y = new Date(now); y.setDate(y.getDate() - 1); return { from: day(y), to: endOfDay(y) }; }
+            case 'semana':    return { from: now.getTime() - 7 * 24 * 60 * 60 * 1000, to: now.getTime() };
+            case 'mes':       return { from: now.getTime() - 30 * 24 * 60 * 60 * 1000, to: now.getTime() };
+            case 'trimestre': return { from: now.getTime() - 90 * 24 * 60 * 60 * 1000, to: now.getTime() };
+            case 'anio':      return { from: now.getTime() - 365 * 24 * 60 * 60 * 1000, to: now.getTime() };
+            case 'all':
+            default:          return { from: null, to: null };
+        }
+    }
+
+    window.onFiltroPresetChange = () => {
+        const preset = document.getElementById('filtroPreset').value;
+        const customBox = document.getElementById('filtroCustom');
+        if (preset === 'custom') {
+            customBox.style.display = 'inline-flex';
+            return;
+        }
+        customBox.style.display = 'none';
+        const r = presetToRange(preset);
+        filtroFrom = r.from;
+        filtroTo = r.to;
+        cargarAudiencias(false);
+    };
+
+    window.aplicarFiltroCustom = () => {
+        const fromStr = document.getElementById('filtroFrom').value;
+        const toStr = document.getElementById('filtroTo').value;
+        filtroFrom = fromStr ? new Date(fromStr + 'T00:00:00').getTime() : null;
+        filtroTo = toStr ? new Date(toStr + 'T23:59:59.999').getTime() : null;
+        cargarAudiencias(false);
+    };
+
+    function actualizarFiltroResumen() {
+        const el = document.getElementById('filtroResumen');
+        if (!el) return;
+        if (!filtroFrom && !filtroTo) {
+            el.textContent = '';
+            return;
+        }
+        const fmt = (ms) => ms ? new Date(ms).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' }) : '...';
+        el.textContent = ` · ${fmt(filtroFrom)} → ${fmt(filtroTo)}`;
+    }
+
     window.cargarAudiencias = async (forceRefresh) => {
         audienciasGrid.innerHTML = '<div class="audiencias-loading"><i class="fas fa-spinner fa-spin"></i> Cargando audiencias...</div>';
+        actualizarFiltroResumen();
         try {
             const token = await auth.currentUser.getIdToken();
-            const url = '/api/audiencias/conteos' + (forceRefresh ? '?fresh=1' : '');
+            const params = new URLSearchParams();
+            if (forceRefresh) params.set('fresh', '1');
+            if (filtroFrom) params.set('from', String(filtroFrom));
+            if (filtroTo) params.set('to', String(filtroTo));
+            const url = '/api/audiencias/conteos' + (params.toString() ? '?' + params.toString() : '');
             const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             if (!res.ok || !data.success) throw new Error(data.message || 'Error al cargar audiencias');

@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="/audiencias/style.css?v=1">
+    <link rel="stylesheet" href="/audiencias/style.css?v=2">
 </head>
 <body>
 
@@ -60,10 +60,29 @@
         <div class="info-banner">
             <i class="fas fa-info-circle"></i>
             <span>Vista de solo lectura. En la siguiente fase podr&aacute;s contactar masivamente a cada grupo desde aqu&iacute;.</span>
-            <button class="btn-refresh" onclick="cargarAudiencias(true)" title="Recargar">
-                <i class="fas fa-sync-alt"></i> Recargar
-            </button>
             <span id="cacheInfo" class="cache-info-audiencias"></span>
+        </div>
+
+        <!-- Filtro de fechas -->
+        <div class="filtro-fechas-box">
+            <i class="fas fa-calendar-alt"></i>
+            <label for="filtroPreset">Filtrar por fecha:</label>
+            <select id="filtroPreset" onchange="onFiltroPresetChange()">
+                <option value="all" selected>Todo el tiempo</option>
+                <option value="hoy">Hoy</option>
+                <option value="ayer">Ayer</option>
+                <option value="semana">&Uacute;ltimos 7 d&iacute;as</option>
+                <option value="mes">&Uacute;ltimos 30 d&iacute;as</option>
+                <option value="trimestre">&Uacute;ltimos 90 d&iacute;as</option>
+                <option value="anio">&Uacute;ltimo a&ntilde;o</option>
+                <option value="custom">Personalizado...</option>
+            </select>
+            <div id="filtroCustom" class="filtro-custom" style="display:none;">
+                <input type="date" id="filtroFrom"> <span>a</span> <input type="date" id="filtroTo">
+                <button class="btn-aplicar" onclick="aplicarFiltroCustom()">Aplicar</button>
+            </div>
+            <span id="filtroResumen" class="filtro-resumen"></span>
+            <button class="btn-refresh" onclick="cargarAudiencias(true)" title="Recargar"><i class="fas fa-sync-alt"></i> Recargar</button>
         </div>
 
         <!-- Cards de cada grupo -->
@@ -89,6 +108,6 @@
     </div>
 </div>
 
-<script type="module" src="/audiencias/script.js?v=1"></script>
+<script type="module" src="/audiencias/script.js?v=2"></script>
 </body>
 </html>
