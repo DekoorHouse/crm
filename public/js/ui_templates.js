@@ -1573,6 +1573,11 @@ const OrderHistoryItemTemplate = (order) => {
                     ${statusOptionsHTML}
                 </select>
             </div>
+            <div class="order-history-row">
+                <button class="order-edit-btn" onclick="openOrderEditModal('${order.id}')">
+                    <i class="fas fa-pen"></i> Editar pedido
+                </button>
+            </div>
         </div>
     `;
 };
