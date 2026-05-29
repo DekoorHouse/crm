@@ -3510,6 +3510,41 @@ router.get('/leads/daily-count', async (req, res) => {
     }
 });
 
+// --- GET /api/orders/daily-count ---
+// "Pedidos cerrados" por dia: cuenta pedidos con estatus 'Pagado' o 'Fabricar' (venta confirmada),
+// agrupados por dia en zona horaria de Mexico (UTC-6), igual que /api/orders/today. Tiene historico.
+// Query: from, to (YYYY-MM-DD). Respuesta: { success, from, to, closedByDate: { fecha: n }, total }.
+router.get('/orders/daily-count', async (req, res) => {
+    try {
+        const { from, to } = req.query;
+        if (!from || !to) {
+            return res.status(400).json({ success: false, message: 'Se requieren from y to (YYYY-MM-DD).' });
+        }
+        const CLOSED = ['Pagado', 'Fabricar'];
+        const startTs = admin.firestore.Timestamp.fromDate(new Date(from + 'T00:00:00-06:00'));
+        const endTs = admin.firestore.Timestamp.fromDate(new Date(to + 'T23:59:59-06:00'));
+        const snap = await db.collection('pedidos')
+            .where('createdAt', '>=', startTs)
+            .where('createdAt', '<=', endTs)
+            .select('createdAt', 'estatus')
+            .get();
+        const closedByDate = {};
+        let total = 0;
+        snap.forEach(doc => {
+            const d = doc.data();
+            if (!d.createdAt || typeof d.createdAt.toDate !== 'function') return;
+            if (!CLOSED.includes(d.estatus)) return;
+            const day = d.createdAt.toDate().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+            closedByDate[day] = (closedByDate[day] || 0) + 1;
+            total++;
+        });
+        res.status(200).json({ success: true, from, to, closedByDate, total });
+    } catch (error) {
+        console.error('Error getting daily orders count:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener pedidos por dia.', error: error.message });
+    }
+});
+
 // --- Helper: arma query de contactos con botActive=true filtrada por depto ---
 // Soporta departmentId simple ("X") o multi separado por coma ("X,Y,Z", max 10).
 function buildIaActiveQueryForDept(departmentId) {

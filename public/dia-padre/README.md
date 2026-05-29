@@ -33,14 +33,18 @@ Las celdas **amarillas** se editan; las **grises** se calculan solas. Cada cambi
 - **CPL:** 🟢 menor a $180 · 🟡 $180–$250 · 🔴 mayor a $250
 - **Conversión WA:** 🟢 mayor a 12% · 🟡 8–12% · 🔴 menor a 8%
 
-## Datos automáticos: gasto (Meta) + leads (WhatsApp)
+## Datos automáticos: Meta + CRM
 
-En la pestaña **Métricas**, arriba, está la card de datos automáticos:
+En la pestaña **Métricas**, arriba, está la card de datos automáticos. Elige un rango y pulsa
+**"🔄 Actualizar gasto y leads"** (trae todo de una vez y llena las columnas por fecha):
 
-- Elige un rango de fechas y pulsa **"🔄 Actualizar gasto y leads"** (trae ambas cosas a la vez).
-- **Leads WA:** cuenta las conversaciones de WhatsApp que llegaron **desde un anuncio** ese día (cada
-  clic de anuncio → WhatsApp, exista o no el contacto) y llena la columna "Leads WA" por fecha. Se
-  cuenta **desde hoy en adelante** (no hay histórico previo a activar el contador en el CRM).
+- **Gasto ads:** gasto por campaña de Meta + total diario (con histórico).
+- **Leads WA:** conversaciones de WhatsApp que llegaron **desde un anuncio** ese día (cada clic de
+  anuncio → WhatsApp, exista o no el contacto). Se cuenta **desde hoy en adelante** (sin histórico previo).
+- **Pedidos cerrados:** pedidos con estatus **Pagado** o **Fabricar** ese día (con histórico, vía
+  `GET /api/orders/daily-count`).
+- Las columnas por canal (Pedidos DGO/Nac/Pronto) siguen **manuales**: tu sistema de pedidos no guarda
+  el canal/paquetería en el pedido y "Pronto" no existe como dato.
 - Trae el gasto **directo de tu administrador de anuncios** (las mismas cuentas Meta que usa `admon`;
   el token y las cuentas se resuelven en el servidor — el navegador no maneja secretos).
 - Muestra una tabla **Campaña | Gasto** (con nombre real de cada campaña) + total.

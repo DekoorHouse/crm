@@ -632,8 +632,8 @@ function buildMetricas(){
   ].map(r=>`<tr><td class="lbl">${r[0]}</td><td class="sem-verde">${r[1]}</td><td class="sem-amarillo">${r[2]}</td><td class="sem-rojo">${r[3]}</td><td class="lbl small">${r[4]}</td></tr>`).join('');
   return `
   <div class="card">
-    <h2>📣 Datos automáticos: gasto (Meta) + leads (WhatsApp)</h2>
-    <p class="hint">Trae el gasto por campaña de Meta y los leads de WhatsApp que llegaron desde anuncios (del CRM), y llena las columnas "Gasto ads" y "Leads WA" por fecha. El rango arranca el 29 may; amplía "Desde" para traer más historial de gasto. (Los leads por anuncio se cuentan desde hoy en adelante.)</p>
+    <h2>📣 Datos automáticos: Meta + CRM</h2>
+    <p class="hint">Trae de Meta el gasto por campaña, y del CRM los leads de WhatsApp (desde anuncios) y los pedidos cerrados (Pagado/Fabricar), y llena las columnas "Gasto ads", "Leads WA" y "Pedidos cerrados" por fecha. El rango arranca el 29 may; amplía "Desde" para traer más historial. (Gasto y pedidos tienen histórico; los leads se cuentan desde hoy en adelante.)</p>
     <div class="meta-controls">
       <label>Desde <input class="cin txt" type="date" data-path="meta.dateFrom" data-type="text" value="${esc(STATE.meta.dateFrom)}"></label>
       <label>Hasta <input class="cin txt" type="date" data-path="meta.dateTo" data-type="text" value="${esc(STATE.meta.dateTo)}"></label>
@@ -793,6 +793,23 @@ async function fetchLeadsCore(){
   var n=fillLeadsFromCRM(data.leadsByDate);
   return n+' días con leads ('+(data.total||0)+' leads WA)';
 }
+function fillPedidosFromCRM(byDate){
+  var map=byDate||{}, n=0;
+  STATE.metricas.forEach(function(row){
+    if(row.date && map[row.date]!=null){ row.cerrados=Number(map[row.date])||0; n++; }
+  });
+  if(n){ saveSection('metricas'); recalcAll(); }
+  return n;
+}
+async function fetchPedidosCore(){
+  var qs=new URLSearchParams({from:STATE.meta.dateFrom||'', to:STATE.meta.dateTo||''});
+  var resp=await fetch('/api/orders/daily-count?'+qs.toString(), {headers:{'Accept':'application/json'}});
+  if(!resp.ok) throw new Error('Pedidos '+resp.status);
+  var data=await resp.json();
+  if(!data.success) throw new Error(data.message||'sin datos de pedidos');
+  var n=fillPedidosFromCRM(data.closedByDate);
+  return n+' días con pedidos ('+(data.total||0)+' cerrados)';
+}
 async function fetchAuto(){
   var status=$('metaStatus'), btn=document.querySelector('[data-act="auto-fetch"]');
   if(!status) return;
@@ -801,6 +818,7 @@ async function fetchAuto(){
   var ok=[], err=[];
   try{ ok.push(await fetchGastoCore()); }catch(e){ err.push('gasto: '+e.message); }
   try{ ok.push(await fetchLeadsCore()); }catch(e){ err.push('leads: '+e.message); }
+  try{ ok.push(await fetchPedidosCore()); }catch(e){ err.push('pedidos: '+e.message); }
   var msg = ok.length ? ('✓ '+ok.join(' · ')) : '';
   if(err.length) msg += (msg?'   ':'')+'⚠️ '+err.join(' · ');
   status.textContent = msg || 'Sin datos.';
@@ -866,7 +884,7 @@ function init(){
   bindEvents();
   switchTab(STATE.ui&&STATE.ui.tab||'resumen');
   recalcAll();
-  window.DPP={compute,recalcAll,exportData,importData,resetData,DEFAULTS,fetchAuto,fetchLeadsCore,renderMetaResults};
+  window.DPP={compute,recalcAll,exportData,importData,resetData,DEFAULTS,fetchAuto,fetchLeadsCore,fetchPedidosCore,renderMetaResults};
   Object.defineProperty(window.DPP,'STATE',{get:()=>STATE});
   registerSW();
   initAuth();
