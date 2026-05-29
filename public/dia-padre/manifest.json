@@ -1,0 +1,16 @@
+{
+  "name": "DeKoor · Día del Padre 2026",
+  "short_name": "Día Padre",
+  "description": "Plan operativo y de control de la campaña Día del Padre 2026 de DeKoor.",
+  "scope": "/dia-padre/",
+  "start_url": "/dia-padre/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#1E3A52",
+  "background_color": "#FAF6F0",
+  "lang": "es-MX",
+  "icons": [
+    { "src": "/favicon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

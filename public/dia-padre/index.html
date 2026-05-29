@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<title>DeKoor · Día del Padre 2026</title>
+<meta name="description" content="Plan operativo y de control · Campaña Día del Padre 2026 · DeKoor">
+<meta name="theme-color" content="#1E3A52">
+<link rel="manifest" href="/dia-padre/manifest.json">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/favicon-192.png">
+<style>
+:root{
+  --navy:#1E3A52; --orange:#F4823C; --cream:#FAF6F0; --white:#fff;
+  --gray:#6b7785; --line:#e3e8ee; --calc-bg:#eef2f7; --edit-bg:#FFFFCC;
+  --green:#2e7d32; --green-bg:#E2EFDA; --yellow-bg:#FFF2CC; --yellow-tx:#8a6d00;
+  --red:#c62828; --red-bg:#FCE4D6; --blue-bg:#DAE3F3;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  background:var(--cream); color:var(--navy); -webkit-text-size-adjust:100%;
+}
+/* ---------- Overlay / Login ---------- */
+.overlay{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:1000;color:#fff;text-align:center;padding:24px}
+.spinner{width:46px;height:46px;border:4px solid rgba(255,255,255,.25);border-top-color:var(--orange);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.auth-msg{max-width:340px;line-height:1.5}
+.auth-msg button{margin-top:14px}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(160deg,var(--navy),#0f2436)}
+.login-card{background:#fff;border-radius:16px;padding:32px 28px;width:100%;max-width:360px;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.login-card h1{font-size:20px;margin:0 0 4px;color:var(--navy)}
+.login-card .sub{color:var(--gray);font-size:13px;margin:0 0 22px}
+.login-card label{display:block;font-size:12px;font-weight:600;color:var(--navy);margin:14px 0 5px}
+.login-card input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:15px}
+.login-card input:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(244,130,60,.2)}
+.login-card button{width:100%;margin-top:20px;padding:13px;border:none;border-radius:10px;background:var(--orange);color:#fff;font-size:15px;font-weight:700;cursor:pointer}
+.login-card button:disabled{opacity:.6;cursor:default}
+.login-err{color:var(--red);font-size:13px;margin-top:12px;min-height:18px;text-align:center}
+.login-logo{font-size:30px;margin-bottom:8px}
+/* ---------- App bar ---------- */
+.appbar{position:sticky;top:0;z-index:50;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;line-height:1.1}
+.brand .dot{color:var(--orange)}
+.brand small{display:block;font-weight:400;font-size:11px;color:#aab8c6}
+.bar-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.uemail{font-size:11px;color:#aab8c6;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn-ghost{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;font-size:12px;padding:7px 10px;border-radius:8px;cursor:pointer;white-space:nowrap}
+.btn-ghost:hover{background:rgba(255,255,255,.18)}
+/* ---------- Tabs ---------- */
+.tabs{position:sticky;top:0;z-index:40;background:#fff;border-bottom:1px solid var(--line);display:flex;gap:2px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:0 6px;scrollbar-width:thin}
+.tabs::-webkit-scrollbar{height:4px}
+.tabs::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+.tab{flex:0 0 auto;background:none;border:none;border-bottom:3px solid transparent;padding:13px 14px;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;white-space:nowrap}
+.tab.active{color:var(--navy);border-bottom-color:var(--orange)}
+main{padding:16px 12px 60px;max-width:1100px;margin:0 auto}
+.tab-panel{display:none;animation:fade .2s ease}
+.tab-panel.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+/* ---------- Cards & tables ---------- */
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(30,58,82,.05)}
+.card h2{font-size:15px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+.card .hint{font-size:12px;color:var(--gray);margin:0 0 14px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 16px;text-align:center;box-shadow:0 1px 3px rgba(30,58,82,.05)}
+.kpi .label{font-size:12px;color:var(--navy);font-weight:600;letter-spacing:.02em}
+.kpi .val{font-size:26px;font-weight:800;color:var(--orange);margin-top:6px;line-height:1.1}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:520px}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+thead th{background:var(--navy);color:#fff;font-weight:600;font-size:12px;text-align:right;position:sticky;top:0}
+thead th.grp{background:#16304a;text-align:center;border-left:1px solid #2a4a66}
+th:first-child,td.lbl{text-align:left}
+td.lbl{font-weight:600;color:var(--navy)}
+td.lbl.small,.lbl .small{font-weight:400;color:var(--gray);font-size:12px}
+tr.tot td,tr.tot{background:#fbfdff;font-weight:700}
+tr.tot td.calc{background:#e9eef5}
+tr.hl td{background:#fff6ef;font-weight:800;font-size:14px}
+td.calc,.cout{background:var(--calc-bg);color:var(--navy);font-weight:600}
+td.calc{font-variant-numeric:tabular-nums}
+.cout{display:inline-block;min-width:38px;font-variant-numeric:tabular-nums}
+.cin{width:72px;max-width:24vw;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--edit-bg);font-size:13px;text-align:right;font-variant-numeric:tabular-nums;color:var(--navy)}
+.cin.wide{width:100%;min-width:180px;text-align:left;background:var(--edit-bg)}
+.cin.txt{text-align:left}
+.cin:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(244,130,60,.18);background:#fffde3}
+td.center{text-align:center}
+/* semaforos */
+.sem-verde{background:var(--green-bg)!important;color:var(--green)!important}
+.sem-amarillo{background:var(--yellow-bg)!important;color:var(--yellow-tx)!important}
+.sem-rojo{background:var(--red-bg)!important;color:var(--red)!important}
+.sem-pos{color:var(--green)!important}
+.sem-neg{color:var(--red)!important}
+/* badges calendario */
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.b-prep{background:#e7e6e6;color:#555}
+.b-s1{background:var(--blue-bg);color:#2a4a73}
+.b-s2{background:var(--yellow-bg);color:#7a6200}
+.b-s3{background:var(--red-bg);color:#a44a1e}
+.b-dp{background:var(--orange);color:#fff}
+.b-cierre{background:var(--green-bg);color:#2e6b32}
+tr.row-done td.lbl,tr.row-done .cin{opacity:.5}
+tr.row-done .cin.wide{text-decoration:line-through}
+.chk{width:20px;height:20px;accent-color:var(--orange);cursor:pointer}
+.note{font-size:12px;color:var(--gray);background:#f6f8fb;border-left:3px solid var(--orange);padding:9px 12px;border-radius:0 8px 8px 0;margin:0 0 14px;line-height:1.5}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--gray);margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:13px;height:13px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.1)}
+.inline-field{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin:0 0 12px}
+/* toast */
+.toast{position:fixed;right:16px;bottom:16px;background:var(--green);color:#fff;padding:10px 16px;border-radius:30px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:.25s;pointer-events:none;z-index:200}
+.toast.show{opacity:1;transform:translateY(0)}
+/* responsive */
+@media(max-width:640px){
+  .kpis{grid-template-columns:1fr;gap:10px}
+  .kpi .val{font-size:24px}
+  .brand small{display:none}
+  main{padding:12px 8px 60px}
+  .card{padding:13px}
+}
+@media print{
+  .appbar,.tabs,.toast,.bar-actions{display:none!important}
+  .tab-panel{display:block!important;page-break-after:always}
+  .cin{border:none;background:none}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+
+<!-- Carga / auth -->
+<div id="authLoading" class="overlay"><div class="spinner"></div></div>
+
+<!-- Login -->
+<div id="seccionLogin" class="login-wrap" style="display:none">
+  <form id="loginForm" class="login-card">
+    <div class="login-logo">💡</div>
+    <h1>DeKoor · Día del Padre 2026</h1>
+    <p class="sub">Plan operativo y de control de campaña</p>
+    <label for="loginEmail">Correo electrónico</label>
+    <input type="email" id="loginEmail" autocomplete="username" required placeholder="tu.correo@dekoor.com">
+    <label for="loginPass">Contraseña</label>
+    <input type="password" id="loginPass" autocomplete="current-password" required placeholder="••••••••">
+    <button type="submit">Ingresar</button>
+    <div id="loginError" class="login-err"></div>
+  </form>
+</div>
+
+<!-- App -->
+<div id="seccionApp" style="display:none">
+  <header class="appbar">
+    <div class="brand">💡 DeKoor <span class="dot">·</span> Día del Padre 2026<small>Plan de venta y control · 1 al 21 de junio</small></div>
+    <div class="bar-actions">
+      <span id="userEmail" class="uemail"></span>
+      <button class="btn-ghost" data-act="export">⭳ Exportar</button>
+      <button class="btn-ghost" data-act="import">⭱ Importar</button>
+      <button class="btn-ghost" data-act="reset">↺ Reiniciar</button>
+      <button class="btn-ghost" id="logoutBtn">Salir</button>
+    </div>
+  </header>
+  <nav class="tabs" id="tabs">
+    <button class="tab" data-tab="resumen">Resumen</button>
+    <button class="tab" data-tab="ventas">Ventas</button>
+    <button class="tab" data-tab="ads">Ads Semana 1</button>
+    <button class="tab" data-tab="capital">Capital</button>
+    <button class="tab" data-tab="calendario">Calendario</button>
+    <button class="tab" data-tab="metricas">Métricas</button>
+  </nav>
+  <main>
+    <section id="panel-resumen" class="tab-panel"></section>
+    <section id="panel-ventas" class="tab-panel"></section>
+    <section id="panel-ads" class="tab-panel"></section>
+    <section id="panel-capital" class="tab-panel"></section>
+    <section id="panel-calendario" class="tab-panel"></section>
+    <section id="panel-metricas" class="tab-panel"></section>
+  </main>
+</div>
+
+<div id="toast" class="toast">✓ Guardado</div>
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<script type="module">
+"use strict";
+
+/* ===================== CONFIG ===================== */
+const FIRE = {
+  apiKey:"AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+  authDomain:"pedidos-con-gemini.firebaseapp.com",
+  projectId:"pedidos-con-gemini",
+  storageBucket:"pedidos-con-gemini.firebasestorage.app",
+  messagingSenderId:"300825194175",
+  appId:"1:300825194175:web:972fa7b8af195a83e6e00a"
+};
+const SECTIONS = ['global','ventas','ads','capital','calendario','metricas'];
+const KEY = {
+  global:'dekoor_dp2026_global', ventas:'dekoor_dp2026_ventas', ads:'dekoor_dp2026_ads',
+  capital:'dekoor_dp2026_capital', calendario:'dekoor_dp2026_calendario',
+  metricas:'dekoor_dp2026_metricas', ui:'dekoor_dp2026_ui'
+};
+
+/* ===================== DATOS BASE (del Excel) ===================== */
+// [nombre, margen/pieza, piezas plan, envío]
+const CHANNELS = [
+  ['DGO COD',320,193,60],
+  ['Nacional J&T',300,262,80],
+  ['Pronto COD',224,158,120],
+  ['Nacional DHL',260,87,120]
+];
+// [día, fase, plan DGO, plan Nacional, plan Pronto]
+const ADS = [
+  ['Lun 1 jun','Arranque',800,1200,1000],
+  ['Mar 2 jun','Aprendizaje',800,1500,1200],
+  ['Mié 3 jun','Primera lectura',1000,1800,1400],
+  ['Jue 4 jun','Ajuste data',1200,2000,1500],
+  ['Vie 5 jun','Día fuerte',1500,2500,1800],
+  ['Sáb 6 jun','Pico social',1500,2500,1800],
+  ['Dom 7 jun','Cierre',1200,2000,1500]
+];
+// [fecha, semana, acción clave]
+const CAL = [
+  ['Vie 29 may','Preparación','Solicitar préstamo $180k. Confirmar bases LED 700 pzs.'],
+  ['Sáb 30 may','Preparación','Comprar acrílico/MDF para 800 piezas + empaques'],
+  ['Dom 31 may','Preparación','Diseñar 3 creatividades ads + plantillas CorelDRAW'],
+  ['Lun 1 jun','Semana 1','🚀 LANZAR ADS en 3 campañas Meta'],
+  ['Mar 2 jun','Semana 1','Pre-producir 200 bases láser sin nombre'],
+  ['Mié 3 jun','Semana 1','Primera lectura CPL · Refinar respuestas WhatsApp'],
+  ['Jue 4 jun','Semana 1','Pre-producir 200 bases más · Ajustar campañas'],
+  ['Vie 5 jun','Semana 1','Primer corte semanal · Análisis ROAS'],
+  ['Sáb-Dom 6-7','Semana 1','Producción y entregas DGO en curso'],
+  ['Lun 8 jun','Semana 2','Escalar presupuesto a canales rentables'],
+  ['Mar 9 jun','Semana 2','Recordatorios WhatsApp 24h antes para Pronto'],
+  ['Mié 10 jun','Semana 2','Pre-producir 200 bases (acum: 600)'],
+  ['Jue 11 jun','Semana 2',"📢 Aviso: 'Últimos 2 días J&T'"],
+  ['Vie 12 jun','Semana 2','🔴 ÚLTIMO DÍA J&T · Avisar fin de canal'],
+  ['Sáb-Dom 13-14','Semana 2','Procesar acumulado · Pre-producir extra'],
+  ['Lun 15 jun','Semana 3','🔥 Nómina intensa activada · 5 personas 8h/día'],
+  ['Mar 16 jun','Semana 3','Máxima producción · Entrega DGO COD acumulado'],
+  ['Mié 17 jun','Semana 3',"📢 Aviso: 'Mañana último día envío DHL'"],
+  ['Jue 18 jun','Semana 3','📦 ÚLTIMO CORTE DHL · Cierre nacional'],
+  ['Vie 19 jun','Semana 3','Solo DGO · Entregas máximas'],
+  ['Sáb 20 jun','Semana 3','Última jornada de entregas DGO'],
+  ['Dom 21 jun','DÍA DEL PADRE','🎉 DÍA DEL PADRE · Monitoreo de quejas'],
+  ['Lun 22 jun','Cierre','Inicio cobranza Pronto'],
+  ['Mar-Mié 23-24','Cierre','Recepción depósitos Pronto'],
+  ['Jue 25 jun','Cierre','Pagar préstamo cuando llegue depósito'],
+  ['Vie 26 jun','Cierre','Análisis post-mortem por canal'],
+  ['Sáb 27 jun','Cierre','Documentar aprendizajes para Buen Fin/Navidad']
+];
+const MET_LABELS = ['Lun 1 jun','Mar 2 jun','Mié 3 jun','Jue 4 jun','Vie 5 jun','Sáb 6 jun','Dom 7 jun','Lun 8 jun','Mar 9 jun','Mié 10 jun','Jue 11 jun','Vie 12 jun','Sáb 13 jun','Dom 14 jun','Lun 15 jun','Mar 16 jun','Mié 17 jun','Jue 18 jun','Vie 19 jun','Sáb 20 jun','Dom 21 jun'];
+
+const DEFAULTS = {
+  global:{ prestamo:180000, tasaPct:20, nomina:38800 },
+  ventas:{ canales: CHANNELS.map(([nombre,margen,piezasPlan,envio])=>(
+      {nombre,margen,piezasPlan,piezasReal:0,precio:650,material:90,envio,ads:180})) },
+  ads:{ cplObjetivo:180, pedidosReales:{dgo:0,nac:0,pronto:0},
+    dias: ADS.map(([dia,fase,planDGO,planNac,planPronto])=>(
+      {dia,fase,planDGO,planNac,planPronto,realDGO:0,realNac:0,realPronto:0})) },
+  capital:{ materialCant:700, materialCosto:90, materialReal:0,
+    adsCant:700, adsCosto:180, adsReal:0, nominaCant:1, nominaReal:38800, envioPromedio:95 },
+  calendario: CAL.map(([fecha,semana,accion])=>({fecha,semana,accion,responsable:'',done:false})),
+  metricas: MET_LABELS.map(fecha=>(
+    {fecha,gasto:0,leads:0,cerrados:0,pedDGO:0,pedNac:0,pedPronto:0,rechazos:0}))
+};
+
+/* ===================== ESTADO / PERSISTENCIA ===================== */
+let STATE = freshState();
+function freshState(){ const s = JSON.parse(JSON.stringify(DEFAULTS)); s.ui = {tab:'resumen'}; return s; }
+function loadState(){
+  STATE = freshState();
+  SECTIONS.forEach(s=>{ const r=localStorage.getItem(KEY[s]); if(r){ try{ STATE[s]=JSON.parse(r); }catch(e){} } });
+  const u=localStorage.getItem(KEY.ui); if(u){ try{ STATE.ui=JSON.parse(u); }catch(e){} }
+}
+function saveSection(s){ try{ localStorage.setItem(KEY[s], JSON.stringify(STATE[s])); }catch(e){} }
+function saveUI(){ try{ localStorage.setItem(KEY.ui, JSON.stringify(STATE.ui)); }catch(e){} }
+
+/* ===================== HELPERS ===================== */
+const $ = id => document.getElementById(id);
+function num(x){ const n=parseFloat(x); return isNaN(n)?0:n; }
+function getPath(o,p){ return p.split('.').reduce((a,k)=> (a==null?undefined:a[k]), o); }
+function setPath(o,p,v){ const ks=p.split('.'); const last=ks.pop(); let t=o; for(const k of ks) t=t[k]; t[last]=v; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+const MX = new Intl.NumberFormat('es-MX');
+function fmtMoney(n){ const neg=n<0; return (neg?'-$':'$')+MX.format(Math.round(Math.abs(n))); }
+function fmtInt(n){ return MX.format(Math.round(n)); }
+function fmtPct(n){ return (n*100).toFixed(1)+'%'; }
+function format(v,f){ if(v===undefined||v===null)v=0; if(f==='money')return fmtMoney(v); if(f==='pct')return fmtPct(v); return fmtInt(v); }
+
+/* ===================== MOTOR DE CÁLCULO (fórmulas del Excel) ===================== */
+function compute(S){
+  const O={};
+  const prestamo=num(S.global.prestamo), tasa=num(S.global.tasaPct)/100, nomina=num(S.global.nomina);
+  const interes = prestamo*tasa;
+  // --- Ventas por canal ---
+  let tPP=0,tMP=0,tPR=0,tMR=0,ingPlan=0,ingReal=0;
+  S.ventas.canales.forEach((c,i)=>{
+    const mPlan=num(c.margen)*num(c.piezasPlan);
+    const mReal=num(c.margen)*num(c.piezasReal);
+    const mUnit=num(c.precio)-num(c.material)-num(c.envio)-num(c.ads);
+    O[`v${i}.margenPlan`]=mPlan; O[`v${i}.margenReal`]=mReal;
+    O[`v${i}.dPiezas`]=num(c.piezasReal)-num(c.piezasPlan);
+    O[`v${i}.dMargen`]=mReal-mPlan; O[`v${i}.margenUnit`]=mUnit;
+    tPP+=num(c.piezasPlan); tMP+=mPlan; tPR+=num(c.piezasReal); tMR+=mReal;
+    ingPlan+=num(c.piezasPlan)*num(c.precio); ingReal+=num(c.piezasReal)*num(c.precio);
+  });
+  O['vT.piezasPlan']=tPP; O['vT.margenPlan']=tMP; O['vT.piezasReal']=tPR; O['vT.margenReal']=tMR;
+  O['vT.dPiezas']=tPR-tPP; O['vT.dMargen']=tMR-tMP;
+  // --- Resumen ---
+  O['r.ingresoPlan']=ingPlan; O['r.ingresoReal']=ingReal; O['r.ingresoDif']=ingReal-ingPlan;
+  O['r.margenPlan']=tMP; O['r.margenReal']=tMR; O['r.margenDif']=tMR-tMP;
+  O['r.nominaPlan']=-nomina; O['r.nominaReal']=-nomina; O['r.nominaDif']=0;
+  O['r.interesPlan']=-interes; O['r.interesReal']=-interes; O['r.interesDif']=0;
+  const utilPlan=tMP-nomina-interes, utilReal=tMR-nomina-interes;
+  O['r.utilPlan']=utilPlan; O['r.utilReal']=utilReal; O['r.utilDif']=utilReal-utilPlan;
+  O['kpi.piezas']=tPP; O['kpi.prestamo']=prestamo; O['kpi.util']=utilPlan;
+  // --- Ads Semana 1 ---
+  const cpl=num(S.ads.cplObjetivo)||180;
+  let pD=0,pN=0,pP=0,rD=0,rN=0,rP=0,wP=0,wR=0;
+  S.ads.dias.forEach((d,i)=>{
+    const tp=num(d.planDGO)+num(d.planNac)+num(d.planPronto);
+    const tr=num(d.realDGO)+num(d.realNac)+num(d.realPronto);
+    O[`a${i}.totPlan`]=tp; O[`a${i}.totReal`]=tr;
+    pD+=num(d.planDGO); pN+=num(d.planNac); pP+=num(d.planPronto);
+    rD+=num(d.realDGO); rN+=num(d.realNac); rP+=num(d.realPronto); wP+=tp; wR+=tr;
+  });
+  O['aT.planDGO']=pD; O['aT.planNac']=pN; O['aT.planPronto']=pP; O['aT.planWeek']=wP;
+  O['aT.realDGO']=rD; O['aT.realNac']=rN; O['aT.realPronto']=rP; O['aT.realWeek']=wR;
+  O['pe.invPlanDGO']=pD; O['pe.invPlanNac']=pN; O['pe.invPlanPronto']=pP; O['pe.invPlanTotal']=pD+pN+pP;
+  const eD=Math.round(pD/cpl), eN=Math.round(pN/cpl), eP=Math.round(pP/cpl);
+  O['pe.pedEspDGO']=eD; O['pe.pedEspNac']=eN; O['pe.pedEspPronto']=eP; O['pe.pedEspTotal']=eD+eN+eP;
+  O['pe.invRealDGO']=rD; O['pe.invRealNac']=rN; O['pe.invRealPronto']=rP; O['pe.invRealTotal']=rD+rN+rP;
+  const pr=S.ads.pedidosReales, prT=num(pr.dgo)+num(pr.nac)+num(pr.pronto);
+  O['pe.pedRealTotal']=prT;
+  O['pe.cplRealDGO']=num(pr.dgo)?rD/num(pr.dgo):0;
+  O['pe.cplRealNac']=num(pr.nac)?rN/num(pr.nac):0;
+  O['pe.cplRealPronto']=num(pr.pronto)?rP/num(pr.pronto):0;
+  O['pe.cplRealTotal']=prT?(rD+rN+rP)/prT:0;
+  // --- Capital ---
+  const matPlan=num(S.capital.materialCant)*num(S.capital.materialCosto);
+  const adsPlan=num(S.capital.adsCant)*num(S.capital.adsCosto);
+  const nomPlan=num(S.capital.nominaCant)*nomina;
+  O['c.materialPlan']=matPlan; O['c.materialDif']=num(S.capital.materialReal)-matPlan;
+  O['c.adsPlan']=adsPlan;      O['c.adsDif']=num(S.capital.adsReal)-adsPlan;
+  O['c.nominaPlan']=nomPlan;   O['c.nominaDif']=num(S.capital.nominaReal)-nomPlan;
+  const capPlan=matPlan+adsPlan+nomPlan;
+  const capReal=num(S.capital.materialReal)+num(S.capital.adsReal)+num(S.capital.nominaReal);
+  O['c.totalPlan']=capPlan; O['c.totalReal']=capReal; O['c.totalDif']=capReal-capPlan;
+  O['c.intereses']=interes; O['c.totalDevolver']=prestamo+interes;
+  const envios=num(S.capital.envioPromedio)*tPP;
+  O['c.resIngreso']=ingPlan; O['c.resMaterial']=-matPlan; O['c.resEnvios']=-envios;
+  O['c.resAds']=-adsPlan; O['c.resNomina']=-nomina; O['c.resIntereses']=-interes;
+  O['c.utilNeta']=ingPlan-matPlan-envios-adsPlan-nomina-interes;
+  // --- Métricas diarias ---
+  let mG=0,mL=0,mC=0,mD=0,mN=0,mP=0,mR=0;
+  S.metricas.forEach((m,i)=>{
+    O[`m${i}.cpl`]=num(m.cerrados)?num(m.gasto)/num(m.cerrados):0;
+    O[`m${i}.conv`]=num(m.leads)?num(m.cerrados)/num(m.leads):0;
+    mG+=num(m.gasto); mL+=num(m.leads); mC+=num(m.cerrados);
+    mD+=num(m.pedDGO); mN+=num(m.pedNac); mP+=num(m.pedPronto); mR+=num(m.rechazos);
+  });
+  O['mT.gasto']=mG; O['mT.leads']=mL; O['mT.cerrados']=mC; O['mT.dgo']=mD;
+  O['mT.nac']=mN; O['mT.pronto']=mP; O['mT.rechazos']=mR;
+  O['mT.cpl']=mC?mG/mC:0; O['mT.conv']=mL?mC/mL:0;
+  return O;
+}
+
+/* ===================== RENDER (re-cálculo en vivo) ===================== */
+const SEM_CLASSES=['sem-verde','sem-amarillo','sem-rojo','sem-pos','sem-neg'];
+function applySem(el,type,v){
+  SEM_CLASSES.forEach(c=>el.classList.remove(c));
+  if(type==='cpl'){ if(v>0) el.classList.add(v<180?'sem-verde':(v<=250?'sem-amarillo':'sem-rojo')); }
+  else if(type==='conv'){ if(v>0) el.classList.add(v>0.12?'sem-verde':(v>=0.08?'sem-amarillo':'sem-rojo')); }
+  else if(type==='diff'){ if(v>0)el.classList.add('sem-pos'); else if(v<0)el.classList.add('sem-neg'); }
+}
+function recalcAll(activeEl){
+  const O=compute(STATE);
+  document.querySelectorAll('[data-calc]').forEach(el=>{
+    const v=O[el.dataset.calc];
+    el.textContent=format(v, el.dataset.fmt||'int');
+    if(el.dataset.sem) applySem(el, el.dataset.sem, v||0);
+  });
+  document.querySelectorAll('[data-path]').forEach(el=>{
+    if(el===activeEl) return;
+    const v=getPath(STATE, el.dataset.path);
+    if(el.dataset.type==='bool') el.checked=!!v;
+    else if(el.dataset.type==='text') el.value=(v==null?'':v);
+    else el.value=(v===0||v==null||v==='')?'':v;
+  });
+}
+
+/* ===================== BUILDERS ===================== */
+function cin(path,val,{dec=false,cls=''}={}){
+  return `<input class="cin ${cls}" data-path="${path}" data-type="num" inputmode="${dec?'decimal':'numeric'}" value="${(val===0||val==null)?'':val}">`;
+}
+function ctext(path,val,ph){ return `<input class="cin txt" data-path="${path}" data-type="text" value="${esc(val)}" placeholder="${ph||''}">`; }
+function cout(key,fmt,sem){ return `<span class="cout" data-calc="${key}" data-fmt="${fmt||'int'}"${sem?` data-sem="${sem}"`:''}></span>`; }
+const BADGE={'Preparación':'b-prep','Semana 1':'b-s1','Semana 2':'b-s2','Semana 3':'b-s3','DÍA DEL PADRE':'b-dp','Cierre':'b-cierre'};
+
+function buildResumen(){
+  return `
+  <div class="kpis">
+    <div class="kpi"><div class="label">Piezas a vender</div><div class="val">${cout('kpi.piezas','int')}</div></div>
+    <div class="kpi"><div class="label">Préstamo solicitado</div><div class="val">${cout('kpi.prestamo','money')}</div></div>
+    <div class="kpi"><div class="label">Utilidad esperada</div><div class="val">${cout('kpi.util','money')}</div></div>
+  </div>
+  <div class="card">
+    <h2>💰 Resumen financiero</h2>
+    <p class="hint">Planeado vs Real · la columna Real se llena sola con los datos de Ventas y Capital.</p>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Concepto</th><th>Planeado</th><th>Real</th><th>Diferencia</th></tr></thead>
+      <tbody>
+        <tr><td class="lbl">Ingreso bruto esperado</td><td class="calc">${cout('r.ingresoPlan','money')}</td><td class="calc">${cout('r.ingresoReal','money')}</td><td class="calc">${cout('r.ingresoDif','money','diff')}</td></tr>
+        <tr><td class="lbl">Margen bruto</td><td class="calc">${cout('r.margenPlan','money')}</td><td class="calc">${cout('r.margenReal','money')}</td><td class="calc">${cout('r.margenDif','money','diff')}</td></tr>
+        <tr><td class="lbl">(−) Nómina campaña</td><td class="calc">${cout('r.nominaPlan','money')}</td><td class="calc">${cout('r.nominaReal','money')}</td><td class="calc">${cout('r.nominaDif','money','diff')}</td></tr>
+        <tr><td class="lbl">(−) Intereses préstamo</td><td class="calc">${cout('r.interesPlan','money')}</td><td class="calc">${cout('r.interesReal','money')}</td><td class="calc">${cout('r.interesDif','money','diff')}</td></tr>
+        <tr class="hl"><td class="lbl">Utilidad final</td><td class="calc">${cout('r.utilPlan','money')}</td><td class="calc">${cout('r.utilReal','money')}</td><td class="calc">${cout('r.utilDif','money','diff')}</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">El préstamo, la tasa y la nómina se editan en la pestaña <b>Capital</b>. Esta utilidad ($123,572 al plan) se calcula sobre el <b>margen</b>; en Capital verás una segunda cifra ($124,700) calculada sobre costos con envío promedio $95 — ambas vienen tal cual de tu Excel.</p>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--edit-bg)"></i> Celda editable</span>
+      <span><i class="sw" style="background:var(--calc-bg)"></i> Calculada automáticamente</span>
+      <span><i class="sw" style="background:var(--orange)"></i> KPI / total destacado</span>
+    </div>
+  </div>`;
+}
+
+function buildVentas(){
+  const rows=STATE.ventas.canales.map((c,i)=>`
+    <tr><td class="lbl">${esc(c.nombre)}</td>
+      <td>${cin(`ventas.canales.${i}.margen`,c.margen)}</td>
+      <td>${cin(`ventas.canales.${i}.piezasPlan`,c.piezasPlan)}</td>
+      <td class="calc">${cout(`v${i}.margenPlan`,'money')}</td>
+      <td>${cin(`ventas.canales.${i}.piezasReal`,c.piezasReal)}</td>
+      <td class="calc">${cout(`v${i}.margenReal`,'money')}</td>
+      <td class="calc">${cout(`v${i}.dPiezas`,'int','diff')}</td>
+      <td class="calc">${cout(`v${i}.dMargen`,'money','diff')}</td></tr>`).join('');
+  const cost=STATE.ventas.canales;
+  const costRow=(label,field,key,fmt)=>`
+    <tr><td class="lbl">${label}</td>
+      ${cost.map((c,i)=> key
+        ? `<td class="calc">${cout(`v${i}.${key}`,fmt||'money')}</td>`
+        : `<td>${cin(`ventas.canales.${i}.${field}`,c[field])}</td>`).join('')}</tr>`;
+  return `
+  <div class="card">
+    <h2>📊 Ventas por canal · Plan vs Real</h2>
+    <p class="hint">Edita Margen/pieza, Piezas Plan y Piezas Real. El resto se calcula.</p>
+    <div class="tbl-wrap"><table style="min-width:680px">
+      <thead><tr><th>Canal</th><th>Margen/pieza</th><th>Piezas Plan</th><th>Margen Plan</th><th>Piezas Real</th><th>Margen Real</th><th>Δ Piezas</th><th>Δ Margen</th></tr></thead>
+      <tbody>${rows}
+        <tr class="tot"><td class="lbl">TOTAL</td><td></td>
+          <td class="calc">${cout('vT.piezasPlan','int')}</td>
+          <td class="calc">${cout('vT.margenPlan','money')}</td>
+          <td class="calc">${cout('vT.piezasReal','int')}</td>
+          <td class="calc">${cout('vT.margenReal','money')}</td>
+          <td class="calc">${cout('vT.dPiezas','int','diff')}</td>
+          <td class="calc">${cout('vT.dMargen','money','diff')}</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h2>💸 Estructura de costos por pieza</h2>
+    <p class="hint">Margen unitario teórico (Precio − Material − Envío − Ads). Nota: Pronto vende con margen efectivo $224 por rechazos COD, aunque su margen unitario teórico sea $260.</p>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Concepto</th><th>DGO COD</th><th>Nacional J&amp;T</th><th>Pronto COD</th><th>Nacional DHL</th></tr></thead>
+      <tbody>
+        ${costRow('Precio venta','precio')}
+        ${costRow('(−) Material','material')}
+        ${costRow('(−) Envío','envio')}
+        ${costRow('(−) Ads','ads')}
+        <tr class="tot">${'<td class="lbl">Margen unitario</td>'+cost.map((c,i)=>`<td class="calc">${cout(`v${i}.margenUnit`,'money')}</td>`).join('')}</tr>
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+function buildAds(){
+  const rows=STATE.ads.dias.map((d,i)=>`
+    <tr><td class="lbl">${esc(d.dia)}</td><td class="lbl small">${esc(d.fase)}</td>
+      <td>${cin(`ads.dias.${i}.planDGO`,d.planDGO)}</td>
+      <td>${cin(`ads.dias.${i}.planNac`,d.planNac)}</td>
+      <td>${cin(`ads.dias.${i}.planPronto`,d.planPronto)}</td>
+      <td>${cin(`ads.dias.${i}.realDGO`,d.realDGO)}</td>
+      <td>${cin(`ads.dias.${i}.realNac`,d.realNac)}</td>
+      <td>${cin(`ads.dias.${i}.realPronto`,d.realPronto)}</td>
+      <td class="calc">${cout(`a${i}.totPlan`,'money')}</td>
+      <td class="calc">${cout(`a${i}.totReal`,'money')}</td></tr>`).join('');
+  return `
+  <div class="card">
+    <h2>📅 Ads · Semana 1 (1–7 junio)</h2>
+    <p class="hint">Inversión diaria planeada vs real. Aprendizaje del píxel y escalamiento progresivo.</p>
+    <div class="tbl-wrap"><table style="min-width:760px">
+      <thead>
+        <tr><th rowspan="2">Día</th><th rowspan="2">Fase</th><th class="grp" colspan="3">PLANEADO</th><th class="grp" colspan="3">REAL</th><th class="grp" colspan="2">TOTALES</th></tr>
+        <tr><th>DGO</th><th>Nac.</th><th>Pronto</th><th>DGO</th><th>Nac.</th><th>Pronto</th><th>Plan</th><th>Real</th></tr>
+      </thead>
+      <tbody>${rows}
+        <tr class="tot"><td class="lbl">TOTAL</td><td></td>
+          <td class="calc">${cout('aT.planDGO','money')}</td>
+          <td class="calc">${cout('aT.planNac','money')}</td>
+          <td class="calc">${cout('aT.planPronto','money')}</td>
+          <td class="calc">${cout('aT.realDGO','money')}</td>
+          <td class="calc">${cout('aT.realNac','money')}</td>
+          <td class="calc">${cout('aT.realPronto','money')}</td>
+          <td class="calc">${cout('aT.planWeek','money')}</td>
+          <td class="calc">${cout('aT.realWeek','money')}</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h2>🎯 Pedidos esperados</h2>
+    <div class="inline-field">CPL objetivo: $ ${cin('ads.cplObjetivo',STATE.ads.cplObjetivo)}</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Concepto</th><th>DGO</th><th>Nacional</th><th>Pronto</th><th>TOTAL</th></tr></thead>
+      <tbody>
+        <tr><td class="lbl">Inversión plan</td><td class="calc">${cout('pe.invPlanDGO','money')}</td><td class="calc">${cout('pe.invPlanNac','money')}</td><td class="calc">${cout('pe.invPlanPronto','money')}</td><td class="calc">${cout('pe.invPlanTotal','money')}</td></tr>
+        <tr><td class="lbl">Pedidos esperados</td><td class="calc">${cout('pe.pedEspDGO','int')}</td><td class="calc">${cout('pe.pedEspNac','int')}</td><td class="calc">${cout('pe.pedEspPronto','int')}</td><td class="calc">${cout('pe.pedEspTotal','int')}</td></tr>
+        <tr><td class="lbl">Inversión real</td><td class="calc">${cout('pe.invRealDGO','money')}</td><td class="calc">${cout('pe.invRealNac','money')}</td><td class="calc">${cout('pe.invRealPronto','money')}</td><td class="calc">${cout('pe.invRealTotal','money')}</td></tr>
+        <tr><td class="lbl">Pedidos REALES</td><td>${cin('ads.pedidosReales.dgo',STATE.ads.pedidosReales.dgo)}</td><td>${cin('ads.pedidosReales.nac',STATE.ads.pedidosReales.nac)}</td><td>${cin('ads.pedidosReales.pronto',STATE.ads.pedidosReales.pronto)}</td><td class="calc">${cout('pe.pedRealTotal','int')}</td></tr>
+        <tr class="tot"><td class="lbl">CPL real</td><td class="calc">${cout('pe.cplRealDGO','money','cpl')}</td><td class="calc">${cout('pe.cplRealNac','money','cpl')}</td><td class="calc">${cout('pe.cplRealPronto','money','cpl')}</td><td class="calc">${cout('pe.cplRealTotal','money','cpl')}</td></tr>
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+function buildCapital(){
+  const c=STATE.capital;
+  return `
+  <div class="card">
+    <h2>💵 Estructura de capital</h2>
+    <div class="tbl-wrap"><table style="min-width:600px">
+      <thead><tr><th>Concepto</th><th>Cantidad</th><th>Costo unitario</th><th>Total Plan</th><th>Total Real</th><th>Diferencia</th></tr></thead>
+      <tbody>
+        <tr><td class="lbl">Material (piezas)</td><td>${cin('capital.materialCant',c.materialCant)}</td><td>${cin('capital.materialCosto',c.materialCosto)}</td><td class="calc">${cout('c.materialPlan','money')}</td><td>${cin('capital.materialReal',c.materialReal)}</td><td class="calc">${cout('c.materialDif','money','diff')}</td></tr>
+        <tr><td class="lbl">Ads (piezas)</td><td>${cin('capital.adsCant',c.adsCant)}</td><td>${cin('capital.adsCosto',c.adsCosto)}</td><td class="calc">${cout('c.adsPlan','money')}</td><td>${cin('capital.adsReal',c.adsReal)}</td><td class="calc">${cout('c.adsDif','money','diff')}</td></tr>
+        <tr><td class="lbl">Nómina (3 semanas)</td><td>${cin('capital.nominaCant',c.nominaCant)}</td><td>${cin('global.nomina',STATE.global.nomina)}</td><td class="calc">${cout('c.nominaPlan','money')}</td><td>${cin('capital.nominaReal',c.nominaReal)}</td><td class="calc">${cout('c.nominaDif','money','diff')}</td></tr>
+        <tr class="tot"><td class="lbl">CAPITAL TOTAL NECESARIO</td><td></td><td></td><td class="calc">${cout('c.totalPlan','money')}</td><td class="calc">${cout('c.totalReal','money')}</td><td class="calc">${cout('c.totalDif','money','diff')}</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h2>🏦 Préstamo</h2>
+    <div class="tbl-wrap"><table>
+      <tbody>
+        <tr><td class="lbl">Monto del préstamo</td><td>${cin('global.prestamo',STATE.global.prestamo)}</td></tr>
+        <tr><td class="lbl">Tasa de interés (%)</td><td>${cin('global.tasaPct',STATE.global.tasaPct,{dec:true})}</td></tr>
+        <tr><td class="lbl">Intereses a pagar</td><td class="calc">${cout('c.intereses','money')}</td></tr>
+        <tr class="tot"><td class="lbl">Total a devolver</td><td class="calc">${cout('c.totalDevolver','money')}</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h2>📈 Resultado esperado</h2>
+    <p class="hint">Cálculo alterno (base costos, envío promedio editable).</p>
+    <div class="tbl-wrap"><table>
+      <tbody>
+        <tr><td class="lbl">Ingreso bruto (700 × $650)</td><td class="calc">${cout('c.resIngreso','money')}</td></tr>
+        <tr><td class="lbl">(−) Costo material</td><td class="calc">${cout('c.resMaterial','money')}</td></tr>
+        <tr><td class="lbl">(−) Costo envíos (promedio $ ${cin('capital.envioPromedio',c.envioPromedio)} )</td><td class="calc">${cout('c.resEnvios','money')}</td></tr>
+        <tr><td class="lbl">(−) Ads</td><td class="calc">${cout('c.resAds','money')}</td></tr>
+        <tr><td class="lbl">(−) Nómina</td><td class="calc">${cout('c.resNomina','money')}</td></tr>
+        <tr><td class="lbl">(−) Intereses préstamo</td><td class="calc">${cout('c.resIntereses','money')}</td></tr>
+        <tr class="hl"><td class="lbl">UTILIDAD NETA</td><td class="calc">${cout('c.utilNeta','money')}</td></tr>
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+function buildCalendario(){
+  const rows=STATE.calendario.map((e,i)=>`
+    <tr class="${e.done?'row-done':''}" data-row="cal${i}">
+      <td class="lbl">${esc(e.fecha)}</td>
+      <td><span class="badge ${BADGE[e.semana]||'b-prep'}">${esc(e.semana)}</span></td>
+      <td><input class="cin wide" data-path="calendario.${i}.accion" data-type="text" value="${esc(e.accion)}"></td>
+      <td>${ctext(`calendario.${i}.responsable`,e.responsable,'—')}</td>
+      <td class="center"><input type="checkbox" class="chk" data-path="calendario.${i}.done" data-type="bool" ${e.done?'checked':''}></td>
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>🗓️ Calendario operativo</h2>
+    <p class="hint">27 hitos · 29 may → 27 jun. Marca cada acción al completarla (se guarda sola).</p>
+    <div class="tbl-wrap"><table style="min-width:640px">
+      <thead><tr><th>Fecha</th><th>Semana</th><th>Acción clave</th><th>Responsable</th><th class="center">✓</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
+}
+
+function buildMetricas(){
+  const rows=STATE.metricas.map((m,i)=>`
+    <tr><td class="lbl">${esc(m.fecha)}</td>
+      <td>${cin(`metricas.${i}.gasto`,m.gasto,{dec:true})}</td>
+      <td>${cin(`metricas.${i}.leads`,m.leads)}</td>
+      <td>${cin(`metricas.${i}.cerrados`,m.cerrados)}</td>
+      <td class="calc">${cout(`m${i}.cpl`,'money','cpl')}</td>
+      <td class="calc">${cout(`m${i}.conv`,'pct','conv')}</td>
+      <td>${cin(`metricas.${i}.pedDGO`,m.pedDGO)}</td>
+      <td>${cin(`metricas.${i}.pedNac`,m.pedNac)}</td>
+      <td>${cin(`metricas.${i}.pedPronto`,m.pedPronto)}</td>
+      <td>${cin(`metricas.${i}.rechazos`,m.rechazos)}</td></tr>`).join('');
+  const guia=[
+    ['CPL Nacional','&lt; $180','$180 – $250','&gt; $250','Pausar, replantear creatividad'],
+    ['CPL DGO','&lt; $120','$120 – $180','&gt; $180','Revisar segmentación local'],
+    ['Conversión WA','&gt; 12%','8% – 12%','&lt; 8%','Revisar mensajes y precio'],
+    ['Rechazo Pronto','&lt; 8%','8% – 15%','&gt; 15%','Filtrar con anticipo parcial'],
+    ['Quejas Facebook','0/día','1–2/día','3+/día','Revisar entregas / responder']
+  ].map(r=>`<tr><td class="lbl">${r[0]}</td><td class="sem-verde">${r[1]}</td><td class="sem-amarillo">${r[2]}</td><td class="sem-rojo">${r[3]}</td><td class="lbl small">${r[4]}</td></tr>`).join('');
+  return `
+  <div class="card">
+    <h2>📈 Métricas de control diario</h2>
+    <p class="hint">Captura cada noche · CPL y Conversión WA se calculan y colorean solas (21 días).</p>
+    <div class="tbl-wrap"><table style="min-width:860px">
+      <thead><tr><th>Fecha</th><th>Gasto ads</th><th>Leads WA</th><th>Pedidos cerr.</th><th>CPL</th><th>Conv. WA</th><th>Ped. DGO</th><th>Ped. Nac</th><th>Ped. Pronto</th><th>Rechazos</th></tr></thead>
+      <tbody>${rows}
+        <tr class="tot"><td class="lbl">TOTALES</td>
+          <td class="calc">${cout('mT.gasto','money')}</td>
+          <td class="calc">${cout('mT.leads','int')}</td>
+          <td class="calc">${cout('mT.cerrados','int')}</td>
+          <td class="calc">${cout('mT.cpl','money','cpl')}</td>
+          <td class="calc">${cout('mT.conv','pct','conv')}</td>
+          <td class="calc">${cout('mT.dgo','int')}</td>
+          <td class="calc">${cout('mT.nac','int')}</td>
+          <td class="calc">${cout('mT.pronto','int')}</td>
+          <td class="calc">${cout('mT.rechazos','int')}</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h2>🚦 Guía de semáforo</h2>
+    <div class="tbl-wrap"><table style="min-width:560px">
+      <thead><tr><th>Métrica</th><th>🟢 Verde</th><th>🟡 Amarillo</th><th>🔴 Rojo</th><th>Acción si rojo</th></tr></thead>
+      <tbody>${guia}</tbody>
+    </table></div>
+  </div>`;
+}
+
+function buildAll(){
+  $('panel-resumen').innerHTML=buildResumen();
+  $('panel-ventas').innerHTML=buildVentas();
+  $('panel-ads').innerHTML=buildAds();
+  $('panel-capital').innerHTML=buildCapital();
+  $('panel-calendario').innerHTML=buildCalendario();
+  $('panel-metricas').innerHTML=buildMetricas();
+}
+
+/* ===================== INTERACCIÓN ===================== */
+let toastTimer=null;
+function flashSaved(msg){
+  const t=$('toast'); t.textContent='✓ '+(msg||'Guardado'); t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),1200);
+}
+function onEdit(el){
+  const path=el.dataset.path; if(!path) return;
+  let val;
+  if(el.dataset.type==='bool') val=el.checked;
+  else if(el.dataset.type==='text') val=el.value;
+  else val=el.value===''?0:num(el.value);
+  setPath(STATE, path, val);
+  saveSection(path.split('.')[0]);
+  if(el.dataset.type==='bool' && path.startsWith('calendario')){
+    const tr=el.closest('tr'); if(tr) tr.classList.toggle('row-done', el.checked);
+  }
+  recalcAll(el);
+  flashSaved();
+}
+function switchTab(name){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  const p=$('panel-'+name); if(p) p.classList.add('active');
+  STATE.ui.tab=name; saveUI();
+}
+function exportData(){
+  const data={_app:'dekoor_dp2026',_version:1,_exported:new Date().toISOString()};
+  SECTIONS.forEach(s=>data[s]=STATE[s]);
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download='plan-dia-padre-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  flashSaved('Exportado');
+}
+function importData(file){
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const d=JSON.parse(r.result);
+      let n=0;
+      SECTIONS.forEach(s=>{ if(d[s]!==undefined){ STATE[s]=d[s]; saveSection(s); n++; } });
+      if(!n){ alert('El archivo no contiene datos del plan.'); return; }
+      buildAll(); switchTab(STATE.ui&&STATE.ui.tab||'resumen'); recalcAll();
+      flashSaved('Importado');
+    }catch(e){ alert('Archivo inválido: '+e.message); }
+  };
+  r.readAsText(file);
+}
+function resetData(){
+  if(!confirm('¿Borrar todos los datos capturados y volver a los valores iniciales del plan?\n\nEsto no se puede deshacer (exporta antes si quieres respaldo).')) return;
+  SECTIONS.forEach(s=>localStorage.removeItem(KEY[s])); localStorage.removeItem(KEY.ui);
+  STATE=freshState(); buildAll(); switchTab('resumen'); recalcAll(); flashSaved('Reiniciado');
+}
+function bindEvents(){
+  document.addEventListener('input', e=>{ const t=e.target; if(t.dataset&&t.dataset.path&&t.dataset.type!=='bool') onEdit(t); });
+  document.addEventListener('change', e=>{ const t=e.target; if(t.dataset&&t.dataset.type==='bool') onEdit(t); });
+  document.addEventListener('click', e=>{
+    const t=e.target.closest('[data-tab],[data-act]'); if(!t) return;
+    if(t.dataset.tab) switchTab(t.dataset.tab);
+    else if(t.dataset.act==='export') exportData();
+    else if(t.dataset.act==='import') $('importFile').click();
+    else if(t.dataset.act==='reset') resetData();
+  });
+  $('importFile').addEventListener('change', e=>{ if(e.target.files[0]) importData(e.target.files[0]); e.target.value=''; });
+}
+
+/* ===================== AUTH (gating) ===================== */
+async function initAuth(){
+  const ov=$('authLoading');
+  try{
+    const [appMod, authMod] = await Promise.all([
+      import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js')
+    ]);
+    const app=appMod.initializeApp(FIRE);
+    const auth=authMod.getAuth(app);
+    const loginSec=$('seccionLogin'), appSec=$('seccionApp'), err=$('loginError');
+    $('loginForm').addEventListener('submit', async e=>{
+      e.preventDefault(); err.textContent='';
+      const btn=e.submitter; if(btn) btn.disabled=true;
+      try{ await authMod.signInWithEmailAndPassword(auth, $('loginEmail').value.trim(), $('loginPass').value); }
+      catch(ex){ err.textContent = ex.code==='auth/invalid-credential'||ex.code==='auth/wrong-password'||ex.code==='auth/user-not-found' ? 'Correo o contraseña incorrectos.' : 'No se pudo iniciar sesión. Intenta de nuevo.'; }
+      finally{ if(btn) btn.disabled=false; }
+    });
+    $('logoutBtn').addEventListener('click', ()=>authMod.signOut(auth));
+    authMod.onAuthStateChanged(auth, user=>{
+      ov.style.display='none';
+      if(user){ loginSec.style.display='none'; appSec.style.display='block'; $('userEmail').textContent=user.email||''; }
+      else{ loginSec.style.display='flex'; appSec.style.display='none'; }
+    });
+  }catch(ex){
+    ov.innerHTML='<div class="auth-msg">No se pudo cargar el inicio de sesión.<br>Necesitas conexión a internet la primera vez.<br><button class="btn-ghost" onclick="location.reload()">Reintentar</button></div>';
+  }
+}
+
+/* ===================== SERVICE WORKER ===================== */
+function registerSW(){
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('/dia-padre/sw.js',{scope:'/dia-padre/'}).catch(()=>{});
+  }
+}
+
+/* ===================== INIT ===================== */
+function init(){
+  loadState();
+  buildAll();
+  bindEvents();
+  switchTab(STATE.ui&&STATE.ui.tab||'resumen');
+  recalcAll();
+  window.DPP={compute,recalcAll,exportData,importData,resetData,DEFAULTS};
+  Object.defineProperty(window.DPP,'STATE',{get:()=>STATE});
+  registerSW();
+  initAuth();
+}
+init();
+</script>
+</body>
+</html>

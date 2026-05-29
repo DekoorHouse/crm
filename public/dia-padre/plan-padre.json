@@ -1,0 +1,85 @@
+{
+  "_app": "dekoor_dp2026",
+  "_version": 1,
+  "_exported": "2026-05-29T12:00:00.000Z",
+  "_nota": "Export de ejemplo con los valores iniciales del Excel. Usa el boton Importar para cargarlo.",
+  "global": { "prestamo": 180000, "tasaPct": 20, "nomina": 38800 },
+  "ventas": {
+    "canales": [
+      { "nombre": "DGO COD",      "margen": 320, "piezasPlan": 193, "piezasReal": 0, "precio": 650, "material": 90, "envio": 60,  "ads": 180 },
+      { "nombre": "Nacional J&T", "margen": 300, "piezasPlan": 262, "piezasReal": 0, "precio": 650, "material": 90, "envio": 80,  "ads": 180 },
+      { "nombre": "Pronto COD",   "margen": 224, "piezasPlan": 158, "piezasReal": 0, "precio": 650, "material": 90, "envio": 120, "ads": 180 },
+      { "nombre": "Nacional DHL", "margen": 260, "piezasPlan": 87,  "piezasReal": 0, "precio": 650, "material": 90, "envio": 120, "ads": 180 }
+    ]
+  },
+  "ads": {
+    "cplObjetivo": 180,
+    "pedidosReales": { "dgo": 0, "nac": 0, "pronto": 0 },
+    "dias": [
+      { "dia": "Lun 1 jun", "fase": "Arranque",        "planDGO": 800,  "planNac": 1200, "planPronto": 1000, "realDGO": 0, "realNac": 0, "realPronto": 0 },
+      { "dia": "Mar 2 jun", "fase": "Aprendizaje",     "planDGO": 800,  "planNac": 1500, "planPronto": 1200, "realDGO": 0, "realNac": 0, "realPronto": 0 },
+      { "dia": "Mié 3 jun", "fase": "Primera lectura", "planDGO": 1000, "planNac": 1800, "planPronto": 1400, "realDGO": 0, "realNac": 0, "realPronto": 0 },
+      { "dia": "Jue 4 jun", "fase": "Ajuste data",     "planDGO": 1200, "planNac": 2000, "planPronto": 1500, "realDGO": 0, "realNac": 0, "realPronto": 0 },
+      { "dia": "Vie 5 jun", "fase": "Día fuerte",      "planDGO": 1500, "planNac": 2500, "planPronto": 1800, "realDGO": 0, "realNac": 0, "realPronto": 0 },
+      { "dia": "Sáb 6 jun", "fase": "Pico social",     "planDGO": 1500, "planNac": 2500, "planPronto": 1800, "realDGO": 0, "realNac": 0, "realPronto": 0 },
+      { "dia": "Dom 7 jun", "fase": "Cierre",          "planDGO": 1200, "planNac": 2000, "planPronto": 1500, "realDGO": 0, "realNac": 0, "realPronto": 0 }
+    ]
+  },
+  "capital": {
+    "materialCant": 700, "materialCosto": 90, "materialReal": 0,
+    "adsCant": 700, "adsCosto": 180, "adsReal": 0,
+    "nominaCant": 1, "nominaReal": 38800, "envioPromedio": 95
+  },
+  "calendario": [
+    { "fecha": "Vie 29 may",   "semana": "Preparación",   "accion": "Solicitar préstamo $180k. Confirmar bases LED 700 pzs.", "responsable": "", "done": false },
+    { "fecha": "Sáb 30 may",   "semana": "Preparación",   "accion": "Comprar acrílico/MDF para 800 piezas + empaques", "responsable": "", "done": false },
+    { "fecha": "Dom 31 may",   "semana": "Preparación",   "accion": "Diseñar 3 creatividades ads + plantillas CorelDRAW", "responsable": "", "done": false },
+    { "fecha": "Lun 1 jun",    "semana": "Semana 1",      "accion": "🚀 LANZAR ADS en 3 campañas Meta", "responsable": "", "done": false },
+    { "fecha": "Mar 2 jun",    "semana": "Semana 1",      "accion": "Pre-producir 200 bases láser sin nombre", "responsable": "", "done": false },
+    { "fecha": "Mié 3 jun",    "semana": "Semana 1",      "accion": "Primera lectura CPL · Refinar respuestas WhatsApp", "responsable": "", "done": false },
+    { "fecha": "Jue 4 jun",    "semana": "Semana 1",      "accion": "Pre-producir 200 bases más · Ajustar campañas", "responsable": "", "done": false },
+    { "fecha": "Vie 5 jun",    "semana": "Semana 1",      "accion": "Primer corte semanal · Análisis ROAS", "responsable": "", "done": false },
+    { "fecha": "Sáb-Dom 6-7",  "semana": "Semana 1",      "accion": "Producción y entregas DGO en curso", "responsable": "", "done": false },
+    { "fecha": "Lun 8 jun",    "semana": "Semana 2",      "accion": "Escalar presupuesto a canales rentables", "responsable": "", "done": false },
+    { "fecha": "Mar 9 jun",    "semana": "Semana 2",      "accion": "Recordatorios WhatsApp 24h antes para Pronto", "responsable": "", "done": false },
+    { "fecha": "Mié 10 jun",   "semana": "Semana 2",      "accion": "Pre-producir 200 bases (acum: 600)", "responsable": "", "done": false },
+    { "fecha": "Jue 11 jun",   "semana": "Semana 2",      "accion": "📢 Aviso: 'Últimos 2 días J&T'", "responsable": "", "done": false },
+    { "fecha": "Vie 12 jun",   "semana": "Semana 2",      "accion": "🔴 ÚLTIMO DÍA J&T · Avisar fin de canal", "responsable": "", "done": false },
+    { "fecha": "Sáb-Dom 13-14","semana": "Semana 2",      "accion": "Procesar acumulado · Pre-producir extra", "responsable": "", "done": false },
+    { "fecha": "Lun 15 jun",   "semana": "Semana 3",      "accion": "🔥 Nómina intensa activada · 5 personas 8h/día", "responsable": "", "done": false },
+    { "fecha": "Mar 16 jun",   "semana": "Semana 3",      "accion": "Máxima producción · Entrega DGO COD acumulado", "responsable": "", "done": false },
+    { "fecha": "Mié 17 jun",   "semana": "Semana 3",      "accion": "📢 Aviso: 'Mañana último día envío DHL'", "responsable": "", "done": false },
+    { "fecha": "Jue 18 jun",   "semana": "Semana 3",      "accion": "📦 ÚLTIMO CORTE DHL · Cierre nacional", "responsable": "", "done": false },
+    { "fecha": "Vie 19 jun",   "semana": "Semana 3",      "accion": "Solo DGO · Entregas máximas", "responsable": "", "done": false },
+    { "fecha": "Sáb 20 jun",   "semana": "Semana 3",      "accion": "Última jornada de entregas DGO", "responsable": "", "done": false },
+    { "fecha": "Dom 21 jun",   "semana": "DÍA DEL PADRE", "accion": "🎉 DÍA DEL PADRE · Monitoreo de quejas", "responsable": "", "done": false },
+    { "fecha": "Lun 22 jun",   "semana": "Cierre",        "accion": "Inicio cobranza Pronto", "responsable": "", "done": false },
+    { "fecha": "Mar-Mié 23-24","semana": "Cierre",        "accion": "Recepción depósitos Pronto", "responsable": "", "done": false },
+    { "fecha": "Jue 25 jun",   "semana": "Cierre",        "accion": "Pagar préstamo cuando llegue depósito", "responsable": "", "done": false },
+    { "fecha": "Vie 26 jun",   "semana": "Cierre",        "accion": "Análisis post-mortem por canal", "responsable": "", "done": false },
+    { "fecha": "Sáb 27 jun",   "semana": "Cierre",        "accion": "Documentar aprendizajes para Buen Fin/Navidad", "responsable": "", "done": false }
+  ],
+  "metricas": [
+    { "fecha": "Lun 1 jun",  "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Mar 2 jun",  "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Mié 3 jun",  "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Jue 4 jun",  "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Vie 5 jun",  "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Sáb 6 jun",  "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Dom 7 jun",  "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Lun 8 jun",  "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Mar 9 jun",  "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Mié 10 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Jue 11 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Vie 12 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Sáb 13 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Dom 14 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Lun 15 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Mar 16 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Mié 17 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Jue 18 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Vie 19 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Sáb 20 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 },
+    { "fecha": "Dom 21 jun", "gasto": 0, "leads": 0, "cerrados": 0, "pedDGO": 0, "pedNac": 0, "pedPronto": 0, "rechazos": 0 }
+  ]
+}
