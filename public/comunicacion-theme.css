@@ -1,0 +1,94 @@
+/* =========================================================
+   TEMA UNIFICADO DEKOOR — Sistema de comunicación masiva
+   Paleta de marca (del logo del elefante):
+     Azul marino  #1B4D5C   (color principal)
+     Terracota    #E07A5F   (acento — el corazón del logo)
+     Salvia       #81B29A   (positivo / éxito)
+     Arena        #F2CC8F   (resaltes sobre navy)
+   Se incluye DESPUÉS del CSS propio de cada página para unificar
+   los verdes (#16a34a) e índigos (#6366f1) a la marca.
+   ========================================================= */
+:root {
+    --brand-navy: #1B4D5C;
+    --brand-navy-dark: #143a45;
+    --brand-terracotta: #E07A5F;
+    --brand-terracotta-dark: #c9674d;
+    --brand-sage: #81B29A;
+    --brand-sand: #F2CC8F;
+}
+
+/* ---- Masthead con logo (el logo se inyecta vía comunicacion-pwa.js) ---- */
+.titulo-container { gap: 12px; }
+.titulo-container h1 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--brand-navy) !important;
+}
+.titulo-container h1 > i { display: none; } /* el logo reemplaza el ícono decorativo */
+.brand-logo {
+    height: 42px;
+    width: 42px;
+    border-radius: 11px;
+    background: var(--brand-navy);
+    padding: 5px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+/* ---- Login ---- */
+.login-container h1 { color: var(--brand-navy) !important; }
+.login-container h1 > i { display: none; }
+.login-brand-logo {
+    display: block;
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 18px;
+    border-radius: 18px;
+    background: var(--brand-navy);
+    padding: 9px;
+    object-fit: contain;
+}
+.login-container button { background: var(--brand-navy) !important; }
+.login-container button:hover { background: var(--brand-navy-dark) !important; }
+
+/* ---- Botones primarios (los <button> sin clase = acción principal) ---- */
+button:not([class]) { background: var(--brand-navy) !important; }
+button:not([class]):hover { background: var(--brand-navy-dark) !important; }
+button:not([class]):disabled { background: #cbd5d8 !important; }
+
+/* ---- Barra de pestañas ---- */
+.switch-vista { background: #e8eeed !important; }
+.switch-vista a { color: var(--brand-navy) !important; }
+.switch-vista a:hover { background: rgba(27,77,92,0.08) !important; }
+.switch-vista a.activo {
+    background: var(--brand-navy) !important;
+    color: #fff !important;
+    box-shadow: 0 1px 3px rgba(27,77,92,0.30) !important;
+}
+.switch-vista a.activo i { color: var(--brand-sand) !important; }
+
+/* ---- Focus rings → navy ---- */
+textarea:focus,
+input:focus,
+select:focus {
+    border-color: var(--brand-navy) !important;
+    box-shadow: 0 0 0 3px rgba(27,77,92,0.12) !important;
+}
+
+/* ---- Acentos comunes ---- */
+.cache-info.fresh { color: var(--brand-sage) !important; }
+.select-all-row #contadorSeleccionados,
+.pedido-numero { color: var(--brand-navy) !important; }
+input[type="checkbox"], .pedido-check { accent-color: var(--brand-navy); }
+
+/* Barra de progreso de envíos → degradado navy→terracota */
+.progress-bar {
+    background: linear-gradient(90deg, var(--brand-navy), var(--brand-terracotta)) !important;
+}
+
+/* Botón flotante de instalar PWA → navy */
+#pwa-install-btn {
+    background: var(--brand-navy) !important;
+    box-shadow: 0 4px 16px rgba(27,77,92,0.4) !important;
+}

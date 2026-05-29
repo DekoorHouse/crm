@@ -5,6 +5,34 @@
  * Incluir en: /audiencias/, /cobranza/, /retargeting/, /retargeting/nuevos/
  */
 (function () {
+    // --- Inyectar logo de marca (masthead + login) ---
+    function initBrand() {
+        const LOGO = '/favicon.png';
+        // Logo en el encabezado de cada página
+        document.querySelectorAll('.titulo-container h1').forEach((h1) => {
+            if (h1.querySelector('.brand-logo')) return;
+            const img = document.createElement('img');
+            img.src = LOGO;
+            img.alt = 'Dekoor';
+            img.className = 'brand-logo';
+            h1.insertBefore(img, h1.firstChild);
+        });
+        // Logo en la pantalla de login
+        const lc = document.querySelector('.login-container');
+        if (lc && !lc.querySelector('.login-brand-logo')) {
+            const img = document.createElement('img');
+            img.src = LOGO;
+            img.alt = 'Dekoor';
+            img.className = 'login-brand-logo';
+            lc.insertBefore(img, lc.firstChild);
+        }
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initBrand);
+    } else {
+        initBrand();
+    }
+
     // Registrar service worker
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
