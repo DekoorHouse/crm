@@ -20,6 +20,10 @@ interface PedidoLite {
   plantilla_origen: string;
   estatus: string;
   precio: number;
+  orderNumber: string | null;
+  telefono: string;
+  fechaMs: number;
+  producto: string;
 }
 
 interface PlantillaKPI {
@@ -88,12 +92,18 @@ export default function CampanasPage() {
       (snap) => {
         const list: PedidoLite[] = snap.docs.map((d) => {
           const v = d.data() as Record<string, unknown>;
+          const consec = v.consecutiveOrderNumber;
+          const created = v.createdAt as { toMillis?: () => number } | undefined;
           return {
             id: d.id,
             campana_id: (v.campana_id as string) || "",
             plantilla_origen: (v.plantilla_origen as string) || "",
             estatus: (v.estatus as string) || "",
-            precio: typeof v.precio === "number" ? v.precio : 0,
+            precio: typeof v.precio === "number" ? v.precio : (parseFloat(v.precio as string) || 0),
+            orderNumber: consec ? `DH${consec}` : null,
+            telefono: (v.telefono as string) || "",
+            fechaMs: created?.toMillis ? created.toMillis() : 0,
+            producto: (v.producto as string) || "",
           };
         });
         setPedidos(list);
@@ -409,6 +419,49 @@ export default function CampanasPage() {
                         </table>
                       </div>
                     )}
+
+                    {/* Lista de pedidos pagados */}
+                    {(() => {
+                      const pagados = Object.values(pedidosIndex[c.id] ?? {})
+                        .flat()
+                        .filter((p) => p.estatus === ESTATUS_PAGADO)
+                        .sort((a, b) => b.fechaMs - a.fechaMs);
+                      if (pagados.length === 0) return null;
+                      return (
+                        <div className="mt-4">
+                          <h4 className="text-[11px] font-black uppercase tracking-widest text-on-surface-variant mb-2 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-primary" style={{ fontSize: 16 }}>paid</span>
+                            Pedidos pagados ({pagados.length})
+                          </h4>
+                          <div className="overflow-x-auto rounded-xl border border-outline-variant/15 bg-surface-container-lowest">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant bg-surface-container-low/50">
+                                  <th className="text-left py-2 px-3">Pedido</th>
+                                  <th className="text-left py-2 px-3">Teléfono</th>
+                                  <th className="text-left py-2 px-3">Producto</th>
+                                  <th className="text-right py-2 px-3">Monto</th>
+                                  <th className="text-right py-2 px-3">Fecha</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pagados.map((p) => (
+                                  <tr key={p.id} className="border-t border-outline-variant/8 hover:bg-surface-container-low/40">
+                                    <td className="py-2 px-3 font-bold text-primary">{p.orderNumber || "—"}</td>
+                                    <td className="py-2 px-3 font-mono text-xs text-on-surface-variant">{p.telefono || "—"}</td>
+                                    <td className="py-2 px-3 text-on-surface">{p.producto || "—"}</td>
+                                    <td className="py-2 px-3 text-right font-semibold text-on-surface">{formatMoney(p.precio)}</td>
+                                    <td className="py-2 px-3 text-right text-on-surface-variant text-xs">
+                                      {p.fechaMs ? new Date(p.fechaMs).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "2-digit" }) : "—"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {c.notas && (
                       <div className="mt-3 text-xs text-on-surface-variant italic px-2">
