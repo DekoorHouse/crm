@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mis Audiencias</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/audiencias/style.css?v=1">
+</head>
+<body>
+
+<div id="loading-overlay">
+    <div class="loading-box">
+        <img src="/favicon.png" class="loading-logo" alt="Cargando...">
+    </div>
+</div>
+
+<div class="main-container">
+
+    <div id="seccionLogin">
+        <div class="login-container">
+            <h1><i class="fas fa-users"></i> Mis Audiencias</h1>
+            <form id="formularioLogin">
+                <div>
+                    <label for="email">Correo Electr&oacute;nico:</label>
+                    <input type="email" id="email" required placeholder="tu.correo@ejemplo.com">
+                </div>
+                <div>
+                    <label for="password">Contrase&ntilde;a:</label>
+                    <input type="password" id="password" required placeholder="--------">
+                </div>
+                <div id="mensajeError"></div>
+                <button type="submit"><i class="fas fa-sign-in-alt"></i> Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="seccionAudiencias" style="display:none;">
+        <div class="titulo-container">
+            <h1><i class="fas fa-users" style="color: #16a34a;"></i> Mis Audiencias</h1>
+            <div class="user-info">
+                <span id="usuarioLogueado"></span>
+                <button id="btnCerrarSesion" onclick="cerrarSesion()" title="Cerrar sesi&oacute;n"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <!-- Tabs de comunicaci&oacute;n masiva -->
+        <div class="switch-vista">
+            <a href="/audiencias/" class="activo"><i class="fas fa-users"></i> Audiencias</a>
+            <a href="/cobranza/"><i class="fas fa-credit-card"></i> Cobranza</a>
+            <a href="/retargeting/"><i class="fas fa-bullseye"></i> Retargeting (Pagados)</a>
+            <a href="/retargeting/nuevos/"><i class="fas fa-bullhorn"></i> Retargeting (Nuevos)</a>
+            <a href="/retargeting/#calculadora"><i class="fas fa-calculator"></i> Calculadora</a>
+        </div>
+
+        <div class="info-banner">
+            <i class="fas fa-info-circle"></i>
+            <span>Vista de solo lectura. En la siguiente fase podr&aacute;s contactar masivamente a cada grupo desde aqu&iacute;.</span>
+            <button class="btn-refresh" onclick="cargarAudiencias(true)" title="Recargar">
+                <i class="fas fa-sync-alt"></i> Recargar
+            </button>
+            <span id="cacheInfo" class="cache-info-audiencias"></span>
+        </div>
+
+        <!-- Cards de cada grupo -->
+        <div id="audienciasGrid" class="audiencias-grid">
+            <div class="audiencias-loading">
+                <i class="fas fa-spinner fa-spin"></i> Cargando audiencias...
+            </div>
+        </div>
+
+        <!-- Pie con estadísticas globales -->
+        <div id="audienciasFooter" class="audiencias-footer" style="display:none;">
+            <div class="footer-item">
+                <i class="fas fa-ban" style="color:#dc2626;"></i>
+                <strong id="footerNoMolestar">0</strong>
+                <span>en lista <strong>No Molestar</strong></span>
+            </div>
+            <div class="footer-item">
+                <i class="fas fa-clock" style="color:#f59e0b;"></i>
+                <strong id="footerCooldown">0</strong>
+                <span>en <strong>cooldown global</strong> (recibieron algo en los &uacute;ltimos 7 d&iacute;as)</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="/audiencias/script.js?v=1"></script>
+</body>
+</html>

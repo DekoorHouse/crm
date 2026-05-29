@@ -9487,6 +9487,333 @@ router.post('/template-metrics/enable-meta-insights', async (req, res) => {
     }
 });
 
+// =============================================================
+// AUDIENCIAS — Fase 2 del sistema de retargeting
+// Cinco grupos con sub-estados (Limbo / Listos / Contactados).
+// Tiempos basados en psicología del consumidor + best practices de marketing.
+// =============================================================
+const AUDIENCIA_CONFIG = {
+    sinPagar: {
+        limboHours: 4,
+        listosMaxDays: 7,
+        cooldownDays: 3
+    },
+    sinDatos: {
+        limboHours: 2,
+        listosMaxDays: 5,
+        cooldownDays: 2
+    },
+    enVisto: {
+        limboHours: 24,
+        listosMaxDays: 21,
+        cooldownDays: 14
+    },
+    recompra: {
+        calienteMin: 30, calienteMax: 60,
+        optimaMin: 60, optimaMax: 120,
+        ultimaMin: 120, ultimaMax: 180,
+        cooldownDays: 30
+    },
+    inactivos: {
+        tibioMin: 180, tibioMax: 365,
+        frioMin: 365, frioMax: 730,
+        hibernadoMin: 730,
+        tibioCooldownDays: 45,
+        frioCooldownDays: 60,
+        hibernadoCooldownDays: 90
+    },
+    cooldownGlobalDays: 7 // Cualquier mensaje en los últimos 7 días → en cooldown
+};
+
+const audienciasCache = { data: null, cachedAt: 0 };
+const AUDIENCIAS_CACHE_TTL_MS = 2 * 60 * 1000; // 2 min
+
+// GET /api/audiencias/conteos
+// Devuelve los conteos de cada grupo y sub-estado.
+// Filtra automáticamente por la lista "No Molestar" (contactos con flag noContact=true).
+router.get('/audiencias/conteos', async (req, res) => {
+    try {
+        const { fresh } = req.query;
+        if (fresh !== '1' && audienciasCache.data && (Date.now() - audienciasCache.cachedAt) < AUDIENCIAS_CACHE_TTL_MS) {
+            return res.json({ success: true, ...audienciasCache.data, fromCache: true, cacheAgeMs: Date.now() - audienciasCache.cachedAt });
+        }
+
+        const now = Date.now();
+        const cfg = AUDIENCIA_CONFIG;
+        const msH = 60 * 60 * 1000;
+        const msD = 24 * msH;
+
+        // --- Helpers ---
+        const inRange = (ms, minMs, maxMs) => ms >= minMs && ms <= maxMs;
+        const tsToMs = (ts) => ts?.toMillis?.() || (ts?.toDate?.()?.getTime?.()) || 0;
+
+        // === 1) Cargar No Molestar (contactos con bandera explícita) ===
+        const noMolestarSet = new Set();
+        try {
+            const nmSnap = await db.collection('contacts_whatsapp')
+                .where('noContact', '==', true)
+                .select()
+                .get();
+            nmSnap.docs.forEach(d => noMolestarSet.add(d.id));
+        } catch (_) { /* índice opcional, ignorar */ }
+
+        // === 2) Cargar mensajes recientes (últimos 7 días) para cooldown global ===
+        const cooldownStartMs = now - cfg.cooldownGlobalDays * msD;
+        const cooldownSet = new Set();
+        const sendsRecientesSnap = await db.collection('template_sends')
+            .where('sentAt', '>=', admin.firestore.Timestamp.fromMillis(cooldownStartMs))
+            .select('contactId', 'sentAt', 'templateName')
+            .get();
+        const ultimoEnvioPorContacto = new Map(); // contactId → { sentAt, templateName }
+        for (const d of sendsRecientesSnap.docs) {
+            const data = d.data();
+            if (!data.contactId) continue;
+            cooldownSet.add(data.contactId);
+            const ms = tsToMs(data.sentAt);
+            const prev = ultimoEnvioPorContacto.get(data.contactId);
+            if (!prev || ms > prev.ms) {
+                ultimoEnvioPorContacto.set(data.contactId, { ms, templateName: data.templateName });
+            }
+        }
+
+        // === 3) GRUPO: SIN PAGAR ===
+        // Pedidos con estatus != Pagado, creados en los últimos N días
+        const sinPagar = { total: 0, limbo: 0, listos: 0, contactados: 0, montoTotal: 0 };
+        const sinPagarPedidosSnap = await db.collection('pedidos')
+            .where('estatus', '!=', 'Pagado')
+            .orderBy('estatus')
+            .orderBy('createdAt', 'desc')
+            .limit(2000)
+            .get();
+        const sinPagarVentanaMs = cfg.sinPagar.listosMaxDays * msD;
+        for (const d of sinPagarPedidosSnap.docs) {
+            const p = d.data();
+            const tel = p.telefono;
+            if (!tel || noMolestarSet.has(tel)) continue;
+            if (p.estatus === 'Cancelado' || p.estatus === 'Devolucion' || p.estatus === 'Entregado') continue;
+            const createdMs = tsToMs(p.createdAt);
+            if (!createdMs) continue;
+            const ageMs = now - createdMs;
+            if (ageMs > sinPagarVentanaMs) continue; // Fuera de ventana
+
+            const monto = parseFloat(p.precio) || 0;
+            sinPagar.total++;
+            sinPagar.montoTotal += monto;
+
+            const limboMs = cfg.sinPagar.limboHours * msH;
+            const cooldownMs = cfg.sinPagar.cooldownDays * msD;
+            const ultimo = ultimoEnvioPorContacto.get(tel);
+            const enCooldownEspecifico = ultimo && (now - ultimo.ms) < cooldownMs;
+
+            if (ageMs < limboMs) sinPagar.limbo++;
+            else if (enCooldownEspecifico) sinPagar.contactados++;
+            else sinPagar.listos++;
+        }
+
+        // === 4) GRUPO: SIN DATOS ===
+        // Pedidos Pagado donde NO existe doc en datos_envio para ese numeroPedido
+        const sinDatos = { total: 0, limbo: 0, listos: 0, contactados: 0 };
+        const pagadosRecientesSnap = await db.collection('pedidos')
+            .where('estatus', '==', 'Pagado')
+            .where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(now - cfg.sinDatos.listosMaxDays * msD * 2))
+            .orderBy('createdAt', 'desc')
+            .limit(1000)
+            .get();
+
+        // Cargar todos los datos_envio recientes en memoria para hacer match rápido
+        const datosEnvioRecientesSnap = await db.collection('datos_envio')
+            .where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(now - 30 * msD))
+            .select('numeroPedido')
+            .get();
+        const numerosConDatos = new Set(datosEnvioRecientesSnap.docs.map(d => String(d.data().numeroPedido || '').replace(/\D/g, '')));
+
+        const sinDatosLimboMs = cfg.sinDatos.limboHours * msH;
+        const sinDatosVentanaMs = cfg.sinDatos.listosMaxDays * msD;
+        const sinDatosCooldownMs = cfg.sinDatos.cooldownDays * msD;
+        for (const d of pagadosRecientesSnap.docs) {
+            const p = d.data();
+            const tel = p.telefono;
+            if (!tel || noMolestarSet.has(tel)) continue;
+            const consecNum = String(p.consecutiveOrderNumber || '').replace(/\D/g, '');
+            if (numerosConDatos.has(consecNum)) continue; // Ya tiene datos
+            const createdMs = tsToMs(p.createdAt);
+            if (!createdMs) continue;
+            const ageMs = now - createdMs;
+            if (ageMs > sinDatosVentanaMs) continue;
+
+            sinDatos.total++;
+            const ultimo = ultimoEnvioPorContacto.get(tel);
+            const enCooldownEspecifico = ultimo && (now - ultimo.ms) < sinDatosCooldownMs;
+
+            if (ageMs < sinDatosLimboMs) sinDatos.limbo++;
+            else if (enCooldownEspecifico) sinDatos.contactados++;
+            else sinDatos.listos++;
+        }
+
+        // === 5) GRUPO: EN VISTO ===
+        // Contactos cuyo último mensaje es DE NOSOTROS (no del cliente),
+        // y que en la ventana no han creado pedido.
+        // Simplificación: usar lastMessageTimestamp + lastMessage de contacts_whatsapp.
+        // El criterio fino requiere leer messages — lo dejamos como TODO.
+        const enVisto = { total: 0, limbo: 0, listos: 0, contactados: 0 };
+        const contactosActivosSnap = await db.collection('contacts_whatsapp')
+            .where('lastMessageTimestamp', '>=', admin.firestore.Timestamp.fromMillis(now - cfg.enVisto.listosMaxDays * msD))
+            .orderBy('lastMessageTimestamp', 'desc')
+            .limit(3000)
+            .get();
+        const enVistoLimboMs = cfg.enVisto.limboHours * msH;
+        const enVistoVentanaMs = cfg.enVisto.listosMaxDays * msD;
+        const enVistoCooldownMs = cfg.enVisto.cooldownDays * msD;
+
+        // Para excluir los que ya tienen pedido activo, necesitamos saber qué teléfonos
+        // tienen pedidos creados en últimos 30 días. Reutilizamos los snaps de arriba +
+        // una query extra ligera.
+        const telConPedidoReciente = new Set();
+        sinPagarPedidosSnap.docs.forEach(d => { const t = d.data().telefono; if (t) telConPedidoReciente.add(t); });
+        pagadosRecientesSnap.docs.forEach(d => { const t = d.data().telefono; if (t) telConPedidoReciente.add(t); });
+
+        for (const d of contactosActivosSnap.docs) {
+            const c = d.data();
+            const tel = d.id; // ID del doc es el teléfono
+            if (noMolestarSet.has(tel)) continue;
+            if (telConPedidoReciente.has(tel)) continue; // No es "en visto puro", ya está en pedidos
+            // Si su unreadCount es > 0, ÉL nos dejó en visto a nosotros (no al revés)
+            // unreadCount cuenta mensajes del cliente sin que el agente los lea
+            // El caso clásico "en visto" es: nosotros le escribimos último, sin respuesta.
+            // Simplificación: si unreadCount === 0 y lastMessageTimestamp es de los últimos N días,
+            // asumimos que él vió nuestro último y no respondió.
+            if (c.unreadCount && c.unreadCount > 0) continue;
+
+            const lastMs = tsToMs(c.lastMessageTimestamp);
+            if (!lastMs) continue;
+            const ageMs = now - lastMs;
+            if (ageMs > enVistoVentanaMs) continue;
+
+            enVisto.total++;
+            const ultimo = ultimoEnvioPorContacto.get(tel);
+            const enCooldownEspecifico = ultimo && (now - ultimo.ms) < enVistoCooldownMs;
+
+            if (ageMs < enVistoLimboMs) enVisto.limbo++;
+            else if (enCooldownEspecifico) enVisto.contactados++;
+            else enVisto.listos++;
+        }
+
+        // === 6) GRUPO: RECOMPRA (3 sub-grupos) ===
+        // Clientes con al menos un pedido Pagado; el más reciente es de hace 30-180 días.
+        // Necesitamos: por teléfono, la fecha de su último pedido Pagado.
+        const recompra = {
+            total: 0,
+            caliente: { total: 0, listos: 0, contactados: 0 },
+            optima: { total: 0, listos: 0, contactados: 0 },
+            ultima: { total: 0, listos: 0, contactados: 0 }
+        };
+        const inactivos = {
+            total: 0,
+            tibio: { total: 0, listos: 0, contactados: 0 },
+            frio: { total: 0, listos: 0, contactados: 0 },
+            hibernado: { total: 0, listos: 0, contactados: 0 },
+            montoTotalLTV: 0
+        };
+
+        // Query: pedidos Pagado de últimos 2 años, ordenados por createdAt desc.
+        // Iterar y para cada teléfono guardar solo el MÁS RECIENTE.
+        const dosAñosAtrasMs = now - 730 * msD;
+        const pedidosHistSnap = await db.collection('pedidos')
+            .where('estatus', '==', 'Pagado')
+            .where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(dosAñosAtrasMs))
+            .orderBy('createdAt', 'desc')
+            .limit(5000)
+            .get();
+
+        const ultimoPedidoPorTel = new Map(); // tel → { createdMs, precio }
+        for (const d of pedidosHistSnap.docs) {
+            const p = d.data();
+            const tel = p.telefono;
+            if (!tel || noMolestarSet.has(tel)) continue;
+            const createdMs = tsToMs(p.createdAt);
+            if (!createdMs) continue;
+            if (!ultimoPedidoPorTel.has(tel)) {
+                ultimoPedidoPorTel.set(tel, { createdMs, precio: parseFloat(p.precio) || 0 });
+            }
+        }
+
+        const recompraCooldownMs = cfg.recompra.cooldownDays * msD;
+        for (const [tel, info] of ultimoPedidoPorTel) {
+            const daysAgo = (now - info.createdMs) / msD;
+            const ultimo = ultimoEnvioPorContacto.get(tel);
+            const enCooldownEspecifico = ultimo && (now - ultimo.ms) < recompraCooldownMs;
+
+            if (daysAgo >= cfg.recompra.calienteMin && daysAgo < cfg.recompra.calienteMax) {
+                recompra.caliente.total++;
+                recompra.total++;
+                if (enCooldownEspecifico) recompra.caliente.contactados++;
+                else recompra.caliente.listos++;
+            } else if (daysAgo >= cfg.recompra.optimaMin && daysAgo < cfg.recompra.optimaMax) {
+                recompra.optima.total++;
+                recompra.total++;
+                if (enCooldownEspecifico) recompra.optima.contactados++;
+                else recompra.optima.listos++;
+            } else if (daysAgo >= cfg.recompra.ultimaMin && daysAgo < cfg.recompra.ultimaMax) {
+                recompra.ultima.total++;
+                recompra.total++;
+                if (enCooldownEspecifico) recompra.ultima.contactados++;
+                else recompra.ultima.listos++;
+            } else if (daysAgo >= cfg.inactivos.tibioMin && daysAgo < cfg.inactivos.tibioMax) {
+                inactivos.tibio.total++;
+                inactivos.total++;
+                inactivos.montoTotalLTV += info.precio;
+                const inactivoCd = cfg.inactivos.tibioCooldownDays * msD;
+                const enCd = ultimo && (now - ultimo.ms) < inactivoCd;
+                if (enCd) inactivos.tibio.contactados++; else inactivos.tibio.listos++;
+            } else if (daysAgo >= cfg.inactivos.frioMin && daysAgo < cfg.inactivos.frioMax) {
+                inactivos.frio.total++;
+                inactivos.total++;
+                inactivos.montoTotalLTV += info.precio;
+                const inactivoCd = cfg.inactivos.frioCooldownDays * msD;
+                const enCd = ultimo && (now - ultimo.ms) < inactivoCd;
+                if (enCd) inactivos.frio.contactados++; else inactivos.frio.listos++;
+            } else if (daysAgo >= cfg.inactivos.hibernadoMin) {
+                inactivos.hibernado.total++;
+                inactivos.total++;
+                inactivos.montoTotalLTV += info.precio;
+                const inactivoCd = cfg.inactivos.hibernadoCooldownDays * msD;
+                const enCd = ultimo && (now - ultimo.ms) < inactivoCd;
+                if (enCd) inactivos.hibernado.contactados++; else inactivos.hibernado.listos++;
+            }
+        }
+
+        // === Resumen final ===
+        const payload = {
+            calculadoEn: new Date().toISOString(),
+            config: cfg,
+            grupos: {
+                sinPagar,
+                sinDatos,
+                enVisto,
+                recompra,
+                inactivos
+            },
+            noMolestar: noMolestarSet.size,
+            enCooldownGlobal: cooldownSet.size
+        };
+
+        audienciasCache.data = payload;
+        audienciasCache.cachedAt = Date.now();
+        res.json({ success: true, ...payload, fromCache: false });
+    } catch (err) {
+        console.error('Error en audiencias/conteos:', err);
+        const msg = err.message || 'Error interno';
+        if (msg.includes('index') || msg.includes('requires an index')) {
+            return res.status(500).json({
+                success: false,
+                message: 'Falta índice de Firestore para alguna query de audiencias. Revisa logs del server.',
+                detail: msg
+            });
+        }
+        res.status(500).json({ success: false, message: msg });
+    }
+});
+
 // GET /api/retargeting/conversion-stats?templateName=X[&from=ms][&to=ms]
 // Devuelve { enviados, conversiones, ingreso, gasto } para auto-llenar la calculadora.
 // - enviados: contactos únicos en template_sends con templateName=X (menos failed/blocked)
