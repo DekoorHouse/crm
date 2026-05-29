@@ -3482,6 +3482,34 @@ router.get('/contacts/pending-ia-count', async (req, res) => {
     }
 });
 
+// --- GET /api/leads/daily-count ---
+// "Leads WA" por dia: conversaciones que llegan desde un anuncio (mensajes con referral de anuncio),
+// pre-agregadas en daily_metrics.adLeads. No importa si el contacto ya existia. Cuenta desde que se
+// desplego el contador (no hay historico previo).
+// Query: from, to (YYYY-MM-DD). Respuesta: { success, from, to, leadsByDate: { fecha: n }, total }.
+router.get('/leads/daily-count', async (req, res) => {
+    try {
+        const { from, to } = req.query;
+        if (!from || !to) {
+            return res.status(400).json({ success: false, message: 'Se requieren from y to (YYYY-MM-DD).' });
+        }
+        const snap = await db.collection('daily_metrics')
+            .where(admin.firestore.FieldPath.documentId(), '>=', from)
+            .where(admin.firestore.FieldPath.documentId(), '<=', to)
+            .get();
+        const leadsByDate = {};
+        let total = 0;
+        snap.forEach(doc => {
+            const n = Number(doc.data().adLeads) || 0;
+            if (n > 0) { leadsByDate[doc.id] = n; total += n; }
+        });
+        res.status(200).json({ success: true, from, to, leadsByDate, total });
+    } catch (error) {
+        console.error('Error getting daily leads count:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener leads por dia.', error: error.message });
+    }
+});
+
 // --- Helper: arma query de contactos con botActive=true filtrada por depto ---
 // Soporta departmentId simple ("X") o multi separado por coma ("X,Y,Z", max 10).
 function buildIaActiveQueryForDept(departmentId) {

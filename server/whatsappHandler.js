@@ -608,10 +608,16 @@ router.post('/', async (req, res) => {
             const contactTag = (contactDoc.exists && contactDoc.data().status) || 'sin_etiqueta';
             const metricsDateKey = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
             const dailyMetricRef = db.collection('daily_metrics').doc(metricsDateKey);
-            dailyMetricRef.set({
+            const dailyMetricUpdate = {
                 totalMessages: admin.firestore.FieldValue.increment(1),
                 [`tags.${contactTag}`]: admin.firestore.FieldValue.increment(1)
-            }, { merge: true }).catch(err => console.error('[METRICS] Error incrementando métrica diaria:', err));
+            };
+            // "Lead WA" por anuncio: cada mensaje que llega con referral de anuncio cuenta como lead,
+            // exista o no el contacto (clic de anuncio -> WhatsApp). Pre-agregado por dia en daily_metrics.adLeads.
+            if (message.referral && message.referral.source_type === 'ad') {
+                dailyMetricUpdate.adLeads = admin.firestore.FieldValue.increment(1);
+            }
+            dailyMetricRef.set(dailyMetricUpdate, { merge: true }).catch(err => console.error('[METRICS] Error incrementando métrica diaria:', err));
 
             // --- Update contact document ---
             const isNewContact = !contactDoc.exists;

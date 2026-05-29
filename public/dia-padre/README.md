@@ -33,11 +33,14 @@ Las celdas **amarillas** se editan; las **grises** se calculan solas. Cada cambi
 - **CPL:** 🟢 menor a $180 · 🟡 $180–$250 · 🔴 mayor a $250
 - **Conversión WA:** 🟢 mayor a 12% · 🟡 8–12% · 🔴 menor a 8%
 
-## Gasto de Meta Ads por campaña (automático)
+## Datos automáticos: gasto (Meta) + leads (WhatsApp)
 
-En la pestaña **Métricas**, arriba, está la card **"Gasto de Meta Ads por campaña"**:
+En la pestaña **Métricas**, arriba, está la card de datos automáticos:
 
-- Elige un rango de fechas y pulsa **"🔄 Traer de Meta"**.
+- Elige un rango de fechas y pulsa **"🔄 Actualizar gasto y leads"** (trae ambas cosas a la vez).
+- **Leads WA:** cuenta las conversaciones de WhatsApp que llegaron **desde un anuncio** ese día (cada
+  clic de anuncio → WhatsApp, exista o no el contacto) y llena la columna "Leads WA" por fecha. Se
+  cuenta **desde hoy en adelante** (no hay histórico previo a activar el contador en el CRM).
 - Trae el gasto **directo de tu administrador de anuncios** (las mismas cuentas Meta que usa `admon`;
   el token y las cuentas se resuelven en el servidor — el navegador no maneja secretos).
 - Muestra una tabla **Campaña | Gasto** (con nombre real de cada campaña) + total.

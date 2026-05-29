@@ -632,12 +632,12 @@ function buildMetricas(){
   ].map(r=>`<tr><td class="lbl">${r[0]}</td><td class="sem-verde">${r[1]}</td><td class="sem-amarillo">${r[2]}</td><td class="sem-rojo">${r[3]}</td><td class="lbl small">${r[4]}</td></tr>`).join('');
   return `
   <div class="card">
-    <h2>📣 Gasto de Meta Ads por campaña</h2>
-    <p class="hint">Trae el gasto directo de tu administrador de anuncios (mismas cuentas que admon) y llena el "Gasto ads" diario automáticamente. El rango arranca el 29 may para que pruebes con datos de hoy; amplía "Desde" (ej. 1 may) para traer más historial.</p>
+    <h2>📣 Datos automáticos: gasto (Meta) + leads (WhatsApp)</h2>
+    <p class="hint">Trae el gasto por campaña de Meta y los leads de WhatsApp que llegaron desde anuncios (del CRM), y llena las columnas "Gasto ads" y "Leads WA" por fecha. El rango arranca el 29 may; amplía "Desde" para traer más historial de gasto. (Los leads por anuncio se cuentan desde hoy en adelante.)</p>
     <div class="meta-controls">
       <label>Desde <input class="cin txt" type="date" data-path="meta.dateFrom" data-type="text" value="${esc(STATE.meta.dateFrom)}"></label>
       <label>Hasta <input class="cin txt" type="date" data-path="meta.dateTo" data-type="text" value="${esc(STATE.meta.dateTo)}"></label>
-      <button class="btn-primary" data-act="meta-fetch">🔄 Traer de Meta</button>
+      <button class="btn-primary" data-act="auto-fetch">🔄 Actualizar gasto y leads</button>
     </div>
     <div id="metaStatus" class="meta-status"></div>
     <div id="metaResults"></div>
@@ -765,36 +765,48 @@ function fillDailyFromMeta(daily){
   if(n){ saveSection('metricas'); recalcAll(); }
   return n;
 }
-async function fetchMeta(){
-  var status=$('metaStatus'), btn=document.querySelector('[data-act="meta-fetch"]');
+async function fetchGastoCore(){
+  var qs=new URLSearchParams({date_from:STATE.meta.dateFrom||'', date_to:STATE.meta.dateTo||''});
+  var resp=await fetch('/api/meta-ads/campaign-spend?'+qs.toString(), {headers:{'Accept':'application/json'}});
+  if(!resp.ok) throw new Error('Meta respondió '+resp.status);
+  var data=await resp.json();
+  if(!data.success) throw new Error(data.error||'sin datos de gasto');
+  STATE.meta.total=data.total||0; STATE.meta.campaigns=data.campaigns||[]; STATE.meta.daily=data.daily||[];
+  STATE.meta.fetchedAt=new Date().toISOString(); saveSection('meta');
+  var n=fillDailyFromMeta(data.daily); renderMetaResults();
+  return STATE.meta.campaigns.length+' campañas · '+fmtMoney(STATE.meta.total)+(n?(' · '+n+' días gasto'):'');
+}
+function fillLeadsFromCRM(leadsByDate){
+  var map=leadsByDate||{}, n=0;
+  STATE.metricas.forEach(function(row){
+    if(row.date && map[row.date]!=null){ row.leads=Number(map[row.date])||0; n++; }
+  });
+  if(n){ saveSection('metricas'); recalcAll(); }
+  return n;
+}
+async function fetchLeadsCore(){
+  var qs=new URLSearchParams({from:STATE.meta.dateFrom||'', to:STATE.meta.dateTo||''});
+  var resp=await fetch('/api/leads/daily-count?'+qs.toString(), {headers:{'Accept':'application/json'}});
+  if(!resp.ok) throw new Error('CRM respondió '+resp.status);
+  var data=await resp.json();
+  if(!data.success) throw new Error(data.message||'sin datos de leads');
+  var n=fillLeadsFromCRM(data.leadsByDate);
+  return n+' días con leads ('+(data.total||0)+' leads WA)';
+}
+async function fetchAuto(){
+  var status=$('metaStatus'), btn=document.querySelector('[data-act="auto-fetch"]');
   if(!status) return;
-  status.textContent='Consultando Meta…'; status.className='meta-status loading';
+  status.textContent='Consultando Meta y CRM…'; status.className='meta-status loading';
   if(btn) btn.disabled=true;
-  try{
-    var qs=new URLSearchParams({date_from:STATE.meta.dateFrom||'', date_to:STATE.meta.dateTo||''});
-    var resp=await fetch('/api/meta-ads/campaign-spend?'+qs.toString(), {headers:{'Accept':'application/json'}});
-    if(!resp.ok) throw new Error('El servidor respondió '+resp.status+' (¿abriste la app desde crm-rzon.onrender.com?).');
-    var data=await resp.json();
-    if(!data.success) throw new Error(data.error||'No se pudo obtener el gasto.');
-    STATE.meta.total=data.total||0; STATE.meta.campaigns=data.campaigns||[]; STATE.meta.daily=data.daily||[];
-    STATE.meta.fetchedAt=new Date().toISOString();
-    saveSection('meta');
-    var n=fillDailyFromMeta(data.daily);
-    renderMetaResults();
-    if(!STATE.meta.campaigns.length){
-      status.textContent='Sin gasto en ese rango (¿la campaña aún no arranca o no hay datos?).';
-      status.className='meta-status';
-    } else {
-      status.textContent='✓ '+STATE.meta.campaigns.length+' campañas · '+fmtMoney(STATE.meta.total)+(n?(' · '+n+' días de gasto actualizados'):'');
-      status.className='meta-status ok';
-      flashSaved('Gasto Meta actualizado');
-    }
-  }catch(e){
-    status.textContent='⚠️ '+e.message;
-    status.className='meta-status err';
-  }finally{
-    if(btn) btn.disabled=false;
-  }
+  var ok=[], err=[];
+  try{ ok.push(await fetchGastoCore()); }catch(e){ err.push('gasto: '+e.message); }
+  try{ ok.push(await fetchLeadsCore()); }catch(e){ err.push('leads: '+e.message); }
+  var msg = ok.length ? ('✓ '+ok.join(' · ')) : '';
+  if(err.length) msg += (msg?'   ':'')+'⚠️ '+err.join(' · ');
+  status.textContent = msg || 'Sin datos.';
+  status.className = 'meta-status '+(ok.length ? 'ok' : 'err');
+  if(ok.length) flashSaved('Actualizado');
+  if(btn) btn.disabled=false;
 }
 
 function bindEvents(){
@@ -806,7 +818,7 @@ function bindEvents(){
     else if(t.dataset.act==='export') exportData();
     else if(t.dataset.act==='import') $('importFile').click();
     else if(t.dataset.act==='reset') resetData();
-    else if(t.dataset.act==='meta-fetch') fetchMeta();
+    else if(t.dataset.act==='auto-fetch') fetchAuto();
   });
   $('importFile').addEventListener('change', e=>{ if(e.target.files[0]) importData(e.target.files[0]); e.target.value=''; });
 }
@@ -854,7 +866,7 @@ function init(){
   bindEvents();
   switchTab(STATE.ui&&STATE.ui.tab||'resumen');
   recalcAll();
-  window.DPP={compute,recalcAll,exportData,importData,resetData,DEFAULTS,fetchMeta,renderMetaResults};
+  window.DPP={compute,recalcAll,exportData,importData,resetData,DEFAULTS,fetchAuto,fetchLeadsCore,renderMetaResults};
   Object.defineProperty(window.DPP,'STATE',{get:()=>STATE});
   registerSW();
   initAuth();
