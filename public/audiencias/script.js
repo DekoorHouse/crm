@@ -145,6 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const html = [
             cardSimple({
                 clase: 'sin-pagar',
+                grupoKey: 'sinPagar',
                 icono: 'fa-credit-card',
                 titulo: 'Sin Pagar',
                 hint: 'Tienen pedido pero no han pagado',
@@ -153,6 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }),
             cardSimple({
                 clase: 'sin-datos',
+                grupoKey: 'sinDatos',
                 icono: 'fa-box',
                 titulo: 'Sin Datos de Envío',
                 hint: 'Pagaron pero no tenemos su dirección',
@@ -160,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }),
             cardSimple({
                 clase: 'en-visto',
+                grupoKey: 'enVisto',
                 icono: 'fa-eye',
                 titulo: 'En Visto',
                 hint: 'Leyeron nuestro mensaje, no contestaron y no tienen pedido',
@@ -167,6 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }),
             cardSubgrupos({
                 clase: 'recompra',
+                grupoKey: 'recompra',
                 icono: 'fa-redo',
                 titulo: 'Recompra',
                 hint: 'Ya compraron — ventana de recompra natural (30-180 días)',
@@ -179,6 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }),
             cardSubgrupos({
                 clase: 'inactivos',
+                grupoKey: 'inactivos',
                 icono: 'fa-snowflake',
                 titulo: 'Inactivos',
                 hint: 'Llevan más de 180 días sin volver a comprar',
@@ -200,7 +205,16 @@ document.addEventListener('DOMContentLoaded', () => {
         audienciasFooter.style.display = 'flex';
     }
 
-    function cardSimple({ clase, icono, titulo, hint, grupo, extra }) {
+    function cardSimple({ clase, icono, titulo, hint, grupo, grupoKey, extra }) {
+        const cell = (estado, num, emoji, lbl, hintTxt) => {
+            const clickable = num > 0;
+            return `<div class="estado-cell estado-${estado} ${clickable ? 'clickable' : ''}"
+                        ${clickable ? `onclick="verDetalle('${grupoKey}', null, '${estado}', '${titulo.replace(/'/g, '')}')"` : ''}>
+                        <div class="estado-num">${num}</div>
+                        <div class="estado-lbl">${emoji} ${lbl}</div>
+                        <div class="estado-hint">${clickable ? '👁 ver lista' : hintTxt}</div>
+                    </div>`;
+        };
         return `
             <div class="audiencia-card audiencia-card-${clase}">
                 <div class="audiencia-header">
@@ -215,28 +229,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
                 <div class="estados-grid">
-                    <div class="estado-cell estado-limbo">
-                        <div class="estado-num">${grupo.limbo || 0}</div>
-                        <div class="estado-lbl">⏳ Limbo</div>
-                        <div class="estado-hint">en cuarentena</div>
-                    </div>
-                    <div class="estado-cell estado-listos">
-                        <div class="estado-num">${grupo.listos || 0}</div>
-                        <div class="estado-lbl">🎯 Listos</div>
-                        <div class="estado-hint">para contactar</div>
-                    </div>
-                    <div class="estado-cell estado-contactados">
-                        <div class="estado-num">${grupo.contactados || 0}</div>
-                        <div class="estado-lbl">✉ Contactados</div>
-                        <div class="estado-hint">esperando respuesta</div>
-                    </div>
+                    ${cell('limbo', grupo.limbo || 0, '⏳', 'Limbo', 'en cuarentena')}
+                    ${cell('listos', grupo.listos || 0, '🎯', 'Listos', 'para contactar')}
+                    ${cell('contactados', grupo.contactados || 0, '✉', 'Contactados', 'esperando respuesta')}
                 </div>
                 ${extra ? `<div class="audiencia-extra">${extra}</div>` : ''}
             </div>
         `;
     }
 
-    function cardSubgrupos({ clase, icono, titulo, hint, grupo, subgrupos, extra }) {
+    function cardSubgrupos({ clase, icono, titulo, hint, grupo, grupoKey, subgrupos, extra }) {
         return `
             <div class="audiencia-card audiencia-card-${clase} has-subgrupos">
                 <div class="audiencia-header">
@@ -253,14 +255,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="subgrupos-row">
                     ${subgrupos.map(s => {
                         const sg = grupo[s.key] || { total: 0, listos: 0, contactados: 0 };
+                        const listosClick = sg.listos > 0 ? `onclick="verDetalle('${grupoKey}', '${s.key}', 'listos', '${(titulo + ' · ' + s.titulo).replace(/'/g, '')}')"` : '';
+                        const contClick = sg.contactados > 0 ? `onclick="verDetalle('${grupoKey}', '${s.key}', 'contactados', '${(titulo + ' · ' + s.titulo).replace(/'/g, '')}')"` : '';
                         return `
                             <div class="subgrupo-cell ${s.clase}">
                                 <h3><i class="fas ${s.icono}"></i> ${s.titulo}</h3>
                                 <div class="sub-total">${sg.total}</div>
                                 <div class="sub-desc">${s.desc}</div>
                                 <div class="sub-states">
-                                    <span class="sub-state-listos">🎯 ${sg.listos} listos</span>
-                                    <span class="sub-state-contactados">✉ ${sg.contactados} contactados</span>
+                                    <span class="sub-state-listos ${sg.listos > 0 ? 'clickable' : ''}" ${listosClick}>🎯 ${sg.listos} listos</span>
+                                    <span class="sub-state-contactados ${sg.contactados > 0 ? 'clickable' : ''}" ${contClick}>✉ ${sg.contactados} contactados</span>
                                 </div>
                             </div>
                         `;
@@ -270,4 +274,97 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
     }
+
+    // --- Modal de detalle (lista de personas) ---
+    let detallePersonasActual = [];
+
+    window.verDetalle = async (grupo, sub, estado, tituloLegible) => {
+        const modal = document.getElementById('modalDetalle');
+        const body = document.getElementById('modalDetalleBody');
+        const titulo = document.getElementById('modalDetalleTitulo');
+        const estadoLabel = { limbo: '⏳ Limbo', listos: '🎯 Listos', contactados: '✉ Contactados' }[estado] || estado;
+        titulo.innerHTML = `<i class="fas fa-list"></i> ${tituloLegible} — ${estadoLabel}`;
+        document.getElementById('detalleBuscar').value = '';
+        modal.style.display = 'flex';
+        body.innerHTML = '<div class="detalle-loading"><i class="fas fa-spinner fa-spin"></i> Cargando lista...</div>';
+
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const params = new URLSearchParams({ grupo, estado });
+            if (sub) params.set('sub', sub);
+            if (filtroFrom) params.set('from', String(filtroFrom));
+            if (filtroTo) params.set('to', String(filtroTo));
+            const res = await fetch(`/api/audiencias/detalle?${params}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || 'Error');
+            detallePersonasActual = data.personas || [];
+            renderDetalle(detallePersonasActual);
+        } catch (e) {
+            body.innerHTML = `<div class="detalle-error"><i class="fas fa-exclamation-triangle"></i> ${e.message}</div>`;
+        }
+    };
+
+    function renderDetalle(personas) {
+        const body = document.getElementById('modalDetalleBody');
+        if (!personas.length) {
+            body.innerHTML = '<div class="detalle-vacio">Sin resultados.</div>';
+            return;
+        }
+        const fmtFecha = (ms) => ms ? new Date(ms).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
+        const tieneOrden = personas.some(p => p.orderNumber);
+        const rows = personas.map((p, i) => `
+            <tr>
+                <td class="td-idx">${i + 1}</td>
+                ${tieneOrden ? `<td class="td-orden">${p.orderNumber || '—'}</td>` : ''}
+                <td class="td-tel">${p.phone || '—'}</td>
+                ${p.name !== undefined ? `<td class="td-nombre">${p.name || '<span class="muted">sin nombre</span>'}</td>` : ''}
+                ${p.producto !== undefined ? `<td class="td-prod">${p.producto || '—'}</td>` : ''}
+                ${p.amount !== undefined ? `<td class="td-monto">${p.amount ? '$' + Number(p.amount).toLocaleString('es-MX', {maximumFractionDigits:0}) : '—'}</td>` : ''}
+                <td class="td-fecha">${fmtFecha(p.dateMs)}${p.diasDesdeCompra ? ` <span class="muted">(${p.diasDesdeCompra}d)</span>` : ''}</td>
+            </tr>
+        `).join('');
+        body.innerHTML = `
+            <div class="detalle-resumen">${personas.length} persona(s)</div>
+            <table class="detalle-tabla">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        ${tieneOrden ? '<th>Pedido</th>' : ''}
+                        <th>Teléfono</th>
+                        ${personas[0].name !== undefined ? '<th>Nombre</th>' : ''}
+                        ${personas[0].producto !== undefined ? '<th>Producto</th>' : ''}
+                        ${personas[0].amount !== undefined ? '<th>Monto</th>' : ''}
+                        <th>Fecha</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }
+
+    window.filtrarDetalle = () => {
+        const q = document.getElementById('detalleBuscar').value.toLowerCase().trim();
+        if (!q) { renderDetalle(detallePersonasActual); return; }
+        const filtradas = detallePersonasActual.filter(p =>
+            (p.orderNumber && p.orderNumber.toLowerCase().includes(q)) ||
+            (p.phone && p.phone.includes(q)) ||
+            (p.name && p.name.toLowerCase().includes(q))
+        );
+        renderDetalle(filtradas);
+    };
+
+    window.copiarTelefonos = () => {
+        const tels = detallePersonasActual.map(p => p.phone).filter(Boolean).join('\n');
+        navigator.clipboard.writeText(tels).then(() => {
+            const btn = document.querySelector('.btn-copiar');
+            const orig = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i> ¡Copiado!';
+            setTimeout(() => { btn.innerHTML = orig; }, 1500);
+        });
+    };
+
+    window.cerrarDetalle = (event) => {
+        if (event && event.target !== event.currentTarget) return;
+        document.getElementById('modalDetalle').style.display = 'none';
+    };
 });
