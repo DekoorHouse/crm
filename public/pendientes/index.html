@@ -7,8 +7,8 @@
 <meta name="description" content="Organiza tus pendientes por prioridad y urgencia. Orden inteligente, semáforo de vencimiento y Matriz de Eisenhower. DeKoor.">
 <meta name="theme-color" content="#1B4D5C">
 <link rel="manifest" href="/pendientes/manifest.json">
-<link rel="icon" href="/favicon.png" type="image/png">
-<link rel="apple-touch-icon" href="/favicon-192.png">
+<link rel="icon" href="/pendientes/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/pendientes/icon-192.png">
 <style>
 :root{
   --navy:#1B4D5C; --navy-d:#143a45; --terra:#E07A5F; --terra-d:#c9674d;
@@ -28,7 +28,7 @@ button{font-family:inherit}
 /* ---------- App bar ---------- */
 .appbar{position:sticky;top:0;z-index:50;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top))}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;line-height:1.1}
-.brand img{width:34px;height:34px;border-radius:9px;background:#fff;padding:3px;object-fit:contain;flex-shrink:0}
+.brand img{width:36px;height:36px;border-radius:9px;object-fit:contain;flex-shrink:0}
 .brand small{display:block;font-weight:400;font-size:11px;color:#aab8c6;margin-top:2px}
 .bar-actions{display:flex;align-items:center;gap:8px}
 .btn-install{display:none;background:var(--terra);border:none;color:#fff;font-weight:700;font-size:13px;padding:8px 12px;border-radius:9px;cursor:pointer;white-space:nowrap}
@@ -160,7 +160,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--navy);box-shadow:0 0 
 
 <div class="appbar">
   <div class="brand">
-    <img src="/favicon-192.png" alt="DeKoor">
+    <img src="/pendientes/icon-192.png" alt="Pendientes">
     <span>Pendientes<small>Prioridades & urgencia · DeKoor</small></span>
   </div>
   <div class="bar-actions">

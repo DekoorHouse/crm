@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f3f4f6"/>
+    </linearGradient>
+    <filter id="bgShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8"/>
+      <feOffset dy="6"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.15"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="cardShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="5"/>
+      <feOffset dy="4"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.20"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="20" y="18" width="472" height="472" rx="116" fill="url(#bg)" filter="url(#bgShadow)" stroke="#e9ebef" stroke-width="1"/>
+  
+  <!-- tarjeta 0 -->
+  <g filter="url(#cardShadow)">
+    <rect x="124" y="100" width="280" height="92" rx="18" fill="#DC2A20"/>
+    <rect x="116" y="94" width="280" height="92" rx="18" fill="#ffffff"/>
+  </g>
+  <clipPath id="clip0"><rect x="116" y="94" width="280" height="92" rx="18"/></clipPath>
+  <g clip-path="url(#clip0)">
+    <rect x="116" y="94" width="80" height="92" fill="#FB3B30"/>
+  </g>
+  <rect x="151" y="118" width="10" height="33" rx="5" fill="#ffffff"/>
+  <circle cx="156" cy="165" r="6" fill="#ffffff"/>
+  <path d="M204 141 L214 152 L233 128" fill="none" stroke="#2c2c2e" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="256" y="132" width="116" height="8" rx="4" fill="#d6dae0"/>
+  <rect x="256" y="148" width="84" height="8" rx="4" fill="#d6dae0"/>
+
+  <!-- tarjeta 1 -->
+  <g filter="url(#cardShadow)">
+    <rect x="124" y="216" width="280" height="92" rx="18" fill="#E08410"/>
+    <rect x="116" y="210" width="280" height="92" rx="18" fill="#ffffff"/>
+  </g>
+  <clipPath id="clip1"><rect x="116" y="210" width="280" height="92" rx="18"/></clipPath>
+  <g clip-path="url(#clip1)">
+    <rect x="116" y="210" width="80" height="92" fill="#FBA01C"/>
+  </g>
+  <rect x="151" y="234" width="10" height="33" rx="5" fill="#ffffff"/>
+  <circle cx="156" cy="281" r="6" fill="#ffffff"/>
+  <path d="M204 257 L214 268 L233 244" fill="none" stroke="#2c2c2e" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="256" y="248" width="116" height="8" rx="4" fill="#d6dae0"/>
+  <rect x="256" y="264" width="84" height="8" rx="4" fill="#d6dae0"/>
+
+  <!-- tarjeta 2 -->
+  <g filter="url(#cardShadow)">
+    <rect x="124" y="332" width="280" height="92" rx="18" fill="#43A62D"/>
+    <rect x="116" y="326" width="280" height="92" rx="18" fill="#ffffff"/>
+  </g>
+  <clipPath id="clip2"><rect x="116" y="326" width="280" height="92" rx="18"/></clipPath>
+  <g clip-path="url(#clip2)">
+    <rect x="116" y="326" width="80" height="92" fill="#55C13B"/>
+  </g>
+  <rect x="151" y="350" width="10" height="33" rx="5" fill="#ffffff"/>
+  <circle cx="156" cy="397" r="6" fill="#ffffff"/>
+  <path d="M204 373 L214 384 L233 360" fill="none" stroke="#2c2c2e" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="256" y="364" width="116" height="8" rx="4" fill="#d6dae0"/>
+  <rect x="256" y="380" width="84" height="8" rx="4" fill="#d6dae0"/>
+</svg>
