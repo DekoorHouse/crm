@@ -1,6 +1,6 @@
 /* Service Worker · DeKoor Pendientes · scope /pendientes/
    App 100% autocontenida (HTML/CSS/JS inline) → cacheable y usable offline. */
-const CACHE = 'pendientes-v3';
+const CACHE = 'pendientes-v4';
 
 const PRECACHE = [
   '/pendientes/',
@@ -33,9 +33,22 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // Solo gestionamos nuestro propio scope + los íconos de marca.
-  const inScope = url.origin === location.origin &&
-    (url.pathname.startsWith('/pendientes/') || url.pathname === '/favicon.png' || url.pathname === '/favicon-192.png');
+  // SDK de Firebase (gstatic, versionado) → cache-first, para que la app y la
+  // sincronización funcionen también sin conexión una vez instalada.
+  if (url.href.indexOf('https://www.gstatic.com/firebasejs/') === 0) {
+    e.respondWith(
+      caches.match(req).then(hit => hit || fetch(req).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy));
+        return res;
+      }).catch(() => hit))
+    );
+    return;
+  }
+
+  // El resto: solo gestionamos nuestro propio scope. Las llamadas a Firestore/Auth
+  // (firestore.googleapis.com, identitytoolkit, …) son cross-origin → se ignoran (van a red).
+  const inScope = url.origin === location.origin && url.pathname.startsWith('/pendientes/');
   if (!inScope) return;
 
   // Navegación / HTML → network-first con fallback a caché (para recibir actualizaciones).

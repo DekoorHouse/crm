@@ -156,6 +156,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--navy);box-shadow:0 0 
 .modal-actions .btn-primary{flex:1}
 .modal-actions .btn-ghost{flex:0 0 auto}
 
+/* ---------- Barra de sincronización ---------- */
+.sync-bar{display:block;width:100%;text-align:center;border:none;cursor:pointer;font-size:13px;font-weight:600;padding:11px 12px;border-radius:12px;margin-bottom:14px;line-height:1.4}
+.sync-bar.off{background:#fff;border:1px dashed var(--terra);color:var(--terra-d)}
+.sync-bar.off:hover{background:#fff7f4}
+.sync-bar.on{background:#e3efe9;color:#3a7d62}
+.sync-bar.on u{font-weight:700}
+
 /* ---------- Toast ---------- */
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);background:var(--navy);color:#fff;padding:11px 18px;border-radius:999px;font-size:14px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.3);opacity:0;transition:.25s;z-index:200;pointer-events:none}
 #toast.show{transform:translateX(-50%) translateY(0);opacity:1}
@@ -179,6 +186,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--navy);box-shadow:0 0 
 </div>
 
 <main>
+  <!-- Sincronización entre dispositivos -->
+  <button id="sync-bar" class="sync-bar off">☁️ Sincroniza tus pendientes entre el cel y la compu →</button>
+
   <!-- Alta rápida -->
   <div class="card">
     <form id="add-form" class="add-row" autocomplete="off">
@@ -271,6 +281,29 @@ input:focus,select:focus,textarea:focus{border-color:var(--navy);box-shadow:0 0 
   </div>
 </div>
 
+<!-- Modal de inicio de sesión (sincronización en la nube) -->
+<div class="backdrop" id="login-backdrop">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h2>☁️ Sincronizar entre dispositivos</h2>
+    <p style="margin:-8px 0 16px;font-size:13px;color:var(--gray);line-height:1.5">Inicia sesión con tu cuenta DeKoor (la misma del CRM). Tus pendientes se guardan en la nube y aparecen en el cel y en la compu.</p>
+    <form id="login-form" autocomplete="on">
+      <div class="field">
+        <label for="login-email">Correo</label>
+        <input id="login-email" type="email" autocomplete="username" placeholder="tucorreo@dekoor.com" required>
+      </div>
+      <div class="field">
+        <label for="login-pass">Contraseña</label>
+        <input id="login-pass" type="password" autocomplete="current-password" placeholder="••••••••" required>
+      </div>
+      <div id="login-error" style="color:var(--red);font-size:13px;min-height:18px;line-height:1.4"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" id="login-cancel">Cancelar</button>
+        <button type="submit" class="btn-primary" id="login-submit">Iniciar sesión</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -357,19 +390,19 @@ function dueChip(due) {
 function addTask(title, priority, due) {
   title = (title || '').trim();
   if (!title) return;
-  STATE.tasks.push({
-    id: uid(), title: title, notes: '',
-    priority: priority || 'media', due: due || '', done: false, createdAt: Date.now()
-  });
-  save();
+  var t = { id: uid(), title: title, notes: '', priority: priority || 'media', due: due || '', done: false, createdAt: Date.now(), doneAt: null };
+  if (cloudOn()) { cloudSet(t); }
+  else { STATE.tasks.push(t); save(); render(); }
 }
 function findTask(id) { for (var i = 0; i < STATE.tasks.length; i++) if (STATE.tasks[i].id === id) return STATE.tasks[i]; return null; }
 function toggleDone(id) {
   var t = findTask(id); if (!t) return;
-  t.done = !t.done; t.doneAt = t.done ? Date.now() : null; save(); render();
+  if (cloudOn()) { cloudSet(Object.assign({}, t, { done: !t.done, doneAt: !t.done ? Date.now() : null })); }
+  else { t.done = !t.done; t.doneAt = t.done ? Date.now() : null; save(); render(); }
 }
 function deleteTask(id) {
-  STATE.tasks = STATE.tasks.filter(function (t) { return t.id !== id; }); save(); render();
+  if (cloudOn()) { cloudDel(id); }
+  else { STATE.tasks = STATE.tasks.filter(function (t) { return t.id !== id; }); save(); render(); }
 }
 
 /* ---------- Filtro + orden ---------- */
@@ -519,11 +552,13 @@ function saveEdit() {
   var t = findTask($('edit-id').value); if (!t) return closeEdit();
   var title = $('edit-title').value.trim();
   if (!title) { $('edit-title').focus(); return; }
-  t.title = title;
-  t.priority = $('edit-priority').value;
-  t.due = $('edit-due').value || '';
-  t.notes = $('edit-notes').value.trim();
-  save(); closeEdit(); render(); toast('Guardado');
+  var upd = Object.assign({}, t, {
+    title: title, priority: $('edit-priority').value,
+    due: $('edit-due').value || '', notes: $('edit-notes').value.trim()
+  });
+  if (cloudOn()) { cloudSet(upd); }
+  else { Object.assign(t, upd); save(); render(); }
+  closeEdit(); toast('Guardado');
 }
 
 /* ---------- Respaldo (export / import) ---------- */
@@ -544,15 +579,16 @@ function importData(file) {
       var incoming = Array.isArray(data) ? data : (data && data.tasks);
       if (!Array.isArray(incoming)) throw 0;
       var byId = {}; STATE.tasks.forEach(function (t) { byId[t.id] = t; });
-      var added = 0;
+      var added = 0, queue = [];
       incoming.forEach(function (t) {
         if (!t || !t.title) return;
         if (!t.id || byId[t.id]) t.id = uid();
-        t.priority = t.priority || 'media'; t.due = t.due || ''; t.done = !!t.done;
-        t.createdAt = t.createdAt || Date.now();
-        STATE.tasks.push(t); byId[t.id] = t; added++;
+        var clean = sanitize(t);
+        byId[clean.id] = clean; added++;
+        if (cloudOn()) queue.push(clean); else STATE.tasks.push(clean);
       });
-      save(); render(); toast(added + ' pendiente(s) importado(s)');
+      if (cloudOn()) { queue.forEach(cloudSet); toast(added + ' importado(s) a la nube'); }
+      else { save(); render(); toast(added + ' pendiente(s) importado(s)'); }
     } catch (e) { toast('Archivo no válido'); }
   };
   rd.readAsText(file);
@@ -565,6 +601,135 @@ function toast(msg) {
   clearTimeout(toastT); toastT = setTimeout(function () { el.classList.remove('show'); }, 1900);
 }
 
+/* ===================== NUBE / SINCRONIZACIÓN (Firestore) ===================== */
+var FIRE = {
+  apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+  authDomain: "pedidos-con-gemini.firebaseapp.com",
+  projectId: "pedidos-con-gemini",
+  storageBucket: "pedidos-con-gemini.firebasestorage.app",
+  messagingSenderId: "300825194175",
+  appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+};
+var FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
+var FS = null, DBI = null, AUTH = null, AUTHINST = null, USER = null, ITEMS = null, UNSUB = null, MIGRATED = false;
+
+function cloudOn() { return !!(USER && ITEMS && FS); }
+
+// Tarea limpia y segura para Firestore (sin undefined).
+function sanitize(t) {
+  var p = (t.priority === 'alta' || t.priority === 'baja') ? t.priority : 'media';
+  return {
+    id: String(t.id || uid()),
+    title: String(t.title || '').slice(0, 200),
+    notes: String(t.notes || '').slice(0, 1000),
+    priority: p,
+    due: t.due ? String(t.due) : '',
+    done: !!t.done,
+    createdAt: Number(t.createdAt) || Date.now(),
+    doneAt: t.doneAt ? Number(t.doneAt) : null
+  };
+}
+function cloudSet(t) { var c = sanitize(t); FS.setDoc(FS.doc(ITEMS, c.id), c).catch(function () { toast('Error al guardar en la nube'); }); }
+function cloudDel(id) { FS.deleteDoc(FS.doc(ITEMS, id)).catch(function () { toast('Error al borrar'); }); }
+function cloudClearDone(done) {
+  Promise.all(done.map(function (t) { return FS.deleteDoc(FS.doc(ITEMS, t.id)); }))
+    .then(function () { toast('Listas borradas'); }).catch(function () { toast('Error al borrar'); });
+}
+
+// Espejo local: para arranque instantáneo y uso offline.
+function cacheLocal() { try { localStorage.setItem(KEY, JSON.stringify(STATE)); } catch (e) {} }
+function loadLocalTasks() {
+  try { var raw = localStorage.getItem(KEY); if (raw) { var d = JSON.parse(raw); if (d && Array.isArray(d.tasks)) return d.tasks; } } catch (e) {}
+  return [];
+}
+
+function startSync() {
+  MIGRATED = false;
+  if (UNSUB) { UNSUB(); UNSUB = null; }
+  UNSUB = FS.onSnapshot(ITEMS, function (snap) {
+    var cloud = {}; snap.forEach(function (d) { cloud[d.id] = d.data(); });
+    if (!MIGRATED) {
+      MIGRATED = true;
+      // Migración única: subir a la nube las tareas locales que aún no estén.
+      var locals = loadLocalTasks();
+      var toUp = locals.filter(function (t) { return t && t.id && t.title && !cloud[t.id]; });
+      if (toUp.length) {
+        toUp.forEach(function (t) { var c = sanitize(t); cloud[c.id] = c; cloudSet(c); });
+        toast('Subiendo ' + toUp.length + ' pendiente(s) a la nube…');
+      }
+    }
+    STATE.tasks = Object.keys(cloud).map(function (k) { return cloud[k]; });
+    cacheLocal();
+    render();
+  }, function (err) { console.warn('[sync]', err); toast('Error de sincronización'); });
+}
+
+function setSyncUI(email) {
+  var bar = $('sync-bar'); if (!bar) return;
+  if (email) {
+    bar.className = 'sync-bar on';
+    bar.innerHTML = '✅ Sincronizado · ' + esc(email) + ' · <u>cerrar sesión</u>';
+  } else {
+    bar.className = 'sync-bar off';
+    bar.innerHTML = '☁️ Sincroniza tus pendientes entre el cel y la compu →';
+  }
+}
+
+function onAuth(user) {
+  USER = user || null;
+  if (user) {
+    ITEMS = FS.collection(DBI, 'pendientes', user.uid, 'items');
+    setSyncUI(user.email || 'tu cuenta');
+    closeLogin();
+    startSync();
+  } else {
+    if (UNSUB) { UNSUB(); UNSUB = null; }
+    ITEMS = null; MIGRATED = false;
+    setSyncUI(null);
+    load(); render(); // volver a datos locales
+  }
+}
+
+async function initFirebase() {
+  try {
+    var mods = await Promise.all([
+      import(FB + 'firebase-app.js'),
+      import(FB + 'firebase-auth.js'),
+      import(FB + 'firebase-firestore.js')
+    ]);
+    var appMod = mods[0]; AUTH = mods[1]; FS = mods[2];
+    var app = appMod.initializeApp(FIRE);
+    try { DBI = FS.initializeFirestore(app, { localCache: FS.persistentLocalCache({ tabManager: FS.persistentMultipleTabManager() }) }); }
+    catch (e) { DBI = FS.getFirestore(app); }
+    AUTHINST = AUTH.getAuth(app);
+    AUTH.onAuthStateChanged(AUTHINST, onAuth);
+  } catch (e) {
+    console.warn('[firebase] no disponible', e);
+    var bar = $('sync-bar'); if (bar) { bar.className = 'sync-bar off'; bar.textContent = '☁️ Sincronización no disponible ahora'; }
+  }
+}
+
+function openLogin() {
+  if (!AUTHINST) { toast('Cargando sincronización…'); return; }
+  $('login-error').textContent = '';
+  $('login-backdrop').classList.add('open');
+  setTimeout(function () { $('login-email').focus(); }, 50);
+}
+function closeLogin() { var b = $('login-backdrop'); if (b) b.classList.remove('open'); }
+async function doLogin(e) {
+  e.preventDefault();
+  var err = $('login-error'); err.textContent = '';
+  var btn = $('login-submit'); btn.disabled = true;
+  try {
+    await AUTH.signInWithEmailAndPassword(AUTHINST, $('login-email').value.trim(), $('login-pass').value);
+  } catch (ex) {
+    var c = ex && ex.code;
+    err.textContent = (c === 'auth/invalid-credential' || c === 'auth/wrong-password' || c === 'auth/user-not-found' || c === 'auth/invalid-email')
+      ? 'Correo o contraseña incorrectos.' : 'No se pudo iniciar sesión. Revisa tu conexión.';
+  } finally { btn.disabled = false; }
+}
+function doLogout() { if (AUTH && AUTHINST) AUTH.signOut(AUTHINST); }
+
 /* ---------- Eventos ---------- */
 function bind() {
   // Alta rápida
@@ -572,7 +737,7 @@ function bind() {
     e.preventDefault();
     addTask($('add-title').value, $('add-priority').value, $('add-due').value);
     $('add-title').value = ''; $('add-due').value = '';
-    $('add-title').focus(); render();
+    $('add-title').focus();
   });
 
   // Tabs
@@ -620,13 +785,22 @@ function bind() {
   $('btn-import').addEventListener('click', function () { $('import-file').click(); });
   $('import-file').addEventListener('change', function () { if (this.files[0]) importData(this.files[0]); this.value = ''; });
   $('btn-clear-done').addEventListener('click', function () {
-    var n = STATE.tasks.filter(function (t) { return t.done; }).length;
-    if (!n) return toast('No hay hechas');
-    if (confirm('¿Borrar ' + n + ' tarea(s) ya hecha(s)?')) {
-      STATE.tasks = STATE.tasks.filter(function (t) { return !t.done; });
-      save(); render(); toast('Listas borradas');
+    var done = STATE.tasks.filter(function (t) { return t.done; });
+    if (!done.length) return toast('No hay hechas');
+    if (confirm('¿Borrar ' + done.length + ' tarea(s) ya hecha(s)?')) {
+      if (cloudOn()) { cloudClearDone(done); }
+      else { STATE.tasks = STATE.tasks.filter(function (t) { return !t.done; }); save(); render(); toast('Listas borradas'); }
     }
   });
+
+  // Sincronización en la nube
+  $('sync-bar').addEventListener('click', function () {
+    if (USER) { if (confirm('¿Cerrar sesión en este dispositivo? Tus pendientes seguirán guardados en la nube.')) doLogout(); }
+    else openLogin();
+  });
+  $('login-form').addEventListener('submit', doLogin);
+  $('login-cancel').addEventListener('click', closeLogin);
+  $('login-backdrop').addEventListener('click', function (e) { if (e.target === this) closeLogin(); });
 }
 
 /* ---------- Service Worker ---------- */
@@ -665,8 +839,10 @@ function init() {
   load();
   bind();
   render();
+  setSyncUI(null);
   registerSW();
   setupInstall();
+  initFirebase();
 }
 init();
 </script>
