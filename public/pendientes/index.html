@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+<title>DeKoor · Pendientes y Prioridades</title>
+<meta name="description" content="Organiza tus pendientes por prioridad y urgencia. Orden inteligente, semáforo de vencimiento y Matriz de Eisenhower. DeKoor.">
+<meta name="theme-color" content="#1B4D5C">
+<link rel="manifest" href="/pendientes/manifest.json">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/favicon-192.png">
+<style>
+:root{
+  --navy:#1B4D5C; --navy-d:#143a45; --terra:#E07A5F; --terra-d:#c9674d;
+  --sage:#81B29A; --sand:#F2CC8F; --cream:#FAF6F0; --white:#fff;
+  --gray:#6b7785; --line:#e3e8ee; --red:#c62828; --red-bg:#FCE4D6;
+  --amber:#b7791f; --amber-bg:#FFF2CC;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  background:var(--cream); color:var(--navy); -webkit-text-size-adjust:100%;
+  padding-bottom:env(safe-area-inset-bottom); overflow-x:hidden;
+}
+button{font-family:inherit}
+
+/* ---------- App bar ---------- */
+.appbar{position:sticky;top:0;z-index:50;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top))}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;line-height:1.1}
+.brand img{width:34px;height:34px;border-radius:9px;background:#fff;padding:3px;object-fit:contain;flex-shrink:0}
+.brand small{display:block;font-weight:400;font-size:11px;color:#aab8c6;margin-top:2px}
+.bar-actions{display:flex;align-items:center;gap:8px}
+.btn-install{display:none;background:var(--terra);border:none;color:#fff;font-weight:700;font-size:13px;padding:8px 12px;border-radius:9px;cursor:pointer;white-space:nowrap}
+.btn-install.is-ready{display:inline-flex;align-items:center;gap:6px}
+.btn-install:hover{background:var(--terra-d)}
+
+/* ---------- Tabs ---------- */
+.tabs{position:sticky;top:0;z-index:40;background:var(--white);border-bottom:1px solid var(--line);display:flex;gap:2px;padding:0 8px}
+.tab{flex:1;background:none;border:none;border-bottom:3px solid transparent;padding:13px 8px;font-size:14px;font-weight:600;color:var(--gray);cursor:pointer}
+.tab.active{color:var(--navy);border-bottom-color:var(--terra)}
+
+main{max-width:760px;margin:0 auto;padding:14px 12px 90px}
+
+/* ---------- Cards ---------- */
+.card{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(27,77,92,.06)}
+
+/* ---------- Quick add ---------- */
+.add-row{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+.add-row .grow{flex:1 1 100%;min-width:0}
+input,select,textarea{font-family:inherit;font-size:15px;color:var(--navy);border:1px solid var(--line);border-radius:10px;padding:11px 12px;background:#fff;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(27,77,92,.12)}
+.add-row input.grow{font-size:16px}
+.add-row select,.add-row input[type=date]{flex:1 1 0;min-width:120px}
+.btn-primary{background:var(--navy);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn-primary:hover{background:var(--navy-d)}
+.btn-primary:disabled{opacity:.5;cursor:default}
+.add-row .btn-primary{flex:1 1 100%}
+
+/* ---------- KPIs ---------- */
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.kpi{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:12px 10px;text-align:center;box-shadow:0 1px 3px rgba(27,77,92,.06)}
+.kpi .val{font-size:24px;font-weight:800;line-height:1}
+.kpi .label{font-size:11px;color:var(--gray);font-weight:600;margin-top:5px}
+.kpi.vencidas .val{color:var(--red)}
+.kpi.hoy .val{color:var(--terra)}
+.kpi.pend .val{color:var(--navy)}
+
+/* ---------- Toolbar ---------- */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.toolbar .search{flex:1 1 160px;display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:0 10px}
+.toolbar .search input{border:none;padding:10px 0;flex:1;background:transparent;box-shadow:none!important}
+.toolbar .search input:focus{box-shadow:none}
+.toolbar select{padding:10px 12px}
+.chips{display:flex;gap:6px}
+.chip{border:1px solid var(--line);background:#fff;color:var(--gray);border-radius:20px;padding:8px 13px;font-size:13px;font-weight:600;cursor:pointer}
+.chip.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.sort-note{font-size:12px;color:var(--gray);margin:-4px 2px 12px;display:flex;align-items:center;gap:6px}
+
+/* ---------- Task list ---------- */
+.list{display:flex;flex-direction:column;gap:10px}
+.task{display:flex;align-items:flex-start;gap:11px;background:var(--white);border:1px solid var(--line);border-left:5px solid var(--gray);border-radius:12px;padding:12px 12px;box-shadow:0 1px 3px rgba(27,77,92,.05)}
+.task.sem-rojo{border-left-color:var(--red)}
+.task.sem-ambar{border-left-color:var(--sand)}
+.task.sem-azul{border-left-color:var(--navy)}
+.task.sem-verde{border-left-color:var(--sage)}
+.task.sem-gris{border-left-color:#cbd5d8}
+.task.done{opacity:.55}
+.chk{appearance:none;-webkit-appearance:none;width:24px;height:24px;min-width:24px;border:2px solid var(--sage);border-radius:7px;cursor:pointer;margin-top:1px;position:relative;background:#fff}
+.chk:checked{background:var(--sage);border-color:var(--sage)}
+.chk:checked::after{content:"";position:absolute;left:7px;top:3px;width:6px;height:11px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(45deg)}
+.t-body{flex:1;min-width:0}
+.t-title{font-size:15px;font-weight:600;line-height:1.35;word-break:break-word}
+.task.done .t-title{text-decoration:line-through}
+.t-notes{font-size:13px;color:var(--gray);margin-top:3px;line-height:1.4;word-break:break-word;white-space:pre-wrap}
+.t-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.pri-alta{background:var(--terra);color:#fff}
+.pri-media{background:var(--sand);color:#6b5310}
+.pri-baja{background:#e8eeed;color:var(--navy)}
+.due{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.due.rojo{background:var(--red-bg);color:var(--red)}
+.due.ambar{background:var(--amber-bg);color:var(--amber)}
+.due.azul{background:#DAE3F3;color:#2a4a73}
+.due.verde{background:#e3efe9;color:#3a7d62}
+.t-actions{display:flex;flex-direction:column;gap:4px}
+.icon-btn{background:none;border:none;cursor:pointer;font-size:17px;line-height:1;padding:5px;border-radius:8px;opacity:.65}
+.icon-btn:hover{opacity:1;background:#f1f4f7}
+
+/* ---------- Empty ---------- */
+.empty{text-align:center;color:var(--gray);padding:42px 18px}
+.empty .big{font-size:42px;margin-bottom:10px}
+.empty p{margin:4px 0;font-size:14px}
+
+/* ---------- Matriz Eisenhower ---------- */
+.matrix{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.quad{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:120px;min-width:0;border-top:4px solid var(--gray)}
+.quad.q1{border-top-color:var(--red)}
+.quad.q2{border-top-color:var(--navy)}
+.quad.q3{border-top-color:var(--sand)}
+.quad.q4{border-top-color:#cbd5d8}
+.quad h3{margin:0 0 2px;font-size:13px;font-weight:800}
+.quad .qsub{font-size:11px;color:var(--gray);margin:0 0 10px}
+.quad .qcount{float:right;font-size:12px;color:var(--gray);font-weight:700}
+.mini{display:flex;align-items:center;gap:7px;font-size:13px;padding:7px 8px;border-radius:9px;background:#f7f9fb;margin-bottom:6px;cursor:pointer;line-height:1.3}
+.mini:hover{background:#eef2f6}
+.mini .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.mini .mt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mini small{color:var(--gray);font-size:11px;white-space:nowrap}
+.quad .qempty{font-size:12px;color:#9aa6b1;font-style:italic;padding:6px 2px}
+@media(max-width:560px){.matrix{grid-template-columns:1fr}}
+
+/* ---------- Footer actions ---------- */
+.foot{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:20px}
+.btn-ghost{background:#fff;border:1px solid var(--line);color:var(--navy);font-size:13px;font-weight:600;padding:9px 14px;border-radius:10px;cursor:pointer}
+.btn-ghost:hover{background:#f1f4f7}
+.btn-ghost.danger{color:var(--red)}
+
+/* ---------- Modal ---------- */
+.backdrop{position:fixed;inset:0;background:rgba(20,40,55,.55);display:none;align-items:flex-end;justify-content:center;z-index:100;padding:0}
+.backdrop.open{display:flex}
+.modal{background:#fff;width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,.25);animation:slideup .2s ease}
+@media(min-width:560px){.backdrop{align-items:center}.modal{border-radius:18px}}
+@keyframes slideup{from{transform:translateY(30px);opacity:.6}to{transform:translateY(0);opacity:1}}
+.modal h2{margin:0 0 16px;font-size:18px}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12px;font-weight:700;color:var(--navy);margin-bottom:5px}
+.field input,.field select,.field textarea{width:100%}
+.field textarea{resize:vertical;min-height:60px}
+.modal-actions{display:flex;gap:10px;margin-top:18px}
+.modal-actions .btn-primary{flex:1}
+.modal-actions .btn-ghost{flex:0 0 auto}
+
+/* ---------- Toast ---------- */
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);background:var(--navy);color:#fff;padding:11px 18px;border-radius:999px;font-size:14px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.3);opacity:0;transition:.25s;z-index:200;pointer-events:none}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+</style>
+</head>
+<body>
+
+<div class="appbar">
+  <div class="brand">
+    <img src="/favicon-192.png" alt="DeKoor">
+    <span>Pendientes<small>Prioridades & urgencia · DeKoor</small></span>
+  </div>
+  <div class="bar-actions">
+    <button id="install-pwa-btn" class="btn-install">📲 Instalar app</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="lista" id="tab-lista">📋 Lista</button>
+  <button class="tab" data-tab="matriz" id="tab-matriz">🎯 Matriz</button>
+</div>
+
+<main>
+  <!-- Alta rápida -->
+  <div class="card">
+    <form id="add-form" class="add-row" autocomplete="off">
+      <input class="grow" id="add-title" type="text" placeholder="¿Qué tienes pendiente?" maxlength="160" required>
+      <select id="add-priority" title="Prioridad">
+        <option value="alta">🔴 Prioridad alta</option>
+        <option value="media" selected>🟡 Prioridad media</option>
+        <option value="baja">🟢 Prioridad baja</option>
+      </select>
+      <input id="add-due" type="date" title="Fecha límite (opcional)">
+      <button class="btn-primary" type="submit">➕ Agregar</button>
+    </form>
+  </div>
+
+  <!-- Vista LISTA -->
+  <section id="view-lista">
+    <div class="kpis">
+      <div class="kpi pend"><div class="val" id="kpi-pend">0</div><div class="label">Pendientes</div></div>
+      <div class="kpi hoy"><div class="val" id="kpi-hoy">0</div><div class="label">Para hoy</div></div>
+      <div class="kpi vencidas"><div class="val" id="kpi-venc">0</div><div class="label">Vencidas</div></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="search">🔍<input id="search" type="search" placeholder="Buscar..."></div>
+      <select id="sort">
+        <option value="smart">Orden inteligente</option>
+        <option value="priority">Por prioridad</option>
+        <option value="due">Por fecha límite</option>
+        <option value="created">Por más reciente</option>
+      </select>
+    </div>
+    <div class="chips" style="margin-bottom:12px">
+      <button class="chip active" data-filter="pendientes">Pendientes</button>
+      <button class="chip" data-filter="todas">Todas</button>
+      <button class="chip" data-filter="hechas">Hechas</button>
+    </div>
+    <div class="sort-note" id="sort-note"></div>
+
+    <div class="list" id="list"></div>
+  </section>
+
+  <!-- Vista MATRIZ (Eisenhower) -->
+  <section id="view-matriz" style="display:none">
+    <p class="sort-note" style="margin-bottom:12px">La <b>Matriz de Eisenhower</b> reparte tus pendientes según importancia (prioridad) y urgencia (fecha límite ≤ 2 días o vencida).</p>
+    <div class="matrix">
+      <div class="quad q1"><span class="qcount" id="c-q1">0</span><h3>🔥 Hazlo ya</h3><p class="qsub">Importante y urgente</p><div id="q1"></div></div>
+      <div class="quad q2"><span class="qcount" id="c-q2">0</span><h3>🗓️ Planifícalo</h3><p class="qsub">Importante, no urgente</p><div id="q2"></div></div>
+      <div class="quad q3"><span class="qcount" id="c-q3">0</span><h3>⚡ Resuélvelo rápido</h3><p class="qsub">Urgente, no tan importante</p><div id="q3"></div></div>
+      <div class="quad q4"><span class="qcount" id="c-q4">0</span><h3>🌱 Cuando puedas</h3><p class="qsub">Ni urgente ni importante</p><div id="q4"></div></div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <button class="btn-ghost" id="btn-export">📤 Exportar respaldo</button>
+    <button class="btn-ghost" id="btn-import">📥 Importar</button>
+    <button class="btn-ghost danger" id="btn-clear-done">🧹 Borrar hechas</button>
+    <input type="file" id="import-file" accept="application/json,.json" style="display:none">
+  </div>
+</main>
+
+<!-- Modal de edición -->
+<div class="backdrop" id="edit-backdrop">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h2 id="edit-title-h">Editar pendiente</h2>
+    <input type="hidden" id="edit-id">
+    <div class="field">
+      <label for="edit-title">Tarea</label>
+      <input id="edit-title" type="text" maxlength="160">
+    </div>
+    <div class="field">
+      <label for="edit-priority">Prioridad</label>
+      <select id="edit-priority">
+        <option value="alta">🔴 Alta</option>
+        <option value="media">🟡 Media</option>
+        <option value="baja">🟢 Baja</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="edit-due">Fecha límite (opcional)</label>
+      <input id="edit-due" type="date">
+    </div>
+    <div class="field">
+      <label for="edit-notes">Notas (opcional)</label>
+      <textarea id="edit-notes" maxlength="600" placeholder="Detalles, enlaces, contexto..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost danger" id="edit-delete">🗑️ Borrar</button>
+      <button class="btn-primary" id="edit-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ============================ DeKoor · Pendientes ============================
+   App autocontenida. Guarda en localStorage (por dispositivo, funciona offline).
+   Modelo de tarea:
+     { id, title, notes, priority:'alta'|'media'|'baja', due:'YYYY-MM-DD'|'', done:bool, createdAt:number }
+   ============================================================================ */
+var KEY = 'dekoor_pendientes_v1';
+var $ = function (id) { return document.getElementById(id); };
+
+var STATE = { tasks: [], ui: { tab: 'lista', sort: 'smart', filter: 'pendientes', q: '' } };
+
+/* ---------- Persistencia ---------- */
+function load() {
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (raw) {
+      var data = JSON.parse(raw);
+      if (data && Array.isArray(data.tasks)) STATE.tasks = data.tasks;
+      if (data && data.ui) STATE.ui = Object.assign(STATE.ui, data.ui);
+    }
+  } catch (e) { /* almacenamiento corrupto → empezamos limpio */ }
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(STATE)); } catch (e) {}
+}
+function uid() {
+  return 't' + Math.random().toString(36).slice(2, 9) + (STATE.tasks.length);
+}
+
+/* ---------- Fechas (en horario local, sin líos de zona) ---------- */
+function ymd(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function todayStr() { return ymd(new Date()); }
+function parseYmd(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+function daysLeft(due) {
+  if (!due) return null;
+  var n = new Date(); var today = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  return Math.round((parseYmd(due) - today) / 86400000);
+}
+var MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+/* ---------- Lógica de prioridad / urgencia ---------- */
+var PRI_W = { alta: 40, media: 20, baja: 8 };
+function urgencyScore(due) {
+  var d = daysLeft(due);
+  if (d === null) return 10;          // sin fecha → poca urgencia
+  if (d < 0) return 100;              // vencida
+  if (d === 0) return 90;             // hoy
+  if (d === 1) return 76;             // mañana
+  if (d === 2) return 66;
+  if (d <= 7) return 50;
+  if (d <= 14) return 32;
+  return 16;
+}
+function smartScore(t) { return urgencyScore(t.due) + (PRI_W[t.priority] || 0); }
+
+// Clase de semáforo (borde izquierdo de la tarjeta) según fecha.
+function semClass(t) {
+  var d = daysLeft(t.due);
+  if (d === null) return 'sem-gris';
+  if (d <= 0) return 'sem-rojo';
+  if (d <= 2) return 'sem-ambar';
+  if (d <= 7) return 'sem-azul';
+  return 'sem-verde';
+}
+// Texto + color de la "píldora" de fecha.
+function dueChip(due) {
+  var d = daysLeft(due);
+  if (d === null) return null;
+  var color, txt;
+  if (d < 0) { color = 'rojo'; txt = d === -1 ? 'Venció ayer' : 'Venció hace ' + (-d) + ' d'; }
+  else if (d === 0) { color = 'rojo'; txt = '¡Hoy!'; }
+  else if (d === 1) { color = 'ambar'; txt = 'Mañana'; }
+  else if (d <= 6) { color = 'ambar'; txt = 'En ' + d + ' días'; }
+  else { var dt = parseYmd(due); color = d <= 14 ? 'azul' : 'verde'; txt = dt.getDate() + ' ' + MESES[dt.getMonth()]; }
+  return { color: color, txt: txt };
+}
+
+/* ---------- Operaciones ---------- */
+function addTask(title, priority, due) {
+  title = (title || '').trim();
+  if (!title) return;
+  STATE.tasks.push({
+    id: uid(), title: title, notes: '',
+    priority: priority || 'media', due: due || '', done: false, createdAt: Date.now()
+  });
+  save();
+}
+function findTask(id) { for (var i = 0; i < STATE.tasks.length; i++) if (STATE.tasks[i].id === id) return STATE.tasks[i]; return null; }
+function toggleDone(id) {
+  var t = findTask(id); if (!t) return;
+  t.done = !t.done; t.doneAt = t.done ? Date.now() : null; save(); render();
+}
+function deleteTask(id) {
+  STATE.tasks = STATE.tasks.filter(function (t) { return t.id !== id; }); save(); render();
+}
+
+/* ---------- Filtro + orden ---------- */
+function visibleTasks() {
+  var q = STATE.ui.q.trim().toLowerCase();
+  var list = STATE.tasks.filter(function (t) {
+    if (STATE.ui.filter === 'pendientes' && t.done) return false;
+    if (STATE.ui.filter === 'hechas' && !t.done) return false;
+    if (q) {
+      var hay = (t.title + ' ' + (t.notes || '')).toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+  var sort = STATE.ui.sort;
+  list.sort(function (a, b) {
+    if (a.done !== b.done) return a.done ? 1 : -1; // hechas siempre al final
+    if (sort === 'priority') {
+      var d = (PRI_W[b.priority] || 0) - (PRI_W[a.priority] || 0);
+      return d !== 0 ? d : smartScore(b) - smartScore(a);
+    }
+    if (sort === 'due') {
+      var ad = a.due ? parseYmd(a.due).getTime() : Infinity;
+      var bd = b.due ? parseYmd(b.due).getTime() : Infinity;
+      return ad !== bd ? ad - bd : smartScore(b) - smartScore(a);
+    }
+    if (sort === 'created') return (b.createdAt || 0) - (a.createdAt || 0);
+    return smartScore(b) - smartScore(a); // 'smart'
+  });
+  return list;
+}
+
+/* ---------- Render ---------- */
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+var PRI_LABEL = { alta: 'Alta', media: 'Media', baja: 'Baja' };
+
+function render() {
+  // Tabs
+  $('tab-lista').classList.toggle('active', STATE.ui.tab === 'lista');
+  $('tab-matriz').classList.toggle('active', STATE.ui.tab === 'matriz');
+  $('view-lista').style.display = STATE.ui.tab === 'lista' ? '' : 'none';
+  $('view-matriz').style.display = STATE.ui.tab === 'matriz' ? '' : 'none';
+
+  renderKpis();
+  if (STATE.ui.tab === 'lista') renderList(); else renderMatrix();
+}
+
+function renderKpis() {
+  var pend = 0, hoy = 0, venc = 0, today = todayStr();
+  STATE.tasks.forEach(function (t) {
+    if (t.done) return;
+    pend++;
+    var d = daysLeft(t.due);
+    if (d !== null && d < 0) venc++;
+    else if (t.due === today) hoy++;
+  });
+  $('kpi-pend').textContent = pend;
+  $('kpi-hoy').textContent = hoy;
+  $('kpi-venc').textContent = venc;
+}
+
+var SORT_NOTES = {
+  smart: 'Orden inteligente: combina prioridad y cercanía de la fecha límite.',
+  priority: 'Ordenado por prioridad (alta → baja).',
+  due: 'Ordenado por fecha límite (lo más próximo primero).',
+  created: 'Ordenado por lo más reciente que agregaste.'
+};
+
+function taskHTML(t) {
+  var chip = dueChip(t.due);
+  var dueHtml = chip ? '<span class="due ' + chip.color + '">⏰ ' + esc(chip.txt) + '</span>' : '';
+  var notesHtml = t.notes ? '<div class="t-notes">' + esc(t.notes) + '</div>' : '';
+  return '<div class="task ' + semClass(t) + (t.done ? ' done' : '') + '" data-id="' + t.id + '">'
+    + '<input type="checkbox" class="chk" ' + (t.done ? 'checked' : '') + ' data-act="toggle" aria-label="Hecho">'
+    + '<div class="t-body">'
+    + '<div class="t-title">' + esc(t.title) + '</div>'
+    + notesHtml
+    + '<div class="t-meta">'
+    + '<span class="badge pri-' + t.priority + '">' + (PRI_LABEL[t.priority] || '') + '</span>'
+    + dueHtml
+    + '</div></div>'
+    + '<div class="t-actions">'
+    + '<button class="icon-btn" data-act="edit" title="Editar">✏️</button>'
+    + '<button class="icon-btn" data-act="del" title="Borrar">🗑️</button>'
+    + '</div></div>';
+}
+
+function renderList() {
+  $('sort-note').innerHTML = '💡 ' + SORT_NOTES[STATE.ui.sort];
+  var list = visibleTasks();
+  var el = $('list');
+  if (!list.length) {
+    var msg = STATE.tasks.length
+      ? '<p>No hay pendientes que coincidan con este filtro.</p>'
+      : '<p><b>¡Todo limpio!</b></p><p>Agrega tu primer pendiente arriba 👆</p>';
+    el.innerHTML = '<div class="empty"><div class="big">🗒️</div>' + msg + '</div>';
+    return;
+  }
+  el.innerHTML = list.map(taskHTML).join('');
+}
+
+/* ---------- Matriz Eisenhower ----------
+   Importante = prioridad alta o media. Urgente = vencida o fecha ≤ 2 días. */
+function isImportant(t) { return t.priority === 'alta' || t.priority === 'media'; }
+function isUrgent(t) { var d = daysLeft(t.due); return d !== null && d <= 2; }
+var PRI_DOT = { alta: '#E07A5F', media: '#F2CC8F', baja: '#81B29A' };
+
+function miniHTML(t) {
+  var chip = dueChip(t.due);
+  var sub = chip ? '<small>· ' + esc(chip.txt) + '</small>' : '';
+  return '<div class="mini" data-id="' + t.id + '" data-act="edit">'
+    + '<span class="dot" style="background:' + (PRI_DOT[t.priority] || '#ccc') + '"></span>'
+    + '<span class="mt">' + esc(t.title) + '</span>' + sub + '</div>';
+}
+
+function renderMatrix() {
+  var q1 = [], q2 = [], q3 = [], q4 = [];
+  STATE.tasks.filter(function (t) { return !t.done; }).forEach(function (t) {
+    var imp = isImportant(t), urg = isUrgent(t);
+    if (imp && urg) q1.push(t); else if (imp && !urg) q2.push(t);
+    else if (!imp && urg) q3.push(t); else q4.push(t);
+  });
+  [['q1', q1], ['q2', q2], ['q3', q3], ['q4', q4]].forEach(function (pair) {
+    var arr = pair[1].sort(function (a, b) { return smartScore(b) - smartScore(a); });
+    $('c-' + pair[0]).textContent = arr.length;
+    $(pair[0]).innerHTML = arr.length ? arr.map(miniHTML).join('') : '<div class="qempty">Nada por aquí 🎉</div>';
+  });
+}
+
+/* ---------- Modal de edición ---------- */
+function openEdit(id) {
+  var t = findTask(id); if (!t) return;
+  $('edit-id').value = t.id;
+  $('edit-title').value = t.title;
+  $('edit-priority').value = t.priority;
+  $('edit-due').value = t.due || '';
+  $('edit-notes').value = t.notes || '';
+  $('edit-backdrop').classList.add('open');
+  setTimeout(function () { $('edit-title').focus(); }, 50);
+}
+function closeEdit() { $('edit-backdrop').classList.remove('open'); }
+function saveEdit() {
+  var t = findTask($('edit-id').value); if (!t) return closeEdit();
+  var title = $('edit-title').value.trim();
+  if (!title) { $('edit-title').focus(); return; }
+  t.title = title;
+  t.priority = $('edit-priority').value;
+  t.due = $('edit-due').value || '';
+  t.notes = $('edit-notes').value.trim();
+  save(); closeEdit(); render(); toast('Guardado');
+}
+
+/* ---------- Respaldo (export / import) ---------- */
+function exportData() {
+  var blob = new Blob([JSON.stringify({ tasks: STATE.tasks, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pendientes-dekoor-' + todayStr() + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  toast('Respaldo descargado');
+}
+function importData(file) {
+  var rd = new FileReader();
+  rd.onload = function () {
+    try {
+      var data = JSON.parse(rd.result);
+      var incoming = Array.isArray(data) ? data : (data && data.tasks);
+      if (!Array.isArray(incoming)) throw 0;
+      var byId = {}; STATE.tasks.forEach(function (t) { byId[t.id] = t; });
+      var added = 0;
+      incoming.forEach(function (t) {
+        if (!t || !t.title) return;
+        if (!t.id || byId[t.id]) t.id = uid();
+        t.priority = t.priority || 'media'; t.due = t.due || ''; t.done = !!t.done;
+        t.createdAt = t.createdAt || Date.now();
+        STATE.tasks.push(t); byId[t.id] = t; added++;
+      });
+      save(); render(); toast(added + ' pendiente(s) importado(s)');
+    } catch (e) { toast('Archivo no válido'); }
+  };
+  rd.readAsText(file);
+}
+
+/* ---------- Toast ---------- */
+var toastT;
+function toast(msg) {
+  var el = $('toast'); el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(function () { el.classList.remove('show'); }, 1900);
+}
+
+/* ---------- Eventos ---------- */
+function bind() {
+  // Alta rápida
+  $('add-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    addTask($('add-title').value, $('add-priority').value, $('add-due').value);
+    $('add-title').value = ''; $('add-due').value = '';
+    $('add-title').focus(); render();
+  });
+
+  // Tabs
+  document.querySelectorAll('.tab').forEach(function (b) {
+    b.addEventListener('click', function () { STATE.ui.tab = b.dataset.tab; save(); render(); });
+  });
+
+  // Orden + búsqueda + filtros
+  $('sort').addEventListener('change', function () { STATE.ui.sort = this.value; save(); render(); });
+  $('sort').value = STATE.ui.sort;
+  $('search').addEventListener('input', function () { STATE.ui.q = this.value; renderList(); });
+  document.querySelectorAll('.chip').forEach(function (c) {
+    c.addEventListener('click', function () {
+      STATE.ui.filter = c.dataset.filter;
+      document.querySelectorAll('.chip').forEach(function (x) { x.classList.toggle('active', x === c); });
+      save(); renderList();
+    });
+  });
+
+  // Delegación de clics en lista y matriz (toggle / edit / del)
+  document.querySelector('main').addEventListener('click', function (e) {
+    var actEl = e.target.closest('[data-act]'); if (!actEl) return;
+    var holder = actEl.closest('[data-id]'); if (!holder) return;
+    var id = holder.dataset.id, act = actEl.dataset.act;
+    if (act === 'toggle') toggleDone(id);
+    else if (act === 'edit') openEdit(id);
+    else if (act === 'del') {
+      var t = findTask(id);
+      if (t && confirm('¿Borrar "' + t.title + '"?')) { deleteTask(id); toast('Borrado'); }
+    }
+  });
+
+  // Modal
+  $('edit-save').addEventListener('click', saveEdit);
+  $('edit-delete').addEventListener('click', function () {
+    var t = findTask($('edit-id').value);
+    if (t && confirm('¿Borrar "' + t.title + '"?')) { deleteTask(t.id); closeEdit(); toast('Borrado'); }
+  });
+  $('edit-backdrop').addEventListener('click', function (e) { if (e.target === this) closeEdit(); });
+  $('edit-notes').addEventListener('keydown', function (e) { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') saveEdit(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeEdit(); });
+
+  // Respaldo
+  $('btn-export').addEventListener('click', exportData);
+  $('btn-import').addEventListener('click', function () { $('import-file').click(); });
+  $('import-file').addEventListener('change', function () { if (this.files[0]) importData(this.files[0]); this.value = ''; });
+  $('btn-clear-done').addEventListener('click', function () {
+    var n = STATE.tasks.filter(function (t) { return t.done; }).length;
+    if (!n) return toast('No hay hechas');
+    if (confirm('¿Borrar ' + n + ' tarea(s) ya hecha(s)?')) {
+      STATE.tasks = STATE.tasks.filter(function (t) { return !t.done; });
+      save(); render(); toast('Listas borradas');
+    }
+  });
+}
+
+/* ---------- Service Worker ---------- */
+function registerSW() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/pendientes/sw.js', { scope: '/pendientes/' }).catch(function () {});
+  }
+}
+
+/* ---------- Instalar PWA ---------- */
+function setupInstall() {
+  var btn = $('install-pwa-btn'); if (!btn) return;
+  var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (standalone) return;
+  var ua = navigator.userAgent || '';
+  var isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  var isSafari = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+  var deferred = null;
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; btn.classList.add('is-ready'); });
+  if (isIOS && isSafari) btn.classList.add('is-ready');
+  btn.addEventListener('click', async function () {
+    if (deferred) {
+      btn.style.pointerEvents = 'none';
+      try { deferred.prompt(); await deferred.userChoice; } catch (e) {}
+      finally { deferred = null; btn.style.pointerEvents = ''; }
+      return;
+    }
+    if (isIOS && isSafari) { alert('Para instalar en iPhone/iPad:\n\n1. Toca Compartir (⬆️).\n2. Elige "Agregar a inicio".'); return; }
+    alert('Tu navegador no permite instalar directamente. Ábrela en Chrome o Edge para instalar.');
+  });
+  window.addEventListener('appinstalled', function () { deferred = null; btn.classList.remove('is-ready'); toast('App instalada'); });
+}
+
+/* ---------- Init ---------- */
+function init() {
+  load();
+  bind();
+  render();
+  registerSW();
+  setupInstall();
+}
+init();
+</script>
+</body>
+</html>
