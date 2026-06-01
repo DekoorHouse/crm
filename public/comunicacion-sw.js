@@ -44,6 +44,11 @@ self.addEventListener('fetch', (event) => {
   // No tocar cross-origin (Firebase, fonts, CDNs)
   if (url.origin !== self.location.origin) return;
 
+  // Apps hermanas con su propio Service Worker y manifest (scope propio):
+  // NO interferir, o esta PWA (scope "/") secuestraría su navegación e instalación
+  // y se instalarían con el nombre/ícono equivocados. Cada una gestiona lo suyo.
+  if (url.pathname.startsWith('/pendientes/')) return;
+
   // APIs siempre a red, sin cache
   if (url.pathname.startsWith('/api/')) return;
 

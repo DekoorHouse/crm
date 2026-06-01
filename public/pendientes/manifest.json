@@ -2,6 +2,7 @@
   "name": "DeKoor · Pendientes y Prioridades",
   "short_name": "Pendientes",
   "description": "Organiza tus tareas pendientes por prioridad y urgencia: orden inteligente, semáforo de vencimiento y Matriz de Eisenhower. Funciona offline.",
+  "id": "/pendientes/",
   "scope": "/pendientes/",
   "start_url": "/pendientes/",
   "display": "standalone",

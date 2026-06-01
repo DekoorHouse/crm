@@ -1,6 +1,6 @@
 /* Service Worker · DeKoor Pendientes · scope /pendientes/
    App 100% autocontenida (HTML/CSS/JS inline) → cacheable y usable offline. */
-const CACHE = 'pendientes-v2';
+const CACHE = 'pendientes-v3';
 
 const PRECACHE = [
   '/pendientes/',
