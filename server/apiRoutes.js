@@ -138,6 +138,49 @@ router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) =>
     }
 });
 
+// --- Crear referencia (publico, sin auth) ---
+// La creacion se hace server-side con admin SDK para que los visitantes (no
+// autenticados) puedan publicar sin abrir escritura publica en las reglas de
+// Firestore. Se fuerza aprobado=false y la fecha del servidor.
+router.post('/referencias/crear', async (req, res) => {
+    try {
+        const { nombre, ciudad, rating, texto, fotos } = req.body;
+
+        const nombreLimpio = (nombre || '').toString().trim().slice(0, 100);
+        const ciudadLimpia = (ciudad || '').toString().trim().slice(0, 100);
+        const textoLimpio = (texto || '').toString().trim().slice(0, 2000);
+        const ratingNum = parseInt(rating, 10);
+
+        if (!nombreLimpio) return res.status(400).json({ error: 'Escribe tu nombre.' });
+        if (!ciudadLimpia) return res.status(400).json({ error: 'Escribe tu ciudad.' });
+        if (!textoLimpio) return res.status(400).json({ error: 'Escribe tu opinion.' });
+        if (!(ratingNum >= 1 && ratingNum <= 5)) {
+            return res.status(400).json({ error: 'Selecciona una calificacion valida.' });
+        }
+
+        // Solo aceptar URLs de nuestro propio Storage (las devuelve /referencias/upload)
+        const fotosLimpias = Array.isArray(fotos)
+            ? fotos.filter(u => typeof u === 'string' && u.startsWith('https://storage.googleapis.com/')).slice(0, 5)
+            : [];
+
+        const docRef = await db.collection('referencias').add({
+            nombre: nombreLimpio,
+            ciudad: ciudadLimpia,
+            rating: ratingNum,
+            texto: textoLimpio,
+            foto: fotosLimpias[0] || '',
+            fotos: fotosLimpias,
+            fecha: admin.firestore.FieldValue.serverTimestamp(),
+            aprobado: false
+        });
+
+        res.json({ id: docRef.id });
+    } catch (error) {
+        console.error('Error creando referencia:', error);
+        res.status(500).json({ error: 'No se pudo publicar la referencia.' });
+    }
+});
+
 // --- Rotar foto de referencia ---
 router.post('/referencias/rotate', async (req, res) => {
     try {

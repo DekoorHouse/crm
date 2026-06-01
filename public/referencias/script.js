@@ -162,18 +162,23 @@ async function submitReferencia(event) {
             fotos.push(uploadData.url);
         }
 
-        var docRef = await db.collection('referencias').add({
-            nombre: nombre,
-            ciudad: ciudad,
-            rating: selectedRating,
-            texto: texto,
-            foto: fotos[0] || '',
-            fotos: fotos,
-            fecha: firebase.firestore.FieldValue.serverTimestamp(),
-            aprobado: false
+        // La creacion se hace en el servidor (admin SDK). El visitante no esta
+        // autenticado, por lo que un write directo a Firestore seria rechazado.
+        var crearRes = await fetch(API_BASE_URL + '/api/referencias/crear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                nombre: nombre,
+                ciudad: ciudad,
+                rating: selectedRating,
+                texto: texto,
+                fotos: fotos
+            })
         });
+        var crearData = await crearRes.json();
+        if (!crearRes.ok) throw new Error(crearData.error || 'Error al publicar');
 
-        misRefs.push(docRef.id);
+        misRefs.push(crearData.id);
         localStorage.setItem('misReferencias', JSON.stringify(misRefs));
 
         // Notificar por WhatsApp (no bloquea al usuario)
