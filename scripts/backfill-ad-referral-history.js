@@ -12,20 +12,30 @@
  *   3) la Graph API de Meta (si hay META_GRAPH_TOKEN y no se pasa --no-graph),
  *   4) en última instancia, solo el número (#source_id).
  *
+ * Por defecto SOLO escribe los contactos con VARIOS anuncios (el caso "si hay varios").
+ * Los de un solo anuncio ya se ven bien en el banner usando el `adReferral` existente, así
+ * que se omiten para no reescribir ~80k documentos sin necesidad (usa --include-single para incluirlos).
+ *
  * Uso:
  *   node scripts/backfill-ad-referral-history.js                  # dry-run (no escribe)
  *   node scripts/backfill-ad-referral-history.js --apply          # aplica los cambios
- *   node scripts/backfill-ad-referral-history.js --limit 20       # procesa solo 20 contactos (prueba)
+ *   node scripts/backfill-ad-referral-history.js --limit 200      # procesa solo 200 contactos (prueba)
+ *   node scripts/backfill-ad-referral-history.js --concurrency 50 # lecturas en paralelo (default 30)
+ *   node scripts/backfill-ad-referral-history.js --include-single # también escribe los de un solo anuncio
  *   node scripts/backfill-ad-referral-history.js --no-graph       # no consulta nombres a Meta
  *   node scripts/backfill-ad-referral-history.js --force          # reconstruye aunque ya tenga historial
  *
- * Requiere: FIREBASE_SERVICE_ACCOUNT_JSON en .env (y opcional META_GRAPH_TOKEN para nombres).
+ * Requiere: FIREBASE_SERVICE_ACCOUNT_JSON (env o serviceAccountKey.json) y opcional META_GRAPH_TOKEN.
  */
 require('dotenv').config();
 const admin = require('firebase-admin');
 const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
+const pLimit = require('p-limit');
+
+// Se activa si la query por adId tuvo que caer a scan completo de mensajes (más lento).
+const FALLBACK_SCAN_USED = { flag: false };
 
 // Mismo criterio que server/config.js: env var en producción, o serviceAccountKey.json local.
 function loadServiceAccount() {
@@ -45,9 +55,19 @@ function loadServiceAccount() {
 const APPLY = process.argv.includes('--apply');
 const NO_GRAPH = process.argv.includes('--no-graph');
 const FORCE = process.argv.includes('--force');
+const INCLUDE_SINGLE = process.argv.includes('--include-single');
 const GRAPH_TOKEN = process.env.META_GRAPH_TOKEN;
-const limitArg = process.argv.find(a => a.startsWith('--limit'));
-const LIMIT = limitArg ? parseInt((limitArg.split('=')[1] || process.argv[process.argv.indexOf(limitArg) + 1]), 10) : null;
+
+function numArg(name, def) {
+    const a = process.argv.find(x => x === name || x.startsWith(name + '='));
+    if (!a) return def;
+    const v = a.includes('=') ? a.split('=')[1] : process.argv[process.argv.indexOf(a) + 1];
+    const n = parseInt(v, 10);
+    return isNaN(n) ? def : n;
+}
+const LIMIT = numArg('--limit', null);
+const CONCURRENCY = numArg('--concurrency', 30);
+const GRAPH_CONCURRENCY = numArg('--graph-concurrency', 5);
 
 function tsMs(ts) {
     if (!ts) return 0;
@@ -86,6 +106,7 @@ async function fetchAdMessages(contactRef) {
             .get();
         return snap.docs.map(d => d.data()).filter(d => d.adId);
     } catch (e) {
+        FALLBACK_SCAN_USED.flag = true;
         const snap = await contactRef.collection('messages')
             .select('adId', 'timestamp')
             .get();
@@ -151,10 +172,11 @@ async function main() {
     console.log('');
 
     console.log('Cargando contactos...');
+    const t0 = Date.now();
     const snap = await db.collection('contacts_whatsapp').get();
-    console.log(`Total contactos: ${snap.size}`);
+    console.log(`Total contactos: ${snap.size}  (${((Date.now() - t0) / 1000).toFixed(0)}s)`);
 
-    // Caché global de metadatos de anuncios + selección de candidatos.
+    // Caché global de metadatos de anuncios + candidatos (objetos ligeros para no agotar memoria).
     const adMeta = new Map();
     const candidates = [];
     let alreadyHave = 0;
@@ -167,40 +189,55 @@ async function main() {
             alreadyHave++;
             return;
         }
-        candidates.push({ ref: doc.ref, id: doc.id, data });
+        candidates.push({ ref: doc.ref, id: doc.id, adReferral: data.adReferral, createdAt: data.createdAt || null });
     });
 
     console.log(`Contactos con anuncio (adReferral): ${candidates.length + alreadyHave}`);
     console.log(`  - ya tienen historial (se omiten): ${alreadyHave}`);
-    console.log(`  - a procesar: ${candidates.length}`);
+    console.log(`  - a inspeccionar: ${candidates.length}`);
     console.log(`Anuncios distintos conocidos por nombre (caché): ${adMeta.size}\n`);
 
     const toProcess = LIMIT ? candidates.slice(0, LIMIT) : candidates;
 
-    // Pass 1: reconstruir anuncios distintos por contacto y recolectar IDs sin nombre.
-    console.log('Reconstruyendo historial desde los mensajes...');
-    const unknownIds = new Set();
-    let i = 0;
-    for (const c of toProcess) {
-        i++;
-        if (i % 100 === 0) console.log(`  ${i}/${toProcess.length}`);
+    // Pass 1: reconstruir anuncios distintos por contacto, EN PARALELO (limitado).
+    console.log(`Reconstruyendo historial desde los mensajes (concurrencia ${CONCURRENCY})...`);
+    const t1 = Date.now();
+    const limit = pLimit(CONCURRENCY);
+    let done = 0;
+    await Promise.all(toProcess.map(c => limit(async () => {
         const messages = await fetchAdMessages(c.ref);
-        c.distinct = buildDistinctAds(messages, c.data);
-        for (const d of c.distinct) {
+        c.distinct = buildDistinctAds(messages, c);
+        done++;
+        if (done % 2000 === 0) console.log(`  ${done}/${toProcess.length}  (${((Date.now() - t1) / 1000).toFixed(0)}s)`);
+    })));
+    console.log(`  Listo en ${((Date.now() - t1) / 1000).toFixed(0)}s.`);
+    if (FALLBACK_SCAN_USED.flag) {
+        console.warn('  ⚠ La query por adId requirió scan completo de mensajes (más lento). El índice de adId ayudaría.');
+    }
+
+    // Solo nos interesa ESCRIBIR los contactos con VARIOS anuncios (el caso "si hay varios").
+    // Los de un solo anuncio ya se ven bien en el banner vía el adReferral existente.
+    const multiCount = toProcess.filter(c => (c.distinct || []).length >= 2).length;
+    const toWrite = toProcess.filter(c => (c.distinct || []).length >= (INCLUDE_SINGLE ? 1 : 2));
+    console.log(`\nContactos con VARIOS anuncios: ${multiCount}`);
+    console.log(`Contactos de un solo anuncio: ${toProcess.length - multiCount} (${INCLUDE_SINGLE ? 'se incluirán' : 'se omiten — ya se ven vía adReferral'})`);
+
+    // Pass 2: resolver nombres faltantes SOLO de los anuncios que se van a escribir, EN PARALELO (limitado).
+    const unknownIds = new Set();
+    for (const c of toWrite) {
+        for (const d of (c.distinct || [])) {
             const meta = adMeta.get(d.source_id);
-            const isOwnRef = c.data.adReferral && String(c.data.adReferral.source_id) === d.source_id;
+            const isOwnRef = c.adReferral && String(c.adReferral.source_id) === d.source_id;
             if (!isOwnRef && (!meta || !meta.ad_name)) unknownIds.add(d.source_id);
         }
     }
 
-    // Pass 2: resolver nombres faltantes vía Graph API (una sola vez por anuncio).
     let resolved = 0, graphFails = 0;
     if (!NO_GRAPH && GRAPH_TOKEN && unknownIds.size) {
-        console.log(`\nResolviendo ${unknownIds.size} nombres de anuncio vía Graph API...`);
-        let k = 0;
-        for (const id of unknownIds) {
-            k++;
-            if (k % 25 === 0) console.log(`  ${k}/${unknownIds.size}`);
+        console.log(`\nResolviendo ${unknownIds.size} nombres de anuncio vía Graph API (concurrencia ${GRAPH_CONCURRENCY})...`);
+        const glimit = pLimit(GRAPH_CONCURRENCY);
+        let gk = 0;
+        await Promise.all([...unknownIds].map(id => glimit(async () => {
             const name = await resolveName(id);
             if (name) {
                 const prev = adMeta.get(id) || {};
@@ -209,29 +246,27 @@ async function main() {
             } else {
                 graphFails++;
             }
-        }
+            if (++gk % 50 === 0) console.log(`  ${gk}/${unknownIds.size}`);
+        })));
     }
 
-    // Pass 3: armar el adReferralHistory final.
+    // Pass 3: armar el adReferralHistory final de los contactos a escribir.
     const toUpdate = [];
-    let multiAd = 0, totalAds = 0;
-    for (const c of toProcess) {
-        const history = (c.distinct || []).map(d => buildEntry(d, c.data, adMeta));
+    let totalAds = 0;
+    for (const c of toWrite) {
+        const history = (c.distinct || []).map(d => buildEntry(d, c, adMeta));
         if (!history.length) continue;
-        if (history.length > 1) multiAd++;
         totalAds += history.length;
         toUpdate.push({ ref: c.ref, id: c.id, history });
     }
 
     console.log(`\nResumen:`);
-    console.log(`  Contactos a actualizar: ${toUpdate.length}`);
-    console.log(`  - con varios anuncios: ${multiAd}`);
-    console.log(`  - con un solo anuncio: ${toUpdate.length - multiAd}`);
+    console.log(`  Contactos a actualizar: ${toUpdate.length} (con ${INCLUDE_SINGLE ? '≥1' : '≥2'} anuncios)`);
     console.log(`  Anuncios reconstruidos en total: ${totalAds}`);
     console.log(`  Nombres resueltos vía Graph: ${resolved} (fallidos: ${graphFails})\n`);
 
-    // Muestra: priorizar contactos con varios anuncios.
-    const sample = toUpdate.slice().sort((a, b) => b.history.length - a.history.length).slice(0, 8);
+    // Muestra: los de más anuncios primero.
+    const sample = toUpdate.slice().sort((a, b) => b.history.length - a.history.length).slice(0, 10);
     console.log('Muestra (los de más anuncios primero):');
     sample.forEach(it => {
         const list = it.history.map(h => `#${h.source_id}${h.ad_name ? `(${h.ad_name})` : ''}@${tsDate(h.firstSeenAt)}`).join('  →  ');
