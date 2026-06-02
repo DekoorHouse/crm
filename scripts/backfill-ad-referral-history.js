@@ -134,15 +134,23 @@ function buildDistinctAds(messages, contact) {
     return distinct;
 }
 
+// Un nombre "bueno" no está vacío ni es el relleno "ID: <número>".
+function goodName(s) {
+    return typeof s === 'string' && s.trim() !== '' && !/^id:\s/i.test(s);
+}
+
 function buildEntry(d, contact, adMeta) {
     const id = d.source_id;
-    // Si coincide con el adReferral del contacto, conservar TODOS sus datos ricos.
-    if (contact.adReferral && String(contact.adReferral.source_id) === id) {
-        return { ...contact.adReferral, source_id: id, firstSeenAt: d.firstSeenAt || contact.adReferral.firstSeenAt || null };
-    }
     const meta = adMeta.get(id) || {};
+    // Si coincide con el adReferral del contacto, conservar sus datos ricos (source_url, tipo, etc.),
+    // pero si su nombre falta o es el relleno "ID: xxx", completarlo desde la caché/Graph.
+    if (contact.adReferral && String(contact.adReferral.source_id) === id) {
+        const entry = { ...contact.adReferral, source_id: id, firstSeenAt: d.firstSeenAt || contact.adReferral.firstSeenAt || null };
+        if (!goodName(entry.ad_name) && goodName(meta.ad_name)) entry.ad_name = meta.ad_name;
+        return entry;
+    }
     const entry = { source_id: id, source_type: meta.source_type || 'ad', firstSeenAt: d.firstSeenAt || null };
-    if (meta.ad_name) entry.ad_name = meta.ad_name;
+    if (goodName(meta.ad_name)) entry.ad_name = meta.ad_name;
     if (meta.source_url) entry.source_url = meta.source_url;
     if (meta.headline) entry.headline = meta.headline;
     if (meta.body) entry.body = meta.body;
@@ -226,9 +234,11 @@ async function main() {
     const unknownIds = new Set();
     for (const c of toWrite) {
         for (const d of (c.distinct || [])) {
-            const meta = adMeta.get(d.source_id);
             const isOwnRef = c.adReferral && String(c.adReferral.source_id) === d.source_id;
-            if (!isOwnRef && (!meta || !meta.ad_name)) unknownIds.add(d.source_id);
+            const ownName = isOwnRef ? c.adReferral.ad_name : null;
+            const meta = adMeta.get(d.source_id);
+            const haveName = goodName(ownName) || (meta && goodName(meta.ad_name));
+            if (!haveName) unknownIds.add(d.source_id);
         }
     }
 
