@@ -1067,31 +1067,84 @@ const ReplyContextBarTemplate = (message) => {
     `;
 };
 
-const AdReferralBannerTemplate = (adReferral) => {
-    if (!adReferral || !adReferral.source_id) return '';
-    
-    // Diferenciar entre anuncio (ad) y publicación (post)
-    const isPost = adReferral.source_type === 'post';
-    const icon = isPost ? 'fa-share-square' : 'fa-bullhorn';
-    const typeLabel = isPost ? 'Publicación' : 'Anuncio';
-    
-    // Extraer título/nombre interno o fallback
-    const title = adReferral.ad_name || adReferral.headline || adReferral.body || `ID: ${adReferral.source_id}`;
-    const url = adReferral.source_url || '#';
-    
+// Extrae milisegundos de un timestamp de Firestore en cualquiera de sus formas
+// (Timestamp en vivo con .toDate(), serializado {_seconds}, {seconds}, Date o string ISO).
+const referralTimeMs = (ts) => {
+    if (!ts) return 0;
+    if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+    if (typeof ts._seconds === 'number') return ts._seconds * 1000;
+    if (typeof ts.seconds === 'number') return ts.seconds * 1000;
+    if (ts instanceof Date) return ts.getTime();
+    if (typeof ts === 'string') { const t = Date.parse(ts); return isNaN(t) ? 0 : t; }
+    return 0;
+};
+
+const formatReferralDate = (ts) => {
+    const ms = referralTimeMs(ts);
+    if (!ms) return '';
+    return new Date(ms).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const AdReferralBannerTemplate = (contact) => {
+    if (!contact) return '';
+
+    // Usar el historial completo si existe; si no, caer al adReferral único (retrocompatibilidad).
+    let referrals = (Array.isArray(contact.adReferralHistory) && contact.adReferralHistory.length)
+        ? [...contact.adReferralHistory]
+        : (contact.adReferral ? [contact.adReferral] : []);
+
+    referrals = referrals.filter(r => r && r.source_id);
+    if (referrals.length === 0) return '';
+
+    // Ordenar cronológicamente (más antiguo primero). Las entradas sin fecha (anteriores a esta función)
+    // tienen tiempo 0, por lo que quedan al inicio: son las más antiguas.
+    referrals.sort((a, b) => referralTimeMs(a.firstSeenAt) - referralTimeMs(b.firstSeenAt));
+
+    const isMulti = referrals.length > 1;
+
+    const rows = referrals.map((ref, i) => {
+        const isPost = ref.source_type === 'post';
+        const typeLabel = isPost ? 'Publicación' : 'Anuncio';
+        const name = ref.ad_name || ref.headline || ref.body || '';
+        const dateStr = formatReferralDate(ref.firstSeenAt);
+        const url = ref.source_url || '';
+
+        const orderNum = isMulti ? `<span class="ad-referral-seq">${i + 1}</span>` : '';
+        const numberBadge = `<span class="ad-referral-number" title="ID del ${typeLabel.toLowerCase()} en Meta">#${ref.source_id}</span>`;
+        const nameHTML = name ? `<span class="ad-referral-name" title="${name}">${name}</span>` : '';
+        const dateHTML = dateStr ? `<span class="ad-referral-date">${dateStr}</span>` : '';
+        const linkHTML = url
+            ? `<a href="${url}" target="_blank" class="ad-referral-link" title="Ver ${typeLabel.toLowerCase()} original"><i class="fas fa-external-link-alt"></i></a>`
+            : '';
+
+        return `
+            <div class="ad-referral-item">
+                ${orderNum}
+                <div class="ad-referral-item-text">
+                    ${numberBadge}
+                    ${nameHTML}
+                    ${dateHTML}
+                </div>
+                ${linkHTML}
+            </div>`;
+    }).join('');
+
+    // Etiqueta de cabecera: tipo del primer origen, o "anuncios" si hay varios de distintos tipos.
+    const firstIsPost = referrals[0].source_type === 'post';
+    const headerLabel = isMulti
+        ? `Origen: Meta · ${referrals.length} anuncios`
+        : `Origen: Meta ${firstIsPost ? 'Publicación' : 'Anuncio'}`;
+    const headerIcon = firstIsPost ? 'fa-share-square' : 'fa-bullhorn';
+
     return `
-        <div class="ad-referral-banner">
+        <div class="ad-referral-banner ${isMulti ? 'ad-referral-banner-multi' : ''}">
             <div class="ad-referral-icon">
-                <i class="fas ${icon}"></i>
+                <i class="fas ${headerIcon}"></i>
             </div>
             <div class="ad-referral-content">
-                <p class="ad-referral-label">Origen: Meta ${typeLabel}</p>
-                <p class="ad-referral-title">${title}</p>
+                <p class="ad-referral-label">${headerLabel}</p>
+                <div class="ad-referral-list">${rows}</div>
             </div>
-            ${adReferral.source_url ? `
-            <a href="${url}" target="_blank" class="ad-referral-link" title="Ver anuncio original">
-                <i class="fas fa-external-link-alt"></i>
-            </a>` : ''}
         </div>
     `;
 };
@@ -1227,7 +1280,7 @@ const ChatWindowTemplate = (contact) => {
             </div>
         </header>
 
-        ${AdReferralBannerTemplate(contact.adReferral)}
+        ${AdReferralBannerTemplate(contact)}
         <div class="bg-white border-b border-gray-200 flex">
             <button class="tab-btn active"><i class="fas fa-comments mr-2"></i>Chat</button>
         </div>

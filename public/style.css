@@ -168,6 +168,76 @@ body.dark-mode input:focus, body.dark-mode textarea:focus, body.dark-mode select
     transform: scale(1.1);
 }
 
+/* --- Número de anuncio + historial cronológico de orígenes --- */
+.ad-referral-banner-multi {
+    align-items: flex-start;
+}
+
+.ad-referral-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 3px;
+}
+
+.ad-referral-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ad-referral-seq {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fbc02d;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ad-referral-item-text {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.ad-referral-number {
+    flex-shrink: 0;
+    font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #f57f17;
+    background: rgba(251, 192, 45, 0.18);
+    border: 1px solid rgba(251, 192, 45, 0.45);
+    padding: 1px 6px;
+    border-radius: 6px;
+    user-select: all;
+}
+
+.ad-referral-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #424242;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ad-referral-date {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: #8d6e00;
+    opacity: 0.85;
+}
+
 @keyframes slideDown {
     from { transform: translateY(-10px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }

@@ -637,36 +637,60 @@ router.post('/', async (req, res) => {
                 contactUpdateData.designUnreadCount = admin.firestore.FieldValue.increment(1);
             }
 
-            // Only add adReferral if it exists in the incoming message AND the contact doesn't already have it (first ad message)
-            if (message.referral && (!contactDoc.exists || !contactDoc.data().adReferral)) {
-                let adName = message.referral.headline || message.referral.body || `ID: ${message.referral.source_id}`;
-                
-                // Intentar obtener el nombre interno del anuncio vía Graph API
-                if (message.referral.source_type === 'ad' && message.referral.source_id && process.env.META_GRAPH_TOKEN) {
-                    try {
-                        console.log(`[META GRAPH] Consultando nombre del anuncio para ID: ${message.referral.source_id}`);
-                        const metaResponse = await axios.get(`https://graph.facebook.com/v18.0/${message.referral.source_id}`, {
-                            params: {
-                                fields: 'name',
-                                access_token: process.env.META_GRAPH_TOKEN
-                            }
-                        });
-                        
-                        if (metaResponse.data && metaResponse.data.name) {
-                            adName = metaResponse.data.name;
-                            console.log(`[META GRAPH] Nombre obtenido: ${adName}`);
-                        }
-                    } catch (error) {
-                        console.error(`[META GRAPH] Error al consultar nombre de anuncio: ${error.message}`);
-                        // Fallback ya está en adName (headline o body)
-                    }
+            // --- Ad Referral: registrar TODOS los anuncios de los que vino el contacto, en orden cronológico ---
+            // Antes solo se guardaba el primer anuncio (adReferral). Ahora mantenemos también un historial
+            // (adReferralHistory): un arreglo con cada anuncio DISTINTO (por source_id) y la fecha en que se vio
+            // por primera vez, ordenado del más antiguo al más reciente.
+            if (message.referral && message.referral.source_id) {
+                const existingData = contactDoc.exists ? contactDoc.data() : {};
+                let adHistory = Array.isArray(existingData.adReferralHistory) ? [...existingData.adReferralHistory] : [];
+
+                // Migración suave: si el contacto ya tenía un adReferral previo pero aún no historial, lo sembramos como el primero.
+                if (adHistory.length === 0 && existingData.adReferral && existingData.adReferral.source_id) {
+                    adHistory.push(existingData.adReferral);
                 }
 
-                contactUpdateData.adReferral = {
-                    ...message.referral,
-                    ad_name: adName
-                };
-                console.log(`[AD] Información de Ad Referral guardada para ${from}. Ad ID: ${message.referral.source_id}, Name: ${adName}`);
+                // Solo registrar si este anuncio (source_id) aún no está en el historial.
+                const alreadyTracked = adHistory.some(entry => entry && entry.source_id === message.referral.source_id);
+
+                if (!alreadyTracked) {
+                    let adName = message.referral.headline || message.referral.body || `ID: ${message.referral.source_id}`;
+
+                    // Intentar obtener el nombre interno del anuncio vía Graph API
+                    if (message.referral.source_type === 'ad' && process.env.META_GRAPH_TOKEN) {
+                        try {
+                            console.log(`[META GRAPH] Consultando nombre del anuncio para ID: ${message.referral.source_id}`);
+                            const metaResponse = await axios.get(`https://graph.facebook.com/v18.0/${message.referral.source_id}`, {
+                                params: {
+                                    fields: 'name',
+                                    access_token: process.env.META_GRAPH_TOKEN
+                                }
+                            });
+
+                            if (metaResponse.data && metaResponse.data.name) {
+                                adName = metaResponse.data.name;
+                                console.log(`[META GRAPH] Nombre obtenido: ${adName}`);
+                            }
+                        } catch (error) {
+                            console.error(`[META GRAPH] Error al consultar nombre de anuncio: ${error.message}`);
+                            // Fallback ya está en adName (headline o body)
+                        }
+                    }
+
+                    const referralEntry = {
+                        ...message.referral,
+                        ad_name: adName,
+                        firstSeenAt: messageData.timestamp // Fecha del primer mensaje recibido desde este anuncio
+                    };
+
+                    adHistory.push(referralEntry);
+                    contactUpdateData.adReferralHistory = adHistory;
+
+                    // Mantener adReferral apuntando al PRIMER anuncio (retrocompatibilidad con atribución y banner anterior).
+                    contactUpdateData.adReferral = adHistory[0];
+
+                    console.log(`[AD] Anuncio registrado para ${from}. Ad ID: ${message.referral.source_id}, Nombre: ${adName}. Total anuncios distintos: ${adHistory.length}`);
+                }
             }
 
             // Set or merge contact data
