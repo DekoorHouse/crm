@@ -110,57 +110,72 @@ body.dark-mode input:focus, body.dark-mode textarea:focus, body.dark-mode select
 .ad-referral-banner {
     background: linear-gradient(135deg, #fff9c4 0%, #fffde7 100%);
     border-bottom: 1px solid #fff59d;
-    padding: 10px 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
     animation: slideDown 0.3s ease-out;
 }
 
+/* Franja delgada: encabezado siempre visible y clicable para desplegar la lista. */
+.ad-referral-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 14px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+}
+
+.ad-referral-header:hover {
+    background: rgba(251, 192, 45, 0.12);
+}
+
 .ad-referral-icon {
-    width: 36px;
-    height: 36px;
+    width: 22px;
+    height: 22px;
     background: #fbc02d;
     color: white;
-    border-radius: 10px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.2rem;
-    box-shadow: 0 2px 4px rgba(251, 192, 45, 0.3);
-}
-
-.ad-referral-content {
-    flex-grow: 1;
+    font-size: 0.8rem;
+    flex-shrink: 0;
 }
 
 .ad-referral-label {
-    font-size: 0.7rem;
+    flex-grow: 1;
+    font-size: 0.72rem;
     text-transform: uppercase;
     font-weight: 700;
     color: #f57f17;
     margin: 0;
     letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.ad-referral-title {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #424242;
-    margin: 1px 0 0 0;
-    display: -webkit-box;
-    -webkit-line-clamp: 1;
-    line-clamp: 1;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+.ad-referral-chevron {
+    color: #f57f17;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+}
+
+.ad-referral-banner.expanded .ad-referral-chevron {
+    transform: rotate(180deg);
 }
 
 .ad-referral-link {
     color: #fbc02d;
-    font-size: 1.1rem;
-    padding: 8px;
+    font-size: 1rem;
+    padding: 4px 6px;
     border-radius: 50%;
     transition: all 0.2s;
+    flex-shrink: 0;
 }
 
 .ad-referral-link:hover {
@@ -168,16 +183,16 @@ body.dark-mode input:focus, body.dark-mode textarea:focus, body.dark-mode select
     transform: scale(1.1);
 }
 
-/* --- Número de anuncio + historial cronológico de orígenes --- */
-.ad-referral-banner-multi {
-    align-items: flex-start;
-}
-
+/* --- Número de anuncio + historial cronológico de orígenes (colapsable) --- */
 .ad-referral-list {
-    display: flex;
+    display: none;
     flex-direction: column;
     gap: 4px;
-    margin-top: 3px;
+    padding: 0 14px 8px 14px;
+}
+
+.ad-referral-banner.expanded .ad-referral-list {
+    display: flex;
 }
 
 .ad-referral-item {
@@ -1918,11 +1933,12 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
     #contact-status-wrapper .status-btn { padding: 2px 8px; font-size: 0.65rem; }
 
     /* Banner "ORIGEN: META ANUNCIO" compacto en mobile */
-    .ad-referral-banner { padding: 5px 10px; gap: 8px; }
-    .ad-referral-icon { width: 26px; height: 26px; font-size: 0.85rem; border-radius: 7px; }
+    .ad-referral-header { padding: 4px 10px; gap: 8px; }
+    .ad-referral-icon { width: 20px; height: 20px; font-size: 0.75rem; border-radius: 6px; }
     .ad-referral-label { font-size: 0.6rem; letter-spacing: 0.3px; }
-    .ad-referral-title { font-size: 0.78rem; margin-top: 0; }
-    .ad-referral-link { font-size: 0.95rem; padding: 4px; }
+    .ad-referral-list { padding: 0 10px 6px 10px; }
+    .ad-referral-name { font-size: 0.78rem; }
+    .ad-referral-link { font-size: 0.9rem; padding: 4px; }
 
     /* Si el único tab visible es "Chat", esconder la barra de tabs entera */
     .chat-tabs-mobile-hidden { display: none !important; }

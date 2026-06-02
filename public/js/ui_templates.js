@@ -1138,13 +1138,12 @@ const AdReferralBannerTemplate = (contact) => {
 
     return `
         <div class="ad-referral-banner ${isMulti ? 'ad-referral-banner-multi' : ''}">
-            <div class="ad-referral-icon">
-                <i class="fas ${headerIcon}"></i>
-            </div>
-            <div class="ad-referral-content">
-                <p class="ad-referral-label">${headerLabel}</p>
-                <div class="ad-referral-list">${rows}</div>
-            </div>
+            <button type="button" class="ad-referral-header" onclick="this.closest('.ad-referral-banner').classList.toggle('expanded')" title="Ver anuncios de origen">
+                <span class="ad-referral-icon"><i class="fas ${headerIcon}"></i></span>
+                <span class="ad-referral-label">${headerLabel}</span>
+                <i class="fas fa-chevron-down ad-referral-chevron"></i>
+            </button>
+            <div class="ad-referral-list">${rows}</div>
         </div>
     `;
 };
