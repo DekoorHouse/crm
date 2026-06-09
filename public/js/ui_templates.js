@@ -788,7 +788,7 @@ const MessageStatusIconTemplate = (status) => {
     switch (status) {
         case 'pending': return `<i class="far fa-clock message-status-icon" style="color: ${sentColor};"></i>`;
         case 'queued': return `<i class="far fa-clock message-status-icon" style="color: #60a5fa;"></i>`;
-        case 'read': return `<i class="fas fa-check-double" style="color: ${readColor};"></i>`;
+        case 'read': return `<i class="fas fa-check-double message-status-read" style="color: ${readColor};"></i>`;
         case 'delivered': return `<i class="fas fa-check-double" style="color: ${sentColor};"></i>`;
         case 'sent': return `<i class="fas fa-check" style="color: ${sentColor};"></i>`;
         default: return '';
