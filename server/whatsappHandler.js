@@ -922,7 +922,15 @@ router.post('/', async (req, res) => {
                     const newStatusValue = order[newStatus] || 0;
 
                     if (newStatusValue > currentStatusValue) {
-                        await messageDoc.ref.update({ status: newStatus });
+                        const updateData = { status: newStatus };
+                        // Guardar el momento exacto del cambio de estado (timestamp de WhatsApp, epoch en segundos)
+                        const tsSeconds = Number(statusUpdate.timestamp);
+                        if (!isNaN(tsSeconds) && tsSeconds > 0) {
+                            const fsTs = admin.firestore.Timestamp.fromMillis(tsSeconds * 1000);
+                            if (newStatus === 'read') updateData.readAt = fsTs;
+                            else if (newStatus === 'delivered') updateData.deliveredAt = fsTs;
+                        }
+                        await messageDoc.ref.update(updateData);
                         console.log(`[LOG] Estado del mensaje ${messageId} actualizado a '${newStatus}' en Firestore.`);
                     } else {
                          console.log(`[LOG] Estado ${newStatus} para ${messageId} es anterior o igual al actual (${messageDoc.data().status}). No se actualiza.`);

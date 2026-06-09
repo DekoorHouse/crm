@@ -782,13 +782,20 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
             </div>`;
 };
 
-const MessageStatusIconTemplate = (status) => {
+const MessageStatusIconTemplate = (status, readAt) => {
     const sentColor = '#9ca3af';
     const readColor = '#53bdeb';
     switch (status) {
         case 'pending': return `<i class="far fa-clock message-status-icon" style="color: ${sentColor};"></i>`;
         case 'queued': return `<i class="far fa-clock message-status-icon" style="color: #60a5fa;"></i>`;
-        case 'read': return `<i class="fas fa-check-double message-status-read" style="color: ${readColor};"></i>`;
+        case 'read': {
+            const secs = readAt && typeof readAt.seconds === 'number' ? readAt.seconds : null;
+            // Si tenemos la hora de lectura, la palomita es clickeable para mostrarla
+            if (secs) {
+                return `<i class="fas fa-check-double message-status-read message-status-read--clickable" style="color: ${readColor};" onclick="showReadReceipt(event, ${secs})" title="Ver hora de visto"></i>`;
+            }
+            return `<i class="fas fa-check-double message-status-read" style="color: ${readColor};"></i>`;
+        }
         case 'delivered': return `<i class="fas fa-check-double" style="color: ${sentColor};"></i>`;
         case 'sent': return `<i class="fas fa-check" style="color: ${sentColor};"></i>`;
         default: return '';
@@ -828,7 +835,7 @@ const MessageBubbleTemplate = (message) => {
 
     let contentHTML = '';
     let bubbleExtraClass = '';
-    let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
+    let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status, message.readAt) : ''}</div>`;
 
     const defaultTexts = ['📷 Imagen', '🎥 Video', '🎵 Audio', '📄 Documento', 'Sticker'];
     
@@ -841,7 +848,7 @@ const MessageBubbleTemplate = (message) => {
             bubbleExtraClass = 'has-image';
             const bubbleBgColor = isSent ? 'var(--color-bubble-sent-bg)' : 'var(--color-bubble-received-bg)';
             const fullImageUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
-            contentHTML += `<div style="background-color: ${bubbleBgColor}" class="rounded-lg overflow-hidden"><img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}<div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
+            contentHTML += `<div style="background-color: ${bubbleBgColor}" class="rounded-lg overflow-hidden"><img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}<div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status, message.readAt) : ''}</div></div>`;
             timeAndStatusHTML = '';
         } else if (message.fileType.startsWith('video/')) {
             bubbleExtraClass = 'has-video';

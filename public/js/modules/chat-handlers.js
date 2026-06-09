@@ -1858,9 +1858,68 @@ async function handleBotToggle(contactId, isActive) {
 }
 // --- END: Bot Toggle Logic ---
 
+// --- START: Read Receipt (hora de visto) ---
+/**
+ * Muestra un tooltip con la hora (y la fecha si fue otro día) en que el
+ * destinatario vio el mensaje. Se dispara al hacer click en la palomita azul.
+ * @param {Event} event Evento de click (para posicionar y evitar propagación).
+ * @param {number} readSeconds Epoch en segundos del momento de lectura.
+ */
+function showReadReceipt(event, readSeconds) {
+    if (event) event.stopPropagation();
+    if (!readSeconds) return;
+
+    const date = new Date(readSeconds * 1000);
+    const hora = date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+    let texto;
+    if (typeof isSameDay === 'function' && isSameDay(date, new Date())) {
+        texto = `Visto hoy a las ${hora}`;
+    } else {
+        const fecha = date.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+        texto = `Visto el ${fecha} a las ${hora}`;
+    }
+
+    let tip = document.getElementById('read-receipt-tooltip');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.id = 'read-receipt-tooltip';
+        tip.className = 'read-receipt-tooltip';
+        document.body.appendChild(tip);
+    }
+    tip.innerHTML = `<i class="fas fa-check-double" style="color:#53bdeb;"></i> ${texto}`;
+    tip.style.display = 'block';
+    tip.style.visibility = 'hidden';
+
+    // Posicionar arriba del punto del click, sin salirse de la pantalla
+    const x = event ? event.clientX : window.innerWidth / 2;
+    const y = event ? event.clientY : window.innerHeight / 2;
+    requestAnimationFrame(() => {
+        const rect = tip.getBoundingClientRect();
+        let left = x - rect.width / 2;
+        left = Math.max(8, Math.min(left, window.innerWidth - rect.width - 8));
+        let top = y - rect.height - 10;
+        if (top < 8) top = y + 16; // si no cabe arriba, mostrar debajo
+        tip.style.left = `${left}px`;
+        tip.style.top = `${top}px`;
+        tip.style.visibility = 'visible';
+    });
+
+    // Cerrar al hacer click en cualquier lado o tras unos segundos
+    clearTimeout(tip._hideTimer);
+    tip._hideTimer = setTimeout(hideReadReceipt, 4000);
+    setTimeout(() => document.addEventListener('click', hideReadReceipt, { once: true }), 0);
+}
+
+function hideReadReceipt() {
+    const tip = document.getElementById('read-receipt-tooltip');
+    if (tip) tip.style.display = 'none';
+}
+// --- END: Read Receipt ---
+
 // Exportar las funciones globalmente
 window.handleMarkAsUnread = handleMarkAsUnread;
 window.handleBotToggle = handleBotToggle;
+window.showReadReceipt = showReadReceipt;
 
 
 /**
