@@ -45,6 +45,8 @@
   .badge.ok { background:#e7f6ec; color:var(--green); }
   .muted { color:var(--gray); font-size:13px; }
   .del { background:#fdeaea; color:#c0392b; font-size:13px; padding:6px 10px; }
+  .edit { background:#e7f0fb; color:var(--primary); font-size:13px; padding:6px 10px; }
+  .acciones { display:flex; gap:6px; flex-shrink:0; }
   .hint { font-size:12px; color:var(--gray); margin-top:6px; }
 </style>
 </head>
@@ -89,6 +91,7 @@
         <textarea id="indicaciones" placeholder="Casa azul, portón negro, dejar con el vigilante…"></textarea>
 
         <button type="submit" id="btnGuardar" class="btn-primary">Guardar entrega</button>
+        <div id="cancelarEdicion" style="display:none; text-align:center; margin-top:10px;"><a href="#" id="linkCancelar" style="color:var(--gray); font-size:13px;">✕ Cancelar edición</a></div>
         <div id="estado" class="estado"></div>
       </form>
     </div>
@@ -123,7 +126,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-    import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     // Mismo proyecto Firebase que tu CRM y que la app
     const firebaseConfig = {
@@ -142,6 +145,7 @@
     let entregas = [];
     let marker = null;
     let picked = null;
+    let editId = null;
 
     // Fecha de entrega: por defecto hoy
     function ponerFechaHoy() {
@@ -290,11 +294,25 @@
       const btn = document.getElementById('btnGuardar');
       try {
         btn.disabled = true;
-        await addDoc(collection(db, COL), entrega);
-        estado('✅ Entrega guardada — ya aparece en la app del repartidor.');
-        ev.target.reset();
-        limpiarPunto();
-        ponerFechaHoy();
+        if (editId) {
+          await updateDoc(doc(db, COL, editId), {
+            numeroPedido: val('numeroPedido'),
+            cliente,
+            telefono: val('telefono'),
+            direccion: val('direccion'),
+            producto: val('producto'),
+            monto: parseFloat(val('monto')) || 0,
+            indicaciones: val('indicaciones'),
+            fechaEntrega: fecha,
+            lat: picked.lat,
+            lng: picked.lng
+          });
+          estado('✏️ Entrega actualizada — el cambio aparece en la app.');
+        } else {
+          await addDoc(collection(db, COL), entrega);
+          estado('✅ Entrega guardada — ya aparece en la app del repartidor.');
+        }
+        salirEdicion();
       } catch (e) {
         estado('Error al guardar: ' + e.message, true);
       } finally {
@@ -315,14 +333,46 @@
             <span class="badge ${e.estado === 'ENTREGADO' ? 'ok' : 'pend'}">${e.estado === 'ENTREGADO' ? 'ENTREGADO' : 'PENDIENTE'}</span>
             <div class="muted">${e.fechaEntrega ? '📅 ' + fmtFecha(e.fechaEntrega) + ' · ' : ''}${esc(e.producto || '')}${e.monto ? ' · $' + e.monto : ''}${e.telefono ? ' · ' + esc(e.telefono) : ''}</div>
           </div>
-          <button class="del" data-id="${e.id}">Eliminar</button>
+          <div class="acciones">
+            <button class="edit" data-id="${e.id}">Editar</button>
+            <button class="del" data-id="${e.id}">Eliminar</button>
+          </div>
         </div>`).join('');
+      cont.querySelectorAll('.edit').forEach(b => b.addEventListener('click', () => editarEntrega(b.dataset.id)));
       cont.querySelectorAll('.del').forEach(b => b.addEventListener('click', () => borrar(b.dataset.id)));
     }
     async function borrar(id) {
       if (!confirm('¿Eliminar esta entrega?')) return;
       try { await deleteDoc(doc(db, COL, id)); } catch (e) { estado('Error al eliminar: ' + e.message, true); }
     }
+
+    function editarEntrega(id) {
+      const e = entregas.find(x => x.id === id);
+      if (!e) return;
+      editId = id;
+      document.getElementById('numeroPedido').value = e.numeroPedido || '';
+      document.getElementById('monto').value = e.monto || '';
+      document.getElementById('fechaEntrega').value = e.fechaEntrega || '';
+      document.getElementById('cliente').value = e.cliente || '';
+      document.getElementById('telefono').value = e.telefono || '';
+      document.getElementById('producto').value = e.producto || '';
+      document.getElementById('direccion').value = e.direccion || '';
+      document.getElementById('indicaciones').value = e.indicaciones || '';
+      if (e.lat && e.lng) { setPunto(e.lat, e.lng); map.setView([e.lat, e.lng], 16); }
+      document.getElementById('btnGuardar').textContent = 'Actualizar entrega';
+      document.getElementById('cancelarEdicion').style.display = 'block';
+      estado('Editando la entrega de ' + (e.cliente || '') + '…');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    function salirEdicion() {
+      editId = null;
+      document.getElementById('form').reset();
+      limpiarPunto();
+      ponerFechaHoy();
+      document.getElementById('btnGuardar').textContent = 'Guardar entrega';
+      document.getElementById('cancelarEdicion').style.display = 'none';
+    }
+    document.getElementById('linkCancelar').addEventListener('click', e => { e.preventDefault(); salirEdicion(); });
 
     function val(id) { return document.getElementById(id).value.trim(); }
     function estado(msg, err) {
