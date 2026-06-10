@@ -165,3 +165,51 @@ exports.sendReportManual = functions
         console.log(`Reporte manual (${period}):`, result);
         return result;
     });
+
+// ------------------------------------------------------------
+// Notifica a la app del repartidor cuando entra o se modifica una entrega.
+// Envia al tema "entregas_repartidor" (la app esta suscrita a ese tema).
+// ------------------------------------------------------------
+const CAMPOS_CONTENIDO = ['numeroPedido', 'cliente', 'telefono', 'direccion', 'producto', 'monto', 'indicaciones', 'fechaEntrega', 'lat', 'lng'];
+
+exports.notificarEntrega = functions
+    .region('us-central1')
+    .firestore
+    .document('entregas_repartidor/{id}')
+    .onWrite(async (change, context) => {
+        const after = change.after.exists ? change.after.data() : null;
+        if (!after) return null; // se elimino: no notificar
+        const before = change.before.exists ? change.before.data() : null;
+        const esNuevo = !before;
+
+        // En una edicion, solo avisar si cambio un campo de contenido
+        // (no cuando el repartidor solo cambia estado/ordenRuta/minutosEstimados).
+        if (!esNuevo) {
+            const cambio = CAMPOS_CONTENIDO.some(f => JSON.stringify(before[f]) !== JSON.stringify(after[f]));
+            if (!cambio) return null;
+        }
+
+        const cliente = after.cliente || 'Cliente';
+        const titulo = esNuevo ? '📦 Nuevo pedido' : '✏️ Pedido modificado';
+        let cuerpo;
+        if (esNuevo) {
+            const partes = [cliente];
+            if (after.numeroPedido) partes.push('#' + after.numeroPedido);
+            if (after.producto) partes.push(after.producto);
+            cuerpo = partes.join(' · ');
+        } else {
+            cuerpo = `Se actualizó la entrega de ${cliente}`;
+        }
+
+        try {
+            await admin.messaging().send({
+                topic: 'entregas_repartidor',
+                notification: { title: titulo, body: cuerpo },
+                android: { priority: 'high' }
+            });
+            console.log('FCM enviado:', titulo, '-', cuerpo);
+        } catch (e) {
+            console.error('Error enviando FCM', e);
+        }
+        return null;
+    });
