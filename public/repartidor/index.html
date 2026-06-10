@@ -115,6 +115,9 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <!-- Google Maps JS solo para el buscador de direcciones (Places). El mapa visible sigue siendo OpenStreetMap (gratis). -->
+  <script>window.gmapsReady = new Promise(function (r) { window.__gmapsReady = r; });</script>
+  <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDqizDSGdFFplpeUYxRMoFlfVejIhHcJ7E&libraries=places&language=es&region=MX&loading=async&callback=__gmapsReady"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -161,16 +164,25 @@
         : 'Sin ubicación — haz clic en el mapa para marcar el punto.';
     }
 
-    // ---- Buscar dirección con lista de coincidencias (Nominatim, gratis) ----
+    // ---- Buscar dirección con Google Places API (nueva) ----
     const inputBuscar = document.getElementById('buscar');
     const boxResultados = document.getElementById('resultados');
     let buscarTimer = null;
+    let placesLib = null, suggestToken = null, predsActuales = [];
+
+    // Carga la librería de Places (API nueva) cuando Google esté listo
+    if (window.gmapsReady) window.gmapsReady.then(initGoogle);
+    async function initGoogle() {
+      try { placesLib = await google.maps.importLibrary('places'); nuevaSesion(); }
+      catch (e) { console.error('No se pudo cargar Places', e); }
+    }
+    function nuevaSesion() { if (placesLib) suggestToken = new placesLib.AutocompleteSessionToken(); }
 
     inputBuscar.addEventListener('input', () => {
       clearTimeout(buscarTimer);
       const q = inputBuscar.value.trim();
-      if (q.length < 4) { ocultarResultados(); return; }
-      buscarTimer = setTimeout(() => buscar(q), 350);
+      if (q.length < 3) { ocultarResultados(); return; }
+      buscarTimer = setTimeout(() => buscar(q), 300);
     });
     inputBuscar.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); clearTimeout(buscarTimer); buscar(inputBuscar.value.trim()); }
@@ -181,33 +193,44 @@
 
     async function buscar(q) {
       if (!q || q.length < 3) return;
+      if (!placesLib) { boxResultados.innerHTML = '<div class="empty">Cargando buscador…</div>'; boxResultados.classList.add('show'); return; }
       boxResultados.innerHTML = '<div class="empty">Buscando…</div>';
       boxResultados.classList.add('show');
       try {
-        // Sesga los resultados a México y a la zona de Durango (izq,arriba,der,abajo)
-        const viewbox = '-104.95,24.20,-104.40,23.85';
-        const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=mx&accept-language=es'
-          + '&viewbox=' + viewbox + '&bounded=0&q=' + encodeURIComponent(q);
-        const r = await fetch(url);
-        const data = await r.json();
-        if (data && data.length) {
-          boxResultados.innerHTML = data.map((d, i) =>
-            '<div class="item" data-i="' + i + '">' + esc(d.display_name) + '</div>').join('');
+        const { suggestions } = await placesLib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input: q,
+          sessionToken: suggestToken,
+          includedRegionCodes: ['mx'],
+          locationBias: { center: { lat: 24.0277, lng: -104.6532 }, radius: 40000 },
+          language: 'es',
+          region: 'mx'
+        });
+        predsActuales = (suggestions || []).map(s => s.placePrediction).filter(Boolean);
+        if (predsActuales.length) {
+          boxResultados.innerHTML = predsActuales.map((p, i) =>
+            '<div class="item" data-i="' + i + '"><b>' + esc(p.mainText ? p.mainText.text : p.text.text) + '</b> '
+            + '<span class="muted">' + esc(p.secondaryText ? p.secondaryText.text : '') + '</span></div>').join('');
           boxResultados.querySelectorAll('.item').forEach(el =>
-            el.addEventListener('click', () => elegirResultado(data[+el.dataset.i])));
+            el.addEventListener('click', () => elegirResultado(predsActuales[+el.dataset.i])));
         } else {
           boxResultados.innerHTML = '<div class="empty">Sin coincidencias. Marca el punto en el mapa.</div>';
         }
       } catch (e) {
-        boxResultados.innerHTML = '<div class="empty">Buscador no disponible. Marca el punto en el mapa.</div>';
+        boxResultados.innerHTML = '<div class="empty">Buscador no disponible (' + esc(e.message || 'error') + '). Marca el punto en el mapa.</div>';
       }
     }
 
-    function elegirResultado(d) {
-      const lat = +d.lat, lng = +d.lon;
-      map.setView([lat, lng], 17);
-      setPunto(lat, lng);
-      document.getElementById('direccion').value = d.display_name || inputBuscar.value;
+    async function elegirResultado(pred) {
+      try {
+        const place = pred.toPlace();
+        await place.fetchFields({ fields: ['location', 'formattedAddress'] });
+        const lat = place.location.lat();
+        const lng = place.location.lng();
+        map.setView([lat, lng], 17);
+        setPunto(lat, lng);
+        document.getElementById('direccion').value = place.formattedAddress || (pred.text ? pred.text.text : '');
+      } catch (e) { console.error(e); }
+      nuevaSesion(); // cierra la sesión (facturación agrupada y más barata)
       ocultarResultados();
     }
     function ocultarResultados() { boxResultados.classList.remove('show'); boxResultados.innerHTML = ''; }
