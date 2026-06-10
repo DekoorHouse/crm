@@ -24,6 +24,13 @@
   #map { height:340px; border-radius:12px; margin-top:8px; z-index:0; }
   .searchbar { display:flex; gap:8px; }
   .searchbar input { flex:1; }
+  .searchwrap { position:relative; }
+  .resultados { position:absolute; top:calc(100% + 4px); left:0; right:0; background:#fff; border:1px solid #e5e7eb; border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,.18); z-index:1000; max-height:260px; overflow-y:auto; display:none; }
+  .resultados.show { display:block; }
+  .resultados .item { padding:10px 12px; cursor:pointer; border-bottom:1px solid #f1f1f1; font-size:13.5px; line-height:1.35; }
+  .resultados .item:last-child { border-bottom:none; }
+  .resultados .item:hover { background:#eef4fb; }
+  .resultados .empty { padding:10px 12px; color:var(--gray); font-size:13px; }
   button { cursor:pointer; border:none; border-radius:10px; font-size:15px; font-weight:600; padding:11px 16px; }
   .btn-primary { background:var(--primary); color:#fff; width:100%; margin-top:16px; }
   .btn-primary:disabled { opacity:.6; }
@@ -88,9 +95,12 @@
     <div>
       <div class="card">
         <h2>📍 Ubicación de la entrega *</h2>
-        <div class="searchbar">
-          <input id="buscar" placeholder="Buscar dirección…" />
-          <button type="button" id="btnBuscar" class="btn-sec">Buscar</button>
+        <div class="searchwrap">
+          <div class="searchbar">
+            <input id="buscar" placeholder="Escribe la dirección…" autocomplete="off" />
+            <button type="button" id="btnBuscar" class="btn-sec">Buscar</button>
+          </div>
+          <div id="resultados" class="resultados"></div>
         </div>
         <div id="map"></div>
         <div id="coords">Sin ubicación — haz clic en el mapa para marcar el punto.</div>
@@ -151,24 +161,56 @@
         : 'Sin ubicación — haz clic en el mapa para marcar el punto.';
     }
 
-    // ---- Buscar dirección (Nominatim, gratis) ----
-    document.getElementById('btnBuscar').addEventListener('click', buscar);
-    document.getElementById('buscar').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); buscar(); } });
-    async function buscar() {
-      const q = document.getElementById('buscar').value.trim();
-      if (!q) return;
+    // ---- Buscar dirección con lista de coincidencias (Nominatim, gratis) ----
+    const inputBuscar = document.getElementById('buscar');
+    const boxResultados = document.getElementById('resultados');
+    let buscarTimer = null;
+
+    inputBuscar.addEventListener('input', () => {
+      clearTimeout(buscarTimer);
+      const q = inputBuscar.value.trim();
+      if (q.length < 4) { ocultarResultados(); return; }
+      buscarTimer = setTimeout(() => buscar(q), 350);
+    });
+    inputBuscar.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(buscarTimer); buscar(inputBuscar.value.trim()); }
+      if (e.key === 'Escape') ocultarResultados();
+    });
+    document.getElementById('btnBuscar').addEventListener('click', () => { clearTimeout(buscarTimer); buscar(inputBuscar.value.trim()); });
+    document.addEventListener('click', e => { if (!e.target.closest('.searchwrap')) ocultarResultados(); });
+
+    async function buscar(q) {
+      if (!q || q.length < 3) return;
+      boxResultados.innerHTML = '<div class="empty">Buscando…</div>';
+      boxResultados.classList.add('show');
       try {
-        const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`);
+        // Sesga los resultados a México y a la zona de Durango (izq,arriba,der,abajo)
+        const viewbox = '-104.95,24.20,-104.40,23.85';
+        const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=mx&accept-language=es'
+          + '&viewbox=' + viewbox + '&bounded=0&q=' + encodeURIComponent(q);
+        const r = await fetch(url);
         const data = await r.json();
-        if (data && data[0]) {
-          const lat = +data[0].lat, lng = +data[0].lon;
-          map.setView([lat, lng], 16);
-          setPunto(lat, lng);
-          const dir = document.getElementById('direccion');
-          if (!dir.value) dir.value = data[0].display_name || q;
-        } else estado('No se encontró. Marca el punto en el mapa.', true);
-      } catch (e) { estado('Buscador no disponible aquí. Marca el punto en el mapa.', true); }
+        if (data && data.length) {
+          boxResultados.innerHTML = data.map((d, i) =>
+            '<div class="item" data-i="' + i + '">' + esc(d.display_name) + '</div>').join('');
+          boxResultados.querySelectorAll('.item').forEach(el =>
+            el.addEventListener('click', () => elegirResultado(data[+el.dataset.i])));
+        } else {
+          boxResultados.innerHTML = '<div class="empty">Sin coincidencias. Marca el punto en el mapa.</div>';
+        }
+      } catch (e) {
+        boxResultados.innerHTML = '<div class="empty">Buscador no disponible. Marca el punto en el mapa.</div>';
+      }
     }
+
+    function elegirResultado(d) {
+      const lat = +d.lat, lng = +d.lon;
+      map.setView([lat, lng], 17);
+      setPunto(lat, lng);
+      document.getElementById('direccion').value = d.display_name || inputBuscar.value;
+      ocultarResultados();
+    }
+    function ocultarResultados() { boxResultados.classList.remove('show'); boxResultados.innerHTML = ''; }
 
     // ---- Conexión Firebase ----
     onAuthStateChanged(auth, u => { if (u) { estado('Conectado ✓'); escuchar(); } });
