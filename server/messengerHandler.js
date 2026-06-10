@@ -325,8 +325,25 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
     // Remove null/undefined fields
     Object.keys(messageData).forEach(key => messageData[key] == null && delete messageData[key]);
 
-    // Save message to Firestore
-    await contactRef.collection('messages').add(messageData);
+    // Save message to Firestore.
+    // Usamos el mid como ID del documento con create() para que la escritura sea idempotente:
+    // si Meta entrega el webhook dos veces de forma concurrente (Instagram lo hace con frecuencia),
+    // el segundo create() falla con ALREADY_EXISTS en lugar de crear un mensaje duplicado.
+    // Esto cierra la race condition que la verificación query-then-add de arriba no alcanza a cubrir.
+    try {
+        if (message.mid) {
+            const msgDocId = message.mid.replace(/\//g, '_'); // '/' no es válido en IDs de documento de Firestore
+            await contactRef.collection('messages').doc(msgDocId).create(messageData);
+        } else {
+            await contactRef.collection('messages').add(messageData);
+        }
+    } catch (saveErr) {
+        if (saveErr.code === 6 || /already exist/i.test(saveErr.message || '')) { // ALREADY_EXISTS: webhook duplicado
+            console.log(`[${logPrefix}] Mensaje duplicado (mid ${message.mid}) atrapado por create(). Ignorando.`);
+            return;
+        }
+        throw saveErr;
+    }
     console.log(`[${logPrefix}] Mensaje de ${contactId} guardado en Firestore.`);
 
     // --- Incrementar métricas diarias pre-agregadas ---
