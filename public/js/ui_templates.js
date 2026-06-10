@@ -782,6 +782,14 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
             </div>`;
 };
 
+// Identificador legible del contacto según el canal:
+// WhatsApp -> teléfono (+número); Instagram -> @usuario (o "Instagram" si no se obtuvo); Messenger -> "Facebook Messenger".
+const ContactHandleTemplate = (contact) => {
+    if (contact.channel === 'messenger') return 'Facebook Messenger';
+    if (contact.channel === 'instagram') return contact.igUsername ? `@${contact.igUsername}` : 'Instagram';
+    return `+${contact.id}`;
+};
+
 const MessageStatusIconTemplate = (status, readAt) => {
     const sentColor = '#9ca3af';
     const readColor = '#53bdeb';
@@ -1267,13 +1275,13 @@ const ChatWindowTemplate = (contact) => {
             <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
             <div class="flex-grow">
                 <h2 class="text-base font-semibold cursor-pointer" style="color: var(--color-text);" onclick="openContactDetails()">
-                    <i class="${contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1"></i>${contact.name}
+                    <i class="${contact.channel === 'instagram' ? 'fab fa-instagram text-pink-500' : contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1"></i>${contact.name}
                 </h2>
                 <div class="flex items-center text-xs text-gray-500">
-                    ${contact.channel === 'messenger'
-                        ? '<span>Facebook Messenger</span>'
-                        : `<span>+${contact.id}</span>
-                           <button onclick="event.stopPropagation(); copyToClipboard('${contact.id}', this)" class="ml-2 text-gray-400 hover:text-primary transition-colors focus:outline-none" title="Copiar número"><i class="far fa-copy"></i></button>`
+                    <span>${ContactHandleTemplate(contact)}</span>
+                    ${(contact.channel !== 'messenger' && contact.channel !== 'instagram')
+                        ? `<button onclick="event.stopPropagation(); copyToClipboard('${contact.id}', this)" class="ml-2 text-gray-400 hover:text-primary transition-colors focus:outline-none" title="Copiar número"><i class="far fa-copy"></i></button>`
+                        : ''
                     }
                 </div>
                 <div id="contact-status-wrapper" class="mt-1.5"></div>
@@ -1322,7 +1330,7 @@ const ContactDetailsSidebarTemplate = (contact) => {
                 <div class="text-center mb-6">
                     ${UserIcon(contact, 'h-24 w-24 mx-auto')}
                     <h2 class="text-2xl font-bold mt-4">${contact.name || 'Desconocido'}</h2>
-                    <p class="text-gray-500">+${contact.id}</p>
+                    <p class="text-gray-500">${ContactHandleTemplate(contact)}</p>
                      <p class="text-sm text-gray-500 mt-1">${contact.email || ''}</p>
                      <p class="text-sm text-gray-500 mt-1"><em>${contact.nickname || ''}</em></p>
                 </div>
@@ -1548,7 +1556,7 @@ const ConversationPreviewModalTemplate = (contact) => `
                         <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
                         <div class="flex-grow">
                             <h2 class="text-base font-semibold" style="color: var(--color-text);">${contact.name}</h2>
-                            <p class="text-xs text-gray-500">+${contact.id}</p>
+                            <p class="text-xs text-gray-500">${ContactHandleTemplate(contact)}</p>
                         </div>
                     </div>
                     <button class="image-modal-close !relative !top-0 !right-0" onclick="closeConversationPreviewModal()">
