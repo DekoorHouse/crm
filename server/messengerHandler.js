@@ -214,7 +214,11 @@ router.post('/', async (req, res) => {
 
                 // Handle incoming messages
                 if (event.message) {
-                    await handleIncomingMessage(senderId, event.message, event.timestamp, channel);
+                    // Anuncios Click-to-Messenger/Instagram: Meta entrega el anuncio de origen en referral
+                    // (a nivel del evento o dentro del postback). Lo pasamos para el mensaje de bienvenida por anuncio.
+                    const referral = event.referral || event.postback?.referral || event.message.referral || null;
+                    if (referral) console.log(`[${logPrefix} REFERRAL] Referral recibido:`, JSON.stringify(referral));
+                    await handleIncomingMessage(senderId, event.message, event.timestamp, channel, referral);
                 }
 
                 // Handle postbacks (Messenger only, IG doesn't support them)
@@ -239,7 +243,7 @@ router.post('/', async (req, res) => {
  * @param {number} eventTimestamp
  * @param {'messenger'|'instagram'} channel
  */
-async function handleIncomingMessage(senderId, message, eventTimestamp, channel = 'messenger') {
+async function handleIncomingMessage(senderId, message, eventTimestamp, channel = 'messenger', referral = null) {
     const prefix = channel === 'instagram' ? 'ig' : 'fb';
     const logPrefix = channel === 'instagram' ? 'INSTAGRAM' : 'MESSENGER';
     const contactId = `${prefix}_${senderId}`;
@@ -433,9 +437,28 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
         }
     }
 
-    // Welcome message for new contacts
+    // Welcome message / Ad response for new contacts
     if (isNewContact) {
-        await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+        let adResponseSent = false;
+        // Click-to-Messenger ads: Meta entrega el Ad ID en referral.ad_id (Messenger/Instagram).
+        // Se usa la MISMA colección 'ad_responses' que WhatsApp para reutilizar los mensajes configurados.
+        const adId = referral && (referral.ad_id || referral.source_id);
+        if (adId) {
+            console.log(`[${logPrefix} AD] Nuevo contacto desde Ad ID: ${adId}`);
+            const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains', adId).limit(1).get();
+            if (!snapshot.empty) {
+                const adResponseData = snapshot.docs[0].data();
+                console.log(`[${logPrefix} AD] Mensaje de anuncio encontrado para Ad ID ${adId}.`);
+                await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
+                adResponseSent = true;
+            } else {
+                console.log(`[${logPrefix} AD] No hay mensaje específico para Ad ID ${adId}. Se envía bienvenida general.`);
+            }
+        }
+        // Bienvenida general SOLO si no se envió un mensaje específico de anuncio
+        if (!adResponseSent) {
+            await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+        }
         await contactRef.update({ welcomed: true });
         return;
     }
