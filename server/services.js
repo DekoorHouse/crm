@@ -270,31 +270,50 @@ async function sendMessengerMessage(recipientId, { text, fileUrl, fileType, chan
             throw error;
         }
 
-        // Small delay between media and text
+        // Delay entre el adjunto y el texto: Meta procesa el video de forma asíncrona y
+        // enviar el texto demasiado pronto hacía que el segundo envío se perdiera. Damos más margen.
         if (text) {
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 800));
         }
     }
 
-    // Send text if present
+    // Send text if present.
+    // El texto va en un segundo envío (Messenger no permite texto + adjunto juntos). Ese
+    // segundo envío a veces fallaba de forma transitoria (sobre todo justo después de un
+    // video) y el texto se perdía. Reintentamos con backoff; si aun así falla pero el
+    // adjunto sí se envió, no descartamos el adjunto.
     if (text) {
         const textPayload = {
             recipient: { id: recipientId },
             message: { text: text }
         };
 
-        try {
-            console.log(`[${logPrefix}] Enviando texto a ${recipientId}`);
-            const response = await axios.post(url, textPayload, { params });
-            sentMessages.push({
-                id: response.data.message_id,
-                textForDb: text,
-                fileUrlForDb: null,
-                fileTypeForDb: null
-            });
-        } catch (error) {
-            console.error(`❌ [${logPrefix}] Error al enviar texto a ${recipientId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
-            throw error;
+        const maxAttempts = 3;
+        let textSent = false;
+        for (let attempt = 1; attempt <= maxAttempts && !textSent; attempt++) {
+            try {
+                console.log(`[${logPrefix}] Enviando texto a ${recipientId} (intento ${attempt}/${maxAttempts})`);
+                const response = await axios.post(url, textPayload, { params });
+                sentMessages.push({
+                    id: response.data.message_id,
+                    textForDb: text,
+                    fileUrlForDb: null,
+                    fileTypeForDb: null
+                });
+                textSent = true;
+            } catch (error) {
+                const errData = error.response ? JSON.stringify(error.response.data) : error.message;
+                console.error(`❌ [${logPrefix}] Intento ${attempt}/${maxAttempts} falló al enviar texto a ${recipientId}: ${errData}`);
+                if (attempt < maxAttempts) {
+                    await new Promise(resolve => setTimeout(resolve, attempt * 700)); // backoff: 700ms, 1400ms
+                } else if (sentMessages.length === 0) {
+                    // Mensaje de solo texto: no se envió nada, propagar el error.
+                    throw error;
+                } else {
+                    // El adjunto sí se envió: no lo perdemos. El texto queda sin enviar.
+                    console.error(`❌ [${logPrefix}] El texto no se pudo enviar tras ${maxAttempts} intentos; el adjunto sí se envió y se registrará.`);
+                }
+            }
         }
     }
 
