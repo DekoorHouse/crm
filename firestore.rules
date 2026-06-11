@@ -112,6 +112,12 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    // --- Seguimiento en vivo del repartidor (link publico que abre el cliente) ---
+    match /seguimiento/{id} {
+      allow read: if true;            // el cliente lo ve sin login (link)
+      allow write: if isAuthenticated();
+    }
+
     // --- Catch-all: denegar por defecto ---
     match /{document=**} {
       allow read, write: if isAuthenticated();

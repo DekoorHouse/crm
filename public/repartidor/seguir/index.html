@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sigue tu pedido · Dekoor</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root { --navy:#163C51; --orange:#F47B20; --green:#1B8E3C; --gray:#6B7280; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body { display:flex; flex-direction:column; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:#f4f6f8; }
+  header { background:var(--navy); color:#fff; padding:16px 18px; text-align:center; transition:background .3s; }
+  header h1 { margin:0; font-size:18px; }
+  header p { margin:5px 0 0; font-size:14px; opacity:.92; }
+  header.done { background:var(--green); }
+  .estado { background:#fff; padding:14px 18px; text-align:center; border-bottom:1px solid #eee; }
+  .faltan { font-size:26px; font-weight:800; color:var(--orange); line-height:1.1; }
+  .faltan small { display:block; font-size:13px; color:var(--gray); font-weight:500; margin-top:3px; }
+  .eta { font-size:14px; color:var(--gray); margin-top:8px; }
+  #map { flex:1; min-height:300px; z-index:0; }
+  .pin { font-size:30px; line-height:1; text-align:center; filter:drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
+</style>
+</head>
+<body>
+  <header id="hd">
+    <h1 id="titulo">🛵 Tu pedido está en camino</h1>
+    <p id="sub">Sigue al repartidor en tiempo real</p>
+  </header>
+  <div class="estado">
+    <div class="faltan" id="faltan">…<small>cargando</small></div>
+    <div class="eta" id="eta"></div>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    const cfg = {
+      apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+      authDomain: "pedidos-con-gemini.firebaseapp.com",
+      projectId: "pedidos-con-gemini",
+      storageBucket: "pedidos-con-gemini.appspot.com",
+      messagingSenderId: "300825194175",
+      appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+    };
+    const db = getFirestore(initializeApp(cfg));
+
+    const id = new URLSearchParams(location.search).get('id');
+
+    const map = L.map('map').setView([24.0277, -104.6532], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    const icono = (e) => L.divIcon({ html: '<div class="pin">' + e + '</div>', className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
+    let driverM = null, clientM = null, fitted = false;
+
+    const $ = (x) => document.getElementById(x);
+
+    if (!id) {
+      $('faltan').innerHTML = 'Link inválido';
+    } else {
+      onSnapshot(doc(db, 'seguimiento', id),
+        (snap) => { if (!snap.exists()) { $('faltan').innerHTML = 'Pedido no encontrado<small>revisa tu link</small>'; return; } render(snap.data()); },
+        () => { $('faltan').innerHTML = 'No disponible por ahora'; });
+    }
+
+    function render(d) {
+      if (d.estado === 'ENTREGADO') {
+        $('titulo').textContent = '✅ ¡Tu pedido fue entregado!';
+        $('sub').textContent = 'Gracias por tu compra 🧡';
+        $('hd').classList.add('done');
+        $('faltan').innerHTML = 'Entregado';
+        $('eta').textContent = '';
+      } else if (d.estado === 'CANCELADO') {
+        $('titulo').textContent = 'Pedido cancelado';
+        $('sub').textContent = 'Cualquier duda, contáctanos';
+        $('faltan').textContent = '—';
+        $('eta').textContent = '';
+      } else {
+        const f = d.faltan || 0;
+        $('faltan').innerHTML = (f === 0)
+          ? '¡Eres el siguiente! 🎉<small>el repartidor va en camino a ti</small>'
+          : f + '<small>entrega' + (f === 1 ? '' : 's') + ' antes de la tuya</small>';
+        if (!d.driverLat) $('eta').textContent = 'Esperando la ubicación del repartidor…';
+        else $('eta').textContent = (d.minutos > 0) ? ('🕒 Aprox. ' + d.minutos + ' min') : '';
+      }
+
+      const pts = [];
+      if (d.clienteLat) { clientM = mover(clientM, d.clienteLat, d.clienteLng, '🏠'); pts.push([d.clienteLat, d.clienteLng]); }
+      if (d.driverLat) { driverM = mover(driverM, d.driverLat, d.driverLng, '🛵'); pts.push([d.driverLat, d.driverLng]); }
+      if (pts.length && !fitted) {
+        fitted = true;
+        if (pts.length > 1) map.fitBounds(pts, { padding: [60, 60] });
+        else map.setView(pts[0], 15);
+      }
+    }
+
+    function mover(m, lat, lng, emoji) {
+      if (m) { m.setLatLng([lat, lng]); return m; }
+      return L.marker([lat, lng], { icon: icono(emoji) }).addTo(map);
+    }
+  </script>
+</body>
+</html>
