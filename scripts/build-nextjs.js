@@ -3,13 +3,22 @@
  *
  * Render lo ejecuta como Build Command:  npm install && npm run build
  *
- * Pasos:
- *   1. Instala dependencias de nextjs-app/
- *   2. Hace next build (static export -> nextjs-app/out/)
- *   3. Copia el output a public/nextjs/ (de donde Express lo sirve)
+ * El build de Next.js esta COMMITEADO en public/nextjs/ junto con
+ * .build-meta.json, que guarda un hash del codigo fuente de nextjs-app/.
+ * Si el hash actual coincide con el del build commiteado, este script
+ * termina en menos de un segundo y el deploy solo paga el npm install
+ * de la raiz. Si no coincide, reconstruye como fallback (lento en Render).
+ *
+ * Flujo local cuando toques nextjs-app/:
+ *   npm run build                        # reconstruye public/nextjs/
+ *   git add public/nextjs && git commit  # commitea el build actualizado
+ *
+ * Flags:
+ *   --force   Reconstruir aunque el hash coincida.
  */
 
 const { execSync } = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -17,16 +26,84 @@ const ROOT = path.join(__dirname, "..");
 const NEXTJS_DIR = path.join(ROOT, "nextjs-app");
 const SOURCE = path.join(NEXTJS_DIR, "out");
 const DEST = path.join(ROOT, "public", "nextjs");
+const META_FILE = path.join(DEST, ".build-meta.json");
+
+// Entradas generadas dentro de nextjs-app/ que NO cuentan como codigo fuente
+// (tsconfig.tsbuildinfo cambia con cada build y se auto-invalidaria).
+const HASH_EXCLUDE = new Set(["node_modules", ".next", "out", "tsconfig.tsbuildinfo", ".DS_Store"]);
+
+function listSourceFiles(dir) {
+  const files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (HASH_EXCLUDE.has(entry.name)) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listSourceFiles(full));
+    } else if (entry.isFile()) {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
+// CRLF -> LF, para que el hash coincida entre Windows (local) y Linux (Render)
+// aunque git autocrlf cambie los finales de linea al hacer checkout.
+function normalizeEol(buf) {
+  if (!buf.includes(0x0d)) return buf;
+  return Buffer.from(buf.filter((b) => b !== 0x0d));
+}
+
+// Hash determinista del fuente: rutas relativas (separador "/") ordenadas + contenido.
+function sourceHash() {
+  const files = listSourceFiles(NEXTJS_DIR)
+    .map((full) => ({ full, rel: path.relative(NEXTJS_DIR, full).split(path.sep).join("/") }))
+    .sort((a, b) => (a.rel < b.rel ? -1 : 1));
+  const hash = crypto.createHash("sha256");
+  for (const { full, rel } of files) {
+    hash.update(rel);
+    hash.update("\0");
+    hash.update(normalizeEol(fs.readFileSync(full)));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+function readMeta() {
+  try {
+    return JSON.parse(fs.readFileSync(META_FILE, "utf8"));
+  } catch {
+    return null;
+  }
+}
 
 function run(cmd, cwd, env = process.env) {
   console.log(`\n> ${cmd}  (cwd: ${path.relative(ROOT, cwd) || "."})`);
   execSync(cmd, { cwd, stdio: "inherit", env });
 }
 
+const force = process.argv.includes("--force");
+const currentHash = sourceHash();
+const meta = readMeta();
+const isFresh = meta && meta.sourceHash === currentHash && fs.existsSync(path.join(DEST, "_next"));
+
+if (isFresh && !force) {
+  console.log("==> public/nextjs/ esta al dia con nextjs-app/ (hash coincide). Saltando build de Next.js.");
+  process.exit(0);
+}
+
+if (!isFresh && process.env.RENDER) {
+  console.warn(
+    "\n!! ADVERTENCIA: public/nextjs/ esta desactualizado respecto a nextjs-app/.\n" +
+    "!! Reconstruyendo en Render como fallback (esto hace el deploy lento).\n" +
+    "!! Para deploys rapidos: corre `npm run build` localmente y commitea public/nextjs/.\n"
+  );
+}
+
 // Install incluyendo devDependencies (tailwind/postcss/typescript son necesarios para el build).
-// No pasamos NODE_ENV=production aqui porque eso hace que npm omita devDependencies.
+// npm install (no npm ci): respeta node_modules existente, asi el fallback en Render
+// aprovecha el build cache y localmente no reinstala nada.
 console.log("==> Installing nextjs-app dependencies");
-run("npm ci --include=dev", NEXTJS_DIR);
+run("npm install --include=dev", NEXTJS_DIR);
 
 // El next.config.ts solo activa output:export cuando NODE_ENV=production
 console.log("\n==> Building Next.js (static export)");
@@ -44,4 +121,10 @@ if (fs.existsSync(DEST)) {
 fs.mkdirSync(DEST, { recursive: true });
 fs.cpSync(SOURCE, DEST, { recursive: true });
 
-console.log("\nDone. public/nextjs/ esta listo para que Express lo sirva.");
+// Recalcular el hash DESPUES del build por si npm install ajusto el lockfile.
+fs.writeFileSync(
+  META_FILE,
+  JSON.stringify({ sourceHash: sourceHash(), builtAt: new Date().toISOString(), node: process.version }, null, 2) + "\n"
+);
+
+console.log("\nDone. public/nextjs/ esta listo. Recuerda commitearlo junto con tus cambios de nextjs-app/.");
