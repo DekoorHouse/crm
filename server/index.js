@@ -11,10 +11,12 @@ const mercadopagoRouter = require('./mercadopago/mercadopagoRoutes');
 const transferenciasRouter = require('./transferencias/transferenciasRoutes');
 const carritosRouter = require('./carritos/carritosRoutes');
 const jtGuiasRouter = require('./jt/jtRoutes');
+const leadsRouter = require('./leads/leadReactivationRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
 const { startCartRecoveryScheduler } = require('./carritos/carritosScheduler');
 const { startInventarioScheduler } = require('./inventario/inventarioScheduler');
+const { startLeadReactivationScheduler } = require('./leads/leadReactivationScheduler');
 const path = require('path');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -50,6 +52,7 @@ app.use('/api/mercadopago', mercadopagoRouter);
 app.use('/api/pagos/transferencia', transferenciasRouter);
 app.use('/api/carritos-abandonados', carritosRouter);
 app.use('/api/jt-guias', jtGuiasRouter);
+app.use('/api/leads', leadsRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
 
 // --- Facebook Login for Business (OAuth para App Review) ---
@@ -321,6 +324,8 @@ const server = app.listen(PORT, () => {
   startWhatsAppScheduler();
   // Iniciar scheduler de recuperacion de carritos abandonados
   startCartRecoveryScheduler();
+  // Iniciar scheduler de reactivacion de leads sin pedido registrado
+  startLeadReactivationScheduler();
   // Iniciar scheduler de reporte diario de inventario (18:00 hora MX)
   startInventarioScheduler();
   // Conectar bridge TCP a MeerK40t

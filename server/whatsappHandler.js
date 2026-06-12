@@ -3,6 +3,7 @@ const axios = require('axios');
 // SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendConversionEvent
 const { db, admin, bucket } = require('./config');
 const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent } = require('./services');
+const { armLeadFollowup } = require('./leads/leadReactivationScheduler');
 
 const router = express.Router();
 
@@ -696,6 +697,11 @@ router.post('/', async (req, res) => {
             // Set or merge contact data
             await contactRef.set(contactUpdateData, { merge: true });
             console.log(`[LOG] Contacto ${from} actualizado/creado en Firestore.`);
+
+            // Reactivación de leads: cada mensaje entrante (re)inicia la secuencia de
+            // seguimiento. Si no registra pedido, el scheduler le enviará recordatorios.
+            armLeadFollowup(from, contactUpdateData.name).catch(err =>
+                console.error('[LEAD_REACT] Error armando seguimiento:', err.message));
 
             // --- INICIO: ENRUTAMIENTO POR DEPARTAMENTO (AD ID) ---
             // Verifica si el mensaje trae referral para asignar el departamento
