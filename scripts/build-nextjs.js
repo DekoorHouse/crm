@@ -28,14 +28,16 @@ const SOURCE = path.join(NEXTJS_DIR, "out");
 const DEST = path.join(ROOT, "public", "nextjs");
 const META_FILE = path.join(DEST, ".build-meta.json");
 
-// Entradas generadas dentro de nextjs-app/ que NO cuentan como codigo fuente
-// (tsconfig.tsbuildinfo cambia con cada build y se auto-invalidaria).
-const HASH_EXCLUDE = new Set(["node_modules", ".next", "out", "tsconfig.tsbuildinfo", ".DS_Store"]);
+// Entradas que NO cuentan como codigo fuente para el hash. Solo deben entrar
+// archivos TRACKEADOS en git: lo gitignorado (generados como next-env.d.ts /
+// tsconfig.tsbuildinfo, o .env* locales) no existe en el clone de Render y
+// romperia la coincidencia del hash. Si cambias un .env local, usa --force.
+const HASH_EXCLUDE = new Set(["node_modules", ".next", "out", "tsconfig.tsbuildinfo", "next-env.d.ts", ".DS_Store"]);
 
 function listSourceFiles(dir) {
   const files = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (HASH_EXCLUDE.has(entry.name)) continue;
+    if (HASH_EXCLUDE.has(entry.name) || entry.name.startsWith(".env")) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       files.push(...listSourceFiles(full));
