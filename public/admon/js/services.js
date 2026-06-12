@@ -425,6 +425,108 @@ export async function saveCategorizationRules(rules) {
     return rules.length;
 }
 
+// --- OVERRIDES (manualCategories): gestión desde el modal Reglas ---
+
+/**
+ * Lee TODOS los overrides de manualCategories con su docId real (la Map de
+ * state.manualCategories pierde el docId y el kind, que aquí necesitamos
+ * para poder borrar). Lectura bajo demanda — se invoca al expandir la
+ * sección "Overrides" del modal, no como listener.
+ */
+export async function fetchAllManualCategories() {
+    const snap = await getDocs(collection(db, "manualCategories"));
+    return snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+}
+
+export async function deleteManualCategory(docId) {
+    return deleteDoc(doc(db, "manualCategories", docId));
+}
+
+export async function deleteManualCategoriesBulk(docIds) {
+    if (!Array.isArray(docIds) || docIds.length === 0) return 0;
+    const CHUNK = 400;
+    for (let i = 0; i < docIds.length; i += CHUNK) {
+        const batch = writeBatch(db);
+        docIds.slice(i, i + CHUNK).forEach(id => batch.delete(doc(db, "manualCategories", id)));
+        await batch.commit();
+    }
+    return docIds.length;
+}
+
+// --- APLICAR REGLA A MOVIMIENTOS EXISTENTES ---
+
+/**
+ * Calcula (sin tocar nada) qué pasaría al aplicar la regla keyword→categoría
+ * sobre los movimientos YA guardados. Protecciones que espejan el
+ * comportamiento de importación:
+ *
+ *   - Sólo CARGOS (charge > 0). Las reglas nunca aplican a abonos: si no
+ *     se omitieran aquí, una keyword tipo "chris" arrastraría los cientos de
+ *     ingresos "SPEI RECIBIDO ... christian" a una categoría de gasto.
+ *   - Se omiten movimientos con splits (su categoría vive en las partes).
+ *   - Se omiten manuales/editados (source manual|modified): son decisiones
+ *     explícitas del usuario; se reportan en el conteo para que decida
+ *     cambiarlos uno a uno si quiere.
+ *
+ * Además detecta overrides de manualCategories cuyo concepto CONTIENE la
+ * keyword pero apuntan a OTRA categoría — esos seguirían ganando sobre la
+ * regla en futuras importaciones, así que se reportan para ofrecer borrarlos.
+ *
+ * @returns {Promise<{toUpdate:Array, skippedManual:number, skippedSplits:number,
+ *                    skippedCredits:number, conflictingOverrides:Array}>}
+ */
+export async function previewRuleApplication(keyword, targetCategory) {
+    const kw = String(keyword || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!kw || kw.length < 3) throw new Error('Keyword inválida (mínimo 3 caracteres)');
+    if (!targetCategory) throw new Error('Falta la categoría destino');
+
+    const snap = await getDocs(collection(db, EXP()));
+    const toUpdate = [];
+    let skippedManual = 0, skippedSplits = 0, skippedCredits = 0;
+
+    snap.docs.forEach(d => {
+        const e = d.data();
+        const c = String(e.concept || '').toLowerCase().replace(/\s+/g, ' ');
+        if (!c.includes(kw)) return;
+        if ((e.category || 'SinCategorizar') === targetCategory) return;
+        if (!((parseFloat(e.charge) || 0) > 0)) { skippedCredits++; return; }
+        if (e.splits && e.splits.length) { skippedSplits++; return; }
+        if (e.source === 'manual' || e.source === 'modified') { skippedManual++; return; }
+        toUpdate.push({
+            id: d.id, date: e.date, concept: e.concept,
+            charge: e.charge, category: e.category || 'SinCategorizar'
+        });
+    });
+
+    const mc = await getDocs(collection(db, "manualCategories"));
+    const conflictingOverrides = mc.docs
+        .map(d => ({ docId: d.id, ...d.data() }))
+        .filter(o => String(o.concept || '').includes(kw) && o.category !== targetCategory);
+
+    return { toUpdate, skippedManual, skippedSplits, skippedCredits, conflictingOverrides };
+}
+
+/**
+ * Aplica el resultado del preview: actualiza en lote los movimientos a la
+ * categoría destino. Marca source='modified' (protege contra "Borrar Mes"
+ * y contra futuros re-apply masivos).
+ */
+export async function commitRuleApplication(expenseIds, targetCategory) {
+    if (!Array.isArray(expenseIds) || expenseIds.length === 0) return 0;
+    saveStateToHistory();
+    const CHUNK = 400;
+    for (let i = 0; i < expenseIds.length; i += CHUNK) {
+        const batch = writeBatch(db);
+        expenseIds.slice(i, i + CHUNK).forEach(id => batch.update(doc(db, EXP(), id), {
+            category: targetCategory,
+            subcategory: '',
+            source: 'modified'
+        }));
+        await batch.commit();
+    }
+    return expenseIds.length;
+}
+
 // --- OPERACIONES CRUD ---
 
 export async function saveExpense(expenseData, originalCategory) {

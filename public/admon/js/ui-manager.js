@@ -2878,6 +2878,27 @@ export function openRulesModal() {
                     <i class="fas fa-plus"></i> Agregar regla
                 </button>
             </div>
+
+            <details id="overrides-details" style="border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+                <summary style="cursor:pointer;font-weight:700;font-size:11px;text-transform:uppercase;color:var(--text-secondary);">
+                    <i class="fas fa-database"></i> Overrides guardados (manualCategories) — <span id="ov-count">expande para cargar</span>
+                </summary>
+                <div style="margin-top:10px;display:grid;gap:8px;">
+                    <div style="font-size:11px;color:var(--text-secondary);">
+                        Los overrides se crean al recategorizar a mano y <strong>ganan sobre las reglas</strong>.
+                        Tipo <code>merchant</code> = aplica a todo el comercio; sin tipo = sólo al concepto exacto
+                        (los que traen <code>aut:</code>/<code>folio:</code> nunca volverán a matchear — bórralos con 🧹).
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="ov-search" class="modal-input" placeholder="Buscar por concepto..." style="flex:1;padding:5px 8px;font-size:12px;">
+                        <select id="ov-cat" class="modal-input" style="width:150px;padding:5px 8px;font-size:12px;">
+                            <option value="">Todas las categorías</option>
+                        </select>
+                        <button type="button" id="ov-clean-btn" class="btn btn-outline btn-sm" title="Borra overrides exactos con aut:/folio: (huérfanos de un solo uso)">🧹 Huérfanos</button>
+                    </div>
+                    <div id="ov-table-wrap" style="max-height:240px;overflow-y:auto;border:1px solid var(--border-color);border-radius:8px;"></div>
+                </div>
+            </details>
         </div>`;
 
     showModal({
@@ -2938,7 +2959,7 @@ export function openRulesModal() {
                                 <th style="padding:6px;width:56px;"></th>
                                 <th style="padding:6px;text-align:left;">Keyword (contiene)</th>
                                 <th style="padding:6px;text-align:left;width:170px;">Categoría</th>
-                                <th style="padding:6px;width:36px;"></th>
+                                <th style="padding:6px;width:80px;"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -2957,7 +2978,8 @@ export function openRulesModal() {
                                             ${buildCategoryOptions(r.category)}
                                         </select>
                                     </td>
-                                    <td style="padding:4px 6px;text-align:center;">
+                                    <td style="padding:4px 6px;text-align:center;white-space:nowrap;">
+                                        <button type="button" class="btn btn-sm rule-apply" data-idx="${i}" title="Aplicar esta regla a movimientos YA guardados (con preview)" style="padding:2px 8px;"><i class="fas fa-bolt"></i></button>
                                         <button type="button" class="btn btn-sm rule-del" data-idx="${i}" style="color:var(--danger);padding:2px 8px;"><i class="fas fa-trash"></i></button>
                                     </td>
                                 </tr>`).join('')}
@@ -2979,6 +3001,7 @@ export function openRulesModal() {
                 const up = e.target.closest('.rule-up');
                 const down = e.target.closest('.rule-down');
                 const del = e.target.closest('.rule-del');
+                const apply = e.target.closest('.rule-apply');
                 if (up) {
                     const i = parseInt(up.dataset.idx);
                     [working[i - 1], working[i]] = [working[i], working[i - 1]];
@@ -2990,8 +3013,88 @@ export function openRulesModal() {
                 } else if (del) {
                     working.splice(parseInt(del.dataset.idx), 1);
                     render();
+                } else if (apply) {
+                    applyRule(parseInt(apply.dataset.idx), apply);
                 }
             });
+
+            /**
+             * Aplica la regla de la fila i a los movimientos YA guardados:
+             * preview (conteos + detalle en consola) → confirm → commit.
+             * Después ofrece borrar overrides que contradigan la regla
+             * (seguirían ganando sobre ella en futuras importaciones).
+             */
+            const applyRule = async (i, btn) => {
+                const kw = String(working[i].keyword || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                const target = working[i].category;
+                if (kw.length < 3) { showToast('Keyword muy corta (mínimo 3 caracteres)', 'error'); return; }
+                if (!target) { showToast('La regla no tiene categoría', 'error'); return; }
+
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                try {
+                    const prev = await services.previewRuleApplication(kw, target);
+
+                    if (prev.toUpdate.length === 0 && prev.conflictingOverrides.length === 0) {
+                        showToast(`Nada que actualizar para "${kw}" → ${target}`, 'success');
+                        return;
+                    }
+
+                    // Detalle completo a consola para auditoría
+                    if (prev.toUpdate.length > 0) {
+                        console.log(`Movimientos que pasarían a ${target} por "${kw}":`);
+                        console.table(prev.toUpdate.map(m => ({
+                            Fecha: m.date, Concepto: (m.concept || '').slice(0, 60),
+                            Cargo: m.charge, Cat_actual: m.category
+                        })));
+                    }
+
+                    if (prev.toUpdate.length > 0) {
+                        const total = prev.toUpdate.reduce((s, m) => s + (parseFloat(m.charge) || 0), 0);
+                        const skips = [];
+                        if (prev.skippedManual) skips.push(`${prev.skippedManual} manuales/editados`);
+                        if (prev.skippedSplits) skips.push(`${prev.skippedSplits} con splits`);
+                        if (prev.skippedCredits) skips.push(`${prev.skippedCredits} abonos`);
+                        const ok = confirm(
+                            `Regla "${kw}" → ${target}\n\n` +
+                            `${prev.toUpdate.length} movimientos cambiarían (cargos: $${total.toFixed(2)}).\n` +
+                            (skips.length ? `Se omiten: ${skips.join(', ')}.\n` : '') +
+                            `Detalle en la consola (F12).\n\n¿Aplicar?`
+                        );
+                        if (ok) {
+                            const n = await services.commitRuleApplication(prev.toUpdate.map(m => m.id), target);
+                            showToast(`${n} movimientos → ${target}`, 'success');
+                        }
+                    }
+
+                    if (prev.conflictingOverrides.length > 0) {
+                        console.log('Overrides en conflicto con la regla:');
+                        console.table(prev.conflictingOverrides.map(o => ({
+                            Concepto: (o.concept || '').slice(0, 60), Categoria: o.category, Kind: o.kind || ''
+                        })));
+                        const ok2 = confirm(
+                            `Hay ${prev.conflictingOverrides.length} override(s) que contienen "${kw}" pero apuntan ` +
+                            `a OTRA categoría — seguirían ganando sobre esta regla en futuras importaciones ` +
+                            `(detalle en consola).\n\n¿Borrarlos?`
+                        );
+                        if (ok2) {
+                            await services.deleteManualCategoriesBulk(prev.conflictingOverrides.map(o => o.docId));
+                            showToast(`${prev.conflictingOverrides.length} overrides eliminados`, 'success');
+                            if (ovAll) {
+                                const gone = new Set(prev.conflictingOverrides.map(o => o.docId));
+                                ovAll = ovAll.filter(o => !gone.has(o.docId));
+                                renderOverrides();
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error aplicando regla:', err);
+                    showToast('Error aplicando la regla (ver consola)', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-bolt"></i>';
+                }
+            };
 
             document.getElementById('rules-add-btn').addEventListener('click', () => {
                 working.push({ keyword: '', category: 'SinCategorizar' });
@@ -3029,6 +3132,121 @@ export function openRulesModal() {
             $btn.addEventListener('click', runTest);
             $in.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); runTest(); }
+            });
+
+            // --- Sección Overrides (carga perezosa al expandir) ---
+            let ovAll = null;
+            const ovDetails = document.getElementById('overrides-details');
+            const ovCount = document.getElementById('ov-count');
+            const ovWrap = document.getElementById('ov-table-wrap');
+            const ovSearch = document.getElementById('ov-search');
+            const ovCat = document.getElementById('ov-cat');
+            const ovCleanBtn = document.getElementById('ov-clean-btn');
+
+            const isOrphan = (o) => (o.kind !== 'merchant') && /aut:|folio:/i.test(String(o.concept || ''));
+
+            const renderOverrides = () => {
+                if (!Array.isArray(ovAll)) return;
+                const q = (ovSearch.value || '').toLowerCase().trim();
+                const cat = ovCat.value;
+                const filtered = ovAll.filter(o =>
+                    (!q || String(o.concept || '').toLowerCase().includes(q)) &&
+                    (!cat || o.category === cat)
+                );
+                const orphanCount = ovAll.filter(isOrphan).length;
+                ovCount.textContent = `${ovAll.length} en total (${orphanCount} huérfanos)`;
+
+                ovWrap.innerHTML = `
+                    <table style="width:100%;border-collapse:collapse;font-size:11px;">
+                        <thead style="position:sticky;top:0;background:var(--bg-card);z-index:1;">
+                            <tr>
+                                <th style="padding:5px 6px;text-align:left;">Concepto / comercio</th>
+                                <th style="padding:5px 6px;text-align:left;width:110px;">Categoría</th>
+                                <th style="padding:5px 6px;width:70px;">Tipo</th>
+                                <th style="padding:5px 6px;width:34px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filtered.length === 0
+                                ? '<tr><td colspan="4" style="padding:10px;text-align:center;color:var(--text-secondary);">— sin resultados —</td></tr>'
+                                : filtered.map(o => `
+                                <tr style="border-top:1px solid var(--border-color);${isOrphan(o) ? 'opacity:0.6;' : ''}">
+                                    <td style="padding:4px 6px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(o.concept || '')}">${esc(o.concept || '')}</td>
+                                    <td style="padding:4px 6px;">${esc(o.category || '')}</td>
+                                    <td style="padding:4px 6px;text-align:center;">
+                                        ${o.kind === 'merchant'
+                                            ? '<span style="background:rgba(99,102,241,0.12);color:var(--primary);padding:1px 6px;border-radius:6px;font-size:10px;font-weight:700;">merchant</span>'
+                                            : '<span style="color:var(--text-secondary);font-size:10px;">exacto</span>'}
+                                    </td>
+                                    <td style="padding:4px 6px;text-align:center;">
+                                        <button type="button" class="btn btn-sm ov-del" data-docid="${esc(o.docId)}" style="color:var(--danger);padding:1px 6px;"><i class="fas fa-trash"></i></button>
+                                    </td>
+                                </tr>`).join('')}
+                        </tbody>
+                    </table>`;
+            };
+
+            const loadOverrides = async () => {
+                ovCount.textContent = 'cargando...';
+                try {
+                    ovAll = await services.fetchAllManualCategories();
+                    // Poblar el filtro de categorías con las que realmente existen
+                    const cats = [...new Set(ovAll.map(o => o.category).filter(Boolean))].sort();
+                    ovCat.innerHTML = '<option value="">Todas las categorías</option>' +
+                        cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+                    renderOverrides();
+                } catch (err) {
+                    console.error('Error cargando overrides:', err);
+                    ovCount.textContent = 'error al cargar';
+                }
+            };
+
+            ovDetails.addEventListener('toggle', () => {
+                if (ovDetails.open && !Array.isArray(ovAll)) loadOverrides();
+            });
+            ovSearch.addEventListener('input', renderOverrides);
+            ovCat.addEventListener('change', renderOverrides);
+
+            ovWrap.addEventListener('click', async (e) => {
+                const delBtn = e.target.closest('.ov-del');
+                if (!delBtn) return;
+                const docId = delBtn.dataset.docid;
+                const ov = ovAll.find(o => o.docId === docId);
+                if (!ov) return;
+                if (!confirm(`¿Borrar override?\n\n"${ov.concept}" → ${ov.category}\n\nFuturas importaciones de este ${ov.kind === 'merchant' ? 'comercio' : 'concepto'} caerán por reglas.`)) return;
+                try {
+                    await services.deleteManualCategory(docId);
+                    ovAll = ovAll.filter(o => o.docId !== docId);
+                    renderOverrides();
+                    showToast('Override eliminado', 'success');
+                } catch (err) {
+                    console.error(err);
+                    showToast('No se pudo borrar', 'error');
+                }
+            });
+
+            ovCleanBtn.addEventListener('click', async () => {
+                if (!Array.isArray(ovAll)) { showToast('Expande la sección primero para cargar', 'warning'); return; }
+                const orphans = ovAll.filter(isOrphan);
+                if (orphans.length === 0) { showToast('No hay huérfanos que limpiar', 'success'); return; }
+                if (!confirm(
+                    `Se borrarán ${orphans.length} overrides EXACTOS que contienen aut:/folio: ` +
+                    `(referencias únicas de transacción — nunca volverán a matchear con nada).\n\n` +
+                    `Los overrides tipo "merchant" NO se tocan.\n\n¿Continuar?`
+                )) return;
+                ovCleanBtn.disabled = true;
+                try {
+                    const n = await services.deleteManualCategoriesBulk(orphans.map(o => o.docId));
+                    const gone = new Set(orphans.map(o => o.docId));
+                    ovAll = ovAll.filter(o => !gone.has(o.docId));
+                    renderOverrides();
+                    showToast(`${n} overrides huérfanos eliminados`, 'success');
+                } catch (err) {
+                    console.error(err);
+                    showToast('Error en la limpieza (ver consola)', 'error');
+                } finally {
+                    ovCleanBtn.disabled = false;
+                }
             });
 
             render();

@@ -4,12 +4,12 @@
 //  - JS/CSS/Img estáticos: cache-first con actualización en background
 //  - API/Firestore/Firebase: passthrough (sin cachear)
 
-// v11 (2026-05-27): reglas de categorizacion editables desde la UI (modal
-// "Reglas" con tabla + probador de conceptos; doc Firestore
-// admin_data/categorization_rules con fallback a reglas hardcodeadas) y
-// fix raiz: las transferencias bancarias (spei enviado/recibido, pago
-// cuenta de tercero) ya no generan overrides de comercio al recategorizar.
-const CACHE_VERSION = 'admon-v11';
+// v12 (2026-06-12): Fase B del modal Reglas — seccion "Overrides guardados"
+// (ver/buscar/borrar manualCategories + limpieza de huerfanos con aut:/folio:)
+// y boton "aplicar regla a existentes" (rayo) con preview que protege
+// abonos, splits y movimientos manuales/editados, y ofrece borrar overrides
+// en conflicto con la regla.
+const CACHE_VERSION = 'admon-v12';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 
