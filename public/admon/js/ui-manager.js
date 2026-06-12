@@ -1,5 +1,5 @@
 import { elements, state } from './state.js';
-import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange } from './utils.js';
+import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange, getActiveKeywordRules, categorizeWithTrace } from './utils.js';
 import * as services from './services.js';
 import { isTestMode, setTestMode, isDevMode, setDevMode, describeMode } from './config.js';
 
@@ -2819,6 +2819,219 @@ export function showDryRunReportModal(opts) {
                     $import.innerHTML = importLabel;
                 }
             });
+        }
+    });
+}
+
+// =============================================================================
+//  Modal "Reglas de categorización" — tabla editable + probador de conceptos
+// =============================================================================
+
+/**
+ * Abre el modal de gestión de reglas keyword → categoría.
+ *
+ * - La tabla muestra las reglas ACTIVAS: las de Firestore si existen
+ *   (admin_data/categorization_rules), o las hardcodeadas como semilla.
+ * - El orden de las filas ES la prioridad de evaluación (primera que
+ *   matchea gana). Flechas ↑↓ para reordenar.
+ * - "Guardar reglas" persiste el array completo en Firestore. A partir de
+ *   ese momento las reglas dinámicas mandan sobre las de código.
+ * - El probador muestra qué categoría recibiría un concepto Y POR QUÉ
+ *   (override exacto / override de comercio / regla / nada).
+ */
+export function openRulesModal() {
+    // Copia de trabajo local — sólo se persiste al dar "Guardar reglas".
+    const working = getActiveKeywordRules().map(r => ({
+        keyword: String(r.keyword || ''),
+        category: String(r.category || 'SinCategorizar')
+    }));
+    const usingFirestore = Array.isArray(state.categorizationRules) && state.categorizationRules.length > 0;
+
+    const esc = (s) => String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    const body = `
+        <div style="display:grid;gap:14px;max-width:680px;">
+            <div style="border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+                <div style="font-size:11px;text-transform:uppercase;font-weight:700;color:var(--text-secondary);margin-bottom:8px;">
+                    <i class="fas fa-vial"></i> Probador de conceptos
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="rules-tester-input" class="modal-input" style="flex:1;"
+                           placeholder="Pega un concepto, ej: SPEI ENVIADO albo / 0074313326 721 0506260Jovita">
+                    <button type="button" id="rules-tester-btn" class="btn btn-outline">Probar</button>
+                </div>
+                <div id="rules-tester-result" style="font-size:13px;margin-top:8px;"></div>
+            </div>
+
+            <div style="border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+                <div style="font-size:11px;text-transform:uppercase;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">
+                    <i class="fas fa-tags"></i> Reglas — el orden es la prioridad (la primera que matchea gana)
+                </div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px;">
+                    Aplican a <strong>cargos</strong> en futuras importaciones; no re-categorizan movimientos ya guardados.
+                    Fuente actual: <strong>${usingFirestore ? 'Firestore (editadas desde aquí)' : 'código (semilla — al guardar pasan a Firestore)'}</strong>.
+                </div>
+                <div id="rules-table-wrap" style="max-height:320px;overflow-y:auto;border:1px solid var(--border-color);border-radius:8px;"></div>
+                <button type="button" id="rules-add-btn" class="btn btn-outline btn-sm" style="margin-top:10px;">
+                    <i class="fas fa-plus"></i> Agregar regla
+                </button>
+            </div>
+        </div>`;
+
+    showModal({
+        title: 'Reglas de categorización',
+        body,
+        confirmText: 'Guardar reglas',
+        showCancel: true,
+        onConfirm: async () => {
+            // Validación + normalización
+            const clean = [];
+            const seen = new Set();
+            const problems = [];
+            working.forEach((r, i) => {
+                const kw = String(r.keyword || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                const cat = String(r.category || '').trim();
+                if (!kw) { problems.push(`Fila ${i + 1}: keyword vacía`); return; }
+                if (kw.length < 3) { problems.push(`Fila ${i + 1}: "${kw}" es muy corta (mínimo 3 caracteres)`); return; }
+                if (!cat) { problems.push(`Fila ${i + 1}: sin categoría`); return; }
+                if (seen.has(kw)) { problems.push(`Fila ${i + 1}: keyword "${kw}" repetida (gana la primera)`); return; }
+                seen.add(kw);
+                clean.push({ keyword: kw, category: cat });
+            });
+
+            if (problems.length > 0) {
+                showToast(`No se guardó: ${problems[0]}${problems.length > 1 ? ` (+${problems.length - 1} más, ver consola)` : ''}`, 'error');
+                console.warn('Problemas de validación en reglas:', problems);
+                return; // el modal queda abierto para corregir
+            }
+            if (clean.length === 0) {
+                showToast('No puedes guardar una lista vacía de reglas', 'error');
+                return;
+            }
+
+            try {
+                const count = await services.saveCategorizationRules(clean);
+                showToast(`${count} reglas guardadas`, 'success');
+                showModal({ show: false });
+            } catch (err) {
+                console.error('Error guardando reglas:', err);
+                showToast('No se pudieron guardar las reglas', 'error');
+            }
+        },
+        onModalOpen: () => {
+            const wrap = document.getElementById('rules-table-wrap');
+
+            const buildCategoryOptions = (selected) => {
+                const cats = getAllCategories();
+                if (selected && !cats.includes(selected)) cats.push(selected);
+                return cats.map(c => `<option value="${esc(c)}" ${c === selected ? 'selected' : ''}>${esc(c)}</option>`).join('');
+            };
+
+            const render = () => {
+                wrap.innerHTML = `
+                    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                        <thead style="position:sticky;top:0;background:var(--bg-card);z-index:1;">
+                            <tr>
+                                <th style="padding:6px;width:30px;">#</th>
+                                <th style="padding:6px;width:56px;"></th>
+                                <th style="padding:6px;text-align:left;">Keyword (contiene)</th>
+                                <th style="padding:6px;text-align:left;width:170px;">Categoría</th>
+                                <th style="padding:6px;width:36px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${working.map((r, i) => `
+                                <tr style="border-top:1px solid var(--border-color);">
+                                    <td style="padding:4px 6px;color:var(--text-secondary);text-align:center;">${i + 1}</td>
+                                    <td style="padding:4px 2px;white-space:nowrap;">
+                                        <button type="button" class="btn btn-sm rule-up" data-idx="${i}" ${i === 0 ? 'disabled' : ''} style="padding:2px 6px;">↑</button>
+                                        <button type="button" class="btn btn-sm rule-down" data-idx="${i}" ${i === working.length - 1 ? 'disabled' : ''} style="padding:2px 6px;">↓</button>
+                                    </td>
+                                    <td style="padding:4px 6px;">
+                                        <input type="text" class="modal-input rule-kw" data-idx="${i}" value="${esc(r.keyword)}" style="width:100%;padding:5px 8px;font-size:12px;">
+                                    </td>
+                                    <td style="padding:4px 6px;">
+                                        <select class="modal-input rule-cat" data-idx="${i}" style="width:100%;padding:5px 8px;font-size:12px;">
+                                            ${buildCategoryOptions(r.category)}
+                                        </select>
+                                    </td>
+                                    <td style="padding:4px 6px;text-align:center;">
+                                        <button type="button" class="btn btn-sm rule-del" data-idx="${i}" style="color:var(--danger);padding:2px 8px;"><i class="fas fa-trash"></i></button>
+                                    </td>
+                                </tr>`).join('')}
+                        </tbody>
+                    </table>`;
+            };
+
+            // Delegación de eventos: inputs escriben directo a `working`,
+            // mover/borrar mutan y re-renderizan.
+            wrap.addEventListener('input', (e) => {
+                const kw = e.target.closest('.rule-kw');
+                if (kw) working[parseInt(kw.dataset.idx)].keyword = kw.value;
+            });
+            wrap.addEventListener('change', (e) => {
+                const cat = e.target.closest('.rule-cat');
+                if (cat) working[parseInt(cat.dataset.idx)].category = cat.value;
+            });
+            wrap.addEventListener('click', (e) => {
+                const up = e.target.closest('.rule-up');
+                const down = e.target.closest('.rule-down');
+                const del = e.target.closest('.rule-del');
+                if (up) {
+                    const i = parseInt(up.dataset.idx);
+                    [working[i - 1], working[i]] = [working[i], working[i - 1]];
+                    render();
+                } else if (down) {
+                    const i = parseInt(down.dataset.idx);
+                    [working[i], working[i + 1]] = [working[i + 1], working[i]];
+                    render();
+                } else if (del) {
+                    working.splice(parseInt(del.dataset.idx), 1);
+                    render();
+                }
+            });
+
+            document.getElementById('rules-add-btn').addEventListener('click', () => {
+                working.push({ keyword: '', category: 'SinCategorizar' });
+                render();
+                // Scroll al fondo y enfocar la keyword nueva
+                wrap.scrollTop = wrap.scrollHeight;
+                const inputs = wrap.querySelectorAll('.rule-kw');
+                if (inputs.length) inputs[inputs.length - 1].focus();
+            });
+
+            // --- Probador ---
+            const $in = document.getElementById('rules-tester-input');
+            const $btn = document.getElementById('rules-tester-btn');
+            const $out = document.getElementById('rules-tester-result');
+
+            const runTest = () => {
+                const value = $in.value.trim();
+                if (!value) { $out.innerHTML = ''; return; }
+                const t = categorizeWithTrace(value);
+                let html = '';
+                if (t.mechanism === 'override-exacto') {
+                    html = `→ <strong>${esc(t.category)}</strong> por <span style="color:#d97706;font-weight:600;">OVERRIDE EXACTO</span> del concepto completo.<br>
+                        <span style="font-size:11px;color:var(--text-secondary);">Las reglas no aplican mientras exista ese override en manualCategories.</span>`;
+                } else if (t.mechanism === 'override-merchant') {
+                    html = `→ <strong>${esc(t.category)}</strong> por <span style="color:#d97706;font-weight:600;">OVERRIDE DE COMERCIO</span> "<code>${esc(t.detail)}</code>".<br>
+                        <span style="font-size:11px;color:var(--text-secondary);">Este override gana sobre las reglas. Si está mal, hay que borrarlo de manualCategories.</span>`;
+                } else if (t.mechanism === 'regla') {
+                    html = `→ <strong style="color:var(--success);">${esc(t.category)}</strong> por la regla "<code>${esc(t.detail)}</code>" (posición ${t.position}, fuente: ${t.source === 'firestore' ? 'Firestore' : 'código'}).`;
+                } else {
+                    html = `→ <strong>SinCategorizar</strong> — ningún override ni regla matchea.`;
+                }
+                $out.innerHTML = html;
+            };
+
+            $btn.addEventListener('click', runTest);
+            $in.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); runTest(); }
+            });
+
+            render();
         }
     });
 }

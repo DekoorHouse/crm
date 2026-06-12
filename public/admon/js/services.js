@@ -387,6 +387,44 @@ export function setupOrdersListener(onDataChange) {
 }
 
 
+// --- REGLAS DE CATEGORIZACIÓN (editables desde el modal "Reglas") ---
+
+/**
+ * Escucha el doc `admin_data/categorization_rules`. Si existe y trae un
+ * array `rules` válido, lo vuelca a state.categorizationRules (las reglas
+ * dinámicas mandan). Si no existe, deja null → utils.js usa las
+ * DEFAULT_KEYWORD_RULES hardcodeadas como fallback.
+ */
+export function listenForCategorizationRules(onDataChange) {
+    const ref = doc(db, "admin_data", "categorization_rules");
+    return onSnapshot(ref, (snap) => {
+        if (snap.exists() && Array.isArray(snap.data().rules)) {
+            state.categorizationRules = snap.data().rules;
+        } else {
+            state.categorizationRules = null;
+        }
+        onDataChange();
+    }, (error) => console.error("Categorization Rules Listener Error:", error));
+}
+
+/**
+ * Reemplaza el set completo de reglas dinámicas. El array debe venir ya
+ * validado por la UI (keywords normalizadas a minúsculas, >= 3 chars).
+ * El listener actualiza state automáticamente tras el guardado.
+ *
+ * @param {Array<{keyword:string, category:string}>} rules
+ * @returns {Promise<number>} cantidad de reglas guardadas
+ */
+export async function saveCategorizationRules(rules) {
+    if (!Array.isArray(rules)) throw new Error('rules debe ser un array');
+    await setDoc(doc(db, "admin_data", "categorization_rules"), {
+        version: 1,
+        rules,
+        updatedAt: Timestamp.now()
+    });
+    return rules.length;
+}
+
 // --- OPERACIONES CRUD ---
 
 export async function saveExpense(expenseData, originalCategory) {
@@ -401,9 +439,20 @@ export async function saveExpense(expenseData, originalCategory) {
         // Persistir el cambio manual de categoría POR COMERCIO (parte antes de "/").
         // Asi una sola categorizacion aplica a todos los movimientos del mismo
         // comercio aunque cada uno tenga AUT/RFC distinto en el concepto.
+        //
+        // FIX RAIZ (2026-05-27): los conceptos de transferencia bancaria NO
+        // generan override de comercio. Su "comercio" (ej. "spei enviado albo")
+        // es el BANCO, no el destinatario — un override ahí captura TODAS las
+        // transferencias de ese banco sin importar a quién van (causa del bug
+        // albo→Alex que mandaba transferencias de chris y jovita a Alex).
+        // El movimiento individual SÍ conserva la categoría que el usuario
+        // eligió; sólo se omite la regla automática de comercio.
+        const BANK_TRANSFER_PREFIXES = ['spei enviado', 'spei recibido', 'pago cuenta de tercero', 'spei retornado'];
+        const isBankTransfer = merchantKey && BANK_TRANSFER_PREFIXES.some(p => merchantKey.startsWith(p));
+
         if (newCategory && newCategory !== 'SinCategorizar' && categoryChanged && merchantKey) {
             const ruleBasedCategory = autoCategorizeWithRulesOnly(concept);
-            if (newCategory !== ruleBasedCategory) {
+            if (newCategory !== ruleBasedCategory && !isBankTransfer) {
                 await setDoc(doc(db, "manualCategories", hashCode(merchantKey)), {
                     concept: merchantKey,
                     category: newCategory,

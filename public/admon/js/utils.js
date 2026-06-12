@@ -198,26 +198,133 @@ export function autoCategorize(concept) {
     return autoCategorizeWithRulesOnly(concept);
 }
 
+/**
+ * Reglas de categorización por keyword HARDCODEADAS — lista plana ordenada.
+ * El orden del array es el orden de evaluación: la primera keyword que
+ * matchea gana (por eso 'chris' va antes que 'alex': una transferencia
+ * "transf a chris" cae en Chris aunque después hubiera matcheado otra).
+ *
+ * Desde 2026-05-27 estas reglas son el SEED y FALLBACK del sistema dinámico:
+ * si existe el doc Firestore `admin_data/categorization_rules`, ese manda
+ * (editable desde el modal "Reglas" de la UI). Si no existe o falla la
+ * lectura, se usan estas. El orden aquí replica el orden del objeto `rules`
+ * histórico (categoría por categoría).
+ */
+export const DEFAULT_KEYWORD_RULES = [
+    { keyword: 'xciento', category: 'Ganancia' },
+    { keyword: 'chris', category: 'Chris' },
+    { keyword: 'moises', category: 'Chris' },
+    { keyword: 'wm max llc', category: 'Chris' },
+    { keyword: 'stori', category: 'Chris' },
+    { keyword: 'jessica', category: 'Chris' },
+    { keyword: 'yannine', category: 'Chris' },
+    { keyword: 'recargas y paquetes bmov / ******6530', category: 'Chris' },
+    { keyword: 'recargas y paquetes bmov / ******7167', category: 'Chris' },
+    { keyword: 'carniceria las pradera', category: 'Chris' },
+    { keyword: 'minisuper natalia', category: 'Chris' },
+    { keyword: 'temu', category: 'Chris' },
+    { keyword: 'alsuper plus mezquital', category: 'Chris' },
+    { keyword: 'alsuper plus d arrieta', category: 'Chris' },
+    { keyword: 'fruteria alvarez', category: 'Chris' },
+    { keyword: 'alex', category: 'Alex' },
+    { keyword: 'bolt', category: 'Alex' },
+    { keyword: 'retiro sin tarjeta / ******0670', category: 'Alex' },
+    { keyword: 'facebook', category: 'Publicidad' },
+    { keyword: 'material', category: 'Material' },
+    { keyword: 'raza', category: 'Material' },
+    { keyword: 'c00008749584', category: 'Material' },
+    { keyword: 'acrilico', category: 'Material' },
+    { keyword: 'mercadolibre', category: 'Material' },
+    { keyword: 'psa computo', category: 'Material' },
+    { keyword: 'guias', category: 'Envios' },
+    { keyword: 'diego', category: 'Sueldos' },
+    { keyword: 'catalina', category: 'Sueldos' },
+    { keyword: 'rosario', category: 'Sueldos' },
+    { keyword: 'erika', category: 'Sueldos' },
+    { keyword: 'catarina', category: 'Sueldos' },
+    { keyword: 'maria gua', category: 'Sueldos' },
+    { keyword: 'karla', category: 'Sueldos' },
+    { keyword: 'lupita', category: 'Sueldos' },
+    { keyword: 'jovita', category: 'Sueldos' },
+    { keyword: 'recargas y paquetes bmov / ******0030', category: 'Sueldos' },
+    { keyword: 'openai', category: 'Tecnologia' },
+    { keyword: 'claude', category: 'Tecnologia' },
+    { keyword: 'whaticket', category: 'Tecnologia' },
+    { keyword: 'hostinger', category: 'Tecnologia' },
+    { keyword: 'payu *google cloud', category: 'Tecnologia' },
+    { keyword: 'tripo ai', category: 'Tecnologia' },
+    { keyword: 'local', category: 'Local' },
+    { keyword: 'renta', category: 'Local' },
+    { keyword: 'valeria', category: 'Local' },
+    { keyword: 'saldos vencidos', category: 'Deudas' },
+    { keyword: 'devolucion', category: 'Devoluciones' },
+    { keyword: 'interes', category: 'GastosFinancieros' },
+    { keyword: 'comision', category: 'GastosFinancieros' }
+];
+
+/**
+ * Devuelve las reglas activas: las dinámicas de Firestore si existen
+ * (state.categorizationRules, alimentado por listenForCategorizationRules),
+ * o las hardcodeadas como fallback.
+ */
+export function getActiveKeywordRules() {
+    const dyn = state.categorizationRules;
+    return (Array.isArray(dyn) && dyn.length > 0) ? dyn : DEFAULT_KEYWORD_RULES;
+}
+
 export function autoCategorizeWithRulesOnly(concept) {
     const lowerConcept = String(concept).toLowerCase().replace(/\s+/g, ' ');
-    const rules = {
-        Ganancia: ['xciento'],
-        Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167', 'carniceria las pradera', 'minisuper natalia', 'temu', 'alsuper plus mezquital', 'alsuper plus d arrieta', 'fruteria alvarez'],
-        Alex: ['alex', 'bolt', 'retiro sin tarjeta / ******0670'],
-        Publicidad: ['facebook'],
-        Material: ['material', 'raza', 'c00008749584', 'acrilico', 'mercadolibre', 'psa computo'],
-        Envios: ['guias'], 
-        Sueldos: ['diego', 'catalina', 'rosario', 'erika', 'catarina', 'maria gua', 'karla', 'lupita', 'jovita', 'recargas y paquetes bmov / ******0030'],
-        Tecnologia: ['openai', 'claude', 'whaticket', 'hostinger', 'payu *google cloud', 'tripo ai'],
-        Local: ['local', 'renta', 'valeria'], 
-        Deudas: ['saldos vencidos'], 
-        Devoluciones: ['devolucion'],
-        GastosFinancieros: ['interes', 'comision']
-    };
-    for (const category in rules) {
-        if (rules[category].some(keyword => lowerConcept.includes(keyword))) return category;
+    const rules = getActiveKeywordRules();
+    for (const rule of rules) {
+        if (rule && rule.keyword && lowerConcept.includes(rule.keyword)) {
+            return rule.category;
+        }
     }
     return 'SinCategorizar';
+}
+
+/**
+ * Versión instrumentada de autoCategorize para el PROBADOR del modal Reglas.
+ * Devuelve no sólo la categoría sino el MECANISMO que la decidió, para que
+ * el usuario pueda autodiagnosticar "¿por qué este concepto cae ahí?".
+ *
+ * @param {string} concept
+ * @returns {{ category:string, mechanism:'override-exacto'|'override-merchant'|'regla'|'ninguno',
+ *             detail?:string, position?:number, source?:'firestore'|'codigo' }}
+ */
+export function categorizeWithTrace(concept) {
+    // Espeja EXACTAMENTE la cascada de autoCategorize().
+    const lowerConcept = String(concept).toLowerCase();
+    if (state.manualCategories.has(lowerConcept)) {
+        return {
+            category: state.manualCategories.get(lowerConcept),
+            mechanism: 'override-exacto',
+            detail: lowerConcept
+        };
+    }
+    const merchantKey = extractMerchantKey(concept);
+    if (merchantKey && state.manualCategories.has(merchantKey)) {
+        return {
+            category: state.manualCategories.get(merchantKey),
+            mechanism: 'override-merchant',
+            detail: merchantKey
+        };
+    }
+    const normalized = String(concept).toLowerCase().replace(/\s+/g, ' ');
+    const rules = getActiveKeywordRules();
+    for (let i = 0; i < rules.length; i++) {
+        const rule = rules[i];
+        if (rule && rule.keyword && normalized.includes(rule.keyword)) {
+            return {
+                category: rule.category,
+                mechanism: 'regla',
+                detail: rule.keyword,
+                position: i + 1,
+                source: (Array.isArray(state.categorizationRules) && state.categorizationRules.length > 0) ? 'firestore' : 'codigo'
+            };
+        }
+    }
+    return { category: 'SinCategorizar', mechanism: 'ninguno' };
 }
 
 /**
