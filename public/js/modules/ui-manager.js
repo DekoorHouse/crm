@@ -702,6 +702,10 @@ function renderAjustesView() {
         simulateAdForm.removeEventListener('submit', handleSimulateAdMessage);
         simulateAdForm.addEventListener('submit', handleSimulateAdMessage);
     }
+    // Carga la configuración de reactivación de leads (toggle + secuencia)
+    if (typeof loadLeadReactSettings === 'function') {
+        loadLeadReactSettings();
+    }
 }
 
 // --- INICIO: Renderizado de Entrenamiento de IA ---

@@ -378,6 +378,38 @@ const SettingsViewTemplate = () => `
                 </div>
             </div>
             <div class="settings-card">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-bold">Reactivación de Leads</h2>
+                        <p class="text-sm text-gray-500" id="lead-react-subtitle">Mensajes automáticos para clientes que escriben y no registran pedido.</p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="lead-react-toggle" onchange="handleLeadReactToggle(this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div id="lead-react-body" class="mt-4">
+                    <div id="lead-react-rows" class="space-y-3">
+                        <div class="text-sm text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando configuración...</div>
+                    </div>
+                    <div class="flex items-center justify-between mt-3 flex-wrap gap-2">
+                        <button type="button" class="btn btn-secondary" onclick="addLeadReactRow()"><i class="fas fa-plus mr-2"></i>Agregar mensaje</button>
+                        <p class="text-xs text-gray-500">Usa {{nombre}} para incluir el nombre del cliente</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 mt-4 text-sm text-gray-500">
+                        <label class="flex items-center gap-2 !mb-0">No enviar si tiene pedido de hace menos de
+                            <input type="number" id="lead-react-mindays" min="0" class="!mb-0 text-center" style="width: 70px;"> días
+                        </label>
+                        <label class="flex items-center gap-2 !mb-0">Pausa entre secuencias al mismo cliente
+                            <input type="number" id="lead-react-cooldown" min="0" class="!mb-0 text-center" style="width: 70px;"> horas
+                        </label>
+                    </div>
+                    <div class="flex justify-end mt-4">
+                        <button type="button" id="lead-react-save-btn" class="btn btn-primary" onclick="handleSaveLeadReact()"><i class="fas fa-save mr-2"></i>Guardar mensajes</button>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-card">
                 <h2 class="text-xl font-bold mb-4">Integraciones</h2>
                 <div>
                     <label for="google-sheet-id-input" class="font-semibold">ID de Google Sheet para Cobertura</label>

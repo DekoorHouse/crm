@@ -893,6 +893,187 @@ async function handleAwayMessageToggle(isActive) {
     }
 }
 
+// --- Reactivación de Leads (Ajustes Generales) ---
+// Config en crm_settings/lead_reactivation vía /api/leads/reactivacion.
+// El scheduler del backend envía los mensajes; aquí solo se administra.
+
+let leadReactConfig = null;
+let leadReactPendingCount = null;
+
+function updateLeadReactSubtitle() {
+    const el = document.getElementById('lead-react-subtitle');
+    if (!el) return;
+    const base = 'Mensajes automáticos para clientes que escriben y no registran pedido.';
+    el.textContent = (leadReactConfig && leadReactConfig.enabled && typeof leadReactPendingCount === 'number')
+        ? `${base} · ${leadReactPendingCount} en seguimiento ahora`
+        : base;
+}
+
+// Crea el elemento DOM de una fila (delay + unidad + texto) de la secuencia
+function leadReactRowElement(followup, index) {
+    const wrap = document.createElement('div');
+    wrap.className = 'lead-react-row border border-gray-200 rounded-lg p-3';
+
+    const head = document.createElement('div');
+    head.className = 'flex items-center gap-2 flex-wrap mb-2 text-sm text-gray-500';
+    head.innerHTML = `
+        <span class="lr-num text-xs font-bold text-gray-600">MENSAJE ${index + 1}</span>
+        <span>· enviar a los</span>
+        <input type="number" min="1" class="lr-delay !mb-0 text-center" style="width: 80px;">
+        <select class="lr-unit !mb-0" style="width: auto;">
+            <option value="min">minutos</option>
+            <option value="h">horas</option>
+        </select>
+        <span>del último mensaje del cliente</span>
+        <button type="button" class="lr-remove ml-auto text-red-500" title="Quitar mensaje"><i class="fas fa-trash"></i></button>
+    `;
+    // Mostrar en horas cuando el delay es un número exacto de horas
+    const isHours = followup.delayMinutes >= 60 && followup.delayMinutes % 60 === 0;
+    head.querySelector('.lr-delay').value = isHours ? followup.delayMinutes / 60 : followup.delayMinutes;
+    head.querySelector('.lr-unit').value = isHours ? 'h' : 'min';
+    head.querySelector('.lr-remove').addEventListener('click', () => removeLeadReactRow(wrap));
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'lr-text w-full p-2 border border-gray-300 rounded-lg text-sm';
+    textarea.rows = 2;
+    textarea.placeholder = 'Texto del mensaje...';
+    textarea.value = followup.text || ''; // .value evita inyección de HTML
+    wrap.appendChild(head);
+    wrap.appendChild(textarea);
+    return wrap;
+}
+
+function renderLeadReactRows(followups) {
+    const rowsEl = document.getElementById('lead-react-rows');
+    if (!rowsEl) return;
+    rowsEl.innerHTML = '';
+    followups.forEach((f, i) => rowsEl.appendChild(leadReactRowElement(f, i)));
+}
+
+function addLeadReactRow() {
+    const rowsEl = document.getElementById('lead-react-rows');
+    if (!rowsEl) return;
+    rowsEl.appendChild(leadReactRowElement({ delayMinutes: 60, text: '' }, rowsEl.querySelectorAll('.lead-react-row').length));
+}
+
+function removeLeadReactRow(rowEl) {
+    const rowsEl = document.getElementById('lead-react-rows');
+    if (!rowsEl) return;
+    if (rowsEl.querySelectorAll('.lead-react-row').length <= 1) {
+        showError('Debe haber al menos un mensaje en la secuencia.');
+        return;
+    }
+    rowEl.remove();
+    // Renumerar los mensajes restantes
+    rowsEl.querySelectorAll('.lead-react-row .lr-num').forEach((el, i) => { el.textContent = `MENSAJE ${i + 1}`; });
+}
+
+// Lee las filas tal como están en el DOM (la fuente de verdad al guardar)
+function readLeadReactRows() {
+    return Array.from(document.querySelectorAll('#lead-react-rows .lead-react-row')).map(row => ({
+        delay: Number(row.querySelector('.lr-delay').value),
+        unit: row.querySelector('.lr-unit').value,
+        text: row.querySelector('.lr-text').value.trim()
+    }));
+}
+
+// Carga config + conteo de pendientes al abrir Ajustes
+async function loadLeadReactSettings() {
+    const rowsEl = document.getElementById('lead-react-rows');
+    if (!rowsEl) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/leads/reactivacion/config`);
+        if (!response.ok) throw new Error('No se pudo cargar la configuración.');
+        leadReactConfig = await response.json();
+
+        const toggle = document.getElementById('lead-react-toggle');
+        if (toggle) toggle.checked = !!leadReactConfig.enabled;
+        const minDays = document.getElementById('lead-react-mindays');
+        if (minDays) minDays.value = leadReactConfig.minDaysSinceLastOrder;
+        const cooldown = document.getElementById('lead-react-cooldown');
+        if (cooldown) cooldown.value = leadReactConfig.cooldownHours;
+
+        renderLeadReactRows(leadReactConfig.followups);
+        updateLeadReactSubtitle();
+    } catch (error) {
+        rowsEl.innerHTML = '<div class="text-sm text-red-500">No se pudo cargar la configuración de reactivación.</div>';
+        return;
+    }
+
+    // Conteo de leads en seguimiento (no bloquea la carga si falla)
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/leads/reactivacion/seguimientos?status=pending&limit=500`);
+        if (res.ok) {
+            const data = await res.json();
+            leadReactPendingCount = data.count || 0;
+            updateLeadReactSubtitle();
+        }
+    } catch (e) { /* silencioso */ }
+}
+
+// Botón de encendido/apagado: guarda al instante
+async function handleLeadReactToggle(isActive) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/leads/reactivacion/config`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: isActive })
+        });
+        if (!response.ok) throw new Error('No se pudo guardar el ajuste.');
+        leadReactConfig = await response.json();
+        updateLeadReactSubtitle();
+        showError(isActive ? 'Reactivación de leads encendida.' : 'Reactivación de leads apagada.', 'success');
+    } catch (error) {
+        showError(error.message);
+        // Revierte el interruptor en la UI si falla la API
+        const toggle = document.getElementById('lead-react-toggle');
+        if (toggle) toggle.checked = !isActive;
+    }
+}
+
+async function handleSaveLeadReact() {
+    const followups = [];
+    for (const row of readLeadReactRows()) {
+        if (!Number.isFinite(row.delay) || row.delay < 1 || !row.text) {
+            showError('Cada mensaje necesita un tiempo válido y un texto.');
+            return;
+        }
+        const delayMinutes = row.unit === 'h' ? Math.round(row.delay * 60) : Math.round(row.delay);
+        if (delayMinutes > 23 * 60) {
+            showError('Los mensajes deben enviarse dentro de las primeras 23 horas (ventana de WhatsApp).');
+            return;
+        }
+        followups.push({ delayMinutes, text: row.text });
+    }
+    if (followups.length === 0) {
+        showError('Agrega al menos un mensaje.');
+        return;
+    }
+
+    const btn = document.getElementById('lead-react-save-btn');
+    if (btn) btn.disabled = true;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/leads/reactivacion/config`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                followups,
+                minDaysSinceLastOrder: Math.max(0, Number(document.getElementById('lead-react-mindays')?.value) || 0),
+                cooldownHours: Math.max(0, Number(document.getElementById('lead-react-cooldown')?.value) || 0)
+            })
+        });
+        if (!response.ok) throw new Error('No se pudo guardar la configuración.');
+        leadReactConfig = await response.json();
+        renderLeadReactRows(leadReactConfig.followups);
+        updateLeadReactSubtitle();
+        showError('Mensajes de reactivación guardados.', 'success');
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 
 
 
