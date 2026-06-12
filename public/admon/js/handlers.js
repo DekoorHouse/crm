@@ -360,6 +360,10 @@ export function initEventListeners() {
     const exportKpisBtn = document.getElementById('export-kpis-btn');
     if (exportKpisBtn) exportKpisBtn.addEventListener('click', handleExportKpis);
 
+    // Modal de reglas de categorizacion (keyword -> categoria, editable).
+    const rulesBtn = document.getElementById('rules-btn');
+    if (rulesBtn) rulesBtn.addEventListener('click', () => ui.openRulesModal());
+
     // Toggle de modo prueba (banner + botón). Lo conecta `ui-manager.js`
     // al renderizar el banner; nada que hacer aquí.
     

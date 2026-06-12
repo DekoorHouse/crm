@@ -76,7 +76,18 @@ export const state = {
     openingDate: '2026-03-01',
     isConfigured: false,
     updatedAt: null
-  }
+  },
+
+  /**
+   * Reglas de categorización por keyword, editables desde la UI (modal
+   * "Reglas"). Vienen del doc Firestore `admin_data/categorization_rules`.
+   * Formato: [{ keyword: 'jovita', category: 'Sueldos' }, ...] — el orden
+   * del array es el orden de evaluación (primera que matchea gana).
+   *
+   * null = el doc no existe todavía → utils.js usa las reglas hardcodeadas
+   * (DEFAULT_KEYWORD_RULES) como fallback. Imposible quedarse sin reglas.
+   */
+  categorizationRules: null
 };
 
 export const charts = { 

@@ -61,6 +61,8 @@ function initializeAppUI() {
     services.listenForNotes(ui.renderNotes);
     // Configuración del saldo inicial (alimenta "Saldo BBVA Estimado" del Resumen)
     services.listenForBalanceConfig(onDataChange);
+    // Reglas de categorización dinámicas (modal "Reglas"; fallback a código)
+    services.listenForCategorizationRules(onDataChange);
 
     ui.renderMonthFilter();
     
