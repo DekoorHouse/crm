@@ -2,6 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getAwayMessage, setAwayMessage, getGoogleSheet, setGoogleSheet } from "@/lib/api/crm";
+import {
+  getLeadReactivationConfig,
+  saveLeadReactivationConfig,
+  getLeadFollowupsCount,
+  type LeadReactivationConfig,
+} from "@/lib/api/leadReactivation";
 import { db, auth } from "@/lib/firebase/config";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import toast from "react-hot-toast";
@@ -25,6 +31,17 @@ async function authHeaders(): Promise<HeadersInit> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// Fila editable de la secuencia de reactivación (delay + unidad + texto)
+type LeadRow = { delay: string; unit: "min" | "h"; text: string };
+
+function rowsFromLeadConfig(cfg: LeadReactivationConfig): LeadRow[] {
+  return cfg.followups.map((f) =>
+    f.delayMinutes >= 60 && f.delayMinutes % 60 === 0
+      ? { delay: String(f.delayMinutes / 60), unit: "h", text: f.text }
+      : { delay: String(f.delayMinutes), unit: "min", text: f.text }
+  );
+}
+
 export default function AjustesPage() {
   const [awayActive, setAwayActive] = useState(false);
   const [sheetId, setSheetId] = useState("");
@@ -37,6 +54,13 @@ export default function AjustesPage() {
   const [savingEditorBot, setSavingEditorBot] = useState(false);
   const [fbStatus, setFbStatus] = useState<FbStatus>({ connected: false });
   const [fbLoading, setFbLoading] = useState(false);
+  const [leadCfg, setLeadCfg] = useState<LeadReactivationConfig | null>(null);
+  const [leadRows, setLeadRows] = useState<LeadRow[]>([]);
+  const [leadMinDays, setLeadMinDays] = useState("15");
+  const [leadCooldown, setLeadCooldown] = useState("24");
+  const [leadPending, setLeadPending] = useState<number | null>(null);
+  const [togglingLead, setTogglingLead] = useState(false);
+  const [savingLead, setSavingLead] = useState(false);
 
   const loadFbStatus = useCallback(async () => {
     try {
@@ -54,6 +78,13 @@ export default function AjustesPage() {
       getGoogleSheet().then((s) => setSheetId(s.googleSheetId || "")).catch(() => {}),
       getDoc(doc(db, "crm_settings", "bot")).then((d) => setBotInstructions(d.data()?.instructions || "")).catch(() => {}),
       getDoc(doc(db, "crm_settings", "editor_bot")).then((d) => setEditorBotInstructions(d.data()?.instructions || "")).catch(() => {}),
+      getLeadReactivationConfig().then((cfg) => {
+        setLeadCfg(cfg);
+        setLeadRows(rowsFromLeadConfig(cfg));
+        setLeadMinDays(String(cfg.minDaysSinceLastOrder));
+        setLeadCooldown(String(cfg.cooldownHours));
+      }).catch(() => {}),
+      getLeadFollowupsCount().then(setLeadPending).catch(() => {}),
       loadFbStatus(),
     ]).finally(() => setLoading(false));
   }, [loadFbStatus]);
@@ -145,6 +176,64 @@ export default function AjustesPage() {
     }
   }
 
+  async function handleToggleLead() {
+    if (!leadCfg) { toast.error("La configuración aún no carga"); return; }
+    setTogglingLead(true);
+    try {
+      const next = !leadCfg.enabled;
+      const saved = await saveLeadReactivationConfig({ enabled: next });
+      setLeadCfg(saved);
+      toast.success(next ? "Reactivación de leads encendida" : "Reactivación de leads apagada");
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Error"); }
+    finally { setTogglingLead(false); }
+  }
+
+  function updateLeadRow(i: number, patch: Partial<LeadRow>) {
+    setLeadRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+
+  function addLeadRow() {
+    setLeadRows((rows) => [...rows, { delay: "60", unit: "min", text: "" }]);
+  }
+
+  function removeLeadRow(i: number) {
+    setLeadRows((rows) => rows.filter((_, idx) => idx !== i));
+  }
+
+  async function handleSaveLead() {
+    const followups: { delayMinutes: number; text: string }[] = [];
+    for (const row of leadRows) {
+      const value = Number(row.delay);
+      const text = row.text.trim();
+      if (!Number.isFinite(value) || value < 1 || !text) {
+        toast.error("Cada mensaje necesita un tiempo válido y un texto");
+        return;
+      }
+      const delayMinutes = row.unit === "h" ? Math.round(value * 60) : Math.round(value);
+      if (delayMinutes > 23 * 60) {
+        toast.error("Los mensajes deben enviarse dentro de las primeras 23 horas (ventana de WhatsApp)");
+        return;
+      }
+      followups.push({ delayMinutes, text });
+    }
+    if (followups.length === 0) { toast.error("Agrega al menos un mensaje"); return; }
+
+    setSavingLead(true);
+    try {
+      const saved = await saveLeadReactivationConfig({
+        followups,
+        minDaysSinceLastOrder: Math.max(0, Number(leadMinDays) || 0),
+        cooldownHours: Math.max(0, Number(leadCooldown) || 0),
+      });
+      setLeadCfg(saved);
+      setLeadRows(rowsFromLeadConfig(saved));
+      setLeadMinDays(String(saved.minDaysSinceLastOrder));
+      setLeadCooldown(String(saved.cooldownHours));
+      toast.success("Mensajes de reactivación guardados");
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Error"); }
+    finally { setSavingLead(false); }
+  }
+
   async function handleToggleAway() {
     setSavingAway(true);
     try {
@@ -198,6 +287,83 @@ export default function AjustesPage() {
               className={`relative w-12 h-7 rounded-full transition-colors ${awayActive ? "bg-primary" : "bg-surface-container-high"}`}>
               <div className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${awayActive ? "left-6" : "left-1"}`} />
             </button>
+          </div>
+        </div>
+
+        {/* Reactivación de leads */}
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/10 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-bold text-on-surface">Reactivación de leads</h3>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Mensajes automáticos para clientes que escriben y no registran pedido
+                {leadCfg?.enabled && leadPending !== null ? ` · ${leadPending} en seguimiento ahora` : ""}
+              </p>
+            </div>
+            <button onClick={handleToggleLead} disabled={togglingLead || !leadCfg}
+              title={leadCfg?.enabled ? "Apagar" : "Encender"}
+              className={`relative w-12 h-7 rounded-full transition-colors ${leadCfg?.enabled ? "bg-primary" : "bg-surface-container-high"}`}>
+              <div className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${leadCfg?.enabled ? "left-6" : "left-1"}`} />
+            </button>
+          </div>
+
+          <div className={leadCfg?.enabled ? "" : "opacity-60"}>
+            <div className="space-y-3">
+              {leadRows.map((row, i) => (
+                <div key={i} className="bg-surface-container-low rounded-xl p-4">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Mensaje {i + 1}</span>
+                    <span className="text-xs text-on-surface-variant">· enviar a los</span>
+                    <input type="number" min={1} value={row.delay}
+                      onChange={(e) => updateLeadRow(i, { delay: e.target.value })}
+                      className="w-20 bg-surface-container-lowest rounded-lg px-2 py-1.5 text-sm text-on-surface border-none focus:ring-0 focus:outline-none text-center" />
+                    <select value={row.unit}
+                      onChange={(e) => updateLeadRow(i, { unit: e.target.value as "min" | "h" })}
+                      className="bg-surface-container-lowest rounded-lg px-2 py-1.5 text-sm text-on-surface border-none focus:ring-0 focus:outline-none">
+                      <option value="min">minutos</option>
+                      <option value="h">horas</option>
+                    </select>
+                    <span className="text-xs text-on-surface-variant">del último mensaje del cliente</span>
+                    {leadRows.length > 1 && (
+                      <button onClick={() => removeLeadRow(i)}
+                        className="ml-auto text-xs font-bold text-red-500 hover:opacity-70">
+                        Quitar
+                      </button>
+                    )}
+                  </div>
+                  <textarea value={row.text} onChange={(e) => updateLeadRow(i, { text: e.target.value })} rows={2}
+                    placeholder="Texto del mensaje…"
+                    className="w-full bg-surface-container-lowest rounded-lg px-3 py-2 text-sm text-on-surface border-none focus:ring-0 focus:outline-none resize-none" />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between mt-3">
+              <button onClick={addLeadRow} className="text-xs font-bold text-primary hover:opacity-70">+ Agregar mensaje</button>
+              <p className="text-xs text-on-surface-variant">Usa <span className="font-mono">{"{{nombre}}"}</span> para el nombre del cliente</p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-4 text-xs text-on-surface-variant">
+              <label className="flex items-center gap-2">
+                No enviar si tiene pedido de hace menos de
+                <input type="number" min={0} value={leadMinDays} onChange={(e) => setLeadMinDays(e.target.value)}
+                  className="w-16 bg-surface-container-low rounded-lg px-2 py-1.5 text-sm text-on-surface border-none focus:ring-0 focus:outline-none text-center" />
+                días
+              </label>
+              <label className="flex items-center gap-2">
+                Pausa entre secuencias al mismo cliente
+                <input type="number" min={0} value={leadCooldown} onChange={(e) => setLeadCooldown(e.target.value)}
+                  className="w-16 bg-surface-container-low rounded-lg px-2 py-1.5 text-sm text-on-surface border-none focus:ring-0 focus:outline-none text-center" />
+                horas
+              </label>
+            </div>
+
+            <div className="flex justify-end mt-3">
+              <button onClick={handleSaveLead} disabled={savingLead}
+                className="px-4 py-2 text-sm font-bold text-on-primary bg-primary rounded-xl hover:opacity-90 disabled:opacity-40 transition-all">
+                {savingLead ? "Guardando..." : "Guardar mensajes"}
+              </button>
+            </div>
           </div>
         </div>
 
