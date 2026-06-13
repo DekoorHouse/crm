@@ -425,6 +425,44 @@ export async function saveCategorizationRules(rules) {
     return rules.length;
 }
 
+// --- REGIONES DE CAMPAÑAS (pestaña Campañas) ---
+
+/** Escucha admin_data/campaign_regions → state.campaignRegions (null si no existe). */
+export function listenForCampaignRegions(onDataChange) {
+    const ref = doc(db, "admin_data", "campaign_regions");
+    return onSnapshot(ref, (snap) => {
+        state.campaignRegions = snap.exists() ? snap.data() : null;
+        onDataChange();
+    }, (error) => console.error("Campaign Regions Listener Error:", error));
+}
+
+/** Guarda la config de regiones (reglas keyword + overrides por campaña + default). */
+export async function saveCampaignRegions(config) {
+    await setDoc(doc(db, "admin_data", "campaign_regions"), {
+        rules: Array.isArray(config.rules) ? config.rules : [],
+        overrides: (config.overrides && typeof config.overrides === 'object') ? config.overrides : {},
+        defaultRegion: config.defaultRegion || 'Nacional',
+        updatedAt: Timestamp.now()
+    });
+}
+
+/**
+ * Llama al backend POST /api/meta-ads/region-report con el rango y los adIds
+ * (attributedAdId distintos de los pedidos pagados del rango). Devuelve
+ * { campaigns, adToCampaign, adsResolved, adsRequested, errors }.
+ */
+export async function fetchRegionReport({ dateFrom, dateTo, adIds }) {
+    const resp = await fetch('/api/meta-ads/region-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date_from: dateFrom, date_to: dateTo, adIds: adIds || [] })
+    });
+    if (!resp.ok) throw new Error('El servidor respondió ' + resp.status + ' (¿desplegaste el backend de region-report?)');
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'region-report falló');
+    return data;
+}
+
 // --- OVERRIDES (manualCategories): gestión desde el modal Reglas ---
 
 /**

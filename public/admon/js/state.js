@@ -87,7 +87,15 @@ export const state = {
    * null = el doc no existe todavía → utils.js usa las reglas hardcodeadas
    * (DEFAULT_KEYWORD_RULES) como fallback. Imposible quedarse sin reglas.
    */
-  categorizationRules: null
+  categorizationRules: null,
+
+  /**
+   * Configuración de regiones para la pestaña Campañas. Viene del doc
+   * Firestore `admin_data/campaign_regions`:
+   *   { rules:[{keyword,region}], overrides:{campaignId:region}, defaultRegion }
+   * null = no configurado → utils usa DEFAULT_REGION_RULES / 'Nacional'.
+   */
+  campaignRegions: null
 };
 
 export const charts = { 
