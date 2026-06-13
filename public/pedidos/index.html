@@ -102,6 +102,7 @@
                  <div class="filtro-item" style="grid-column: span 2; display: flex; gap: 10px;">
                     <button id="btnAplicarFiltros"><i class="fas fa-filter"></i> Aplicar Filtros</button>
                     <button id="btnBorrarFiltros"><i class="fas fa-eraser"></i> Borrar Filtros</button>
+                    <button id="btnExportarPedidos" type="button" style="background:#1d6f42;"><i class="fas fa-file-excel"></i> Exportar</button>
                  </div>
 
              </div>
@@ -386,6 +387,38 @@
     </div>
 </div>
 
+<div id="modalExportar" class="modal-overlay" style="display: none;">
+    <div class="modal-content" id="modalContentExportar">
+        <button id="btnCerrarModalExportar" class="modal-close-btn" title="Cerrar">×</button>
+        <h2><i class="fas fa-file-excel" style="color: #1d6f42;"></i> Exportar Pedidos</h2>
+        <p style="margin: 0 0 16px; color: #555; font-size: 0.95rem;">
+            Elige el rango de fechas que quieres descargar en un archivo de Excel.
+        </p>
+        <div class="form-grid">
+            <div class="form-item form-item-full">
+                <label for="exportFechaSelect"><i class="fas fa-calendar-day"></i> Rango de fechas:</label>
+                <select id="exportFechaSelect">
+                    <option value="">Todos los pedidos</option>
+                    <option value="hoy">Hoy</option>
+                    <option value="ayer">Ayer</option>
+                    <option value="ultimos-10-dias">Últimos 10 días</option>
+                    <option value="este-mes">Este mes</option>
+                    <option value="personalizado">Personalizado</option>
+                </select>
+            </div>
+            <div class="form-item form-item-full" id="exportRangoPersonalizado" style="display: none;">
+                <label for="exportFechaPersonalizada"><i class="fas fa-calendar-alt"></i> Fecha o rango:</label>
+                <input type="text" id="exportFechaPersonalizada" placeholder="Selecciona una fecha o un rango">
+            </div>
+        </div>
+        <div id="exportMensaje" style="display:none; margin-top:12px; padding:10px 14px; border-radius:8px; font-size:0.9rem;"></div>
+        <div class="form-actions">
+            <button type="button" id="btnCancelarExportar"><i class="fas fa-times"></i> Cancelar</button>
+            <button type="button" id="btnConfirmarExportar" style="background:#1d6f42; color:#fff;"><i class="fas fa-download"></i> Descargar Excel</button>
+        </div>
+    </div>
+</div>
+
 <div id="copy-toast">¡Texto copiado!</div>
 <div id="photo-copy-toast">¡Foto copiada!</div>
 
@@ -400,6 +433,9 @@
     </div>
     <button id="closeSearchBtn" title="Cerrar (Esc)">&times;</button>
 </div>
+
+<!-- SheetJS (XLSX) para exportar pedidos a Excel -->
+<script src="/admon/js/vendor/xlsx.full.min.js"></script>
 
 <!-- Link to external JS file -->
 <script type="module" src="/pedidos/script.js"></script>

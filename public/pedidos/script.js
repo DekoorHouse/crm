@@ -95,6 +95,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const rangoFechaPersonalizadoContainer = document.getElementById('rangoFechaPersonalizado');
     const filtroFechaPersonalizadaInput = document.getElementById('filtroFechaPersonalizada');
 
+    // Export elements
+    const btnExportarPedidos = document.getElementById('btnExportarPedidos');
+    const modalExportar = document.getElementById('modalExportar');
+    const btnCerrarModalExportar = document.getElementById('btnCerrarModalExportar');
+    const btnCancelarExportar = document.getElementById('btnCancelarExportar');
+    const btnConfirmarExportar = document.getElementById('btnConfirmarExportar');
+    const exportFechaSelect = document.getElementById('exportFechaSelect');
+    const exportRangoPersonalizado = document.getElementById('exportRangoPersonalizado');
+    const exportFechaPersonalizadaInput = document.getElementById('exportFechaPersonalizada');
+    const exportMensaje = document.getElementById('exportMensaje');
+
 
     // Dark Mode Toggle elements
     const darkModeToggle = document.getElementById('darkModeToggle');
@@ -147,6 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSearchIndex = -1;
     let selectedThumbnail = { element: null, manager: null, index: -1 };
     let datePickerInstance = null;
+    let exportDatePickerInstance = null;
     let filteredCounterClicks = 0;
     let lastFilteredCounterClickTime = 0;
 
@@ -2004,6 +2016,191 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ============================================================
+    // EXPORTAR PEDIDOS A EXCEL (elige rango de fechas)
+    // ============================================================
+    function abrirModalExportar() {
+        if (!modalExportar) return;
+
+        // Por defecto, replicar el filtro de fecha activo en la tabla
+        const opcionesExport = Array.from(exportFechaSelect.options).map(o => o.value);
+        exportFechaSelect.value = opcionesExport.includes(filtroFechaSelect.value) ? filtroFechaSelect.value : '';
+
+        if (exportMensaje) exportMensaje.style.display = 'none';
+        toggleExportRango();
+
+        // Inicialización perezosa del datepicker (el modal ya es visible -> medidas correctas)
+        modalExportar.style.display = 'flex';
+        document.body.classList.add('modal-open');
+
+        if (!exportDatePickerInstance) {
+            exportDatePickerInstance = flatpickr(exportFechaPersonalizadaInput, {
+                mode: "range",
+                dateFormat: "Y-m-d",
+                locale: "es",
+                altInput: true,
+                altFormat: "j F, Y",
+                allowInput: true,
+                onClose: function(selectedDates, dateStr, instance) {
+                    if (selectedDates.length === 1) {
+                        instance.setDate([selectedDates[0], selectedDates[0]], true);
+                    }
+                }
+            });
+        }
+
+        // Si el filtro activo es personalizado, copiar su rango al exportador
+        if (exportFechaSelect.value === 'personalizado' && datePickerInstance && datePickerInstance.selectedDates.length > 0) {
+            exportDatePickerInstance.setDate(datePickerInstance.selectedDates, false);
+        }
+    }
+
+    function cerrarModalExportar() {
+        if (!modalExportar) return;
+        modalExportar.style.display = 'none';
+        document.body.classList.remove('modal-open');
+    }
+
+    function toggleExportRango() {
+        if (!exportRangoPersonalizado) return;
+        exportRangoPersonalizado.style.display = exportFechaSelect.value === 'personalizado' ? 'block' : 'none';
+    }
+
+    function setExportMensaje(texto, tipo = 'info') {
+        if (!exportMensaje) return;
+        const estilos = {
+            info:    { bg: '#eef6ff', color: '#1d4ed8' },
+            error:   { bg: '#fee', color: '#c00' },
+            success: { bg: '#e8f5e9', color: '#1b5e20' }
+        };
+        const s = estilos[tipo] || estilos.info;
+        exportMensaje.style.background = s.bg;
+        exportMensaje.style.color = s.color;
+        exportMensaje.innerHTML = texto;
+        exportMensaje.style.display = 'block';
+    }
+
+    // Trae TODOS los pedidos del rango paginando el endpoint (sin tocar la vista actual)
+    async function fetchAllOrdersForExport(filters, onProgress) {
+        const todos = [];
+        let startAfterId = null;
+        let hasMore = true;
+        let guard = 0;
+
+        while (hasMore && guard < 1000) {
+            guard++;
+            const params = new URLSearchParams();
+            params.set('limit', '100');
+            if (filters.dateFilter) params.set('dateFilter', filters.dateFilter);
+            if (filters.customStart) params.set('customStart', filters.customStart);
+            if (filters.customEnd) params.set('customEnd', filters.customEnd);
+            if (startAfterId) params.set('startAfterId', startAfterId);
+
+            const res = await fetch(`/api/orders/list?${params.toString()}`);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.message || 'Error al obtener los pedidos.');
+
+            todos.push(...data.orders);
+            hasMore = data.hasMore;
+            startAfterId = data.lastVisibleId;
+            if (onProgress) onProgress(todos.length);
+            if (!startAfterId) break;
+        }
+        return todos;
+    }
+
+    function formatExportDate(createdAt) {
+        if (!createdAt) return '';
+        const seconds = typeof createdAt.toDate === 'function'
+            ? Math.floor(createdAt.toDate().getTime() / 1000)
+            : createdAt._seconds;
+        if (seconds == null) return '';
+        return new Date(seconds * 1000).toLocaleString('es-MX', {
+            timeZone: 'America/Mexico_City',
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    async function exportarPedidos() {
+        if (typeof XLSX === 'undefined' || !XLSX || typeof XLSX.utils === 'undefined') {
+            setExportMensaje('No se pudo cargar la librería de Excel. Recarga la página e intenta de nuevo.', 'error');
+            return;
+        }
+
+        // Construir filtros de fecha a partir de la selección
+        const seleccion = exportFechaSelect.value;
+        const filters = { dateFilter: '', customStart: null, customEnd: null };
+        let etiqueta = 'todos';
+
+        if (seleccion === 'personalizado') {
+            const fechas = exportDatePickerInstance ? exportDatePickerInstance.selectedDates : [];
+            if (!fechas || fechas.length === 0) {
+                setExportMensaje('Selecciona una fecha o un rango para exportar.', 'error');
+                return;
+            }
+            const inicio = new Date(fechas[0]); inicio.setHours(0, 0, 0, 0);
+            const fin = new Date(fechas.length > 1 ? fechas[1] : fechas[0]); fin.setHours(23, 59, 59, 999);
+            filters.dateFilter = 'personalizado';
+            filters.customStart = inicio.getTime().toString();
+            filters.customEnd = fin.getTime().toString();
+            const fmt = (d) => d.toLocaleDateString('en-CA'); // YYYY-MM-DD
+            etiqueta = fmt(inicio) === fmt(fin) ? fmt(inicio) : `${fmt(inicio)}_a_${fmt(fin)}`;
+        } else if (seleccion) {
+            filters.dateFilter = seleccion;
+            etiqueta = seleccion;
+        }
+
+        const textoOriginal = btnConfirmarExportar.innerHTML;
+        btnConfirmarExportar.disabled = true;
+        btnCancelarExportar.disabled = true;
+        btnConfirmarExportar.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparando...';
+        setExportMensaje('<i class="fas fa-spinner fa-spin"></i> Obteniendo pedidos...', 'info');
+
+        try {
+            const pedidos = await fetchAllOrdersForExport(filters, (n) => {
+                btnConfirmarExportar.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${n} pedidos...`;
+            });
+
+            if (!pedidos.length) {
+                setExportMensaje('No hay pedidos en el rango seleccionado.', 'error');
+                return;
+            }
+
+            const filas = pedidos.map(o => ({
+                '# Pedido': o.consecutiveOrderNumber ? `DH${o.consecutiveOrderNumber}` : (o.id || ''),
+                'Fecha y Hora': formatExportDate(o.createdAt),
+                'Vendedor': o.vendedor || '',
+                'Teléfono': o.telefono || '',
+                'Estatus': o.estatus || 'Sin estatus',
+                'Producto': o.producto || '',
+                'Datos Producto': o.datosProducto || '',
+                'Datos Promoción': o.datosPromocion || '',
+                'Comentarios': o.comentarios || '',
+                'Precio': Number(o.precio) || 0
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(filas);
+            ws['!cols'] = [
+                { wch: 10 }, { wch: 18 }, { wch: 12 }, { wch: 16 }, { wch: 14 },
+                { wch: 14 }, { wch: 32 }, { wch: 32 }, { wch: 32 }, { wch: 12 }
+            ];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
+            XLSX.writeFile(wb, `Pedidos_${etiqueta}.xlsx`);
+
+            setExportMensaje(`<i class="fas fa-check-circle"></i> Se exportaron ${pedidos.length} pedidos.`, 'success');
+            setTimeout(cerrarModalExportar, 1200);
+        } catch (error) {
+            console.error('Error al exportar pedidos:', error);
+            setExportMensaje(`Error al exportar: ${error.message}`, 'error');
+        } finally {
+            btnConfirmarExportar.disabled = false;
+            btnCancelarExportar.disabled = false;
+            btnConfirmarExportar.innerHTML = textoOriginal;
+        }
+    }
+
     async function actualizarContadorHoy() {
         const { startDate, endDate } = getDateRange('hoy');
         if (!startDate || !endDate) return;
@@ -2198,6 +2395,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // --- Exportar ---
+    if (btnExportarPedidos) btnExportarPedidos.addEventListener('click', abrirModalExportar);
+    if (btnCerrarModalExportar) btnCerrarModalExportar.addEventListener('click', cerrarModalExportar);
+    if (btnCancelarExportar) btnCancelarExportar.addEventListener('click', cerrarModalExportar);
+    if (btnConfirmarExportar) btnConfirmarExportar.addEventListener('click', exportarPedidos);
+    if (exportFechaSelect) exportFechaSelect.addEventListener('change', toggleExportRango);
+    if (modalExportar) modalExportar.addEventListener('click', (e) => { if (e.target === modalExportar) cerrarModalExportar(); });
 
     if (contadorPedidosFiltrados) {
         contadorPedidosFiltrados.addEventListener('click', () => {
@@ -2454,6 +2659,7 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (activeCircularMenu) cerrarMenuEstatus();
             else if (modalComentario && modalComentario.style.display === 'flex') cerrarModalComentario();
             else if (modalImagenPedido && modalImagenPedido.style.display === 'flex') cerrarModalImagen();
+            else if (modalExportar && modalExportar.style.display === 'flex') cerrarModalExportar();
             else if (modalNuevoPedido && modalNuevoPedido.style.display === 'flex') cerrarModalPedido();
         }
 
