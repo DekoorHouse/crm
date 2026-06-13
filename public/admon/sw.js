@@ -4,11 +4,10 @@
 //  - JS/CSS/Img estáticos: cache-first con actualización en background
 //  - API/Firestore/Firebase: passthrough (sin cachear)
 
-// v13 (2026-06-12): pestana "Campanas" — gasto/venta/ROAS por region.
-// Cruza gasto-por-campana de Meta (endpoint region-report) con venta-por-
-// campana de pedidos (attributedAdId->campana), agrupa por region editable
-// (keyword + override por campana). Baldes Organico y Sin atribuir aparte.
-const CACHE_VERSION = 'admon-v13';
+// v14 (2026-06-13): pestana Campanas gana boton "Exportar" — descarga el
+// reporte por region a Excel (2 hojas: Por Region + Por Campana) desde los
+// datos del ultimo Calcular, sin re-llamar al backend.
+const CACHE_VERSION = 'admon-v14';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 

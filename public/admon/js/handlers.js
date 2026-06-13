@@ -369,6 +369,8 @@ export function initEventListeners() {
     if (campCalcBtn) campCalcBtn.addEventListener('click', loadCampaignsReport);
     const campRegionsBtn = document.getElementById('camp-regions-btn');
     if (campRegionsBtn) campRegionsBtn.addEventListener('click', () => ui.openRegionsModal({ onSaved: loadCampaignsReport }));
+    const campExportBtn = document.getElementById('camp-export-btn');
+    if (campExportBtn) campExportBtn.addEventListener('click', handleExportCampaigns);
 
     // Toggle de modo prueba (banner + botón). Lo conecta `ui-manager.js`
     // al renderizar el banner; nada que hacer aquí.
@@ -1204,6 +1206,7 @@ async function handleExportKpis() {
 // ============================================================================
 
 let _campaignsLoadedOnce = false;
+let _lastCampaignsData = null; // { report, paidInRange } del último Calcular (para exportar)
 
 /**
  * Lee pedidos pagados del rango, saca sus attributedAdId, pide al backend el
@@ -1233,11 +1236,58 @@ async function loadCampaignsReport() {
         const adIds = [...new Set(inRange.map(p => p.attributedAdId).filter(Boolean).map(String))];
 
         const report = await services.fetchRegionReport({ dateFrom, dateTo, adIds });
+        _lastCampaignsData = { report, paidInRange: inRange };
         ui.renderCampaignsReport(out, { report, paidInRange: inRange });
     } catch (err) {
         console.error('Error cargando reporte de campañas:', err);
         out.innerHTML = `<p style="color:var(--danger);">Error: ${err.message}</p>`;
     }
+}
+
+/**
+ * Exporta el reporte por región a Excel (2 hojas: Por Región + Por Campaña)
+ * usando los datos del último Calcular. No vuelve a llamar al backend.
+ */
+function handleExportCampaigns() {
+    if (!ensureXLSXLoaded()) return;
+    if (!_lastCampaignsData) {
+        ui.showToast('Primero pulsa Calcular para generar el reporte', 'warning');
+        return;
+    }
+    const { report, paidInRange } = _lastCampaignsData;
+    const agg = utils.buildRegionReport(report, paidInRange);
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const roas = (rev, sp) => sp > 0 ? round2(rev / sp) : '';
+    const cpa  = (sp, ord) => ord > 0 ? round2(sp / ord) : '';
+
+    // Hoja 1 — Por Región
+    const regionRows = agg.regionList.map(r => ({
+        'Región': r.region, 'Gasto': round2(r.spend), 'Venta': round2(r.revenue),
+        'Pedidos': r.orders, 'ROAS': roas(r.revenue, r.spend), 'CPA': cpa(r.spend, r.orders)
+    }));
+    regionRows.push({ 'Región': 'Orgánico (sin anuncio)', 'Gasto': 0, 'Venta': round2(agg.organic.revenue), 'Pedidos': agg.organic.orders, 'ROAS': '', 'CPA': '' });
+    if (agg.unattributed.orders > 0) {
+        regionRows.push({ 'Región': 'Sin atribuir (anuncio borrado)', 'Gasto': 0, 'Venta': round2(agg.unattributed.revenue), 'Pedidos': agg.unattributed.orders, 'ROAS': '', 'CPA': '' });
+    }
+    regionRows.push({
+        'Región': 'TOTAL', 'Gasto': round2(agg.totals.spend), 'Venta': round2(agg.totals.revenue),
+        'Pedidos': agg.totals.adOrders + agg.organic.orders + agg.unattributed.orders,
+        'ROAS': roas(agg.totals.adRevenue, agg.totals.spend), 'CPA': ''
+    });
+
+    // Hoja 2 — Por Campaña
+    const campRows = [];
+    agg.regionList.forEach(r => r.campaigns.forEach(c => campRows.push({
+        'Región': r.region, 'Campaña': c.name, 'Cuenta': c.accountId || '',
+        'Gasto': round2(c.spend), 'Venta': round2(c.revenue), 'Pedidos': c.orders,
+        'ROAS': roas(c.revenue, c.spend), 'CPA': cpa(c.spend, c.orders)
+    })));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(regionRows), 'Por Región');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(campRows), 'Por Campaña');
+    XLSX.writeFile(wb, `ReporteCampanas_${report.dateFrom}_a_${report.dateTo}.xlsx`);
+    ui.showToast('Reporte exportado', 'success');
 }
 
 /**
