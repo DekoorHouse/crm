@@ -392,6 +392,72 @@ async function getDailySpend(accountId, dateFrom, dateTo) {
     }));
 }
 
+// ===================== REPORTE POR REGION (gasto por campana + mapa ad->campana) =====================
+
+/**
+ * Gasto por campana de varias cuentas en un rango. Reusa getInsightsByLevel
+ * a nivel 'campaign' (ya paginado) por cada cuenta. Si una cuenta falla, se
+ * registra el error y se continua con las demas.
+ *
+ * @param {string[]} accountIds  IDs limpios (sin act_)
+ * @param {string} dateFrom YYYY-MM-DD
+ * @param {string} dateTo   YYYY-MM-DD
+ * @returns {Promise<{campaigns:Array<{accountId,campaignId,campaignName,spend}>, errors:Array}>}
+ */
+async function getCampaignSpendForAccounts(accountIds, dateFrom, dateTo) {
+    const campaigns = [];
+    const errors = [];
+    for (const accId of accountIds) {
+        try {
+            const rows = await getInsightsByLevel(accId, 'campaign', dateFrom, dateTo);
+            rows.forEach(r => campaigns.push({
+                accountId: String(accId).replace('act_', ''),
+                campaignId: r.campaign_id,
+                campaignName: r.campaign_name,
+                spend: Number(r.spend) || 0
+            }));
+        } catch (err) {
+            errors.push({ accountId: accId, error: err.response?.data?.error?.message || err.message });
+        }
+    }
+    return { campaigns, errors };
+}
+
+/**
+ * Resuelve una lista de Ad IDs a su campana usando el batch-read de Meta
+ * (GET /?ids=ad1,ad2,...&fields=campaign{id,name}, max 50 por llamada).
+ * Los anuncios borrados o sin acceso simplemente no aparecen en el mapa.
+ *
+ * @param {string[]} adIds
+ * @returns {Promise<Object<string,{campaignId,campaignName}>>}
+ */
+async function resolveAdsToCampaigns(adIds) {
+    const map = {};
+    const unique = [...new Set((adIds || []).filter(Boolean).map(String))];
+    const BATCH = 50;
+    for (let i = 0; i < unique.length; i += BATCH) {
+        const batch = unique.slice(i, i + BATCH);
+        try {
+            // path '' -> https://graph.facebook.com/<ver>/?ids=...  (token global)
+            const resp = await metaGet('', { ids: batch.join(','), fields: 'campaign{id,name}' }, null);
+            for (const adId of Object.keys(resp || {})) {
+                const camp = resp[adId] && resp[adId].campaign;
+                if (camp) map[adId] = { campaignId: camp.id, campaignName: camp.name };
+            }
+        } catch (err) {
+            // Si el batch entero falla (un id invalido tumba la llamada),
+            // reintentamos uno por uno para no perder los demas.
+            for (const adId of batch) {
+                try {
+                    const one = await metaGet(adId, { fields: 'campaign{id,name}' }, null);
+                    if (one && one.campaign) map[adId] = { campaignId: one.campaign.id, campaignName: one.campaign.name };
+                } catch (_) { /* anuncio borrado/sin acceso: se omite */ }
+            }
+        }
+    }
+    return map;
+}
+
 // ===================== AUDIENCES / TARGETING =====================
 
 async function searchTargeting(query, type = 'adinterest', accountId) {
@@ -428,6 +494,8 @@ module.exports = {
     listCreatives, getCreative, createCreative, uploadAdImage, getCreativePreview,
     // Insights
     getInsights, getInsightsByLevel, getDailySpend,
+    // Reporte por region
+    getCampaignSpendForAccounts, resolveAdsToCampaigns,
     // Audiences
     searchTargeting, listCustomAudiences
 };
