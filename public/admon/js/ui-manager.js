@@ -1,5 +1,5 @@
 import { elements, state } from './state.js';
-import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange, getActiveKeywordRules, categorizeWithTrace } from './utils.js';
+import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange, getActiveKeywordRules, categorizeWithTrace, buildRegionReport, getRegionConfig } from './utils.js';
 import * as services from './services.js';
 import { isTestMode, setTestMode, isDevMode, setDevMode, describeMode } from './config.js';
 
@@ -2839,6 +2839,256 @@ export function showDryRunReportModal(opts) {
  * - El probador muestra qué categoría recibiría un concepto Y POR QUÉ
  *   (override exacto / override de comercio / regla / nada).
  */
+// =============================================================================
+//  Pestaña Campañas — reporte gasto/venta/ROAS por región + modal de regiones
+// =============================================================================
+
+function escHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Campañas del último reporte renderizado (las usa el modal de regiones para
+// listar overrides por campaña).
+let _lastCampaignsForRegions = [];
+
+function campKpiBox(label, value, color) {
+    return `<div style="flex:1;min-width:120px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;">
+        <div style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;font-weight:600;">${label}</div>
+        <div style="font-size:18px;font-weight:800;color:${color || 'var(--text-primary)'};">${value}</div>
+    </div>`;
+}
+
+/**
+ * Renderiza el reporte por región dentro de `container`.
+ * @param {HTMLElement} container
+ * @param {{report:object, paidInRange:Array}} data
+ */
+export function renderCampaignsReport(container, { report, paidInRange }) {
+    const agg = buildRegionReport(report, paidInRange);
+    _lastCampaignsForRegions = agg.campaignsFull || [];
+
+    const money = (n) => formatCurrency(n);
+    const roas = (rev, sp) => sp > 0 ? (rev / sp).toFixed(2) + 'x' : '—';
+    const cpa  = (sp, ord) => ord > 0 ? money(sp / ord) : '—';
+
+    const adsNote = `${report.adsResolved ?? '?'}/${report.adsRequested ?? '?'} anuncios atribuidos`;
+    const errNote = report.errors ? ` · ⚠ ${report.errors.length} cuenta(s) con error (ver consola)` : '';
+
+    let html = `
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+            ${campKpiBox('Gasto', money(agg.totals.spend), 'var(--danger)')}
+            ${campKpiBox('Venta atribuida', money(agg.totals.adRevenue), 'var(--success)')}
+            ${campKpiBox('ROAS global', roas(agg.totals.adRevenue, agg.totals.spend), 'var(--primary)')}
+            ${campKpiBox('Pedidos atribuidos', agg.totals.adOrders)}
+        </div>
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px;">
+            Rango ${escHtml(report.dateFrom)} → ${escHtml(report.dateTo)} · ${adsNote}${errNote}.
+            La "venta atribuida" es un <strong>piso</strong>: sólo cuenta pedidos ligados a un anuncio. Orgánicos y anuncios borrados van aparte.
+        </div>
+        <div style="border:1px solid var(--border-color);border-radius:10px;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead style="background:var(--bg-card);">
+                <tr>
+                    <th style="text-align:left;padding:8px 10px;">Región</th>
+                    <th style="text-align:right;padding:8px 10px;">Gasto</th>
+                    <th style="text-align:right;padding:8px 10px;">Venta</th>
+                    <th style="text-align:right;padding:8px 10px;">Pedidos</th>
+                    <th style="text-align:right;padding:8px 10px;">ROAS</th>
+                    <th style="text-align:right;padding:8px 10px;">CPA</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+    agg.regionList.forEach((r, ri) => {
+        html += `
+            <tr class="region-row" data-region="${ri}" style="cursor:pointer;border-top:1px solid var(--border-color);font-weight:600;">
+                <td style="padding:8px 10px;"><i class="fas fa-chevron-right region-caret" style="font-size:10px;transition:transform .15s;"></i> ${escHtml(r.region)} <span style="font-weight:400;color:var(--text-secondary);font-size:11px;">(${r.campaigns.length})</span></td>
+                <td style="text-align:right;padding:8px 10px;color:var(--danger);">${money(r.spend)}</td>
+                <td style="text-align:right;padding:8px 10px;color:var(--success);">${money(r.revenue)}</td>
+                <td style="text-align:right;padding:8px 10px;">${r.orders}</td>
+                <td style="text-align:right;padding:8px 10px;font-weight:700;color:${r.revenue >= r.spend ? 'var(--success)' : 'var(--danger)'};">${roas(r.revenue, r.spend)}</td>
+                <td style="text-align:right;padding:8px 10px;">${cpa(r.spend, r.orders)}</td>
+            </tr>
+            <tr class="region-detail" data-region="${ri}" style="display:none;">
+                <td colspan="6" style="padding:0;">
+                    <table style="width:100%;border-collapse:collapse;font-size:12px;background:rgba(127,127,127,0.04);">
+                        ${r.campaigns.map(c => `
+                            <tr style="border-top:1px solid var(--border-color);">
+                                <td style="padding:5px 10px 5px 28px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(c.name)}">${escHtml(c.name)}</td>
+                                <td style="text-align:right;padding:5px 10px;color:var(--danger);">${money(c.spend)}</td>
+                                <td style="text-align:right;padding:5px 10px;color:var(--success);">${money(c.revenue)}</td>
+                                <td style="text-align:right;padding:5px 10px;">${c.orders}</td>
+                                <td style="text-align:right;padding:5px 10px;">${roas(c.revenue, c.spend)}</td>
+                                <td style="text-align:right;padding:5px 10px;">${cpa(c.spend, c.orders)}</td>
+                            </tr>`).join('')}
+                    </table>
+                </td>
+            </tr>`;
+    });
+
+    html += `
+            <tr style="border-top:2px solid var(--border-color);">
+                <td style="padding:8px 10px;">Orgánico <span style="font-weight:400;color:var(--text-secondary);font-size:11px;">(venta sin anuncio)</span></td>
+                <td style="text-align:right;padding:8px 10px;">—</td>
+                <td style="text-align:right;padding:8px 10px;color:var(--success);">${money(agg.organic.revenue)}</td>
+                <td style="text-align:right;padding:8px 10px;">${agg.organic.orders}</td>
+                <td style="text-align:right;padding:8px 10px;">—</td>
+                <td style="text-align:right;padding:8px 10px;">—</td>
+            </tr>`;
+    if (agg.unattributed.orders > 0) {
+        html += `
+            <tr>
+                <td style="padding:8px 10px;color:var(--text-secondary);">Sin atribuir <span style="font-weight:400;font-size:11px;">(anuncio borrado)</span></td>
+                <td style="text-align:right;padding:8px 10px;">—</td>
+                <td style="text-align:right;padding:8px 10px;">${money(agg.unattributed.revenue)}</td>
+                <td style="text-align:right;padding:8px 10px;">${agg.unattributed.orders}</td>
+                <td style="text-align:right;padding:8px 10px;">—</td>
+                <td style="text-align:right;padding:8px 10px;">—</td>
+            </tr>`;
+    }
+    html += `
+            <tr style="border-top:2px solid var(--border-color);font-weight:800;background:var(--bg-card);">
+                <td style="padding:8px 10px;">TOTAL</td>
+                <td style="text-align:right;padding:8px 10px;color:var(--danger);">${money(agg.totals.spend)}</td>
+                <td style="text-align:right;padding:8px 10px;color:var(--success);">${money(agg.totals.revenue)}</td>
+                <td style="text-align:right;padding:8px 10px;">${agg.totals.adOrders + agg.organic.orders + agg.unattributed.orders}</td>
+                <td style="text-align:right;padding:8px 10px;">${roas(agg.totals.adRevenue, agg.totals.spend)}</td>
+                <td style="text-align:right;padding:8px 10px;">—</td>
+            </tr>
+            </tbody></table></div>`;
+
+    container.innerHTML = html;
+
+    container.querySelectorAll('.region-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const ri = row.dataset.region;
+            const detail = container.querySelector(`.region-detail[data-region="${ri}"]`);
+            const caret = row.querySelector('.region-caret');
+            const open = detail.style.display !== 'none';
+            detail.style.display = open ? 'none' : '';
+            if (caret) caret.style.transform = open ? '' : 'rotate(90deg)';
+        });
+    });
+}
+
+/**
+ * Modal "Regiones": reglas keyword→región (editables) + override manual por
+ * campaña (lista del último reporte) + región default. Persiste en
+ * admin_data/campaign_regions vía services.saveCampaignRegions.
+ *
+ * @param {{ onSaved?:Function }} opts
+ */
+export function openRegionsModal({ onSaved } = {}) {
+    const cfg = getRegionConfig();
+    const working = {
+        rules: cfg.rules.map(r => ({ keyword: r.keyword, region: r.region })),
+        overrides: { ...cfg.overrides },
+        defaultRegion: cfg.defaultRegion || 'Nacional'
+    };
+    const campaigns = _lastCampaignsForRegions.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+    const body = `
+        <div style="display:grid;gap:14px;max-width:640px;">
+            <div class="form-group" style="margin:0;">
+                <label style="font-size:12px;color:var(--text-secondary);">Región por defecto (campañas que no matchean ninguna regla)</label>
+                <input type="text" id="reg-default" class="modal-input" value="${escHtml(working.defaultRegion)}" style="width:200px;">
+            </div>
+
+            <div style="border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+                <div style="font-size:11px;text-transform:uppercase;font-weight:700;color:var(--text-secondary);margin-bottom:8px;">
+                    Reglas — si el nombre de la campaña CONTIENE la palabra → región
+                </div>
+                <div id="reg-rules-wrap"></div>
+                <button type="button" id="reg-add-rule" class="btn btn-outline btn-sm" style="margin-top:8px;"><i class="fas fa-plus"></i> Agregar regla</button>
+            </div>
+
+            <details ${campaigns.length ? '' : 'open'} style="border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+                <summary style="cursor:pointer;font-weight:700;font-size:11px;text-transform:uppercase;color:var(--text-secondary);">
+                    Override por campaña (${campaigns.length})
+                </summary>
+                <div style="font-size:11px;color:var(--text-secondary);margin:8px 0;">
+                    Deja vacío para usar las reglas automáticas. Escribe una región para forzar esa campaña a ese grupo.
+                    ${campaigns.length ? '' : '<br><strong>Calcula el reporte primero</strong> para ver aquí la lista de campañas.'}
+                </div>
+                <div id="reg-overrides-wrap" style="max-height:240px;overflow-y:auto;"></div>
+            </details>
+        </div>`;
+
+    showModal({
+        title: 'Regiones de campañas',
+        body,
+        confirmText: 'Guardar regiones',
+        showCancel: true,
+        onConfirm: async () => {
+            // Reglas válidas
+            const rules = [];
+            const seen = new Set();
+            for (const r of working.rules) {
+                const kw = String(r.keyword || '').toLowerCase().trim();
+                const reg = String(r.region || '').trim();
+                if (!kw || kw.length < 2 || !reg) continue;
+                if (seen.has(kw)) continue;
+                seen.add(kw);
+                rules.push({ keyword: kw, region: reg });
+            }
+            // Overrides desde los inputs por campaña
+            const overrides = {};
+            document.querySelectorAll('.reg-ov-input').forEach(inp => {
+                const v = inp.value.trim();
+                if (v) overrides[inp.dataset.cid] = v;
+            });
+            const defaultRegion = document.getElementById('reg-default').value.trim() || 'Nacional';
+
+            try {
+                await services.saveCampaignRegions({ rules, overrides, defaultRegion });
+                showToast('Regiones guardadas', 'success');
+                showModal({ show: false });
+                if (typeof onSaved === 'function') onSaved();
+            } catch (err) {
+                console.error('Error guardando regiones:', err);
+                showToast('No se pudieron guardar las regiones', 'error');
+            }
+        },
+        onModalOpen: () => {
+            const rulesWrap = document.getElementById('reg-rules-wrap');
+            const renderRules = () => {
+                rulesWrap.innerHTML = working.rules.map((r, i) => `
+                    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+                        <input type="text" class="modal-input reg-kw" data-idx="${i}" value="${escHtml(r.keyword)}" placeholder="keyword" style="flex:1;padding:5px 8px;font-size:12px;">
+                        <span style="color:var(--text-secondary);">→</span>
+                        <input type="text" class="modal-input reg-region" data-idx="${i}" value="${escHtml(r.region)}" placeholder="región" style="width:150px;padding:5px 8px;font-size:12px;">
+                        <button type="button" class="btn btn-sm reg-del" data-idx="${i}" style="color:var(--danger);padding:2px 8px;"><i class="fas fa-trash"></i></button>
+                    </div>`).join('');
+            };
+            rulesWrap.addEventListener('input', (e) => {
+                const kw = e.target.closest('.reg-kw');
+                const rg = e.target.closest('.reg-region');
+                if (kw) working.rules[parseInt(kw.dataset.idx)].keyword = kw.value;
+                if (rg) working.rules[parseInt(rg.dataset.idx)].region = rg.value;
+            });
+            rulesWrap.addEventListener('click', (e) => {
+                const del = e.target.closest('.reg-del');
+                if (del) { working.rules.splice(parseInt(del.dataset.idx), 1); renderRules(); }
+            });
+            document.getElementById('reg-add-rule').addEventListener('click', () => {
+                working.rules.push({ keyword: '', region: '' });
+                renderRules();
+            });
+            renderRules();
+
+            // Overrides por campaña
+            const ovWrap = document.getElementById('reg-overrides-wrap');
+            ovWrap.innerHTML = campaigns.map(c => `
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px;">
+                    <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(c.name)}">${escHtml(c.name)}</span>
+                    <input type="text" class="modal-input reg-ov-input" data-cid="${escHtml(c.campaignId)}" value="${escHtml(working.overrides[c.campaignId] || '')}" placeholder="${escHtml(c.region)}" style="width:150px;padding:4px 8px;font-size:12px;">
+                </div>`).join('');
+        }
+    });
+}
+
 export function openRulesModal() {
     // Copia de trabajo local — sólo se persiste al dar "Guardar reglas".
     const working = getActiveKeywordRules().map(r => ({

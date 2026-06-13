@@ -364,6 +364,12 @@ export function initEventListeners() {
     const rulesBtn = document.getElementById('rules-btn');
     if (rulesBtn) rulesBtn.addEventListener('click', () => ui.openRulesModal());
 
+    // Pestaña Campañas: calcular reporte + configurar regiones.
+    const campCalcBtn = document.getElementById('camp-calc-btn');
+    if (campCalcBtn) campCalcBtn.addEventListener('click', loadCampaignsReport);
+    const campRegionsBtn = document.getElementById('camp-regions-btn');
+    if (campRegionsBtn) campRegionsBtn.addEventListener('click', () => ui.openRegionsModal({ onSaved: loadCampaignsReport }));
+
     // Toggle de modo prueba (banner + botón). Lo conecta `ui-manager.js`
     // al renderizar el banner; nada que hacer aquí.
     
@@ -888,6 +894,19 @@ function handleTabClick(tab) {
             services.autoSyncMetaKpis().catch(() => {});
         }
     }
+
+    // Pestaña Campañas: sembrar fechas (últimos 30 días) y cargar una vez.
+    if (tab.dataset.tab === 'campaigns') {
+        const fromEl = document.getElementById('camp-date-from');
+        const toEl = document.getElementById('camp-date-to');
+        const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (fromEl && toEl && (!fromEl.value || !toEl.value)) {
+            const today = new Date();
+            fromEl.value = fmt(new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000));
+            toEl.value = fmt(today);
+        }
+        if (!_campaignsLoadedOnce) { _campaignsLoadedOnce = true; loadCampaignsReport(); }
+    }
 }
 
 /**
@@ -1177,6 +1196,47 @@ async function handleExportKpis() {
             confirmText: 'Cerrar',
             showCancel: false
         });
+    }
+}
+
+// ============================================================================
+//  Pestaña Campañas — carga del reporte por región
+// ============================================================================
+
+let _campaignsLoadedOnce = false;
+
+/**
+ * Lee pedidos pagados del rango, saca sus attributedAdId, pide al backend el
+ * gasto por campaña + el mapa anuncio→campaña, y renderiza el reporte por
+ * región. Todo on-demand (no listener) — pesado pero acotado al rango.
+ */
+async function loadCampaignsReport() {
+    const out = document.getElementById('campaigns-content');
+    if (!out) return;
+    const dateFrom = document.getElementById('camp-date-from')?.value;
+    const dateTo   = document.getElementById('camp-date-to')?.value;
+    if (!dateFrom || !dateTo || dateFrom > dateTo) {
+        ui.showToast('Verifica las fechas (desde ≤ hasta)', 'warning');
+        return;
+    }
+
+    out.innerHTML = '<p><i class="fas fa-spinner fa-spin"></i> Cargando campañas y pedidos… (puede tardar unos segundos)</p>';
+    try {
+        const allPedidos = await services.fetchAllPedidos();
+        const inRange = allPedidos.filter(p => {
+            if (!(p.estatus === 'Pagado' || p.estatus === 'Fabricar')) return false;
+            if (!p.createdAt || typeof p.createdAt.toDate !== 'function') return false;
+            const d = p.createdAt.toDate();
+            const f = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+            return f >= dateFrom && f <= dateTo;
+        });
+        const adIds = [...new Set(inRange.map(p => p.attributedAdId).filter(Boolean).map(String))];
+
+        const report = await services.fetchRegionReport({ dateFrom, dateTo, adIds });
+        ui.renderCampaignsReport(out, { report, paidInRange: inRange });
+    } catch (err) {
+        console.error('Error cargando reporte de campañas:', err);
+        out.innerHTML = `<p style="color:var(--danger);">Error: ${err.message}</p>`;
     }
 }
 

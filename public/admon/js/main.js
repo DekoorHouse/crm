@@ -63,6 +63,8 @@ function initializeAppUI() {
     services.listenForBalanceConfig(onDataChange);
     // Reglas de categorización dinámicas (modal "Reglas"; fallback a código)
     services.listenForCategorizationRules(onDataChange);
+    // Regiones de campañas (pestaña Campañas; fallback a semilla)
+    services.listenForCampaignRegions(onDataChange);
 
     ui.renderMonthFilter();
     

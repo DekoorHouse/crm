@@ -434,25 +434,31 @@ async function getCampaignSpendForAccounts(accountIds, dateFrom, dateTo) {
 async function resolveAdsToCampaigns(adIds) {
     const map = {};
     const unique = [...new Set((adIds || []).filter(Boolean).map(String))];
+    const token = await resolveToken(null);
     const BATCH = 50;
     for (let i = 0; i < unique.length; i += BATCH) {
-        const batch = unique.slice(i, i + BATCH);
+        const slice = unique.slice(i, i + BATCH);
+        // Batch API REAL de Meta: cada sub-request es independiente, asi que un
+        // anuncio borrado NO tumba al resto del lote (a diferencia de /?ids=,
+        // que falla entero y obligaba a reintentar 1x1 -> lentisimo). 50/lote.
+        const batch = slice.map(id => ({ method: 'GET', relative_url: `${id}?fields=campaign{id,name}` }));
         try {
-            // path '' -> https://graph.facebook.com/<ver>/?ids=...  (token global)
-            const resp = await metaGet('', { ids: batch.join(','), fields: 'campaign{id,name}' }, null);
-            for (const adId of Object.keys(resp || {})) {
-                const camp = resp[adId] && resp[adId].campaign;
-                if (camp) map[adId] = { campaignId: camp.id, campaignName: camp.name };
-            }
-        } catch (err) {
-            // Si el batch entero falla (un id invalido tumba la llamada),
-            // reintentamos uno por uno para no perder los demas.
-            for (const adId of batch) {
+            const resp = await axios.post(`${META_API_BASE}/`, {
+                access_token: token,
+                batch: JSON.stringify(batch)
+            });
+            const results = Array.isArray(resp.data) ? resp.data : [];
+            results.forEach((r, idx) => {
+                if (!r || r.code !== 200 || !r.body) return; // anuncio borrado/sin acceso
                 try {
-                    const one = await metaGet(adId, { fields: 'campaign{id,name}' }, null);
-                    if (one && one.campaign) map[adId] = { campaignId: one.campaign.id, campaignName: one.campaign.name };
-                } catch (_) { /* anuncio borrado/sin acceso: se omite */ }
-            }
+                    const obj = JSON.parse(r.body);
+                    if (obj && obj.campaign) {
+                        map[slice[idx]] = { campaignId: obj.campaign.id, campaignName: obj.campaign.name };
+                    }
+                } catch (_) { /* body no parseable */ }
+            });
+        } catch (err) {
+            console.error('[META] batch resolve ads error:', err.response?.data || err.message);
         }
     }
     return map;

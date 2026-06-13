@@ -4,12 +4,11 @@
 //  - JS/CSS/Img estáticos: cache-first con actualización en background
 //  - API/Firestore/Firebase: passthrough (sin cachear)
 
-// v12 (2026-06-12): Fase B del modal Reglas — seccion "Overrides guardados"
-// (ver/buscar/borrar manualCategories + limpieza de huerfanos con aut:/folio:)
-// y boton "aplicar regla a existentes" (rayo) con preview que protege
-// abonos, splits y movimientos manuales/editados, y ofrece borrar overrides
-// en conflicto con la regla.
-const CACHE_VERSION = 'admon-v12';
+// v13 (2026-06-12): pestana "Campanas" — gasto/venta/ROAS por region.
+// Cruza gasto-por-campana de Meta (endpoint region-report) con venta-por-
+// campana de pedidos (attributedAdId->campana), agrupa por region editable
+// (keyword + override por campana). Baldes Organico y Sin atribuir aparte.
+const CACHE_VERSION = 'admon-v13';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 

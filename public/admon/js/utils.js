@@ -327,6 +327,130 @@ export function categorizeWithTrace(concept) {
     return { category: 'SinCategorizar', mechanism: 'ninguno' };
 }
 
+// ===========================================================================
+//  REGIONES DE CAMPAÑAS (pestaña Campañas)
+// ===========================================================================
+
+/**
+ * Reglas semilla para agrupar campañas en regiones por keyword en el nombre.
+ * Editables desde el modal "Regiones"; viven en admin_data/campaign_regions.
+ * Orden = prioridad (primera que matchea gana).
+ */
+export const DEFAULT_REGION_RULES = [
+    { keyword: 'monterrey', region: 'Monterrey' },
+    { keyword: 'mty', region: 'Monterrey' },
+    { keyword: ' nl', region: 'Monterrey' },
+    { keyword: 'durango', region: 'Durango' },
+    { keyword: 'dgo', region: 'Durango' },
+    { keyword: 'saltillo', region: 'Saltillo' }
+];
+export const DEFAULT_REGION = 'Nacional';
+
+/** Config activa de regiones: Firestore si existe, semilla si no. */
+export function getRegionConfig() {
+    const c = state.campaignRegions;
+    return {
+        rules: (c && Array.isArray(c.rules) && c.rules.length) ? c.rules : DEFAULT_REGION_RULES,
+        overrides: (c && c.overrides && typeof c.overrides === 'object') ? c.overrides : {},
+        defaultRegion: (c && c.defaultRegion) ? c.defaultRegion : DEFAULT_REGION
+    };
+}
+
+/**
+ * Resuelve la región de una campaña: override manual por id gana; si no,
+ * primera regla de keyword que matchea el nombre; si nada, región default.
+ */
+export function resolveCampaignRegion(campaignId, campaignName) {
+    const { rules, overrides, defaultRegion } = getRegionConfig();
+    if (campaignId && overrides[campaignId]) return overrides[campaignId];
+    const name = String(campaignName || '').toLowerCase();
+    for (const r of rules) {
+        if (r && r.keyword && name.includes(String(r.keyword).toLowerCase())) return r.region;
+    }
+    return defaultRegion;
+}
+
+/**
+ * Agrega el reporte por región a partir de:
+ *   - report: respuesta de /api/meta-ads/region-report { campaigns, adToCampaign }
+ *   - paidInRange: pedidos Pagado/Fabricar dentro del rango de fechas
+ *
+ * Función PURA (no toca DOM ni red): cruza gasto-por-campaña (Meta) con
+ * venta-por-campaña (pedidos vía attributedAdId→campaña), agrupa por región
+ * y separa los baldes "Orgánico" (sin anuncio) y "Sin atribuir" (anuncio
+ * borrado que no resolvió a campaña).
+ *
+ * @returns {{ regionList:Array, organic:{revenue,orders}, unattributed:{revenue,orders}, totals:Object }}
+ */
+export function buildRegionReport(report, paidInRange) {
+    const campaigns = (report && report.campaigns) || [];
+    const adToCampaign = (report && report.adToCampaign) || {};
+
+    // Campaña id -> { campaignId, name, spend, accountId }
+    const campById = {};
+    campaigns.forEach(c => {
+        if (!c.campaignId) return;
+        if (!campById[c.campaignId]) {
+            campById[c.campaignId] = { campaignId: c.campaignId, name: c.campaignName || c.campaignId, spend: 0, accountId: c.accountId || '' };
+        }
+        campById[c.campaignId].spend += Number(c.spend) || 0;
+    });
+
+    // Venta y pedidos por campaña + baldes orgánico / sin atribuir
+    const revByCampaign = {}, ordersByCampaign = {};
+    const organic = { revenue: 0, orders: 0 };
+    const unattributed = { revenue: 0, orders: 0 };
+
+    paidInRange.forEach(p => {
+        const price = parseFloat(p.precio) || 0;
+        const adId = p.attributedAdId ? String(p.attributedAdId) : null;
+        if (!adId) { organic.revenue += price; organic.orders++; return; }
+        const camp = adToCampaign[adId];
+        if (!camp || !camp.campaignId) { unattributed.revenue += price; unattributed.orders++; return; }
+        revByCampaign[camp.campaignId] = (revByCampaign[camp.campaignId] || 0) + price;
+        ordersByCampaign[camp.campaignId] = (ordersByCampaign[camp.campaignId] || 0) + 1;
+        // Campaña con venta pero sin gasto en el rango (pausada): la incluimos
+        if (!campById[camp.campaignId]) {
+            campById[camp.campaignId] = { campaignId: camp.campaignId, name: camp.campaignName || camp.campaignId, spend: 0, accountId: '' };
+        }
+    });
+
+    const campaignsFull = Object.values(campById).map(c => ({
+        ...c,
+        revenue: revByCampaign[c.campaignId] || 0,
+        orders: ordersByCampaign[c.campaignId] || 0,
+        region: resolveCampaignRegion(c.campaignId, c.name)
+    }));
+
+    const regions = {};
+    campaignsFull.forEach(c => {
+        if (!regions[c.region]) regions[c.region] = { region: c.region, spend: 0, revenue: 0, orders: 0, campaigns: [] };
+        regions[c.region].spend += c.spend;
+        regions[c.region].revenue += c.revenue;
+        regions[c.region].orders += c.orders;
+        regions[c.region].campaigns.push(c);
+    });
+    Object.values(regions).forEach(r => r.campaigns.sort((a, b) => b.spend - a.spend));
+    const regionList = Object.values(regions).sort((a, b) => b.spend - a.spend);
+
+    const adSpend = campaignsFull.reduce((s, c) => s + c.spend, 0);
+    const adRevenue = campaignsFull.reduce((s, c) => s + c.revenue, 0);
+    const adOrders = campaignsFull.reduce((s, c) => s + c.orders, 0);
+
+    return {
+        regionList,
+        organic,
+        unattributed,
+        campaignsFull,
+        totals: {
+            spend: adSpend,
+            adRevenue,
+            adOrders,
+            revenue: adRevenue + organic.revenue + unattributed.revenue
+        }
+    };
+}
+
 /**
  * Recalcula el pago de un empleado.
  */
