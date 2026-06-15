@@ -19,7 +19,12 @@
   .faltan small { display:block; font-size:13px; color:var(--gray); font-weight:500; margin-top:3px; }
   .eta { font-size:14px; color:var(--gray); margin-top:8px; }
   #map { flex:1; min-height:300px; z-index:0; }
-  .pin { font-size:30px; line-height:1; text-align:center; filter:drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
+  .driver-marker { position:relative; width:46px; height:46px; }
+  .driver-marker .badge { position:absolute; top:5px; left:5px; width:36px; height:36px; border-radius:50%; background:var(--orange); display:flex; align-items:center; justify-content:center; font-size:20px; border:2.5px solid #fff; box-shadow:0 2px 7px rgba(0,0,0,.45); }
+  .driver-marker .pulse { position:absolute; top:5px; left:5px; width:36px; height:36px; border-radius:50%; background:var(--orange); animation:pulso 1.8s ease-out infinite; }
+  @keyframes pulso { 0%{transform:scale(.7);opacity:.5} 100%{transform:scale(2);opacity:0} }
+  .home-pin { width:38px; height:38px; border-radius:50%; background:var(--navy); border:2.5px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-size:18px; }
+  .leaflet-marker-icon.driver-anim { transition: transform 1.6s linear; }
 </style>
 </head>
 <body>
@@ -51,9 +56,13 @@
     const id = new URLSearchParams(location.search).get('id');
 
     const map = L.map('map').setView([24.0277, -104.6532], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-    const icono = (e) => L.divIcon({ html: '<div class="pin">' + e + '</div>', className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
-    let driverM = null, clientM = null, fitted = false;
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20, detectRetina: true, subdomains: 'abcd',
+      attribution: '© OpenStreetMap, © CARTO'
+    }).addTo(map);
+    const driverIcon = L.divIcon({ className: 'driver-anim', html: '<div class="driver-marker"><div class="pulse"></div><div class="badge">🛵</div></div>', iconSize: [46, 46], iconAnchor: [23, 23] });
+    const homeIcon = L.divIcon({ className: '', html: '<div class="home-pin">🏠</div>', iconSize: [40, 40], iconAnchor: [20, 20] });
+    let driverM = null, clientM = null, linea = null, fitted = false;
 
     const $ = (x) => document.getElementById(x);
 
@@ -87,18 +96,27 @@
       }
 
       const pts = [];
-      if (d.clienteLat) { clientM = mover(clientM, d.clienteLat, d.clienteLng, '🏠'); pts.push([d.clienteLat, d.clienteLng]); }
-      if (d.driverLat) { driverM = mover(driverM, d.driverLat, d.driverLng, '🛵'); pts.push([d.driverLat, d.driverLng]); }
+      if (d.clienteLat) {
+        clientM = clientM ? clientM.setLatLng([d.clienteLat, d.clienteLng])
+          : L.marker([d.clienteLat, d.clienteLng], { icon: homeIcon }).addTo(map);
+        pts.push([d.clienteLat, d.clienteLng]);
+      }
+      if (d.driverLat) {
+        driverM = driverM ? driverM.setLatLng([d.driverLat, d.driverLng])
+          : L.marker([d.driverLat, d.driverLng], { icon: driverIcon, zIndexOffset: 1000 }).addTo(map);
+        pts.push([d.driverLat, d.driverLng]);
+      }
+      // Línea que conecta al repartidor con tu casa
+      if (d.clienteLat && d.driverLat) {
+        const coords = [[d.driverLat, d.driverLng], [d.clienteLat, d.clienteLng]];
+        if (linea) linea.setLatLngs(coords);
+        else linea = L.polyline(coords, { color: '#163C51', weight: 3, opacity: 0.45, dashArray: '4 9' }).addTo(map);
+      }
       if (pts.length && !fitted) {
         fitted = true;
-        if (pts.length > 1) map.fitBounds(pts, { padding: [60, 60] });
-        else map.setView(pts[0], 15);
+        if (pts.length > 1) map.fitBounds(pts, { padding: [70, 70] });
+        else map.setView(pts[0], 16);
       }
-    }
-
-    function mover(m, lat, lng, emoji) {
-      if (m) { m.setLatLng([lat, lng]); return m; }
-      return L.marker([lat, lng], { icon: icono(emoji) }).addTo(map);
     }
   </script>
 </body>
