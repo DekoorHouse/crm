@@ -6279,6 +6279,31 @@ router.get('/metrics', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/metrics/series (Serie temporal de mensajes recibidos por día) ---
+// Lee daily_metrics en una ventana amplia (~24 meses) para graficar por día/mes/año.
+// El frontend agrupa por la granularidad elegida. Cache simple de 10 min.
+let metricsSeriesCache = null;
+router.get('/metrics/series', async (req, res) => {
+    try {
+        if (req.query.fresh !== '1' && metricsSeriesCache && (Date.now() - metricsSeriesCache.at) < 10 * 60 * 1000) {
+            return res.status(200).json({ success: true, data: metricsSeriesCache.data, fromCache: true });
+        }
+        const start = new Date();
+        start.setMonth(start.getMonth() - 24);
+        const startKey = start.toISOString().split('T')[0]; // YYYY-MM-DD
+        const snapshot = await db.collection('daily_metrics')
+            .where(admin.firestore.FieldPath.documentId(), '>=', startKey)
+            .orderBy(admin.firestore.FieldPath.documentId())
+            .get();
+        const data = snapshot.docs.map(doc => ({ date: doc.id, total: doc.data().totalMessages || 0 }));
+        metricsSeriesCache = { at: Date.now(), data };
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error('❌ Error en /metrics/series:', error);
+        res.status(500).json({ success: false, message: error.message || 'Error del servidor al obtener la serie.' });
+    }
+});
+
 // --- Endpoint GET /api/orders/verify/:orderId (Verificar pedido o teléfono) ---
 router.get('/orders/verify/:orderId', async (req, res) => {
     const { orderId } = req.params;
@@ -9664,6 +9689,15 @@ async function computeAudiencias(fromMs, toMs) {
     };
     const push = (arr, obj) => { if (arr.length < MAX_POR_BUCKET) arr.push(obj); };
 
+    // === 0) Total de contactos en el CRM (global, no afectado por el rango de fechas) ===
+    let totalContactos = 0;
+    try {
+        const totalSnap = await db.collection('contacts_whatsapp').count().get();
+        totalContactos = totalSnap.data().count || 0;
+    } catch (e) {
+        console.error('[AUDIENCIAS] No se pudo contar contactos:', e.message);
+    }
+
     // === 1) No Molestar ===
     const noMolestarSet = new Set();
     try {
@@ -9841,6 +9875,7 @@ async function computeAudiencias(fromMs, toMs) {
     const payload = {
         calculadoEn: new Date().toISOString(),
         config: cfg,
+        totalContactos,
         range: { from: fromMs, to: toMs },
         grupos: { sinPagar, sinDatos, enVisto, recompra, inactivos },
         noMolestar: noMolestarSet.size,

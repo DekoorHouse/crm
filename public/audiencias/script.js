@@ -41,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
             seccionAudiencias.style.display = 'block';
             usuarioLogueado.textContent = user.email;
             cargarAudiencias(false);
+            cargarMensajesChart();
         } else {
             seccionLogin.style.display = 'block';
             seccionAudiencias.style.display = 'none';
@@ -203,6 +204,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('footerNoMolestar').textContent = data.noMolestar || 0;
         document.getElementById('footerCooldown').textContent = data.enCooldownGlobal || 0;
         audienciasFooter.style.display = 'flex';
+
+        // Total de contactos en el CRM
+        const totalEl = document.getElementById('totalContactos');
+        if (totalEl) totalEl.textContent = (data.totalContactos || 0).toLocaleString('es-MX');
     }
 
     function cardSimple({ clase, icono, titulo, hint, grupo, grupoKey, extra }) {
@@ -367,6 +372,100 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event && event.target !== event.currentTarget) return;
         document.getElementById('modalDetalle').style.display = 'none';
     };
+
+    // --- Gráfica de mensajes recibidos por día / mes / año ---
+    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    let seriesRaw = [];
+    let granularidadActual = 'day';
+    let mensajesChartInstance = null;
+
+    const fmtDiaLabel = (s) => { const p = s.split('-'); return `${parseInt(p[2])} ${MESES[parseInt(p[1]) - 1]}`; };
+    const fmtMesLabel = (s) => { const p = s.split('-'); return `${MESES[parseInt(p[1]) - 1]} ${p[0].slice(2)}`; };
+
+    function bucketSeries(raw, gran) {
+        if (gran === 'day') {
+            const recientes = raw.slice(-60);
+            return { labels: recientes.map(d => fmtDiaLabel(d.date)), values: recientes.map(d => d.total) };
+        }
+        const map = new Map();
+        for (const d of raw) {
+            const key = gran === 'month' ? d.date.slice(0, 7) : d.date.slice(0, 4);
+            map.set(key, (map.get(key) || 0) + d.total);
+        }
+        let entries = [...map.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1);
+        if (gran === 'month') entries = entries.slice(-18);
+        return {
+            labels: entries.map(([k]) => gran === 'month' ? fmtMesLabel(k) : k),
+            values: entries.map(([, v]) => v)
+        };
+    }
+
+    async function cargarMensajesChart() {
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch('/api/metrics/series', { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            if (!res.ok || !data.success) return;
+            seriesRaw = data.data || [];
+            document.getElementById('chartSection').style.display = 'block';
+            renderMensajesChart();
+        } catch (e) {
+            console.error('No se pudo cargar la gráfica de mensajes:', e.message);
+        }
+    }
+
+    window.setGranularidad = (g) => {
+        granularidadActual = g;
+        document.querySelectorAll('#chartToggle button').forEach(b => b.classList.toggle('activo', b.dataset.gran === g));
+        renderMensajesChart();
+    };
+
+    function renderMensajesChart() {
+        const canvas = document.getElementById('mensajesChart');
+        const vacio = document.getElementById('chartVacio');
+        if (!seriesRaw.length || !seriesRaw.some(d => d.total > 0)) {
+            canvas.style.display = 'none';
+            vacio.style.display = 'block';
+            return;
+        }
+        canvas.style.display = 'block';
+        vacio.style.display = 'none';
+        const { labels, values } = bucketSeries(seriesRaw, granularidadActual);
+        const esLinea = granularidadActual === 'day';
+        if (mensajesChartInstance) mensajesChartInstance.destroy();
+        mensajesChartInstance = new Chart(canvas.getContext('2d'), {
+            type: esLinea ? 'line' : 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Mensajes recibidos',
+                    data: values,
+                    backgroundColor: esLinea ? 'rgba(22,163,74,0.12)' : 'rgba(22,163,74,0.75)',
+                    borderColor: '#16a34a',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: esLinea,
+                    pointRadius: esLinea ? 0 : undefined,
+                    pointHoverRadius: 4,
+                    borderRadius: 6,
+                    maxBarThickness: 48
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: (c) => `${c.parsed.y.toLocaleString('es-MX')} mensajes` } }
+                },
+                scales: {
+                    x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12, font: { size: 11 } } },
+                    y: { beginAtZero: true, ticks: { precision: 0, font: { size: 11 } }, grid: { color: '#f3f4f6' } }
+                }
+            }
+        });
+    }
 
     // Cerrar modal con tecla Esc
     document.addEventListener('keydown', (e) => {

@@ -71,6 +71,17 @@
             <span id="cacheInfo" class="cache-info-audiencias"></span>
         </div>
 
+        <!-- Resumen: total de contactos en el CRM -->
+        <div class="resumen-bar">
+            <div class="resumen-stat">
+                <div class="resumen-icon"><i class="fas fa-address-book"></i></div>
+                <div>
+                    <div class="resumen-num" id="totalContactos">&mdash;</div>
+                    <div class="resumen-lbl">Contactos totales en el CRM</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Filtro de fechas -->
         <div class="filtro-fechas-box">
             <i class="fas fa-calendar-alt"></i>
@@ -98,6 +109,25 @@
             <div class="audiencias-loading">
                 <i class="fas fa-spinner fa-spin"></i> Cargando audiencias...
             </div>
+        </div>
+
+        <!-- Gr&aacute;fica de mensajes recibidos por d&iacute;a / mes / a&ntilde;o -->
+        <div id="chartSection" class="chart-section" style="display:none;">
+            <div class="chart-header">
+                <div class="chart-titulo">
+                    <h2><i class="fas fa-chart-line"></i> Mensajes recibidos</h2>
+                    <p>Volumen de mensajes entrantes por periodo</p>
+                </div>
+                <div class="chart-toggle" id="chartToggle">
+                    <button data-gran="day" class="activo" onclick="setGranularidad('day')">D&iacute;a</button>
+                    <button data-gran="month" onclick="setGranularidad('month')">Mes</button>
+                    <button data-gran="year" onclick="setGranularidad('year')">A&ntilde;o</button>
+                </div>
+            </div>
+            <div class="chart-canvas-wrap">
+                <canvas id="mensajesChart"></canvas>
+            </div>
+            <div id="chartVacio" class="chart-vacio" style="display:none;">Sin datos de mensajes en este periodo.</div>
         </div>
 
         <!-- Modal de detalle (lista de personas de un grupo/estado) -->
@@ -131,7 +161,8 @@
     </div>
 </div>
 
-<script type="module" src="/audiencias/script.js?v=4"></script>
+<script src="/audiencias/vendor/chart.min.js"></script>
+<script type="module" src="/audiencias/script.js?v=5"></script>
 <script src="/comunicacion-pwa.js?v=2"></script>
 </body>
 </html>
