@@ -41,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
             seccionAudiencias.style.display = 'block';
             usuarioLogueado.textContent = user.email;
             cargarAudiencias(false);
+            cargarCenso();
             cargarMensajesChart();
         } else {
             seccionLogin.style.display = 'block';
@@ -323,6 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${tieneOrden ? `<td class="td-orden">${p.orderNumber || '—'}</td>` : ''}
                 <td class="td-tel">${p.phone || '—'}</td>
                 ${p.name !== undefined ? `<td class="td-nombre">${p.name || '<span class="muted">sin nombre</span>'}</td>` : ''}
+                ${p.compras !== undefined ? `<td class="td-compras">${p.compras}</td>` : ''}
                 ${p.producto !== undefined ? `<td class="td-prod">${p.producto || '—'}</td>` : ''}
                 ${p.amount !== undefined ? `<td class="td-monto">${p.amount ? '$' + Number(p.amount).toLocaleString('es-MX', {maximumFractionDigits:0}) : '—'}</td>` : ''}
                 <td class="td-fecha">${fmtFecha(p.dateMs)}${p.diasDesdeCompra ? ` <span class="muted">(${p.diasDesdeCompra}d)</span>` : ''}</td>
@@ -337,6 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${tieneOrden ? '<th>Pedido</th>' : ''}
                         <th>Teléfono</th>
                         ${personas[0].name !== undefined ? '<th>Nombre</th>' : ''}
+                        ${personas[0].compras !== undefined ? '<th>Compras</th>' : ''}
                         ${personas[0].producto !== undefined ? '<th>Producto</th>' : ''}
                         ${personas[0].amount !== undefined ? '<th>Monto</th>' : ''}
                         <th>Fecha</th>
@@ -371,6 +374,71 @@ document.addEventListener('DOMContentLoaded', () => {
     window.cerrarDetalle = (event) => {
         if (event && event.target !== event.currentTarget) return;
         document.getElementById('modalDetalle').style.display = 'none';
+    };
+
+    // --- Censo: Resumen de tu base (parte TODOS los contactos, la suma da el total) ---
+    const CENSO_DEFS = {
+        compraron1vez: { icon: 'fa-user-check', titulo: 'Compraron 1 vez', desc: 'Una sola compra — empujar la segunda', clase: 'censo-c1' },
+        recurrentes:   { icon: 'fa-crown',      titulo: 'Recurrentes',      desc: '2+ compras — tus mejores clientes', clase: 'censo-rec' },
+        nuncaActivos:  { icon: 'fa-comment-dots', titulo: 'Nunca compraron · activos', desc: 'Escribieron hace poco, sin comprar', clase: 'censo-act' },
+        nuncaFrios:    { icon: 'fa-snowflake',  titulo: 'Nunca compraron · fríos', desc: 'Leads viejos sin compra — reactivar por lotes', clase: 'censo-frio' }
+    };
+
+    async function cargarCenso() {
+        const cont = document.getElementById('censoCards');
+        cont.innerHTML = '<div class="audiencias-loading"><i class="fas fa-spinner fa-spin"></i> Calculando tu base…</div>';
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch('/api/audiencias/censo', { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || 'Error al calcular el censo');
+            renderCenso(data);
+        } catch (e) {
+            cont.innerHTML = `<div class="audiencias-error"><i class="fas fa-exclamation-triangle"></i> ${e.message}</div>`;
+        }
+    }
+
+    function renderCenso(data) {
+        const c = data.counts || {};
+        const orden = ['compraron1vez', 'recurrentes', 'nuncaActivos', 'nuncaFrios'];
+        document.getElementById('censoCards').innerHTML = orden.map(key => {
+            const def = CENSO_DEFS[key];
+            const num = c[key] || 0;
+            return `
+                <div class="censo-card ${def.clase}" onclick="verCensoDetalle('${key}', '${def.titulo.replace(/'/g, '')}')">
+                    <div class="censo-card-icon"><i class="fas ${def.icon}"></i></div>
+                    <div class="censo-card-num">${num.toLocaleString('es-MX')}</div>
+                    <div class="censo-card-titulo">${def.titulo}</div>
+                    <div class="censo-card-desc">${def.desc}</div>
+                    <div class="censo-card-ver">👁 ver lista</div>
+                </div>`;
+        }).join('');
+        const footer = document.getElementById('censoFooter');
+        footer.style.display = 'block';
+        footer.innerHTML = `<i class="fas fa-equals"></i> Suman <strong>${(data.total || 0).toLocaleString('es-MX')}</strong> contactos &middot; <i class="fas fa-ban"></i> ${(data.noMolestar || 0).toLocaleString('es-MX')} en No Molestar &middot; activo = mensaje en los últimos ${data.activoDias || 30} días`;
+    }
+
+    window.verCensoDetalle = async (bucket, tituloLegible) => {
+        const modal = document.getElementById('modalDetalle');
+        const body = document.getElementById('modalDetalleBody');
+        const titulo = document.getElementById('modalDetalleTitulo');
+        titulo.innerHTML = `<i class="fas fa-list"></i> ${tituloLegible}`;
+        document.getElementById('detalleBuscar').value = '';
+        modal.style.display = 'flex';
+        body.innerHTML = '<div class="detalle-loading"><i class="fas fa-spinner fa-spin"></i> Cargando lista…</div>';
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const params = new URLSearchParams({ bucket });
+            if (filtroFrom) params.set('from', String(filtroFrom));
+            if (filtroTo) params.set('to', String(filtroTo));
+            const res = await fetch(`/api/audiencias/censo/detalle?${params}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || 'Error');
+            detallePersonasActual = data.personas || [];
+            renderDetalle(detallePersonasActual);
+        } catch (e) {
+            body.innerHTML = `<div class="detalle-error"><i class="fas fa-exclamation-triangle"></i> ${e.message}</div>`;
+        }
     };
 
     // --- Gráfica de mensajes recibidos por día / mes / año ---

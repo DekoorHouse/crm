@@ -82,6 +82,18 @@
             </div>
         </div>
 
+        <!-- Censo: Resumen de tu base (la suma da el total) -->
+        <div id="censoSection" class="censo-section">
+            <div class="censo-header">
+                <h2><i class="fas fa-layer-group"></i> Resumen de tu base</h2>
+                <p>Todos tus contactos clasificados &mdash; la suma da el total. El filtro de fecha de abajo aplica al abrir cada lista (para sacar lotes manejables).</p>
+            </div>
+            <div id="censoCards" class="censo-cards">
+                <div class="audiencias-loading"><i class="fas fa-spinner fa-spin"></i> Calculando tu base&hellip;</div>
+            </div>
+            <div id="censoFooter" class="censo-footer" style="display:none;"></div>
+        </div>
+
         <!-- Filtro de fechas -->
         <div class="filtro-fechas-box">
             <i class="fas fa-calendar-alt"></i>
@@ -162,7 +174,7 @@
 </div>
 
 <script src="/audiencias/vendor/chart.min.js"></script>
-<script type="module" src="/audiencias/script.js?v=5"></script>
+<script type="module" src="/audiencias/script.js?v=6"></script>
 <script src="/comunicacion-pwa.js?v=2"></script>
 </body>
 </html>

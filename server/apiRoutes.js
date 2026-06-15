@@ -9960,6 +9960,131 @@ router.get('/audiencias/detalle', async (req, res) => {
     }
 });
 
+// =============================================================
+// CENSO — "Resumen de tu base": parte TODOS los contactos del CRM en
+// grupos mutuamente excluyentes que SUMAN al total. Es el complemento de
+// las audiencias (que son bandejas de acción acotadas por ventanas de tiempo).
+// Recorre toda la colección, así que va en su propio cache largo (30 min).
+// =============================================================
+const CENSO_ACTIVO_DIAS = 30; // nunca-compró: activo si escribió en este rango, si no, frío
+const censoCacheMap = new Map();
+const CENSO_CACHE_TTL_MS = 30 * 60 * 1000;
+
+async function computeCenso(fromMs, toMs) {
+    const now = Date.now();
+    const msD = 24 * 60 * 60 * 1000;
+    const tsToMs = (ts) => ts?.toMillis?.() || (ts?.toDate?.()?.getTime?.()) || 0;
+    const norm = (t) => String(t || '').replace(/\D/g, '').slice(-10); // últimos 10 dígitos (52/521)
+    const activoCutoff = now - CENSO_ACTIVO_DIAS * msD;
+    const rangeSet = !!(fromMs || toMs);
+    const inRange = (ms) => {
+        if (!ms) return false;
+        if (fromMs && ms < fromMs) return false;
+        if (toMs && ms > toMs) return false;
+        return true;
+    };
+
+    // 1) # de compras por teléfono (pedidos Pagado o Entregado)
+    const buyerCount = new Map();
+    const pagadosSnap = await db.collection('pedidos')
+        .where('estatus', 'in', ['Pagado', 'Entregado'])
+        .select('telefono').get();
+    for (const d of pagadosSnap.docs) {
+        const tel = norm(d.data().telefono);
+        if (!tel) continue;
+        buyerCount.set(tel, (buyerCount.get(tel) || 0) + 1);
+    }
+
+    // 2) Recorrer TODOS los contactos en lotes (memoria acotada en Render)
+    const counts = { compraron1vez: 0, recurrentes: 0, nuncaActivos: 0, nuncaFrios: 0 };
+    const miembros = { compraron1vez: [], recurrentes: [], nuncaActivos: [], nuncaFrios: [] };
+    const MAX_POR_BUCKET = 2000;
+    const pushM = (arr, obj) => { if (arr.length < MAX_POR_BUCKET) arr.push(obj); };
+    let total = 0, noMolestar = 0;
+
+    const PER_BATCH = 10000;
+    let last = null;
+    while (true) {
+        let q = db.collection('contacts_whatsapp')
+            .orderBy(admin.firestore.FieldPath.documentId())
+            .select('lastMessageTimestamp', 'noContact', 'name')
+            .limit(PER_BATCH);
+        if (last) q = q.startAfter(last);
+        const snap = await q.get();
+        if (snap.empty) break;
+        for (const d of snap.docs) {
+            const c = d.data();
+            total++;
+            if (c.noContact === true) noMolestar++;
+            const n = buyerCount.get(norm(d.id)) || 0;
+            const lastMs = tsToMs(c.lastMessageTimestamp);
+            let bucket;
+            if (n === 1) bucket = 'compraron1vez';
+            else if (n >= 2) bucket = 'recurrentes';
+            else bucket = (lastMs >= activoCutoff) ? 'nuncaActivos' : 'nuncaFrios';
+            counts[bucket]++;
+            if (!rangeSet || inRange(lastMs)) {
+                pushM(miembros[bucket], { phone: d.id, name: c.name || null, dateMs: lastMs, compras: n });
+            }
+        }
+        last = snap.docs[snap.docs.length - 1].id;
+        if (snap.size < PER_BATCH) break;
+    }
+
+    const payload = { calculadoEn: new Date().toISOString(), total, noMolestar, activoDias: CENSO_ACTIVO_DIAS, counts };
+    return { payload, miembros };
+}
+
+async function getCensoCached(fromMs, toMs, fresh) {
+    const key = `${fromMs || ''}_${toMs || ''}`;
+    if (fresh !== '1' && censoCacheMap.has(key)) {
+        const cached = censoCacheMap.get(key);
+        if ((Date.now() - cached.at) < CENSO_CACHE_TTL_MS) return cached;
+    }
+    const { payload, miembros } = await computeCenso(fromMs, toMs);
+    const entry = { at: Date.now(), payload, miembros };
+    censoCacheMap.set(key, entry);
+    if (censoCacheMap.size > 20) { const k = censoCacheMap.keys().next().value; censoCacheMap.delete(k); }
+    return entry;
+}
+
+// GET /api/audiencias/censo[?from=&to=&fresh=1] — conteos del censo (suman al total)
+router.get('/audiencias/censo', async (req, res) => {
+    try {
+        const { fresh, from, to } = req.query;
+        const fromMs = from ? Number(from) : null;
+        const toMs = to ? Number(to) : null;
+        const entry = await getCensoCached(fromMs, toMs, fresh);
+        const cacheAgeMs = Date.now() - entry.at;
+        res.json({ success: true, ...entry.payload, fromCache: cacheAgeMs > 50, cacheAgeMs });
+    } catch (err) {
+        console.error('Error en audiencias/censo:', err);
+        const msg = err.message || 'Error interno';
+        if (msg.includes('index') || msg.includes('requires an index')) {
+            return res.status(500).json({ success: false, message: 'Falta índice de Firestore para el censo. Revisa logs del server.', detail: msg });
+        }
+        res.status(500).json({ success: false, message: msg });
+    }
+});
+
+// GET /api/audiencias/censo/detalle?bucket=X[&from=&to=] — lista de personas de un grupo del censo
+router.get('/audiencias/censo/detalle', async (req, res) => {
+    try {
+        const { bucket, from, to } = req.query;
+        if (!bucket) return res.status(400).json({ success: false, message: 'Falta el parámetro bucket' });
+        const fromMs = from ? Number(from) : null;
+        const toMs = to ? Number(to) : null;
+        const entry = await getCensoCached(fromMs, toMs, '0');
+        const lista = entry.miembros?.[bucket];
+        if (!Array.isArray(lista)) return res.status(404).json({ success: false, message: 'Grupo no encontrado', bucket });
+        const ordenada = lista.slice().sort((a, b) => (b.dateMs || 0) - (a.dateMs || 0));
+        res.json({ success: true, bucket, total: ordenada.length, personas: ordenada });
+    } catch (err) {
+        console.error('Error en audiencias/censo/detalle:', err);
+        res.status(500).json({ success: false, message: err.message || 'Error interno' });
+    }
+});
+
 // GET /api/retargeting/conversion-stats?templateName=X[&from=ms][&to=ms]
 // Devuelve { enviados, conversiones, ingreso, gasto } para auto-llenar la calculadora.
 // - enviados: contactos únicos en template_sends con templateName=X (menos failed/blocked)
