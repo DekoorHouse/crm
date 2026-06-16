@@ -40,10 +40,28 @@
   td .ped{font-weight:700;color:var(--teal);}
   .tbl-wrap{overflow-x:auto;}
   .done-badge{color:var(--ok);font-size:12px;} .pend-badge{color:var(--primary);font-size:12px;}
-  .del{color:var(--err);cursor:pointer;background:none;border:none;font-size:13px;}
+  .rowact{display:flex;gap:6px;}
+  .iconbtn{cursor:pointer;background:none;border:none;font-size:13px;padding:4px 6px;border-radius:7px;}
+  .iconbtn.edit{color:var(--teal);} .iconbtn.edit:hover{background:#eef2f3;}
+  .iconbtn.del{color:var(--err);} .iconbtn.del:hover{background:#fdecea;}
   .state{text-align:center;padding:50px 20px;color:var(--muted);}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--teal);color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;opacity:0;transition:opacity .2s;z-index:50;}
   .toast.show{opacity:1;}
+  /* Modal de edición */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-start;justify-content:center;z-index:60;padding:24px 14px;overflow-y:auto;}
+  .modal-bg.show{display:flex;}
+  .modal{background:#fff;border-radius:16px;width:560px;max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+  .modal .mhead{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line);}
+  .modal .mhead h3{font-size:15px;color:var(--teal);}
+  .modal .mhead .x{background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);}
+  .modal .mbody{padding:18px 20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .modal .fld{display:flex;flex-direction:column;gap:4px;min-width:0;}
+  .modal .fld.full{grid-column:1 / -1;}
+  .modal .fld label{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;}
+  .modal .fld input, .modal .fld textarea{border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13.5px;color:#22323a;}
+  .modal .fld input:focus, .modal .fld textarea:focus{outline:none;border-color:var(--gold);}
+  .modal .mfoot{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid var(--line);}
+  @media(max-width:520px){ .modal .mbody{grid-template-columns:1fr;} }
 </style>
 </head>
 <body>
@@ -72,6 +90,35 @@
 
     <div class="tandas" id="tandas"></div>
     <div class="state" id="state"><i class="fas fa-spinner fa-spin"></i> Cargando tandas...</div>
+  </div>
+
+  <!-- Modal de edición de entrega -->
+  <div class="modal-bg" id="editBg">
+    <div class="modal">
+      <div class="mhead">
+        <h3><i class="fas fa-pen"></i> Editar entrega <span id="emPedido" style="color:var(--muted);font-weight:600;"></span></h3>
+        <button class="x" id="editClose">&times;</button>
+      </div>
+      <div class="mbody">
+        <div class="fld"><label>Nombre</label><input id="e_nombre" /></div>
+        <div class="fld"><label>Teléfono</label><input id="e_telefono" maxlength="10" inputmode="numeric" /></div>
+        <div class="fld full"><label>Calle</label><input id="e_calle" /></div>
+        <div class="fld"><label>No. exterior</label><input id="e_numExterior" /></div>
+        <div class="fld"><label>No. interior</label><input id="e_numInterior" /></div>
+        <div class="fld full"><label>Entre calles</label><input id="e_entreCalles" /></div>
+        <div class="fld"><label>Colonia</label><input id="e_colonia" /></div>
+        <div class="fld"><label>C.P.</label><input id="e_cp" maxlength="5" inputmode="numeric" /></div>
+        <div class="fld full"><label>Referencia</label><input id="e_referencia" /></div>
+        <div class="fld full"><label>Contenido</label><input id="e_contenido" /></div>
+        <div class="fld"><label>Piezas</label><input id="e_piezas" type="number" min="1" /></div>
+        <div class="fld"><label>Precio</label><input id="e_precio" type="number" min="0" /></div>
+        <div class="fld full"><label>Comentarios</label><textarea id="e_comentarios" rows="2"></textarea></div>
+      </div>
+      <div class="mfoot">
+        <button class="btn ghost" id="editCancel">Cancelar</button>
+        <button class="btn green" id="editSave"><i class="fas fa-check"></i> Guardar</button>
+      </div>
+    </div>
   </div>
 
   <div class="toast" id="toast"></div>
@@ -178,7 +225,10 @@
             '<td>'+esc(it.contenido)+(it.piezas>1?(' ('+it.piezas+')'):'')+'</td>'+
             '<td>'+money(it.precio)+'</td>'+
             '<td>'+(it.entregado?'<span class="done-badge"><i class="fas fa-check"></i> Entregado</span>':'<span class="pend-badge">Pendiente</span>')+'</td>'+
-            '<td><button class="del" data-del="'+it.id+'" title="Eliminar"><i class="fas fa-trash"></i></button></td>'+
+            '<td><div class="rowact">'+
+              '<button class="iconbtn edit" data-edit="'+it.id+'" title="Editar"><i class="fas fa-pen"></i></button>'+
+              '<button class="iconbtn del" data-del="'+it.id+'" title="Eliminar"><i class="fas fa-trash"></i></button>'+
+            '</div></td>'+
           '</tr>';
         }).join('')+'</tbody></table></div>';
     }catch(e){ box.innerHTML='<div style="padding:12px;color:var(--err);">'+esc(e.message)+'</div>'; }
@@ -186,6 +236,8 @@
 
   $('tandas').addEventListener('click', async (e)=>{
     const tandaEl=e.target.closest('.tanda');
+    const editBtn=e.target.closest('[data-edit]');
+    if(editBtn && tandaEl){ openEdit(tandaEl.dataset.fecha, editBtn.dataset.edit); return; }
     const del=e.target.closest('[data-del]');
     if(del){
       if(!confirm('¿Eliminar esta dirección de la tanda?')) return;
@@ -205,6 +257,51 @@
     if(act.dataset.act==='crew'){ copy(crewLink({fecha,token:tandaEl.dataset.token})); }
     else if(act.dataset.act==='xlsx'){ act.disabled=true; try{ await exportXlsx(fecha); }catch(err){ toast(err.message); } act.disabled=false; }
     else if(act.dataset.act==='ver'){ toggleDetail(fecha); }
+  });
+
+  // --- Edición de entrega ---
+  let editCtx=null;
+  function setVal(id,v){ $(id).value = v==null ? '' : v; }
+  function openEdit(fecha, id){
+    const d=detailCache[fecha]; if(!d) return;
+    const it=d.items.find(x=>x.id===id); if(!it) return;
+    editCtx={fecha, id};
+    $('emPedido').textContent=it.numeroPedido||'';
+    setVal('e_nombre',it.nombre); setVal('e_telefono',it.telefono);
+    setVal('e_calle',it.calle); setVal('e_numExterior',it.numExterior);
+    setVal('e_numInterior',it.numInterior); setVal('e_entreCalles',it.entreCalles);
+    setVal('e_colonia',it.colonia); setVal('e_cp',it.cp);
+    setVal('e_referencia',it.referencia); setVal('e_contenido',it.contenido);
+    setVal('e_piezas',it.piezas||1); setVal('e_precio',it.precio||0);
+    setVal('e_comentarios',it.comentarios);
+    $('editBg').classList.add('show');
+  }
+  function closeEdit(){ $('editBg').classList.remove('show'); editCtx=null; }
+  $('editClose').addEventListener('click', closeEdit);
+  $('editCancel').addEventListener('click', closeEdit);
+  $('editBg').addEventListener('click', (e)=>{ if(e.target===$('editBg')) closeEdit(); });
+  $('editSave').addEventListener('click', async ()=>{
+    if(!editCtx) return;
+    const payload={
+      nombre:$('e_nombre').value.trim(), telefono:$('e_telefono').value.replace(/\D/g,''),
+      calle:$('e_calle').value.trim(), numExterior:$('e_numExterior').value.trim(),
+      numInterior:$('e_numInterior').value.trim(), entreCalles:$('e_entreCalles').value.trim(),
+      colonia:$('e_colonia').value.trim(), cp:$('e_cp').value.replace(/\D/g,''),
+      referencia:$('e_referencia').value.trim(), contenido:$('e_contenido').value.trim(),
+      piezas:parseInt($('e_piezas').value,10)||1, precio:Number($('e_precio').value)||0,
+      comentarios:$('e_comentarios').value.trim()
+    };
+    const btn=$('editSave'); btn.disabled=true;
+    try{
+      const r=await fetch('/api/repartos-mty/admin/entrega/'+editCtx.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const d=await r.json();
+      if(d.success){
+        const fecha=editCtx.fecha; delete detailCache[fecha]; toast('Cambios guardados ✓'); closeEdit();
+        const box=$('d-'+fecha); if(box && box.classList.contains('show')){ box.classList.remove('show'); await toggleDetail(fecha); }
+        load();
+      } else toast(d.message||'Error al guardar');
+    }catch(e){ toast('Error de conexión'); }
+    btn.disabled=false;
   });
 
   load();

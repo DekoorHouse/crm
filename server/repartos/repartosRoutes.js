@@ -384,6 +384,30 @@ router.delete('/admin/entrega/:id', requireAdmin, async (req, res) => {
     }
 });
 
+// --- Admin: editar una entrega (cookie) --------------------------------------
+router.put('/admin/entrega/:id', requireAdmin, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const campos = ['nombre', 'telefono', 'calle', 'numExterior', 'numInterior', 'entreCalles', 'colonia', 'cp', 'referencia', 'comentarios', 'contenido'];
+        const update = {};
+        for (const k of campos) if (k in b) update[k] = String(b[k] ?? '').trim();
+        if ('telefono' in update) update.telefono = update.telefono.replace(/\D/g, '');
+        if ('cp' in update) update.cp = update.cp.replace(/\D/g, '');
+        if ('precio' in b) update.precio = Number(b.precio) || 0;
+        if ('piezas' in b) update.piezas = Math.max(1, parseInt(b.piezas, 10) || 1);
+
+        if (!Object.keys(update).length) {
+            return res.status(400).json({ success: false, message: 'Nada que actualizar.' });
+        }
+        update.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+        await db.collection(COL_REPARTOS).doc(req.params.id).update(update);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[REPARTOS-MTY] edit', e.message);
+        res.status(500).json({ success: false, message: 'Error al guardar los cambios.' });
+    }
+});
+
 // --- CRM: enviar al cliente el enlace del formulario MTY (botón del chat) ----
 // Mismo patrón que /api/jt-guias/pedir-datos, pero manda el enlace /mty/DHxxxx
 // (entrega local) en vez de la guía nacional J&T.
@@ -453,3 +477,5 @@ router.post('/pedir-datos/:contactId', async (req, res) => {
 });
 
 module.exports = router;
+// Reutilizado por el módulo DGO (dgoRoutes.js): mismo lookup del CRM.
+module.exports.lookupPedido = lookupPedido;
