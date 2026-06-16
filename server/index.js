@@ -12,6 +12,7 @@ const transferenciasRouter = require('./transferencias/transferenciasRoutes');
 const carritosRouter = require('./carritos/carritosRoutes');
 const jtGuiasRouter = require('./jt/jtRoutes');
 const leadsRouter = require('./leads/leadReactivationRoutes');
+const repartosMtyRouter = require('./repartos/repartosRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
 const { startCartRecoveryScheduler } = require('./carritos/carritosScheduler');
@@ -53,6 +54,7 @@ app.use('/api/pagos/transferencia', transferenciasRouter);
 app.use('/api/carritos-abandonados', carritosRouter);
 app.use('/api/jt-guias', jtGuiasRouter);
 app.use('/api/leads', leadsRouter);
+app.use('/api/repartos-mty', repartosMtyRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
 
 // --- Facebook Login for Business (OAuth para App Review) ---
@@ -308,6 +310,20 @@ app.get('/sitio/*', (req, res) => {
 // --- Rutas dinámicas de /datos-envio/:pedido ---
 app.get('/datos-envio/:pedido', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'datos-envio', 'index.html'));
+});
+
+// --- Repartos MTY (entregas locales por repartidor propio) ---
+// Formulario público para que el cliente mande su dirección.
+app.get(['/mty', '/mty/:pedido'], (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'repartos-mty', 'index.html'));
+});
+// Vista del repartidor: la tanda del día (protegida por token en la URL).
+app.get('/reparto/:fecha', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'repartos-mty', 'reparto.html'));
+});
+// Panel admin (protegido por la session cookie de /admon).
+app.get('/admon/repartos', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'admon', 'repartos.html'));
 });
 
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook

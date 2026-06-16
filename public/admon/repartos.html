@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Repartos MTY | Admon Dekoor</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<script src="/admon/js/vendor/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+<style>
+  :root{ --teal:#1B4D5C; --cream:#FAF0E6; --gold:#C9A24B; --primary:#D4722C;
+         --ok:#1B8E3C; --err:#c0392b; --muted:#7c8a91; --bg:#f4f6f7; --line:#e3e8ea; }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:#22323a;}
+  header{background:var(--teal);color:#fff;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  header h1{font-size:18px;font-weight:700;display:flex;align-items:center;gap:10px;}
+  header a{color:#cfe0e5;text-decoration:none;font-size:13.5px;}
+  .wrap{max-width:1000px;margin:0 auto;padding:22px 18px 60px;}
+  .share{background:#fff;border-radius:14px;padding:16px 18px;margin-bottom:18px;box-shadow:0 1px 5px rgba(0,0,0,.06);}
+  .share h2{font-size:14px;color:var(--teal);margin-bottom:10px;}
+  .linkrow{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .linkrow input{flex:1;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13.5px;color:#33424a;background:#fafbfb;}
+  .btn{border:none;border-radius:9px;padding:9px 13px;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:7px;color:#fff;background:var(--teal);}
+  .btn.sm{padding:7px 11px;font-size:12.5px;}
+  .btn.gold{background:var(--gold);} .btn.green{background:var(--ok);} .btn.ghost{background:#eef2f3;color:var(--teal);}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .tandas{display:grid;gap:12px;}
+  .tanda{background:#fff;border-radius:14px;padding:16px 18px;box-shadow:0 1px 5px rgba(0,0,0,.06);}
+  .tanda .head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  .tanda .fecha{font-size:16px;font-weight:700;color:var(--teal);text-transform:capitalize;}
+  .tanda .today{background:var(--gold);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;margin-left:8px;vertical-align:middle;}
+  .tanda .counts{font-size:13px;color:var(--muted);margin-top:3px;}
+  .tanda .acts{display:flex;gap:8px;flex-wrap:wrap;}
+  .detail{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;display:none;}
+  .detail.show{display:block;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.3px;}
+  td .ped{font-weight:700;color:var(--teal);}
+  .tbl-wrap{overflow-x:auto;}
+  .done-badge{color:var(--ok);font-size:12px;} .pend-badge{color:var(--primary);font-size:12px;}
+  .del{color:var(--err);cursor:pointer;background:none;border:none;font-size:13px;}
+  .state{text-align:center;padding:50px 20px;color:var(--muted);}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--teal);color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;opacity:0;transition:opacity .2s;z-index:50;}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+  <header>
+    <h1><i class="fas fa-truck-fast"></i> Repartos MTY</h1>
+    <a href="/admon/"><i class="fas fa-arrow-left"></i> Volver a Admon</a>
+  </header>
+
+  <div class="wrap">
+    <div class="share">
+      <h2><i class="fas fa-share-nodes"></i> Enlace del formulario para clientes</h2>
+      <div class="linkrow">
+        <input id="formLink" readonly />
+        <button class="btn sm" data-copy="formLink"><i class="fas fa-copy"></i> Copiar</button>
+        <button class="btn sm gold" data-wa="formLink"><i class="fab fa-whatsapp"></i></button>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);">Mándalo a cada cliente de MTY. Ellos escriben su número de pedido (DH...) y su dirección. Las direcciones del día se agrupan solas en la tanda de hoy.</p>
+    </div>
+
+    <div class="tandas" id="tandas"></div>
+    <div class="state" id="state"><i class="fas fa-spinner fa-spin"></i> Cargando tandas...</div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const origin=location.origin;
+  const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  $('formLink').value=origin+'/mty';
+  let detailCache={};
+
+  function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
+  function copy(text){ navigator.clipboard.writeText(text).then(()=>toast('Enlace copiado ✓')).catch(()=>{ const i=document.createElement('input'); i.value=text; document.body.appendChild(i); i.select(); document.execCommand('copy'); i.remove(); toast('Enlace copiado ✓'); }); }
+  function money(n){ return '$'+(Number(n)||0).toLocaleString('es-MX'); }
+  function fechaLarga(f){ try{ const [y,mo,d]=f.split('-').map(Number); return new Date(y,mo-1,d).toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); }catch(e){ return f; } }
+  function hoyMTY(){ return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Monterrey',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()); }
+
+  document.body.addEventListener('click',(e)=>{
+    const c=e.target.closest('[data-copy]'); if(c){ copy($(c.dataset.copy).value); return; }
+    const w=e.target.closest('[data-wa]'); if(w){ window.open('https://wa.me/?text='+encodeURIComponent('Hola 👋 Para enviarte tu pedido, por favor llena tus datos aquí: '+$(w.dataset.wa).value),'_blank'); return; }
+  });
+
+  function crewLink(t){ return origin+'/reparto/'+t.fecha+'?token='+t.token; }
+
+  async function load(){
+    try{
+      const r=await fetch('/api/repartos-mty/admin/tandas');
+      if(r.status===401||r.status===403){ $('state').innerHTML='<i class="fas fa-lock"></i> Sesión no autorizada. <a href="/admon/">Inicia sesión</a>.'; return; }
+      const d=await r.json();
+      if(!d.success){ $('state').textContent=d.message||'Error al cargar.'; return; }
+      const hoy=hoyMTY();
+      $('state').style.display='none';
+      if(!d.tandas.length){ $('tandas').innerHTML='<div class="state" style="display:block;"><i class="fas fa-calendar-day"></i><br>Aún no hay tandas. Comparte el enlace del formulario para empezar a recibir direcciones.</div>'; return; }
+      $('tandas').innerHTML=d.tandas.map(t=>{
+        const isHoy=t.fecha===hoy;
+        return '<div class="tanda" data-fecha="'+t.fecha+'" data-token="'+esc(t.token)+'">'+
+          '<div class="head"><div>'+
+            '<div class="fecha">'+fechaLarga(t.fecha)+(isHoy?'<span class="today">HOY</span>':'')+'</div>'+
+            '<div class="counts">'+t.total+' entregas · '+t.entregados+' entregadas · '+(t.total-t.entregados)+' pendientes</div>'+
+          '</div><div class="acts">'+
+            '<button class="btn sm ghost" data-act="crew"><i class="fas fa-link"></i> Enlace repartidor</button>'+
+            '<button class="btn sm green" data-act="xlsx"><i class="fas fa-file-excel"></i> Excel</button>'+
+            '<button class="btn sm" data-act="ver"><i class="fas fa-eye"></i> Ver</button>'+
+          '</div></div>'+
+          '<div class="detail" id="d-'+t.fecha+'"></div>'+
+        '</div>';
+      }).join('');
+    }catch(e){ $('state').textContent='Error de conexión.'; }
+  }
+
+  async function fetchDetail(fecha){
+    if(detailCache[fecha]) return detailCache[fecha];
+    const r=await fetch('/api/repartos-mty/admin/tanda/'+fecha);
+    const d=await r.json();
+    if(d.success){ detailCache[fecha]=d; return d; }
+    throw new Error(d.message||'Error');
+  }
+
+  function buildRefExport(it){
+    return [ it.entreCalles?('Entre '+it.entreCalles):'', it.referencia||'', it.numInterior?('Int. '+it.numInterior):'' ]
+      .filter(Boolean).join(' · ');
+  }
+
+  async function exportXlsx(fecha){
+    const d=await fetchDetail(fecha);
+    const header=['No. de pedido','Nombre','Telefono','Calle','No. Exterior','Colonia','CP','Referencia','Precio','Comentarios','Contenido','Piezas'];
+    const rows=d.items.map(it=>[
+      it.numeroPedido||'', it.nombre||'', it.telefono||'', it.calle||'', it.numExterior||'',
+      it.colonia||'', it.cp||'', buildRefExport(it), Number(it.precio)||0, it.comentarios||'', it.contenido||'', Number(it.piezas)||1
+    ]);
+    const aoa=[header,...rows];
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:11},{wch:24},{wch:12},{wch:22},{wch:10},{wch:20},{wch:8},{wch:34},{wch:9},{wch:26},{wch:16},{wch:7}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Entregas '+fecha);
+    XLSX.writeFile(wb,'repartos-mty-'+fecha+'.xlsx');
+    toast('Excel descargado ✓');
+  }
+
+  async function toggleDetail(fecha){
+    const box=$('d-'+fecha);
+    if(box.classList.contains('show')){ box.classList.remove('show'); return; }
+    box.classList.add('show'); box.innerHTML='<div style="padding:14px;color:var(--muted);"><i class="fas fa-spinner fa-spin"></i> Cargando...</div>';
+    try{
+      const d=await fetchDetail(fecha);
+      if(!d.items.length){ box.innerHTML='<div style="padding:12px;color:var(--muted);">Sin direcciones todavía.</div>'; return; }
+      box.innerHTML='<div class="tbl-wrap"><table><thead><tr>'+
+        '<th>Pedido</th><th>Nombre</th><th>Teléfono</th><th>Dirección</th><th>Contenido</th><th>Precio</th><th>Estado</th><th></th>'+
+        '</tr></thead><tbody>'+d.items.map(it=>{
+          const dir=esc([it.calle,it.numExterior,(it.numInterior?'Int. '+it.numInterior:'')].filter(Boolean).join(' '))+'<br><span style="color:var(--muted);">Col. '+esc(it.colonia)+', C.P. '+esc(it.cp)+'</span>';
+          return '<tr data-id="'+it.id+'">'+
+            '<td class="ped">'+esc(it.numeroPedido)+'</td>'+
+            '<td>'+esc(it.nombre)+'</td>'+
+            '<td>'+esc(it.telefono)+'</td>'+
+            '<td>'+dir+'</td>'+
+            '<td>'+esc(it.contenido)+(it.piezas>1?(' ('+it.piezas+')'):'')+'</td>'+
+            '<td>'+money(it.precio)+'</td>'+
+            '<td>'+(it.entregado?'<span class="done-badge"><i class="fas fa-check"></i> Entregado</span>':'<span class="pend-badge">Pendiente</span>')+'</td>'+
+            '<td><button class="del" data-del="'+it.id+'" title="Eliminar"><i class="fas fa-trash"></i></button></td>'+
+          '</tr>';
+        }).join('')+'</tbody></table></div>';
+    }catch(e){ box.innerHTML='<div style="padding:12px;color:var(--err);">'+esc(e.message)+'</div>'; }
+  }
+
+  $('tandas').addEventListener('click', async (e)=>{
+    const tandaEl=e.target.closest('.tanda');
+    const del=e.target.closest('[data-del]');
+    if(del){
+      if(!confirm('¿Eliminar esta dirección de la tanda?')) return;
+      const id=del.dataset.del;
+      const r=await fetch('/api/repartos-mty/admin/entrega/'+id,{method:'DELETE'});
+      const d=await r.json();
+      if(d.success){
+        const fecha=tandaEl.dataset.fecha; delete detailCache[fecha]; toast('Eliminado');
+        const box=$('d-'+fecha);
+        if(box && box.classList.contains('show')){ box.classList.remove('show'); await toggleDetail(fecha); }
+        load();
+      } else toast(d.message||'Error');
+      return;
+    }
+    const act=e.target.closest('[data-act]'); if(!act||!tandaEl) return;
+    const fecha=tandaEl.dataset.fecha;
+    if(act.dataset.act==='crew'){ copy(crewLink({fecha,token:tandaEl.dataset.token})); }
+    else if(act.dataset.act==='xlsx'){ act.disabled=true; try{ await exportXlsx(fecha); }catch(err){ toast(err.message); } act.disabled=false; }
+    else if(act.dataset.act==='ver'){ toggleDetail(fecha); }
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>
