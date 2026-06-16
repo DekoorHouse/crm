@@ -222,6 +222,27 @@ async function handlePedirDatosEnvio() {
 }
 
 /**
+ * Envía al cliente el enlace del formulario de entrega local en Monterrey (MTY).
+ */
+async function handlePedirDatosMty() {
+    if (!state.selectedContactId) return;
+    const ok = await showConfirmModal("¿Enviar al cliente el enlace del formulario de entrega local en Monterrey (MTY) para su último pedido?", { icon: 'pin_drop', confirmText: 'Enviar' });
+    if (!ok) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/repartos-mty/pedir-datos/${state.selectedContactId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || 'Error al enviar solicitud');
+        showError(`Enlace MTY enviado para pedido ${result.orderNumber || ''}`.trim(), 'success');
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+/**
  * Cancela la guía J&T activa del último pedido del contacto seleccionado.
  */
 async function handleCancelarGuiaEnvio() {
