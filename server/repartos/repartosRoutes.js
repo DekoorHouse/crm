@@ -212,10 +212,13 @@ router.post('/', async (req, res) => {
         const cp = String(b.cp || '').replace(/\D/g, '');
         const referencia = String(b.referencia || '').trim();
 
-        if (!numeroPedido || !nombre || !telefono || !calle || !colonia || !cp) {
+        // El número de pedido ya NO es obligatorio: el cliente puede mandar sus
+        // datos antes de que registremos el pedido. Si viene (enlace /mty/DHxxxx),
+        // debe tener formato DH y jalamos su snapshot del CRM.
+        if (!nombre || !telefono || !calle || !colonia || !cp) {
             return res.status(400).json({ success: false, message: 'Faltan campos obligatorios.' });
         }
-        if (!/^DH\d+$/.test(numeroPedido)) {
+        if (numeroPedido && !/^DH\d+$/.test(numeroPedido)) {
             return res.status(400).json({ success: false, message: 'El número de pedido debe ser DH seguido de números.' });
         }
         if (!/^\d{10}$/.test(telefono)) {
@@ -225,36 +228,43 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ success: false, message: 'El código postal debe tener 5 dígitos.' });
         }
 
-        const crm = await lookupPedido(numeroPedido);
-        if (!crm) {
-            return res.status(404).json({ success: false, message: `No encontramos el pedido ${numeroPedido}.` });
-        }
+        const crm = numeroPedido ? await lookupPedido(numeroPedido) : null;
 
-        // Snapshot del CRM + datos capturados por el cliente.
+        // Snapshot del CRM (si hay pedido) + datos capturados por el cliente. Sin
+        // pedido, los campos del CRM van vacíos y se completan en /admon/repartos.
         const baseData = {
             numeroPedido,
-            consecutiveOrderNumber: crm.consecutiveOrderNumber,
+            consecutiveOrderNumber: crm ? crm.consecutiveOrderNumber : null,
             nombre, telefono, calle, numExterior, numInterior, entreCalles, colonia, cp, referencia,
             ciudad: String(b.ciudad || '').trim(),
             estado: String(b.estado || 'Nuevo León').trim(),
-            precio: crm.precio,
-            comentarios: crm.comentarios,
-            contenido: crm.contenido,
-            piezas: crm.piezas,
-            fechaPedido: crm.fechaPedido || '',
+            precio: crm ? crm.precio : 0,
+            comentarios: crm ? crm.comentarios : '',
+            contenido: crm ? crm.contenido : '',
+            piezas: crm ? crm.piezas : 1,
+            fechaPedido: crm ? (crm.fechaPedido || '') : '',
         };
 
-        // Si el pedido ya tiene dirección registrada, la actualizamos (sin duplicar).
-        const existing = await db.collection(COL_REPARTOS)
-            .where('numeroPedido', '==', numeroPedido).limit(1).get();
+        const fecha = fechaMTY();
 
-        if (!existing.empty) {
-            const exRef = existing.docs[0].ref;
+        // Dedup: por número de pedido si lo hay; si no, por teléfono dentro de la
+        // tanda de hoy (re-enviar corrige la dirección en vez de duplicar).
+        let exRef = null;
+        if (numeroPedido) {
+            const existing = await db.collection(COL_REPARTOS)
+                .where('numeroPedido', '==', numeroPedido).limit(1).get();
+            if (!existing.empty) exRef = existing.docs[0].ref;
+        } else {
+            const sameTel = await db.collection(COL_REPARTOS).where('telefono', '==', telefono).get();
+            const match = sameTel.docs.find(d => { const x = d.data(); return x.tandaFecha === fecha && !x.numeroPedido; });
+            if (match) exRef = match.ref;
+        }
+
+        if (exRef) {
             await exRef.update({ ...baseData, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
             return res.json({ success: true, id: exRef.id, updated: true, message: 'Actualizamos tu dirección. ¡Gracias!' });
         }
 
-        const fecha = fechaMTY();
         await ensureTanda(fecha);
         const ref = await db.collection(COL_REPARTOS).add({
             ...baseData,
@@ -395,6 +405,16 @@ router.put('/admin/entrega/:id', requireAdmin, async (req, res) => {
         if ('cp' in update) update.cp = update.cp.replace(/\D/g, '');
         if ('precio' in b) update.precio = Number(b.precio) || 0;
         if ('piezas' in b) update.piezas = Math.max(1, parseInt(b.piezas, 10) || 1);
+        // Asignar/editar el número de pedido (clave del export y del lookup CRM).
+        if ('numeroPedido' in b) {
+            const np = String(b.numeroPedido || '').toUpperCase().trim();
+            if (np && !/^DH\d+$/.test(np)) {
+                return res.status(400).json({ success: false, message: 'El número de pedido debe ser DH seguido de números.' });
+            }
+            update.numeroPedido = np;
+            const digits = np.replace(/\D/g, '');
+            update.consecutiveOrderNumber = digits ? parseInt(digits, 10) : null;
+        }
 
         if (!Object.keys(update).length) {
             return res.status(400).json({ success: false, message: 'Nada que actualizar.' });
@@ -415,21 +435,20 @@ router.post('/pedir-datos/:contactId', async (req, res) => {
     try {
         const { contactId } = req.params;
 
-        // 1. Último pedido del contacto.
-        const ordersSnap = await db.collection('pedidos').where('telefono', '==', contactId).get();
-        if (ordersSnap.empty) {
-            return res.status(404).json({ success: false, message: 'Este contacto no tiene pedidos registrados.' });
-        }
-        const orders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-            .filter(o => o.consecutiveOrderNumber)
-            .sort((a, b) => (b.consecutiveOrderNumber || 0) - (a.consecutiveOrderNumber || 0));
-        if (!orders.length) {
-            return res.status(404).json({ success: false, message: 'Este contacto no tiene pedidos con número.' });
-        }
-        const orderNumber = `DH${orders[0].consecutiveOrderNumber}`;
+        // El pedido ya NO es obligatorio: si el contacto tiene uno, prellenamos el
+        // enlace (/mty/DHxxxx) y el mensaje; si no, mandamos el enlace genérico
+        // (/mty) y el número se asigna después en /admon/repartos.
+        let orderNumber = '';
+        try {
+            const ordersSnap = await db.collection('pedidos').where('telefono', '==', contactId).get();
+            const orders = ordersSnap.docs.map(d => d.data())
+                .filter(o => o.consecutiveOrderNumber)
+                .sort((a, b) => (b.consecutiveOrderNumber || 0) - (a.consecutiveOrderNumber || 0));
+            if (orders.length) orderNumber = `DH${orders[0].consecutiveOrderNumber}`;
+        } catch (_) { /* sin pedido: enlace genérico */ }
 
         const BASE = (process.env.PUBLIC_APP_URL || 'https://app.dekoormx.com').replace(/\/$/, '');
-        const link = `${BASE}/mty/${orderNumber}`;
+        const link = orderNumber ? `${BASE}/mty/${orderNumber}` : `${BASE}/mty`;
 
         // Si existe una respuesta rápida "Datos MTY" se usa (permite personalizar el
         // texto); si no, se manda un mensaje por defecto con el enlace.
@@ -441,12 +460,15 @@ router.post('/pedir-datos/:contactId', async (req, res) => {
             const q = qr.data();
             messageText = (q.message || '')
                 .replace(/\*\*/g, orderNumber)
-                .replace(/(https?:\/\/[^\/\s]+\/mty)\/?(?=\s|$)/gi, `$1/${orderNumber}`);
-            if (!/\/mty\//i.test(messageText)) messageText += `\n${link}`;
+                .replace(/(https?:\/\/[^\/\s]+\/mty)\/?(?=\s|$)/gi, orderNumber ? `$1/${orderNumber}` : '$1')
+                .replace(/ {2,}/g, ' ');
+            if (!/\/mty(\/|\b)/i.test(messageText)) messageText += `\n${link}`;
             fileUrl = q.fileUrl || null;
             fileType = q.fileType || null;
         } else {
-            messageText = `📦✨ Para enviarte tu pedido *${orderNumber}* necesitamos tu dirección de entrega en Nuevo León 📍🚚\n\nPor favor llénala en este enlace 👇😊\n${link}`;
+            messageText = orderNumber
+                ? `📦✨ Para enviarte tu pedido *${orderNumber}* necesitamos tu dirección de entrega en Nuevo León 📍🚚\n\nPor favor llénala en este enlace 👇😊\n${link}`
+                : `📦✨ Para enviarte tu pedido necesitamos tu dirección de entrega en Nuevo León 📍🚚\n\nPor favor llénala en este enlace 👇😊\n${link}`;
         }
 
         const { sendAdvancedWhatsAppMessage } = require('../services');

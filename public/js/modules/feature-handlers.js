@@ -226,7 +226,7 @@ async function handlePedirDatosEnvio() {
  */
 async function handlePedirDatosMty() {
     if (!state.selectedContactId) return;
-    const ok = await showConfirmModal("¿Enviar al cliente el enlace del formulario de entrega local en Monterrey (MTY) para su último pedido?", { icon: 'pin_drop', confirmText: 'Enviar' });
+    const ok = await showConfirmModal("¿Enviar al cliente el enlace del formulario de entrega local en Monterrey (MTY)? No necesita tener un pedido registrado.", { icon: 'pin_drop', confirmText: 'Enviar' });
     if (!ok) return;
     try {
         const response = await fetch(`${API_BASE_URL}/api/repartos-mty/pedir-datos/${state.selectedContactId}`, {
@@ -236,7 +236,7 @@ async function handlePedirDatosMty() {
         });
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.message || 'Error al enviar solicitud');
-        showError(`Enlace MTY enviado para pedido ${result.orderNumber || ''}`.trim(), 'success');
+        showError(result.orderNumber ? `Enlace MTY enviado para pedido ${result.orderNumber}` : 'Enlace MTY enviado al cliente ✓', 'success');
     } catch (error) {
         showError(error.message);
     }
@@ -248,7 +248,7 @@ async function handlePedirDatosMty() {
  */
 async function handlePedirDatosDgo() {
     if (!state.selectedContactId) return;
-    const ok = await showConfirmModal("¿Enviar al cliente el enlace del formulario de entrega local en Durango (DGO) para su último pedido?", { icon: 'two_wheeler', confirmText: 'Enviar' });
+    const ok = await showConfirmModal("¿Enviar al cliente el enlace del formulario de entrega local en Durango (DGO)? No necesita tener un pedido registrado.", { icon: 'two_wheeler', confirmText: 'Enviar' });
     if (!ok) return;
     try {
         const response = await fetch(`${API_BASE_URL}/api/repartos-dgo/pedir-datos/${state.selectedContactId}`, {
@@ -258,7 +258,7 @@ async function handlePedirDatosDgo() {
         });
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.message || 'Error al enviar solicitud');
-        showError(`Enlace DGO enviado para pedido ${result.orderNumber || ''}`.trim(), 'success');
+        showError(result.orderNumber ? `Enlace DGO enviado para pedido ${result.orderNumber}` : 'Enlace DGO enviado al cliente ✓', 'success');
     } catch (error) {
         showError(error.message);
     }

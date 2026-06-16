@@ -100,10 +100,13 @@ router.post('/', async (req, res) => {
         const lat = Number(b.lat);
         const lng = Number(b.lng);
 
-        if (!numeroPedido || !nombre || !telefono || !calle || !colonia) {
+        // El número de pedido ya NO es obligatorio: el cliente puede mandar sus
+        // datos antes de que registremos el pedido. Si viene (enlace /dgo/DHxxxx),
+        // debe ser DH y jalamos su precio/contenido/comentarios del CRM.
+        if (!nombre || !telefono || !calle || !colonia) {
             return res.status(400).json({ success: false, message: 'Faltan campos obligatorios.' });
         }
-        if (!/^DH\d+$/.test(numeroPedido)) {
+        if (numeroPedido && !/^DH\d+$/.test(numeroPedido)) {
             return res.status(400).json({ success: false, message: 'El número de pedido debe ser DH seguido de números.' });
         }
         if (!/^\d{10}$/.test(telefono)) {
@@ -113,23 +116,21 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Marca la ubicación de la entrega en el mapa.' });
         }
 
-        const crm = await lookupPedido(numeroPedido);
-        if (!crm) {
-            return res.status(404).json({ success: false, message: `No encontramos el pedido ${numeroPedido}.` });
-        }
+        const crm = numeroPedido ? await lookupPedido(numeroPedido) : null;
 
         const direccion = componerDireccion({ calle, numExterior, numInterior, colonia, cp, ciudad });
-        const indicaciones = componerIndicaciones({ entreCalles, referencia, comentarios: crm.comentarios });
+        const indicaciones = componerIndicaciones({ entreCalles, referencia, comentarios: crm ? crm.comentarios : '' });
 
-        // Datos del pedido (del CRM) + lo capturado por el cliente, en el formato
-        // exacto que espera la app del repartidor.
+        // Datos del pedido (del CRM si lo hay) + lo capturado por el cliente, en el
+        // formato exacto que espera la app del repartidor. Sin pedido, monto = 0 y
+        // producto vacío; se ajustan luego en /repartidor al registrar el pedido.
         const baseData = {
             numeroPedido,
             cliente: nombre,
             telefono,
             direccion,
-            producto: crm.contenido || '',
-            monto: Number(crm.precio) || 0, // COD: el precio del pedido.
+            producto: crm ? (crm.contenido || '') : '',
+            monto: crm ? (Number(crm.precio) || 0) : 0, // COD: el precio del pedido.
             indicaciones,
             fechaEntrega: fechaDGO(),
             lat,
@@ -139,11 +140,18 @@ router.post('/', async (req, res) => {
             origen: 'cliente-dgo',
         };
 
-        // Si el pedido ya tiene una entrega NO entregada, la actualizamos (sin
-        // duplicar en la ruta del repartidor).
-        const existing = await db.collection(COL_ENTREGAS)
-            .where('numeroPedido', '==', numeroPedido).get();
-        const abierta = existing.docs.find(d => d.data().estado !== 'ENTREGADO');
+        // Dedup: por número de pedido si lo hay; si no, por teléfono entre las
+        // entregas de cliente-dgo aún no entregadas (re-enviar corrige, no duplica).
+        let abierta = null;
+        if (numeroPedido) {
+            const existing = await db.collection(COL_ENTREGAS)
+                .where('numeroPedido', '==', numeroPedido).get();
+            abierta = existing.docs.find(d => d.data().estado !== 'ENTREGADO');
+        } else {
+            const existing = await db.collection(COL_ENTREGAS)
+                .where('telefono', '==', telefono).get();
+            abierta = existing.docs.find(d => { const x = d.data(); return x.estado !== 'ENTREGADO' && x.origen === 'cliente-dgo' && !x.numeroPedido; });
+        }
 
         if (abierta) {
             await abierta.ref.update({ ...baseData, actualizadoEn: Date.now() });
@@ -170,20 +178,20 @@ router.post('/pedir-datos/:contactId', async (req, res) => {
     try {
         const { contactId } = req.params;
 
-        const ordersSnap = await db.collection('pedidos').where('telefono', '==', contactId).get();
-        if (ordersSnap.empty) {
-            return res.status(404).json({ success: false, message: 'Este contacto no tiene pedidos registrados.' });
-        }
-        const orders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-            .filter(o => o.consecutiveOrderNumber)
-            .sort((a, b) => (b.consecutiveOrderNumber || 0) - (a.consecutiveOrderNumber || 0));
-        if (!orders.length) {
-            return res.status(404).json({ success: false, message: 'Este contacto no tiene pedidos con número.' });
-        }
-        const orderNumber = `DH${orders[0].consecutiveOrderNumber}`;
+        // El pedido ya NO es obligatorio: si el contacto tiene uno, prellenamos el
+        // enlace (/dgo/DHxxxx); si no, mandamos el genérico (/dgo) y el número se
+        // asigna después al registrar el pedido (entrega editable en /repartidor).
+        let orderNumber = '';
+        try {
+            const ordersSnap = await db.collection('pedidos').where('telefono', '==', contactId).get();
+            const orders = ordersSnap.docs.map(d => d.data())
+                .filter(o => o.consecutiveOrderNumber)
+                .sort((a, b) => (b.consecutiveOrderNumber || 0) - (a.consecutiveOrderNumber || 0));
+            if (orders.length) orderNumber = `DH${orders[0].consecutiveOrderNumber}`;
+        } catch (_) { /* sin pedido: enlace genérico */ }
 
         const BASE = (process.env.PUBLIC_APP_URL || 'https://app.dekoormx.com').replace(/\/$/, '');
-        const link = `${BASE}/dgo/${orderNumber}`;
+        const link = orderNumber ? `${BASE}/dgo/${orderNumber}` : `${BASE}/dgo`;
 
         // Respuesta rápida "Datos DGO" si existe; si no, mensaje por defecto.
         let messageText, fileUrl = null, fileType = null;
@@ -194,12 +202,15 @@ router.post('/pedir-datos/:contactId', async (req, res) => {
             const q = qr.data();
             messageText = (q.message || '')
                 .replace(/\*\*/g, orderNumber)
-                .replace(/(https?:\/\/[^\/\s]+\/dgo)\/?(?=\s|$)/gi, `$1/${orderNumber}`);
-            if (!/\/dgo\//i.test(messageText)) messageText += `\n${link}`;
+                .replace(/(https?:\/\/[^\/\s]+\/dgo)\/?(?=\s|$)/gi, orderNumber ? `$1/${orderNumber}` : '$1')
+                .replace(/ {2,}/g, ' ');
+            if (!/\/dgo(\/|\b)/i.test(messageText)) messageText += `\n${link}`;
             fileUrl = q.fileUrl || null;
             fileType = q.fileType || null;
         } else {
-            messageText = `📦✨ Para enviarte tu pedido *${orderNumber}* necesitamos tu dirección de entrega en Durango 📍🚚\n\nPor favor llénala en este enlace 👇😊\n${link}`;
+            messageText = orderNumber
+                ? `📦✨ Para enviarte tu pedido *${orderNumber}* necesitamos tu dirección de entrega en Durango 📍🚚\n\nPor favor llénala en este enlace 👇😊\n${link}`
+                : `📦✨ Para enviarte tu pedido necesitamos tu dirección de entrega en Durango 📍🚚\n\nPor favor llénala en este enlace 👇😊\n${link}`;
         }
 
         const { sendAdvancedWhatsAppMessage } = require('../services');

@@ -100,6 +100,14 @@
         <button class="x" id="editClose">&times;</button>
       </div>
       <div class="mbody">
+        <div class="fld full">
+          <label>Número de pedido</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input id="e_numeroPedido" placeholder="DH12488" style="flex:1;" />
+            <button type="button" class="btn ghost sm" id="e_pullCrm" title="Traer precio, contenido, piezas y comentarios del CRM"><i class="fas fa-rotate"></i> Traer del CRM</button>
+          </div>
+          <span id="e_pedidoHint" style="font-size:11.5px;color:var(--muted);"></span>
+        </div>
         <div class="fld"><label>Nombre</label><input id="e_nombre" /></div>
         <div class="fld"><label>Teléfono</label><input id="e_telefono" maxlength="10" inputmode="numeric" /></div>
         <div class="fld full"><label>Calle</label><input id="e_calle" /></div>
@@ -267,6 +275,7 @@
     const it=d.items.find(x=>x.id===id); if(!it) return;
     editCtx={fecha, id};
     $('emPedido').textContent=it.numeroPedido||'';
+    setVal('e_numeroPedido',it.numeroPedido); $('e_pedidoHint').textContent='';
     setVal('e_nombre',it.nombre); setVal('e_telefono',it.telefono);
     setVal('e_calle',it.calle); setVal('e_numExterior',it.numExterior);
     setVal('e_numInterior',it.numInterior); setVal('e_entreCalles',it.entreCalles);
@@ -277,12 +286,38 @@
     $('editBg').classList.add('show');
   }
   function closeEdit(){ $('editBg').classList.remove('show'); editCtx=null; }
+
+  // Traer del CRM precio, contenido, piezas y comentarios al asignar el número.
+  // force=true sobrescribe (botón); en automático (al salir del campo) sólo rellena vacíos.
+  async function pullCrm(force){
+    const np=$('e_numeroPedido').value.toUpperCase().trim(); $('e_numeroPedido').value=np;
+    const hint=$('e_pedidoHint');
+    if(!/^DH\d+$/.test(np)){ if(force) hint.textContent='Escribe un pedido válido (DH...).'; return; }
+    hint.textContent='Buscando en el CRM...';
+    try{
+      const r=await fetch('/api/repartos-mty/pedido/'+encodeURIComponent(np));
+      const d=await r.json();
+      if(!d.success){ hint.textContent=d.message||'No encontramos ese pedido en el CRM.'; return; }
+      const blank=v=>v==null||String(v).trim()===''||String(v)==='0';
+      if(d.contenido && (force||blank($('e_contenido').value))) setVal('e_contenido',d.contenido);
+      if(d.piezas && (force||blank($('e_piezas').value)||$('e_piezas').value==='1')) setVal('e_piezas',d.piezas);
+      if(d.precio && (force||blank($('e_precio').value))) setVal('e_precio',d.precio);
+      if(d.comentarios && (force||blank($('e_comentarios').value))) setVal('e_comentarios',d.comentarios);
+      if(d.telefono && blank($('e_telefono').value)) setVal('e_telefono',d.telefono);
+      if(d.nombre && blank($('e_nombre').value)) setVal('e_nombre',d.nombre);
+      hint.innerHTML='<span style="color:var(--ok);">Datos del CRM cargados ✓ — revisa y Guarda.</span>';
+    }catch(e){ hint.textContent='Error al consultar el CRM.'; }
+  }
+  $('e_pullCrm').addEventListener('click', ()=>pullCrm(true));
+  $('e_numeroPedido').addEventListener('change', ()=>pullCrm(false));
+
   $('editClose').addEventListener('click', closeEdit);
   $('editCancel').addEventListener('click', closeEdit);
   $('editBg').addEventListener('click', (e)=>{ if(e.target===$('editBg')) closeEdit(); });
   $('editSave').addEventListener('click', async ()=>{
     if(!editCtx) return;
     const payload={
+      numeroPedido:$('e_numeroPedido').value.toUpperCase().trim(),
       nombre:$('e_nombre').value.trim(), telefono:$('e_telefono').value.replace(/\D/g,''),
       calle:$('e_calle').value.trim(), numExterior:$('e_numExterior').value.trim(),
       numInterior:$('e_numInterior').value.trim(), entreCalles:$('e_entreCalles').value.trim(),

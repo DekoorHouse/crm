@@ -114,30 +114,6 @@
 
       <form id="form" autocomplete="on">
         <div class="field">
-          <label for="numeroPedido">Número de pedido <span class="req">*</span></label>
-          <div class="inputwrap"><i class="fas fa-hashtag"></i>
-            <input type="text" id="numeroPedido" placeholder="DH12488" autocomplete="off" required />
-          </div>
-          <div class="hint" id="pedidoHint"></div>
-        </div>
-
-        <div class="resumen" id="resumen">
-          <div class="resumen-title">Datos de tu pedido</div>
-          <div class="r"><span>Pedido</span><b id="rPedido">—</b></div>
-          <div class="r"><span>Contenido</span><b id="rContenido">—</b></div>
-          <div class="r"><span>Piezas</span><b id="rPiezas">—</b></div>
-          <div class="r"><span>Fecha</span><b id="rFecha">—</b></div>
-          <div class="r precio"><span>Precio</span><b id="rPrecio">—</b></div>
-        </div>
-
-        <div class="field" id="comentariosField" style="display:none;">
-          <label for="comentarios">Comentarios (registrados en tu pedido)</label>
-          <div class="inputwrap readonly"><i class="fas fa-circle-info"></i>
-            <input type="text" id="comentarios" readonly tabindex="-1" />
-          </div>
-        </div>
-
-        <div class="field">
           <label for="nombre">Nombre <span class="req">*</span></label>
           <div class="inputwrap"><i class="fas fa-user"></i>
             <input type="text" id="nombre" placeholder="Nombre completo" required />
@@ -259,9 +235,11 @@
   const API = window.API_BASE_URL || '';
   const $ = id => document.getElementById(id);
   const form=$('form'), btn=$('btn'), alertEl=$('alert'), thanks=$('thanks');
-  const orderInput=$('numeroPedido'), pedidoHint=$('pedidoHint'), resumen=$('resumen');
+  // El pedido es opcional: si el enlace trae /dgo/DHxxxx lo usamos en silencio,
+  // pero el cliente ya no captura ni ve el número (lo asignas luego al registrar el pedido).
+  const pedidoUrl=((window.location.pathname.match(/\/dgo\/(DH\d+)/i)||[])[1]||'').toUpperCase();
   const DGO = { lat: 24.0277, lng: -104.6532 }; // centro de Durango
-  let pedidoOk=false, verifyTimer=null, picked=null, marker=null, geocoder=null, geoTimer=null;
+  let picked=null, marker=null, geocoder=null, geoTimer=null;
   let placesLib=null, suggestToken=null, predsActuales=[], pinManual=false;
 
   const money=n=>'$'+(Number(n)||0).toLocaleString('es-MX');
@@ -297,49 +275,13 @@
     else{ c.className='unset'; c.textContent='Sin ubicación todavía — escribe tu dirección o búscala arriba.'; }
   }
 
-  // ---------- Prefill del número de pedido desde /dgo/DH12488 ----------
-  const m = window.location.pathname.match(/\/dgo\/(DH\d+)/i);
-  if(m){
-    orderInput.value = m[1].toUpperCase();
-    orderInput.readOnly = true;
-    orderInput.style.fontWeight='700';
-    setTimeout(()=>verificarPedido(orderInput.value), 250);
-  }
-
-  orderInput.addEventListener('input', ()=>{
-    orderInput.value = orderInput.value.toUpperCase();
-    pedidoOk=false; resumen.classList.remove('show'); $('comentariosField').style.display='none';
-    pedidoHint.textContent=''; pedidoHint.className='hint';
-    clearTimeout(verifyTimer);
-    const v=orderInput.value.trim();
-    if(!v) return;
-    if(!/^DH\d+$/i.test(v)){ pedidoHint.textContent='Debe empezar con DH y números (ej: DH12488).'; pedidoHint.className='hint error'; return; }
-    verifyTimer=setTimeout(()=>verificarPedido(v), 550);
-  });
-
-  async function verificarPedido(numero){
-    pedidoHint.textContent='Verificando pedido...'; pedidoHint.className='hint';
-    try{
-      const r=await fetch(API+'/api/repartos-dgo/pedido/'+encodeURIComponent(numero));
-      const d=await r.json();
-      if(d.success){
-        pedidoOk=true;
-        pedidoHint.textContent='Pedido encontrado ✓'; pedidoHint.className='hint ok';
-        $('rPedido').textContent=d.numeroPedido||orderInput.value;
-        $('rContenido').textContent=d.contenido||'—';
-        $('rPiezas').textContent=d.piezas||1;
-        $('rFecha').textContent=fmtFecha(d.fechaPedido);
-        $('rPrecio').textContent=d.precio?money(d.precio):'—';
-        resumen.classList.add('show');
-        if(d.comentarios){ $('comentarios').value=d.comentarios; $('comentariosField').style.display='block'; }
-        else { $('comentariosField').style.display='none'; }
-        if(d.telefono && !$('telefono').value) $('telefono').value=d.telefono;
-        if(d.nombre && !$('nombre').value) $('nombre').value=d.nombre;
-      }else{
-        pedidoOk=false;
-        pedidoHint.textContent=d.message||'No encontramos ese pedido.'; pedidoHint.className='hint error';
-      }
-    }catch(e){ pedidoHint.textContent='Error al verificar. Intenta de nuevo.'; pedidoHint.className='hint error'; }
+  // Si el enlace trae un pedido (/dgo/DHxxxx), prellenamos nombre/teléfono en
+  // silencio desde el CRM. Es opcional: sin pedido, el cliente captura todo.
+  if(pedidoUrl){
+    fetch(API+'/api/repartos-dgo/pedido/'+encodeURIComponent(pedidoUrl))
+      .then(r=>r.json())
+      .then(d=>{ if(d&&d.success){ if(d.telefono && !$('telefono').value) $('telefono').value=d.telefono; if(d.nombre && !$('nombre').value) $('nombre').value=d.nombre; } })
+      .catch(()=>{});
   }
 
   // ---------- Google: sugerencias (Places) + geocodificar texto ----------
@@ -458,7 +400,7 @@
     e.preventDefault();
     alertEl.style.display='none';
     const payload={
-      numeroPedido: orderInput.value.trim().toUpperCase(),
+      numeroPedido: pedidoUrl,
       nombre: val('nombre'),
       telefono: $('telefono').value.replace(/\D/g,''),
       calle: val('calle'),
@@ -472,7 +414,6 @@
       lat: picked ? picked.lat : null,
       lng: picked ? picked.lng : null,
     };
-    if(!pedidoOk){ showAlert('error','Primero verifica un número de pedido válido (DH...).'); orderInput.focus(); return; }
     if(!payload.nombre){ showAlert('error','Escribe tu nombre.'); return; }
     if(!/^\d{10}$/.test(payload.telefono)){ showAlert('error','El teléfono debe tener 10 dígitos.'); return; }
     if(!payload.calle){ showAlert('error','Escribe tu calle.'); return; }
@@ -487,7 +428,9 @@
         form.style.display='none'; alertEl.style.display='none';
         if(d.updated) $('thanksMsg').innerHTML='Actualizamos tu dirección correctamente.<br>Pronto recibirás tu pedido. 🐘';
         // Enlace de WhatsApp para que el cliente confirme que ya envió sus datos.
-        const waMsg = `Hola, soy ${payload.nombre}. Ya envié mis datos de entrega para mi pedido ${payload.numeroPedido} ✅`;
+        const waMsg = payload.numeroPedido
+          ? `Hola, soy ${payload.nombre}. Ya envié mis datos de entrega para mi pedido ${payload.numeroPedido} ✅`
+          : `Hola, soy ${payload.nombre}. Ya envié mis datos de entrega ✅`;
         $('waConfirm').href = `https://wa.me/526181333519?text=${encodeURIComponent(waMsg)}`;
         thanks.classList.add('show');
         window.scrollTo({top:0,behavior:'smooth'});
