@@ -1795,6 +1795,119 @@ function updateOrderItemNumbering() {
         if (removeBtn) removeBtn.style.display = rows.length > 1 ? '' : 'none';
     });
 }
+
+// --- Gestor de productos configurables ---------------------------------------
+// Reconstruye los <option> de todos los selects de producto abiertos (modales de
+// nuevo/editar pedido) preservando el valor que el usuario ya tenía seleccionado.
+function refreshOpenProductSelects() {
+    document.querySelectorAll('.order-item-product, .edit-order-item-product').forEach(sel => {
+        const current = sel.value;
+        sel.innerHTML = buildProductOptionsHTML(current);
+        if (current) sel.value = current;
+    });
+}
+
+// Abre el modal para agregar / renombrar / eliminar productos de la lista.
+window.openProductsManager = function() {
+    if (document.getElementById('products-manager-overlay')) return; // ya abierto
+    const overlay = document.createElement('div');
+    overlay.id = 'products-manager-overlay';
+    overlay.className = 'modal-overlay';
+    overlay.style.zIndex = '10000'; // por encima del modal de pedido
+    overlay.innerHTML = ProductsManagerModalTemplate();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeProductsManager(); });
+    document.body.appendChild(overlay);
+    renderProductsManagerList();
+    const input = document.getElementById('new-product-name-input');
+    if (input) input.focus();
+};
+
+// Cierra el modal de gestión de productos.
+window.closeProductsManager = function() {
+    const overlay = document.getElementById('products-manager-overlay');
+    if (overlay) overlay.remove();
+};
+
+// Renderiza la lista de productos dentro del gestor (si está abierto).
+function renderProductsManagerList() {
+    const listEl = document.getElementById('products-manager-list');
+    if (!listEl) return; // el gestor no está abierto
+    const products = state.products || [];
+    if (!products.length) {
+        listEl.innerHTML = '<p class="products-manager-empty">Aún no hay productos. Agrega el primero arriba.</p>';
+        return;
+    }
+    listEl.innerHTML = products.map(ProductManagerRowTemplate).join('');
+}
+
+// Agrega un nuevo producto a Firestore desde el input del gestor.
+window.submitNewProduct = async function() {
+    const input = document.getElementById('new-product-name-input');
+    if (!input) return;
+    const name = input.value.trim();
+    if (!name) { showError("Escribe un nombre para el producto."); return; }
+    const exists = (state.products || []).some(p => (p.name || '').toLowerCase() === name.toLowerCase());
+    if (exists) { showError(`El producto "${name}" ya existe.`); return; }
+    input.value = '';
+    input.focus();
+    try {
+        const maxOrder = (state.products || []).reduce((m, p) => Math.max(m, Number(p.order) || 0), -1);
+        await db.collection('crm_products').add({
+            name,
+            order: maxOrder + 1,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showError(`Producto "${name}" agregado.`, 'success');
+    } catch (err) {
+        console.error("Error al agregar producto:", err);
+        showError("No se pudo agregar el producto.");
+    }
+};
+
+// Renombra un producto cuando el input pierde el foco (solo si cambió).
+window.saveProductName = async function(id, inputEl) {
+    if (!inputEl) return;
+    const newName = inputEl.value.trim();
+    const original = inputEl.dataset.original || '';
+    if (newName === original) return; // sin cambios
+    if (!newName) {
+        inputEl.value = original; // no permitir nombre vacío
+        showError("El nombre del producto no puede estar vacío.");
+        return;
+    }
+    const dup = (state.products || []).some(p => p.id !== id && (p.name || '').toLowerCase() === newName.toLowerCase());
+    if (dup) {
+        inputEl.value = original;
+        showError(`Ya existe un producto llamado "${newName}".`);
+        return;
+    }
+    inputEl.dataset.original = newName;
+    try {
+        await db.collection('crm_products').doc(id).update({ name: newName });
+        showError("Producto actualizado.", 'success');
+    } catch (err) {
+        console.error("Error al renombrar producto:", err);
+        inputEl.value = original;
+        showError("No se pudo actualizar el producto.");
+    }
+};
+
+// Elimina un producto tras confirmación del usuario.
+window.deleteProductEntry = async function(id, btnEl) {
+    const product = (state.products || []).find(p => p.id === id);
+    const name = product ? product.name : 'este producto';
+    const ok = await showConfirmModal(`¿Eliminar el producto "${name}" de la lista?`, {
+        icon: 'delete', confirmText: 'Eliminar', cancelText: 'Cancelar'
+    });
+    if (!ok) return;
+    try {
+        await db.collection('crm_products').doc(id).delete();
+        showError(`Producto "${name}" eliminado.`, 'success');
+    } catch (err) {
+        console.error("Error al eliminar producto:", err);
+        showError("No se pudo eliminar el producto.");
+    }
+};
 /**
  * Abre el modal para registrar un nuevo pedido, pre-rellenando datos si es posible.
  * Unificado con la lgica de Lista de Pedidos (pedidos.html / logica.js).

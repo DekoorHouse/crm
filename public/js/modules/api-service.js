@@ -663,6 +663,49 @@ function listenForTags() {
     });
 }
 
+// Evita intentar sembrar los productos por defecto más de una vez por sesión.
+let productsSeedAttempted = false;
+
+// Escucha en tiempo real la lista de productos configurables (colección crm_products).
+// Mantiene state.products sincronizado y refresca los selects/modal abiertos.
+function listenForProducts() {
+    if (unsubscribeProductsListener) unsubscribeProductsListener();
+    unsubscribeProductsListener = db.collection('crm_products').orderBy('order').onSnapshot(snapshot => {
+        state.products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Si la colección está vacía la primera vez, la sembramos con los productos por defecto.
+        if (snapshot.empty && !productsSeedAttempted) {
+            productsSeedAttempted = true;
+            seedDefaultProducts();
+        }
+
+        // Actualiza cualquier select de producto abierto (modal de nuevo/editar pedido).
+        if (typeof refreshOpenProductSelects === 'function') refreshOpenProductSelects();
+        // Actualiza la lista del gestor de productos si está abierto.
+        if (typeof renderProductsManagerList === 'function') renderProductsManagerList();
+    }, error => {
+        console.error("Error al escuchar los productos:", error);
+        showError("No se pudieron cargar los productos.");
+    });
+}
+
+// Crea los productos por defecto en Firestore la primera vez (migración inicial).
+function seedDefaultProducts() {
+    const defaults = (typeof DEFAULT_PRODUCTS !== 'undefined')
+        ? DEFAULT_PRODUCTS
+        : ['Spiderman', 'Rex', 'Guerreras', 'Muerto', 'Corazón', 'Mario', 'Sonic', 'Especial'];
+    const batch = db.batch();
+    defaults.forEach((name, i) => {
+        const ref = db.collection('crm_products').doc();
+        batch.set(ref, {
+            name,
+            order: i,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    });
+    batch.commit().catch(err => console.error("Error al sembrar productos por defecto:", err));
+}
+
 // Escucha cambios en los mensajes automáticos por anuncio
 function listenForAdResponses() {
     if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();

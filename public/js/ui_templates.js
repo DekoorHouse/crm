@@ -1411,6 +1411,65 @@ const DateSeparatorTemplate = (dateString) => {
     return `<div class="date-separator date-separator-anchor">${dateString}</div>`;
 };
 
+// --- Productos configurables ---
+// La lista de productos de los selects de pedidos se gestiona en la colección
+// Firestore `crm_products` (ver listenForProducts en api-service.js) y se edita
+// desde el modal "Editar productos". Esta constante es solo el fallback inicial
+// que se usa mientras aún no se cargan productos desde Firestore.
+const DEFAULT_PRODUCTS = ['Spiderman', 'Rex', 'Guerreras', 'Muerto', 'Corazón', 'Mario', 'Sonic', 'Especial'];
+
+// Devuelve los nombres de producto actuales (desde el estado global, con fallback).
+function getProductNames() {
+    const fromState = (typeof state !== 'undefined' && Array.isArray(state.products))
+        ? state.products.map(p => p && p.name).filter(Boolean)
+        : [];
+    return fromState.length ? fromState : DEFAULT_PRODUCTS.slice();
+}
+
+// Construye el HTML de <option> para un select de producto, preservando el valor
+// seleccionado aunque ya no exista en la lista (p. ej. pedidos antiguos).
+function buildProductOptionsHTML(selectedValue) {
+    const names = getProductNames();
+    if (selectedValue && !names.includes(selectedValue)) names.unshift(selectedValue);
+    return names.map(n =>
+        `<option value="${escapeHtml(n)}"${n === selectedValue ? ' selected' : ''}>${escapeHtml(n)}</option>`
+    ).join('');
+}
+
+// Fila editable de un producto dentro del gestor de productos.
+const ProductManagerRowTemplate = (product) => `
+    <div class="product-manager-row" data-product-id="${escapeHtml(product.id)}">
+        <input type="text" class="product-name-edit" value="${escapeHtml(product.name || '')}"
+               data-original="${escapeHtml(product.name || '')}"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+               onblur="saveProductName('${escapeHtml(product.id)}', this)">
+        <button type="button" class="product-delete-btn" title="Eliminar producto"
+                onclick="deleteProductEntry('${escapeHtml(product.id)}', this)">
+            <i class="fas fa-trash-alt"></i>
+        </button>
+    </div>
+`;
+
+// Modal para gestionar (agregar / renombrar / eliminar) la lista de productos.
+const ProductsManagerModalTemplate = () => `
+    <div class="modal-content" onclick="event.stopPropagation()" style="max-width:480px;">
+        <button onclick="closeProductsManager()" class="modal-close-btn" title="Cerrar">&times;</button>
+        <h2><i class="fas fa-box-open"></i> Editar productos</h2>
+        <p style="margin-top:-10px;margin-bottom:18px;font-size:0.85rem;color:#6b7280;">
+            Agrega nuevos productos, renombra (clic en el nombre) o elimina. Los cambios se aplican en todos los dispositivos.
+        </p>
+        <div class="products-manager-add">
+            <input type="text" id="new-product-name-input" placeholder="Nombre del nuevo producto..."
+                   autocomplete="off"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();submitNewProduct();}">
+            <button type="button" class="btn btn-primary" onclick="submitNewProduct()" style="white-space:nowrap;">
+                <i class="fas fa-plus"></i> Agregar
+            </button>
+        </div>
+        <div id="products-manager-list" class="products-manager-list"></div>
+    </div>
+`;
+
 const NewOrderItemRowTemplate = (index, isFirst = false) => `
     <div class="order-item-row" data-item-index="${index}">
         <div class="order-item-header">
@@ -1422,16 +1481,7 @@ const NewOrderItemRowTemplate = (index, isFirst = false) => `
         <div class="order-item-fields">
             <div class="form-item">
                 <label>Producto (*):</label>
-                <select class="order-item-product" required>
-                    <option value="Spiderman">Spiderman</option>
-                    <option value="Rex">Rex</option>
-                    <option value="Guerreras">Guerreras</option>
-                    <option value="Muerto">Muerto</option>
-                    <option value="Corazón">Corazón</option>
-                    <option value="Mario">Mario</option>
-                    <option value="Sonic">Sonic</option>
-                    <option value="Especial">Especial</option>
-                </select>
+                <select class="order-item-product" required>${buildProductOptionsHTML()}</select>
             </div>
             <div class="form-item">
                 <label>Cantidad (*):</label>
@@ -1468,6 +1518,9 @@ const NewOrderModalTemplate = () => `
                              </div>
                              <button type="button" id="add-order-item-btn" class="add-order-item-btn" onclick="addOrderItem()">
                                 <i class="fas fa-plus"></i> Agregar otro producto
+                             </button>
+                             <button type="button" class="edit-products-btn" onclick="openProductsManager()" title="Agregar, renombrar o eliminar productos de la lista">
+                                <i class="fas fa-cog"></i> Editar productos
                              </button>
                          </div>
 
@@ -1682,8 +1735,7 @@ const OrderHistoryItemTemplate = (order) => {
 };
 
 const EditOrderItemRowTemplate = (index, item, isFirst = false) => {
-    const productos = ['Spiderman', 'Rex', 'Guerreras', 'Muerto', 'Corazón', 'Mario', 'Sonic', 'Especial'];
-    const options = productos.map(p => `<option value="${p}" ${item.producto === p ? 'selected' : ''}>${p}</option>`).join('');
+    const options = buildProductOptionsHTML(item.producto);
     return `
     <div class="order-item-row" data-item-index="${index}">
         <div class="order-item-header">
@@ -1731,6 +1783,9 @@ const OrderEditModalTemplate = (order) => `
                              <div id="edit-order-items-container"></div>
                              <button type="button" id="add-edit-order-item-btn" class="add-order-item-btn" onclick="addEditOrderItem()">
                                 <i class="fas fa-plus"></i> Agregar otro producto
+                             </button>
+                             <button type="button" class="edit-products-btn" onclick="openProductsManager()" title="Agregar, renombrar o eliminar productos de la lista">
+                                <i class="fas fa-cog"></i> Editar productos
                              </button>
                          </div>
 

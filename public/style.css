@@ -1025,6 +1025,101 @@ label.disabled-icon {
     color: white;
 }
 
+/* Botón "Editar productos" dentro de los modales de pedido.
+   Usa selector con ID para ganar a la regla genérica `#new-order-modal button`. */
+#new-order-modal .edit-products-btn,
+#order-edit-modal .edit-products-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+    background: none;
+    border: none;
+    color: var(--color-secondary);
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 8px 4px;
+    margin-top: 6px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+#new-order-modal .edit-products-btn:hover,
+#order-edit-modal .edit-products-btn:hover {
+    color: var(--color-primary);
+    background: none;
+}
+
+/* Modal gestor de productos (agregar / renombrar / eliminar) */
+.products-manager-add {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    margin-bottom: 16px;
+}
+.products-manager-add input { margin-bottom: 0; }
+.products-manager-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.product-manager-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    background-color: #fafbfc;
+    padding: 4px 6px 4px 8px;
+}
+.product-manager-row input.product-name-edit {
+    flex: 1;
+    margin-bottom: 0;
+    border: 1px solid transparent;
+    background: transparent;
+    font-weight: 600;
+    padding: 8px 10px;
+}
+.product-manager-row input.product-name-edit:hover {
+    border-color: var(--color-border);
+    background-color: #fff;
+}
+.product-manager-row input.product-name-edit:focus {
+    border-color: var(--color-primary);
+    background-color: #fff;
+}
+.product-manager-row .product-delete-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--color-danger);
+    cursor: pointer;
+    font-size: 0.95rem;
+    padding: 8px 10px;
+    border-radius: var(--border-radius-md);
+    transition: background-color 0.15s ease;
+}
+.product-manager-row .product-delete-btn:hover {
+    background-color: rgba(220, 53, 69, 0.12);
+}
+.products-manager-empty {
+    text-align: center;
+    color: #6b7280;
+    font-size: 0.85rem;
+    padding: 20px 0;
+}
+body.dark-mode .product-manager-row {
+    background-color: #1f2335;
+    border-color: #414868;
+}
+body.dark-mode .product-manager-row input.product-name-edit { color: #c0caf5; }
+body.dark-mode .product-manager-row input.product-name-edit:hover,
+body.dark-mode .product-manager-row input.product-name-edit:focus {
+    background-color: #16161e;
+}
+
 body.dark-mode #new-order-modal select, body.dark-mode #order-edit-modal select {
     background-color: #1f2335;
     color: #c0caf5;

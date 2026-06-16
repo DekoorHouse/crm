@@ -11,6 +11,7 @@ let state = {
 
     templates: [], // Plantillas de WhatsApp aprobadas
     tags: [], // Etiquetas/Categorías de contactos
+    products: [], // Productos configurables para el modal de pedidos (colección crm_products)
     // Lista fija de estatus de pedidos, movida aquí para consistencia
     orderStatuses: [
         { key: "Sin estatus", label: "Sin Estatus", color: "#6c757d" },
@@ -125,7 +126,8 @@ let unsubscribeMessagesListener = null,
     unsubscribePendingAiCountListener = null,
     unsubscribeDailyOrdersListener = null,
     unsubscribeCampanasListener = null,
-    unsubscribePedidosCampanaListener = null;
+    unsubscribePedidosCampanaListener = null,
+    unsubscribeProductsListener = null;
 
 // --- Instancias de Gráficas (Chart.js) ---
 let dailyMessagesChart = null; // Gráfica de mensajes diarios (general)

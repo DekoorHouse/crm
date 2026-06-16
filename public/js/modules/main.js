@@ -23,6 +23,7 @@ function startApp() {
     listenForUsers(); // Escucha cambios en los usuarios
     listenForQuickReplies();
     listenForTags();
+    listenForProducts(); // Lista de productos configurables para el modal de pedidos
     listenForAdResponses();
     listenForCampanas(); // Tracking de campañas — modal de pedido necesita campañas activas
 
@@ -85,6 +86,7 @@ function stopApp() {
     if (unsubscribeNotesListener) unsubscribeNotesListener();
     if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener();
     if (unsubscribeTagsListener) unsubscribeTagsListener();
+    if (unsubscribeProductsListener) unsubscribeProductsListener();
     if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
 
     
