@@ -312,6 +312,13 @@ app.get('/datos-envio/:pedido', (req, res) => {
 
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
 app.get('*', (req, res) => {
+    // Si se pide un archivo estático inexistente (.js, .css, .png, etc.), devolver
+    // un 404 real en vez del HTML del CRM. Así el navegador no intenta ejecutar
+    // HTML como JavaScript ("MIME type 'text/html' is not executable") ni se sirve
+    // el CRM en rutas inválidas.
+    if (path.extname(req.path)) {
+        return res.status(404).send('Not found');
+    }
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
