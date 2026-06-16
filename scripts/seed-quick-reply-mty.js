@@ -18,12 +18,10 @@ const FORCE = process.argv.includes('--force');
 
 const SHORTCUT = 'Datos MTY';
 const MESSAGE = [
-    '¡Hola! 👋 Para enviarte tu pedido ** necesitamos tu dirección de entrega en Monterrey.',
+    '📦✨ Para enviarte tu pedido ** necesitamos tu dirección de entrega en Nuevo León 📍🚚',
     '',
-    'Por favor llénala en este enlace 👇',
+    'Por favor llénala en este enlace 👇😊',
     'https://app.dekoormx.com/mty',
-    '',
-    '¡Gracias por tu compra! 🐘',
 ].join('\n');
 
 function initAdmin() {

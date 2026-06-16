@@ -407,13 +407,6 @@ router.post('/pedir-datos/:contactId', async (req, res) => {
         const BASE = (process.env.PUBLIC_APP_URL || 'https://app.dekoormx.com').replace(/\/$/, '');
         const link = `${BASE}/mty/${orderNumber}`;
 
-        // Nombre del contacto (para personalizar el saludo).
-        let nombre = '';
-        try {
-            const c = await db.collection('contacts_whatsapp').doc(contactId).get();
-            if (c.exists) { const cd = c.data(); nombre = cd.name || cd.nombre || cd.profileName || cd.pushName || ''; }
-        } catch (_) { /* opcional */ }
-
         // Si existe una respuesta rápida "Datos MTY" se usa (permite personalizar el
         // texto); si no, se manda un mensaje por defecto con el enlace.
         let messageText, fileUrl = null, fileType = null;
@@ -429,9 +422,7 @@ router.post('/pedir-datos/:contactId', async (req, res) => {
             fileUrl = q.fileUrl || null;
             fileType = q.fileType || null;
         } else {
-            const primer = (nombre || '').split(' ')[0];
-            const saludo = primer ? `Hola ${primer} 👋` : 'Hola 👋';
-            messageText = `${saludo}\nPara enviarte tu pedido *${orderNumber}* necesitamos tu dirección de entrega en Monterrey. Por favor llénala aquí:\n${link}\n\n¡Gracias! 🐘`;
+            messageText = `📦✨ Para enviarte tu pedido *${orderNumber}* necesitamos tu dirección de entrega en Nuevo León 📍🚚\n\nPor favor llénala en este enlace 👇😊\n${link}`;
         }
 
         const { sendAdvancedWhatsAppMessage } = require('../services');
