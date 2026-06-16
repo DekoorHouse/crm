@@ -197,6 +197,10 @@
         <div class="check"><i class="fas fa-check"></i></div>
         <h2>¡Gracias!</h2>
         <p id="thanksMsg">Tu dirección fue registrada correctamente.<br>Pronto recibirás tu pedido. 🐘</p>
+        <a id="waBtn" class="btn" href="#" style="margin-top:18px;background:#25D366;box-shadow:0 6px 18px rgba(37,211,102,.35);text-decoration:none;">
+          <i class="fab fa-whatsapp"></i> Avisar a Dekoor por WhatsApp
+        </a>
+        <p style="font-size:12.5px;color:var(--muted);margin-top:10px;">Te llevaremos a WhatsApp para confirmar tu envío 📲</p>
       </div>
     </div>
 
@@ -330,8 +334,15 @@
       if(d.success){
         form.style.display='none'; alertEl.style.display='none';
         if(d.updated) $('thanksMsg').innerHTML='Actualizamos tu dirección correctamente.<br>Pronto recibirás tu pedido. 🐘';
+        // Aviso a WhatsApp de Dekoor de que el cliente ya envió sus datos.
+        const ped=payload.numeroPedido;
+        const waMsg=`¡Hola Dekoor! 👋 Ya envié mis datos de envío 📦✅ para mi pedido ${ped} 🐘📍`;
+        const waLink='https://wa.me/526181333519?text='+encodeURIComponent(waMsg);
+        $('waBtn').href=waLink;
         thanks.classList.add('show');
         window.scrollTo({top:0,behavior:'smooth'});
+        // Redirección automática a WhatsApp (el botón queda como respaldo).
+        setTimeout(()=>{ window.location.href=waLink; }, 1500);
       }else{
         showAlert('error', d.message||'No se pudo guardar. Intenta de nuevo.');
         btn.disabled=false; btn.innerHTML=orig;
