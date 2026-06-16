@@ -13,7 +13,11 @@ function formatWhatsAppText(text) {
     safeText = safeText.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
     safeText = safeText.replace(/\n/g, '<br>');
 
-    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
+    // Excluir '<' del match para que la URL termine en cualquier tag HTML
+    // (ej. el <br> que reemplaza a \n). Sin esto, el regex se tragaba
+    // "<br><br>..." dentro del href y generaba links rotos como
+    // /jt-rastreo/<br><br>⚠️ al clickear mensajes en el chat.
+    const urlRegex = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/g;
     safeText = safeText.replace(urlRegex, (url) => {
         let href = url;
         if (!url.startsWith('http')) {
