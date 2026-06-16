@@ -384,4 +384,81 @@ router.delete('/admin/entrega/:id', requireAdmin, async (req, res) => {
     }
 });
 
+// --- CRM: enviar al cliente el enlace del formulario MTY (botón del chat) ----
+// Mismo patrón que /api/jt-guias/pedir-datos, pero manda el enlace /mty/DHxxxx
+// (entrega local) en vez de la guía nacional J&T.
+router.post('/pedir-datos/:contactId', async (req, res) => {
+    try {
+        const { contactId } = req.params;
+
+        // 1. Último pedido del contacto.
+        const ordersSnap = await db.collection('pedidos').where('telefono', '==', contactId).get();
+        if (ordersSnap.empty) {
+            return res.status(404).json({ success: false, message: 'Este contacto no tiene pedidos registrados.' });
+        }
+        const orders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(o => o.consecutiveOrderNumber)
+            .sort((a, b) => (b.consecutiveOrderNumber || 0) - (a.consecutiveOrderNumber || 0));
+        if (!orders.length) {
+            return res.status(404).json({ success: false, message: 'Este contacto no tiene pedidos con número.' });
+        }
+        const orderNumber = `DH${orders[0].consecutiveOrderNumber}`;
+
+        const BASE = (process.env.PUBLIC_APP_URL || 'https://app.dekoormx.com').replace(/\/$/, '');
+        const link = `${BASE}/mty/${orderNumber}`;
+
+        // Nombre del contacto (para personalizar el saludo).
+        let nombre = '';
+        try {
+            const c = await db.collection('contacts_whatsapp').doc(contactId).get();
+            if (c.exists) { const cd = c.data(); nombre = cd.name || cd.nombre || cd.profileName || cd.pushName || ''; }
+        } catch (_) { /* opcional */ }
+
+        // Si existe una respuesta rápida "Datos MTY" se usa (permite personalizar el
+        // texto); si no, se manda un mensaje por defecto con el enlace.
+        let messageText, fileUrl = null, fileType = null;
+        const allQrs = await db.collection('quick_replies').get();
+        let qr = allQrs.docs.find(d => (d.data().shortcut || '').toLowerCase() === 'datos mty');
+        if (!qr) qr = allQrs.docs.find(d => { const sc = (d.data().shortcut || '').toLowerCase(); return sc.includes('datos') && sc.includes('mty'); });
+        if (qr) {
+            const q = qr.data();
+            messageText = (q.message || '')
+                .replace(/\*\*/g, orderNumber)
+                .replace(/(https?:\/\/[^\/\s]+\/mty)\/?(?=\s|$)/gi, `$1/${orderNumber}`);
+            if (!/\/mty\//i.test(messageText)) messageText += `\n${link}`;
+            fileUrl = q.fileUrl || null;
+            fileType = q.fileType || null;
+        } else {
+            const primer = (nombre || '').split(' ')[0];
+            const saludo = primer ? `Hola ${primer} 👋` : 'Hola 👋';
+            messageText = `${saludo}\nPara enviarte tu pedido *${orderNumber}* necesitamos tu dirección de entrega en Monterrey. Por favor llénala aquí:\n${link}\n\n¡Gracias! 🐘`;
+        }
+
+        const { sendAdvancedWhatsAppMessage } = require('../services');
+        const sentData = await sendAdvancedWhatsAppMessage(contactId, { text: messageText, fileUrl, fileType });
+
+        const messageToSave = {
+            from: process.env.PHONE_NUMBER_ID,
+            status: 'sent',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: sentData?.id || null,
+            text: messageText,
+        };
+        if (fileUrl) messageToSave.fileUrl = fileUrl;
+        if (fileType) messageToSave.fileType = fileType;
+
+        await db.collection('contacts_whatsapp').doc(contactId).collection('messages').add(messageToSave);
+        await db.collection('contacts_whatsapp').doc(contactId).update({
+            lastMessage: messageText.substring(0, 100),
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            unreadCount: 0,
+        });
+
+        res.json({ success: true, orderNumber, link, message: 'Solicitud de datos MTY enviada correctamente.' });
+    } catch (error) {
+        console.error('[REPARTOS-MTY] pedir-datos', error);
+        res.status(500).json({ success: false, message: 'Error al enviar la solicitud de datos.', error: error.message });
+    }
+});
+
 module.exports = router;

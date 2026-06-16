@@ -178,6 +178,16 @@ export async function pedirDatosEnvio(contactId: string): Promise<{ orderNumber:
   return { orderNumber: data.orderNumber };
 }
 
+export async function pedirDatosMty(contactId: string): Promise<{ orderNumber: string }> {
+  const res = await fetch(`/api/repartos-mty/pedir-datos/${contactId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || "Error al enviar solicitud de datos MTY");
+  return { orderNumber: data.orderNumber };
+}
+
 export async function updateContact(contactId: string, fields: Record<string, unknown>): Promise<void> {
   const res = await fetch(`/api/contacts/${contactId}`, {
     method: "PUT",
