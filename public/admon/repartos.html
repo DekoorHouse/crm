@@ -54,13 +54,20 @@
 
   <div class="wrap">
     <div class="share">
-      <h2><i class="fas fa-share-nodes"></i> Enlace del formulario para clientes</h2>
+      <h2><i class="fas fa-share-nodes"></i> Enlace por pedido (recomendado)</h2>
+      <div class="linkrow">
+        <input id="pedidoInput" placeholder="DH12488" style="max-width:140px;" />
+        <input id="orderLink" readonly placeholder="Escribe el número de pedido →" />
+        <button class="btn sm" data-copy="orderLink"><i class="fas fa-copy"></i> Copiar</button>
+        <button class="btn sm gold" data-wa="orderLink"><i class="fab fa-whatsapp"></i></button>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);">Escribe el pedido del cliente y mándale este enlace. Al abrirlo trae solo (desde el CRM) su pedido, teléfono, contenido, fecha, precio y los comentarios de notas internas — el cliente solo confirma su teléfono y captura su dirección.</p>
+      <div style="border-top:1px solid var(--line);margin:12px 0;"></div>
+      <h2 style="margin-top:0;"><i class="fas fa-link"></i> Enlace genérico (el cliente teclea su pedido)</h2>
       <div class="linkrow">
         <input id="formLink" readonly />
-        <button class="btn sm" data-copy="formLink"><i class="fas fa-copy"></i> Copiar</button>
-        <button class="btn sm gold" data-wa="formLink"><i class="fab fa-whatsapp"></i></button>
+        <button class="btn sm ghost" data-copy="formLink"><i class="fas fa-copy"></i> Copiar</button>
       </div>
-      <p style="font-size:12.5px;color:var(--muted);">Mándalo a cada cliente de MTY. Ellos escriben su número de pedido (DH...) y su dirección. Las direcciones del día se agrupan solas en la tanda de hoy.</p>
     </div>
 
     <div class="tandas" id="tandas"></div>
@@ -75,6 +82,13 @@
   const origin=location.origin;
   const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   $('formLink').value=origin+'/mty';
+  const pedidoInput=$('pedidoInput'), orderLink=$('orderLink');
+  pedidoInput.addEventListener('input',()=>{
+    let v=pedidoInput.value.toUpperCase().replace(/[^0-9DH]/g,'');
+    if(/^\d/.test(v)) v='DH'+v;                 // si teclea solo números, anteponemos DH
+    pedidoInput.value=v;
+    orderLink.value = /^DH\d+$/.test(v) ? (origin+'/mty/'+v) : '';
+  });
   let detailCache={};
 
   function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
@@ -84,8 +98,8 @@
   function hoyMTY(){ return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Monterrey',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()); }
 
   document.body.addEventListener('click',(e)=>{
-    const c=e.target.closest('[data-copy]'); if(c){ copy($(c.dataset.copy).value); return; }
-    const w=e.target.closest('[data-wa]'); if(w){ window.open('https://wa.me/?text='+encodeURIComponent('Hola 👋 Para enviarte tu pedido, por favor llena tus datos aquí: '+$(w.dataset.wa).value),'_blank'); return; }
+    const c=e.target.closest('[data-copy]'); if(c){ const v=$(c.dataset.copy).value; if(!v){ toast('Escribe el número de pedido primero'); return; } copy(v); return; }
+    const w=e.target.closest('[data-wa]'); if(w){ const v=$(w.dataset.wa).value; if(!v){ toast('Escribe el número de pedido primero'); return; } window.open('https://wa.me/?text='+encodeURIComponent('Hola 👋 Para enviarte tu pedido, por favor llena tus datos aquí: '+v),'_blank'); return; }
   });
 
   function crewLink(t){ return origin+'/reparto/'+t.fecha+'?token='+t.token; }

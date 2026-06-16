@@ -40,7 +40,41 @@ function tsToMillis(ts) {
     return null;
 }
 
-// Busca el pedido en el CRM y extrae precio, comentarios, contenido y piezas.
+function fechaFromTs(ts) {
+    const ms = tsToMillis(ts);
+    if (!ms) return '';
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(ms));
+}
+
+// Junta las notas internas del contacto como "comentarios" de entrega.
+// Prioriza las notas que mencionan este pedido (ej: "DH12488 entregar antes de las 6").
+async function fetchNotasInternas(contactId, numeroPedido) {
+    if (!contactId) return '';
+    try {
+        const snap = await db.collection('contacts_whatsapp').doc(contactId).collection('notes').get();
+        if (snap.empty) return '';
+        const notas = snap.docs
+            .map(d => ({ text: String(d.data().text || '').trim(), ms: tsToMillis(d.data().timestamp) || 0 }))
+            .filter(n => n.text)
+            .sort((a, b) => a.ms - b.ms);
+        const digits = String(numeroPedido || '').replace(/\D/g, '');
+        const dhRe = digits ? new RegExp('DH?\\s*' + digits + '\\b', 'i') : null;
+        // Notas que mencionan este pedido (les quitamos el prefijo "DHxxxxx").
+        const propias = dhRe
+            ? notas.filter(n => dhRe.test(n.text)).map(n => n.text.replace(/DH?\s*\d+\s*[:\-]?\s*/i, '').trim()).filter(Boolean)
+            : [];
+        const elegidas = propias.length ? propias : notas.map(n => n.text);
+        return elegidas.join(' · ');
+    } catch (e) {
+        console.warn('[REPARTOS-MTY] notas', e.message);
+        return '';
+    }
+}
+
+// Busca el pedido en el CRM y extrae teléfono, precio, fecha, contenido,
+// piezas y los comentarios (notas internas) del contacto.
 async function lookupPedido(numero) {
     const digits = String(numero || '').replace(/\D/g, '');
     if (!digits) return null;
@@ -66,15 +100,34 @@ async function lookupPedido(numero) {
         piezas = data.items.reduce((s, it) => s + (parseInt(it.cantidad, 10) || 1), 0);
     }
 
-    const tel = String(data.telefono || '').replace(/\D/g, '').slice(-10);
+    const numeroPedido = 'DH' + digits;
+    const contactId = data.contactId || null;
+    const tel = String(data.telefono || data.contactId || '').replace(/\D/g, '').slice(-10);
+
+    // Nombre del cliente desde el contacto (defensivo ante distintos campos).
+    let nombre = '';
+    if (contactId) {
+        try {
+            const c = await db.collection('contacts_whatsapp').doc(contactId).get();
+            if (c.exists) {
+                const cd = c.data();
+                nombre = cd.name || cd.nombre || cd.profileName || cd.pushName || '';
+            }
+        } catch (_) { /* opcional */ }
+    }
+
+    const comentarios = await fetchNotasInternas(contactId, numeroPedido);
+
     return {
-        numeroPedido: 'DH' + digits,
+        numeroPedido,
         consecutiveOrderNumber: num,
         precio: Number(data.precio) || 0,
-        comentarios: data.comentarios || '',
+        comentarios,
         contenido,
         piezas,
+        fechaPedido: fechaFromTs(data.createdAt),
         telefono: tel,
+        nombre,
         telefonoMasked: tel.length >= 4 ? '••••••' + tel.slice(-4) : '',
     };
 }
@@ -126,13 +179,17 @@ router.get('/pedido/:numero', async (req, res) => {
                 message: 'No encontramos ese pedido. Verifica el número (ej: DH12488).',
             });
         }
-        // No exponemos precio ni teléfono completo al cliente.
+        // Datos del CRM para autollenar el formulario.
         res.json({
             success: true,
             numeroPedido: p.numeroPedido,
+            nombre: p.nombre,
+            telefono: p.telefono,
             contenido: p.contenido,
             piezas: p.piezas,
-            telefonoMasked: p.telefonoMasked,
+            precio: p.precio,
+            fechaPedido: p.fechaPedido,
+            comentarios: p.comentarios,
         });
     } catch (e) {
         console.error('[REPARTOS-MTY] lookup', e.message);
@@ -184,6 +241,7 @@ router.post('/', async (req, res) => {
             comentarios: crm.comentarios,
             contenido: crm.contenido,
             piezas: crm.piezas,
+            fechaPedido: crm.fechaPedido || '',
         };
 
         // Si el pedido ya tiene dirección registrada, la actualizamos (sin duplicar).

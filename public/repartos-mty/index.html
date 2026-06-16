@@ -27,8 +27,9 @@
        min-height:100vh;padding:24px 16px 48px;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:520px;margin:0 auto;}
   .brand{text-align:center;margin-bottom:18px;}
-  .brand img{height:64px;width:auto;filter:drop-shadow(0 2px 8px rgba(0,0,0,.25));}
-  .brand p{color:var(--cream);font-size:15px;margin-top:8px;opacity:.92;line-height:1.4;}
+  /* El logo es de color teal y se perdía sobre el fondo teal: lo volvemos blanco. */
+  .brand img{height:62px;width:auto;filter:brightness(0) invert(1) drop-shadow(0 2px 8px rgba(0,0,0,.3));}
+  .brand p{color:var(--cream);font-size:15px;margin-top:10px;opacity:.95;line-height:1.45;font-weight:500;}
   .card{background:var(--cream);border-radius:var(--radius-lg);padding:26px 22px;
         box-shadow:0 12px 40px rgba(0,0,0,.22);}
   .alert{display:none;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;
@@ -49,10 +50,22 @@
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
   .hint{font-size:12.5px;margin-top:5px;min-height:14px;color:var(--muted);}
   .hint.error{color:var(--err);} .hint.ok{color:var(--ok);}
-  .pedido-box{background:#fff;border:1.5px dashed var(--gold);border-radius:13px;
-              padding:12px 14px;margin-bottom:14px;font-size:14px;display:none;}
-  .pedido-box.show{display:block;}
-  .pedido-box strong{color:var(--teal);}
+  /* Tarjeta de resumen del pedido (datos del CRM, sólo lectura). */
+  .resumen{background:#fff;border:1.5px solid var(--gold);border-radius:14px;
+           padding:6px 14px;margin-bottom:14px;display:none;}
+  .resumen.show{display:block;}
+  .resumen .r{display:flex;justify-content:space-between;align-items:center;gap:10px;
+              padding:8px 0;border-bottom:1px dashed #ecdfc9;font-size:14px;}
+  .resumen .r:last-child{border-bottom:none;}
+  .resumen .r span{color:var(--muted);font-weight:500;}
+  .resumen .r b{color:var(--teal);font-weight:700;text-align:right;}
+  .resumen .r.precio b{color:var(--primary);font-size:16px;}
+  .resumen-title{font-size:12px;font-weight:700;color:var(--gold);text-transform:uppercase;
+                 letter-spacing:.5px;padding:10px 0 2px;}
+  /* Campo sólo lectura (autollenado, no editable). */
+  .inputwrap.readonly{background:#efe7da;border-style:dashed;border-color:#e0d2bb;}
+  .inputwrap.readonly input{color:#5a6a70;cursor:default;}
+  .editable-hint{font-size:12px;color:var(--gold);margin-top:5px;font-weight:600;}
   .btn{width:100%;border:none;border-radius:14px;padding:16px;font-family:inherit;
        font-size:16px;font-weight:700;cursor:pointer;color:#fff;background:var(--primary);
        margin-top:8px;display:flex;align-items:center;justify-content:center;gap:9px;
@@ -88,7 +101,21 @@
           <div class="hint" id="pedidoHint"></div>
         </div>
 
-        <div class="pedido-box" id="pedidoBox"></div>
+        <div class="resumen" id="resumen">
+          <div class="resumen-title">Datos de tu pedido</div>
+          <div class="r"><span>Pedido</span><b id="rPedido">—</b></div>
+          <div class="r"><span>Contenido</span><b id="rContenido">—</b></div>
+          <div class="r"><span>Piezas</span><b id="rPiezas">—</b></div>
+          <div class="r"><span>Fecha</span><b id="rFecha">—</b></div>
+          <div class="r precio"><span>Precio</span><b id="rPrecio">—</b></div>
+        </div>
+
+        <div class="field" id="comentariosField" style="display:none;">
+          <label for="comentarios">Comentarios (registrados en tu pedido)</label>
+          <div class="inputwrap readonly"><i class="fas fa-circle-info"></i>
+            <input type="text" id="comentarios" readonly tabindex="-1" />
+          </div>
+        </div>
 
         <div class="field">
           <label for="nombre">Nombre <span class="req">*</span></label>
@@ -102,6 +129,7 @@
           <div class="inputwrap"><i class="fas fa-phone"></i>
             <input type="tel" id="telefono" placeholder="8112345678" maxlength="10" inputmode="numeric" pattern="[0-9]{10}" required />
           </div>
+          <div class="editable-hint"><i class="fas fa-pen"></i> Puedes cambiarlo si recibes en otro número.</div>
         </div>
 
         <div class="field">
@@ -182,8 +210,10 @@
   const $ = id => document.getElementById(id);
   const form=$('form'), btn=$('btn'), alertEl=$('alert'), thanks=$('thanks');
   const cpInput=$('cp'), coloniaSel=$('colonia'), cpHint=$('cpHint');
-  const orderInput=$('numeroPedido'), pedidoHint=$('pedidoHint'), pedidoBox=$('pedidoBox');
+  const orderInput=$('numeroPedido'), pedidoHint=$('pedidoHint'), resumen=$('resumen');
   let pedidoOk=false, verifyTimer=null, coloniaManual=false;
+  const money=n=>'$'+(Number(n)||0).toLocaleString('es-MX');
+  function fmtFecha(f){ if(!f) return '—'; try{ const [y,mo,d]=f.split('-').map(Number); return new Date(y,mo-1,d).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'}); }catch(e){ return f; } }
 
   function showAlert(type,msg){
     alertEl.className='alert '+type;
@@ -204,7 +234,8 @@
 
   orderInput.addEventListener('input', ()=>{
     orderInput.value = orderInput.value.toUpperCase();
-    pedidoOk=false; pedidoBox.classList.remove('show'); pedidoHint.textContent=''; pedidoHint.className='hint';
+    pedidoOk=false; resumen.classList.remove('show'); $('comentariosField').style.display='none';
+    pedidoHint.textContent=''; pedidoHint.className='hint';
     clearTimeout(verifyTimer);
     const v=orderInput.value.trim();
     if(!v) return;
@@ -220,9 +251,19 @@
       if(d.success){
         pedidoOk=true;
         pedidoHint.textContent='Pedido encontrado ✓'; pedidoHint.className='hint ok';
-        let html='<strong>'+esc(d.numeroPedido)+'</strong> · '+esc(d.contenido||'Pedido')+(d.piezas>1?(' · '+d.piezas+' piezas'):'');
-        if(d.telefonoMasked) html+='<br><span style="color:#7c8a91;font-size:13px;">Tel. registrado: '+esc(d.telefonoMasked)+'</span>';
-        pedidoBox.innerHTML=html; pedidoBox.classList.add('show');
+        // Resumen sólo lectura con los datos del CRM.
+        $('rPedido').textContent=d.numeroPedido||orderInput.value;
+        $('rContenido').textContent=d.contenido||'—';
+        $('rPiezas').textContent=d.piezas||1;
+        $('rFecha').textContent=fmtFecha(d.fechaPedido);
+        $('rPrecio').textContent=d.precio?money(d.precio):'—';
+        resumen.classList.add('show');
+        // Comentarios desde las notas internas del CRM (sólo lectura).
+        if(d.comentarios){ $('comentarios').value=d.comentarios; $('comentariosField').style.display='block'; }
+        else { $('comentariosField').style.display='none'; }
+        // Teléfono y nombre prellenados (editables) sin pisar lo que el cliente ya escribió.
+        if(d.telefono && !$('telefono').value) $('telefono').value=d.telefono;
+        if(d.nombre && !$('nombre').value) $('nombre').value=d.nombre;
       }else{
         pedidoOk=false;
         pedidoHint.textContent=d.message||'No encontramos ese pedido.'; pedidoHint.className='hint error';
