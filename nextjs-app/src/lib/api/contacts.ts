@@ -188,6 +188,16 @@ export async function pedirDatosMty(contactId: string): Promise<{ orderNumber: s
   return { orderNumber: data.orderNumber };
 }
 
+export async function pedirDatosDgo(contactId: string): Promise<{ orderNumber: string }> {
+  const res = await fetch(`/api/repartos-dgo/pedir-datos/${contactId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || "Error al enviar solicitud de datos DGO");
+  return { orderNumber: data.orderNumber };
+}
+
 export async function updateContact(contactId: string, fields: Record<string, unknown>): Promise<void> {
   const res = await fetch(`/api/contacts/${contactId}`, {
     method: "PUT",

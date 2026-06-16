@@ -243,6 +243,28 @@ async function handlePedirDatosMty() {
 }
 
 /**
+ * Envía al cliente el enlace del formulario de entrega local en Durango (DGO).
+ * El registro cae directo en la app del repartidor (colección entregas_repartidor).
+ */
+async function handlePedirDatosDgo() {
+    if (!state.selectedContactId) return;
+    const ok = await showConfirmModal("¿Enviar al cliente el enlace del formulario de entrega local en Durango (DGO) para su último pedido?", { icon: 'two_wheeler', confirmText: 'Enviar' });
+    if (!ok) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/repartos-dgo/pedir-datos/${state.selectedContactId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || 'Error al enviar solicitud');
+        showError(`Enlace DGO enviado para pedido ${result.orderNumber || ''}`.trim(), 'success');
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+/**
  * Cancela la guía J&T activa del último pedido del contacto seleccionado.
  */
 async function handleCancelarGuiaEnvio() {
@@ -1803,6 +1825,7 @@ window.handleMarkAsPurchase = handleMarkAsPurchase;
 window.handleMarkAsRegistration = handleMarkAsRegistration; // Mantener si aún se usa
 window.handleSendViewContent = handleSendViewContent;
 window.handlePedirDatosEnvio = handlePedirDatosEnvio;
+window.handlePedirDatosDgo = handlePedirDatosDgo;
 window.handleCancelarGuiaEnvio = handleCancelarGuiaEnvio;
 window.handleGenerarOxxo = handleGenerarOxxo;
 window.handleSaveOrder = handleSaveOrder;

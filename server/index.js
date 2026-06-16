@@ -13,6 +13,7 @@ const carritosRouter = require('./carritos/carritosRoutes');
 const jtGuiasRouter = require('./jt/jtRoutes');
 const leadsRouter = require('./leads/leadReactivationRoutes');
 const repartosMtyRouter = require('./repartos/repartosRoutes');
+const repartosDgoRouter = require('./repartos/dgoRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
 const { startCartRecoveryScheduler } = require('./carritos/carritosScheduler');
@@ -55,6 +56,7 @@ app.use('/api/carritos-abandonados', carritosRouter);
 app.use('/api/jt-guias', jtGuiasRouter);
 app.use('/api/leads', leadsRouter);
 app.use('/api/repartos-mty', repartosMtyRouter);
+app.use('/api/repartos-dgo', repartosDgoRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
 
 // --- Facebook Login for Business (OAuth para App Review) ---
@@ -320,6 +322,13 @@ app.get(['/mty', '/mty/:pedido'], (req, res) => {
 // Vista del repartidor: la tanda del día (protegida por token en la URL).
 app.get('/reparto/:fecha', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'repartos-mty', 'reparto.html'));
+});
+
+// --- Repartos DGO (entregas locales en Durango) ---
+// Formulario público para que el cliente mande su dirección + ubicación.
+// Cae directo en la colección `entregas_repartidor` que escucha la app.
+app.get(['/dgo', '/dgo/:pedido'], (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'repartos-dgo', 'index.html'));
 });
 // Panel admin (protegido por la session cookie de /admon).
 app.get('/admon/repartos', (req, res) => {

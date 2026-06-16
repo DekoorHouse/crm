@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#1B4D5C" />
+<meta property="og:title" content="Datos de entrega | Dekoor" />
+<meta property="og:description" content="Compártenos tu dirección para enviarte tu pedido." />
+<meta property="og:image" content="https://app.dekoormx.com/sitio/img/og-logo.png" />
+<meta property="og:type" content="website" />
+<title>Datos de entrega | Dekoor</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Pacifico&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --teal:#1B4D5C; --teal-dark:#143b47; --cream:#FAF0E6; --cream-field:#F3E9DC;
+    --gold:#C9A24B; --primary:#D4722C; --white:#fff; --ink:#1B4D5C;
+    --ok:#1B8E3C; --err:#c0392b; --muted:#7c8a91;
+    --radius:16px; --radius-lg:22px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Outfit',system-ui,sans-serif;background:var(--teal);color:var(--ink);
+       min-height:100vh;padding:24px 16px 48px;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:520px;margin:0 auto;}
+  .brand{text-align:center;margin-bottom:18px;}
+  .brand img{height:62px;width:auto;filter:brightness(0) invert(1) drop-shadow(0 2px 8px rgba(0,0,0,.3));}
+  .brand p{color:var(--cream);font-size:15px;margin-top:10px;opacity:.95;line-height:1.45;font-weight:500;}
+  .card{background:var(--cream);border-radius:var(--radius-lg);padding:26px 22px;
+        box-shadow:0 12px 40px rgba(0,0,0,.22);}
+  .alert{display:none;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;
+         font-size:14px;margin-bottom:16px;line-height:1.4;}
+  .alert.error{background:#fdecea;color:var(--err);border:1px solid #f5c6cb;}
+  .alert.success{background:#e8f6ec;color:var(--ok);border:1px solid #b7e0c2;}
+  .field{margin-bottom:14px;min-width:0;}
+  .field label{display:block;font-size:13px;font-weight:600;color:var(--teal);margin-bottom:6px;}
+  .field .req{color:var(--primary);}
+  .inputwrap{display:flex;align-items:center;gap:10px;background:var(--cream-field);
+             border:1.5px solid transparent;border-radius:13px;padding:0 14px;transition:border-color .15s;}
+  .inputwrap:focus-within{border-color:var(--gold);background:#fff;}
+  .inputwrap i{color:var(--teal);font-size:15px;width:18px;text-align:center;opacity:.8;}
+  .inputwrap input, .inputwrap select{flex:1;border:none;background:transparent;outline:none;
+             font-family:inherit;font-size:15.5px;color:var(--ink);padding:13px 0;min-width:0;}
+  .inputwrap input::placeholder{color:#a99f90;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .hint{font-size:12.5px;margin-top:5px;min-height:14px;color:var(--muted);}
+  .hint.error{color:var(--err);} .hint.ok{color:var(--ok);}
+  .resumen{background:#fff;border:1.5px solid var(--gold);border-radius:14px;
+           padding:6px 14px;margin-bottom:14px;display:none;}
+  .resumen.show{display:block;}
+  .resumen .r{display:flex;justify-content:space-between;align-items:center;gap:10px;
+              padding:8px 0;border-bottom:1px dashed #ecdfc9;font-size:14px;}
+  .resumen .r:last-child{border-bottom:none;}
+  .resumen .r span{color:var(--muted);font-weight:500;}
+  .resumen .r b{color:var(--teal);font-weight:700;text-align:right;}
+  .resumen .r.precio b{color:var(--primary);font-size:16px;}
+  .resumen-title{font-size:12px;font-weight:700;color:var(--gold);text-transform:uppercase;
+                 letter-spacing:.5px;padding:10px 0 2px;}
+  .inputwrap.readonly{background:#efe7da;border-style:dashed;border-color:#e0d2bb;}
+  .inputwrap.readonly input{color:#5a6a70;cursor:default;}
+  .editable-hint{font-size:12px;color:var(--gold);margin-top:5px;font-weight:600;}
+  /* --- Buscador de sugerencias (Google Places) --- */
+  .searchwrap{position:relative;margin-bottom:10px;}
+  .resultados{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;
+              border:1px solid #e5dcc9;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.18);
+              z-index:1200;max-height:240px;overflow-y:auto;display:none;}
+  .resultados.show{display:block;}
+  .resultados .item{padding:11px 14px;cursor:pointer;border-bottom:1px solid #f3ece0;
+                    font-size:13.5px;line-height:1.35;}
+  .resultados .item:last-child{border-bottom:none;}
+  .resultados .item:active,.resultados .item:hover{background:#faf3e6;}
+  .resultados .empty{padding:11px 14px;color:var(--muted);font-size:13px;}
+  /* --- Mapa --- */
+  .mapsection{background:#fff;border:1.5px solid var(--gold);border-radius:16px;padding:14px;margin-bottom:14px;}
+  .mapsection h3{font-size:13px;font-weight:700;color:var(--teal);margin-bottom:4px;display:flex;align-items:center;gap:7px;}
+  .mapsection .sub{font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.4;}
+  #map{height:240px;border-radius:12px;z-index:0;}
+  #coords{font-size:12.5px;margin-top:8px;font-weight:600;}
+  #coords.set{color:var(--ok);} #coords.unset{color:var(--primary);}
+  .btn-ubicar{width:100%;margin-top:10px;border:1.5px solid var(--teal);background:#fff;color:var(--teal);
+              border-radius:12px;padding:11px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;
+              display:flex;align-items:center;justify-content:center;gap:8px;}
+  .btn-ubicar:active{background:#f0f7f9;}
+  .btn{width:100%;border:none;border-radius:14px;padding:16px;font-family:inherit;
+       font-size:16px;font-weight:700;cursor:pointer;color:#fff;background:var(--primary);
+       margin-top:8px;display:flex;align-items:center;justify-content:center;gap:9px;
+       transition:transform .08s, opacity .15s;box-shadow:0 6px 18px rgba(212,114,44,.35);}
+  .btn:hover{transform:translateY(-1px);} .btn:active{transform:translateY(0);}
+  .btn:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none;}
+  .footnote{text-align:center;color:var(--cream);font-size:12.5px;margin-top:20px;opacity:.7;}
+  .thanks{display:none;text-align:center;padding:18px 6px;}
+  .thanks.show{display:block;}
+  .thanks .check{width:74px;height:74px;border-radius:50%;background:#e8f6ec;color:var(--ok);
+       display:flex;align-items:center;justify-content:center;font-size:36px;margin:6px auto 16px;}
+  .thanks h2{color:var(--teal);font-size:22px;margin-bottom:8px;}
+  .thanks p{color:#5a6a70;font-size:15px;line-height:1.5;}
+  @media(max-width:380px){ .row2{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor" />
+      <p>Para poder enviarte tu pedido,<br>por favor compártenos tus datos.</p>
+    </div>
+
+    <div class="card">
+      <div id="alert" class="alert"></div>
+
+      <form id="form" autocomplete="on">
+        <div class="field">
+          <label for="numeroPedido">Número de pedido <span class="req">*</span></label>
+          <div class="inputwrap"><i class="fas fa-hashtag"></i>
+            <input type="text" id="numeroPedido" placeholder="DH12488" autocomplete="off" required />
+          </div>
+          <div class="hint" id="pedidoHint"></div>
+        </div>
+
+        <div class="resumen" id="resumen">
+          <div class="resumen-title">Datos de tu pedido</div>
+          <div class="r"><span>Pedido</span><b id="rPedido">—</b></div>
+          <div class="r"><span>Contenido</span><b id="rContenido">—</b></div>
+          <div class="r"><span>Piezas</span><b id="rPiezas">—</b></div>
+          <div class="r"><span>Fecha</span><b id="rFecha">—</b></div>
+          <div class="r precio"><span>Precio</span><b id="rPrecio">—</b></div>
+        </div>
+
+        <div class="field" id="comentariosField" style="display:none;">
+          <label for="comentarios">Comentarios (registrados en tu pedido)</label>
+          <div class="inputwrap readonly"><i class="fas fa-circle-info"></i>
+            <input type="text" id="comentarios" readonly tabindex="-1" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="nombre">Nombre <span class="req">*</span></label>
+          <div class="inputwrap"><i class="fas fa-user"></i>
+            <input type="text" id="nombre" placeholder="Nombre completo" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="telefono">Teléfono <span class="req">*</span></label>
+          <div class="inputwrap"><i class="fas fa-phone"></i>
+            <input type="tel" id="telefono" placeholder="6181234567" maxlength="10" inputmode="numeric" pattern="[0-9]{10}" required />
+          </div>
+          <div class="editable-hint"><i class="fas fa-pen"></i> Puedes cambiarlo si recibes en otro número.</div>
+        </div>
+
+        <!-- Buscador de sugerencias (rellena los campos y marca el mapa) -->
+        <div class="field">
+          <label for="buscar">Busca tu dirección (sugerencias)</label>
+          <div class="searchwrap">
+            <div class="inputwrap"><i class="fas fa-magnifying-glass"></i>
+              <input type="text" id="buscar" placeholder="Empieza a escribir tu calle o colonia…" autocomplete="off" />
+            </div>
+            <div id="resultados" class="resultados"></div>
+          </div>
+          <div class="hint">Elige una sugerencia y se llenan los campos, o escríbelos tú mismo abajo.</div>
+        </div>
+
+        <div class="field">
+          <label for="calle">Calle <span class="req">*</span></label>
+          <div class="inputwrap"><i class="fas fa-road"></i>
+            <input type="text" id="calle" placeholder="Nombre de la calle" required />
+          </div>
+        </div>
+
+        <div class="row2">
+          <div class="field">
+            <label for="numExterior">No. exterior</label>
+            <div class="inputwrap"><i class="fas fa-house"></i>
+              <input type="text" id="numExterior" placeholder="123" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="numInterior">No. interior</label>
+            <div class="inputwrap"><i class="fas fa-door-closed"></i>
+              <input type="text" id="numInterior" placeholder="Depto / Int." />
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="colonia">Colonia <span class="req">*</span></label>
+          <div class="inputwrap"><i class="fas fa-building"></i>
+            <input type="text" id="colonia" placeholder="Nombre de tu colonia" required />
+          </div>
+        </div>
+
+        <div class="row2">
+          <div class="field">
+            <label for="cp">Código postal</label>
+            <div class="inputwrap"><i class="fas fa-envelope"></i>
+              <input type="text" id="cp" placeholder="34000" maxlength="5" inputmode="numeric" pattern="[0-9]{5}" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="ciudad">Ciudad</label>
+            <div class="inputwrap"><i class="fas fa-city"></i>
+              <input type="text" id="ciudad" value="Durango" />
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="entreCalles">Entre calles</label>
+          <div class="inputwrap"><i class="fas fa-code-fork"></i>
+            <input type="text" id="entreCalles" placeholder="Calle 1 y Calle 2" />
+          </div>
+        </div>
+
+        <!-- Mapa: se detecta solo desde lo que escribes; puedes mover el pin -->
+        <div class="mapsection">
+          <h3><i class="fas fa-map-location-dot" style="color:var(--primary)"></i> Ubicación de tu entrega <span class="req" style="color:var(--primary)">*</span></h3>
+          <p class="sub">Detectamos el punto desde tu dirección. Verifica que esté bien y, si hace falta, <b>toca el mapa</b> o <b>arrastra el pin</b> al lugar exacto.</p>
+          <div id="map"></div>
+          <div id="coords" class="unset">Sin ubicación todavía — escribe tu dirección, búscala arriba, o toca el mapa.</div>
+          <button type="button" id="btnUbicar" class="btn-ubicar"><i class="fas fa-location-crosshairs"></i> Ubicar mi dirección en el mapa</button>
+        </div>
+
+        <div class="field">
+          <label for="referencia">Referencia / indicaciones</label>
+          <div class="inputwrap"><i class="fas fa-location-dot"></i>
+            <input type="text" id="referencia" placeholder="Color de casa, fachada, dejar con..." />
+          </div>
+        </div>
+
+        <button type="submit" class="btn" id="btn">
+          <i class="fas fa-paper-plane"></i> Enviar mis datos
+        </button>
+      </form>
+
+      <div class="thanks" id="thanks">
+        <div class="check"><i class="fas fa-check"></i></div>
+        <h2>¡Gracias!</h2>
+        <p id="thanksMsg">Tu dirección fue registrada correctamente.<br>Pronto recibirás tu pedido. 🐘</p>
+      </div>
+    </div>
+
+    <p class="footnote">Dekoor · Custom Gift Store</p>
+  </div>
+
+<script src="/env-config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>window.gmapsReady = new Promise(function (r) { window.__gmapsReady = r; });</script>
+<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDqizDSGdFFplpeUYxRMoFlfVejIhHcJ7E&libraries=places&language=es&region=MX&loading=async&callback=__gmapsReady"></script>
+<script>
+(function(){
+  const API = window.API_BASE_URL || '';
+  const $ = id => document.getElementById(id);
+  const form=$('form'), btn=$('btn'), alertEl=$('alert'), thanks=$('thanks');
+  const orderInput=$('numeroPedido'), pedidoHint=$('pedidoHint'), resumen=$('resumen');
+  const DGO = { lat: 24.0277, lng: -104.6532 }; // centro de Durango
+  let pedidoOk=false, verifyTimer=null, picked=null, marker=null, geocoder=null, geoTimer=null;
+  let placesLib=null, suggestToken=null, predsActuales=[], pinManual=false;
+
+  const money=n=>'$'+(Number(n)||0).toLocaleString('es-MX');
+  function fmtFecha(f){ if(!f) return '—'; try{ const [y,mo,d]=f.split('-').map(Number); return new Date(y,mo-1,d).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'}); }catch(e){ return f; } }
+  function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+  function val(id){ return $(id).value.trim(); }
+
+  function showAlert(type,msg){
+    alertEl.className='alert '+type;
+    alertEl.innerHTML='<i class="fas fa-'+(type==='success'?'check-circle':'exclamation-circle')+'"></i><span>'+msg+'</span>';
+    alertEl.style.display='flex';
+    if(type==='error') alertEl.scrollIntoView({behavior:'smooth',block:'center'});
+  }
+
+  // ---------- Mapa (Leaflet / OpenStreetMap) ----------
+  const map = L.map('map').setView([DGO.lat, DGO.lng], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
+  setTimeout(()=>map.invalidateSize(), 300);
+  map.on('click', e => { pinManual=true; setPunto(e.latlng.lat, e.latlng.lng, 'pin movido a mano'); });
+
+  function setPunto(lat, lng, nota){
+    picked = { lat, lng };
+    if(marker) marker.setLatLng([lat,lng]);
+    else{
+      marker = L.marker([lat,lng], { draggable:true }).addTo(map);
+      marker.on('dragend', ()=>{ const p=marker.getLatLng(); pinManual=true; picked={lat:p.lat,lng:p.lng}; pintarCoords('pin ajustado a mano'); });
+    }
+    pintarCoords(nota);
+  }
+  function pintarCoords(nota){
+    const c=$('coords');
+    if(picked){ c.className='set'; c.innerHTML='<i class="fas fa-circle-check"></i> Ubicación lista'+(nota?' · '+esc(nota):''); }
+    else{ c.className='unset'; c.textContent='Sin ubicación todavía — escribe tu dirección o búscala arriba.'; }
+  }
+
+  // ---------- Prefill del número de pedido desde /dgo/DH12488 ----------
+  const m = window.location.pathname.match(/\/dgo\/(DH\d+)/i);
+  if(m){
+    orderInput.value = m[1].toUpperCase();
+    orderInput.readOnly = true;
+    orderInput.style.fontWeight='700';
+    setTimeout(()=>verificarPedido(orderInput.value), 250);
+  }
+
+  orderInput.addEventListener('input', ()=>{
+    orderInput.value = orderInput.value.toUpperCase();
+    pedidoOk=false; resumen.classList.remove('show'); $('comentariosField').style.display='none';
+    pedidoHint.textContent=''; pedidoHint.className='hint';
+    clearTimeout(verifyTimer);
+    const v=orderInput.value.trim();
+    if(!v) return;
+    if(!/^DH\d+$/i.test(v)){ pedidoHint.textContent='Debe empezar con DH y números (ej: DH12488).'; pedidoHint.className='hint error'; return; }
+    verifyTimer=setTimeout(()=>verificarPedido(v), 550);
+  });
+
+  async function verificarPedido(numero){
+    pedidoHint.textContent='Verificando pedido...'; pedidoHint.className='hint';
+    try{
+      const r=await fetch(API+'/api/repartos-dgo/pedido/'+encodeURIComponent(numero));
+      const d=await r.json();
+      if(d.success){
+        pedidoOk=true;
+        pedidoHint.textContent='Pedido encontrado ✓'; pedidoHint.className='hint ok';
+        $('rPedido').textContent=d.numeroPedido||orderInput.value;
+        $('rContenido').textContent=d.contenido||'—';
+        $('rPiezas').textContent=d.piezas||1;
+        $('rFecha').textContent=fmtFecha(d.fechaPedido);
+        $('rPrecio').textContent=d.precio?money(d.precio):'—';
+        resumen.classList.add('show');
+        if(d.comentarios){ $('comentarios').value=d.comentarios; $('comentariosField').style.display='block'; }
+        else { $('comentariosField').style.display='none'; }
+        if(d.telefono && !$('telefono').value) $('telefono').value=d.telefono;
+        if(d.nombre && !$('nombre').value) $('nombre').value=d.nombre;
+      }else{
+        pedidoOk=false;
+        pedidoHint.textContent=d.message||'No encontramos ese pedido.'; pedidoHint.className='hint error';
+      }
+    }catch(e){ pedidoHint.textContent='Error al verificar. Intenta de nuevo.'; pedidoHint.className='hint error'; }
+  }
+
+  // ---------- Google: sugerencias (Places) + geocodificar texto ----------
+  if(window.gmapsReady) window.gmapsReady.then(initGoogle);
+  async function initGoogle(){
+    try{
+      placesLib = await google.maps.importLibrary('places');
+      const geoLib = await google.maps.importLibrary('geocoding');
+      geocoder = new geoLib.Geocoder();
+      nuevaSesion();
+    }catch(e){ console.error('No se pudo cargar Google Maps', e); }
+  }
+  function nuevaSesion(){ if(placesLib) suggestToken = new placesLib.AutocompleteSessionToken(); }
+
+  const inputBuscar=$('buscar'), boxResultados=$('resultados');
+  let buscarTimer=null;
+  inputBuscar.addEventListener('input', ()=>{
+    clearTimeout(buscarTimer);
+    const q=inputBuscar.value.trim();
+    if(q.length<3){ ocultarResultados(); return; }
+    buscarTimer=setTimeout(()=>buscar(q), 300);
+  });
+  inputBuscar.addEventListener('keydown', e=>{ if(e.key==='Escape') ocultarResultados(); if(e.key==='Enter'){ e.preventDefault(); clearTimeout(buscarTimer); buscar(inputBuscar.value.trim()); } });
+  document.addEventListener('click', e=>{ if(!e.target.closest('.searchwrap')) ocultarResultados(); });
+
+  async function buscar(q){
+    if(!q || q.length<3) return;
+    if(!placesLib){ boxResultados.innerHTML='<div class="empty">Cargando buscador…</div>'; boxResultados.classList.add('show'); return; }
+    boxResultados.innerHTML='<div class="empty">Buscando…</div>'; boxResultados.classList.add('show');
+    try{
+      const { suggestions } = await placesLib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input:q, sessionToken:suggestToken, includedRegionCodes:['mx'],
+        locationBias:{ center:{ lat:DGO.lat, lng:DGO.lng }, radius:50000 }, language:'es', region:'mx'
+      });
+      predsActuales=(suggestions||[]).map(s=>s.placePrediction).filter(Boolean);
+      if(predsActuales.length){
+        boxResultados.innerHTML=predsActuales.map((p,i)=>
+          '<div class="item" data-i="'+i+'"><b>'+esc(p.mainText?p.mainText.text:p.text.text)+'</b> '
+          +'<span style="color:#7c8a91">'+esc(p.secondaryText?p.secondaryText.text:'')+'</span></div>').join('');
+        boxResultados.querySelectorAll('.item').forEach(el=>el.addEventListener('click', ()=>elegirResultado(predsActuales[+el.dataset.i])));
+      } else boxResultados.innerHTML='<div class="empty">Sin coincidencias. Escribe tu dirección abajo.</div>';
+    }catch(e){ boxResultados.innerHTML='<div class="empty">Buscador no disponible. Escribe tu dirección abajo.</div>'; }
+  }
+
+  function comp(components, type){
+    const c=(components||[]).find(x=>(x.types||[]).includes(type));
+    return c ? (c.longText || c.long_name || c.shortText || '') : '';
+  }
+
+  async function elegirResultado(pred){
+    try{
+      const place = pred.toPlace();
+      await place.fetchFields({ fields:['location','formattedAddress','addressComponents'] });
+      const lat=place.location.lat(), lng=place.location.lng();
+      const ac=place.addressComponents||[];
+      const calle=comp(ac,'route'), numExt=comp(ac,'street_number');
+      const colonia=comp(ac,'sublocality_level_1')||comp(ac,'neighborhood')||comp(ac,'sublocality');
+      const cp=comp(ac,'postal_code');
+      const ciudad=comp(ac,'locality')||comp(ac,'administrative_area_level_2');
+      if(calle) $('calle').value=calle;
+      if(numExt) $('numExterior').value=numExt;
+      if(colonia) $('colonia').value=colonia;
+      if(cp) $('cp').value=cp.replace(/\D/g,'').slice(0,5);
+      if(ciudad) $('ciudad').value=ciudad;
+      pinManual=false;
+      map.setView([lat,lng], 17);
+      setPunto(lat,lng,'desde tu búsqueda');
+    }catch(e){ console.error(e); }
+    nuevaSesion();
+    ocultarResultados();
+    inputBuscar.value='';
+  }
+  function ocultarResultados(){ boxResultados.classList.remove('show'); boxResultados.innerHTML=''; }
+
+  // Geocodifica lo que el cliente escribió en los campos.
+  function direccionTexto(){
+    const calle=val('calle'), numExt=val('numExterior'), colonia=val('colonia'), cp=val('cp'), ciudad=val('ciudad')||'Durango';
+    if(!calle) return '';
+    return [ [calle,numExt].filter(Boolean).join(' '), colonia, cp, ciudad+', Durango', 'México' ].filter(Boolean).join(', ');
+  }
+  async function geocodificar(auto){
+    const dir=direccionTexto();
+    if(!dir){ if(!auto) showAlert('error','Escribe al menos tu calle y colonia para ubicarte en el mapa.'); return; }
+    if(!geocoder){ if(!auto) showAlert('error','El mapa aún está cargando, intenta en un momento.'); return; }
+    const c=$('coords'); c.className='unset'; c.innerHTML='<i class="fas fa-spinner fa-spin"></i> Buscando tu dirección en el mapa…';
+    try{
+      // Si el geocodificador no responde (red lenta o falla), no dejamos al
+      // cliente atorado: a los 8s lo soltamos para que marque el punto a mano.
+      const timeout = new Promise((_, rej)=>setTimeout(()=>rej(new Error('timeout')), 8000));
+      const { results } = await Promise.race([
+        geocoder.geocode({ address:dir, componentRestrictions:{ country:'mx' } }),
+        timeout,
+      ]);
+      if(results && results.length){
+        const loc=results[0].geometry.location;
+        pinManual=false;
+        map.setView([loc.lat(), loc.lng()], 16);
+        setPunto(loc.lat(), loc.lng(), 'detectada desde tu dirección');
+      } else { pintarCoords(); if(!auto) showAlert('error','No encontramos esa dirección. Toca el mapa para marcar tu ubicación.'); }
+    }catch(e){ pintarCoords(); if(!auto) showAlert('error','No pudimos ubicar la dirección. Toca el mapa para marcar tu ubicación.'); }
+  }
+  $('btnUbicar').addEventListener('click', ()=>geocodificar(false));
+
+  // Auto-detección: al salir de colonia/CP/calle, si el cliente no movió el pin a mano.
+  ['calle','numExterior','colonia','cp'].forEach(id=>{
+    $(id).addEventListener('change', ()=>{
+      clearTimeout(geoTimer);
+      if(pinManual) return;
+      if(!val('calle') || (!val('colonia') && !val('cp'))) return;
+      geoTimer=setTimeout(()=>geocodificar(true), 400);
+    });
+  });
+
+  // ---------- Enviar ----------
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    alertEl.style.display='none';
+    const payload={
+      numeroPedido: orderInput.value.trim().toUpperCase(),
+      nombre: val('nombre'),
+      telefono: $('telefono').value.replace(/\D/g,''),
+      calle: val('calle'),
+      numExterior: val('numExterior'),
+      numInterior: val('numInterior'),
+      entreCalles: val('entreCalles'),
+      colonia: val('colonia'),
+      cp: $('cp').value.replace(/\D/g,''),
+      ciudad: val('ciudad') || 'Durango',
+      referencia: val('referencia'),
+      lat: picked ? picked.lat : null,
+      lng: picked ? picked.lng : null,
+    };
+    if(!pedidoOk){ showAlert('error','Primero verifica un número de pedido válido (DH...).'); orderInput.focus(); return; }
+    if(!payload.nombre){ showAlert('error','Escribe tu nombre.'); return; }
+    if(!/^\d{10}$/.test(payload.telefono)){ showAlert('error','El teléfono debe tener 10 dígitos.'); return; }
+    if(!payload.calle){ showAlert('error','Escribe tu calle.'); return; }
+    if(!payload.colonia){ showAlert('error','Escribe tu colonia.'); return; }
+    if(payload.lat===null || payload.lng===null){ showAlert('error','Marca la ubicación de tu entrega en el mapa (botón "Ubicar mi dirección").'); $('map').scrollIntoView({behavior:'smooth',block:'center'}); return; }
+
+    btn.disabled=true; const orig=btn.innerHTML; btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Enviando...';
+    try{
+      const r=await fetch(API+'/api/repartos-dgo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const d=await r.json();
+      if(d.success){
+        form.style.display='none'; alertEl.style.display='none';
+        if(d.updated) $('thanksMsg').innerHTML='Actualizamos tu dirección correctamente.<br>Pronto recibirás tu pedido. 🐘';
+        thanks.classList.add('show');
+        window.scrollTo({top:0,behavior:'smooth'});
+      }else{
+        showAlert('error', d.message||'No se pudo guardar. Intenta de nuevo.');
+        btn.disabled=false; btn.innerHTML=orig;
+      }
+    }catch(e){ showAlert('error','Error de conexión. Intenta de nuevo.'); btn.disabled=false; btn.innerHTML=orig; }
+  });
+})();
+</script>
+</body>
+</html>
