@@ -91,6 +91,7 @@
        transition:transform .08s, opacity .15s;box-shadow:0 6px 18px rgba(212,114,44,.35);}
   .btn:hover{transform:translateY(-1px);} .btn:active{transform:translateY(0);}
   .btn:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none;}
+  .btn-wa{background:#25D366;box-shadow:0 6px 18px rgba(37,211,102,.4);text-decoration:none;}
   .footnote{text-align:center;color:var(--cream);font-size:12.5px;margin-top:20px;opacity:.7;}
   .thanks{display:none;text-align:center;padding:18px 6px;}
   .thanks.show{display:block;}
@@ -239,6 +240,10 @@
         <div class="check"><i class="fas fa-check"></i></div>
         <h2>¡Gracias!</h2>
         <p id="thanksMsg">Tu dirección fue registrada correctamente.<br>Pronto recibirás tu pedido. 🐘</p>
+        <p style="color:#5a6a70;font-size:14px;margin-top:14px;">Toca el botón para confirmarnos por WhatsApp que ya enviaste tus datos 👇</p>
+        <a id="waConfirm" class="btn btn-wa" href="#" target="_blank" rel="noopener">
+          <i class="fab fa-whatsapp"></i> Confirmar por WhatsApp
+        </a>
       </div>
     </div>
 
@@ -481,6 +486,9 @@
       if(d.success){
         form.style.display='none'; alertEl.style.display='none';
         if(d.updated) $('thanksMsg').innerHTML='Actualizamos tu dirección correctamente.<br>Pronto recibirás tu pedido. 🐘';
+        // Enlace de WhatsApp para que el cliente confirme que ya envió sus datos.
+        const waMsg = `Hola, soy ${payload.nombre}. Ya envié mis datos de entrega para mi pedido ${payload.numeroPedido} ✅`;
+        $('waConfirm').href = `https://wa.me/526181333519?text=${encodeURIComponent(waMsg)}`;
         thanks.classList.add('show');
         window.scrollTo({top:0,behavior:'smooth'});
       }else{
