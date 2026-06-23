@@ -607,9 +607,19 @@ async function generateGeminiResponse(prompt, imageParts = [], systemInstruction
     if (systemInstruction) {
         payload.systemInstruction = { parts: [{ text: systemInstruction }] };
     }
-    const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(45000) });
-    if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
-    const result = await geminiResponse.json();
+    let result;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(45000) });
+            if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
+            result = await geminiResponse.json();
+            break;
+        } catch (e) {
+            const retriable = /premature close|terminated|econnreset|fetch failed|network|aborted/i.test(String(e && e.message));
+            if (attempt < 2 && retriable) { console.warn(`[AI] Gemini falló (${e.message}), reintentando...`); await new Promise(r => setTimeout(r, 800)); continue; }
+            throw e;
+        }
+    }
     let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
     if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
     if (generatedText.startsWith('Asistente:')) {
@@ -887,9 +897,12 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             // Las imágenes del departamento van al caché (contexto estático)
             const cacheName = await getOrCreateCache(botInstructions, departmentImageParts, departmentImagesHashInput);
             if (cacheName) {
-                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (${mediaParts.length} multimedia de conversación + ${departmentImageParts.length} imgs dept cacheadas)`);
-                // Solo se envían en cada petición los mediaParts dinámicos (conversación)
-                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, mediaParts);
+                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (texto; ${departmentImageParts.length} imgs dept cacheadas)`);
+                // NOTA: NO enviamos las imágenes de la conversación (mediaParts) a Gemini.
+                // Bajo UBLA las imágenes ahora SÍ se descargan completas y el request grande
+                // provocaba "Premature close" colgando la respuesta. Respuestas de texto
+                // (como funcionaba antes). TODO: re-habilitar imágenes con tope de tamaño.
+                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, []);
                 console.log(`[AI] 💰 Tokens cacheados: ${aiResult.cachedTokens}, Tokens nuevos de entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}`);
             } else {
                 throw new Error('Caché no disponible, usando fallback.');
@@ -899,10 +912,9 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             // En este caso las imágenes del departamento NO están cacheadas, así que las incluimos en mediaParts.
             console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché.`);
             const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions);
-            const fullPrompt = `${fallbackRef}${shippingInfo}${deptImagesNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió archivos multimedia, estúdialos. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-            // Prepend dept images a mediaParts solo en el fallback
-            const fallbackMediaParts = [...departmentImageParts, ...mediaParts];
-            aiResult = await generateGeminiResponse(fullPrompt, fallbackMediaParts, fallbackSystem);
+            const fullPrompt = `${fallbackRef}${shippingInfo}${deptImagesNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            // Solo texto (sin imágenes de conversación) para evitar "Premature close" con requests grandes.
+            aiResult = await generateGeminiResponse(fullPrompt, [], fallbackSystem);
         }
 
         const aiResponse = aiResult.text;
