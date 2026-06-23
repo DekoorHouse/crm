@@ -917,8 +917,12 @@ const MessageBubbleTemplate = (message) => {
                     !/^(🎤|🎵|📷|🎥|📄|Sticker)/.test(message.text);
 
     // Si la subida del medio a Storage falló, el backend deja un proxy en
-    // mediaProxyUrl (/api/wa/media/:id). Lo usamos como respaldo de fileUrl.
-    const effectiveFileUrl = message.fileUrl || message.mediaProxyUrl || null;
+    // mediaProxyUrl. Lo usamos como respaldo de fileUrl. Los mensajes viejos
+    // guardaron el proxy con prefijo /api por error; la ruta real es /webhook.
+    let effectiveFileUrl = message.fileUrl || message.mediaProxyUrl || null;
+    if (effectiveFileUrl && effectiveFileUrl.startsWith('/api/wa/media/')) {
+        effectiveFileUrl = effectiveFileUrl.replace('/api/wa/media/', '/webhook/wa/media/');
+    }
 
     if (effectiveFileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {

@@ -121,8 +121,10 @@ async function downloadAndUploadMessengerMedia(url, psid, messageId) {
                         }
                         resolve({ publicUrl, mimeType });
                     } catch (finalErr) {
-                        console.error(`[MESSENGER MEDIA] No se pudo generar URL pública para ${filePath}:`, finalErr);
-                        reject(finalErr);
+                        // Último respaldo: la URL CDN de origen de Meta (suele cargar
+                        // directo en <img>), en vez de dejar el mensaje sin imagen.
+                        console.warn(`[MESSENGER MEDIA] No se pudo generar URL de Storage, usando URL de origen. ${finalErr.message}`);
+                        resolve({ publicUrl: url, mimeType });
                     }
                 })
                 .on('error', (error) => {

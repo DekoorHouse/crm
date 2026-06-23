@@ -147,6 +147,8 @@ async function downloadAndUploadMedia(mediaId, from) {
                         console.log(`[MEDIA] URL pública generada: ${publicUrl}`);
                         resolve({ publicUrl, mimeType });
                     } catch (finalErr) {
+                        // Si ni el token ni makePublic funcionan, el caller usa el
+                        // proxy (/webhook/wa/media/:id) como último respaldo.
                         console.error(`[MEDIA] No se pudo generar URL pública para ${filePath}:`, finalErr);
                         reject(finalErr);
                     }
@@ -528,7 +530,7 @@ router.post('/', async (req, res) => {
                     console.log(`[IMAGE] Imagen ${message.image.id} guardada en Storage. URL: ${publicUrl}`);
                 } catch (uploadError) {
                     console.error(`[IMAGE] FALLBACK: No se pudo guardar la imagen ${message.image.id} en Storage. Usando proxy. Error: ${uploadError.message}`);
-                    messageData.mediaProxyUrl = `/api/wa/media/${message.image.id}`; // Store proxy URL for frontend
+                    messageData.mediaProxyUrl = `/webhook/wa/media/${message.image.id}`; // Store proxy URL for frontend
                     messageData.fileType = message.image.mime_type || 'image/jpeg';
                 }
                 messageData.text = message.image.caption || '📷 Imagen'; // Use caption or default text
@@ -540,7 +542,7 @@ router.post('/', async (req, res) => {
                     console.log(`[VIDEO] Video ${message.video.id} guardado en Storage. URL: ${publicUrl}`);
                 } catch (uploadError) {
                     console.error(`[VIDEO] FALLBACK: No se pudo guardar el video ${message.video.id} en Storage. Usando proxy. Error: ${uploadError.message}`);
-                    messageData.mediaProxyUrl = `/api/wa/media/${message.video.id}`;
+                    messageData.mediaProxyUrl = `/webhook/wa/media/${message.video.id}`;
                     messageData.fileType = message.video.mime_type || 'video/mp4';
                 }
                 messageData.text = message.video.caption || '🎥 Video';
@@ -552,7 +554,7 @@ router.post('/', async (req, res) => {
                     console.log(`[AUDIO] Audio ${message.audio.id} guardado en Storage. URL: ${publicUrl}`);
                 } catch (uploadError) {
                     console.error(`[AUDIO] FALLBACK: No se pudo guardar el audio ${message.audio.id} en Storage. Usando proxy. Error: ${uploadError.message}`);
-                    messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
+                    messageData.mediaProxyUrl = `/webhook/wa/media/${message.audio.id}`;
                     messageData.fileType = message.audio.mime_type || 'audio/ogg'; // Default to ogg
                 }
                 messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio"; // Check if it's a voice note
@@ -565,7 +567,7 @@ router.post('/', async (req, res) => {
                     console.log(`[DOCUMENT] Documento ${message.document.id} guardado en Storage. URL: ${publicUrl}`);
                 } catch (uploadError) {
                     console.error(`[DOCUMENT] FALLBACK: No se pudo guardar el documento ${message.document.id}. Usando proxy. Error: ${uploadError.message}`);
-                    messageData.mediaProxyUrl = `/api/wa/media/${message.document.id}`;
+                    messageData.mediaProxyUrl = `/webhook/wa/media/${message.document.id}`;
                     messageData.fileType = message.document.mime_type || 'application/pdf'; // Default to pdf
                     messageData.document = { filename: message.document.filename };
                 }
