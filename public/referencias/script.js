@@ -11,6 +11,16 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const API_BASE_URL = window.API_BASE_URL || '';
 
+// Las fotos viven en un bucket con acceso uniforme (UBLA): las URLs públicas
+// storage.googleapis.com dan 403. Se sirven a través del proxy /api/wa/file,
+// que firma una URL de lectura temporal con la cuenta de servicio.
+function mediaUrl(u) {
+    if (u && u.indexOf('storage.googleapis.com/') !== -1) {
+        return API_BASE_URL + '/api/wa/file?path=' + encodeURIComponent(u);
+    }
+    return u || '';
+}
+
 // --- Estado ---
 let selectedRating = 0;
 let selectedPhotos = [];
@@ -328,11 +338,11 @@ function renderReferencias(refs) {
         var photoHtml = '';
         var refFotos = ref.fotos || (ref.foto ? [ref.foto] : []);
         if (refFotos.length === 1) {
-            photoHtml = '<img src="' + refFotos[0] + '" class="ref-card-photo" alt="Foto del producto" onclick="openLightbox(\'' + refFotos[0] + '\')" loading="lazy">';
+            photoHtml = '<img src="' + mediaUrl(refFotos[0]) + '" class="ref-card-photo" alt="Foto del producto" onclick="openLightbox(\'' + refFotos[0] + '\')" loading="lazy">';
         } else if (refFotos.length > 1) {
             photoHtml = '<div class="ref-photos-grid ref-photos-' + Math.min(refFotos.length, 5) + '">';
             for (var f = 0; f < refFotos.length; f++) {
-                photoHtml += '<img src="' + refFotos[f] + '" class="ref-grid-photo" alt="Foto" onclick="openLightbox(\'' + refFotos[f] + '\')" loading="lazy">';
+                photoHtml += '<img src="' + mediaUrl(refFotos[f]) + '" class="ref-grid-photo" alt="Foto" onclick="openLightbox(\'' + refFotos[f] + '\')" loading="lazy">';
             }
             photoHtml += '</div>';
         }
@@ -396,7 +406,7 @@ function updateStats(refs) {
 
 // --- Lightbox ---
 function openLightbox(url) {
-    document.getElementById('lightboxImg').src = url;
+    document.getElementById('lightboxImg').src = mediaUrl(url);
     document.getElementById('lightbox').classList.remove('hidden');
 }
 function closeLightbox() {

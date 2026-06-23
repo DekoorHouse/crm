@@ -15,6 +15,16 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const API_BASE_URL = window.API_BASE_URL || '';
 
+// Las fotos viven en un bucket con acceso uniforme (UBLA): las URLs públicas
+// storage.googleapis.com dan 403. Se sirven a través del proxy /api/wa/file,
+// que firma una URL de lectura temporal con la cuenta de servicio.
+function mediaUrl(u) {
+    if (u && u.indexOf('storage.googleapis.com/') !== -1) {
+        return API_BASE_URL + '/api/wa/file?path=' + encodeURIComponent(u);
+    }
+    return u || '';
+}
+
 const WA_NUMBER = '5216181333519';
 
 // ============================================================
@@ -122,7 +132,7 @@ scrollTopBtn.addEventListener('click', () => {
 // LIGHTBOX
 // ============================================================
 function openLightbox(url) {
-    document.getElementById('lightboxImg').src = url;
+    document.getElementById('lightboxImg').src = mediaUrl(url);
     document.getElementById('lightbox').classList.remove('hidden');
 }
 
@@ -177,7 +187,7 @@ function loadTestimonials() {
                 // Foto del producto (primera foto disponible)
                 const fotos = ref.fotos || (ref.foto ? [ref.foto] : []);
                 const photoHtml = fotos.length > 0
-                    ? `<img src="${fotos[0]}" alt="Producto" class="tc-photo" loading="lazy">`
+                    ? `<img src="${mediaUrl(fotos[0])}" alt="Producto" class="tc-photo" loading="lazy">`
                     : '';
 
                 html += `

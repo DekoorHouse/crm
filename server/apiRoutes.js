@@ -117,6 +117,30 @@ router.post('/referencias/notificar', async (req, res) => {
 // --- Subir foto de referencia (público, sin auth) ---
 const sharp = require('sharp');
 
+// Reintenta una operación de Storage ante errores de red transitorios.
+// En Render, el token OAuth de Google (https://www.googleapis.com/oauth2/v4/token)
+// falla de forma intermitente con "Premature close" / ECONNRESET cuando se reutiliza
+// un socket keep-alive que el servidor ya cerró. El token se cachea tras el primer
+// éxito, por lo que un reintento inmediato (con socket nuevo) casi siempre resuelve.
+async function withStorageRetry(fn, label = 'storage op', retries = 3) {
+    let lastErr;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            return await fn();
+        } catch (err) {
+            lastErr = err;
+            const msg = String((err && err.message) || '');
+            const code = err && err.code;
+            const transient = /Premature close|ECONNRESET|ETIMEDOUT|socket hang up|EAI_AGAIN|fetch failed|network|ECONNREFUSED/i.test(msg)
+                || code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'EAI_AGAIN';
+            if (!transient || attempt === retries) throw err;
+            console.warn(`[storage-retry] ${label}: intento ${attempt}/${retries} falló (${msg}). Reintentando...`);
+            await new Promise(r => setTimeout(r, 400 * attempt));
+        }
+    }
+    throw lastErr;
+}
+
 router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: 'No se envió archivo' });
@@ -126,10 +150,13 @@ router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) =>
             .toBuffer();
         const fileName = 'referencias/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.webp';
         const file = bucket.file(fileName);
-        await file.save(webpBuffer, {
+        // El bucket usa acceso uniforme (UBLA): no se puede (ni hace falta) marcar el
+        // objeto como público con ACL. Se sirve luego vía /api/wa/file (URL firmada).
+        // resumable:false => una sola petición (más rápido y menos expuesto al fallo de red).
+        await withStorageRetry(() => file.save(webpBuffer, {
             metadata: { contentType: 'image/webp' },
-            public: true
-        });
+            resumable: false
+        }), 'subir foto referencia');
         const url = 'https://storage.googleapis.com/' + bucket.name + '/' + fileName;
         res.json({ url });
     } catch (error) {
@@ -196,10 +223,21 @@ router.post('/referencias/rotate', async (req, res) => {
         if (photoIndex < 0 || photoIndex >= fotos.length) return res.status(400).json({ error: 'Índice inválido' });
 
         const oldUrl = fotos[photoIndex];
-        // Descargar imagen
-        const response = await axios.get(oldUrl, { responseType: 'arraybuffer' });
+        // Descargar imagen desde el bucket. Las URLs públicas storage.googleapis.com
+        // dan 403 con UBLA, así que se baja el objeto con la cuenta de servicio.
+        const marker = `storage.googleapis.com/${bucket.name}/`;
+        const markerIdx = oldUrl.indexOf(marker);
+        let srcBuffer;
+        if (markerIdx >= 0) {
+            const oldPath = decodeURIComponent(oldUrl.slice(markerIdx + marker.length).split('?')[0]);
+            const [buf] = await withStorageRetry(() => bucket.file(oldPath).download(), 'descargar foto referencia');
+            srcBuffer = buf;
+        } else {
+            const response = await axios.get(oldUrl, { responseType: 'arraybuffer' });
+            srcBuffer = Buffer.from(response.data);
+        }
         const angle = direction === 'ccw' ? -90 : 90;
-        const rotatedBuffer = await sharp(Buffer.from(response.data))
+        const rotatedBuffer = await sharp(srcBuffer)
             .rotate(angle)
             .webp({ quality: 80 })
             .toBuffer();
@@ -207,7 +245,10 @@ router.post('/referencias/rotate', async (req, res) => {
         // Subir con nuevo nombre
         const fileName = 'referencias/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.webp';
         const file = bucket.file(fileName);
-        await file.save(rotatedBuffer, { metadata: { contentType: 'image/webp' }, public: true });
+        await withStorageRetry(() => file.save(rotatedBuffer, {
+            metadata: { contentType: 'image/webp' },
+            resumable: false
+        }), 'subir foto rotada');
         const newUrl = 'https://storage.googleapis.com/' + bucket.name + '/' + fileName;
 
         // Actualizar Firestore
