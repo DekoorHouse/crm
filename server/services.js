@@ -433,6 +433,33 @@ const GEMINI_MODEL = 'gemini-3-flash-preview';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const CACHE_TTL = '1800s'; // 30 minutos de TTL para el caché
 
+// Cliente HTTP para Gemini vía axios con conexiones NUEVAS (keepAlive:false).
+// El fetch global (undici) reutiliza conexiones del pool que el servidor ya
+// cerró y lanza "Premature close" en Render (aun con texto). axios + un agente
+// sin keep-alive abre una conexión limpia por petición y elimina ese error.
+const https = require('https');
+const geminiAgent = new https.Agent({ keepAlive: false });
+async function geminiHttp(url, { method = 'GET', body } = {}) {
+    const resp = await axios.request({
+        url,
+        method,
+        data: body,
+        headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
+        httpsAgent: geminiAgent,
+        timeout: 60000,
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        responseType: 'json',
+        validateStatus: () => true,
+    });
+    return {
+        ok: resp.status >= 200 && resp.status < 300,
+        status: resp.status,
+        json: async () => resp.data,
+        text: async () => (typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data ?? '')),
+    };
+}
+
 // --- Estado en memoria del caché ---
 let geminiCache = {
     name: null,          // Nombre del recurso del caché en Gemini (ej: "cachedContents/abc123")
@@ -501,7 +528,7 @@ async function getOrCreateCache(botInstructions, departmentImageParts = [], imag
     // Si hay un caché viejo, intentar borrarlo (best effort)
     if (geminiCache.name) {
         try {
-            await fetch(`${GEMINI_BASE_URL}/${geminiCache.name}?key=${GEMINI_API_KEY}`, { method: 'DELETE' });
+            await geminiHttp(`${GEMINI_BASE_URL}/${geminiCache.name}?key=${GEMINI_API_KEY}`, { method: 'DELETE' });
             console.log(`[CACHE] Caché anterior eliminado: ${geminiCache.name}`);
         } catch (e) {
             console.warn(`[CACHE] No se pudo eliminar el caché anterior: ${e.message}`);
@@ -527,11 +554,9 @@ async function getOrCreateCache(botInstructions, departmentImageParts = [], imag
         ttl: CACHE_TTL
     };
 
-    const response = await fetch(`${GEMINI_BASE_URL}/cachedContents?key=${GEMINI_API_KEY}`, {
+    const response = await geminiHttp(`${GEMINI_BASE_URL}/cachedContents?key=${GEMINI_API_KEY}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cachePayload),
-        signal: AbortSignal.timeout(45000)
+        body: JSON.stringify(cachePayload)
     });
 
     if (!response.ok) {
@@ -580,9 +605,8 @@ async function askGeminiPro(prompt, systemInstruction = null) {
     if (systemInstruction) {
         payload.systemInstruction = { parts: [{ text: systemInstruction }] };
     }
-    const response = await fetch(apiUrl, {
+    const response = await geminiHttp(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
     if (!response.ok) {
@@ -610,7 +634,7 @@ async function generateGeminiResponse(prompt, imageParts = [], systemInstruction
     let result;
     for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-            const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(45000) });
+            const geminiResponse = await geminiHttp(apiUrl, { method: 'POST', body: JSON.stringify(payload) });
             if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
             result = await geminiResponse.json();
             break;
@@ -648,11 +672,9 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
         cachedContent: cacheName
     };
 
-    const geminiResponse = await fetch(apiUrl, {
+    const geminiResponse = await geminiHttp(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(45000)
+        body: JSON.stringify(payload)
     });
 
     if (!geminiResponse.ok) {
