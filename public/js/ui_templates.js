@@ -365,6 +365,29 @@ const SettingsViewTemplate = () => `
         </div>
         <div class="max-w-2xl space-y-8">
             <div class="settings-card">
+                <h2 class="text-xl font-bold mb-1">Apariencia</h2>
+                <p class="text-sm text-gray-500 mb-4">Elige el tema del CRM. Se guarda en este navegador.</p>
+                <div class="theme-picker-grid">
+                    ${(window.CRM_THEMES || []).map(t => {
+                        const active = (window.getCurrentTheme ? window.getCurrentTheme() : 'dekoor') === t.id;
+                        return `
+                        <button type="button" data-theme-card="${t.id}" onclick="setTheme('${t.id}')" class="theme-card${active ? ' theme-card-active' : ''}">
+                            <span class="theme-card-preview">
+                                <span class="theme-card-strip" style="background:${t.swatches[2]}">
+                                    <span class="theme-dot" style="background:${t.swatches[0]}"></span>
+                                    <span class="theme-dot" style="background:${t.swatches[1]}"></span>
+                                </span>
+                            </span>
+                            <span class="theme-card-meta">
+                                <span class="theme-card-name">${t.name}</span>
+                                <span class="theme-card-desc">${t.desc}</span>
+                            </span>
+                            <i class="fas fa-check-circle theme-card-check"></i>
+                        </button>`;
+                    }).join('')}
+                </div>
+            </div>
+            <div class="settings-card">
                 <h2 class="text-xl font-bold mb-4">Automatización</h2>
                 <div class="flex items-center justify-between">
                     <div>
@@ -879,32 +902,36 @@ const MessageBubbleTemplate = (message) => {
 
     const defaultTexts = ['📷 Imagen', '🎥 Video', '🎵 Audio', '📄 Documento', 'Sticker'];
     
-    const hasText = message.text && 
-                    !defaultTexts.includes(message.text) && 
+    const hasText = message.text &&
+                    !defaultTexts.includes(message.text) &&
                     !/^(🎤|🎵|📷|🎥|📄|Sticker)/.test(message.text);
 
-    if (message.fileUrl && message.fileType) {
+    // Si la subida del medio a Storage falló, el backend deja un proxy en
+    // mediaProxyUrl (/api/wa/media/:id). Lo usamos como respaldo de fileUrl.
+    const effectiveFileUrl = message.fileUrl || message.mediaProxyUrl || null;
+
+    if (effectiveFileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {
             bubbleExtraClass = 'has-image';
             const bubbleBgColor = isSent ? 'var(--color-bubble-sent-bg)' : 'var(--color-bubble-received-bg)';
-            const fullImageUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
+            const fullImageUrl = effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`;
             contentHTML += `<div style="background-color: ${bubbleBgColor}" class="rounded-lg overflow-hidden"><img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}<div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status, message.readAt) : ''}</div></div>`;
             timeAndStatusHTML = '';
         } else if (message.fileType.startsWith('video/')) {
             bubbleExtraClass = 'has-video';
-            const separator = message.fileUrl.includes('?') ? '&' : '?';
-            const videoUrl = message.timestamp ? `${message.fileUrl}${separator}v=${message.timestamp.seconds}` : message.fileUrl;
+            const separator = effectiveFileUrl.includes('?') ? '&' : '?';
+            const videoUrl = message.timestamp ? `${effectiveFileUrl}${separator}v=${message.timestamp.seconds}` : effectiveFileUrl;
             const fullVideoUrl = videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`;
             contentHTML += `<video controls playsinline preload="metadata" class="video rounded-lg mb-1" src="${fullVideoUrl}" onclick="event.stopPropagation()">Tu navegador no soporta videos.</video>`;
             if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
         } else if (message.fileType.startsWith('audio/')) {
-             const audioSrc = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
+             const audioSrc = effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`;
              contentHTML += `<audio controls preload="metadata" class="chat-audio-player"><source src="${audioSrc}" type="${message.fileType}">Tu navegador no soporta audio.</audio>`;
         } else if (message.type === 'document' || message.fileType.startsWith('application/') || message.fileType.startsWith('text/')) {
-            const fullDocUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
+            const fullDocUrl = effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`;
             contentHTML += `<a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link"><i class="fas fa-file-alt document-icon"></i><span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span></a>`;
         } else if (message.type === 'sticker') {
-            const fullStickerUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
+            const fullStickerUrl = effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`;
             contentHTML += `<img src="${fullStickerUrl}" alt="Sticker" class="chat-sticker-preview">`;
         }
     } else if (message.type === 'location' && message.location) {

@@ -2819,42 +2819,83 @@ function toggleEditNote(noteId) {
 // --- NUEVO: Lógica de Tema Oscuro ---
 
 /**
- * Alterna entre modo claro y oscuro, guardando la preferencia.
+ * Catálogo de temas. El id coincide con la clase body.theme-<id> en style.css
+ * (excepto 'obsidian', que reutiliza el tema oscuro existente body.dark-mode).
  */
-function toggleDarkMode() {
-    document.body.classList.toggle('dark-mode');
-    const isDark = document.body.classList.contains('dark-mode');
-    localStorage.setItem('crm_theme', isDark ? 'dark' : 'light');
-    updateDarkModeIcon();
+const CRM_THEMES = [
+    { id: 'dekoor',   name: 'Tradicional Dekoor', desc: 'Azul y naranja de marca',     isDark: false, swatches: ['#1b4d5c', '#d4722c', '#f7f9fa'] },
+    { id: 'obsidian', name: 'Obsidiana',          desc: 'Oscuro elegante',             isDark: true,  swatches: ['#7aa2f7', '#e0af68', '#1a1b26'] },
+    { id: 'lila',     name: 'Lila',               desc: 'Lavanda femenino',            isDark: false, swatches: ['#8a5cd1', '#d6608f', '#faf7fe'] },
+    { id: 'elegante', name: 'Elegante',           desc: 'Marfil, salvia y dorado',     isDark: false, swatches: ['#47634f', '#b08d57', '#faf8f4'] },
+    { id: 'minimal',  name: 'Minimalista',        desc: 'Blanco y negro + azul',       isDark: false, swatches: ['#18181b', '#2563eb', '#ffffff'] },
+];
+const CRM_THEME_IDS = CRM_THEMES.map(t => t.id);
+const DEFAULT_THEME = 'dekoor';
+
+/** Normaliza el valor guardado (incluye migración del esquema anterior light/dark). */
+function normalizeThemeId(raw) {
+    if (CRM_THEME_IDS.includes(raw)) return raw;
+    if (raw === 'dark') return 'obsidian';
+    if (raw === 'light') return 'dekoor';
+    return DEFAULT_THEME;
+}
+
+/** Devuelve el id del tema activo. */
+function getCurrentTheme() {
+    return normalizeThemeId(localStorage.getItem('crm_theme'));
 }
 
 /**
- * Actualiza el icono del botón de tema oscuro según el estado actual.
+ * Aplica un tema por id: limpia clases de tema previas, agrega theme-<id> y
+ * la clase dark-mode si es oscuro. Guarda la preferencia y refresca la UI.
  */
+function applyTheme(id) {
+    const theme = CRM_THEMES.find(t => t.id === id) || CRM_THEMES[0];
+    const body = document.body;
+    CRM_THEMES.forEach(t => body.classList.remove('theme-' + t.id));
+    body.classList.add('theme-' + theme.id);
+    body.classList.toggle('dark-mode', theme.isDark);
+    localStorage.setItem('crm_theme', theme.id);
+    updateDarkModeIcon();
+    // Marca la tarjeta activa si el selector de Ajustes está montado.
+    document.querySelectorAll('[data-theme-card]').forEach(el => {
+        el.classList.toggle('theme-card-active', el.dataset.themeCard === theme.id);
+    });
+}
+
+/** Selección desde el selector de Ajustes (alias claro para onclick). */
+function setTheme(id) { applyTheme(id); }
+
+/**
+ * Botón de la cabecera: alterna rápido entre claro (último claro usado) y
+ * oscuro (Obsidiana), conservando el tema claro preferido del usuario.
+ */
+function toggleDarkMode() {
+    const current = getCurrentTheme();
+    if (current === 'obsidian') {
+        applyTheme(localStorage.getItem('crm_theme_light') || DEFAULT_THEME);
+    } else {
+        localStorage.setItem('crm_theme_light', current);
+        applyTheme('obsidian');
+    }
+}
+
+/** Actualiza el icono del botón de tema (sol/luna) según si el tema es oscuro. */
 function updateDarkModeIcon() {
     const icon = document.getElementById('dark-mode-icon');
     if (icon) {
         const isDark = document.body.classList.contains('dark-mode');
         icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
-        // Opcional: Cambiar el título del botón padre si fuera necesario
     }
 }
 
-/**
- * Inicializa el tema al cargar la página.
- */
+/** Inicializa el tema al cargar la página. */
 function initTheme() {
-    const savedTheme = localStorage.getItem('crm_theme');
-    // Si está guardado como 'dark', aplicar clase
-    if (savedTheme === 'dark') {
-        document.body.classList.add('dark-mode');
-    } else {
-        // Opcional: Respetar preferencia del sistema si no hay guardado
-        // if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        //     document.body.classList.add('dark-mode');
-        // }
+    const id = getCurrentTheme();
+    if (!CRM_THEMES.find(t => t.id === id)?.isDark) {
+        localStorage.setItem('crm_theme_light', id);
     }
-    updateDarkModeIcon();
+    applyTheme(id);
 }
 
 // --- FIN NUEVO ---
@@ -2892,6 +2933,10 @@ window.closeOrderEditModal = closeOrderEditModal;
 // --- EXPORTAR NUEVAS FUNCIONES DE TEMA ---
 window.toggleDarkMode = toggleDarkMode;
 window.initTheme = initTheme;
+window.applyTheme = applyTheme;
+window.setTheme = setTheme;
+window.getCurrentTheme = getCurrentTheme;
+window.CRM_THEMES = CRM_THEMES;
 
 // --- EXPORTAR NUEVAS FUNCIONES ---
 window.openDepartmentModal = openDepartmentModal;

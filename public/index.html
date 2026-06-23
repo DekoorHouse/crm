@@ -37,6 +37,16 @@
 
 </head>
 <body class="antialiased">
+<!-- Tema: aplicar de inmediato para evitar parpadeo (sobre todo en oscuro) -->
+<script>
+(function(){try{
+    var raw=localStorage.getItem('crm_theme');
+    var valid=['dekoor','obsidian','lila','elegante','minimal'];
+    var id=valid.indexOf(raw)>=0?raw:(raw==='dark'?'obsidian':'dekoor');
+    document.body.classList.add('theme-'+id);
+    if(id==='obsidian')document.body.classList.add('dark-mode');
+}catch(e){}})();
+</script>
 
     <!-- Pantalla de Carga -->
     <div id="loading-overlay">
