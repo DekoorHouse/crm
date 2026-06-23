@@ -894,8 +894,10 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         // --- Intentar usar Context Caching ---
         let aiResult;
         try {
-            // Las imágenes del departamento van al caché (contexto estático)
-            const cacheName = await getOrCreateCache(botInstructions, departmentImageParts, departmentImagesHashInput);
+            // Caché SOLO de texto: no incluir imágenes del departamento. Las imágenes
+            // grandes en el request de Gemini causan "Premature close". (TODO: re-habilitar
+            // imágenes con tope de tamaño y URL firmada.)
+            const cacheName = await getOrCreateCache(botInstructions, [], '');
             if (cacheName) {
                 console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (texto; ${departmentImageParts.length} imgs dept cacheadas)`);
                 // NOTA: NO enviamos las imágenes de la conversación (mediaParts) a Gemini.
