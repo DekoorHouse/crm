@@ -104,18 +104,26 @@ async function downloadAndUploadMessengerMedia(url, psid, messageId) {
             mediaResponse.data.pipe(stream)
                 .on('finish', async () => {
                     console.log(`[MESSENGER MEDIA] Archivo ${filePath} subido a Firebase Storage.`);
-                    let publicUrl;
                     try {
-                        await file.makePublic();
-                        publicUrl = file.publicUrl();
-                    } catch (aclErr) {
-                        // Bucket con Uniform Bucket-Level Access: usar token de descarga.
-                        console.warn(`[MESSENGER MEDIA] makePublic() falló (¿UBLA?), usando token de descarga. ${aclErr.message}`);
-                        const downloadToken = require('crypto').randomUUID();
-                        await file.setMetadata({ metadata: { firebaseStorageDownloadTokens: downloadToken } });
-                        publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${downloadToken}`;
+                        let publicUrl;
+                        try {
+                            // Bucket con Uniform Bucket-Level Access: el acceso anónimo está
+                            // bloqueado (storage.googleapis.com da 403). Usamos un token de
+                            // descarga de Firebase, que es permanente y compatible con UBLA.
+                            const downloadToken = require('crypto').randomUUID();
+                            await file.setMetadata({ metadata: { firebaseStorageDownloadTokens: downloadToken } });
+                            publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${downloadToken}`;
+                        } catch (tokenErr) {
+                            // Respaldo para buckets sin UBLA: ACL pública clásica.
+                            console.warn(`[MESSENGER MEDIA] token de descarga falló, intentando makePublic(). ${tokenErr.message}`);
+                            await file.makePublic();
+                            publicUrl = file.publicUrl();
+                        }
+                        resolve({ publicUrl, mimeType });
+                    } catch (finalErr) {
+                        console.error(`[MESSENGER MEDIA] No se pudo generar URL pública para ${filePath}:`, finalErr);
+                        reject(finalErr);
                     }
-                    resolve({ publicUrl, mimeType });
                 })
                 .on('error', (error) => {
                     console.error(`[MESSENGER MEDIA] Error al subir archivo:`, error);

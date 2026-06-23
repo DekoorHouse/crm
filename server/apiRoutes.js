@@ -5062,6 +5062,42 @@ router.post('/storage/generate-signed-url', async (req, res) => {
     }
 });
 
+// --- GET /api/wa/file?path=<rutaDelObjeto|urlCompleta> ---
+// Sirve un objeto del bucket, que es privado (Uniform Bucket-Level Access).
+// Las URLs storage.googleapis.com/<bucket>/... guardadas históricamente dan 403
+// porque el bucket bloquea el acceso anónimo. Este endpoint firma una URL de lectura
+// temporal (la firma usa la cuenta de servicio, que sí tiene acceso) y redirige a ella,
+// sin pasar el archivo por Node. Así se ven los medios viejos sin migrar los datos.
+const WA_FILE_ALLOWED_PREFIXES = ['whatsapp_media/', 'messenger_media/', 'referencias/', 'quick_replies/', 'ad_responses/'];
+router.get('/wa/file', async (req, res) => {
+    try {
+        let raw = String(req.query.path || req.query.url || '');
+        // Acepta también una URL completa de storage.googleapis.com de nuestro bucket.
+        const marker = `storage.googleapis.com/${bucket.name}/`;
+        const markerIdx = raw.indexOf(marker);
+        if (markerIdx >= 0) raw = raw.slice(markerIdx + marker.length);
+        const objectPath = decodeURIComponent(raw.split('?')[0]).replace(/^\/+/, '');
+
+        // Seguridad: sin path traversal y solo carpetas de medios conocidas.
+        if (!objectPath || objectPath.includes('..') ||
+            !WA_FILE_ALLOWED_PREFIXES.some((p) => objectPath.startsWith(p))) {
+            return res.status(400).send('Ruta no permitida');
+        }
+
+        const [signedUrl] = await bucket.file(objectPath).getSignedUrl({
+            version: 'v4',
+            action: 'read',
+            expires: Date.now() + 60 * 60 * 1000, // 1 hora
+        });
+        // Cache corto en el navegador para no re-firmar en cada repintado del chat.
+        res.set('Cache-Control', 'private, max-age=1800');
+        return res.redirect(302, signedUrl);
+    } catch (err) {
+        console.error('[FILE PROXY] No se pudo firmar el objeto:', err.message);
+        return res.status(404).send('Archivo no encontrado');
+    }
+});
+
 
 // --- Endpoint GET /api/orders/cohort-progression (Progresión de cobro por cohorte) ---
 router.get('/orders/cohort-progression', async (req, res) => {

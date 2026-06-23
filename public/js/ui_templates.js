@@ -865,6 +865,16 @@ const MessageStatusIconTemplate = (status, readAt) => {
     }
 };
 
+// Reescribe URLs storage.googleapis.com de nuestro bucket (privado: da 403 al público)
+// hacia el proxy del backend, que firma una URL de lectura temporal. Las URLs con token
+// de Firebase (firebasestorage.googleapis.com) y las rutas relativas pasan sin cambios.
+const resolveMediaUrl = (url) => {
+    if (!url || typeof url !== 'string') return url;
+    const m = url.match(/^https?:\/\/storage\.googleapis\.com\/[^/]+\/(.+)$/i);
+    if (!m) return url;
+    return `${API_BASE_URL}/api/wa/file?path=${encodeURIComponent(m[1].split('?')[0])}`;
+};
+
 const RepliedMessagePreviewTemplate = (originalMessage, targetId = '') => {
     if (!originalMessage) return '';
 
@@ -876,7 +886,7 @@ const RepliedMessagePreviewTemplate = (originalMessage, targetId = '') => {
     if ((originalMessage.type === 'image' || originalMessage.fileType?.startsWith('image/')) && originalMessage.fileUrl) {
         const caption = originalMessage.text && originalMessage.text !== '📷 Imagen' ? originalMessage.text : '';
         let captionHtml = caption ? `<div class="reply-media-text"><p class="reply-media-caption">${caption}</p></div>` : '';
-        textPreview = `<div class="reply-media-preview"><img src="${originalMessage.fileUrl}" alt="Miniatura de respuesta" class="reply-thumbnail">${captionHtml}</div>`;
+        textPreview = `<div class="reply-media-preview"><img src="${resolveMediaUrl(originalMessage.fileUrl)}" alt="Miniatura de respuesta" class="reply-thumbnail">${captionHtml}</div>`;
     } else {
         let plainText = originalMessage.text || 'Mensaje';
         if (originalMessage.type === 'audio') plainText = '🎤 Mensaje de voz';
@@ -914,24 +924,24 @@ const MessageBubbleTemplate = (message) => {
         if (message.fileType.startsWith('image/')) {
             bubbleExtraClass = 'has-image';
             const bubbleBgColor = isSent ? 'var(--color-bubble-sent-bg)' : 'var(--color-bubble-received-bg)';
-            const fullImageUrl = effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`;
+            const fullImageUrl = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
             contentHTML += `<div style="background-color: ${bubbleBgColor}" class="rounded-lg overflow-hidden"><img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}<div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status, message.readAt) : ''}</div></div>`;
             timeAndStatusHTML = '';
         } else if (message.fileType.startsWith('video/')) {
             bubbleExtraClass = 'has-video';
             const separator = effectiveFileUrl.includes('?') ? '&' : '?';
             const videoUrl = message.timestamp ? `${effectiveFileUrl}${separator}v=${message.timestamp.seconds}` : effectiveFileUrl;
-            const fullVideoUrl = videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`;
+            const fullVideoUrl = resolveMediaUrl(videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`);
             contentHTML += `<video controls playsinline preload="metadata" class="video rounded-lg mb-1" src="${fullVideoUrl}" onclick="event.stopPropagation()">Tu navegador no soporta videos.</video>`;
             if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
         } else if (message.fileType.startsWith('audio/')) {
-             const audioSrc = effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`;
+             const audioSrc = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
              contentHTML += `<audio controls preload="metadata" class="chat-audio-player"><source src="${audioSrc}" type="${message.fileType}">Tu navegador no soporta audio.</audio>`;
         } else if (message.type === 'document' || message.fileType.startsWith('application/') || message.fileType.startsWith('text/')) {
-            const fullDocUrl = effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`;
+            const fullDocUrl = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
             contentHTML += `<a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link"><i class="fas fa-file-alt document-icon"></i><span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span></a>`;
         } else if (message.type === 'sticker') {
-            const fullStickerUrl = effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`;
+            const fullStickerUrl = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
             contentHTML += `<img src="${fullStickerUrl}" alt="Sticker" class="chat-sticker-preview">`;
         }
     } else if (message.type === 'location' && message.location) {
