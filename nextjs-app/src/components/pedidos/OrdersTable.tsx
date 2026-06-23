@@ -229,7 +229,7 @@ export default function OrdersTable({
                     )}
                     {order.telefonoVerificado && (
                       <span
-                        className="material-symbols-outlined text-green-500"
+                        className="material-symbols-outlined text-success"
                         style={{ fontSize: "14px", fontVariationSettings: "'FILL' 1" }}
                       >
                         verified

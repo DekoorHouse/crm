@@ -48,14 +48,8 @@ export default function CrmLayout({ children }: { children: React.ReactNode }) {
     }
     link.href = "/crm-manifest.json";
 
-    // Theme color (barra superior en mobile)
-    let theme = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
-    if (!theme) {
-      theme = document.createElement("meta");
-      theme.name = "theme-color";
-      document.head.appendChild(theme);
-    }
-    theme.content = "#1B4D5C";
+    // El color de la barra (meta theme-color) lo administra applyThemeToDom
+    // según el tema activo.
 
     // Apple PWA meta tags (iOS Safari)
     const ensureMeta = (name: string, content: string) => {

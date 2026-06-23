@@ -1,58 +1,82 @@
 @import "tailwindcss";
 
-/* ============================================= */
-/* DEKOOR CRM - Design System from Google Stitch */
-/* ============================================= */
+/* ============================================================ */
+/* DEKOOR CRM - Sistema de diseño unificado                     */
+/* ------------------------------------------------------------ */
+/* Cada tema es un set de variables CSS aplicado vía            */
+/* [data-theme="<id>"] en <html>. El tema por defecto (Dekoor)  */
+/* vive en :root para que el SSR / sin-JS se vea correcto.      */
+/* Los temas oscuros además reciben la clase .dark (para las    */
+/* utilidades dark: y los fondos .dark .chat-bg).               */
+/* Ids: dekoor · obsidian · lila · elegante · minimal           */
+/* ============================================================ */
 
-/* --- Light Theme (Default) --- */
+/* La variante dark: responde a la clase .dark (no a prefers-color-scheme) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================ */
+/* TEMA POR DEFECTO — Tradicional Dekoor (azul + naranja)       */
+/* ============================================================ */
 :root {
-  /* Primary palette */
-  --color-primary: #386753;
-  --color-primary-container: #81b29a;
+  /* Primario — azul/teal de la marca */
+  --color-primary: #1b4d5c;
+  --color-primary-container: #cfe3e8;
   --color-on-primary: #ffffff;
-  --color-on-primary-container: #134532;
+  --color-on-primary-container: #0c2e38;
 
-  /* Secondary palette */
-  --color-secondary: #9a442d;
-  --color-secondary-container: #fc9174;
+  /* Secundario — naranja de la marca */
+  --color-secondary: #d4722c;
+  --color-secondary-container: #fbe0cc;
   --color-on-secondary: #ffffff;
-  --color-on-secondary-container: #742814;
+  --color-on-secondary-container: #5c2f0e;
 
-  /* Tertiary / Accent palette */
-  --color-tertiary: #765a28;
-  --color-tertiary-container: #c5a269;
-  --color-accent: #f2cc8f;
+  /* Terciario / acento */
+  --color-tertiary: #c25e1e;
+  --color-tertiary-container: #f6d9bf;
+  --color-accent: #d4722c;
 
-  /* Surface / Background */
-  --color-background: #fbf8fe;
-  --color-surface: #fbf8fe;
+  /* Fondo / superficies */
+  --color-background: #f7f9fa;
+  --color-surface: #f7f9fa;
   --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #f6f2f8;
-  --color-surface-container: #f0edf3;
-  --color-surface-container-high: #eae7ed;
-  --color-surface-container-highest: #e4e1e7;
-  --color-surface-dim: #dcd9df;
+  --color-surface-container-low: #eef3f4;
+  --color-surface-container: #e7eef0;
+  --color-surface-container-high: #dfe8ea;
+  --color-surface-container-highest: #d6e1e3;
+  --color-surface-dim: #d1dadc;
 
-  /* Text */
-  --color-on-surface: #1b1b1f;
-  --color-on-surface-variant: #414944;
+  /* Texto */
+  --color-on-surface: #16252a;
+  --color-on-surface-variant: #4d5e63;
 
-  /* Outline / Borders */
-  --color-outline: #717973;
-  --color-outline-variant: #c0c9c2;
+  /* Bordes */
+  --color-outline: #7d9197;
+  --color-outline-variant: #c3d2d6;
 
-  /* Error */
-  --color-error: #ba1a1a;
-  --color-error-container: #ffdad6;
+  /* Estados */
+  --color-error: #c0392b;
+  --color-error-container: #fbe3df;
   --color-on-error: #ffffff;
-  --color-on-error-container: #93000a;
+  --color-on-error-container: #5e1109;
 
-  /* Inverse */
-  --color-inverse-surface: #303034;
-  --color-inverse-on-surface: #f3eff5;
-  --color-inverse-primary: #9fd1b8;
+  --color-success: #2e9e6b;
+  --color-success-container: #d6f1e3;
+  --color-on-success: #ffffff;
 
-  /* Status colors */
+  --color-warning: #c87a16;
+  --color-warning-container: #fdebcf;
+  --color-on-warning: #ffffff;
+
+  --color-info: #2f7fb3;
+  --color-info-container: #d9ecf7;
+  --color-on-info: #ffffff;
+
+  /* Inversos (tooltips / toasts) */
+  --color-inverse-surface: #16252a;
+  --color-inverse-on-surface: #eef3f4;
+  --color-inverse-primary: #7fb3c0;
+
+  /* ---- Estados del pipeline de pedidos (consistentes en todos los temas) ---- */
   --color-status-sin-estatus: #6c757d;
   --color-status-foto-enviada: #007bff;
   --color-status-esperando-pago: #ffc107;
@@ -65,48 +89,238 @@
   --color-status-cancelado: #6c757d;
 }
 
-/* --- Dark Theme (Tokyo Night) --- */
-.dark {
-  --color-primary: #7aa2f7;
-  --color-primary-container: #24283b;
-  --color-on-primary: #ffffff;
-  --color-on-primary-container: #7aa2f7;
+/* ============================================================ */
+/* OBSIDIANA — modo oscuro elegante                             */
+/* ============================================================ */
+[data-theme="obsidian"] {
+  --color-primary: #6e8bff;
+  --color-primary-container: #1e2740;
+  --color-on-primary: #0c0d10;
+  --color-on-primary-container: #b9c6ff;
 
-  --color-secondary: #bb9af7;
-  --color-secondary-container: #3b4261;
-  --color-on-secondary: #ffffff;
-  --color-on-secondary-container: #bb9af7;
+  --color-secondary: #f0985a;
+  --color-secondary-container: #3a2516;
+  --color-on-secondary: #1a0d04;
+  --color-on-secondary-container: #ffd2ad;
 
-  --color-tertiary: #e0af68;
-  --color-tertiary-container: #414868;
-  --color-accent: #e0af68;
+  --color-tertiary: #5cc8c2;
+  --color-tertiary-container: #143b39;
+  --color-accent: #6e8bff;
 
-  --color-background: #1a1b26;
-  --color-surface: #24283b;
-  --color-surface-container-lowest: #1a1b26;
-  --color-surface-container-low: #1f2335;
-  --color-surface-container: #24283b;
-  --color-surface-container-high: #292e42;
-  --color-surface-container-highest: #3b4261;
-  --color-surface-dim: #1a1b26;
+  --color-background: #0c0d10;
+  --color-surface: #141519;
+  --color-surface-container-lowest: #0f1013;
+  --color-surface-container-low: #16181d;
+  --color-surface-container: #1b1e24;
+  --color-surface-container-high: #22262d;
+  --color-surface-container-highest: #2a2f37;
+  --color-surface-dim: #0c0d10;
 
-  --color-on-surface: #ffffff;
-  --color-on-surface-variant: #9aa5ce;
+  --color-on-surface: #f2f3f5;
+  --color-on-surface-variant: #a3abb5;
 
-  --color-outline: #565f89;
-  --color-outline-variant: #414868;
+  --color-outline: #4a525c;
+  --color-outline-variant: #2c3138;
 
-  --color-error: #f7768e;
-  --color-error-container: #44192b;
-  --color-on-error: #ffffff;
-  --color-on-error-container: #f7768e;
+  --color-error: #ff6b6b;
+  --color-error-container: #3a1416;
+  --color-on-error: #1a0606;
+  --color-on-error-container: #ffc9c9;
 
-  --color-inverse-surface: #e4e1e7;
-  --color-inverse-on-surface: #1a1b26;
-  --color-inverse-primary: #386753;
+  --color-success: #4ade80;
+  --color-success-container: #123524;
+  --color-on-success: #052012;
+
+  --color-warning: #fbbf52;
+  --color-warning-container: #3a2c0c;
+  --color-on-warning: #221806;
+
+  --color-info: #62b6f5;
+  --color-info-container: #102d44;
+  --color-on-info: #04141f;
+
+  --color-inverse-surface: #f2f3f5;
+  --color-inverse-on-surface: #16181d;
+  --color-inverse-primary: #1b4d5c;
+
+  /* Estados de pipeline algo más brillantes para fondo oscuro */
+  --color-status-foto-enviada: #4a9eff;
+  --color-status-esperando-pago: #ffce3a;
+  --color-status-pagado: #3ddc84;
+  --color-status-disenado: #a98bff;
+  --color-status-fabricar: #38c9da;
+  --color-status-corregido: #43e0b0;
+  --color-status-mns-amenazador: #ff6b6b;
 }
 
-/* --- Tailwind v4 Theme Integration --- */
+/* ============================================================ */
+/* LILA — lavanda femenino                                      */
+/* ============================================================ */
+[data-theme="lila"] {
+  --color-primary: #8a5cd1;
+  --color-primary-container: #ece1fb;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #3b1d6b;
+
+  --color-secondary: #d6608f;
+  --color-secondary-container: #fbe1ec;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #5e1438;
+
+  --color-tertiary: #b06fd6;
+  --color-tertiary-container: #f2e2fb;
+  --color-accent: #d6608f;
+
+  --color-background: #faf7fe;
+  --color-surface: #faf7fe;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f4eefb;
+  --color-surface-container: #efe7f8;
+  --color-surface-container-high: #e8def4;
+  --color-surface-container-highest: #e1d5f0;
+  --color-surface-dim: #ddd0ec;
+
+  --color-on-surface: #2b2238;
+  --color-on-surface-variant: #5f5470;
+
+  --color-outline: #968aa6;
+  --color-outline-variant: #d9cee8;
+
+  --color-error: #c0392b;
+  --color-error-container: #fbe3df;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #5e1109;
+
+  --color-success: #2e9e6b;
+  --color-success-container: #d8f1e5;
+  --color-on-success: #ffffff;
+
+  --color-warning: #c87a16;
+  --color-warning-container: #fceacd;
+  --color-on-warning: #ffffff;
+
+  --color-info: #7c6cd0;
+  --color-info-container: #e7e2f8;
+  --color-on-info: #ffffff;
+
+  --color-inverse-surface: #2b2238;
+  --color-inverse-on-surface: #f4eefb;
+  --color-inverse-primary: #c8aef0;
+}
+
+/* ============================================================ */
+/* ELEGANTE — marfil cálido + salvia + dorado                   */
+/* ============================================================ */
+[data-theme="elegante"] {
+  --color-primary: #47634f;
+  --color-primary-container: #d7e4db;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #15301f;
+
+  --color-secondary: #b08d57;
+  --color-secondary-container: #f1e6d1;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #463417;
+
+  --color-tertiary: #8a7a5e;
+  --color-tertiary-container: #ece2cf;
+  --color-accent: #b08d57;
+
+  --color-background: #faf8f4;
+  --color-surface: #faf8f4;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f3efe8;
+  --color-surface-container: #ece7dd;
+  --color-surface-container-high: #e4ded2;
+  --color-surface-container-highest: #dcd5c7;
+  --color-surface-dim: #d6cebf;
+
+  --color-on-surface: #2a2722;
+  --color-on-surface-variant: #5d574c;
+
+  --color-outline: #978f7f;
+  --color-outline-variant: #d3cabb;
+
+  --color-error: #a8392b;
+  --color-error-container: #f6e0db;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #4d1009;
+
+  --color-success: #3f7d55;
+  --color-success-container: #dcebe0;
+  --color-on-success: #ffffff;
+
+  --color-warning: #b08d57;
+  --color-warning-container: #f1e6d1;
+  --color-on-warning: #ffffff;
+
+  --color-info: #4a6b7c;
+  --color-info-container: #dde8ed;
+  --color-on-info: #ffffff;
+
+  --color-inverse-surface: #2a2722;
+  --color-inverse-on-surface: #f3efe8;
+  --color-inverse-primary: #9fb8a7;
+}
+
+/* ============================================================ */
+/* MINIMALISTA — blanco/negro + acento azul                     */
+/* ============================================================ */
+[data-theme="minimal"] {
+  --color-primary: #18181b;
+  --color-primary-container: #ebebed;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #18181b;
+
+  --color-secondary: #2563eb;
+  --color-secondary-container: #dbe7ff;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #11286b;
+
+  --color-tertiary: #3f3f46;
+  --color-tertiary-container: #e4e4e7;
+  --color-accent: #2563eb;
+
+  --color-background: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f6f6f7;
+  --color-surface-container: #f0f0f1;
+  --color-surface-container-high: #e8e8ea;
+  --color-surface-container-highest: #e0e0e3;
+  --color-surface-dim: #d7d7da;
+
+  --color-on-surface: #18181b;
+  --color-on-surface-variant: #6b6b70;
+
+  --color-outline: #9a9aa0;
+  --color-outline-variant: #e2e2e5;
+
+  --color-error: #dc2626;
+  --color-error-container: #fde2e1;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #6b1411;
+
+  --color-success: #16a34a;
+  --color-success-container: #d9f3e1;
+  --color-on-success: #ffffff;
+
+  --color-warning: #d97706;
+  --color-warning-container: #fdeacc;
+  --color-on-warning: #ffffff;
+
+  --color-info: #2563eb;
+  --color-info-container: #dbe7ff;
+  --color-on-info: #ffffff;
+
+  --color-inverse-surface: #18181b;
+  --color-inverse-on-surface: #f6f6f7;
+  --color-inverse-primary: #d7d7da;
+}
+
+/* ============================================================ */
+/* Integración con Tailwind v4                                  */
+/* ============================================================ */
 @theme inline {
   --color-primary: var(--color-primary);
   --color-primary-container: var(--color-primary-container);
@@ -116,8 +330,10 @@
   --color-secondary: var(--color-secondary);
   --color-secondary-container: var(--color-secondary-container);
   --color-on-secondary: var(--color-on-secondary);
+  --color-on-secondary-container: var(--color-on-secondary-container);
 
   --color-tertiary: var(--color-tertiary);
+  --color-tertiary-container: var(--color-tertiary-container);
   --color-accent: var(--color-accent);
 
   --color-background: var(--color-background);
@@ -127,6 +343,7 @@
   --color-surface-container: var(--color-surface-container);
   --color-surface-container-high: var(--color-surface-container-high);
   --color-surface-container-highest: var(--color-surface-container-highest);
+  --color-surface-dim: var(--color-surface-dim);
 
   --color-on-surface: var(--color-on-surface);
   --color-on-surface-variant: var(--color-on-surface-variant);
@@ -136,16 +353,43 @@
 
   --color-error: var(--color-error);
   --color-error-container: var(--color-error-container);
+  --color-on-error: var(--color-on-error);
   --color-on-error-container: var(--color-on-error-container);
+
+  --color-success: var(--color-success);
+  --color-success-container: var(--color-success-container);
+  --color-on-success: var(--color-on-success);
+
+  --color-warning: var(--color-warning);
+  --color-warning-container: var(--color-warning-container);
+  --color-on-warning: var(--color-on-warning);
+
+  --color-info: var(--color-info);
+  --color-info-container: var(--color-info-container);
+  --color-on-info: var(--color-on-info);
 
   --color-inverse-surface: var(--color-inverse-surface);
   --color-inverse-on-surface: var(--color-inverse-on-surface);
+  --color-inverse-primary: var(--color-inverse-primary);
+
+  --color-status-sin-estatus: var(--color-status-sin-estatus);
+  --color-status-foto-enviada: var(--color-status-foto-enviada);
+  --color-status-esperando-pago: var(--color-status-esperando-pago);
+  --color-status-pagado: var(--color-status-pagado);
+  --color-status-disenado: var(--color-status-disenado);
+  --color-status-fabricar: var(--color-status-fabricar);
+  --color-status-corregir: var(--color-status-corregir);
+  --color-status-corregido: var(--color-status-corregido);
+  --color-status-mns-amenazador: var(--color-status-mns-amenazador);
+  --color-status-cancelado: var(--color-status-cancelado);
 
   --font-headline: "Plus Jakarta Sans", sans-serif;
   --font-body: "Manrope", sans-serif;
 }
 
-/* --- Base Styles --- */
+/* ============================================================ */
+/* Estilos base                                                 */
+/* ============================================================ */
 body {
   background: var(--color-background);
   color: var(--color-on-surface);
@@ -156,7 +400,7 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-headline);
 }
 
-/* --- Global scrollbar --- */
+/* --- Scrollbar global --- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-outline-variant); border-radius: 10px; }
@@ -165,19 +409,19 @@ h1, h2, h3, h4, h5, h6 {
 /* Firefox */
 * { scrollbar-width: thin; scrollbar-color: var(--color-outline-variant) transparent; }
 
-/* --- Kanban scrollbar --- */
+/* --- Scrollbar Kanban --- */
 .kanban-scroll::-webkit-scrollbar { height: 8px; }
 .kanban-scroll::-webkit-scrollbar-track { background: var(--color-surface-container-low); }
 .kanban-scroll::-webkit-scrollbar-thumb { background: var(--color-outline-variant); border-radius: 10px; }
 
-/* --- Smooth transitions for theme switch --- */
+/* --- Transiciones suaves al cambiar de tema --- */
 @layer base {
   * {
     transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   }
 }
 
-/* --- Twemoji: render emojis estilo WhatsApp/Apple via SVG inline --- */
+/* --- Twemoji: emojis estilo WhatsApp/Apple via SVG inline --- */
 .twemoji {
   height: 1.2em;
   width: 1.2em;
@@ -186,7 +430,7 @@ h1, h2, h3, h4, h5, h6 {
   display: inline-block;
 }
 
-/* --- Chat background pattern (Dekoor-style: elefante, regalos, envios, etc) --- */
+/* --- Patrón de fondo del chat (Dekoor) --- */
 .chat-bg {
   background-color: var(--color-surface-container-low);
   background-image: url("/chat-bg-dekoor.svg");
@@ -200,30 +444,30 @@ h1, h2, h3, h4, h5, h6 {
   background-repeat: repeat;
 }
 
-/* --- Glass header effect --- */
+/* --- Header con efecto glass --- */
 .glass-header {
   backdrop-filter: blur(12px) saturate(1.5);
   -webkit-backdrop-filter: blur(12px) saturate(1.5);
   background-color: color-mix(in srgb, var(--color-surface-container-lowest) 85%, transparent);
 }
 
-/* --- Avatar gradient --- */
+/* --- Gradiente de avatar --- */
 .avatar-gradient {
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-container) 100%);
 }
 
-/* --- Sent bubble gradient --- */
+/* --- Gradiente de burbuja enviada --- */
 .bubble-sent {
   background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 12%, transparent) 0%, color-mix(in srgb, var(--color-primary) 6%, transparent) 100%);
 }
 
-/* --- Subtle card shadow --- */
+/* --- Sombra sutil de tarjeta --- */
 .card-shadow {
   box-shadow: 0 1px 3px color-mix(in srgb, var(--color-on-surface) 6%, transparent),
               0 1px 2px color-mix(in srgb, var(--color-on-surface) 4%, transparent);
 }
 
-/* --- Section divider with fade --- */
+/* --- Divisor con desvanecido --- */
 .section-divider {
   border: none;
   height: 1px;

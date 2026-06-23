@@ -7,10 +7,10 @@ import { fetchAbandonedCarts, updateAbandonedCart, type AbandonedCart } from "@/
 type StatusFilter = "pending" | "converted" | "messaged" | "discarded";
 
 const STATUS_TABS: { id: StatusFilter; label: string; color: string }[] = [
-  { id: "pending", label: "Pendientes", color: "text-amber-600" },
-  { id: "messaged", label: "Contactados", color: "text-blue-600" },
-  { id: "converted", label: "Convertidos", color: "text-green-600" },
-  { id: "discarded", label: "Descartados", color: "text-gray-500" },
+  { id: "pending", label: "Pendientes", color: "text-warning" },
+  { id: "messaged", label: "Contactados", color: "text-info" },
+  { id: "converted", label: "Convertidos", color: "text-success" },
+  { id: "discarded", label: "Descartados", color: "text-on-surface-variant" },
 ];
 
 function formatDate(raw: AbandonedCart["createdAt"]): string {
@@ -152,7 +152,7 @@ export default function CarritosAbandonadosPage() {
                 )}
 
                 {cart.orderNumber && (
-                  <div className="text-xs text-green-700 mb-2">
+                  <div className="text-xs text-success mb-2">
                     ✓ Pedido: <strong>{cart.orderNumber}</strong>
                   </div>
                 )}

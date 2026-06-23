@@ -199,7 +199,7 @@ function DepartmentPromptsSection() {
                       </span>
                     )}
                     {isDirty && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-warning bg-warning/10 px-2 py-0.5 rounded-full">
                         Sin guardar
                       </span>
                     )}

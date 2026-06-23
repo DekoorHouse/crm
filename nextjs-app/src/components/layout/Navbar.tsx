@@ -1,6 +1,6 @@
 "use client";
 
-import { useTheme } from "@/lib/hooks/useTheme";
+import ThemeMenu from "@/components/layout/ThemeMenu";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { signOut } from "@/lib/firebase/auth";
 import { useState } from "react";
@@ -14,7 +14,6 @@ interface NavbarProps {
 }
 
 export default function Navbar({ viewMode, onViewModeChange, onNewOrder, onExport, onSearchClick }: NavbarProps) {
-  const { isDark, toggleTheme } = useTheme();
   const { user } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
@@ -74,15 +73,8 @@ export default function Navbar({ viewMode, onViewModeChange, onNewOrder, onExpor
           </button>
         )}
 
-        {/* Dark mode toggle */}
-        <button
-          onClick={toggleTheme}
-          className="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-all"
-        >
-          <span className="material-symbols-outlined">
-            {isDark ? "light_mode" : "dark_mode"}
-          </span>
-        </button>
+        {/* Selector de tema */}
+        <ThemeMenu variant="icon" />
 
         {/* New order button */}
         <button

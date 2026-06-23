@@ -277,8 +277,8 @@ export default function RentabilidadPage() {
           </div>
 
           {/* Pipeline */}
-          <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-5 flex items-center gap-4 flex-wrap">
-            <span className="material-symbols-outlined text-amber-600" style={{ fontSize: 32 }}>
+          <div className="rounded-2xl bg-warning/10 border border-warning/30 p-5 flex items-center gap-4 flex-wrap">
+            <span className="material-symbols-outlined text-warning" style={{ fontSize: 32 }}>
               pending_actions
             </span>
             <div className="flex-1 min-w-[200px]">
@@ -286,8 +286,8 @@ export default function RentabilidadPage() {
                 Pipeline pendiente
               </p>
               <p className="text-lg text-on-surface mt-1">
-                <span className="font-bold text-amber-700">{data.pipeline.pedidosPendientes}</span> pedidos
-                sin cobrar por <span className="font-bold text-amber-700">{fmtMoney(data.pipeline.valorPendiente)}</span>
+                <span className="font-bold text-warning">{data.pipeline.pedidosPendientes}</span> pedidos
+                sin cobrar por <span className="font-bold text-warning">{fmtMoney(data.pipeline.valorPendiente)}</span>
               </p>
               <p className="text-xs text-on-surface-variant mt-0.5">
                 Esperado cobrar (a tasa histórica de {fmtPct(data.totals.tasaPago)}):{" "}
@@ -301,9 +301,9 @@ export default function RentabilidadPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold text-on-surface uppercase tracking-wide">Curva diaria</h2>
               <div className="flex items-center gap-3 text-[11px] text-on-surface-variant">
-                <Legend color="bg-blue-500" label="Spend" />
-                <Legend color="bg-green-500" label="Ingresos" />
-                <Legend color="bg-amber-400" label="Pipeline" />
+                <Legend color="bg-info" label="Spend" />
+                <Legend color="bg-success" label="Ingresos" />
+                <Legend color="bg-warning" label="Pipeline" />
               </div>
             </div>
             {data.curvaDiaria.length === 0 ? (
@@ -319,18 +319,18 @@ export default function RentabilidadPage() {
                     >
                       <div className="flex items-end gap-0.5 h-40">
                         <div
-                          className="w-2 bg-blue-500 rounded-sm"
+                          className="w-2 bg-info rounded-sm"
                           style={{ height: `${(d.spend / maxDailyValue) * 100}%` }}
                           title={`Spend: ${fmtMoney(d.spend)}`}
                         />
                         <div
-                          className="w-2 bg-green-500 rounded-sm"
+                          className="w-2 bg-success rounded-sm"
                           style={{ height: `${(d.ingresos / maxDailyValue) * 100}%` }}
                           title={`Ingresos: ${fmtMoney(d.ingresos)}`}
                         />
                         <div
                           className={`w-2 rounded-sm ${
-                            d.incompleto ? "bg-amber-400 opacity-60" : "bg-amber-400"
+                            d.incompleto ? "bg-warning opacity-60" : "bg-warning"
                           }`}
                           style={{ height: `${(d.pipeline / maxDailyValue) * 100}%` }}
                           title={`Pipeline: ${fmtMoney(d.pipeline)}`}
@@ -339,7 +339,7 @@ export default function RentabilidadPage() {
                       <span className="text-[9px] text-on-surface-variant">
                         {d.date.slice(5)}
                         {d.incompleto && (
-                          <span className="text-amber-600" title="Datos aún cocinándose">
+                          <span className="text-warning" title="Datos aún cocinándose">
                             *
                           </span>
                         )}
@@ -543,9 +543,9 @@ function KpiCard({
 }) {
   const toneClass =
     tone === "success"
-      ? "text-green-600"
+      ? "text-success"
       : tone === "danger"
-      ? "text-red-600"
+      ? "text-error"
       : "text-on-surface";
   const bgClass = big
     ? "bg-primary/10 border border-primary/30"
@@ -593,7 +593,7 @@ function RowItem({ f }: { f: ProfitabilityRow }) {
       <td className="py-2 px-2 text-right text-on-surface tabular-nums">{fmtMoney(f.ingresos)}</td>
       <td
         className={`py-2 px-2 text-right tabular-nums font-bold ${
-          f.profit >= 0 ? "text-green-600" : "text-red-600"
+          f.profit >= 0 ? "text-success" : "text-error"
         }`}
       >
         {fmtMoney(f.profit)}

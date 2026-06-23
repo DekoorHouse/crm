@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useTheme } from "@/lib/hooks/useTheme";
+import ThemeMenu from "@/components/layout/ThemeMenu";
 import { signOut } from "@/lib/firebase/auth";
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase/config";
@@ -62,7 +62,6 @@ interface CrmSidebarProps {
 export default function CrmSidebar({ collapsed: collapsedProp, onToggle, onMobileClose }: CrmSidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
 
   // En mobile (< md = 768px) el sidebar siempre se ve expandido (no colapsado).
   // El layout maneja el show/hide via translate-x. La prop collapsed solo aplica en desktop.
@@ -200,19 +199,8 @@ export default function CrmSidebar({ collapsed: collapsedProp, onToggle, onMobil
           </div>
         )}
 
-        {/* Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          title={collapsed ? (isDark ? "Modo claro" : "Modo oscuro") : undefined}
-          className={`w-full flex items-center rounded-xl text-[13px] font-medium text-on-surface-variant hover:bg-surface-container-low transition-all ${
-            collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2"
-          }`}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
-            {isDark ? "light_mode" : "dark_mode"}
-          </span>
-          {!collapsed && (isDark ? "Modo claro" : "Modo oscuro")}
-        </button>
+        {/* Selector de tema */}
+        <ThemeMenu variant="sidebar" collapsed={collapsed} />
 
         {/* User + logout */}
         <div className={`flex items-center border-t border-outline-variant/15 pt-3 ${

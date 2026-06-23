@@ -8,13 +8,8 @@ const SUBTITLE = "Cargando workspace...";
 export default function LoadingOverlay() {
   const [step, setStep] = useState(0);
 
-  // Apply dark mode immediately from localStorage so the splash matches the theme
-  useEffect(() => {
-    const stored = localStorage.getItem("dekoor-theme");
-    if (stored === "dark") {
-      document.documentElement.classList.add("dark");
-    }
-  }, []);
+  // El script inline del layout ya aplicó el tema antes de pintar; este splash
+  // hereda las variables de color automáticamente, sin lógica extra.
 
   useEffect(() => {
     const timers = [

@@ -11,6 +11,7 @@ import {
 import { db, auth } from "@/lib/firebase/config";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import toast from "react-hot-toast";
+import ThemePicker from "@/components/crm/ThemePicker";
 
 interface FbPage {
   id: string;
@@ -276,6 +277,15 @@ export default function AjustesPage() {
       <p className="text-sm text-on-surface-variant mb-8">Configuracion general del CRM</p>
 
       <div className="space-y-6">
+        {/* Apariencia / Tema */}
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/10 p-6">
+          <h3 className="text-sm font-bold text-on-surface mb-1">Apariencia</h3>
+          <p className="text-xs text-on-surface-variant mb-4">
+            Elige el tema del CRM. Se guarda en tu cuenta y te sigue en cualquier dispositivo.
+          </p>
+          <ThemePicker />
+        </div>
+
         {/* Away message */}
         <div className="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/10 p-6">
           <div className="flex items-center justify-between">
@@ -326,7 +336,7 @@ export default function AjustesPage() {
                     <span className="text-xs text-on-surface-variant">del último mensaje del cliente</span>
                     {leadRows.length > 1 && (
                       <button onClick={() => removeLeadRow(i)}
-                        className="ml-auto text-xs font-bold text-red-500 hover:opacity-70">
+                        className="ml-auto text-xs font-bold text-error hover:opacity-70">
                         Quitar
                       </button>
                     )}
@@ -446,7 +456,7 @@ export default function AjustesPage() {
                         <div className="text-sm font-bold text-on-surface">{p.name}</div>
                         <div className="text-xs text-on-surface-variant">
                           {p.category || "Pagina"} &middot; ID {p.id}
-                          {p.subscribed && <span className="ml-2 text-green-600 font-bold">&#10003; Suscrita</span>}
+                          {p.subscribed && <span className="ml-2 text-success font-bold">&#10003; Suscrita</span>}
                         </div>
                       </div>
                       <div className="flex gap-2">

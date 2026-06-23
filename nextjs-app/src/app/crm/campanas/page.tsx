@@ -272,13 +272,13 @@ export default function CampanasPage() {
   return (
     <div className="px-4 sm:px-6 py-5 max-w-7xl mx-auto">
       {/* Barra de tabs de comunicación masiva (mismo set que /audiencias, /cobranza, etc.) */}
-      <div className="inline-flex flex-wrap gap-1 mb-4 p-1 rounded-lg" style={{ background: "#e8eeed" }}>
-        <a href="/audiencias/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold transition-colors hover:bg-black/5" style={{ color: "#1B4D5C" }}>Audiencias</a>
-        <a href="/cobranza/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold transition-colors hover:bg-black/5" style={{ color: "#1B4D5C" }}>Cobranza</a>
-        <a href="/retargeting/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold transition-colors hover:bg-black/5" style={{ color: "#1B4D5C" }}>Retargeting (Pagados)</a>
-        <a href="/retargeting/nuevos/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold transition-colors hover:bg-black/5" style={{ color: "#1B4D5C" }}>Retargeting (Nuevos)</a>
-        <a href="/retargeting/#calculadora" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold transition-colors hover:bg-black/5" style={{ color: "#1B4D5C" }}>Calculadora</a>
-        <span className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold shadow-sm" style={{ background: "#1B4D5C", color: "#fff" }}>Campañas</span>
+      <div className="inline-flex flex-wrap gap-1 mb-4 p-1 rounded-lg bg-surface-container">
+        <a href="/audiencias/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold text-primary transition-colors hover:bg-on-surface/5">Audiencias</a>
+        <a href="/cobranza/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold text-primary transition-colors hover:bg-on-surface/5">Cobranza</a>
+        <a href="/retargeting/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold text-primary transition-colors hover:bg-on-surface/5">Retargeting (Pagados)</a>
+        <a href="/retargeting/nuevos/" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold text-primary transition-colors hover:bg-on-surface/5">Retargeting (Nuevos)</a>
+        <a href="/retargeting/#calculadora" className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold text-primary transition-colors hover:bg-on-surface/5">Calculadora</a>
+        <span className="px-3.5 py-1.5 rounded-md text-[13px] font-semibold shadow-sm bg-primary text-on-primary">Campañas</span>
       </div>
 
       <div className="flex items-center justify-between mb-5">
