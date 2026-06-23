@@ -530,7 +530,8 @@ async function getOrCreateCache(botInstructions, departmentImageParts = [], imag
     const response = await fetch(`${GEMINI_BASE_URL}/cachedContents?key=${GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cachePayload)
+        body: JSON.stringify(cachePayload),
+        signal: AbortSignal.timeout(45000)
     });
 
     if (!response.ok) {
@@ -606,7 +607,7 @@ async function generateGeminiResponse(prompt, imageParts = [], systemInstruction
     if (systemInstruction) {
         payload.systemInstruction = { parts: [{ text: systemInstruction }] };
     }
-    const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(45000) });
     if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
     const result = await geminiResponse.json();
     let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
@@ -640,7 +641,8 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
     const geminiResponse = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(45000)
     });
 
     if (!geminiResponse.ok) {
@@ -745,6 +747,7 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
 
         if (!shouldRun) {
             console.log(`[AI] El bot ya no está activo para ${contactId} (Global: ${globalBotActive}, Individual: ${contactData.botActive}). Abortando respuesta.`);
+            await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() }); // no dejar el estado 'generating' huérfano
             return;
         }
 
@@ -819,7 +822,13 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         for (const refImage of departmentReferenceImages) {
             if (refImage && refImage.url && typeof refImage.url === 'string' && refImage.url.startsWith('http')) {
                 try {
-                    const response = await fetch(refImage.url);
+                    const response = await fetch(refImage.url, { signal: AbortSignal.timeout(15000) });
+                    if (!response.ok) {
+                        // Con Uniform Bucket-Level Access, las URLs storage.googleapis.com dan 403.
+                        // NO metemos el cuerpo del error como "imagen" (eso cuelga/atraganta a Gemini): la omitimos.
+                        console.warn(`[AI] Imagen de referencia del departamento no disponible (HTTP ${response.status}). Se omite.`);
+                        continue;
+                    }
                     const buffer = Buffer.from(await response.arrayBuffer());
                     if (buffer.length > 0) {
                         departmentImageParts.push({ inlineData: { data: buffer.toString('base64'), mimeType: refImage.mimeType || 'image/jpeg' } });
@@ -838,7 +847,11 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         for (const media of downloadedMedia.reverse()) { // Voltear para mantener orden cronológico
             if (media.url.startsWith('http')) {
                 try {
-                    const response = await fetch(media.url);
+                    const response = await fetch(media.url, { signal: AbortSignal.timeout(15000) });
+                    if (!response.ok) {
+                        console.warn(`[AI] Multimedia de conversación no disponible (HTTP ${response.status}). Se omite.`);
+                        continue;
+                    }
                     const buffer = Buffer.from(await response.arrayBuffer());
                     if (buffer.length > 0) {
                         mediaParts.push({ inlineData: { data: buffer.toString('base64'), mimeType: media.mimeType } });
