@@ -1000,8 +1000,13 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas enviadas: ${aiMessages.length})`);
     } catch (error) {
         console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
-        // Asegurarse de limpiar el estado incluso en error
-        await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() });
+        // Asegurarse de limpiar el estado incluso en error. Guardamos el último
+        // error para diagnóstico (visible en Firestore sin depender de los logs).
+        await contactRef.update({
+            aiStatus: admin.firestore.FieldValue.delete(),
+            aiLastError: String(error && error.message || error).slice(0, 600),
+            aiLastErrorAt: admin.firestore.FieldValue.serverTimestamp()
+        });
     }
 }
 
