@@ -581,8 +581,10 @@ router.post('/', async (req, res) => {
                     messageData.text = 'Sticker';
                     console.log(`[STICKER] Sticker ${message.sticker.id} guardado en Storage. URL: ${publicUrl}`);
                 } catch (uploadError) {
-                    console.error(`[STICKER] FALLBACK: No se pudo guardar el sticker ${message.sticker.id}. Error: ${uploadError.message}`);
-                    messageData.text = 'Mensaje multimedia (sticker)'; // Fallback text
+                    console.error(`[STICKER] FALLBACK: No se pudo guardar el sticker ${message.sticker.id}. Usando proxy. Error: ${uploadError.message}`);
+                    messageData.mediaProxyUrl = `/webhook/wa/media/${message.sticker.id}`; // Proxy para mostrarlo igual
+                    messageData.fileType = message.sticker.mime_type || 'image/webp';
+                    messageData.text = 'Sticker';
                 }
             } else if (message.type === 'location') {
                 messageData.location = message.location; // Store location object

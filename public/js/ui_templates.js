@@ -925,7 +925,10 @@ const MessageBubbleTemplate = (message) => {
     }
 
     if (effectiveFileUrl && message.fileType) {
-        if (message.fileType.startsWith('image/')) {
+        if (message.type === 'sticker') {
+            const fullStickerUrl = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
+            contentHTML += `<img src="${fullStickerUrl}" alt="Sticker" class="chat-sticker-preview">`;
+        } else if (message.fileType.startsWith('image/')) {
             bubbleExtraClass = 'has-image';
             const bubbleBgColor = isSent ? 'var(--color-bubble-sent-bg)' : 'var(--color-bubble-received-bg)';
             const fullImageUrl = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
@@ -944,9 +947,6 @@ const MessageBubbleTemplate = (message) => {
         } else if (message.type === 'document' || message.fileType.startsWith('application/') || message.fileType.startsWith('text/')) {
             const fullDocUrl = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
             contentHTML += `<a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link"><i class="fas fa-file-alt document-icon"></i><span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span></a>`;
-        } else if (message.type === 'sticker') {
-            const fullStickerUrl = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
-            contentHTML += `<img src="${fullStickerUrl}" alt="Sticker" class="chat-sticker-preview">`;
         }
     } else if (message.type === 'location' && message.location) {
         const { latitude, longitude, name, address } = message.location;
