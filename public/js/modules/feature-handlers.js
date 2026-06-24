@@ -765,6 +765,118 @@ async function handleSendUnifiedCampaign() {
 
 // --- Constructor de plantillas de Meta ---
 
+// Foto adjunta para el asistente de IA (comprimida en el cliente).
+let aiTemplatePhoto = null;
+
+// Lee la foto, la reduce (máx 1024px, JPEG) y la guarda como base64 para enviarla a la IA.
+function onAiTemplatePhotoChange(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+            const maxDim = 1024;
+            let { width, height } = img;
+            if (width > maxDim || height > maxDim) {
+                const scale = maxDim / Math.max(width, height);
+                width = Math.round(width * scale);
+                height = Math.round(height * scale);
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width; canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            aiTemplatePhoto = { base64: dataUrl, mimeType: 'image/jpeg' };
+
+            const prev = document.getElementById('ai-tpl-photo-preview');
+            if (prev) { prev.src = dataUrl; prev.classList.remove('hidden'); }
+            const label = document.getElementById('ai-tpl-photo-label');
+            if (label) label.textContent = file.name;
+        };
+        img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+// Llama a la IA con la descripción (+ foto) y precarga todos los campos del formulario.
+async function handleGenerateTemplateWithAI() {
+    const desc = (document.getElementById('ai-tpl-desc').value || '').trim();
+    if (!desc) { showError('Describe para qué es la plantilla.'); return; }
+
+    const btn = document.getElementById('ai-tpl-generate-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Generando...';
+
+    try {
+        const payload = { description: desc, category: document.getElementById('tpl-category').value };
+        if (aiTemplatePhoto) { payload.imageBase64 = aiTemplatePhoto.base64; payload.imageMimeType = aiTemplatePhoto.mimeType; }
+
+        const response = await fetch(`${API_BASE_URL}/api/whatsapp-templates/ai-generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || 'No se pudo generar con IA.');
+
+        applyAiTemplateSuggestion(result.suggestion);
+        showError('La IA llenó los campos. Revísalos y ajústalos antes de crear.', 'success');
+    } catch (error) {
+        console.error('Error al generar plantilla con IA:', error);
+        showError(error.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-wand-magic-sparkles mr-1"></i> Generar';
+    }
+}
+
+// Precarga el formulario con la sugerencia devuelta por la IA.
+function applyAiTemplateSuggestion(s) {
+    if (!s) return;
+
+    if (s.name) document.getElementById('tpl-name').value = String(s.name).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    if (s.category && ['MARKETING', 'UTILITY'].includes(s.category)) document.getElementById('tpl-category').value = s.category;
+
+    // Cabecera
+    const headerSel = document.getElementById('tpl-header-type');
+    const htype = (s.header && s.header.type) || 'NONE';
+    headerSel.value = ['NONE', 'TEXT', 'IMAGE'].includes(htype) ? htype : 'NONE';
+    onTemplateHeaderTypeChange();
+    if (htype === 'TEXT' && s.header && s.header.text) document.getElementById('tpl-header-text').value = s.header.text;
+
+    // Cuerpo + ejemplos de variables
+    if (s.body) document.getElementById('tpl-body').value = s.body;
+    onTemplateBodyChange(); // genera los inputs de variables según {{n}}
+    if (Array.isArray(s.bodyExamples)) {
+        const inputs = document.querySelectorAll('#tpl-body-vars input[data-var]');
+        inputs.forEach((inp, i) => { if (s.bodyExamples[i] != null) inp.value = s.bodyExamples[i]; });
+    }
+
+    // Pie
+    if (s.footer != null) document.getElementById('tpl-footer').value = s.footer;
+
+    // Botones
+    const list = document.getElementById('tpl-buttons-list');
+    list.innerHTML = '';
+    if (Array.isArray(s.buttons)) {
+        s.buttons.slice(0, 3).forEach(b => {
+            if (!b || !b.text) return;
+            addTemplateButton();
+            const row = list.lastElementChild;
+            const typeSel = row.querySelector('.tpl-btn-type');
+            const t = ['QUICK_REPLY', 'URL', 'PHONE_NUMBER'].includes(b.type) ? b.type : 'QUICK_REPLY';
+            typeSel.value = t;
+            onTemplateButtonTypeChange(typeSel);
+            row.querySelector('.tpl-btn-text').value = b.text || '';
+            if (t === 'URL') row.querySelector('.tpl-btn-extra').value = b.url || '';
+            else if (t === 'PHONE_NUMBER') row.querySelector('.tpl-btn-extra').value = b.phone_number || '';
+        });
+    }
+
+    updateTemplatePreview();
+}
+
 // Muestra el campo correcto según el tipo de cabecera elegido.
 function onTemplateHeaderTypeChange() {
     const type = (document.getElementById('tpl-header-type') || {}).value || 'NONE';
@@ -2102,6 +2214,8 @@ window.onTemplateBodyChange = onTemplateBodyChange;
 window.addTemplateButton = addTemplateButton;
 window.onTemplateButtonTypeChange = onTemplateButtonTypeChange;
 window.updateTemplatePreview = updateTemplatePreview;
+window.onAiTemplatePhotoChange = onAiTemplatePhotoChange;
+window.handleGenerateTemplateWithAI = handleGenerateTemplateWithAI;
 window.handleCreateWhatsappTemplate = handleCreateWhatsappTemplate;
 window.handleSaveQuickReply = handleSaveQuickReply;
 window.handleDeleteQuickReply = handleDeleteQuickReply;

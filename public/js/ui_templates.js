@@ -107,6 +107,20 @@ const AdRoutingViewTemplate = () => `
 const CreateTemplateFormTemplate = () => `
     <div class="template-builder">
       <div class="template-builder-form">
+        <div class="ai-assist-box">
+            <div class="ai-assist-title"><i class="fas fa-wand-magic-sparkles"></i> Generar con IA</div>
+            <p class="ai-assist-desc">Describe para qué es la plantilla y la IA llenará todos los campos (con emojis). Puedes adjuntar una foto del producto para darle contexto.</p>
+            <textarea id="ai-tpl-desc" rows="2" placeholder="Ej: Promoción 2x1 en lámparas LED para el Día del Padre, con un botón para comprar" class="!mb-2"></textarea>
+            <div class="ai-assist-row">
+                <label class="ai-assist-photo">
+                    <input type="file" id="ai-tpl-photo" accept="image/*" onchange="onAiTemplatePhotoChange(event)" hidden>
+                    <i class="fas fa-camera"></i> <span id="ai-tpl-photo-label">Adjuntar foto (opcional)</span>
+                </label>
+                <button type="button" id="ai-tpl-generate-btn" onclick="handleGenerateTemplateWithAI()" class="btn btn-primary btn-sm"><i class="fas fa-wand-magic-sparkles mr-1"></i> Generar</button>
+            </div>
+            <img id="ai-tpl-photo-preview" class="ai-tpl-photo-preview hidden" alt="foto adjunta">
+        </div>
+
         <div class="campaign-form-section">
             <label class="font-bold" for="tpl-name">Nombre de la plantilla</label>
             <input type="text" id="tpl-name" placeholder="ej. promo_dia_del_padre" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9_]/g,'_')" class="!mb-1">

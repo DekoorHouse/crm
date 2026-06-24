@@ -4949,6 +4949,61 @@ router.post('/whatsapp-templates/create', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/whatsapp-templates/ai-generate (Sugerir plantilla con IA) ---
+// Recibe una descripción (y opcionalmente una foto) y devuelve una sugerencia
+// completa de plantilla (nombre, categoría, cabecera, cuerpo con emojis, pie y
+// botones) lista para precargar el formulario.
+router.post('/whatsapp-templates/ai-generate', async (req, res) => {
+    try {
+        const { description, imageBase64, imageMimeType, category } = req.body;
+        if (!description || !description.trim()) {
+            return res.status(400).json({ success: false, message: 'Describe para qué es la plantilla.' });
+        }
+
+        const systemInstruction = `Eres un experto en marketing por WhatsApp para "Dekoor", una marca mexicana de regalos personalizados y lámparas LED.
+Creas plantillas de mensajes de WhatsApp (HSM) que cumplen las políticas de Meta.
+Escribes SIEMPRE en español de México, tono cálido y cercano, y SIEMPRE incluyes emojis relevantes en el cuerpo.
+Devuelves EXCLUSIVAMENTE un objeto JSON válido (sin texto extra, sin markdown, sin comillas triples) con esta forma exacta:
+{
+  "name": "nombre_en_snake_case",
+  "category": "MARKETING",
+  "header": { "type": "NONE", "text": "" },
+  "body": "cuerpo con emojis y variables {{1}} si aporta",
+  "bodyExamples": ["ejemplo de {{1}}"],
+  "footer": "pie corto opcional",
+  "buttons": [ { "type": "QUICK_REPLY", "text": "..." } ]
+}
+Reglas:
+- "category": "MARKETING" o "UTILITY".
+- "header.type": "NONE", "TEXT" o "IMAGE". Si el usuario adjunta una foto del producto, usa "IMAGE". Si usas "TEXT", llena "header.text".
+- El cuerpo lleva emojis, máx ~600 caracteres. Usa variables {{1}}, {{2}}… SOLO si aporta (nombre del cliente, número de pedido, etc.), numeradas en orden desde 1.
+- "bodyExamples": un ejemplo por cada variable, en orden. Si no hay variables, deja [].
+- "footer": máximo 60 caracteres. Si no aplica, deja "".
+- "buttons": máximo 3. Tipos: "QUICK_REPLY" (solo text), "URL" (text + url), "PHONE_NUMBER" (text + phone_number). Si no aplica, deja [].
+- "name": solo minúsculas, números y guion bajo.`;
+
+        const prompt = `Crea una plantilla de WhatsApp para esto:\n"${description.trim()}"\n${category ? `Categoría preferida: ${category}.` : ''}\nDevuelve solo el objeto JSON.`;
+
+        const imageParts = [];
+        if (imageBase64) {
+            const data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+            imageParts.push({ inlineData: { data, mimeType: imageMimeType || 'image/jpeg' } });
+        }
+
+        const aiResult = await generateGeminiResponse(prompt, imageParts, systemInstruction);
+        let text = (aiResult.text || '').trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        if (start === -1 || end === -1) throw new Error('La IA no devolvió un JSON válido.');
+
+        const suggestion = JSON.parse(text.slice(start, end + 1));
+        res.status(200).json({ success: true, suggestion });
+    } catch (error) {
+        console.error('[IA PLANTILLA] Error:', error.message);
+        res.status(500).json({ success: false, message: error.message || 'No se pudo generar la plantilla con IA.' });
+    }
+});
+
 
 // --- Endpoint POST /api/campaigns/send-template (Enviar campaña de texto) ---
 router.post('/campaigns/send-template', async (req, res) => {
