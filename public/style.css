@@ -977,6 +977,15 @@ body.dark-mode .table tr:hover { background-color: #292e42; }
 .campaign-form-section label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
 #recipient-count-display { margin-top: 0.5rem; font-style: italic; color: var(--color-text-light); }
 
+/* Sub-pestañas de la vista Campañas (Enviar / Crear plantilla) */
+.campaign-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-border); margin-bottom: 1.5rem; }
+.campaign-tab { padding: 10px 18px; background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--color-text-light); transition: color 0.15s ease, border-color 0.15s ease; }
+.campaign-tab:hover { color: var(--color-text); }
+.campaign-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.campaign-pane { display: none; }
+.campaign-pane.active { display: block; }
+.tpl-button-row select, .tpl-button-row input { margin-bottom: 0 !important; }
+
 #app-body { display: flex; flex: 1; overflow: hidden; }
 #main-view-container { flex: 1; min-width: 0; }
 #chat-view { display: flex; flex: 1; min-width: 0; height: 100%; }

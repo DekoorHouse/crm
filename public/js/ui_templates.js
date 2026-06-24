@@ -103,64 +103,118 @@ const AdRoutingViewTemplate = () => `
     </div>
 `;
 
-const CampaignsViewTemplate = () => `
-    <div class="view-container">
-        <div class="view-header">
-            <h1>Crear Campaña (Solo Texto)</h1>
+// Formulario constructor de plantillas de Meta (sub-pestaña "Crear plantilla")
+const CreateTemplateFormTemplate = () => `
+    <div class="max-w-2xl">
+        <div class="campaign-form-section">
+            <label class="font-bold" for="tpl-name">Nombre de la plantilla</label>
+            <input type="text" id="tpl-name" placeholder="ej. promo_dia_del_padre" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9_]/g,'_')" class="!mb-1">
+            <p class="text-xs text-gray-400">Solo minúsculas, números y guion bajo. No se puede cambiar después.</p>
         </div>
-        <div class="max-w-2xl">
+
+        <div class="grid grid-cols-2 gap-4">
             <div class="campaign-form-section">
-                <label for="campaign-tag-select">1. Enviar a contactos con la etiqueta:</label>
-                <select id="campaign-tag-select" onchange="updateCampaignRecipientCount()" class="!mb-2"></select>
-                <p id="recipient-count-display">Se enviará a 0 contactos.</p>
+                <label class="font-bold" for="tpl-language">Idioma</label>
+                <select id="tpl-language" class="!mb-0">
+                    <option value="es_MX">Español (México)</option>
+                    <option value="es">Español</option>
+                    <option value="en_US">Inglés (EE. UU.)</option>
+                </select>
             </div>
             <div class="campaign-form-section">
-                <label for="campaign-template-select">2. Seleccionar Plantilla de Mensaje:</label>
-                <select id="campaign-template-select" class="!mb-2"></select>
+                <label class="font-bold" for="tpl-category">Categoría</label>
+                <select id="tpl-category" class="!mb-0">
+                    <option value="MARKETING">Marketing</option>
+                    <option value="UTILITY">Utilidad (Utility)</option>
+                </select>
             </div>
-            <div class="campaign-form-section">
-                <button id="send-campaign-btn" onclick="handleSendCampaign()" class="btn btn-primary btn-lg">
-                    <i class="fas fa-paper-plane mr-2"></i>
-                    Enviar Campaña
-                </button>
-            </div>
+        </div>
+
+        <div class="campaign-form-section">
+            <label class="font-bold" for="tpl-header-type">Cabecera (opcional)</label>
+            <select id="tpl-header-type" onchange="onTemplateHeaderTypeChange()" class="!mb-2">
+                <option value="NONE">Ninguna</option>
+                <option value="TEXT">Texto</option>
+                <option value="IMAGE">Imagen</option>
+            </select>
+            <input type="text" id="tpl-header-text" placeholder="Texto de la cabecera (máx. 60)" maxlength="60" class="hidden !mb-0">
+            <input type="text" id="tpl-header-image" placeholder="URL de una imagen de muestra (jpg/png)" class="hidden !mb-0">
+        </div>
+
+        <div class="campaign-form-section">
+            <label class="font-bold" for="tpl-body">Cuerpo del mensaje *</label>
+            <textarea id="tpl-body" rows="5" oninput="onTemplateBodyChange()" placeholder="Hola {{1}}, tu pedido {{2}} ya está listo para recoger. ¡Gracias por tu compra!" class="!mb-1"></textarea>
+            <p class="text-xs text-gray-400">Usa {{1}}, {{2}}… para variables. Abajo escribe un ejemplo de cada una (Meta lo exige).</p>
+            <div id="tpl-body-vars" class="space-y-2 mt-2"></div>
+        </div>
+
+        <div class="campaign-form-section">
+            <label class="font-bold" for="tpl-footer">Pie de página (opcional)</label>
+            <input type="text" id="tpl-footer" placeholder="ej. Dekoor · Responde BAJA para no recibir más" maxlength="60" class="!mb-0">
+        </div>
+
+        <div class="campaign-form-section">
+            <label class="font-bold">Botones (opcional, máx. 3)</label>
+            <div id="tpl-buttons-list" class="space-y-2 mt-1"></div>
+            <button type="button" onclick="addTemplateButton()" class="btn btn-outline btn-sm mt-2"><i class="fas fa-plus mr-1"></i> Agregar botón</button>
+        </div>
+
+        <div class="campaign-form-section">
+            <button id="create-template-btn" onclick="handleCreateWhatsappTemplate()" class="btn btn-primary btn-lg">
+                <i class="fas fa-paper-plane mr-2"></i> Crear y enviar a revisión
+            </button>
+            <p class="text-xs text-gray-400 mt-2">Meta revisa la plantilla (suele tardar unos minutos). Estará disponible para enviar cuando aparezca como APROBADA.</p>
         </div>
     </div>
 `;
 
-const CampaignsWithImageViewTemplate = () => `
+// Vista unificada de Campañas: sub-pestañas "Enviar" y "Crear plantilla"
+const CampaignsViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">
-            <h1>Crear Campaña con Imagen</h1>
+            <h1>Campañas</h1>
         </div>
-        <div class="max-w-2xl">
-            <div class="campaign-form-section">
-                <label class="font-bold">1. Enviar a (elige una opción):</label>
-                <div class="mt-2 p-4 border rounded-lg bg-gray-50">
-                    <label for="campaign-image-tag-select" class="text-sm font-semibold">Contactos con la etiqueta:</label>
-                    <select id="campaign-image-tag-select" onchange="updateCampaignRecipientCount('image')" class="!mb-2"></select>
-                    <p id="recipient-count-display-image">Se enviará a 0 contactos.</p>
+
+        <div class="campaign-tabs">
+            <button class="campaign-tab active" data-ctab="enviar" onclick="switchCampaignTab('enviar')"><i class="fas fa-paper-plane mr-2"></i>Enviar campaña</button>
+            <button class="campaign-tab" data-ctab="crear" onclick="switchCampaignTab('crear')"><i class="fas fa-file-circle-plus mr-2"></i>Crear plantilla</button>
+        </div>
+
+        <!-- SUB-PESTAÑA: Enviar -->
+        <div class="campaign-pane active" data-cpane="enviar">
+            <div class="max-w-2xl">
+                <div class="campaign-form-section">
+                    <label class="font-bold">1. Enviar a (elige una opción):</label>
+                    <div class="mt-2 p-4 border rounded-lg bg-gray-50">
+                        <label for="campaign-tag-select" class="text-sm font-semibold">Contactos con la etiqueta:</label>
+                        <select id="campaign-tag-select" onchange="updateCampaignRecipientCount()" class="!mb-2"></select>
+                        <p id="campaign-recipient-count" class="text-sm text-gray-500">0 destinatarios</p>
+                    </div>
+                    <p class="text-center my-3 font-bold text-gray-400">Ó</p>
+                    <div class="p-4 border rounded-lg bg-gray-50">
+                        <label for="campaign-phone-input" class="text-sm font-semibold">Un número de teléfono específico:</label>
+                        <input type="text" id="campaign-phone-input" placeholder="Ej: 521..." class="!mb-0">
+                    </div>
                 </div>
-                <p class="text-center my-3 font-bold text-gray-400">Ó</p>
-                <div class="p-4 border rounded-lg bg-gray-50">
-                    <label for="campaign-image-phone-input" class="text-sm font-semibold">Un número de teléfono específico:</label>
-                    <input type="text" id="campaign-image-phone-input" oninput="updateCampaignRecipientCount('image')" placeholder="Ej: 521..." class="!mb-0">
+                <div class="campaign-form-section">
+                    <label for="campaign-template-select" class="font-bold">2. Plantilla de mensaje:</label>
+                    <select id="campaign-template-select" onchange="onCampaignTemplateChange()" class="!mb-2"></select>
+                </div>
+                <div id="campaign-image-url-section" class="campaign-form-section hidden">
+                    <label for="campaign-image-url-input" class="font-bold">3. URL de la imagen (esta plantilla lleva cabecera de imagen):</label>
+                    <input type="text" id="campaign-image-url-input" placeholder="https://ejemplo.com/imagen.jpg" class="!mb-2">
+                </div>
+                <div class="campaign-form-section">
+                    <button id="send-campaign-btn" onclick="handleSendUnifiedCampaign()" class="btn btn-primary btn-lg">
+                        <i class="fas fa-paper-plane mr-2"></i> Enviar Campaña
+                    </button>
                 </div>
             </div>
-            <div class="campaign-form-section">
-                <label for="campaign-image-template-select" class="font-bold">2. Seleccionar Plantilla de Mensaje (con cabecera de imagen):</label>
-                <select id="campaign-image-template-select" class="!mb-2"></select>
-            </div>
-            <div class="campaign-form-section">
-                <label for="campaign-image-url-input" class="font-bold">3. URL de la Imagen:</label>
-                <input type="text" id="campaign-image-url-input" placeholder="https://ejemplo.com/imagen.jpg" class="!mb-2">
-            </div>
-            <div class="campaign-form-section">
-                <button id="send-campaign-image-btn" onclick="handleSendCampaignWithImage()" class="btn btn-primary btn-lg">
-                    <i class="fas fa-paper-plane mr-2"></i>
-                    Enviar Campaña con Imagen
-                </button>
-            </div>
+        </div>
+
+        <!-- SUB-PESTAÑA: Crear plantilla -->
+        <div class="campaign-pane" data-cpane="crear">
+            ${CreateTemplateFormTemplate()}
         </div>
     </div>
 `;

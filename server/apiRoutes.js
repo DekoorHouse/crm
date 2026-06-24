@@ -4830,16 +4830,137 @@ router.get('/whatsapp-templates', async (req, res) => {
     }
 });
 
+// Sube una imagen de muestra a Meta (resumable upload) y devuelve el `handle`
+// requerido para plantillas con cabecera de IMAGEN. Usa FB_APP_ID + WHATSAPP_TOKEN.
+async function uploadSampleHeaderImage(imageUrl) {
+    const FB_APP_ID = process.env.FB_APP_ID;
+    if (!FB_APP_ID) throw new Error('Falta FB_APP_ID en el servidor para subir la imagen de muestra.');
+
+    // Descargar la imagen de muestra
+    const imgResp = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const buffer = Buffer.from(imgResp.data);
+    const mime = (imgResp.headers['content-type'] || 'image/jpeg').split(';')[0];
+    const fileName = (imageUrl.split('/').pop() || 'sample').split('?')[0] || 'sample.jpg';
+
+    // 1) Crear sesión de subida
+    const startResp = await axios.post(
+        `https://graph.facebook.com/v19.0/${FB_APP_ID}/uploads`,
+        null,
+        { params: { file_name: fileName, file_length: buffer.length, file_type: mime, access_token: WHATSAPP_TOKEN } }
+    );
+    const sessionId = startResp.data && startResp.data.id; // formato "upload:..."
+    if (!sessionId) throw new Error('Meta no devolvió una sesión de subida para la imagen.');
+
+    // 2) Subir los bytes y obtener el handle
+    const uploadResp = await axios.post(
+        `https://graph.facebook.com/v19.0/${sessionId}`,
+        buffer,
+        { headers: { 'Authorization': `OAuth ${WHATSAPP_TOKEN}`, 'file_offset': '0', 'Content-Type': mime } }
+    );
+    const handle = uploadResp.data && uploadResp.data.h;
+    if (!handle) throw new Error('Meta no devolvió el handle de la imagen de muestra.');
+    return handle;
+}
+
+// --- Endpoint POST /api/whatsapp-templates/create (Crear plantilla de Meta) ---
+router.post('/whatsapp-templates/create', async (req, res) => {
+    if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN) {
+        return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp Business.' });
+    }
+
+    try {
+        const { name, language, category, header, body, footer, buttons, bodyExamples } = req.body;
+
+        // Validaciones
+        if (!name || !/^[a-z0-9_]+$/.test(name)) {
+            return res.status(400).json({ success: false, message: 'Nombre inválido: usa solo minúsculas, números y guion bajo.' });
+        }
+        if (!body || !body.trim()) {
+            return res.status(400).json({ success: false, message: 'El cuerpo del mensaje es obligatorio.' });
+        }
+
+        const components = [];
+
+        // --- HEADER (opcional) ---
+        if (header && header.type === 'TEXT' && header.text && header.text.trim()) {
+            const comp = { type: 'HEADER', format: 'TEXT', text: header.text.trim() };
+            if (/\{\{1\}\}/.test(header.text) && header.example) {
+                comp.example = { header_text: [String(header.example)] };
+            }
+            components.push(comp);
+        } else if (header && header.type === 'IMAGE' && header.imageUrl && header.imageUrl.trim()) {
+            const handle = await uploadSampleHeaderImage(header.imageUrl.trim());
+            components.push({ type: 'HEADER', format: 'IMAGE', example: { header_handle: [handle] } });
+        }
+
+        // --- BODY (obligatorio) ---
+        const bodyComp = { type: 'BODY', text: body.trim() };
+        const varCount = (body.match(/\{\{\d+\}\}/g) || []).length;
+        if (varCount > 0) {
+            const examples = (Array.isArray(bodyExamples) ? bodyExamples : [])
+                .slice(0, varCount)
+                .map(v => (v && String(v).trim()) || 'ejemplo');
+            while (examples.length < varCount) examples.push('ejemplo');
+            bodyComp.example = { body_text: [examples] };
+        }
+        components.push(bodyComp);
+
+        // --- FOOTER (opcional) ---
+        if (footer && footer.trim()) {
+            components.push({ type: 'FOOTER', text: footer.trim() });
+        }
+
+        // --- BUTTONS (opcional) ---
+        if (Array.isArray(buttons) && buttons.length) {
+            const built = buttons.map(b => {
+                if (!b || !b.text || !b.text.trim()) return null;
+                if (b.type === 'QUICK_REPLY') return { type: 'QUICK_REPLY', text: b.text.trim() };
+                if (b.type === 'URL' && b.url) return { type: 'URL', text: b.text.trim(), url: b.url.trim() };
+                if (b.type === 'PHONE_NUMBER' && b.phone_number) return { type: 'PHONE_NUMBER', text: b.text.trim(), phone_number: b.phone_number.trim() };
+                return null;
+            }).filter(Boolean);
+            if (built.length) components.push({ type: 'BUTTONS', buttons: built });
+        }
+
+        const payload = {
+            name,
+            language: language || 'es_MX',
+            category: category || 'MARKETING',
+            components
+        };
+
+        const url = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
+        const response = await axios.post(url, payload, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
+        });
+
+        res.status(200).json({
+            success: true,
+            data: response.data,
+            message: 'Plantilla creada y enviada a revisión de Meta. Aparecerá disponible cuando sea aprobada.'
+        });
+    } catch (error) {
+        const apiErr = error.response?.data?.error;
+        console.error('[CREAR PLANTILLA] Error:', apiErr ? JSON.stringify(apiErr) : error.message);
+        res.status(400).json({
+            success: false,
+            message: apiErr?.error_user_msg || apiErr?.message || error.message || 'No se pudo crear la plantilla.'
+        });
+    }
+});
+
 
 // --- Endpoint POST /api/campaigns/send-template (Enviar campaña de texto) ---
 router.post('/campaigns/send-template', async (req, res) => {
-    const { contactIds, template } = req.body; // template es el objeto completo
+    const { contactIds, template, phoneNumber } = req.body; // template es el objeto completo
 
     // Validaciones
-    if (!contactIds?.length || !template) {
-        return res.status(400).json({ success: false, message: 'Se requieren IDs de contacto y una plantilla.' });
+    if ((!contactIds?.length && !phoneNumber) || !template) {
+        return res.status(400).json({ success: false, message: 'Se requieren destinatarios (IDs o teléfono) y una plantilla.' });
     }
 
+    // Destinatarios: un teléfono específico tiene prioridad sobre la lista de IDs
+    const targets = phoneNumber ? [phoneNumber] : contactIds;
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
     let successful = 0;
@@ -4847,7 +4968,7 @@ router.post('/campaigns/send-template', async (req, res) => {
     const failedDetails = [];
 
     // Enviar mensaje a cada contacto (con pequeño delay)
-    for (const contactId of contactIds) {
+    for (const contactId of targets) {
         try {
             // Construir payload usando la función helper
             const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template); // Sin imagen, sin params extra
@@ -4862,10 +4983,10 @@ router.post('/campaigns/send-template', async (req, res) => {
             await contactRef.collection('messages').add({
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: messageToSaveText
             });
-            // Actualizar último mensaje del contacto
-            await contactRef.update({
+            // Actualizar último mensaje del contacto (set+merge para crear el contacto si es un teléfono nuevo)
+            await contactRef.set({
                 lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0
-            });
+            }, { merge: true });
 
             successful++;
         } catch (error) {

@@ -70,12 +70,9 @@ function navigateTo(viewName, force = false) {
             renderTagsView(); // Dibuja la tabla de etiquetas
             break;
         case 'campanas':
+        case 'campanas-imagen': // alias: la sección con imagen se fusionó en "Campañas"
             mainViewContainer.innerHTML = CampaignsViewTemplate();
-            renderCampaignsView(); // Prepara el formulario de campañas de texto
-            break;
-        case 'campanas-imagen':
-            mainViewContainer.innerHTML = CampaignsWithImageViewTemplate();
-            renderCampaignsWithImageView(); // Prepara el formulario de campañas con imagen
+            renderCampaignsView(); // Prepara la vista unificada (enviar + crear plantilla)
             break;
         case 'difusion':
             mainViewContainer.innerHTML = DifusionViewTemplate();
@@ -519,9 +516,9 @@ function renderContactsView() {
     }).join('');
 }
 
-// Prepara el formulario para campañas de texto
+// Prepara la vista unificada de Campañas (sub-pestañas Enviar + Crear plantilla)
 function renderCampaignsView() {
-    if (state.activeView !== 'campanas') return;
+    if (state.activeView !== 'campanas' && state.activeView !== 'campanas-imagen') return;
     const tagSelect = document.getElementById('campaign-tag-select');
     const templateSelect = document.getElementById('campaign-template-select');
 
@@ -529,12 +526,20 @@ function renderCampaignsView() {
     if (tagSelect) {
         tagSelect.innerHTML = '<option value="all">Todos los contactos</option>' + state.tags.map(tag => `<option value="${tag.key}">${tag.label}</option>`).join('');
     }
-    // Poblar select de plantillas
+    // Poblar select de plantillas con TODAS las aprobadas (el valor es el nombre).
+    // Las que llevan cabecera de imagen se marcan para mostrar el campo de URL.
     if (templateSelect) {
-        templateSelect.innerHTML = '<option value="">-- Selecciona una plantilla --</option>' + state.templates.map(t => `<option value='${JSON.stringify(t)}'>${t.name} (${t.language})</option>`).join('');
+        templateSelect.innerHTML = '<option value="">-- Selecciona una plantilla --</option>' + state.templates.map(t => {
+            const hasImg = (t.components || []).some(c => c.type === 'HEADER' && c.format === 'IMAGE');
+            return `<option value="${t.name}">${t.name} (${t.language})${hasImg ? ' 🖼️' : ''}</option>`;
+        }).join('');
     }
-    // Actualizar contador inicial de destinatarios
+
+    // Actualizar contador inicial de destinatarios y visibilidad del campo de imagen.
+    // (No se reinicia el form de "Crear plantilla" aquí: esta función se vuelve a
+    //  llamar en cada snapshot de contactos/etiquetas y borraría lo que el usuario escribe.)
     updateCampaignRecipientCount();
+    if (typeof onCampaignTemplateChange === 'function') onCampaignTemplateChange();
 }
 
 // Prepara el formulario para campañas con imagen

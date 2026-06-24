@@ -673,6 +673,226 @@ async function handleSendCampaignWithImage() {
 }
 
 
+// =====================================================================
+// === CAMPAÑAS UNIFICADAS (enviar) + CONSTRUCTOR DE PLANTILLAS META ===
+// =====================================================================
+
+// Cambia entre las sub-pestañas "Enviar campaña" y "Crear plantilla".
+function switchCampaignTab(tab) {
+    document.querySelectorAll('.campaign-tab').forEach(t => t.classList.toggle('active', t.dataset.ctab === tab));
+    document.querySelectorAll('.campaign-pane').forEach(p => p.classList.toggle('active', p.dataset.cpane === tab));
+}
+
+// Muestra/oculta el campo de URL de imagen según la plantilla seleccionada.
+function onCampaignTemplateChange() {
+    const templateSelect = document.getElementById('campaign-template-select');
+    const imgSection = document.getElementById('campaign-image-url-section');
+    if (!templateSelect || !imgSection) return;
+    const tpl = state.templates.find(t => t.name === templateSelect.value);
+    const hasImageHeader = tpl && (tpl.components || []).some(c => c.type === 'HEADER' && c.format === 'IMAGE');
+    imgSection.classList.toggle('hidden', !hasImageHeader);
+}
+
+// Envío unificado: decide entre endpoint de texto o de imagen según la plantilla,
+// y soporta destinatarios por etiqueta o por un teléfono específico.
+async function handleSendUnifiedCampaign() {
+    const tagSelect = document.getElementById('campaign-tag-select');
+    const templateSelect = document.getElementById('campaign-template-select');
+    const phoneInput = document.getElementById('campaign-phone-input');
+    const imageUrlInput = document.getElementById('campaign-image-url-input');
+    const button = document.getElementById('send-campaign-btn');
+
+    const templateName = templateSelect.value;
+    if (!templateName) { showError('Selecciona una plantilla.'); return; }
+    const template = state.templates.find(t => t.name === templateName);
+    if (!template) { showError('Plantilla no válida.'); return; }
+
+    const phoneNumber = (phoneInput.value || '').trim();
+    const selectedTagKey = tagSelect.value;
+
+    // Destinatarios
+    let recipients = [];
+    if (!phoneNumber) {
+        recipients = (selectedTagKey === 'all') ? state.contacts : state.contacts.filter(c => c.status === selectedTagKey);
+        if (recipients.length === 0) {
+            showError('No hay contactos en esa etiqueta y no diste un teléfono específico.');
+            return;
+        }
+    }
+    const contactIds = phoneNumber ? [] : recipients.map(c => c.id);
+
+    const hasImageHeader = (template.components || []).some(c => c.type === 'HEADER' && c.format === 'IMAGE');
+    const imageUrl = imageUrlInput ? (imageUrlInput.value || '').trim() : '';
+    if (hasImageHeader && !imageUrl) {
+        showError('Esta plantilla lleva imagen en la cabecera: ingresa la URL de la imagen.');
+        return;
+    }
+
+    const total = phoneNumber ? 1 : recipients.length;
+    if (!confirm(`Se enviará la plantilla "${templateName}" a ${total} destinatario(s). ¿Continuar?`)) return;
+
+    button.disabled = true;
+    button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...`;
+
+    try {
+        let result;
+        if (hasImageHeader) {
+            const response = await fetch(`${API_BASE_URL}/api/campaigns/send-template-with-image`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contactIds, templateObject: template, imageUrl, phoneNumber })
+            });
+            result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.message || 'Error del servidor.');
+        } else {
+            const response = await fetch(`${API_BASE_URL}/api/campaigns/send-template`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contactIds, template, phoneNumber })
+            });
+            result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.message || 'Error del servidor.');
+        }
+        alert(`Campaña enviada.\n\nÉxitos: ${result.results.successful}\nFallos: ${result.results.failed}`);
+    } catch (error) {
+        console.error('Error al enviar la campaña:', error);
+        showError(error.message);
+    } finally {
+        button.disabled = false;
+        button.innerHTML = `<i class="fas fa-paper-plane mr-2"></i> Enviar Campaña`;
+    }
+}
+
+// --- Constructor de plantillas de Meta ---
+
+// Muestra el campo correcto según el tipo de cabecera elegido.
+function onTemplateHeaderTypeChange() {
+    const type = (document.getElementById('tpl-header-type') || {}).value || 'NONE';
+    const textInput = document.getElementById('tpl-header-text');
+    const imageInput = document.getElementById('tpl-header-image');
+    if (textInput) textInput.classList.toggle('hidden', type !== 'TEXT');
+    if (imageInput) imageInput.classList.toggle('hidden', type !== 'IMAGE');
+}
+
+// Detecta variables {{n}} en el cuerpo y genera un input de ejemplo por cada una.
+function onTemplateBodyChange() {
+    const body = (document.getElementById('tpl-body') || {}).value || '';
+    const container = document.getElementById('tpl-body-vars');
+    if (!container) return;
+
+    const nums = (body.match(/\{\{(\d+)\}\}/g) || []).map(m => parseInt(m.replace(/[^\d]/g, ''), 10));
+    const maxVar = nums.length ? Math.max(...nums) : 0;
+
+    if (maxVar === 0) { container.innerHTML = ''; return; }
+
+    // Preserva valores ya escritos
+    const prev = {};
+    container.querySelectorAll('input[data-var]').forEach(inp => { prev[inp.dataset.var] = inp.value; });
+
+    let html = '<p class="text-xs font-semibold text-gray-500">Ejemplos de variables (Meta los exige):</p>';
+    for (let i = 1; i <= maxVar; i++) {
+        html += `<input type="text" data-var="${i}" placeholder="Ejemplo para {{${i}}}" value="${(prev[i] || '').replace(/"/g, '&quot;')}" class="!mb-0">`;
+    }
+    container.innerHTML = html;
+}
+
+// Agrega una fila de botón (máx. 3).
+function addTemplateButton() {
+    const list = document.getElementById('tpl-buttons-list');
+    if (!list) return;
+    if (list.querySelectorAll('.tpl-button-row').length >= 3) { showError('Máximo 3 botones.'); return; }
+
+    const row = document.createElement('div');
+    row.className = 'tpl-button-row flex items-center gap-2 p-2 border rounded bg-gray-50';
+    row.innerHTML = `
+        <select class="tpl-btn-type !mb-0" style="max-width:130px" onchange="onTemplateButtonTypeChange(this)">
+            <option value="QUICK_REPLY">Respuesta rápida</option>
+            <option value="URL">Enlace (URL)</option>
+            <option value="PHONE_NUMBER">Llamar</option>
+        </select>
+        <input type="text" class="tpl-btn-text !mb-0" placeholder="Texto del botón" maxlength="25">
+        <input type="text" class="tpl-btn-extra !mb-0 hidden" placeholder="https://...">
+        <button type="button" onclick="this.closest('.tpl-button-row').remove()" class="text-red-500 hover:text-red-700 px-2" title="Quitar"><i class="fas fa-times"></i></button>
+    `;
+    list.appendChild(row);
+}
+
+// Muestra el campo extra (URL/teléfono) según el tipo de botón.
+function onTemplateButtonTypeChange(select) {
+    const row = select.closest('.tpl-button-row');
+    const extra = row.querySelector('.tpl-btn-extra');
+    if (select.value === 'URL') { extra.classList.remove('hidden'); extra.placeholder = 'https://...'; }
+    else if (select.value === 'PHONE_NUMBER') { extra.classList.remove('hidden'); extra.placeholder = '+5218112345678'; }
+    else { extra.classList.add('hidden'); extra.value = ''; }
+}
+
+// Recopila el formulario y crea la plantilla en Meta vía el backend.
+async function handleCreateWhatsappTemplate() {
+    const name = (document.getElementById('tpl-name').value || '').trim();
+    const language = document.getElementById('tpl-language').value;
+    const category = document.getElementById('tpl-category').value;
+    const headerType = document.getElementById('tpl-header-type').value;
+    const body = (document.getElementById('tpl-body').value || '').trim();
+    const footer = (document.getElementById('tpl-footer').value || '').trim();
+    const button = document.getElementById('create-template-btn');
+
+    if (!name || !/^[a-z0-9_]+$/.test(name)) { showError('El nombre solo admite minúsculas, números y guion bajo.'); return; }
+    if (!body) { showError('El cuerpo del mensaje es obligatorio.'); return; }
+
+    // Cabecera
+    let header = null;
+    if (headerType === 'TEXT') {
+        const text = (document.getElementById('tpl-header-text').value || '').trim();
+        if (text) header = { type: 'TEXT', text };
+    } else if (headerType === 'IMAGE') {
+        const imageUrl = (document.getElementById('tpl-header-image').value || '').trim();
+        if (!imageUrl) { showError('Ingresa la URL de una imagen de muestra para la cabecera.'); return; }
+        header = { type: 'IMAGE', imageUrl };
+    }
+
+    // Ejemplos de variables del cuerpo (en orden)
+    const bodyExamples = Array.from(document.querySelectorAll('#tpl-body-vars input[data-var]'))
+        .sort((a, b) => parseInt(a.dataset.var, 10) - parseInt(b.dataset.var, 10))
+        .map(inp => inp.value.trim());
+
+    // Botones
+    const buttons = Array.from(document.querySelectorAll('#tpl-buttons-list .tpl-button-row')).map(row => {
+        const type = row.querySelector('.tpl-btn-type').value;
+        const text = (row.querySelector('.tpl-btn-text').value || '').trim();
+        const extra = (row.querySelector('.tpl-btn-extra').value || '').trim();
+        if (!text) return null;
+        if (type === 'URL') return { type, text, url: extra };
+        if (type === 'PHONE_NUMBER') return { type, text, phone_number: extra };
+        return { type: 'QUICK_REPLY', text };
+    }).filter(Boolean);
+
+    button.disabled = true;
+    button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Creando...`;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/whatsapp-templates/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, language, category, header, body, footer, buttons, bodyExamples })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || 'No se pudo crear la plantilla.');
+
+        const status = result.data && result.data.status ? ` (${result.data.status})` : '';
+        alert(`Plantilla "${name}" creada y enviada a revisión de Meta${status}.\n\nAparecerá en la lista de plantillas cuando Meta la APRUEBE.`);
+
+        // Refrescar la lista de plantillas para cuando se apruebe
+        if (typeof fetchTemplates === 'function') fetchTemplates();
+    } catch (error) {
+        console.error('Error al crear la plantilla:', error);
+        showError(error.message);
+    } finally {
+        button.disabled = false;
+        button.innerHTML = `<i class="fas fa-paper-plane mr-2"></i> Crear y enviar a revisión`;
+    }
+}
+
+
 // --- All other handlers (Tags, Quick Replies, Ad Responses, Settings etc.) ---
 
 /**
@@ -1804,6 +2024,14 @@ window.handleSaveOrder = handleSaveOrder;
 window.handleUpdateExistingOrder = handleUpdateExistingOrder;
 window.handleSendCampaign = handleSendCampaign;
 window.handleSendCampaignWithImage = handleSendCampaignWithImage;
+window.switchCampaignTab = switchCampaignTab;
+window.onCampaignTemplateChange = onCampaignTemplateChange;
+window.handleSendUnifiedCampaign = handleSendUnifiedCampaign;
+window.onTemplateHeaderTypeChange = onTemplateHeaderTypeChange;
+window.onTemplateBodyChange = onTemplateBodyChange;
+window.addTemplateButton = addTemplateButton;
+window.onTemplateButtonTypeChange = onTemplateButtonTypeChange;
+window.handleCreateWhatsappTemplate = handleCreateWhatsappTemplate;
 window.handleSaveQuickReply = handleSaveQuickReply;
 window.handleDeleteQuickReply = handleDeleteQuickReply;
 window.handleSaveAdResponse = handleSaveAdResponse;
