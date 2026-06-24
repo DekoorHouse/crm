@@ -128,6 +128,17 @@ describe('evaluateOrderFollowup', () => {
         const v = evaluateOrderFollowup(base({ scheduledSends: [] }), {}, cfg, T0 + HOUR_MS);
         expect(v.action).toBe('cancel');
     });
+
+    test('respeta el espaciado mínimo entre envíos aunque ambos horarios estén vencidos', () => {
+        // backlog: stage 1 vencido y dentro de ventana (10 min tras el 2º horario)
+        const now = sends[1] + 10 * 60 * 1000;
+        // el 1er mensaje se envió hace 1h (< minGap 4h) -> esperar
+        const f = base({ stage: 1, lastSentAt: now - 1 * HOUR_MS });
+        expect(evaluateOrderFollowup(f, {}, cfg, now).action).toBe('wait');
+        // pasadas las 4h del espaciado -> enviar
+        const f2 = base({ stage: 1, lastSentAt: now - 5 * HOUR_MS });
+        expect(evaluateOrderFollowup(f2, {}, cfg, now).action).toBe('send');
+    });
 });
 
 describe('normalizeOrderConfig', () => {

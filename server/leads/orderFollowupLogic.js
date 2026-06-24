@@ -200,6 +200,14 @@ function evaluateOrderFollowup(followup, contact, cfg, nowMs) {
     const dueMs = sends[stage];
     if (nowMs < dueMs) return { action: 'wait' };
 
+    // Espaciado mínimo entre envíos: protege el backlog (ambos horarios ya vencidos)
+    // y catch-ups tras caídas, para no disparar 2 mensajes seguidos. Para conversaciones
+    // nuevas no aplica porque los horarios ya vienen separados.
+    if (stage > 0) {
+        const lastSentMs = toMillis(followup.lastSentAt);
+        if (lastSentMs && (nowMs - lastSentMs) < cfg.minGapHours * HOUR_MS) return { action: 'wait' };
+    }
+
     // Ya venció, pero solo enviamos dentro del horario laboral (defensa ante caídas/retrasos)
     const h = localHourOf(nowMs, cfg.utcOffsetHours);
     if (h < cfg.businessHours.start || h > cfg.businessHours.end) return { action: 'wait_hours' };
