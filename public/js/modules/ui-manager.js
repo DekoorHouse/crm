@@ -2848,7 +2848,7 @@ function toggleEditNote(noteId) {
  * (excepto 'obsidian', que reutiliza el tema oscuro existente body.dark-mode).
  */
 const CRM_THEMES = [
-    { id: 'dekoor',   name: 'Tradicional Dekoor', desc: 'Azul y naranja de marca',     isDark: false, swatches: ['#1b2a4a', '#ea580c', '#f4f4f2'] },
+    { id: 'dekoor',   name: 'Tradicional Dekoor', desc: 'Azul y naranja de marca',     isDark: false, swatches: ['#163C51', '#ea580c', '#f4f4f2'] },
     { id: 'obsidian', name: 'Obsidiana',          desc: 'Oscuro elegante',             isDark: true,  swatches: ['#7aa2f7', '#e0af68', '#1a1b26'] },
     { id: 'lila',     name: 'Lila',               desc: 'Lavanda femenino',            isDark: false, swatches: ['#8a5cd1', '#d6608f', '#faf7fe'] },
     { id: 'elegante', name: 'Elegante',           desc: 'Marfil, salvia y dorado',     isDark: false, swatches: ['#47634f', '#b08d57', '#faf8f4'] },
