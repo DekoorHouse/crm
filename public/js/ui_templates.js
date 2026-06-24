@@ -1393,6 +1393,11 @@ const ChatWindowTemplate = (contact) => {
 const ContactDetailsSidebarTemplate = (contact) => {
     if (!contact) return '';
 
+    // Chip de campaña/departamento (punto + texto) bajo el teléfono
+    const deptColor = (state._deptColorMap && state._deptColorMap.get(contact.assignedDepartmentId)) || null;
+    const deptName = (deptColor && state.departments) ? (state.departments.find(d => d.id === contact.assignedDepartmentId)?.name || 'Campaña') : '';
+    const deptChip = deptColor ? `<p class="text-xs text-gray-500 mt-2 flex items-center justify-center"><span class="dept-dot" style="background:${deptColor}"></span>${deptName.replace(/[<>]/g,'')}</p>` : '';
+
     return `
         <div class="h-full flex flex-col">
             <header class="p-4 flex items-center justify-between border-b border-gray-200">
@@ -1404,6 +1409,7 @@ const ContactDetailsSidebarTemplate = (contact) => {
                     ${UserIcon(contact, 'h-24 w-24 mx-auto')}
                     <h2 class="text-2xl font-bold mt-4">${contact.name || 'Desconocido'}</h2>
                     <p class="text-gray-500">${ContactHandleTemplate(contact)}</p>
+                     ${deptChip}
                      <p class="text-sm text-gray-500 mt-1">${contact.email || ''}</p>
                      <p class="text-sm text-gray-500 mt-1"><em>${contact.nickname || ''}</em></p>
                 </div>
@@ -1435,14 +1441,25 @@ const ContactDetailsSidebarTemplate = (contact) => {
                 </div>
 
                 <div class="mt-6 border-t pt-6 space-y-2">
-                   <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
-                   <button onclick="handleSendViewContent()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto' (Meta)</button>
-                   <button onclick="handlePedirDatosEnvio()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-truck mr-2"></i>Pedir Datos de Envío (Nacional)</button>
-                   <button onclick="handlePedirDatosMty()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-map-marker-alt mr-2"></i>Pedir Datos de Envío (MTY)</button>
-                   <button onclick="handlePedirDatosDgo()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-motorcycle mr-2"></i>Pedir Datos de Envío (DGO)</button>
-                   <button onclick="handleCancelarGuiaEnvio()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-ban mr-2"></i>Cancelar Guía de Envío</button>
-                   <button onclick="handleGenerarOxxo()" class="btn w-full btn-sm" style="background:#e2231a;color:#fff;"><i class="fas fa-store mr-2"></i>Generar Pago OXXO</button>
-                   <button onclick="abrirModalPedido()" class="btn btn-primary w-full btn-sm mt-4"><i class="fas fa-plus-circle mr-2"></i>Registrar Nuevo Pedido</button>
+                   <!-- Acción primaria (única, naranja) -->
+                   <button onclick="abrirModalPedido()" class="btn btn-primary w-full btn-sm"><i class="fas fa-plus-circle mr-2"></i>Registrar Nuevo Pedido</button>
+
+                   <!-- Secundarias (borde) -->
+                   <button onclick="handleMarkAsPurchase()" class="btn btn-outline w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
+                   <button onclick="handleSendViewContent()" class="btn btn-outline w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto' (Meta)</button>
+
+                   <!-- Grupo: Solicitar envío -->
+                   <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider pt-3 pb-1">Solicitar envío</p>
+                   <button onclick="handlePedirDatosEnvio()" class="btn btn-outline w-full btn-sm"><i class="fas fa-truck mr-2"></i>Nacional</button>
+                   <button onclick="handlePedirDatosMty()" class="btn btn-outline w-full btn-sm"><i class="fas fa-map-marker-alt mr-2"></i>MTY</button>
+                   <button onclick="handlePedirDatosDgo()" class="btn btn-outline w-full btn-sm"><i class="fas fa-motorcycle mr-2"></i>DGO</button>
+
+                   <!-- Pago (neutro, no destructivo) -->
+                   <button onclick="handleGenerarOxxo()" class="btn btn-outline w-full btn-sm"><i class="fas fa-store mr-2"></i>Generar Pago OXXO</button>
+
+                   <!-- Destructiva (discreta, al fondo tras divisor) -->
+                   <div class="border-t border-gray-100 my-3"></div>
+                   <button onclick="handleCancelarGuiaEnvio()" class="btn btn-outline w-full btn-sm" style="color: var(--color-danger);"><i class="fas fa-ban mr-2"></i>Cancelar Guía de Envío</button>
                 </div>
             </div>
             </footer>

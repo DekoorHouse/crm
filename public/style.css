@@ -196,6 +196,9 @@ body.dark-mode .btn-primary:hover:not(:disabled) { background-color: #5d8ae8; }
 .btn-success:hover:not(:disabled) { background-color: var(--color-success-hover); }
 .btn-subtle { background-color: var(--color-subtle-bg); color: var(--color-subtle-text); }
 .btn-subtle:hover { background-color: var(--color-subtle-hover-bg); color: var(--color-primary); }
+/* Botón secundario estilo borde (jerarquía del sistema de diseño) */
+.btn-outline { background-color: transparent; color: var(--color-text); border: 1px solid var(--color-border); font-weight: 500; }
+.btn-outline:hover:not(:disabled) { background-color: var(--color-subtle-bg); }
 
 input[type="email"], input[type="password"], input[type="text"], input[type="number"], input[type="tel"], textarea, select { width: 100%; padding: 10px 15px; margin-bottom: 15px; border: 1px solid var(--color-border); border-radius: var(--border-radius-md); font-family: var(--font-body); font-size: 0.95rem; color: var(--color-text); background-color: #f7f9fc; transition: all 0.2s ease; }
 body.dark-mode input[type="email"], body.dark-mode input[type="password"], body.dark-mode input[type="text"], body.dark-mode input[type="number"], body.dark-mode input[type="tel"], body.dark-mode textarea, body.dark-mode select {
