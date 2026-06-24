@@ -95,6 +95,10 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = MetricsViewTemplate();
             renderMetricsView(); // Dibuja la vista de métricas (incluyendo la nueva sección)
             break;
+        case 'rescate-ia':
+            mainViewContainer.innerHTML = OrderFollowupViewTemplate();
+            renderOrderFollowupView(); // Embudo de rescate + lista de contactados
+            break;
         case 'conversion-campanas':
             mainViewContainer.innerHTML = ConversionCampanasViewTemplate();
             // Lazy-load del listener de pedidos con campaña (costoso si se cargara siempre)

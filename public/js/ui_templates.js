@@ -739,6 +739,64 @@ const MetricsViewTemplate = () => `
     </div>
 `;
 
+// --- Vista: Rescate IA (seguimiento de pedidos en proceso) ---
+const OrderFollowupViewTemplate = () => `
+    <div class="view-container">
+        <div class="view-header">
+            <h1>Rescate IA · Pedidos en proceso</h1>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 mb-4">
+            <button class="btn btn-subtle btn-sm rescate-range-btn" data-days="1">Hoy</button>
+            <button class="btn btn-subtle btn-sm rescate-range-btn active" data-days="7">7 días</button>
+            <button class="btn btn-subtle btn-sm rescate-range-btn" data-days="30">30 días</button>
+            <button id="rescate-refresh" class="btn btn-primary btn-sm"><i class="fas fa-sync-alt mr-2"></i>Actualizar</button>
+        </div>
+
+        <div id="rescate-loading" class="text-center p-8">
+            <i class="fas fa-spinner fa-spin text-4xl" style="color:var(--color-text-light)"></i>
+            <p class="mt-4" style="color:var(--color-text-light)">Cargando métricas de rescate...</p>
+        </div>
+
+        <div id="rescate-content" class="hidden">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;">
+                ${['Contactados','Respondieron','Recuperados','$ recuperado'].map((label, i) => `
+                <div style="background:var(--color-container-bg);border:1px solid var(--color-border);border-radius:14px;padding:16px;box-shadow:0 1px 3px var(--color-shadow);">
+                    <div style="font-size:12px;color:var(--color-text-light);font-weight:600;text-transform:uppercase;letter-spacing:.03em;">${label}</div>
+                    <div style="font-size:28px;font-weight:800;color:var(--color-text);line-height:1.2;margin-top:4px;" id="kpi-${['contacted','replied','converted','value'][i]}">—</div>
+                    <div style="font-size:12px;color:var(--color-text-light);margin-top:2px;" id="kpi-${['contacted','replied','converted','value'][i]}-sub">&nbsp;</div>
+                </div>`).join('')}
+            </div>
+
+            <div class="settings-card mt-6">
+                <h2 class="text-xl font-bold mb-1">Clientes contactados</h2>
+                <p class="text-sm mb-3" style="color:var(--color-text-light)">Quién recibió mensaje del sistema y en qué quedó. Haz clic en una fila para abrir el chat.</p>
+                <div class="flex flex-wrap gap-2 mb-3">
+                    <button class="btn btn-subtle btn-sm rescate-status-btn active" data-status="">Todos</button>
+                    <button class="btn btn-subtle btn-sm rescate-status-btn" data-status="contacted">Sin responder</button>
+                    <button class="btn btn-subtle btn-sm rescate-status-btn" data-status="replied">Respondieron</button>
+                    <button class="btn btn-subtle btn-sm rescate-status-btn" data-status="converted">Recuperados</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Cliente</th>
+                                <th>Teléfono</th>
+                                <th>Quedó pendiente</th>
+                                <th>Msgs</th>
+                                <th>Estado</th>
+                                <th>Último contacto</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rescate-table-body"></tbody>
+                    </table>
+                    <div id="rescate-empty" class="text-center py-6 hidden" style="color:var(--color-text-light)">Sin registros en este rango.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+`;
+
 // --- PLANTILLAS DE COMPONENTES ---
 
 const UserIcon = (contact, size = 'h-9 w-9') => {

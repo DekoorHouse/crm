@@ -2152,3 +2152,113 @@ function renderBatchPicker(row, template, batches) {
 }
 
 window.renderBatchPicker = renderBatchPicker;
+
+// ===== Rescate IA: embudo de rescate + lista de contactados =====
+window._rescate = window._rescate || { days: 7, status: '', sends: [] };
+
+async function renderOrderFollowupView() {
+    const r = window._rescate;
+    document.querySelectorAll('.rescate-range-btn').forEach(b => {
+        b.onclick = () => {
+            r.days = Number(b.dataset.days) || 7;
+            document.querySelectorAll('.rescate-range-btn').forEach(x => x.classList.toggle('active', x === b));
+            loadRescateData();
+        };
+    });
+    const refresh = document.getElementById('rescate-refresh');
+    if (refresh) refresh.onclick = loadRescateData;
+    document.querySelectorAll('.rescate-status-btn').forEach(b => {
+        b.onclick = () => {
+            r.status = b.dataset.status || '';
+            document.querySelectorAll('.rescate-status-btn').forEach(x => x.classList.toggle('active', x === b));
+            renderRescateTable();
+        };
+    });
+    await loadRescateData();
+}
+
+async function loadRescateData() {
+    const r = window._rescate;
+    const loading = document.getElementById('rescate-loading');
+    const content = document.getElementById('rescate-content');
+    if (loading) loading.classList.remove('hidden');
+    if (content) content.classList.add('hidden');
+    const to = Date.now();
+    const from = to - r.days * 24 * 60 * 60 * 1000;
+    try {
+        const [mRes, sRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/api/order-followup/metrics?from=${from}&to=${to}`),
+            fetch(`${API_BASE_URL}/api/order-followup/sends?from=${from}&to=${to}&limit=500`)
+        ]);
+        const m = await mRes.json();
+        const s = await sRes.json();
+        r.sends = (s && s.items) || [];
+        fillRescateKpis(m || {});
+        renderRescateTable();
+    } catch (e) {
+        console.error('[RESCATE] Error cargando datos:', e);
+    } finally {
+        if (loading) loading.classList.add('hidden');
+        if (content) content.classList.remove('hidden');
+    }
+}
+
+function fillRescateKpis(m) {
+    const set = (id, val, sub) => {
+        const el = document.getElementById('kpi-' + id);
+        const se = document.getElementById('kpi-' + id + '-sub');
+        if (el) el.textContent = val;
+        if (se) se.innerHTML = sub || '&nbsp;';
+    };
+    set('contacted', m.contacted || 0, `${m.messages || 0} mensajes`);
+    set('replied', m.replied || 0, `${m.replyRate || 0}% respondió`);
+    set('converted', m.converted || 0, `${m.conversionRate || 0}% recuperado`);
+    set('value', '$' + Number(m.valueRecovered || 0).toLocaleString('es-MX'), `ventana ${m.attributionDays || 7} días`);
+}
+
+const RESCATE_STATUS = {
+    contacted: { label: 'Sin responder', color: 'var(--color-info)' },
+    replied: { label: 'Respondió', color: 'var(--color-primary)' },
+    converted: { label: 'Recuperado', color: 'var(--color-success)' }
+};
+
+function renderRescateTable() {
+    const r = window._rescate;
+    const body = document.getElementById('rescate-table-body');
+    const empty = document.getElementById('rescate-empty');
+    if (!body) return;
+    let rows = r.sends || [];
+    if (r.status) rows = rows.filter(x => x.status === r.status);
+    if (rows.length === 0) {
+        body.innerHTML = '';
+        if (empty) empty.classList.remove('hidden');
+        return;
+    }
+    if (empty) empty.classList.add('hidden');
+    const esc = s => String(s || '').replace(/</g, '&lt;');
+    body.innerHTML = rows.map(x => {
+        const st = RESCATE_STATUS[x.status] || RESCATE_STATUS.contacted;
+        const fecha = x.lastContactedAt
+            ? new Date(x.lastContactedAt).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+            : '—';
+        const order = x.orderNumber ? ` <span style="color:var(--color-success);font-weight:600">(${esc(x.orderNumber)})</span>` : '';
+        return `<tr style="cursor:pointer" onclick="openRescateChat('${esc(x.waId)}')">
+            <td>${esc(x.name) || 'Sin nombre'}</td>
+            <td>${esc(x.waId)}</td>
+            <td>${esc(x.pendiente) || '—'}</td>
+            <td>${x.messagesSent || 0}</td>
+            <td><span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;color:#fff;background:${st.color}">${st.label}</span>${order}</td>
+            <td>${fecha}</td>
+        </tr>`;
+    }).join('');
+}
+
+function openRescateChat(waId) {
+    if (typeof navigateTo === 'function') navigateTo('chats');
+    setTimeout(() => {
+        if (typeof handleSelectContact === 'function') handleSelectContact(waId);
+    }, 80);
+}
+
+window.renderOrderFollowupView = renderOrderFollowupView;
+window.openRescateChat = openRescateChat;
