@@ -30,9 +30,13 @@ auth.onAuthStateChanged(async user => { // Hacemos la función async para espera
         appContainer.classList.remove('hidden');
         appContainer.classList.add('flex');
         
-        // Mostrar nombre o email
-        const displayName = state.currentUserProfile?.name || user.email;
-        userInfoEl.textContent = `Usuario: ${displayName}`;
+        // Mostrar el nombre real (perfil → email bonito → "Usuario"); nunca "null"
+        const rawName = (state.currentUserProfile?.name || '').trim();
+        const profileName = (rawName && rawName.toLowerCase() !== 'null') ? rawName : '';
+        const emailLocal = (user.email || '').split('@')[0].replace(/[._-]+/g, ' ').trim();
+        const prettyEmail = emailLocal ? emailLocal.replace(/\b\w/g, c => c.toUpperCase()) : '';
+        const displayName = profileName || prettyEmail || 'Usuario';
+        userInfoEl.textContent = displayName;
         
         startApp();
     } else {

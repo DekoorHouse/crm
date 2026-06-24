@@ -1238,16 +1238,16 @@ const ChatWindowTemplate = (contact) => {
     const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fas fa-comments text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
     if (!contact) { return emptyChat; }
 
-    // --- Department Color Logic for Header ---
+    // --- Departamento: punto de color de 8px (no franja de color en el header) ---
     let headerStyle = '';
+    let deptDotHTML = '';
     if (contact.assignedDepartmentId) {
         const department = state.departments.find(d => d.id === contact.assignedDepartmentId);
         if (department && department.color) {
-            // Using a top border for the header
-            headerStyle = `style="border-top: 4px solid ${department.color};"`;
+            deptDotHTML = `<span class="dept-dot" style="background:${department.color}" title="${(department.name || 'Departamento').replace(/"/g,'')}"></span>`;
         }
     }
-    // --- End Department Color Logic for Header ---
+    // --- Fin lógica de departamento ---
 
     const isSessionExpired = state.isSessionExpired;
 
@@ -1345,8 +1345,8 @@ const ChatWindowTemplate = (contact) => {
             <button id="chat-back-btn" onclick="closeChatOnMobile()" class="md:hidden chat-back-btn-mobile" aria-label="Volver a la lista de chats"><i class="fas fa-arrow-left"></i></button>
             <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
             <div class="flex-grow">
-                <h2 class="text-base font-semibold cursor-pointer" style="color: var(--color-text);" onclick="openContactDetails()">
-                    <i class="${contact.channel === 'instagram' ? 'fab fa-instagram text-pink-500' : contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1"></i>${contact.name}
+                <h2 class="text-base font-semibold cursor-pointer flex items-center" style="color: var(--color-text);" onclick="openContactDetails()">
+                    ${deptDotHTML}<i class="${contact.channel === 'instagram' ? 'fab fa-instagram text-pink-500' : contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1"></i>${contact.name}
                 </h2>
                 <div class="flex items-center text-xs text-gray-500">
                     <span>${ContactHandleTemplate(contact)}</span>
