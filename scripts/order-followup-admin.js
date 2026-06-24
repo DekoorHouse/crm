@@ -48,6 +48,21 @@ async function setEnabled(enabled) {
     console.log(JSON.stringify(saved, null, 2));
 }
 
+async function clearBackfill() {
+    // Borra los seguimientos sembrados por backfill que sigan pendientes (no envía nada).
+    const snap = await db.collection('order_followups').where('backfilled', '==', true).get();
+    let deleted = 0;
+    let batch = db.batch();
+    for (const d of snap.docs) {
+        if ((d.data().totalSent || 0) > 0) continue; // no borrar los que ya enviaron algo
+        batch.delete(d.ref);
+        deleted++;
+        if (deleted % 400 === 0) { await batch.commit(); batch = db.batch(); }
+    }
+    if (deleted % 400 !== 0) await batch.commit();
+    console.log(`Borrados ${deleted} seguimientos sembrados (backfilled, sin envíos).`);
+}
+
 async function backfill(dryRun) {
     const minSilenceHours = Number(process.argv[3]) || 8;
     const res = await backfillOrderFollowups({ minSilenceHours, dryRun });
@@ -69,8 +84,9 @@ async function backfill(dryRun) {
             case 'disable': await setEnabled(false); break;
             case 'backfill-dry': await backfill(true); break;
             case 'backfill': await backfill(false); break;
+            case 'clear-backfill': await clearBackfill(); break;
             default:
-                console.log('Comandos: status | dry-run | enable | disable | backfill-dry [horas] | backfill [horas]');
+                console.log('Comandos: status | dry-run | enable | disable | backfill-dry [horas] | backfill [horas] | clear-backfill');
         }
     } catch (e) {
         console.error('ERROR:', e.message);

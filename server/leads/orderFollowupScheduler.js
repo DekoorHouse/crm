@@ -173,7 +173,7 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
     try {
         const cfg = await getOrderFollowupConfig();
         const summary = { evaluated: 0, classified: 0, qualified: 0, sent: 0, waiting: 0, finished: 0, errors: 0, dryRun, wouldSend: [] };
-        if (!cfg.enabled) return { ...summary, disabled: true };
+        if (!cfg.enabled && !dryRun) return { ...summary, disabled: true };
         if (!process.env.WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
             console.warn('[ORDER_FOLLOWUP] Saltando: faltan credenciales de WhatsApp.');
             return summary;
@@ -213,11 +213,13 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
                 continue;
             }
             if (verdict.action !== 'send') {
-                await doc.ref.update({
-                    status: TERMINAL_STATUS[verdict.action] || 'cancelled',
-                    cancelReason: verdict.reason || null,
-                    updatedAt: new Date()
-                }).catch(() => {});
+                if (!dryRun) {
+                    await doc.ref.update({
+                        status: TERMINAL_STATUS[verdict.action] || 'cancelled',
+                        cancelReason: verdict.reason || null,
+                        updatedAt: new Date()
+                    }).catch(() => {});
+                }
                 summary.finished++;
                 continue;
             }
@@ -230,7 +232,7 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
                 if (!cls) {
                     const msgs = await fetchRecentMessages(doc.id, 14);
                     if (msgs.length < cfg.classifyMinMessages) {
-                        await doc.ref.update({ status: 'cancelled', cancelReason: 'pocos_mensajes', updatedAt: new Date() }).catch(() => {});
+                        if (!dryRun) await doc.ref.update({ status: 'cancelled', cancelReason: 'pocos_mensajes', updatedAt: new Date() }).catch(() => {});
                         summary.finished++;
                         continue;
                     }
@@ -241,19 +243,23 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
 
                 if (!cls) {
                     // La IA falló: reintentar en el próximo sweep (sin marcar como enviado)
-                    const attempts = (followup.attempts || 0) + 1;
-                    const upd = { attempts, lastError: 'clasificacion_nula', updatedAt: new Date() };
-                    if (attempts >= MAX_ATTEMPTS) upd.status = 'failed';
-                    await doc.ref.update(upd).catch(() => {});
+                    if (!dryRun) {
+                        const attempts = (followup.attempts || 0) + 1;
+                        const upd = { attempts, lastError: 'clasificacion_nula', updatedAt: new Date() };
+                        if (attempts >= MAX_ATTEMPTS) upd.status = 'failed';
+                        await doc.ref.update(upd).catch(() => {});
+                    }
                     summary.errors++;
                     continue;
                 }
 
                 if (!cls.enProceso) {
-                    await doc.ref.update({
-                        status: 'cancelled', cancelReason: 'no_pedido_en_proceso',
-                        classified: true, enProceso: false, updatedAt: new Date()
-                    }).catch(() => {});
+                    if (!dryRun) {
+                        await doc.ref.update({
+                            status: 'cancelled', cancelReason: 'no_pedido_en_proceso',
+                            classified: true, enProceso: false, updatedAt: new Date()
+                        }).catch(() => {});
+                    }
                     summary.finished++;
                     continue;
                 }
@@ -268,7 +274,7 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
                     mensajes: cls.mensajes || [],
                     updatedAt: new Date()
                 };
-                await doc.ref.update(persist).catch(() => {});
+                if (!dryRun) await doc.ref.update(persist).catch(() => {});
                 followup = { ...followup, ...persist };
             }
 
