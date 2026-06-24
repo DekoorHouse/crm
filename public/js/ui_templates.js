@@ -742,17 +742,17 @@ const MetricsViewTemplate = () => `
 // --- PLANTILLAS DE COMPONENTES ---
 
 const UserIcon = (contact, size = 'h-9 w-9') => {
-    // Pedido pagado/confirmado → elefante de marca sobre fondo navy
+    // Pedido pagado/confirmado → insignia de elefante con fondo navy
     if (contact && contact.purchaseStatus === 'completed') {
-         return `<div class="${size} rounded-full flex-shrink-0 dekoor-avatar dekoor-avatar-paid" title="Pedido pagado">
-                <img src="/img/elefante-blanco.png" alt="Pagado" class="dekoor-avatar-img" loading="lazy">
+         return `<div class="${size} rounded-full flex-shrink-0 dekoor-avatar" title="Pedido pagado">
+                <img src="/img/elefante-pagado.png" alt="Pagado" class="dekoor-avatar-img" loading="lazy">
             </div>`;
     }
 
-    // Pedido registrado sin pagar → elefante blanco sobre fondo claro
+    // Pedido registrado sin pagar → insignia de elefante con fondo claro
     if (contact && contact.purchaseStatus === 'registered') {
-         return `<div class="${size} rounded-full flex-shrink-0 dekoor-avatar dekoor-avatar-registered" title="Pedido registrado (sin pagar)">
-                <img src="/img/elefante-blanco.png" alt="Registrado" class="dekoor-avatar-img" loading="lazy">
+         return `<div class="${size} rounded-full flex-shrink-0 dekoor-avatar" title="Pedido registrado (sin pagar)">
+                <img src="/img/elefante-registrado.png" alt="Registrado" class="dekoor-avatar-img" loading="lazy">
             </div>`;
     }
 
