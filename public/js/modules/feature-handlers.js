@@ -105,33 +105,6 @@ async function handleDeleteContact(contactId) {
 // --- IA & Conversion Actions ---
 
 /**
- * Solicita a la API generar una sugerencia de respuesta basada en el historial del chat.
- */
-async function handleGenerateReply() {
-    if (!state.selectedContactId) return; // No hacer nada si no hay chat seleccionado
-    const button = document.getElementById('generate-reply-btn');
-    button.disabled = true; // Deshabilitar botón
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; // Mostrar spinner
-
-    try {
-        // Llama a la API para generar la respuesta
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/generate-reply`, { method: 'POST' });
-        const result = await response.json();
-        if (!response.ok) { // Manejo de error
-            throw new Error(result.message || 'Error al generar respuesta.');
-        }
-        // Rellena el input de mensaje con la sugerencia
-        document.getElementById('message-input').value = result.suggestion;
-    } catch (error) {
-        showError(error.message); // Muestra error
-    } finally {
-        // Rehabilita el botón
-        button.disabled = false;
-        button.innerHTML = '<i class="fas fa-magic"></i>';
-    }
-}
-
-/**
  * Marca un contacto como que realizó una compra y envía el evento a Meta.
  */
 async function handleMarkAsPurchase() {
@@ -1820,7 +1793,6 @@ function showOxxoModal({ contactId, contactName, latestOrder }) {
 // Funciones que se llaman directamente desde el HTML (onclick)
 window.handleUpdateContact = handleUpdateContact;
 window.handleDeleteContact = handleDeleteContact;
-window.handleGenerateReply = handleGenerateReply;
 window.handleMarkAsPurchase = handleMarkAsPurchase;
 window.handleMarkAsRegistration = handleMarkAsRegistration; // Mantener si aún se usa
 window.handleSendViewContent = handleSendViewContent;

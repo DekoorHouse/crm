@@ -1270,7 +1270,6 @@ const ChatWindowTemplate = (contact) => {
              <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*,audio/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" multiple>
              <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
              ${contact.channel !== 'messenger' ? '<button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>' : ''}
-             <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn" title="Contestar con IA"><i class="fas fa-magic"></i></button>
              <textarea id="message-input" placeholder="${placeholderText}" class="flex-1 !mb-0" rows="1"></textarea>
              <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
         </form>`;
@@ -1348,16 +1347,9 @@ const ChatWindowTemplate = (contact) => {
             <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
             <div class="flex-grow">
                 <h2 class="text-base font-semibold cursor-pointer flex items-center" style="color: var(--color-text);" onclick="openContactDetails()">
-                    ${deptDotHTML}<i class="${contact.channel === 'instagram' ? 'fab fa-instagram text-pink-500' : contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1"></i>${contact.name}
+                    <i class="${contact.channel === 'instagram' ? 'fab fa-instagram text-pink-500' : contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1.5"></i>${contact.name}
                 </h2>
-                <div class="flex items-center text-xs text-gray-500">
-                    <span>${ContactHandleTemplate(contact)}</span>
-                    ${(contact.channel !== 'messenger' && contact.channel !== 'instagram')
-                        ? `<button onclick="event.stopPropagation(); copyToClipboard('${contact.id}', this)" class="ml-2 text-gray-400 hover:text-primary transition-colors focus:outline-none" title="Copiar número"><i class="far fa-copy"></i></button>`
-                        : ''
-                    }
-                </div>
-                <div id="contact-status-wrapper" class="mt-1.5"></div>
+                <div id="contact-status-wrapper" class="mt-1"></div>
             </div>
             <div class="flex items-center pr-2">
                 ${designToggleHTML}
@@ -1367,10 +1359,6 @@ const ChatWindowTemplate = (contact) => {
             </div>
         </header>
 
-        ${AdReferralBannerTemplate(contact)}
-        <div class="bg-white border-b border-gray-200 flex">
-            <button class="tab-btn active"><i class="fas fa-comments mr-2"></i>Chat</button>
-        </div>
         ${mainContent}
         <div id="file-preview-container"></div>
         <footer class="chat-footer relative">
@@ -1414,8 +1402,13 @@ const ContactDetailsSidebarTemplate = (contact) => {
                      <p class="text-sm text-gray-500 mt-1"><em>${contact.nickname || ''}</em></p>
                 </div>
 
-                <div id="order-history-container" class="mt-4 border-t pt-4">
-                     <h4 class="font-semibold text-gray-500 mb-3 text-sm uppercase tracking-wider">Historial de Pedidos</h4>
+                ${AdReferralBannerTemplate(contact)}
+
+                <div id="order-history-container" class="mt-4 border-t pt-4 collapsed">
+                     <button type="button" onclick="this.closest('#order-history-container').classList.toggle('collapsed')" class="w-full flex items-center justify-between mb-3 text-sm font-semibold text-gray-500 uppercase tracking-wider">
+                         <span>Historial de Pedidos</span>
+                         <i class="fas fa-chevron-down order-history-chevron"></i>
+                     </button>
                      <div id="contact-orders-list" class="space-y-2">
                         <!-- El contenido se cargará dinámicamente -->
                      </div>
