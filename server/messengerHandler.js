@@ -44,16 +44,24 @@ async function getUserProfile(psid) {
     try {
         const response = await axios.get(`https://graph.facebook.com/v19.0/${psid}`, {
             params: {
-                fields: 'name,profile_pic',
+                fields: 'name,first_name,last_name,profile_pic',
                 access_token: FB_PAGE_ACCESS_TOKEN
             }
         });
+        const data = response.data || {};
+        const name = (data.name || [data.first_name, data.last_name].filter(Boolean).join(' ')).trim();
+        if (!name) {
+            // La API respondió 200 pero sin nombre: casi siempre es falta de permiso
+            // (pages_messaging con acceso avanzado) o token de página sin alcance suficiente.
+            console.warn(`[MESSENGER] Graph API respondió sin nombre para ${psid}. Respuesta: ${JSON.stringify(data)}. Revisa el permiso 'pages_messaging' (acceso avanzado) y que el token sea de la página.`);
+        }
         return {
-            name: response.data.name || `Facebook User (${psid.slice(-4)})`,
-            profileImageUrl: response.data.profile_pic || null
+            name: name || `Facebook User (${psid.slice(-4)})`,
+            profileImageUrl: data.profile_pic || null
         };
     } catch (error) {
-        console.error(`[MESSENGER] Error al obtener perfil de ${psid}:`, error.message);
+        const apiErr = error.response?.data?.error;
+        console.error(`[MESSENGER] Error al obtener perfil de ${psid}:`, apiErr ? JSON.stringify(apiErr) : error.message);
         return { name: `Facebook User (${psid.slice(-4)})`, profileImageUrl: null };
     }
 }
@@ -71,14 +79,21 @@ async function getInstagramUserProfile(igsid) {
                 access_token: IG_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN
             }
         });
-        const name = response.data.name || response.data.username || `IG User (${igsid.slice(-4)})`;
+        const data = response.data || {};
+        const name = (data.name || data.username || '').trim();
+        if (!name) {
+            // 200 sin nombre/usuario: la cuenta IG debe ser Business/Creator ligada a la página
+            // y requiere los permisos 'instagram_basic' + 'instagram_manage_messages' (acceso avanzado).
+            console.warn(`[INSTAGRAM] Graph API respondió sin nombre para ${igsid}. Respuesta: ${JSON.stringify(data)}. Revisa que la cuenta IG sea Business ligada a la página y los permisos instagram_basic / instagram_manage_messages.`);
+        }
         return {
-            name,
-            username: response.data.username || null,
-            profileImageUrl: response.data.profile_pic || null
+            name: name || `IG User (${igsid.slice(-4)})`,
+            username: data.username || null,
+            profileImageUrl: data.profile_pic || null
         };
     } catch (error) {
-        console.error(`[INSTAGRAM] Error al obtener perfil de ${igsid}:`, error.message);
+        const apiErr = error.response?.data?.error;
+        console.error(`[INSTAGRAM] Error al obtener perfil de ${igsid}:`, apiErr ? JSON.stringify(apiErr) : error.message);
         return { name: `IG User (${igsid.slice(-4)})`, username: null, profileImageUrl: null };
     }
 }
@@ -406,6 +421,24 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
             lastMessageTimestamp: messageData.timestamp,
             unreadCount: admin.firestore.FieldValue.increment(1)
         };
+
+        // Auto-reparación de nombre: si el contacto se creó cuando faltaban permisos,
+        // su nombre quedó como marcador genérico ("Facebook User (1234)"). Al llegar un
+        // mensaje nuevo reintentamos obtener el nombre real; si ya está disponible, se corrige.
+        const currentName = (contactDoc.data().name || '');
+        if (/^(Facebook User|IG User) \(/.test(currentName)) {
+            const profile = channel === 'instagram'
+                ? await getInstagramUserProfile(senderId)
+                : await getUserProfile(senderId);
+            const stillPlaceholder = /^(Facebook User|IG User) \(/.test(profile.name);
+            if (!stillPlaceholder) {
+                contactUpdateData.name = profile.name;
+                contactUpdateData.name_lowercase = profile.name.toLowerCase();
+                if (profile.profileImageUrl) contactUpdateData.profileImageUrl = profile.profileImageUrl;
+                if (profile.username) contactUpdateData.igUsername = profile.username;
+                console.log(`[${logPrefix}] Nombre real recuperado para ${contactId}: ${profile.name}`);
+            }
+        }
 
         // Si el chat está en revisión de diseño, también incrementar designUnreadCount
         if (contactDoc.exists && contactDoc.data().inDesignReview) {
