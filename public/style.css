@@ -3,29 +3,30 @@
     --font-heading: 'Inter', sans-serif;
     --font-body: 'Inter', sans-serif;
     
-    /* ===== TEMA PRINCIPAL: Tradicional Dekoor (azul dominante + naranja acción) ===== */
-    /* Azul dominante #0F3F5A (estructura) · Naranja #FF7A00 (acción) */
-    --color-bg: #F6F8FA;              /* gris claro: fondos de sección */
-    --color-container-bg: #FFFFFF;    /* blanco: tarjetas */
-    --color-sidebar-bg: #0F3F5A;      /* azul principal: sidebar */
-    --color-text: #1F2937;            /* texto oscuro */
-    --color-text-light: #6B7280;      /* texto secundario (gris medio) */
-    --color-primary: #FF7A00;         /* NARANJA = acción: botones principales, badges, contadores */
-    --color-secondary: #0F3F5A;       /* AZUL = botones secundarios / estructura */
-    --color-accent: #FFD7B0;          /* naranja suave: etiquetas, pills, resaltados */
-    --color-border: #E5E7EB;          /* gris medio: bordes suaves */
-    --color-shadow: rgba(15, 63, 90, 0.08);
-    --color-danger: #DC2626;
-    --color-danger-hover: #B91C1C;
-    --color-success: #2e9e6b;
-    --color-success-hover: #25855a;
-    --color-subtle-bg: #E6EFF5;       /* azul claro: superficies suaves / chips */
-    --color-subtle-text: #234A66;     /* azul secundario */
-    --color-subtle-hover-bg: #d7e6f0;
-    --color-bubble-sent-bg: #0F3F5A;  /* azul oscuro: mensajes enviados */
-    --color-bubble-sent-text: #FFFFFF;
-    --color-bubble-received-bg: #FFFFFF; /* blanco: mensajes recibidos */
-    --color-bubble-received-text: #1F2937;
+    /* ===== TEMA PRINCIPAL: Dekoor (sistema de diseño: 1 acento naranja + grises) ===== */
+    /* Navy #1b2a4a = estructura · Naranja #ea580c = acción primaria (1 por pantalla) */
+    --color-bg: #f4f4f2;              /* surface-muted: fondo de la app */
+    --color-container-bg: #ffffff;    /* surface: paneles/tarjetas */
+    --color-sidebar-bg: #1b2a4a;      /* brand-navy */
+    --color-text: #1c1c1a;            /* text-primary */
+    --color-text-light: #5f5e5a;      /* text-secondary */
+    --color-primary: #ea580c;         /* brand-orange: acción primaria */
+    --color-secondary: #1b2a4a;       /* navy: estructura / acentos de marca */
+    --color-accent: #f4f4f2;          /* neutro: chip de folio (gris) */
+    --color-border: rgba(0, 0, 0, 0.08);
+    --color-shadow: rgba(0, 0, 0, 0.06);
+    --color-danger: #e24b4a;          /* solo acciones destructivas */
+    --color-danger-hover: #c43f3e;
+    --color-success: #1d9e75;         /* solo confirmado (pagado, checks) */
+    --color-success-hover: #178a65;
+    --color-info: #378add;            /* solo informativo (no leídos, badges) */
+    --color-subtle-bg: #f4f4f2;       /* superficies suaves / hover de filas */
+    --color-subtle-text: #5f5e5a;
+    --color-subtle-hover-bg: #ececea;
+    --color-bubble-sent-bg: #eef1f6;  /* navy claro suave: mensajes enviados */
+    --color-bubble-sent-text: #1c1c1a;
+    --color-bubble-received-bg: #ffffff; /* blanco: mensajes recibidos */
+    --color-bubble-received-text: #1c1c1a;
     --border-radius-sm: 6px;
     --border-radius-md: 10px;
     --border-radius-lg: 15px;
@@ -138,21 +139,27 @@ body.theme-minimal {
     --color-bubble-received-text: #18181b;
 }
 
-/* === TEMA PRINCIPAL DEKOOR: detalles estructurales (azul dominante + naranja acción) === */
-/* Sidebar azul oscuro: nav en blanco, estado activo con acento naranja */
+/* === TEMA PRINCIPAL DEKOOR: detalles estructurales (1 acento naranja + grises) === */
+/* Sidebar navy: inactivos blanco 72% / iconos 50%; activo en naranja-suave */
 body.theme-dekoor #main-sidebar { border-right-color: rgba(255, 255, 255, 0.08); }
-body.theme-dekoor .nav-item { color: rgba(255, 255, 255, 0.80); }
-body.theme-dekoor .nav-item:hover { background-color: rgba(255, 255, 255, 0.10); color: #ffffff; }
-body.theme-dekoor .nav-item.active { background-color: rgba(255, 122, 0, 0.20); color: #ffffff; }
-body.theme-dekoor .nav-item.active i { color: #FF7A00; }
-/* Marca del encabezado en azul */
+body.theme-dekoor .nav-item { color: rgba(255, 255, 255, 0.72); }
+body.theme-dekoor .nav-item i { opacity: 0.5; }
+body.theme-dekoor .nav-item:hover { background-color: rgba(255, 255, 255, 0.08); color: #ffffff; }
+body.theme-dekoor .nav-item:hover i { opacity: 0.9; }
+body.theme-dekoor .nav-item.active { background-color: rgba(234, 88, 12, 0.16); color: #fb923c; }
+body.theme-dekoor .nav-item.active i { color: #fb923c; opacity: 1; }
+/* Marca del encabezado en navy */
 body.theme-dekoor #app-header h1 { color: var(--color-secondary); }
-/* Chat seleccionado: azul claro suave + acento naranja, texto oscuro (no burbuja azul fuerte) */
-body.theme-dekoor .contact-item.selected { background-image: none; background-color: #E6EFF5; border-left-color: #FF7A00; }
+/* Fila activa: gris suave, SIN barra de color, texto oscuro */
+body.theme-dekoor .contact-item.selected { background-image: none; background-color: var(--color-subtle-bg); border-left-color: transparent; }
 body.theme-dekoor .contact-item.selected h3, body.theme-dekoor .contact-item.selected p { color: var(--color-text) !important; }
-body.theme-dekoor .contact-item.selected .unread-badge { background-color: #FF7A00; color: #ffffff; }
-/* Contador de pedidos del header en naranja (acción) */
-body.theme-dekoor .orders-badge { background-color: #FF7A00; }
+body.theme-dekoor .contact-item.selected .unread-badge { background-color: var(--color-info); color: #ffffff; }
+/* No leídos en azul info (no naranja) */
+body.theme-dekoor .unread-badge { background-color: var(--color-info); color: #ffffff; }
+/* Folio de pedido: chip gris con borde (estado "registrado") */
+body.theme-dekoor .order-badge { background-color: var(--color-subtle-bg); color: var(--color-text-light); border: 1px solid var(--color-border); }
+/* Contador de pedidos del header: chip neutro discreto (naranja se reserva al botón primario) */
+body.theme-dekoor .orders-badge { background-color: var(--color-subtle-bg); color: var(--color-text); border: 1px solid var(--color-border); box-shadow: none; }
 
 body { font-family: var(--font-body); background-color: var(--color-bg); color: var(--color-text); font-size: 14px; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
 body.modal-open { overflow: hidden; }
