@@ -92,8 +92,8 @@ function listenForContactOrders(contactId, callback) {
  * Actualiza el estado global de contactos y paginación.
  */
 async function fetchInitialContacts() {
+    const contactsLoadingEl = document.getElementById('contacts-loading');
     try {
-        const contactsLoadingEl = document.getElementById('contacts-loading');
         if (contactsLoadingEl) contactsLoadingEl.style.display = 'block'; // Mostrar carga
 
         // Reseteamos el estado de paginación para una carga limpia
@@ -168,8 +168,8 @@ async function fetchInitialContacts() {
                  errorMsg += `\nDetalles: ${data.errorDetails}`;
                  console.error("Detalles del servidor:", data.errorDetails);
                  if (data.errorDetails.includes('requires an index')) {
-                     alert("Se requiere crear un índice en Firebase para el filtro de No leídos.\nRevisa el enlace en la consola del navegador para crearlo con un clic.");
-                     console.error("➡️ Enlace para crear el índice: ", data.errorDetails);
+                     alert("Este filtro necesita un índice en Firebase (aún no creado).\nAbre la consola del navegador (F12 → Console) y haz clic en el enlace de Firebase para crearlo con un clic; en 1-2 min el filtro funcionará.");
+                     console.error("➡️ Enlace para crear el índice (ábrelo): ", data.errorDetails);
                  }
             }
             throw new Error(errorMsg);
@@ -190,11 +190,15 @@ async function fetchInitialContacts() {
 
         // Renderiza la lista de contactos en la UI
         scheduleContactListRender();
-
-        if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; // Ocultar carga
     } catch (error) {
         console.error(error);
         showError(error.message);
+        // No dejar la lista atascada en "Cargando contactos…": mostrar vacío para poder
+        // cambiar de filtro / volver a "Todos" y recuperar.
+        state.contacts = [];
+        scheduleContactListRender();
+    } finally {
+        if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; // Ocultar carga (éxito o error)
     }
 }
 

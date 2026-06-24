@@ -1031,8 +1031,9 @@ function setFilter(filter) {
     state.purchaseFilter = null;
     state.unreadOnly = false;
     state.designReviewFilter = false;
-    renderTagFilters(); 
-    
+    if (filter === 'all') state.channelFilter = null; // "Todos" = reset total (incluye canal)
+    renderTagFilters();
+
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); 
     if (document.getElementById(`filter-${filter}`)) {
         document.getElementById(`filter-${filter}`).classList.add('active'); 
