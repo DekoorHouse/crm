@@ -745,14 +745,14 @@ const UserIcon = (contact, size = 'h-9 w-9') => {
     // Pedido pagado/confirmado → insignia de elefante con fondo navy
     if (contact && contact.purchaseStatus === 'completed') {
          return `<div class="${size} rounded-full flex-shrink-0 dekoor-avatar" title="Pedido pagado">
-                <img src="/img/elefante-pagado.png" alt="Pagado" class="dekoor-avatar-img" loading="lazy">
+                <img src="/img/elefante-pagado.png?v=2" alt="Pagado" class="dekoor-avatar-img" loading="lazy">
             </div>`;
     }
 
     // Pedido registrado sin pagar → insignia de elefante con fondo claro
     if (contact && contact.purchaseStatus === 'registered') {
          return `<div class="${size} rounded-full flex-shrink-0 dekoor-avatar" title="Pedido registrado (sin pagar)">
-                <img src="/img/elefante-registrado.png" alt="Registrado" class="dekoor-avatar-img" loading="lazy">
+                <img src="/img/elefante-registrado.png?v=2" alt="Registrado" class="dekoor-avatar-img" loading="lazy">
             </div>`;
     }
 
