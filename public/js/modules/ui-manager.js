@@ -160,30 +160,32 @@ function renderTagFilters() {
     // Botón "Todos"
     let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter && !state.designReviewFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
 
-    // Botón "Pendientes IA"
-    buttonsHtml += `<button id="filter-pendientes_ia" class="filter-btn ${state.activeFilter === 'pendientes_ia' ? 'active text-purple-600 border-purple-600 bg-purple-50' : ''}" onclick="setFilter('pendientes_ia')"><i class="fas fa-robot text-xs mr-1"></i> Pendientes IA</button>`;
+    // Estado de pedido (texto explícito — reemplaza las coronas)
+    const greyActive = state.purchaseFilter === 'registered' || state.purchaseFilter === 'both';
+    buttonsHtml += `<button id="filter-crown-registered" class="filter-btn ${greyActive ? 'active' : ''}" onclick="setPurchaseFilter('registered')" title="Pedidos registrados sin pagar">Registrados</button>`;
 
-    // Botón "No leídos" (directo, fuera del dropdown)
+    const blueActive = state.purchaseFilter === 'completed' || state.purchaseFilter === 'both';
+    buttonsHtml += `<button id="filter-crown-completed" class="filter-btn ${blueActive ? 'active' : ''}" onclick="setPurchaseFilter('completed')" title="Pedidos pagados">Pagados</button>`;
+
+    // "En diseño" (reemplaza el pincel)
+    buttonsHtml += `<button id="filter-design" class="filter-btn ${state.designReviewFilter ? 'active' : ''}" onclick="toggleDesignFilter()" title="En revisión de diseño">En diseño</button>`;
+
+    // "Pendientes IA" (sin morado)
+    buttonsHtml += `<button id="filter-pendientes_ia" class="filter-btn ${state.activeFilter === 'pendientes_ia' ? 'active' : ''}" onclick="setFilter('pendientes_ia')">Pendientes IA</button>`;
+
+    // "No leídos"
     buttonsHtml += `<button id="filter-unread" class="filter-btn ${state.unreadOnly ? 'active' : ''}" onclick="toggleUnreadFilter()">No leídos</button>`;
 
-    // Botón "Coronita gris" (pedidos registrados)
-    const greyActive = state.purchaseFilter === 'registered' || state.purchaseFilter === 'both';
-    buttonsHtml += `<button id="filter-crown-registered" class="filter-btn ${greyActive ? 'active' : ''}" onclick="setPurchaseFilter('registered')" title="Pedidos registrados"><i class="fas fa-crown text-xs mr-1" style="color: ${greyActive ? 'white' : '#A0A0A0'};"></i></button>`;
+    // Separador Estado | Canal
+    buttonsHtml += `<span class="filter-sep" aria-hidden="true"></span>`;
 
-    // Botón "Coronita azul" (pedidos confirmados)
-    const blueActive = state.purchaseFilter === 'completed' || state.purchaseFilter === 'both';
-    buttonsHtml += `<button id="filter-crown-completed" class="filter-btn ${blueActive ? 'active' : ''}" onclick="setPurchaseFilter('completed')" title="Pedidos confirmados"><i class="fas fa-crown text-xs mr-1" style="color: ${blueActive ? 'white' : '#1E90FF'};"></i></button>`;
-
-    // Botón "En diseño" (revisión de diseño)
-    buttonsHtml += `<button id="filter-design" class="filter-btn ${state.designReviewFilter ? 'active' : ''}" onclick="toggleDesignFilter()" title="En revisión de diseño"><i class="fas fa-paint-brush text-xs mr-1" style="color: ${state.designReviewFilter ? 'white' : '#a855f7'};"></i></button>`;
-
-    // Botones de canal (WhatsApp / Messenger / Instagram)
+    // Canales (iconos de marca: WhatsApp / Messenger / Instagram)
     const waActive = state.channelFilter === 'whatsapp';
-    buttonsHtml += `<button id="filter-channel-wa" class="filter-btn ${waActive ? 'active' : ''}" onclick="toggleChannelFilter('whatsapp')" title="Solo WhatsApp"><i class="fab fa-whatsapp text-xs" style="color: ${waActive ? 'white' : '#25D366'};"></i></button>`;
+    buttonsHtml += `<button id="filter-channel-wa" class="filter-btn filter-channel ${waActive ? 'active' : ''}" onclick="toggleChannelFilter('whatsapp')" title="Solo WhatsApp"><i class="fab fa-whatsapp text-xs" style="color: ${waActive ? 'white' : '#25D366'};"></i></button>`;
     const fbActive = state.channelFilter === 'messenger';
-    buttonsHtml += `<button id="filter-channel-fb" class="filter-btn ${fbActive ? 'active' : ''}" onclick="toggleChannelFilter('messenger')" title="Solo Messenger"><i class="fab fa-facebook-messenger text-xs" style="color: ${fbActive ? 'white' : '#0084FF'};"></i></button>`;
+    buttonsHtml += `<button id="filter-channel-fb" class="filter-btn filter-channel ${fbActive ? 'active' : ''}" onclick="toggleChannelFilter('messenger')" title="Solo Messenger"><i class="fab fa-facebook-messenger text-xs" style="color: ${fbActive ? 'white' : '#0084FF'};"></i></button>`;
     const igActive = state.channelFilter === 'instagram';
-    buttonsHtml += `<button id="filter-channel-ig" class="filter-btn ${igActive ? 'active' : ''}" onclick="toggleChannelFilter('instagram')" title="Solo Instagram"><i class="fab fa-instagram text-xs" style="color: ${igActive ? 'white' : '#E1306C'};"></i></button>`;
+    buttonsHtml += `<button id="filter-channel-ig" class="filter-btn filter-channel ${igActive ? 'active' : ''}" onclick="toggleChannelFilter('instagram')" title="Solo Instagram"><i class="fab fa-instagram text-xs" style="color: ${igActive ? 'white' : '#E1306C'};"></i></button>`;
 
     // Menú desplegable de tres puntos con los demás filtros (etiquetas)
     let dropdownItems = '';
@@ -281,7 +283,8 @@ async function actualizarContadorPendientesIA(precomputedCount = null) {
         // Si no existe, lo insertamos al final del botón
         badge = document.createElement('span');
         badge.id = 'pending-ai-counter';
-        badge.className = 'ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500 text-white shadow-sm transition-all duration-300';
+        badge.className = 'ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm transition-all duration-300';
+        badge.style.backgroundColor = 'var(--color-info, #378add)';
         filterBtn.appendChild(badge);
     }
 
