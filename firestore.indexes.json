@@ -80,6 +80,33 @@
         { "fieldPath": "source", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "contacts_whatsapp",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assignedDepartmentId", "order": "ASCENDING" },
+        { "fieldPath": "unreadCount", "order": "DESCENDING" },
+        { "fieldPath": "lastMessageTimestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contacts_whatsapp",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "unreadCount", "order": "DESCENDING" },
+        { "fieldPath": "lastMessageTimestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contacts_whatsapp",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assignedDepartmentId", "order": "ASCENDING" },
+        { "fieldPath": "channel", "order": "ASCENDING" },
+        { "fieldPath": "unreadCount", "order": "DESCENDING" },
+        { "fieldPath": "lastMessageTimestamp", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
