@@ -742,19 +742,17 @@ const MetricsViewTemplate = () => `
 // --- PLANTILLAS DE COMPONENTES ---
 
 const UserIcon = (contact, size = 'h-9 w-9') => {
-    // Corona zafiro — pedido confirmado (Fabricar)
+    // Pedido pagado/confirmado → elefante de marca sobre fondo navy
     if (contact && contact.purchaseStatus === 'completed') {
-         return `<div class="${size} rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold relative sapphire-crown" style="background: linear-gradient(135deg, #0F52BA, #1E90FF); box-shadow: 0 2px 6px rgba(15,82,186,0.45);">
-                <i class="fas fa-crown text-sm" style="filter: drop-shadow(0 0 3px rgba(0,212,255,0.5));"></i>
-                <span class="gem-badge gem-filled" style="position:absolute;bottom:-1px;right:-1px;width:13px;height:13px;border-radius:50%;background:radial-gradient(circle at 35% 35%, #00D4FF, #0F52BA);border:1.5px solid rgba(255,255,255,0.8);box-shadow:0 0 6px rgba(0,212,255,0.7);"></span>
+         return `<div class="${size} rounded-full flex-shrink-0 dekoor-avatar dekoor-avatar-paid" title="Pedido pagado">
+                <img src="/img/elefante-blanco.png" alt="Pagado" class="dekoor-avatar-img" loading="lazy">
             </div>`;
     }
 
-    // Corona plateada — pedido registrado, falta confirmar (hueco de gema)
+    // Pedido registrado sin pagar → elefante blanco sobre fondo claro
     if (contact && contact.purchaseStatus === 'registered') {
-         return `<div class="${size} rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold relative silver-crown" style="background: linear-gradient(135deg, #C0C0C0, #8C8C8C); box-shadow: 0 2px 4px rgba(0,0,0,0.18);">
-                <i class="fas fa-crown text-sm" style="opacity:0.9;"></i>
-                <span class="gem-badge gem-socket" style="position:absolute;bottom:-1px;right:-1px;width:13px;height:13px;border-radius:50%;background:rgba(0,0,0,0.25);border:1.5px dashed rgba(255,255,255,0.45);box-shadow:inset 0 1px 3px rgba(0,0,0,0.4);"></span>
+         return `<div class="${size} rounded-full flex-shrink-0 dekoor-avatar dekoor-avatar-registered" title="Pedido registrado (sin pagar)">
+                <img src="/img/elefante-blanco.png" alt="Registrado" class="dekoor-avatar-img" loading="lazy">
             </div>`;
     }
 
