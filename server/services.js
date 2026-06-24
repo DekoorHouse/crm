@@ -1034,6 +1034,15 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
 
         await contactRef.update(updateData);
         console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas enviadas: ${aiMessages.length})`);
+
+        // Híbrido: si el pedido NO se acaba de registrar, etiquetar "en vivo" el estado
+        // del pedido (pendiente de foto, etc.) reutilizando el historial ya armado. El
+        // scheduler de order_followup leerá esta etiqueta y se ahorrará una clasificación.
+        // Fire-and-forget: nunca debe afectar la respuesta principal.
+        if (!shouldDeactivate) {
+            tagOrderInProgress(contactId, contactRef, conversationHistory, contactData.name)
+                .catch(e => console.warn('[ORDER_FOLLOWUP] live-tag falló:', e.message));
+        }
     } catch (error) {
         console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
         // Asegurarse de limpiar el estado incluso en error. Guardamos el último
@@ -1044,6 +1053,35 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             aiLastErrorAt: admin.firestore.FieldValue.serverTimestamp()
         });
     }
+}
+
+/**
+ * Etiqueta "en vivo" el estado de pedido del contacto (parte de escritura del híbrido
+ * de order_followup). Reutiliza el historial ya construido por la IA, clasifica una
+ * sola vez y deja la etiqueta en contacts_whatsapp/{id}.orderTag para que el scheduler
+ * de seguimiento la aproveche. Es fire-and-forget: cualquier error solo se loguea.
+ */
+async function tagOrderInProgress(contactId, contactRef, conversationHistory, name) {
+    if (!conversationHistory) return;
+    // require perezoso para evitar ciclo de módulos en carga
+    const { getOrderFollowupConfig } = require('./leads/orderFollowupScheduler');
+    const { classifyOrderIntent } = require('./leads/orderIntentClassifier');
+
+    const cfg = await getOrderFollowupConfig();
+    if (!cfg.enabled || !cfg.liveTagging) return;
+
+    const cls = await classifyOrderIntent({ conversationText: conversationHistory, name });
+    if (!cls) return;
+
+    await contactRef.update({
+        orderTag: {
+            enProceso: cls.enProceso,
+            datosDados: cls.datosDados,
+            pendiente: cls.pendiente,
+            mensajes: cls.mensajes,
+            at: admin.firestore.FieldValue.serverTimestamp()
+        }
+    });
 }
 
 // =================================================================

@@ -4,6 +4,7 @@ const axios = require('axios');
 const { db, admin, bucket } = require('./config');
 const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent } = require('./services');
 const { armLeadFollowup } = require('./leads/leadReactivationScheduler');
+const { armOrderFollowup } = require('./leads/orderFollowupScheduler');
 
 const router = express.Router();
 
@@ -724,6 +725,12 @@ router.post('/', async (req, res) => {
             // seguimiento. Si no registra pedido, el scheduler le enviará recordatorios.
             armLeadFollowup(from, contactUpdateData.name).catch(err =>
                 console.error('[LEAD_REACT] Error armando seguimiento:', err.message));
+
+            // Seguimiento de "pedido en proceso": (re)inicia la secuencia que, al vencer,
+            // clasifica con IA si el cliente empezó a dar datos y no terminó, y le recuerda
+            // dentro de las 24h y en horario laboral. La ventana se reinicia con cada mensaje.
+            armOrderFollowup(from, contactUpdateData.name).catch(err =>
+                console.error('[ORDER_FOLLOWUP] Error armando seguimiento:', err.message));
 
             // --- INICIO: ENRUTAMIENTO POR DEPARTAMENTO (AD ID) ---
             // Verifica si el mensaje trae referral para asignar el departamento

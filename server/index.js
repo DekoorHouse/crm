@@ -19,6 +19,8 @@ const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
 const { startCartRecoveryScheduler } = require('./carritos/carritosScheduler');
 const { startInventarioScheduler } = require('./inventario/inventarioScheduler');
 const { startLeadReactivationScheduler } = require('./leads/leadReactivationScheduler');
+const { startOrderFollowupScheduler } = require('./leads/orderFollowupScheduler');
+const orderFollowupRouter = require('./leads/orderFollowupRoutes');
 const path = require('path');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -55,6 +57,7 @@ app.use('/api/pagos/transferencia', transferenciasRouter);
 app.use('/api/carritos-abandonados', carritosRouter);
 app.use('/api/jt-guias', jtGuiasRouter);
 app.use('/api/leads', leadsRouter);
+app.use('/api/order-followup', orderFollowupRouter);
 app.use('/api/repartos-mty', repartosMtyRouter);
 app.use('/api/repartos-dgo', repartosDgoRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
@@ -358,6 +361,8 @@ const server = app.listen(PORT, () => {
   startCartRecoveryScheduler();
   // Iniciar scheduler de reactivacion de leads sin pedido registrado
   startLeadReactivationScheduler();
+  // Iniciar scheduler de seguimiento de "pedido en proceso" (datos a medias) por IA
+  startOrderFollowupScheduler();
   // Iniciar scheduler de reporte diario de inventario (18:00 hora MX)
   startInventarioScheduler();
   // Conectar bridge TCP a MeerK40t
