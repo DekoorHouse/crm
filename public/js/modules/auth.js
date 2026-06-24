@@ -37,7 +37,22 @@ auth.onAuthStateChanged(async user => { // Hacemos la función async para espera
         const prettyEmail = emailLocal ? emailLocal.replace(/\b\w/g, c => c.toUpperCase()) : '';
         const displayName = profileName || prettyEmail || 'Usuario';
         userInfoEl.textContent = displayName;
-        
+
+        // Avatar del usuario en el sidebar: foto de perfil si existe, si no la inicial
+        const avatarEl = document.getElementById('sidebar-user-avatar');
+        if (avatarEl) {
+            const photo = state.currentUserProfile?.photoURL || user.photoURL || '';
+            if (photo) {
+                avatarEl.style.backgroundImage = `url("${photo}")`;
+                avatarEl.classList.add('has-photo');
+                avatarEl.textContent = '';
+            } else {
+                avatarEl.style.backgroundImage = '';
+                avatarEl.classList.remove('has-photo');
+                avatarEl.textContent = (displayName.trim()[0] || 'U').toUpperCase();
+            }
+        }
+
         startApp();
     } else {
         stopApp();
@@ -49,6 +64,8 @@ auth.onAuthStateChanged(async user => { // Hacemos la función async para espera
         appContainer.classList.add('hidden');
         appContainer.classList.remove('flex');
         userInfoEl.textContent = '';
+        const avatarEl = document.getElementById('sidebar-user-avatar');
+        if (avatarEl) { avatarEl.textContent = ''; avatarEl.style.backgroundImage = ''; avatarEl.classList.remove('has-photo'); }
     }
     loadingOverlay.style.opacity = '0';
     setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);

@@ -876,6 +876,21 @@ body.theme-dekoor .nav-divider { background-color: rgba(255, 255, 255, 0.10); }
 body.dark-mode .nav-section-title { color: rgba(255, 255, 255, 0.40); }
 body.dark-mode .nav-divider { background-color: rgba(255, 255, 255, 0.10); }
 
+/* Bloque de usuario + tema en la parte inferior del sidebar */
+.sidebar-user { display: flex; align-items: center; gap: 10px; padding: 10px 12px 4px; }
+.sidebar-user-avatar { width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; background-color: var(--color-primary); color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.9rem; background-size: cover; background-position: center; }
+.sidebar-user-avatar.has-photo { color: transparent; }
+.sidebar-user-name { flex: 1; min-width: 0; font-size: 0.85rem; font-weight: 600; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-theme-btn { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text-light); background: transparent; border: none; transition: background-color 0.2s ease, color 0.2s ease; }
+.sidebar-theme-btn:hover { background-color: #f0f2f5; color: var(--color-text); }
+.sidebar-theme-btn i { font-size: 1rem; }
+body.theme-dekoor .sidebar-user-name { color: rgba(255, 255, 255, 0.85); }
+body.theme-dekoor .sidebar-theme-btn { color: rgba(255, 255, 255, 0.6); }
+body.theme-dekoor .sidebar-theme-btn:hover { background-color: rgba(255, 255, 255, 0.08); color: #ffffff; }
+body.dark-mode .sidebar-theme-btn:hover { background-color: #24283b; color: var(--color-text); }
+#main-sidebar.collapsed .sidebar-user { justify-content: center; padding-left: 0; padding-right: 0; }
+#main-sidebar.collapsed .sidebar-theme-btn { display: none; }
+
 /* Avatares con insignia de elefante de marca según estado del pedido (reemplazan las coronas) */
 .dekoor-avatar { overflow: hidden; display: flex; align-items: center; justify-content: center; }
 .dekoor-avatar-img { width: 100%; height: 100%; object-fit: cover; }
