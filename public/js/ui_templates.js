@@ -1142,6 +1142,45 @@ const StatusButtonsTemplate = (contact) => {
     return buttonsHtml;
 };
 
+// Control compacto de etiqueta para el header del chat: un icono de etiqueta
+// junto al nombre que abre el dropdown de tags (reemplaza a los "tres puntos").
+const HeaderTagControlTemplate = (contact) => {
+    const activeTag = state.tags.find(t => t.key === contact.status);
+    const iconColor = activeTag ? activeTag.color : 'var(--color-text-light)';
+
+    const dropdownItems = state.tags.map(tag => {
+        const isActive = contact.status === tag.key;
+        return `<button
+                    onclick="handleStatusChange('${contact.id}', '${tag.key}'); closeStatusDropdown();"
+                    class="status-dropdown-item ${isActive ? 'active' : ''}"
+                    style="--btn-color: ${tag.color};">
+                    <span class="status-dropdown-dot" style="background-color: ${tag.color};"></span>
+                    ${tag.label}
+                </button>`;
+    }).join('');
+
+    return `<div class="status-dropdown-wrapper header-tag-control">
+        <button class="header-tag-btn ${activeTag ? 'active' : ''}" style="color: ${iconColor};"
+                onclick="toggleStatusDropdown(event)"
+                title="${activeTag ? 'Etiqueta: ' + activeTag.label : 'Asignar etiqueta'}">
+            <i class="fas fa-tag"></i>
+        </button>
+        <div class="status-dropdown-menu hidden">${dropdownItems}</div>
+    </div>`;
+};
+
+// Toggle "Pendientes IA" para el panel derecho (movido desde el header del chat).
+const PendingAiToggleTemplate = (contact) => {
+    const isIAActive = contact.status === 'pendientes_ia';
+    return `<button onclick="handleStatusChange('${contact.id}', 'pendientes_ia')"
+                class="pending-ai-toggle ${isIAActive ? 'active' : ''}"
+                title="${isIAActive ? 'Quitar de Pendientes IA' : 'Marcar como Pendiente de Revisión IA'}">
+                <i class="fas fa-robot mr-2"></i>
+                <span>Pendientes de revisión IA</span>
+                ${isIAActive ? '<i class="fas fa-check ml-auto"></i>' : ''}
+            </button>`;
+};
+
 const ReplyContextBarTemplate = (message) => {
     if (!message) return '';
     const authorName = message.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
@@ -1342,16 +1381,14 @@ const ChatWindowTemplate = (contact) => {
                 <p>Suelta para adjuntar el archivo</p>
             </div>
         </div>
-        <header class="chat-header p-2 shadow-sm flex items-center space-x-2" ${headerStyle}>
+        <header class="chat-header chat-header-slim flex items-center space-x-2" ${headerStyle}>
             <button id="chat-back-btn" onclick="closeChatOnMobile()" class="md:hidden chat-back-btn-mobile" aria-label="Volver a la lista de chats"><i class="fas fa-arrow-left"></i></button>
-            <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
-            <div class="flex-grow">
-                <h2 class="text-base font-semibold cursor-pointer flex items-center" style="color: var(--color-text);" onclick="openContactDetails()">
-                    <i class="${contact.channel === 'instagram' ? 'fab fa-instagram text-pink-500' : contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1.5"></i>${contact.name}
-                </h2>
-                <div id="contact-status-wrapper" class="mt-1"></div>
+            <div class="flex-shrink-0 chat-header-avatar">${UserIcon(contact)}</div>
+            <div class="flex-grow flex items-center min-w-0" style="gap: 6px;">
+                <h2 class="text-base font-semibold cursor-pointer truncate" style="color: var(--color-text);" onclick="openContactDetails()">${contact.name}</h2>
+                ${HeaderTagControlTemplate(contact)}
             </div>
-            <div class="flex items-center pr-2">
+            <div class="flex items-center pr-2 chat-header-actions">
                 ${designToggleHTML}
                 ${botToggleHTML}
                 ${transferButtonHTML}
@@ -1386,58 +1423,106 @@ const ContactDetailsSidebarTemplate = (contact) => {
     const deptName = (deptColor && state.departments) ? (state.departments.find(d => d.id === contact.assignedDepartmentId)?.name || 'Campaña') : '';
     const deptChip = deptColor ? `<p class="text-xs text-gray-500 mt-2 flex items-center justify-center"><span class="dept-dot" style="background:${deptColor}"></span>${deptName.replace(/[<>]/g,'')}</p>` : '';
 
+    const activeTab = state.contactPanelTab || 'perfil';
+    const notesCount = (state.notes && state.notes.length) ? state.notes.length : 0;
+    const notesBadge = notesCount > 0 ? `<span class="cdetails-tab-badge" id="notes-tab-badge">${notesCount}</span>` : `<span class="cdetails-tab-badge hidden" id="notes-tab-badge"></span>`;
+
     return `
         <div class="h-full flex flex-col">
             <header class="p-4 flex items-center justify-between border-b border-gray-200">
                 <h3 class="font-semibold text-lg">Detalles del contacto</h3>
                 <button onclick="closeContactDetails()" class="text-gray-500 hover:text-gray-800"><i class="fas fa-times"></i></button>
             </header>
-            <div class="flex-1 p-6 overflow-y-auto">
-                <div class="text-center mb-6">
-                    ${UserIcon(contact, 'h-24 w-24 mx-auto')}
-                    <h2 class="text-2xl font-bold mt-4">${contact.name || 'Desconocido'}</h2>
-                    <p class="text-gray-500">${ContactHandleTemplate(contact)}</p>
-                     ${deptChip}
-                     <p class="text-sm text-gray-500 mt-1">${contact.email || ''}</p>
-                     <p class="text-sm text-gray-500 mt-1"><em>${contact.nickname || ''}</em></p>
+
+            <!-- Menú de pestañas con iconos -->
+            <nav class="cdetails-tabs">
+                <button class="cdetails-tab ${activeTab === 'perfil' ? 'active' : ''}" data-tab="perfil" onclick="switchContactPanelTab('perfil')" title="Perfil">
+                    <i class="fas fa-user"></i><span>Perfil</span>
+                </button>
+                <button class="cdetails-tab ${activeTab === 'pedidos' ? 'active' : ''}" data-tab="pedidos" onclick="switchContactPanelTab('pedidos')" title="Pedidos">
+                    <i class="fas fa-box"></i><span>Pedidos</span>
+                </button>
+                <button class="cdetails-tab ${activeTab === 'notas' ? 'active' : ''}" data-tab="notas" onclick="switchContactPanelTab('notas')" title="Notas">
+                    <i class="fas fa-sticky-note"></i><span>Notas</span>${notesBadge}
+                </button>
+            </nav>
+
+            <div class="flex-1 overflow-y-auto">
+                <!-- PESTAÑA: PERFIL -->
+                <div class="cdetails-pane ${activeTab === 'perfil' ? 'active' : ''}" data-pane="perfil">
+                    <div class="p-6">
+                        <div class="text-center mb-6">
+                            ${UserIcon(contact, 'h-24 w-24 mx-auto')}
+                            <h2 class="text-2xl font-bold mt-4">${contact.name || 'Desconocido'}</h2>
+                            <p class="text-gray-500">${ContactHandleTemplate(contact)}</p>
+                            ${deptChip}
+                            <p class="text-sm text-gray-500 mt-1">${contact.email || ''}</p>
+                            <p class="text-sm text-gray-500 mt-1"><em>${contact.nickname || ''}</em></p>
+                        </div>
+
+                        ${PendingAiToggleTemplate(contact)}
+                        ${AdReferralBannerTemplate(contact)}
+                    </div>
                 </div>
 
-                ${AdReferralBannerTemplate(contact)}
+                <!-- PESTAÑA: PEDIDOS -->
+                <div class="cdetails-pane ${activeTab === 'pedidos' ? 'active' : ''}" data-pane="pedidos">
+                    <div class="p-6">
+                        <div id="order-history-container">
+                            <h4 class="cdetails-section-title">Historial de Pedidos</h4>
+                            <div id="contact-orders-list" class="space-y-2">
+                                <!-- El contenido se cargará dinámicamente -->
+                            </div>
+                        </div>
 
-                <div id="order-history-container" class="mt-4 border-t pt-4 collapsed">
-                     <button type="button" onclick="this.closest('#order-history-container').classList.toggle('collapsed')" class="w-full flex items-center justify-between mb-3 text-sm font-semibold text-gray-500 uppercase tracking-wider">
-                         <span>Historial de Pedidos</span>
-                         <i class="fas fa-chevron-down order-history-chevron"></i>
-                     </button>
-                     <div id="contact-orders-list" class="space-y-2">
-                        <!-- El contenido se cargará dinámicamente -->
-                     </div>
+                        <div class="mt-6 border-t pt-6 space-y-2">
+                           <!-- Acción primaria (única, naranja) -->
+                           <button onclick="abrirModalPedido()" class="btn btn-primary w-full btn-sm"><i class="fas fa-plus-circle mr-2"></i>Registrar Nuevo Pedido</button>
+
+                           <!-- Secundarias (borde) -->
+                           <button onclick="handleMarkAsPurchase()" class="btn btn-outline w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
+                           <button onclick="handleSendViewContent()" class="btn btn-outline w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto' (Meta)</button>
+
+                           <!-- Grupo: Solicitar envío -->
+                           <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider pt-3 pb-1">Solicitar envío</p>
+                           <button onclick="handlePedirDatosEnvio()" class="btn btn-outline w-full btn-sm"><i class="fas fa-truck mr-2"></i>Nacional</button>
+                           <button onclick="handlePedirDatosMty()" class="btn btn-outline w-full btn-sm"><i class="fas fa-map-marker-alt mr-2"></i>MTY</button>
+                           <button onclick="handlePedirDatosDgo()" class="btn btn-outline w-full btn-sm"><i class="fas fa-motorcycle mr-2"></i>DGO</button>
+
+                           <!-- Pago (neutro, no destructivo) -->
+                           <button onclick="handleGenerarOxxo()" class="btn btn-outline w-full btn-sm"><i class="fas fa-store mr-2"></i>Generar Pago OXXO</button>
+
+                           <!-- Destructiva (discreta, al fondo tras divisor) -->
+                           <div class="border-t border-gray-100 my-3"></div>
+                           <button onclick="handleCancelarGuiaEnvio()" class="btn btn-outline w-full btn-sm" style="color: var(--color-danger);"><i class="fas fa-ban mr-2"></i>Cancelar Guía de Envío</button>
+                        </div>
+                    </div>
                 </div>
 
-
-                <div class="mt-6 border-t pt-6 space-y-2">
-                   <!-- Acción primaria (única, naranja) -->
-                   <button onclick="abrirModalPedido()" class="btn btn-primary w-full btn-sm"><i class="fas fa-plus-circle mr-2"></i>Registrar Nuevo Pedido</button>
-
-                   <!-- Secundarias (borde) -->
-                   <button onclick="handleMarkAsPurchase()" class="btn btn-outline w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
-                   <button onclick="handleSendViewContent()" class="btn btn-outline w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto' (Meta)</button>
-
-                   <!-- Grupo: Solicitar envío -->
-                   <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider pt-3 pb-1">Solicitar envío</p>
-                   <button onclick="handlePedirDatosEnvio()" class="btn btn-outline w-full btn-sm"><i class="fas fa-truck mr-2"></i>Nacional</button>
-                   <button onclick="handlePedirDatosMty()" class="btn btn-outline w-full btn-sm"><i class="fas fa-map-marker-alt mr-2"></i>MTY</button>
-                   <button onclick="handlePedirDatosDgo()" class="btn btn-outline w-full btn-sm"><i class="fas fa-motorcycle mr-2"></i>DGO</button>
-
-                   <!-- Pago (neutro, no destructivo) -->
-                   <button onclick="handleGenerarOxxo()" class="btn btn-outline w-full btn-sm"><i class="fas fa-store mr-2"></i>Generar Pago OXXO</button>
-
-                   <!-- Destructiva (discreta, al fondo tras divisor) -->
-                   <div class="border-t border-gray-100 my-3"></div>
-                   <button onclick="handleCancelarGuiaEnvio()" class="btn btn-outline w-full btn-sm" style="color: var(--color-danger);"><i class="fas fa-ban mr-2"></i>Cancelar Guía de Envío</button>
+                <!-- PESTAÑA: NOTAS -->
+                <div class="cdetails-pane ${activeTab === 'notas' ? 'active' : ''}" data-pane="notas">
+                    <div class="p-6">
+                        <div id="sidebar-notes-container">
+                            <div class="flex justify-between items-center mb-3">
+                                <h4 class="cdetails-section-title !mb-0">Notas Internas</h4>
+                                <button onclick="toggleSidebarNoteInput()" class="text-primary hover:opacity-80 p-1" title="Agregar nota" style="color: var(--color-primary);">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <div id="sidebar-note-input-container" class="hidden mb-3 bg-gray-50 p-2 rounded border border-gray-100">
+                                <textarea id="sidebar-note-input" class="w-full p-2 text-xs border rounded mb-2 focus:ring-1 focus:ring-blue-400 outline-none" rows="2" placeholder="Escribe una nota interna..."></textarea>
+                                <div class="flex justify-end gap-2">
+                                    <button onclick="toggleSidebarNoteInput()" class="text-[10px] text-gray-400 hover:text-gray-600">Cancelar</button>
+                                    <button onclick="handleSaveSidebarNote()" class="btn btn-primary !py-1 !px-2 !text-[10px] rounded">Guardar</button>
+                                </div>
+                            </div>
+                            <div id="sidebar-notes-list" class="min-h-[40px] transition-all duration-300">
+                                <!-- Las notas se cargarán aquí -->
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            </footer>
         </div>
     `;
 };

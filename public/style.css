@@ -498,6 +498,22 @@ body.dark-mode #chat-panel::before {
 .chat-header { background-color: #f8f9fa; border-bottom: 1px solid var(--color-border); transition: background-color 0.3s ease; }
 body.dark-mode .chat-header { background-color: #1a1b26; }
 
+/* Header del chat: variante delgada y sutil */
+.chat-header-slim { padding: 4px 10px; box-shadow: none; background-color: var(--color-bg); }
+body.dark-mode .chat-header-slim { background-color: #1a1b26; }
+.chat-header-slim .chat-header-avatar .dekoor-avatar,
+.chat-header-slim .chat-header-avatar img,
+.chat-header-slim .chat-header-avatar > div { width: 34px; height: 34px; }
+/* Botones de acción del header más compactos (sin que la barra crezca) */
+.chat-header-actions button { padding: 6px !important; }
+.chat-header-actions button i { font-size: 1rem !important; }
+/* Control de etiqueta junto al nombre (reemplaza los tres puntos) */
+.header-tag-control { flex-shrink: 0; }
+.header-tag-btn { background: transparent; border: none; cursor: pointer; padding: 4px 6px; border-radius: var(--border-radius-md); font-size: 0.9rem; line-height: 1; transition: background-color 0.15s ease; }
+.header-tag-btn:hover { background-color: rgba(0,0,0,0.06); }
+body.dark-mode .header-tag-btn:hover { background-color: rgba(255,255,255,0.08); }
+.header-tag-btn.active { background-color: rgba(0,0,0,0.04); }
+
 .chat-footer { background-color: #f8f9fa; padding: 8px 16px; transition: background-color 0.3s ease; }
 body.dark-mode .chat-footer { background-color: #1a1b26; }
 
@@ -914,6 +930,23 @@ body.dark-mode .sidebar-theme-btn:hover { background-color: #24283b; color: var(
 .order-history-chevron { transition: transform 0.2s ease; }
 #order-history-container.collapsed .order-history-chevron { transform: rotate(-90deg); }
 .rotate-180 { transform: rotate(180deg); }
+
+/* --- Panel de detalles del contacto: pestañas con iconos --- */
+.cdetails-tabs { display: flex; border-bottom: 1px solid var(--color-border); padding: 0 6px; flex-shrink: 0; }
+.cdetails-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 4px; background: transparent; border: none; cursor: pointer; color: var(--color-text-light); font-size: 0.66rem; font-weight: 600; position: relative; border-bottom: 2px solid transparent; transition: color 0.15s ease, border-color 0.15s ease; }
+.cdetails-tab i { font-size: 1.05rem; }
+.cdetails-tab:hover { color: var(--color-text); }
+.cdetails-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.cdetails-tab-badge { position: absolute; top: 4px; left: 50%; margin-left: 10px; background: var(--color-primary); color: #fff; font-size: 0.6rem; font-weight: 700; min-width: 16px; height: 16px; line-height: 16px; border-radius: 8px; text-align: center; padding: 0 4px; }
+.cdetails-pane { display: none; }
+.cdetails-pane.active { display: block; }
+.cdetails-section-title { font-size: 0.78rem; font-weight: 600; color: var(--color-text-light); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+
+/* Toggle "Pendientes IA" en el panel de perfil */
+.pending-ai-toggle { width: 100%; display: flex; align-items: center; padding: 10px 14px; margin-bottom: 16px; border-radius: var(--border-radius-md); border: 1px solid var(--color-border); background: transparent; color: var(--color-text); font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
+.pending-ai-toggle:hover { border-color: #8b5cf6; color: #7c3aed; }
+.pending-ai-toggle.active { background: rgba(139, 92, 246, 0.12); border-color: #8b5cf6; color: #7c3aed; }
+body.dark-mode .pending-ai-toggle.active { background: rgba(139, 92, 246, 0.2); color: #c4b5fd; }
 
 .view-container { padding: 2rem; background-color: var(--color-container-bg); height: 100%; overflow-y: auto; }
 .view-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
@@ -2203,7 +2236,7 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
     .chat-header .flex.items-center.pr-2 { padding-right: 0 !important; gap: 0; }
     .chat-header .flex.items-center.pr-2 > button { padding: 0.25rem !important; margin-left: 0 !important; min-height: 32px; min-width: 32px; }
     .chat-header .flex.items-center.pr-2 > button i { font-size: 0.95rem !important; }
-    .chat-header .flex-shrink-0.pt-0\.5 { display: none; } /* el avatar del header de chat ocupa espacio precioso */
+    .chat-header .chat-header-avatar { display: none; } /* el avatar del header de chat ocupa espacio precioso */
     /* Status wrapper (Pendientes IA, etc) más compacto */
     #contact-status-wrapper { margin-top: 0.25rem !important; }
     #contact-status-wrapper .status-btn { padding: 2px 8px; font-size: 0.65rem; }

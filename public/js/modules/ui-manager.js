@@ -260,6 +260,16 @@ function closeStatusDropdown() {
 }
 
 /**
+ * Cambia la pestaña activa del panel de detalles del contacto (Perfil / Pedidos / Notas).
+ * Guarda la selección en el estado para que persista al re-renderizar el panel.
+ */
+function switchContactPanelTab(tabId) {
+    state.contactPanelTab = tabId;
+    document.querySelectorAll('.cdetails-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+    document.querySelectorAll('.cdetails-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === tabId));
+}
+
+/**
  * Actualiza el contador visual de chats pendientes de IA.
  * Puede recibir un conteo pre-calculado (desde un listener en tiempo real) o consultarlo al servidor.
  * @param {number|null} precomputedCount El conteo actual, si ya se conoce.
@@ -1551,6 +1561,14 @@ function appendMessage(message) {
 function renderSidebarNotes() {
     const sidebarNotesList = document.getElementById('sidebar-notes-list');
     const mainContainer = document.getElementById('sidebar-notes-container');
+
+    // Actualizar el badge de conteo en la pestaña "Notas"
+    const notesTabBadge = document.getElementById('notes-tab-badge');
+    if (notesTabBadge) {
+        const count = (state.notes && state.notes.length) ? state.notes.length : 0;
+        notesTabBadge.textContent = count > 0 ? count : '';
+        notesTabBadge.classList.toggle('hidden', count === 0);
+    }
 
     if (!sidebarNotesList || !mainContainer) return;
 
@@ -2912,6 +2930,7 @@ window.toggleTagDropdown = toggleTagDropdown;
 window.closeTagDropdown = closeTagDropdown;
 window.toggleStatusDropdown = toggleStatusDropdown;
 window.closeStatusDropdown = closeStatusDropdown;
+window.switchContactPanelTab = switchContactPanelTab;
 
 window.closeImageModal = closeImageModal;
 window.openContactDetails = openContactDetails;
