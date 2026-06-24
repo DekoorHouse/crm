@@ -5,6 +5,7 @@ const { db, admin, bucket } = require('./config');
 const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent } = require('./services');
 const { armLeadFollowup } = require('./leads/leadReactivationScheduler');
 const { armOrderFollowup } = require('./leads/orderFollowupScheduler');
+const { markOrderFollowupReplied } = require('./leads/orderFollowupMetrics');
 
 const router = express.Router();
 
@@ -731,6 +732,11 @@ router.post('/', async (req, res) => {
             // dentro de las 24h y en horario laboral. La ventana se reinicia con cada mensaje.
             armOrderFollowup(from, contactUpdateData.name).catch(err =>
                 console.error('[ORDER_FOLLOWUP] Error armando seguimiento:', err.message));
+
+            // Métrica de rescate: si el cliente fue contactado por el sistema y ahora
+            // responde, contabilizamos el re-enganche.
+            markOrderFollowupReplied(from).catch(err =>
+                console.error('[ORDER_FOLLOWUP] Error marcando respuesta:', err.message));
 
             // --- INICIO: ENRUTAMIENTO POR DEPARTAMENTO (AD ID) ---
             // Verifica si el mensaje trae referral para asignar el departamento

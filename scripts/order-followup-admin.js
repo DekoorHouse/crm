@@ -17,6 +17,7 @@ const {
     runOrderFollowupSweep,
     backfillOrderFollowups
 } = require('../server/leads/orderFollowupScheduler');
+const { migrateSendsFromFollowups, getOrderFollowupMetrics } = require('../server/leads/orderFollowupMetrics');
 
 async function status() {
     const cfg = await getOrderFollowupConfig(true);
@@ -85,8 +86,20 @@ async function backfill(dryRun) {
             case 'backfill-dry': await backfill(true); break;
             case 'backfill': await backfill(false); break;
             case 'clear-backfill': await clearBackfill(); break;
+            case 'migrate-sends': {
+                const n = await migrateSendsFromFollowups();
+                console.log(`Migrados ${n} registros a order_followup_sends.`);
+                break;
+            }
+            case 'metrics': {
+                const DAY = 24*60*60*1000;
+                const m = await getOrderFollowupMetrics(Date.now() - 30*DAY, Date.now());
+                console.log('=== Métricas de rescate (últimos 30 días) ===');
+                console.log(JSON.stringify(m, null, 2));
+                break;
+            }
             default:
-                console.log('Comandos: status | dry-run | enable | disable | backfill-dry [horas] | backfill [horas] | clear-backfill');
+                console.log('Comandos: status | dry-run | enable | disable | backfill-dry [horas] | backfill [horas] | clear-backfill | migrate-sends | metrics');
         }
     } catch (e) {
         console.error('ERROR:', e.message);

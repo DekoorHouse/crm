@@ -25,6 +25,7 @@ const cron = require('node-cron');
 const { db, admin } = require('../config');
 const { sendAdvancedWhatsAppMessage } = require('../services');
 const { classifyOrderIntent } = require('./orderIntentClassifier');
+const { recordOrderFollowupSend } = require('./orderFollowupMetrics');
 const {
     normalizeOrderConfig,
     planSends,
@@ -298,6 +299,12 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
                     sentLog: admin.firestore.FieldValue.arrayUnion({ stage: verdict.stage, at: new Date(), messageId, text: String(text).slice(0, 200) }),
                     updatedAt: new Date()
                 });
+                // Registrar para métricas de rescate (colección durable, no se pierde al re-armar)
+                recordOrderFollowupSend(doc.id, {
+                    name: (contact && contact.name) || followup.name,
+                    stage: verdict.stage, pendiente: followup.pendiente,
+                    datosDados: followup.datosDados, text
+                }).catch(err => console.warn('[ORDER_FOLLOWUP] recordSend falló:', err.message));
                 summary.sent++;
                 console.log(`[ORDER_FOLLOWUP] ✓ Seguimiento ${verdict.stage + 1}/${(followup.scheduledSends || []).length} a ${doc.id} (pendiente: ${followup.pendiente || '?'})`);
             } catch (e) {

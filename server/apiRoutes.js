@@ -5576,6 +5576,14 @@ router.post('/orders', async (req, res) => {
             purchaseDate: admin.firestore.FieldValue.serverTimestamp()
         });
 
+        // Métrica de rescate: si este contacto fue contactado por el seguimiento de IA
+        // recientemente, contabilizar el pedido como recuperación (fire-and-forget).
+        try {
+            require('./leads/orderFollowupMetrics')
+                .markOrderFollowupConverted(contactId, { orderNumber: `DH${newOrderNumber}`, value: totalValue })
+                .catch(() => {});
+        } catch (_) {}
+
         // Enviar evento Purchase a Meta CAPI al registrar el pedido (no al pagar/fabricar)
         // Optimiza campañas con señal rápida y mayor volumen; el ROAS real se mide aparte en el CRM.
         if (contactData?.wa_id) {

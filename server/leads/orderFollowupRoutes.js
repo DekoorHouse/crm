@@ -14,6 +14,15 @@ const {
     getOrderFollowupConfig,
     saveOrderFollowupConfig
 } = require('./orderFollowupScheduler');
+const { getOrderFollowupMetrics, listOrderFollowupSends } = require('./orderFollowupMetrics');
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Parsea ?from/?to (YYYY-MM-DD o ms). Default: últimos 30 días.
+function parseRange(q) {
+    const toMs = q.to ? (/^\d+$/.test(q.to) ? Number(q.to) : Date.parse(q.to + 'T23:59:59')) : Date.now();
+    const fromMs = q.from ? (/^\d+$/.test(q.from) ? Number(q.from) : Date.parse(q.from + 'T00:00:00')) : (toMs - 30 * DAY_MS);
+    return { fromMs: Number.isFinite(fromMs) ? fromMs : Date.now() - 30 * DAY_MS, toMs: Number.isFinite(toMs) ? toMs : Date.now() };
+}
 
 router.get('/config', async (_req, res) => {
     try {
@@ -79,6 +88,31 @@ router.post('/sweep', async (req, res) => {
     } catch (e) {
         console.error('[ORDER_FOLLOWUP] Error en sweep manual:', e.message);
         res.status(500).json({ error: 'Error al ejecutar el sweep' });
+    }
+});
+
+// KPIs del embudo de rescate
+router.get('/metrics', async (req, res) => {
+    try {
+        const { fromMs, toMs } = parseRange(req.query);
+        const metrics = await getOrderFollowupMetrics(fromMs, toMs);
+        res.json({ from: fromMs, to: toMs, ...metrics });
+    } catch (e) {
+        console.error('[ORDER_FOLLOWUP] Error en métricas:', e.message);
+        res.status(500).json({ error: 'Error al calcular métricas' });
+    }
+});
+
+// Lista de clientes contactados (para el panel). ?status=contacted|replied|converted
+router.get('/sends', async (req, res) => {
+    try {
+        const { fromMs, toMs } = parseRange(req.query);
+        const limit = Math.min(parseInt(req.query.limit) || 500, 1000);
+        const items = await listOrderFollowupSends(fromMs, toMs, { status: req.query.status, limit });
+        res.json({ from: fromMs, to: toMs, count: items.length, items });
+    } catch (e) {
+        console.error('[ORDER_FOLLOWUP] Error listando envíos:', e.message);
+        res.status(500).json({ error: 'Error al listar envíos' });
     }
 });
 
