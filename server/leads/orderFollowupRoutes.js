@@ -14,7 +14,7 @@ const {
     getOrderFollowupConfig,
     saveOrderFollowupConfig
 } = require('./orderFollowupScheduler');
-const { getOrderFollowupMetrics, listOrderFollowupSends } = require('./orderFollowupMetrics');
+const { getOrderFollowupMetrics, listOrderFollowupSends, getContactFollowup } = require('./orderFollowupMetrics');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Parsea ?from/?to (YYYY-MM-DD o ms). Default: últimos 30 días.
@@ -113,6 +113,16 @@ router.get('/sends', async (req, res) => {
     } catch (e) {
         console.error('[ORDER_FOLLOWUP] Error listando envíos:', e.message);
         res.status(500).json({ error: 'Error al listar envíos' });
+    }
+});
+
+// Estado de seguimiento de un contacto (badge "pendiente" en el chat)
+router.get('/contact/:waId', async (req, res) => {
+    try {
+        res.json(await getContactFollowup(req.params.waId));
+    } catch (e) {
+        console.error('[ORDER_FOLLOWUP] Error en contact:', e.message);
+        res.status(500).json({ exists: false, error: 'Error' });
     }
 });
 

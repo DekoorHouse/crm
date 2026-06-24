@@ -768,6 +768,12 @@ const OrderFollowupViewTemplate = () => `
             </div>
 
             <div class="settings-card mt-6">
+                <h2 class="text-xl font-bold mb-1">Tendencia</h2>
+                <p class="text-sm mb-3" style="color:var(--color-text-light)">Contactados vs. recuperados por día en el rango seleccionado.</p>
+                <div style="position:relative;height:260px;"><canvas id="rescate-trend-chart"></canvas></div>
+            </div>
+
+            <div class="settings-card mt-6">
                 <h2 class="text-xl font-bold mb-1">Clientes contactados</h2>
                 <p class="text-sm mb-3" style="color:var(--color-text-light)">Quién recibió mensaje del sistema y en qué quedó. Haz clic en una fila para abrir el chat.</p>
                 <div class="flex flex-wrap gap-2 mb-3">
@@ -1333,6 +1339,23 @@ const AdReferralBannerTemplate = (contact) => {
     `;
 };
 
+// Insignia de "pedido en proceso" en el header del chat. Lee de un caché en state
+// que llena fetchOrderPending(contactId) al seleccionar el chat (sobrevive re-renders).
+function OrderPendingBadge(contact) {
+    if (!contact) return '';
+    const cache = (typeof state !== 'undefined' && state.orderPendingByContact) || {};
+    const info = cache[contact.id];
+    if (!info || !info.exists) return '';
+    if (info.status === 'converted') {
+        const ord = info.orderNumber ? ` ${String(info.orderNumber).replace(/</g, '&lt;')}` : '';
+        return `<span class="order-pending-pill" title="Pedido recuperado por seguimiento IA" style="display:inline-flex;align-items:center;gap:4px;background:var(--color-success);color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;"><i class="fas fa-check"></i> Recuperado${ord}</span>`;
+    }
+    if (!info.pendiente) return '';
+    const color = info.status === 'replied' ? 'var(--color-primary)' : 'var(--color-info)';
+    const pend = String(info.pendiente).replace(/</g, '&lt;');
+    return `<span class="order-pending-pill" title="Seguimiento IA · quedó pendiente" style="display:inline-flex;align-items:center;gap:4px;background:${color};color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;"><i class="fas fa-hourglass-half"></i> ${pend}</span>`;
+}
+
 const ChatWindowTemplate = (contact) => {
     const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fas fa-comments text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
     if (!contact) { return emptyChat; }
@@ -1445,6 +1468,7 @@ const ChatWindowTemplate = (contact) => {
             <div class="flex-grow flex items-center min-w-0" style="gap: 6px;">
                 <h2 class="text-base font-semibold cursor-pointer truncate" style="color: var(--color-text);" onclick="openContactDetails()">${contact.name}</h2>
                 ${HeaderTagControlTemplate(contact)}
+                <span id="order-pending-host" class="flex-shrink-0">${OrderPendingBadge(contact)}</span>
             </div>
             <div class="flex items-center pr-2 chat-header-actions">
                 ${designToggleHTML}

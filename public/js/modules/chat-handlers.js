@@ -392,9 +392,12 @@ async function handleSelectContact(contactId) {
         db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 }).catch(err => console.error("Error al resetear contador:", err));
     }
     
-    state.selectedContactId = contactId; 
-    state.loadingMessages = true; 
+    state.selectedContactId = contactId;
+    state.loadingMessages = true;
     state.activeTab = 'chat';
+
+    // Badge "pendiente" del seguimiento IA (no bloquea; pinta cuando llega)
+    if (typeof fetchOrderPending === 'function') fetchOrderPending(contactId);
     state.isEditingNote = null;
     state.notes = []; // LIMPIAR NOTAS al cambiar de contacto
     state.isSessionExpired = false; // Resetear al cambiar de contacto

@@ -2195,6 +2195,7 @@ async function loadRescateData() {
         r.sends = (s && s.items) || [];
         fillRescateKpis(m || {});
         renderRescateTable();
+        renderRescateChart();
     } catch (e) {
         console.error('[RESCATE] Error cargando datos:', e);
     } finally {
@@ -2260,5 +2261,69 @@ function openRescateChat(waId) {
     }, 80);
 }
 
+function renderRescateChart() {
+    const r = window._rescate;
+    const canvas = document.getElementById('rescate-trend-chart');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const dayKey = d => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+    const labels = [], keys = [], contactedByDay = {}, convertedByDay = {};
+    for (let i = r.days - 1; i >= 0; i--) {
+        const d = new Date(Date.now() - i * dayMs);
+        const k = dayKey(d);
+        keys.push(k);
+        labels.push(d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }));
+        contactedByDay[k] = 0;
+        convertedByDay[k] = 0;
+    }
+    (r.sends || []).forEach(x => {
+        if (x.firstContactedAt) { const k = dayKey(new Date(x.firstContactedAt)); if (k in contactedByDay) contactedByDay[k]++; }
+        if (x.convertedAt) { const k = dayKey(new Date(x.convertedAt)); if (k in convertedByDay) convertedByDay[k]++; }
+    });
+
+    const styles = getComputedStyle(document.body);
+    const primary = (styles.getPropertyValue('--color-primary').trim() || '#ea580c');
+    const success = (styles.getPropertyValue('--color-success').trim() || '#1d9e75');
+
+    if (window._rescateChart) window._rescateChart.destroy();
+    window._rescateChart = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Contactados', data: keys.map(k => contactedByDay[k]), backgroundColor: primary, borderRadius: 6 },
+                { label: 'Recuperados', data: keys.map(k => convertedByDay[k]), backgroundColor: success, borderRadius: 6 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+            plugins: { legend: { position: 'bottom' } }
+        }
+    });
+}
+
+// Trae el estado de seguimiento del contacto y pinta el badge "pendiente" en el chat.
+async function fetchOrderPending(contactId) {
+    if (!contactId) return;
+    if (!state.orderPendingByContact) state.orderPendingByContact = {};
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/order-followup/contact/${encodeURIComponent(contactId)}`);
+        state.orderPendingByContact[contactId] = (await res.json()) || { exists: false };
+    } catch (e) {
+        state.orderPendingByContact[contactId] = { exists: false };
+    }
+    if (state.selectedContactId === contactId) {
+        const host = document.getElementById('order-pending-host');
+        if (host && typeof OrderPendingBadge === 'function') {
+            const contact = (state.contacts || []).find(c => c.id === contactId) || { id: contactId };
+            host.innerHTML = OrderPendingBadge(contact);
+        }
+    }
+}
+
 window.renderOrderFollowupView = renderOrderFollowupView;
 window.openRescateChat = openRescateChat;
+window.renderRescateChart = renderRescateChart;
+window.fetchOrderPending = fetchOrderPending;

@@ -211,9 +211,45 @@ async function migrateSendsFromFollowups() {
     return migrated;
 }
 
+// Estado de seguimiento de un contacto (para mostrar "pendiente: foto" en el chat).
+async function getContactFollowup(waId) {
+    if (!waId) return { exists: false };
+    try {
+        const snap = await db.collection(COLLECTION).doc(waId).get();
+        if (snap.exists) {
+            const d = snap.data();
+            return {
+                exists: true,
+                pendiente: d.pendiente || null,
+                status: d.status || 'contacted',
+                messagesSent: d.messagesSent || 0,
+                lastContactedAt: toMillis(d.lastContactedAt),
+                orderNumber: d.orderNumber || null
+            };
+        }
+        // Fallback: aún no se envía nada pero ya está clasificado como pedido en proceso
+        const f = await db.collection('order_followups').doc(waId).get();
+        if (f.exists && f.data().enProceso) {
+            const fd = f.data();
+            return {
+                exists: true,
+                pendiente: fd.pendiente || null,
+                status: 'pending',
+                messagesSent: fd.totalSent || 0,
+                lastContactedAt: toMillis(fd.lastSentAt || fd.lastInboundAt),
+                orderNumber: null
+            };
+        }
+    } catch (e) {
+        console.warn('[ORDER_FOLLOWUP] getContactFollowup falló:', e.message);
+    }
+    return { exists: false };
+}
+
 module.exports = {
     COLLECTION,
     migrateSendsFromFollowups,
+    getContactFollowup,
     recordOrderFollowupSend,
     markOrderFollowupReplied,
     markOrderFollowupConverted,
