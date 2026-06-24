@@ -1,7 +1,7 @@
 // --- Virtual Scroll Module ---
 // Renderiza solo los contactos visibles en el viewport para soportar miles de items sin lag.
 
-const VS_ITEM_HEIGHT = 52;
+const VS_ITEM_HEIGHT = 64;
 const VS_BUFFER = 10;
 const VS_INFINITE_SCROLL_THRESHOLD = 200;
 

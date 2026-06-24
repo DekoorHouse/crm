@@ -796,18 +796,20 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
         ? `<span class="order-badge">DH${contact.lastOrderNumber}</span>`
         : '';
     
-    const defaultColor = '#d1d5db';
-    let color = (state._deptColorMap && state._deptColorMap.get(contact.assignedDepartmentId)) || defaultColor;
-    const itemStyle = `style="${vsStyle}border-left-color: ${color};"`;
+    // Departamento/campaña: punto de 8px junto al nombre (no barra vertical de color)
+    const deptColor = (state._deptColorMap && state._deptColorMap.get(contact.assignedDepartmentId)) || null;
+    const deptName = (deptColor && state.departments) ? (state.departments.find(d => d.id === contact.assignedDepartmentId)?.name || 'Campaña') : '';
+    const deptDot = deptColor ? `<span class="dept-dot" style="background:${deptColor}" title="${deptName.replace(/"/g,'')}"></span>` : '';
+    const itemStyle = `style="${vsStyle}"`;
 
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
             <div class="flex justify-between items-center">
-                <h3 class="font-semibold text-sm truncate">
-                    <i class="${contact.channel === 'instagram' ? 'fab fa-instagram text-pink-500' : contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1 text-[10px]"></i>
-                    ${contact.name || 'Desconocido'}
+                <h3 class="font-semibold text-sm truncate flex items-center">
+                    ${deptDot}<i class="${contact.channel === 'instagram' ? 'fab fa-instagram text-pink-500' : contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1 text-[10px]"></i>
+                    <span class="truncate">${contact.name || 'Desconocido'}</span>
                     ${contact.botActive ? '<i class="fas fa-robot text-green-500 ml-1 text-[10px]" title="IA Activa"></i>' : ''}
-                    ${contact.inDesignReview ? '<i class="fas fa-paint-brush text-purple-500 ml-1 text-[10px]" title="En diseño"></i>' : ''}
+                    ${contact.inDesignReview ? '<i class="fas fa-paint-brush text-gray-400 ml-1 text-[10px]" title="En diseño"></i>' : ''}
                 </h3>
                 <div class="contact-meta">
                      ${timeOrBadgeHTML}
