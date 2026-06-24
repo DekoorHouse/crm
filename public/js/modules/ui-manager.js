@@ -719,10 +719,10 @@ function renderAjustesView() {
         simulateAdForm.removeEventListener('submit', handleSimulateAdMessage);
         simulateAdForm.addEventListener('submit', handleSimulateAdMessage);
     }
-    // Carga la configuración de reactivación de leads (toggle + secuencia)
-    if (typeof loadLeadReactSettings === 'function') {
-        loadLeadReactSettings();
-    }
+    // Nota: la sección "Reactivación de Leads" (genérica) se retiró del CRM; la
+    // reemplaza "Rescate IA" (seguimiento de pedido en proceso). El backend genérico
+    // queda inactivo. Funciones loadLeadReactSettings/handleSaveLeadReact siguen
+    // definidas pero ya no se invocan desde la UI.
 }
 
 // --- INICIO: Renderizado de Entrenamiento de IA ---
