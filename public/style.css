@@ -986,6 +986,34 @@ body.dark-mode .table tr:hover { background-color: #292e42; }
 .campaign-pane.active { display: block; }
 .tpl-button-row select, .tpl-button-row input { margin-bottom: 0 !important; }
 
+/* Constructor de plantillas: layout form + vista previa */
+.template-builder { display: flex; gap: 2.5rem; align-items: flex-start; }
+.template-builder-form { flex: 1; min-width: 0; max-width: 640px; }
+.template-builder-preview { width: 320px; flex-shrink: 0; position: sticky; top: 1rem; }
+.template-preview-title { font-weight: 600; margin-bottom: 10px; color: var(--color-text-light); font-size: 0.85rem; }
+
+/* Burbuja estilo WhatsApp para la vista previa */
+.wa-preview-chat { background-color: #e5ddd5; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Cg fill='%23000000' fill-opacity='0.03'%3E%3Cpath d='M20 20a4 4 0 100-8 4 4 0 000 8z'/%3E%3C/g%3E%3C/svg%3E"); border-radius: 12px; padding: 16px 14px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04); }
+.wa-preview-bubble { position: relative; background: #ffffff; border-radius: 8px; border-top-left-radius: 0; padding: 8px 9px 6px; box-shadow: 0 1px 1px rgba(0,0,0,0.12); font-size: 0.86rem; line-height: 1.35; color: #111b21; word-wrap: break-word; overflow-wrap: anywhere; }
+.wa-preview-bubble::before { content: ''; position: absolute; top: 0; left: -8px; width: 8px; height: 13px; background: #ffffff; clip-path: polygon(100% 0, 0 0, 100% 100%); }
+.wa-preview-htext { font-weight: 700; margin-bottom: 4px; color: #111b21; }
+.wa-preview-himg { margin: -8px -9px 6px; border-radius: 8px 8px 0 0; overflow: hidden; }
+.wa-preview-himg img { display: block; width: 100%; max-height: 180px; object-fit: cover; }
+.wa-preview-himg-empty { height: 130px; display: flex; align-items: center; justify-content: center; background: #ccd0d5; color: #8696a0; font-size: 2rem; }
+#tpl-preview-body { white-space: normal; }
+.wa-preview-placeholder { color: #8696a0; font-style: italic; }
+.wa-preview-footer-text { margin-top: 6px; color: #8696a0; font-size: 0.76rem; }
+#tpl-preview-time { text-align: right; color: #8696a0; font-size: 0.66rem; margin-top: 2px; }
+#tpl-preview-buttons { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.wa-preview-btn { background: #ffffff; color: #00a5f4; font-weight: 500; font-size: 0.84rem; text-align: center; padding: 8px; border-radius: 8px; box-shadow: 0 1px 1px rgba(0,0,0,0.12); display: flex; align-items: center; justify-content: center; gap: 6px; }
+.wa-preview-btn i { font-size: 0.8rem; }
+
+@media (max-width: 1024px) {
+    .template-builder { flex-direction: column; }
+    .template-builder-preview { width: 100%; position: static; }
+    .template-builder-form { max-width: none; }
+}
+
 #app-body { display: flex; flex: 1; overflow: hidden; }
 #main-view-container { flex: 1; min-width: 0; }
 #chat-view { display: flex; flex: 1; min-width: 0; height: 100%; }

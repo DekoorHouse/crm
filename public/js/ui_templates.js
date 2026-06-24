@@ -105,7 +105,8 @@ const AdRoutingViewTemplate = () => `
 
 // Formulario constructor de plantillas de Meta (sub-pestaña "Crear plantilla")
 const CreateTemplateFormTemplate = () => `
-    <div class="max-w-2xl">
+    <div class="template-builder">
+      <div class="template-builder-form">
         <div class="campaign-form-section">
             <label class="font-bold" for="tpl-name">Nombre de la plantilla</label>
             <input type="text" id="tpl-name" placeholder="ej. promo_dia_del_padre" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9_]/g,'_')" class="!mb-1">
@@ -137,8 +138,8 @@ const CreateTemplateFormTemplate = () => `
                 <option value="TEXT">Texto</option>
                 <option value="IMAGE">Imagen</option>
             </select>
-            <input type="text" id="tpl-header-text" placeholder="Texto de la cabecera (máx. 60)" maxlength="60" class="hidden !mb-0">
-            <input type="text" id="tpl-header-image" placeholder="URL de una imagen de muestra (jpg/png)" class="hidden !mb-0">
+            <input type="text" id="tpl-header-text" placeholder="Texto de la cabecera (máx. 60)" maxlength="60" oninput="updateTemplatePreview()" class="hidden !mb-0">
+            <input type="text" id="tpl-header-image" placeholder="URL de una imagen de muestra (jpg/png)" oninput="updateTemplatePreview()" class="hidden !mb-0">
         </div>
 
         <div class="campaign-form-section">
@@ -150,7 +151,7 @@ const CreateTemplateFormTemplate = () => `
 
         <div class="campaign-form-section">
             <label class="font-bold" for="tpl-footer">Pie de página (opcional)</label>
-            <input type="text" id="tpl-footer" placeholder="ej. Dekoor · Responde BAJA para no recibir más" maxlength="60" class="!mb-0">
+            <input type="text" id="tpl-footer" placeholder="ej. Dekoor · Responde BAJA para no recibir más" maxlength="60" oninput="updateTemplatePreview()" class="!mb-0">
         </div>
 
         <div class="campaign-form-section">
@@ -165,6 +166,21 @@ const CreateTemplateFormTemplate = () => `
             </button>
             <p class="text-xs text-gray-400 mt-2">Meta revisa la plantilla (suele tardar unos minutos). Estará disponible para enviar cuando aparezca como APROBADA.</p>
         </div>
+      </div>
+
+      <!-- Vista previa en vivo estilo WhatsApp -->
+      <div class="template-builder-preview">
+        <p class="template-preview-title"><i class="fab fa-whatsapp mr-1" style="color:#25D366;"></i> Vista previa</p>
+        <div class="wa-preview-chat">
+            <div class="wa-preview-bubble" id="tpl-preview-bubble">
+                <div id="tpl-preview-header"></div>
+                <div id="tpl-preview-body"><span class="wa-preview-placeholder">El cuerpo del mensaje aparecerá aquí…</span></div>
+                <div id="tpl-preview-footer"></div>
+                <div id="tpl-preview-time">12:30</div>
+            </div>
+            <div id="tpl-preview-buttons"></div>
+        </div>
+      </div>
     </div>
 `;
 

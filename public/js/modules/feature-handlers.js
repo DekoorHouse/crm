@@ -772,6 +772,73 @@ function onTemplateHeaderTypeChange() {
     const imageInput = document.getElementById('tpl-header-image');
     if (textInput) textInput.classList.toggle('hidden', type !== 'TEXT');
     if (imageInput) imageInput.classList.toggle('hidden', type !== 'IMAGE');
+    updateTemplatePreview();
+}
+
+// Escapa HTML para la vista previa.
+function escapeTemplatePreview(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Aplica formato estilo WhatsApp (*negrita* _cursiva_ ~tachado~) + saltos de línea.
+function waFormatPreview(text) {
+    let t = escapeTemplatePreview(text);
+    t = t.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
+    t = t.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+    t = t.replace(/~([^~\n]+)~/g, '<del>$1</del>');
+    t = t.replace(/\n/g, '<br>');
+    return t;
+}
+
+// Refresca la vista previa estilo WhatsApp con el contenido actual del formulario.
+function updateTemplatePreview() {
+    const bubble = document.getElementById('tpl-preview-bubble');
+    if (!bubble) return;
+
+    const headerEl = document.getElementById('tpl-preview-header');
+    const bodyEl = document.getElementById('tpl-preview-body');
+    const footerEl = document.getElementById('tpl-preview-footer');
+    const buttonsEl = document.getElementById('tpl-preview-buttons');
+
+    // --- Cabecera ---
+    const headerType = (document.getElementById('tpl-header-type') || {}).value || 'NONE';
+    if (headerType === 'TEXT') {
+        const txt = (document.getElementById('tpl-header-text') || {}).value || '';
+        headerEl.innerHTML = txt ? `<div class="wa-preview-htext">${waFormatPreview(txt)}</div>` : '';
+    } else if (headerType === 'IMAGE') {
+        const url = (document.getElementById('tpl-header-image') || {}).value || '';
+        headerEl.innerHTML = url
+            ? `<div class="wa-preview-himg"><img src="${escapeTemplatePreview(url)}" onerror="this.style.display='none'"></div>`
+            : `<div class="wa-preview-himg wa-preview-himg-empty"><i class="fas fa-image"></i></div>`;
+    } else {
+        headerEl.innerHTML = '';
+    }
+
+    // --- Cuerpo (sustituye {{n}} por el ejemplo si existe) ---
+    const body = (document.getElementById('tpl-body') || {}).value || '';
+    const examples = {};
+    document.querySelectorAll('#tpl-body-vars input[data-var]').forEach(inp => { examples[inp.dataset.var] = inp.value; });
+    const bodyFilled = body.replace(/\{\{(\d+)\}\}/g, (m, n) => (examples[n] && examples[n].trim()) ? examples[n] : `{{${n}}}`);
+    bodyEl.innerHTML = body
+        ? waFormatPreview(bodyFilled)
+        : '<span class="wa-preview-placeholder">El cuerpo del mensaje aparecerá aquí…</span>';
+
+    // --- Pie ---
+    const footer = (document.getElementById('tpl-footer') || {}).value || '';
+    footerEl.innerHTML = footer ? `<div class="wa-preview-footer-text">${escapeTemplatePreview(footer)}</div>` : '';
+
+    // --- Botones ---
+    let btnHtml = '';
+    document.querySelectorAll('#tpl-buttons-list .tpl-button-row').forEach(row => {
+        const type = row.querySelector('.tpl-btn-type').value;
+        const text = (row.querySelector('.tpl-btn-text').value || '').trim();
+        if (!text) return;
+        let icon = 'fa-reply';
+        if (type === 'URL') icon = 'fa-external-link-alt';
+        else if (type === 'PHONE_NUMBER') icon = 'fa-phone';
+        btnHtml += `<div class="wa-preview-btn"><i class="fas ${icon}"></i>${escapeTemplatePreview(text)}</div>`;
+    });
+    buttonsEl.innerHTML = btnHtml;
 }
 
 // Detecta variables {{n}} en el cuerpo y genera un input de ejemplo por cada una.
@@ -791,9 +858,10 @@ function onTemplateBodyChange() {
 
     let html = '<p class="text-xs font-semibold text-gray-500">Ejemplos de variables (Meta los exige):</p>';
     for (let i = 1; i <= maxVar; i++) {
-        html += `<input type="text" data-var="${i}" placeholder="Ejemplo para {{${i}}}" value="${(prev[i] || '').replace(/"/g, '&quot;')}" class="!mb-0">`;
+        html += `<input type="text" data-var="${i}" placeholder="Ejemplo para {{${i}}}" value="${(prev[i] || '').replace(/"/g, '&quot;')}" oninput="updateTemplatePreview()" class="!mb-0">`;
     }
     container.innerHTML = html;
+    updateTemplatePreview();
 }
 
 // Agrega una fila de botón (máx. 3).
@@ -810,11 +878,12 @@ function addTemplateButton() {
             <option value="URL">Enlace (URL)</option>
             <option value="PHONE_NUMBER">Llamar</option>
         </select>
-        <input type="text" class="tpl-btn-text !mb-0" placeholder="Texto del botón" maxlength="25">
-        <input type="text" class="tpl-btn-extra !mb-0 hidden" placeholder="https://...">
-        <button type="button" onclick="this.closest('.tpl-button-row').remove()" class="text-red-500 hover:text-red-700 px-2" title="Quitar"><i class="fas fa-times"></i></button>
+        <input type="text" class="tpl-btn-text !mb-0" placeholder="Texto del botón" maxlength="25" oninput="updateTemplatePreview()">
+        <input type="text" class="tpl-btn-extra !mb-0 hidden" placeholder="https://..." oninput="updateTemplatePreview()">
+        <button type="button" onclick="this.closest('.tpl-button-row').remove(); updateTemplatePreview();" class="text-red-500 hover:text-red-700 px-2" title="Quitar"><i class="fas fa-times"></i></button>
     `;
     list.appendChild(row);
+    updateTemplatePreview();
 }
 
 // Muestra el campo extra (URL/teléfono) según el tipo de botón.
@@ -824,6 +893,7 @@ function onTemplateButtonTypeChange(select) {
     if (select.value === 'URL') { extra.classList.remove('hidden'); extra.placeholder = 'https://...'; }
     else if (select.value === 'PHONE_NUMBER') { extra.classList.remove('hidden'); extra.placeholder = '+5218112345678'; }
     else { extra.classList.add('hidden'); extra.value = ''; }
+    updateTemplatePreview();
 }
 
 // Recopila el formulario y crea la plantilla en Meta vía el backend.
@@ -2031,6 +2101,7 @@ window.onTemplateHeaderTypeChange = onTemplateHeaderTypeChange;
 window.onTemplateBodyChange = onTemplateBodyChange;
 window.addTemplateButton = addTemplateButton;
 window.onTemplateButtonTypeChange = onTemplateButtonTypeChange;
+window.updateTemplatePreview = updateTemplatePreview;
 window.handleCreateWhatsappTemplate = handleCreateWhatsappTemplate;
 window.handleSaveQuickReply = handleSaveQuickReply;
 window.handleDeleteQuickReply = handleDeleteQuickReply;
