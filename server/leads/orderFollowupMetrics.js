@@ -136,9 +136,12 @@ async function getOrderFollowupMetrics(fromMs, toMs) {
 }
 
 // Lista para el panel (rango + filtro opcional por estado).
+// Trae un margen amplio y filtra por estado ANTES de recortar al límite mostrado,
+// para que el filtro por estado no pierda coincidencias fuera del límite.
 async function listOrderFollowupSends(fromMs, toMs, { status, limit = 500 } = {}) {
-    let rows = await queryByRange(fromMs, toMs, limit);
+    let rows = await queryByRange(fromMs, toMs, Math.max(limit, 1000));
     if (status) rows = rows.filter(r => r.status === status);
+    rows = rows.slice(0, limit);
     return rows.map(r => ({
         waId: r.waId,
         name: r.name || null,
