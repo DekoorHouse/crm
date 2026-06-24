@@ -211,8 +211,8 @@ body.dark-mode input:focus, body.dark-mode textarea:focus, body.dark-mode select
 
 /* --- AD REFERRAL BANNER --- */
 .ad-referral-banner {
-    background: linear-gradient(135deg, #fff9c4 0%, #fffde7 100%);
-    border-bottom: 1px solid #fff59d;
+    background: linear-gradient(135deg, #fff1e6 0%, #fff8f3 100%);
+    border-bottom: 1px solid #ffe0cc;
     animation: slideDown 0.3s ease-out;
 }
 
@@ -232,13 +232,13 @@ body.dark-mode input:focus, body.dark-mode textarea:focus, body.dark-mode select
 }
 
 .ad-referral-header:hover {
-    background: rgba(251, 192, 45, 0.12);
+    background: rgba(234, 88, 12, 0.08);
 }
 
 .ad-referral-icon {
     width: 22px;
     height: 22px;
-    background: #fbc02d;
+    background: #ea580c;
     color: white;
     border-radius: 6px;
     display: flex;
@@ -252,8 +252,8 @@ body.dark-mode input:focus, body.dark-mode textarea:focus, body.dark-mode select
     flex-grow: 1;
     font-size: 0.72rem;
     text-transform: uppercase;
-    font-weight: 700;
-    color: #f57f17;
+    font-weight: 600;
+    color: #c2480a;
     margin: 0;
     letter-spacing: 0.5px;
     white-space: nowrap;
@@ -262,7 +262,7 @@ body.dark-mode input:focus, body.dark-mode textarea:focus, body.dark-mode select
 }
 
 .ad-referral-chevron {
-    color: #f57f17;
+    color: #c2480a;
     font-size: 0.8rem;
     flex-shrink: 0;
     transition: transform 0.2s;
@@ -933,7 +933,10 @@ body.dark-mode .pipeline-card { background-color: #24283b; box-shadow: 0 1px 3px
 .sortable-ghost.pipeline-card { opacity: 0.5; background: #cce5ff; }
 body.dark-mode .sortable-ghost.pipeline-card { background: #414868; }
 
-#loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--color-bg); display: flex; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s ease; }
+#loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #1b2a4a; display: flex; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s ease; }
+#loading-overlay p { color: #ffffff; opacity: 0.85; }
+.loading-logo { width: 120px; height: 120px; border-radius: 50%; box-shadow: 0 8px 30px rgba(0,0,0,0.35); }
+.header-logo { width: 30px; height: 30px; border-radius: 50%; margin-right: 9px; flex-shrink: 0; }
 .login-container { background-color: var(--color-container-bg); padding: 40px; border-radius: var(--border-radius-lg); box-shadow: 0 5px 25px var(--color-shadow); text-align: center; max-width: 420px; width: 100%; }
 .login-container h1 { margin-bottom: 25px; font-size: 1.8em; color: var(--color-primary); }
 .login-container button { width: 100%; }
