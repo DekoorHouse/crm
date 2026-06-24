@@ -27,7 +27,7 @@
     <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/plugins/ranges.js"></script>
 
     <!-- Estilos Personalizados -->
-    <link rel="stylesheet" href="style.css?v=9">
+    <link rel="stylesheet" href="style.css?v=10">
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest-crm.json">
@@ -101,6 +101,7 @@
         <div id="app-body">
             <aside id="main-sidebar" class="h-full flex flex-col p-4 collapsed">
                 <nav class="flex-1">
+                    <p class="nav-section-title"><span class="sidebar-text">Conversaciones</span></p>
                     <a onclick="navigateTo('chats')" data-view="chats" class="nav-item active">
                         <i class="fas fa-comments"></i>
                         <span class="sidebar-text">Chats</span>
@@ -113,29 +114,15 @@
                         <i class="fas fa-stream"></i>
                         <span class="sidebar-text">Pipeline</span>
                     </a>
-                     <a onclick="navigateTo('difusion')" data-view="difusion" class="nav-item">
-                        <i class="fas fa-rocket"></i>
-                        <span class="sidebar-text">Difusión Masiva</span>
-                    </a>
                     <a onclick="navigateTo('contacts')" data-view="contacts" class="nav-item">
                         <i class="fas fa-address-book"></i>
                         <span class="sidebar-text">Contactos</span>
                     </a>
-                    
-                    <!-- NUEVO: Gestión de Departamentos y Reglas -->
-                    <a onclick="navigateTo('departments')" data-view="departments" class="nav-item">
-                        <i class="fas fa-building"></i>
-                        <span class="sidebar-text">Departamentos</span>
-                    </a>
-                    <a onclick="navigateTo('ad-routing')" data-view="ad-routing" class="nav-item">
-                        <i class="fas fa-route"></i>
-                        <span class="sidebar-text">Reglas de Ads</span>
-                    </a>
-                    <!-- FIN NUEVO -->
 
-                    <a onclick="navigateTo('etiquetas')" data-view="etiquetas" class="nav-item">
-                        <i class="fas fa-tags"></i>
-                        <span class="sidebar-text">Etiquetas</span>
+                    <p class="nav-section-title"><span class="sidebar-text">Marketing</span></p>
+                    <a onclick="navigateTo('difusion')" data-view="difusion" class="nav-item">
+                        <i class="fas fa-rocket"></i>
+                        <span class="sidebar-text">Difusión Masiva</span>
                     </a>
                     <a onclick="navigateTo('campanas')" data-view="campanas" class="nav-item">
                         <i class="fas fa-bullhorn"></i>
@@ -149,10 +136,16 @@
                         <i class="fas fa-ad"></i>
                         <span class="sidebar-text">Mensajes Ads</span>
                     </a>
-                    <a onclick="navigateTo('respuestas-rapidas')" data-view="respuestas-rapidas" class="nav-item">
-                        <i class="fas fa-bolt"></i>
-                        <span class="sidebar-text">Respuestas rápidas</span>
+                    <a onclick="navigateTo('ad-routing')" data-view="ad-routing" class="nav-item">
+                        <i class="fas fa-route"></i>
+                        <span class="sidebar-text">Reglas de Ads</span>
                     </a>
+                    <a onclick="navigateTo('conversion-campanas')" data-view="conversion-campanas" class="nav-item">
+                        <i class="fas fa-chart-pie"></i>
+                        <span class="sidebar-text">Conversión Campañas</span>
+                    </a>
+
+                    <p class="nav-section-title"><span class="sidebar-text">IA &amp; automatización</span></p>
                     <a onclick="navigateTo('entrenamiento-ia')" data-view="entrenamiento-ia" class="nav-item">
                         <i class="fas fa-brain"></i>
                         <span class="sidebar-text">Entrenamiento IA</span>
@@ -161,23 +154,31 @@
                         <i class="fas fa-robot"></i>
                         <span class="sidebar-text">Simulador IA</span>
                     </a>
+                    <a onclick="navigateTo('respuestas-rapidas')" data-view="respuestas-rapidas" class="nav-item">
+                        <i class="fas fa-bolt"></i>
+                        <span class="sidebar-text">Respuestas rápidas</span>
+                    </a>
 
+                    <p class="nav-section-title"><span class="sidebar-text">Configuración</span></p>
+                    <a onclick="navigateTo('departments')" data-view="departments" class="nav-item">
+                        <i class="fas fa-building"></i>
+                        <span class="sidebar-text">Departamentos</span>
+                    </a>
+                    <a onclick="navigateTo('etiquetas')" data-view="etiquetas" class="nav-item">
+                        <i class="fas fa-tags"></i>
+                        <span class="sidebar-text">Etiquetas</span>
+                    </a>
                     <a onclick="navigateTo('metricas')" data-view="metricas" class="nav-item">
                         <i class="fas fa-chart-line"></i>
                         <span class="sidebar-text">Métricas</span>
                     </a>
-
-                    <a onclick="navigateTo('conversion-campanas')" data-view="conversion-campanas" class="nav-item">
-                        <i class="fas fa-chart-pie"></i>
-                        <span class="sidebar-text">Conversión Campañas</span>
-                    </a>
-
                     <a onclick="navigateTo('ajustes')" data-view="ajustes" class="nav-item">
                         <i class="fas fa-cog"></i>
                         <span class="sidebar-text">Ajustes Generales</span>
                     </a>
                 </nav>
                 <div class="mt-auto">
+                    <div class="nav-divider"></div>
                     <a id="install-pwa-btn" class="nav-item">
                         <i class="fas fa-mobile-alt"></i>
                         <span class="sidebar-text">Instalar app</span>
