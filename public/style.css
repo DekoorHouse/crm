@@ -164,12 +164,24 @@ body.theme-dekoor .orders-badge { background-color: var(--color-subtle-bg); colo
 body { font-family: var(--font-body); background-color: var(--color-bg); color: var(--color-text); font-size: 14px; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
 body.modal-open { overflow: hidden; }
 h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); color: var(--color-text); }
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* Scrollbars casi invisibles. Chrome/Edge/Safari via ::-webkit-scrollbar;
+   Firefox via scrollbar-width/scrollbar-color (ignora las reglas webkit). */
+* { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.18) transparent; }
+body.dark-mode * { scrollbar-color: rgba(255,255,255,0.18) transparent; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #dcdcdc; border-radius: 3px; }
-body.dark-mode ::-webkit-scrollbar-thumb { background: #414868; }
-::-webkit-scrollbar-thumb:hover { background: #c5c5c5; }
-body.dark-mode ::-webkit-scrollbar-thumb:hover { background: #565f89; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); border-radius: 3px; }
+body.dark-mode ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.30); }
+body.dark-mode ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.30); }
+
+/* Sidebar (fondo navy): scrollbar prácticamente invisible, solo se nota al pasar el mouse */
+#main-sidebar > nav { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+#main-sidebar > nav:hover { scrollbar-color: rgba(255,255,255,0.18) transparent; }
+#main-sidebar > nav::-webkit-scrollbar { width: 4px; }
+#main-sidebar > nav::-webkit-scrollbar-thumb { background: transparent; }
+#main-sidebar > nav:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); }
+#main-sidebar > nav:hover::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.30); }
 
 /* CORRECCIÓN AQUÍ: Se agrega !important para asegurar que oculte los elementos */
 .hidden { display: none !important; }
