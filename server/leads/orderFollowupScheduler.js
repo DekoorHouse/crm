@@ -312,6 +312,108 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
     }
 }
 
+// Devuelve el timestamp (ms) del último mensaje ENTRANTE (del cliente) de un contacto,
+// o null si no tiene. El anclaje de la ventana de 24h es el último mensaje del cliente.
+async function lastInboundMillis(waId) {
+    const snap = await db.collection('contacts_whatsapp').doc(waId).collection('messages')
+        .where('from', '==', waId)
+        .orderBy('timestamp', 'desc')
+        .limit(1)
+        .get();
+    if (snap.empty) return null;
+    return toMillis(snap.docs[0].data().timestamp);
+}
+
+/**
+ * Backfill: siembra seguimientos para conversaciones que YA existen (p. ej. de ayer)
+ * y que llevan callado >= minSilenceHours, SIEMPRE que el último mensaje del cliente
+ * siga dentro de la ventana de 24h (si no, no se puede texto libre y se omite).
+ *
+ * No envía nada: solo crea los docs `order_followups`. El sweep normal se encarga de
+ * clasificar con IA y enviar dentro de horario/ventana. En dryRun solo lista candidatos.
+ *
+ * @param {{minSilenceHours?:number, dryRun?:boolean, limit?:number}} opts
+ */
+async function backfillOrderFollowups({ minSilenceHours = 8, dryRun = false, limit = 300 } = {}) {
+    const cfg = await getOrderFollowupConfig(true);
+    const nowMs = Date.now();
+    const windowMs = cfg.windowHours * 60 * 60 * 1000;
+    const minSilenceMs = minSilenceHours * 60 * 60 * 1000;
+    const cutoff = admin.firestore.Timestamp.fromMillis(nowMs - windowMs);
+
+    const result = {
+        enabled: cfg.enabled, dryRun, minSilenceHours,
+        scanned: 0, candidates: 0, armed: 0,
+        skipped: { sin_inbound: 0, poco_silencio: 0, fuera_de_ventana: 0, ya_compro: 0, otro_canal: 0, ya_sembrado: 0 },
+        sample: []
+    };
+
+    let snap;
+    try {
+        snap = await db.collection('contacts_whatsapp')
+            .where('lastMessageTimestamp', '>=', cutoff)
+            .orderBy('lastMessageTimestamp', 'desc')
+            .limit(limit)
+            .get();
+    } catch (e) {
+        console.error('[ORDER_FOLLOWUP] Backfill: error consultando contactos:', e.message);
+        return { ...result, error: e.message };
+    }
+
+    for (const doc of snap.docs) {
+        result.scanned++;
+        const c = doc.data();
+        const waId = doc.id;
+
+        if (c.channel === 'messenger' || c.channel === 'instagram') { result.skipped.otro_canal++; continue; }
+
+        const inboundMs = await lastInboundMillis(waId);
+        if (!inboundMs) { result.skipped.sin_inbound++; continue; }
+
+        const silence = nowMs - inboundMs;
+        if (silence < minSilenceMs) { result.skipped.poco_silencio++; continue; }
+        if (silence > windowMs) { result.skipped.fuera_de_ventana++; continue; }
+
+        const orderMs = toMillis(c.lastOrderDate);
+        if (orderMs && orderMs >= inboundMs) { result.skipped.ya_compro++; continue; }
+
+        // No re-sembrar si ya hay un seguimiento vivo para esta misma conversación
+        const existing = await db.collection('order_followups').doc(waId).get();
+        if (existing.exists) {
+            const prev = existing.data();
+            if (prev.status === 'pending' && Math.abs((toMillis(prev.lastInboundAt) || 0) - inboundMs) < 60 * 1000) {
+                result.skipped.ya_sembrado++; continue;
+            }
+        }
+
+        const sends = planSends(inboundMs, cfg);
+        if (sends.length === 0) { result.skipped.fuera_de_ventana++; continue; }
+
+        result.candidates++;
+        if (result.sample.length < 15) {
+            result.sample.push({
+                waId, name: c.name || null,
+                silenceHours: +(silence / 3600000).toFixed(1),
+                primerEnvio: new Date(sends[0]).toISOString()
+            });
+        }
+
+        if (!dryRun) {
+            const nowTs = admin.firestore.Timestamp.now();
+            await db.collection('order_followups').doc(waId).set({
+                waId, track: 'order_in_progress', name: c.name || null,
+                lastInboundAt: admin.firestore.Timestamp.fromMillis(inboundMs),
+                scheduledSends: sends, stage: 0, status: 'pending',
+                classified: false, enProceso: null, pendiente: null, datosDados: null, mensajes: null,
+                attempts: 0, totalSent: 0, sentLog: [], backfilled: true,
+                createdAt: nowTs, updatedAt: nowTs
+            });
+            result.armed++;
+        }
+    }
+    return result;
+}
+
 function startOrderFollowupScheduler() {
     if (scheduledTask) {
         console.log('[ORDER_FOLLOWUP] Scheduler ya iniciado');
@@ -327,6 +429,7 @@ module.exports = {
     startOrderFollowupScheduler,
     runOrderFollowupSweep,
     armOrderFollowup,
+    backfillOrderFollowups,
     getOrderFollowupConfig,
     saveOrderFollowupConfig
 };
