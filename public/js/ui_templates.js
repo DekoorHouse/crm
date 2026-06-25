@@ -1210,7 +1210,7 @@ const MessageBubbleTemplate = (message) => {
 
     const msgIdAttr = message.id ? ` data-msg-id="${message.id}"` : '';
     return `
-        <div class="message-group ${bubbleAlignment}" data-doc-id="${message.docId}"${msgIdAttr}>
+        <div class="message-group ${bubbleAlignment}${message.reaction ? ' has-reaction' : ''}" data-doc-id="${message.docId}"${msgIdAttr}>
             <div class="message-bubble ${bubbleClasses} ${bubbleExtraClass}">
                 ${replyPreviewHTML}
                 ${contentHTML}

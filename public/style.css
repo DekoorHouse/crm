@@ -150,8 +150,9 @@ body.theme-dekoor .nav-item.active { background-color: rgba(234, 88, 12, 0.16); 
 body.theme-dekoor .nav-item.active i { color: #fb923c; opacity: 1; }
 /* Marca del encabezado en navy */
 body.theme-dekoor #app-header h1 { color: var(--color-secondary); }
-/* Fila activa: gris suave, SIN barra de color, texto oscuro */
-body.theme-dekoor .contact-item.selected { background-image: none; background-color: var(--color-subtle-bg); border-left-color: transparent; }
+/* Fila activa: tinte navy suave + barra navy a la izquierda para identificarla fácil */
+body.theme-dekoor .contact-item.selected { background-image: none; background-color: rgba(22, 60, 81, 0.10); border-left-color: var(--color-secondary); }
+body.theme-dekoor .contact-item.selected:hover { background-color: rgba(22, 60, 81, 0.14); }
 body.theme-dekoor .contact-item.selected h3, body.theme-dekoor .contact-item.selected p { color: var(--color-text) !important; }
 body.theme-dekoor .contact-item.selected .unread-badge { background-color: var(--color-info); color: #ffffff; }
 /* No leídos en azul info (no naranja) */
@@ -560,8 +561,12 @@ body.dark-mode #message-input:focus { box-shadow: 0 0 0 2px rgba(122, 162, 247, 
 }
 .message-group.sent { justify-content: flex-end; }
 .message-group.received { justify-content: flex-start; }
+/* El badge de reacción sobresale ~10px por debajo de la burbuja (bottom: -10px),
+   así que damos margen inferior extra solo a los mensajes con reacción para que
+   no se encime con el mensaje siguiente. */
+.message-group.has-reaction { margin-bottom: 14px; }
 
-.message-bubble { 
+.message-bubble {
     position: relative; 
     padding: 6px 12px; 
     border-radius: var(--border-radius-md); 
