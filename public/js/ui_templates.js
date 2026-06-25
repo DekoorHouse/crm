@@ -2047,8 +2047,8 @@ const EditOrderItemRowTemplate = (index, item, isFirst = false) => {
 };
 
 const OrderEditModalTemplate = (order) => `
-    <div id="order-edit-modal" class="modal-overlay" onclick="closeOrderEditModal()">
-        <div class="modal-content" onclick="event.stopPropagation()">
+    <div id="order-edit-modal" class="modal-overlay">
+        <div class="modal-content">
             <button onclick="closeOrderEditModal()" class="modal-close-btn" title="Cerrar">&times;</button>
             <div id="editPedidoContainer">
                  <h2 id="editModalTitle"><i class="fas fa-edit"></i> Editar Pedido DH${order.consecutiveOrderNumber}</h2>
