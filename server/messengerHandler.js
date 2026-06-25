@@ -36,56 +36,83 @@ function isWithinBusinessHours() {
 }
 
 /**
- * Fetches user profile info from Facebook Graph API (Messenger).
+ * Obtiene el nombre del usuario vía la Conversations API de la página.
+ * Necesario porque Meta restringió la User Profile API (GET /{psid}), que ahora
+ * responde "Object does not exist" aunque el token y pages_messaging sean correctos.
+ * @param {string} userId PSID (Messenger) o IGSID (Instagram).
+ * @param {string} channel 'messenger' | 'instagram'
+ * @returns {Promise<{name: string|null, username: string|null}>}
+ */
+async function getNameFromConversations(userId, channel) {
+    const token = channel === 'instagram' ? (IG_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN) : FB_PAGE_ACCESS_TOKEN;
+    const platform = channel === 'instagram' ? 'instagram' : 'messenger';
+    if (!FB_PAGE_ID) return { name: null, username: null };
+    try {
+        const res = await axios.get(`https://graph.facebook.com/v19.0/${FB_PAGE_ID}/conversations`, {
+            params: { platform, user_id: userId, fields: 'participants', access_token: token }
+        });
+        const convs = res.data?.data || [];
+        for (const c of convs) {
+            const parts = c.participants?.data || [];
+            const user = parts.find(p => String(p.id) !== String(FB_PAGE_ID));
+            const name = (user?.name || '').trim();
+            if (name) return { name, username: user.username || null };
+        }
+    } catch (error) {
+        const apiErr = error.response?.data?.error;
+        console.warn(`[${channel.toUpperCase()}] Conversations lookup falló para ${userId}: ${apiErr ? apiErr.message : error.message}`);
+    }
+    return { name: null, username: null };
+}
+
+/**
+ * Fetches user profile info (Messenger). Usa primero la Conversations API porque la
+ * User Profile API (GET /{psid}) está restringida por Meta; deja un fallback por si acaso.
  * @param {string} psid The Page-Scoped User ID.
  * @returns {Promise<{name: string, profileImageUrl: string|null}>}
  */
 async function getUserProfile(psid) {
+    // 1) Vía moderna: Conversations API
+    const conv = await getNameFromConversations(psid, 'messenger');
+    if (conv.name) {
+        return { name: conv.name, profileImageUrl: null };
+    }
+    // 2) Fallback: User Profile API (por si en algún caso sí responde)
     try {
         const response = await axios.get(`https://graph.facebook.com/v19.0/${psid}`, {
-            params: {
-                fields: 'name,first_name,last_name,profile_pic',
-                access_token: FB_PAGE_ACCESS_TOKEN
-            }
+            params: { fields: 'name,first_name,last_name,profile_pic', access_token: FB_PAGE_ACCESS_TOKEN }
         });
         const data = response.data || {};
         const name = (data.name || [data.first_name, data.last_name].filter(Boolean).join(' ')).trim();
-        if (!name) {
-            // La API respondió 200 pero sin nombre: casi siempre es falta de permiso
-            // (pages_messaging con acceso avanzado) o token de página sin alcance suficiente.
-            console.warn(`[MESSENGER] Graph API respondió sin nombre para ${psid}. Respuesta: ${JSON.stringify(data)}. Revisa el permiso 'pages_messaging' (acceso avanzado) y que el token sea de la página.`);
-        }
         return {
             name: name || `Facebook User (${psid.slice(-4)})`,
             profileImageUrl: data.profile_pic || null
         };
     } catch (error) {
         const apiErr = error.response?.data?.error;
-        console.error(`[MESSENGER] Error al obtener perfil de ${psid}:`, apiErr ? JSON.stringify(apiErr) : error.message);
+        console.warn(`[MESSENGER] Sin nombre para ${psid} (conversations y user-profile fallaron): ${apiErr ? apiErr.message : error.message}`);
         return { name: `Facebook User (${psid.slice(-4)})`, profileImageUrl: null };
     }
 }
 
 /**
- * Fetches user profile info from Instagram Graph API.
+ * Fetches user profile info (Instagram). Igual que Messenger: Conversations API primero.
  * @param {string} igsid The Instagram-Scoped User ID.
- * @returns {Promise<{name: string, profileImageUrl: string|null}>}
+ * @returns {Promise<{name: string, username: string|null, profileImageUrl: string|null}>}
  */
 async function getInstagramUserProfile(igsid) {
+    // 1) Conversations API (platform=instagram)
+    const conv = await getNameFromConversations(igsid, 'instagram');
+    if (conv.name) {
+        return { name: conv.name, username: conv.username || null, profileImageUrl: null };
+    }
+    // 2) Fallback: User Profile API
     try {
         const response = await axios.get(`https://graph.facebook.com/v19.0/${igsid}`, {
-            params: {
-                fields: 'name,username,profile_pic',
-                access_token: IG_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN
-            }
+            params: { fields: 'name,username,profile_pic', access_token: IG_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN }
         });
         const data = response.data || {};
         const name = (data.name || data.username || '').trim();
-        if (!name) {
-            // 200 sin nombre/usuario: la cuenta IG debe ser Business/Creator ligada a la página
-            // y requiere los permisos 'instagram_basic' + 'instagram_manage_messages' (acceso avanzado).
-            console.warn(`[INSTAGRAM] Graph API respondió sin nombre para ${igsid}. Respuesta: ${JSON.stringify(data)}. Revisa que la cuenta IG sea Business ligada a la página y los permisos instagram_basic / instagram_manage_messages.`);
-        }
         return {
             name: name || `IG User (${igsid.slice(-4)})`,
             username: data.username || null,
@@ -93,7 +120,7 @@ async function getInstagramUserProfile(igsid) {
         };
     } catch (error) {
         const apiErr = error.response?.data?.error;
-        console.error(`[INSTAGRAM] Error al obtener perfil de ${igsid}:`, apiErr ? JSON.stringify(apiErr) : error.message);
+        console.warn(`[INSTAGRAM] Sin nombre para ${igsid} (conversations y user-profile fallaron): ${apiErr ? apiErr.message : error.message}`);
         return { name: `IG User (${igsid.slice(-4)})`, username: null, profileImageUrl: null };
     }
 }

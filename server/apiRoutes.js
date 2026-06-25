@@ -11419,4 +11419,62 @@ router.get('/debug/messenger-conversations', async (_req, res) => {
     res.json(out);
 });
 
+// === BACKFILL: repara nombres genéricos leyendo de la Conversations API ===
+// GET /api/debug/messenger-backfill-names?platform=messenger[&pages=20][&confirm=1]
+// Sin confirm=1 = SIMULACRO (no escribe). Solo ACTUALIZA contactos existentes cuyo
+// nombre es genérico ("Facebook User (...)" / "IG User (...)"); nunca crea duplicados.
+// Reejecuta para continuar si hay más páginas (los ya reparados se saltan solos).
+router.get('/debug/messenger-backfill-names', async (req, res) => {
+    const GRAPH = 'https://graph.facebook.com/v19.0';
+    const token = process.env.FB_PAGE_ACCESS_TOKEN;
+    const pageId = process.env.FB_PAGE_ID;
+    const confirm = req.query.confirm === '1';
+    const platform = req.query.platform === 'instagram' ? 'instagram' : 'messenger';
+    const prefix = platform === 'instagram' ? 'ig' : 'fb';
+    const maxPages = Math.min(parseInt(req.query.pages, 10) || 20, 60);
+    const out = { success: true, confirm, platform, scanned: 0, conNombreReal: 0, actualizados: 0, ejemplos: [], paginas: 0, hayMas: false };
+    if (!token || !pageId) { out.success = false; out.diagnostico = 'Falta FB_PAGE_ACCESS_TOKEN o FB_PAGE_ID.'; return res.json(out); }
+    const esGenerico = n => !n || /^Facebook User|^IG User/i.test(n);
+    try {
+        let url = `${GRAPH}/${pageId}/conversations`;
+        let params = { platform, fields: 'participants', limit: 50, access_token: token };
+        while (url && out.paginas < maxPages) {
+            const r = await axios.get(url, { params });
+            const convs = r.data?.data || [];
+            for (const c of convs) {
+                const parts = c.participants?.data || [];
+                const user = parts.find(p => String(p.id) !== String(pageId));
+                if (!user || !user.id) continue;
+                out.scanned++;
+                const name = (user.name || '').trim();
+                if (esGenerico(name)) continue;
+                out.conNombreReal++;
+                const ref = db.collection('contacts_whatsapp').doc(`${prefix}_${user.id}`);
+                const doc = await ref.get();
+                if (!doc.exists) continue;            // solo reparamos contactos existentes
+                if (!esGenerico(doc.data().name)) continue; // ya tiene nombre real
+                if (out.ejemplos.length < 15) out.ejemplos.push({ id: `${prefix}_${user.id}`, de: doc.data().name || '(sin nombre)', a: name });
+                if (confirm) {
+                    await ref.update({ name, name_lowercase: name.toLowerCase() });
+                    out.actualizados++;
+                }
+            }
+            url = r.data?.paging?.next || null;
+            params = {};
+            out.paginas++;
+            if (url) await new Promise(rs => setTimeout(rs, 250));
+        }
+        out.hayMas = !!url;
+        out.diagnostico = confirm
+            ? `✅ Reparados ${out.actualizados} contactos (revisé ${out.paginas} páginas / ${out.scanned} conversaciones).` + (out.hayMas ? ' Hay más páginas: vuelve a abrir la URL para continuar.' : ' No hay más.')
+            : `SIMULACRO: ${out.ejemplos.length}${out.ejemplos.length >= 15 ? '+' : ''} contactos genéricos reparables (de ${out.scanned} conversaciones). Agrega &confirm=1 para aplicarlo.` + (out.hayMas ? ' (hay más páginas)' : '');
+    } catch (err) {
+        const e = err.response?.data?.error;
+        out.success = false;
+        out.error = e || { message: err.message };
+        out.diagnostico = 'Error en backfill: ' + (e?.message || err.message);
+    }
+    res.json(out);
+});
+
 module.exports = router;
