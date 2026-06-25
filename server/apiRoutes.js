@@ -11281,22 +11281,34 @@ router.get('/debug/messenger-profile', async (req, res) => {
         return res.json(out);
     }
 
-    // 2) Si no dan psid, autodetectar un contacto de Messenger (de preferencia genérico)
-    let testPsid = psid;
-    if (!testPsid) {
+    // La Graph API necesita el PSID crudo, NO el doc id con prefijo (fb_/ig_).
+    const stripPrefix = s => (s || '').replace(/^(fb_|ig_|messenger_|instagram_)/, '');
+
+    // 2) Elegir qué PSID probar. Sin psid → autodetectar un contacto GENÉRICO ("Facebook User (...)")
+    let testPsid = stripPrefix(psid);
+    if (!psid) {
         try {
-            const snap = await db.collection('contacts_whatsapp').where('channel', '==', 'messenger').limit(40).get();
-            const placeholder = snap.docs.find(d => /^Facebook User \(/.test(d.data().name || ''));
-            const chosen = placeholder || snap.docs[0];
+            // Buscar directamente contactos con nombre genérico (rango sobre 'name')
+            const genSnap = await db.collection('contacts_whatsapp')
+                .where('name', '>=', 'Facebook User (')
+                .where('name', '<', 'Facebook User (')
+                .limit(5).get();
+            let chosen = genSnap.docs[0];
+            if (!chosen) {
+                // Fallback: cualquier contacto de Messenger
+                const anySnap = await db.collection('contacts_whatsapp').where('channel', '==', 'messenger').limit(40).get();
+                chosen = anySnap.docs.find(d => /^Facebook User \(/.test(d.data().name || '')) || anySnap.docs[0];
+            }
             if (chosen) {
-                testPsid = chosen.id;
-                out.autoContact = { id: chosen.id, name: chosen.data().name || null, esGenerico: !!placeholder };
+                const d = chosen.data();
+                testPsid = d.psid || stripPrefix(chosen.id); // el campo psid trae el ID crudo
+                out.autoContact = { id: chosen.id, name: d.name || null, esGenerico: /^Facebook User \(/.test(d.name || ''), psidUsado: testPsid };
             }
         } catch (e) {
             out.autoContactError = e.message;
         }
         if (!testPsid) {
-            out.diagnostico = 'Token OK (página: ' + out.page.name + '). No encontré contactos de Messenger para autoprobar. Agrega ?psid=<ID del contacto> manualmente.';
+            out.diagnostico = 'Token OK (página: ' + out.page.name + '). No encontré contactos de Messenger para autoprobar. Agrega ?psid=<PSID> manualmente.';
             return res.json(out);
         }
     }
