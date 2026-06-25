@@ -214,6 +214,7 @@ const CampaignsViewTemplate = () => `
 
         <!-- SUB-PESTAÑA: Enviar -->
         <div class="campaign-pane active" data-cpane="enviar">
+          <div class="campaign-pane-content">
             <div class="campaign-pane-header">
                 <div class="campaign-pane-heading">
                     <h2 class="campaign-pane-title"><i class="fas fa-paper-plane"></i> Enviar campaña</h2>
@@ -248,6 +249,7 @@ const CampaignsViewTemplate = () => `
                     </button>
                 </div>
             </div>
+          </div>
         </div>
 
         <!-- SUB-PESTAÑA: Difusión masiva -->
@@ -257,6 +259,7 @@ const CampaignsViewTemplate = () => `
 
         <!-- SUB-PESTAÑA: Crear plantilla -->
         <div class="campaign-pane" data-cpane="crear">
+          <div class="campaign-pane-content">
             <div class="campaign-pane-header">
                 <div class="campaign-pane-heading">
                     <h2 class="campaign-pane-title"><i class="fas fa-file-circle-plus"></i> Crear plantilla</h2>
@@ -264,6 +267,7 @@ const CampaignsViewTemplate = () => `
                 </div>
             </div>
             ${CreateTemplateFormTemplate()}
+          </div>
         </div>
 
         <!-- SUB-PESTAÑA: Resultados (conversión) -->
@@ -310,7 +314,7 @@ const DifusionViewTemplate = () => `
             .message-pill .remove-pill:hover { opacity: 1; }
             .sortable-ghost { opacity: 0.4; background: #e0e7ff; }
         </style>
-        <div class="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-lg">
+        <div class="campaign-pane-content">
             <div class="campaign-pane-header">
                 <div class="campaign-pane-heading">
                     <h2 class="campaign-pane-title"><i class="fas fa-rocket"></i> Envío masivo de fotos</h2>
@@ -1716,6 +1720,37 @@ function buildProductOptionsHTML(selectedValue) {
     ).join('');
 }
 
+// Devuelve los nombres de producto ordenados por MÁS RECIENTE primero.
+// state.products se carga ordenado por 'order' ascendente (los recién agregados
+// tienen el 'order' más alto), así que lo invertimos para mostrarlos arriba.
+function getProductNamesRecent() {
+    return getProductNames().slice().reverse();
+}
+
+// Combobox de producto con buscador y "ver más" (reemplaza el <select> nativo).
+// Mantiene un <input type="hidden"> con la clase legacy (order-item-product /
+// edit-order-item-product) para que la lógica de guardado siga leyendo .value.
+function ProductPickerTemplate(selectedValue, inputClass) {
+    const value = selectedValue || '';
+    const labelText = value || 'Selecciona un producto';
+    return `
+    <div class="product-picker" data-expanded="0">
+        <input type="hidden" class="product-picker-input ${inputClass}" value="${escapeHtml(value)}">
+        <button type="button" class="product-picker-trigger${value ? '' : ' is-placeholder'}">
+            <span class="product-picker-value">${escapeHtml(labelText)}</span>
+            <i class="fas fa-chevron-down product-picker-caret"></i>
+        </button>
+        <div class="product-picker-panel" hidden>
+            <div class="product-picker-search">
+                <i class="fas fa-search"></i>
+                <input type="text" class="product-picker-search-input" placeholder="Buscar producto..." autocomplete="off">
+            </div>
+            <ul class="product-picker-list" role="listbox"></ul>
+            <button type="button" class="product-picker-more" hidden></button>
+        </div>
+    </div>`;
+}
+
 // Fila editable de un producto dentro del gestor de productos.
 const ProductManagerRowTemplate = (product) => `
     <div class="product-manager-row" data-product-id="${escapeHtml(product.id)}">
@@ -1761,7 +1796,7 @@ const NewOrderItemRowTemplate = (index, isFirst = false) => `
         <div class="order-item-fields">
             <div class="form-item">
                 <label>Producto (*):</label>
-                <select class="order-item-product" required>${buildProductOptionsHTML()}</select>
+                ${ProductPickerTemplate(getProductNamesRecent()[0] || '', 'order-item-product')}
             </div>
             <div class="form-item">
                 <label>Cantidad (*):</label>
@@ -2015,7 +2050,6 @@ const OrderHistoryItemTemplate = (order) => {
 };
 
 const EditOrderItemRowTemplate = (index, item, isFirst = false) => {
-    const options = buildProductOptionsHTML(item.producto);
     return `
     <div class="order-item-row" data-item-index="${index}">
         <div class="order-item-header">
@@ -2027,7 +2061,7 @@ const EditOrderItemRowTemplate = (index, item, isFirst = false) => {
         <div class="order-item-fields">
             <div class="form-item">
                 <label>Producto (*):</label>
-                <select class="edit-order-item-product" required>${options}</select>
+                ${ProductPickerTemplate(item.producto, 'edit-order-item-product')}
             </div>
             <div class="form-item">
                 <label>Cantidad (*):</label>
@@ -2149,7 +2183,7 @@ const OrderEditModalTemplate = (order) => `
 // =====================================================================
 
 const ConversionCampanasViewTemplate = () => `
-    <div class="view-container" style="max-width:1280px;margin:0 auto;">
+    <div class="view-container campaign-pane-content">
         <div class="campaign-pane-header">
             <div class="campaign-pane-heading">
                 <h2 class="campaign-pane-title"><i class="fas fa-chart-pie"></i> Resultados de campañas</h2>

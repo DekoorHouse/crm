@@ -2085,12 +2085,149 @@ function updateOrderItemNumbering() {
 // Reconstruye los <option> de todos los selects de producto abiertos (modales de
 // nuevo/editar pedido) preservando el valor que el usuario ya tenía seleccionado.
 function refreshOpenProductSelects() {
-    document.querySelectorAll('.order-item-product, .edit-order-item-product').forEach(sel => {
-        const current = sel.value;
-        sel.innerHTML = buildProductOptionsHTML(current);
-        if (current) sel.value = current;
+    // Re-renderiza la lista de cualquier picker de producto cuyo panel esté abierto
+    // (los demás conservan su valor; la lista se reconstruye al abrirse).
+    document.querySelectorAll('.product-picker').forEach(picker => {
+        const panel = picker.querySelector('.product-picker-panel');
+        if (panel && !panel.hidden) renderProductPickerList(picker);
     });
 }
+
+// --- Combobox de producto (buscador + "ver más") -----------------------------
+// Reemplaza al <select> nativo para poder ordenar por recientes, mostrar solo los
+// primeros 5 y filtrar con un buscador. El valor seleccionado vive en un
+// <input type="hidden"> con la clase legacy, así que el guardado no cambia.
+const PRODUCT_PICKER_LIMIT = 5;
+
+// Normaliza para buscar sin distinguir acentos/mayúsculas (p. ej. "papa" → "Papá").
+function normalizeForSearch(s) {
+    // NFD separa los acentos en marcas combinantes (U+0300-U+036F) que removemos.
+    return String(s == null ? "" : s).normalize("NFD")
+        .split("").filter(c => { const code = c.charCodeAt(0); return code < 0x300 || code > 0x36f; })
+        .join("").toLowerCase();
+}
+
+// Renderiza los <li> visibles de un picker según la búsqueda y el estado expandido.
+function renderProductPickerList(picker) {
+    const listEl = picker.querySelector('.product-picker-list');
+    const moreBtn = picker.querySelector('.product-picker-more');
+    const searchEl = picker.querySelector('.product-picker-search-input');
+    const hidden = picker.querySelector('.product-picker-input');
+    if (!listEl || !hidden) return;
+
+    const term = normalizeForSearch(searchEl ? searchEl.value : '').trim();
+    const selected = hidden.value;
+
+    let names = getProductNamesRecent();
+    // Conserva un valor antiguo que ya no exista en la lista (pedidos viejos).
+    if (selected && !names.includes(selected)) names.unshift(selected);
+    const filtered = term ? names.filter(n => normalizeForSearch(n).includes(term)) : names;
+
+    // Al buscar mostramos todas las coincidencias; si no, respetamos "ver más".
+    const expanded = picker.dataset.expanded === '1' || !!term;
+    const visible = expanded ? filtered : filtered.slice(0, PRODUCT_PICKER_LIMIT);
+
+    listEl.innerHTML = visible.length
+        ? visible.map(n => `<li class="product-picker-item${n === selected ? ' is-selected' : ''}" data-value="${escapeHtml(n)}" role="option"><span>${escapeHtml(n)}</span>${n === selected ? '<i class="fas fa-check"></i>' : ''}</li>`).join('')
+        : '<li class="product-picker-empty">Sin resultados</li>';
+
+    const hidden_more = filtered.length - PRODUCT_PICKER_LIMIT;
+    if (term || hidden_more <= 0) {
+        moreBtn.hidden = true;
+    } else if (!expanded) {
+        moreBtn.hidden = false;
+        moreBtn.innerHTML = `<i class="fas fa-chevron-down"></i> Ver ${hidden_more} más`;
+    } else {
+        moreBtn.hidden = false;
+        moreBtn.innerHTML = `<i class="fas fa-chevron-up"></i> Ver menos`;
+    }
+}
+
+// Cierra todos los pickers abiertos (opcionalmente excepto uno).
+function closeAllProductPickers(except) {
+    document.querySelectorAll('.product-picker').forEach(picker => {
+        if (picker === except) return;
+        const panel = picker.querySelector('.product-picker-panel');
+        if (panel && !panel.hidden) {
+            panel.hidden = true;
+            picker.classList.remove('is-open');
+            picker.dataset.expanded = '0';
+        }
+    });
+}
+
+// Abre el panel de un picker, limpia el buscador y enfoca.
+function openProductPicker(picker) {
+    closeAllProductPickers(picker);
+    const panel = picker.querySelector('.product-picker-panel');
+    const searchEl = picker.querySelector('.product-picker-search-input');
+    if (!panel) return;
+    picker.dataset.expanded = '0';
+    if (searchEl) searchEl.value = '';
+    panel.hidden = false;
+    picker.classList.add('is-open');
+    renderProductPickerList(picker);
+    if (searchEl) searchEl.focus();
+}
+
+// Aplica un valor seleccionado: actualiza el input oculto, la etiqueta y cierra.
+function selectProductPickerValue(picker, value) {
+    const hidden = picker.querySelector('.product-picker-input');
+    const label = picker.querySelector('.product-picker-value');
+    const trigger = picker.querySelector('.product-picker-trigger');
+    if (hidden) hidden.value = value;
+    if (label) label.textContent = value || 'Selecciona un producto';
+    if (trigger) trigger.classList.toggle('is-placeholder', !value);
+    const panel = picker.querySelector('.product-picker-panel');
+    if (panel) panel.hidden = true;
+    picker.classList.remove('is-open');
+}
+
+// Delegación global de eventos para todos los pickers de producto.
+document.addEventListener('click', (e) => {
+    const trigger = e.target.closest('.product-picker-trigger');
+    if (trigger) {
+        const picker = trigger.closest('.product-picker');
+        const panel = picker.querySelector('.product-picker-panel');
+        if (panel.hidden) openProductPicker(picker);
+        else { panel.hidden = true; picker.classList.remove('is-open'); }
+        return;
+    }
+    const moreBtn = e.target.closest('.product-picker-more');
+    if (moreBtn) {
+        const picker = moreBtn.closest('.product-picker');
+        picker.dataset.expanded = picker.dataset.expanded === '1' ? '0' : '1';
+        renderProductPickerList(picker);
+        const searchEl = picker.querySelector('.product-picker-search-input');
+        if (searchEl) searchEl.focus();
+        return;
+    }
+    const item = e.target.closest('.product-picker-item');
+    if (item && item.dataset.value !== undefined) {
+        selectProductPickerValue(item.closest('.product-picker'), item.dataset.value);
+        return;
+    }
+    // Clic fuera de cualquier picker: cierra los abiertos.
+    if (!e.target.closest('.product-picker')) closeAllProductPickers();
+});
+
+document.addEventListener('input', (e) => {
+    if (e.target.classList && e.target.classList.contains('product-picker-search-input')) {
+        const picker = e.target.closest('.product-picker');
+        if (picker) renderProductPickerList(picker);
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeAllProductPickers(); return; }
+    // Enter dentro del buscador: no enviar el formulario; elige la 1ª coincidencia.
+    if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('product-picker-search-input')) {
+        e.preventDefault();
+        const picker = e.target.closest('.product-picker');
+        const first = picker && picker.querySelector('.product-picker-item[data-value]');
+        if (first) selectProductPickerValue(picker, first.dataset.value);
+    }
+});
 
 // Abre el modal para agregar / renombrar / eliminar productos de la lista.
 window.openProductsManager = function() {
