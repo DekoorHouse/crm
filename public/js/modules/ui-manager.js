@@ -841,6 +841,22 @@ function renderPipelineView() {
 
 
 // Renderiza la vista de ajustes generales
+// Llena el <select> de "Respuesta automática de Facebook" con las respuestas
+// rápidas actuales, preservando la opción ya seleccionada si sigue existiendo.
+function populateMessengerWelcomeSelect() {
+    const sel = document.getElementById('messenger-welcome-select');
+    if (!sel) return;
+    const current = sel.value;
+    const opts = ['<option value="">Predeterminada (saludo genérico)</option>'].concat(
+        (state.quickReplies || []).map(qr => {
+            const preview = (qr.message || (qr.fileUrl ? 'Adjunto' : '')).slice(0, 50);
+            return `<option value="${escapeHtml(qr.shortcut)}">/${escapeHtml(qr.shortcut)} — ${escapeHtml(preview)}</option>`;
+        })
+    );
+    sel.innerHTML = opts.join('');
+    if (current) sel.value = current;
+}
+
 function renderAjustesView() {
     if (state.activeView !== 'ajustes') return;
     // Actualiza el estado del interruptor de mensaje de ausencia
@@ -870,17 +886,15 @@ function renderAjustesView() {
     }
 
     // Respuesta automática de Facebook: poblar el select con las respuestas rápidas
-    const mwSelect = document.getElementById('messenger-welcome-select');
-    if (mwSelect) {
-        const opts = ['<option value="">Predeterminada (saludo genérico)</option>'].concat(
-            (state.quickReplies || []).map(qr => {
-                const preview = (qr.message || (qr.fileUrl ? 'Adjunto' : '')).slice(0, 50);
-                return `<option value="${escapeHtml(qr.shortcut)}">/${escapeHtml(qr.shortcut)} — ${escapeHtml(preview)}</option>`;
-            })
-        );
-        mwSelect.innerHTML = opts.join('');
-        if (typeof loadMessengerWelcomeSetting === 'function') loadMessengerWelcomeSetting();
+    populateMessengerWelcomeSelect();
+    if (typeof loadMessengerWelcomeSetting === 'function') loadMessengerWelcomeSetting();
+
+    // Si las respuestas rápidas aún no se han cargado, forzar su carga (el listener
+    // luego repoblará el select automáticamente).
+    if ((!state.quickReplies || state.quickReplies.length === 0) && typeof listenForQuickReplies === 'function') {
+        listenForQuickReplies();
     }
+
     const saveMwBtn = document.getElementById('save-messenger-welcome-btn');
     if (saveMwBtn && typeof handleSaveMessengerWelcome === 'function') {
         saveMwBtn.removeEventListener('click', handleSaveMessengerWelcome);

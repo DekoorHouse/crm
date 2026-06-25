@@ -628,6 +628,13 @@ function listenForQuickReplies() {
         if (state.activeView === 'respuestas-rapidas') {
             renderQuickRepliesView();
         }
+        // Si estamos en Ajustes, repoblar el select de bienvenida de Facebook
+        if (state.activeView === 'ajustes' && typeof populateMessengerWelcomeSelect === 'function') {
+            populateMessengerWelcomeSelect();
+            const sel = document.getElementById('messenger-welcome-select');
+            // Si aún no hay selección, reaplicar el valor guardado ahora que hay opciones
+            if (sel && !sel.value && typeof loadMessengerWelcomeSetting === 'function') loadMessengerWelcomeSetting();
+        }
     }, (error) => { console.error("Error fetching quick replies:", error); showError("No se pudieron cargar las respuestas rápidas."); });
 }
 
