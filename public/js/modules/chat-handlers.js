@@ -1187,8 +1187,43 @@ function selectQuickReply(replyId) {
 
 function selectEmoji(emoji) {
     const input = document.getElementById('message-input');
-    input.value += emoji;
-    input.focus();
+    if (input) { input.value += emoji; input.focus(); }
+    pushEmojiRecent(emoji);
+    refreshEmojiRecentsInPlace();
+}
+
+// --- Emojis recientes (persistidos en localStorage, estilo WhatsApp) ---
+const EMOJI_RECENTS_KEY = 'crm_emoji_recents';
+const EMOJI_RECENTS_MAX = 32;
+
+function getEmojiRecents() {
+    try {
+        const r = JSON.parse(localStorage.getItem(EMOJI_RECENTS_KEY) || '[]');
+        return Array.isArray(r) ? r : [];
+    } catch (e) { return []; }
+}
+
+function pushEmojiRecent(emoji) {
+    try {
+        let r = getEmojiRecents().filter(e => e !== emoji); // quita duplicado
+        r.unshift(emoji);                                    // el más reciente primero
+        if (r.length > EMOJI_RECENTS_MAX) r = r.slice(0, EMOJI_RECENTS_MAX);
+        localStorage.setItem(EMOJI_RECENTS_KEY, JSON.stringify(r));
+    } catch (e) { /* localStorage no disponible: ignorar */ }
+}
+
+// Actualiza la sección "Recientes" sin re-renderizar todo el picker (evita saltos
+// de scroll). Si aún no existe la sección (primer emoji), hace un render completo.
+function refreshEmojiRecentsInPlace() {
+    const picker = document.getElementById('emoji-picker');
+    if (!picker || picker.classList.contains('hidden')) return;
+    const recents = getEmojiRecents();
+    const grid = picker.querySelector('.emoji-section[data-cat="recents"] .emoji-grid');
+    if (grid) {
+        grid.innerHTML = recents.map(e => `<button type="button" class="emoji" onclick="selectEmoji('${e}')">${e}</button>`).join('');
+    } else if (recents.length) {
+        renderEmojiPicker();
+    }
 }
 
 function handleStartReply(event, messageDocId) {
@@ -1618,11 +1653,18 @@ function renderEmojiPicker() {
     const picker = document.getElementById('emoji-picker');
     if (!picker) return;
 
-    const tabsHTML = EMOJI_CATEGORIES.map((cat, i) =>
-        `<button type="button" class="emoji-tab${i === 0 ? ' active' : ''}" data-cat="${cat.id}" title="${cat.name}" onclick="scrollToEmojiCategory('${cat.id}')">${cat.icon}</button>`
-    ).join('');
+    // Si hay emojis recientes, se antepone una categoría "Recientes" (estilo WhatsApp).
+    const recents = getEmojiRecents();
+    const cats = recents.length
+        ? [{ id: 'recents', faIcon: 'far fa-clock', name: 'Recientes', emojis: recents }, ...EMOJI_CATEGORIES]
+        : EMOJI_CATEGORIES;
 
-    const sectionsHTML = EMOJI_CATEGORIES.map(cat => {
+    const tabsHTML = cats.map((cat, i) => {
+        const iconHTML = cat.faIcon ? `<i class="${cat.faIcon}"></i>` : cat.icon;
+        return `<button type="button" class="emoji-tab${i === 0 ? ' active' : ''}" data-cat="${cat.id}" title="${cat.name}" onclick="scrollToEmojiCategory('${cat.id}')">${iconHTML}</button>`;
+    }).join('');
+
+    const sectionsHTML = cats.map(cat => {
         const grid = cat.emojis.map(e =>
             `<button type="button" class="emoji" onclick="selectEmoji('${e}')">${e}</button>`
         ).join('');
