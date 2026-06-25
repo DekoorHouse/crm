@@ -647,6 +647,10 @@ router.post('/', async (req, res) => {
             // --- Update contact document ---
             const isNewContact = !contactDoc.exists;
             let isAiRuleEnabled = false; // Nueva bandera para saber si la regla tiene IA
+            // ¿El mensaje llega desde un anuncio que este contacto NO había usado antes?
+            // Permite enviar la respuesta configurada también a contactos EXISTENTES que escriben
+            // desde un anuncio distinto al original (antes solo se respondía a contactos nuevos).
+            let isNewAdForContact = false;
 
             const contactUpdateData = {
                 name: contactInfo.profile?.name || (contactDoc.exists ? contactDoc.data().name : from), // Use existing name if available
@@ -679,6 +683,9 @@ router.post('/', async (req, res) => {
                 const alreadyTracked = adHistory.some(entry => entry && entry.source_id === message.referral.source_id);
 
                 if (!alreadyTracked) {
+                    // Anuncio distinto a los del historial: habilita el envío de su respuesta configurada
+                    // aunque el contacto ya exista (lo evalúa el bloque 6 de automatización).
+                    isNewAdForContact = true;
                     let adName = message.referral.headline || message.referral.body || `ID: ${message.referral.source_id}`;
 
                     // Intentar obtener el nombre interno del anuncio vía Graph API
@@ -884,28 +891,32 @@ router.post('/', async (req, res) => {
                 }
             }
 
-            // 6. Handle Welcome/Ad Response for NEW contacts
-            if (isNewContact) {
-                let adResponseSent = false;
-                if (message.referral?.source_type === 'ad' && message.referral.source_id) {
-                    const adId = message.referral.source_id;
-                    console.log(`[AD] Nuevo contacto desde Ad ID: ${adId}`);
-                    // Query using 'array-contains' for the adId within the 'adIds' array
-                    const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains', adId).limit(1).get();
-                    if (!snapshot.empty) {
-                        const adResponseData = snapshot.docs[0].data();
-                        console.log(`[AD] Mensaje encontrado para Ad ID ${adId}: "${adResponseData.message || 'Archivo adjunto'}"`);
-                        await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
-                        adResponseSent = true;
-                    } else {
-                        console.log(`[AD] No se encontró mensaje específico para Ad ID ${adId}. Se enviará mensaje general de bienvenida.`);
-                    }
+            // 6. Respuesta de bienvenida / anuncio
+            // - Contacto NUEVO: respuesta del anuncio de origen (si lo hay) o bienvenida general.
+            // - Contacto EXISTENTE que escribe desde un anuncio DISTINTO a los que ya había usado
+            //   (isNewAdForContact === true): se le envía la respuesta configurada de ese nuevo anuncio.
+            //   Antes esto se omitía porque el bloque estaba gateado solo por isNewContact, así que
+            //   quien ya había escrito desde un anuncio NO recibía la respuesta del siguiente.
+            let adResponseSent = false;
+            const fromAd = message.referral?.source_type === 'ad' && message.referral.source_id;
+            if (fromAd && (isNewContact || isNewAdForContact)) {
+                const adId = message.referral.source_id;
+                console.log(`[AD] ${isNewContact ? 'Nuevo contacto' : 'Contacto existente'} desde Ad ID: ${adId} (anuncio nuevo para el contacto: ${isNewAdForContact}).`);
+                // Query using 'array-contains' for the adId within the 'adIds' array
+                const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains', adId).limit(1).get();
+                if (!snapshot.empty) {
+                    const adResponseData = snapshot.docs[0].data();
+                    console.log(`[AD] Mensaje encontrado para Ad ID ${adId}: "${adResponseData.message || 'Archivo adjunto'}"`);
+                    await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
+                    adResponseSent = true;
+                } else {
+                    console.log(`[AD] No se encontró mensaje específico para Ad ID ${adId}.`);
                 }
-                // Send general welcome message ONLY if no specific ad response was sent
-                if (!adResponseSent) {
-                    await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
-                    await contactRef.update({ welcomed: true }); // Mark as welcomed
-                }
+            }
+            // Bienvenida general SOLO para contactos nuevos que no recibieron respuesta de anuncio.
+            if (isNewContact && !adResponseSent) {
+                await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+                await contactRef.update({ welcomed: true }); // Mark as welcomed
             }
 
             // 7. Trigger AI Reply if applicable
