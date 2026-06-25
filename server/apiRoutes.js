@@ -6487,6 +6487,28 @@ router.post('/settings/google-sheet', async (req, res) => {
     }
 });
 
+// GET (Obtener la respuesta rápida configurada como bienvenida de Facebook/Messenger)
+router.get('/settings/messenger-welcome', async (req, res) => {
+    try {
+        const doc = await db.collection('crm_settings').doc('general').get();
+        const shortcut = doc.exists ? (doc.data().messengerWelcomeShortcut || '') : '';
+        res.status(200).json({ success: true, settings: { shortcut } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener la bienvenida de Facebook.' });
+    }
+});
+
+// POST (Guardar la respuesta rápida que se envía como bienvenida a Facebook/Messenger)
+router.post('/settings/messenger-welcome', async (req, res) => {
+    try {
+        const shortcut = (req.body.shortcut || '').trim();
+        await db.collection('crm_settings').doc('general').set({ messengerWelcomeShortcut: shortcut }, { merge: true });
+        res.status(200).json({ success: true, message: 'Bienvenida de Facebook guardada.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar la bienvenida de Facebook.' });
+    }
+});
+
 
 
 // --- Endpoint POST /api/test/simulate-ad-message (Simular mensaje de anuncio) ---

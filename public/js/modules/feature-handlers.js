@@ -1425,6 +1425,43 @@ async function handleAwayMessageToggle(isActive) {
     }
 }
 
+// --- Respuesta automática de Facebook/Messenger ---
+// Carga la respuesta rápida configurada como bienvenida de FB y la marca en el select.
+async function loadMessengerWelcomeSetting() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/settings/messenger-welcome`);
+        const data = await response.json();
+        if (data.success) {
+            const sel = document.getElementById('messenger-welcome-select');
+            if (sel) sel.value = data.settings.shortcut || '';
+        }
+    } catch (error) {
+        console.error('Error al cargar la bienvenida de Facebook:', error);
+    }
+}
+
+// Guarda la respuesta rápida elegida como bienvenida de FB.
+async function handleSaveMessengerWelcome() {
+    const sel = document.getElementById('messenger-welcome-select');
+    if (!sel) return;
+    const btn = document.getElementById('save-messenger-welcome-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/settings/messenger-welcome`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shortcut: sel.value })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || 'No se pudo guardar.');
+        showError(sel.value ? `Bienvenida de Facebook: /${sel.value}` : 'Bienvenida de Facebook: predeterminada.', 'success');
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    }
+}
+
 // --- Reactivación de Leads (Ajustes Generales) ---
 // Config en crm_settings/lead_reactivation vía /api/leads/reactivacion.
 // El scheduler del backend envía los mensajes; aquí solo se administra.

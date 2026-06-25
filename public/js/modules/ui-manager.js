@@ -780,6 +780,24 @@ function renderAjustesView() {
         simulateAdForm.addEventListener('submit', handleSimulateAdMessage);
     }
 
+    // Respuesta automática de Facebook: poblar el select con las respuestas rápidas
+    const mwSelect = document.getElementById('messenger-welcome-select');
+    if (mwSelect) {
+        const opts = ['<option value="">Predeterminada (saludo genérico)</option>'].concat(
+            (state.quickReplies || []).map(qr => {
+                const preview = (qr.message || (qr.fileUrl ? 'Adjunto' : '')).slice(0, 50);
+                return `<option value="${escapeHtml(qr.shortcut)}">/${escapeHtml(qr.shortcut)} — ${escapeHtml(preview)}</option>`;
+            })
+        );
+        mwSelect.innerHTML = opts.join('');
+        if (typeof loadMessengerWelcomeSetting === 'function') loadMessengerWelcomeSetting();
+    }
+    const saveMwBtn = document.getElementById('save-messenger-welcome-btn');
+    if (saveMwBtn && typeof handleSaveMessengerWelcome === 'function') {
+        saveMwBtn.removeEventListener('click', handleSaveMessengerWelcome);
+        saveMwBtn.addEventListener('click', handleSaveMessengerWelcome);
+    }
+
     // Renderiza la lista de usuarios / operadores
     renderUsersSettings();
     // Si aún no se han cargado los usuarios, intentar cargarlos ahora.

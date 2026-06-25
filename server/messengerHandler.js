@@ -509,7 +509,27 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
         }
         // Bienvenida general SOLO si no se envió un mensaje específico de anuncio
         if (!adResponseSent) {
-            await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+            let welcomePayload = { text: GENERAL_WELCOME_MESSAGE };
+            // Para Facebook Messenger se puede configurar una respuesta rápida como bienvenida.
+            if (channel === 'messenger') {
+                try {
+                    const cfg = await db.collection('crm_settings').doc('general').get();
+                    const shortcut = cfg.exists ? (cfg.data().messengerWelcomeShortcut || '') : '';
+                    if (shortcut) {
+                        const qrSnap = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
+                        if (!qrSnap.empty) {
+                            const qr = qrSnap.docs[0].data();
+                            welcomePayload = { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null };
+                            console.log(`[${logPrefix}] Bienvenida de FB: usando respuesta rápida '/${shortcut}'.`);
+                        } else {
+                            console.warn(`[${logPrefix}] La respuesta rápida '/${shortcut}' configurada para la bienvenida de FB no existe. Se usa la genérica.`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[${logPrefix}] No se pudo leer la bienvenida de FB configurada: ${e.message}`);
+                }
+            }
+            await sendAutoMessage(contactRef, welcomePayload);
         }
         await contactRef.update({ welcomed: true });
         return;

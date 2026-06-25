@@ -515,6 +515,16 @@ const SettingsViewTemplate = () => `
                 </div>
             </div>
             <div class="settings-card">
+                <h2 class="text-xl font-bold mb-1"><i class="fab fa-facebook-messenger text-blue-500 mr-2"></i>Respuesta automática de Facebook</h2>
+                <p class="text-sm text-gray-500 mb-4">Elige la respuesta rápida que se enviará automáticamente como primera respuesta a las conversaciones <strong>nuevas</strong> de Facebook Messenger. Déjala en "Predeterminada" para usar el saludo genérico.</p>
+                <div class="flex items-center gap-3">
+                    <select id="messenger-welcome-select" class="!mb-0">
+                        <option value="">Predeterminada (saludo genérico)</option>
+                    </select>
+                    <button id="save-messenger-welcome-btn" class="btn btn-primary flex-shrink-0">Guardar</button>
+                </div>
+            </div>
+            <div class="settings-card">
                 <h2 class="text-xl font-bold mb-4">Integraciones</h2>
                 <div>
                     <label for="google-sheet-id-input" class="font-semibold">ID de Google Sheet para Cobertura</label>
