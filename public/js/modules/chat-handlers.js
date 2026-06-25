@@ -66,6 +66,14 @@ function handleSearchContacts() {
     }
     // --- FIN DE LA MODIFICACIÓN ---
 
+    // --- NUEVO: Filtro de Departamento activo (selección en la UI) ---
+    // Se aplica en CADA render para que los chats que llegan en tiempo real desde
+    // OTRO departamento no se cuelen en la lista mientras hay un filtro activo.
+    // Coincide con la semántica del filtro del servidor: where('assignedDepartmentId', '==', filtro).
+    if (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') {
+        contactsToRender = contactsToRender.filter(c => c.assignedDepartmentId === state.activeDepartmentFilter);
+    }
+
     // --- NUEVO: Filtros de Etiqueta y No Leídos (Reactividad Frontend) ---
     if (state.activeFilter && state.activeFilter !== 'all') {
         contactsToRender = contactsToRender.filter(c => c.status === state.activeFilter);
