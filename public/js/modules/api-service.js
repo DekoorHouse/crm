@@ -782,6 +782,12 @@ async function fetchAllUsers() {
             state.allUsers = data.users;
             console.log("All users loaded:", state.allUsers);
 
+            // Si la vista de ajustes está abierta, re-renderizar la lista de usuarios
+            // para reflejar cambios (nombre, foto, rango, departamentos) en tiempo real.
+            if (state.activeView === 'ajustes' && typeof renderUsersSettings === 'function') {
+                renderUsersSettings();
+            }
+
             // Mantener sincronizado el perfil actual para que ventanas ya abiertas
             // detecten instantáneamente si se les asignó/quitó un departamento.
             if (state.currentUserProfile && state.currentUserProfile.email) {
@@ -1037,7 +1043,7 @@ function listenForCampanas() {
     unsubscribeCampanasListener = db.collection('campanas').orderBy('creada_en', 'desc').onSnapshot(snapshot => {
         state.campanasList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         // Re-render solo si la vista está activa
-        if (state.activeView === 'conversion-campanas' && typeof renderConversionCampanasView === 'function') {
+        if ((state.activeView === 'conversion-campanas' || (state.activeView === 'campanas' && state.campaignTab === 'resultados')) && typeof renderConversionCampanasView === 'function') {
             renderConversionCampanasView();
         }
         // Si el modal de pedido está abierto, refrescar el selector de campañas
@@ -1063,7 +1069,7 @@ function listenForPedidosConCampana() {
                 precio: typeof data.precio === 'number' ? data.precio : 0
             };
         });
-        if (state.activeView === 'conversion-campanas' && typeof renderConversionCampanasView === 'function') {
+        if ((state.activeView === 'conversion-campanas' || (state.activeView === 'campanas' && state.campaignTab === 'resultados')) && typeof renderConversionCampanasView === 'function') {
             renderConversionCampanasView();
         }
     }, error => {

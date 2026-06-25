@@ -46,6 +46,7 @@ let state = {
     templatePickerOpen: false, // Estado del selector de plantillas
     contactDetailsOpen: false, // Estado de la barra lateral de detalles
     contactPanelTab: 'perfil', // Pestaña activa del panel de detalles ('perfil', 'pedidos', 'notas')
+    campaignTab: 'enviar', // Sub-pestaña activa del hub de Campañas ('enviar','difusion','crear','resultados')
     isEditingNote: null, // ID de la nota que se está editando, o null
     replyingToMessage: null, // Mensaje al que se está respondiendo, o null
     campaignMode: false, // ¿Está activo el modo campaña? (No implementado completamente)

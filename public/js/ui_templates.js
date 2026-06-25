@@ -207,7 +207,9 @@ const CampaignsViewTemplate = () => `
 
         <div class="campaign-tabs">
             <button class="campaign-tab active" data-ctab="enviar" onclick="switchCampaignTab('enviar')"><i class="fas fa-paper-plane mr-2"></i>Enviar campaña</button>
+            <button class="campaign-tab" data-ctab="difusion" onclick="switchCampaignTab('difusion')"><i class="fas fa-rocket mr-2"></i>Difusión masiva</button>
             <button class="campaign-tab" data-ctab="crear" onclick="switchCampaignTab('crear')"><i class="fas fa-file-circle-plus mr-2"></i>Crear plantilla</button>
+            <button class="campaign-tab" data-ctab="resultados" onclick="switchCampaignTab('resultados')"><i class="fas fa-chart-pie mr-2"></i>Resultados</button>
         </div>
 
         <!-- SUB-PESTAÑA: Enviar -->
@@ -242,9 +244,19 @@ const CampaignsViewTemplate = () => `
             </div>
         </div>
 
+        <!-- SUB-PESTAÑA: Difusión masiva -->
+        <div class="campaign-pane" data-cpane="difusion">
+            ${DifusionViewTemplate()}
+        </div>
+
         <!-- SUB-PESTAÑA: Crear plantilla -->
         <div class="campaign-pane" data-cpane="crear">
             ${CreateTemplateFormTemplate()}
+        </div>
+
+        <!-- SUB-PESTAÑA: Resultados (conversión) -->
+        <div class="campaign-pane" data-cpane="resultados">
+            ${ConversionCampanasViewTemplate()}
         </div>
     </div>
 `;
@@ -469,6 +481,13 @@ const SettingsViewTemplate = () => `
                             <i class="fas fa-check-circle theme-card-check"></i>
                         </button>`;
                     }).join('')}
+                </div>
+            </div>
+            <div class="settings-card">
+                <h2 class="text-xl font-bold mb-1">Usuarios y Operadores</h2>
+                <p class="text-sm text-gray-500 mb-4">Consulta y edita la información de tu equipo: nombre, foto de perfil, rango y departamentos asignados.</p>
+                <div id="users-list-container" class="space-y-3">
+                    <p class="text-gray-400 text-sm">Cargando usuarios...</p>
                 </div>
             </div>
             <div class="settings-card">

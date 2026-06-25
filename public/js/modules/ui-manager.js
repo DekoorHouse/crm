@@ -9,7 +9,15 @@ let aiCountdownInterval = null; // Intervalo para la cuenta regresiva de la IA (
 
 // --- Navigation & Main View Rendering ---
 function navigateTo(viewName, force = false) {
+    // Difusión y Conversión se fusionaron en el hub "Campañas" como sub-pestañas.
+    let campaignSubtab = null;
+    if (viewName === 'difusion') { campaignSubtab = 'difusion'; viewName = 'campanas'; }
+    else if (viewName === 'conversion-campanas') { campaignSubtab = 'resultados'; viewName = 'campanas'; }
+    if (campaignSubtab) state.campaignTab = campaignSubtab;
+
     if (state.activeView === viewName && !force) {
+        // Ya estamos en el hub: solo cambiar de sub-pestaña.
+        if (campaignSubtab && typeof switchCampaignTab === 'function') switchCampaignTab(campaignSubtab);
         return;
     }
 
@@ -72,11 +80,9 @@ function navigateTo(viewName, force = false) {
         case 'campanas':
         case 'campanas-imagen': // alias: la sección con imagen se fusionó en "Campañas"
             mainViewContainer.innerHTML = CampaignsViewTemplate();
-            renderCampaignsView(); // Prepara la vista unificada (enviar + crear plantilla)
-            break;
-        case 'difusion':
-            mainViewContainer.innerHTML = DifusionViewTemplate();
-            renderDifusionView(); // Prepara la vista de difusión masiva
+            renderCampaignsView(); // Prepara el panel "Enviar campaña"
+            // Abre la sub-pestaña recordada (Difusión/Resultados se cargan diferido).
+            if (typeof switchCampaignTab === 'function') switchCampaignTab(state.campaignTab || 'enviar');
             break;
         case 'mensajes-ads':
             mainViewContainer.innerHTML = MensajesAdsViewTemplate();
@@ -95,14 +101,6 @@ function navigateTo(viewName, force = false) {
         case 'rescate-ia':
             mainViewContainer.innerHTML = OrderFollowupViewTemplate();
             renderOrderFollowupView(); // Embudo de rescate + lista de contactados
-            break;
-        case 'conversion-campanas':
-            mainViewContainer.innerHTML = ConversionCampanasViewTemplate();
-            // Lazy-load del listener de pedidos con campaña (costoso si se cargara siempre)
-            if (typeof listenForPedidosConCampana === 'function') {
-                listenForPedidosConCampana();
-            }
-            renderConversionCampanasView();
             break;
         case 'entrenamiento-ia':
             mainViewContainer.innerHTML = AITrainingViewTemplate();
@@ -563,7 +561,7 @@ function renderCampaignsWithImageView() {
 
 // Prepara la vista de difusión masiva
 function renderDifusionView() {
-    if (state.activeView !== 'difusion') return;
+    if (state.activeView !== 'difusion' && state.activeView !== 'campanas') return;
 
     // Poblar dropdown de respuestas rápidas para la secuencia
     const quickReplyDropdown = document.getElementById('quick-reply-dropdown');
@@ -724,11 +722,211 @@ function renderAjustesView() {
         simulateAdForm.removeEventListener('submit', handleSimulateAdMessage);
         simulateAdForm.addEventListener('submit', handleSimulateAdMessage);
     }
+
+    // Renderiza la lista de usuarios / operadores
+    renderUsersSettings();
+    // Si aún no se han cargado los usuarios, intentar cargarlos ahora.
+    if ((!state.allUsers || state.allUsers.length === 0) && typeof fetchAllUsers === 'function') {
+        fetchAllUsers();
+    }
+
     // Nota: la sección "Reactivación de Leads" (genérica) se retiró del CRM; la
     // reemplaza "Rescate IA" (seguimiento de pedido en proceso). El backend genérico
     // queda inactivo. Funciones loadLeadReactSettings/handleSaveLeadReact siguen
     // definidas pero ya no se invocan desde la UI.
 }
+
+// --- INICIO: Sección de Usuarios / Operadores en Ajustes ---
+
+/**
+ * Dibuja la lista de usuarios del sistema dentro de la tarjeta de Ajustes.
+ * Cada fila muestra avatar, nombre, correo, rango y departamentos, con un
+ * botón para abrir el modal de edición.
+ */
+function renderUsersSettings() {
+    const container = document.getElementById('users-list-container');
+    if (!container) return; // No estamos en la vista de ajustes
+
+    const users = state.allUsers || [];
+    if (users.length === 0) {
+        container.innerHTML = '<p class="text-gray-400 text-sm">No se encontraron usuarios o aún se están cargando.</p>';
+        return;
+    }
+
+    // Ordenar: admins primero, luego por nombre.
+    const sorted = [...users].sort((a, b) => {
+        if (a.role !== b.role) return a.role === 'admin' ? -1 : 1;
+        return (a.name || a.email).localeCompare(b.name || b.email);
+    });
+
+    container.innerHTML = sorted.map(user => {
+        const displayName = (user.name && user.name.trim() && user.name.toLowerCase() !== 'null') ? user.name : user.email.split('@')[0];
+        const initial = (displayName.trim()[0] || 'U').toUpperCase();
+        const photo = user.photoURL || '';
+        const avatarStyle = photo ? `background-image:url("${photo}");color:transparent;` : '';
+
+        const roleBadge = user.role === 'admin'
+            ? '<span class="user-badge user-badge-admin"><i class="fas fa-crown"></i> Administrador</span>'
+            : '<span class="user-badge user-badge-agent"><i class="fas fa-headset"></i> Agente</span>';
+
+        // Nombres de departamentos asignados (solo relevante para agentes)
+        let deptBadges = '';
+        if (user.role !== 'admin') {
+            const deptIds = user.assignedDepartments || [];
+            if (deptIds.length > 0) {
+                deptBadges = deptIds.map(id => {
+                    const dept = (state.departments || []).find(d => d.id === id);
+                    return `<span class="user-badge user-badge-dept">${escapeHtml(dept ? dept.name : 'Departamento')}</span>`;
+                }).join('');
+            } else {
+                deptBadges = '<span class="user-badge user-badge-dept">Sin departamentos</span>';
+            }
+        }
+
+        return `
+            <div class="user-row">
+                <div class="user-row-avatar" style="${avatarStyle}">${photo ? '' : initial}</div>
+                <div class="user-row-info">
+                    <div class="user-row-name">${escapeHtml(displayName)}</div>
+                    <div class="user-row-email">${escapeHtml(user.email)}</div>
+                    <div class="user-row-meta">${roleBadge}${deptBadges}</div>
+                </div>
+                <button type="button" class="btn btn-subtle btn-sm flex-shrink-0" onclick="openUserModal('${user.email.replace(/'/g, "\\'")}')">
+                    <i class="fas fa-pen mr-1"></i> Editar
+                </button>
+            </div>`;
+    }).join('');
+}
+
+/**
+ * Abre el modal para editar la información de un usuario / operador.
+ * @param {string} email Identificador (email) del usuario a editar.
+ */
+function openUserModal(email) {
+    const modal = document.getElementById('user-modal');
+    if (!modal) return;
+
+    const user = (state.allUsers || []).find(u => u.email === email);
+    if (!user) {
+        showError('No se encontró la información de este usuario.');
+        return;
+    }
+
+    const displayName = (user.name && user.name.trim() && user.name.toLowerCase() !== 'null') ? user.name : '';
+
+    document.getElementById('user-id').value = user.email;
+    document.getElementById('user-name').value = displayName;
+    document.getElementById('user-email-display').value = user.email;
+    document.getElementById('user-role').value = user.role === 'admin' ? 'admin' : 'agent';
+    document.getElementById('user-modal-title').textContent = `Editar: ${displayName || user.email.split('@')[0]}`;
+
+    // Foto de perfil
+    setUserModalPhoto(user.photoURL || '', displayName || user.email);
+
+    // Departamentos: checkboxes
+    const deptContainer = document.getElementById('user-departments-container');
+    const departments = state.departments || [];
+    if (departments.length > 0) {
+        const assigned = user.assignedDepartments || [];
+        deptContainer.innerHTML = departments.map(dept => `
+            <div class="flex items-center">
+                <input type="checkbox" id="user-dept-${dept.id}" name="user-departments" value="${dept.id}" ${assigned.includes(dept.id) ? 'checked' : ''} class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                <label for="user-dept-${dept.id}" class="ml-3 block text-sm font-medium text-gray-700">${escapeHtml(dept.name)}</label>
+            </div>
+        `).join('');
+    } else {
+        deptContainer.innerHTML = '<p class="text-gray-400 text-sm">No hay departamentos creados.</p>';
+    }
+
+    modal.classList.remove('hidden');
+}
+
+function closeUserModal() {
+    const modal = document.getElementById('user-modal');
+    if (modal) modal.classList.add('hidden');
+    const fileInput = document.getElementById('user-photo-input');
+    if (fileInput) fileInput.value = '';
+}
+
+/**
+ * Actualiza el avatar (preview) del modal según haya foto o no.
+ */
+function setUserModalPhoto(photoURL, nameOrEmail) {
+    const avatar = document.getElementById('user-avatar-preview');
+    const initialEl = document.getElementById('user-avatar-initial');
+    const hiddenInput = document.getElementById('user-photo-url');
+    const removeBtn = document.getElementById('user-photo-remove-btn');
+    const btnLabel = document.getElementById('user-photo-btn-label');
+    if (!avatar) return;
+
+    hiddenInput.value = photoURL || '';
+    const initial = ((nameOrEmail || 'U').trim()[0] || 'U').toUpperCase();
+    initialEl.textContent = initial;
+
+    if (photoURL) {
+        avatar.style.backgroundImage = `url("${photoURL}")`;
+        avatar.classList.add('has-photo');
+        if (removeBtn) removeBtn.classList.remove('hidden');
+        if (btnLabel) btnLabel.textContent = 'Cambiar foto';
+    } else {
+        avatar.style.backgroundImage = '';
+        avatar.classList.remove('has-photo');
+        if (removeBtn) removeBtn.classList.add('hidden');
+        if (btnLabel) btnLabel.textContent = 'Subir foto';
+    }
+}
+
+/**
+ * Sube la foto seleccionada a Firebase Storage y la refleja en el preview.
+ */
+async function handleUserPhotoSelect(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = ''; // Permite reseleccionar el mismo archivo
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+        showError('El archivo debe ser una imagen.');
+        return;
+    }
+
+    const email = document.getElementById('user-id').value;
+    const avatar = document.getElementById('user-avatar-preview');
+    const overlay = avatar ? avatar.querySelector('.user-avatar-edit-overlay') : null;
+    if (overlay) overlay.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    if (avatar) avatar.style.opacity = '0.6';
+
+    try {
+        const safeEmail = (email || 'anon').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const path = `user_avatars/${safeEmail}/${Date.now()}_${file.name}`;
+        const fileRef = storage.ref(path);
+        const uploadTask = await fileRef.put(file, { contentType: file.type });
+        const url = await uploadTask.ref.getDownloadURL();
+
+        const nameOrEmail = document.getElementById('user-name').value || email;
+        setUserModalPhoto(url, nameOrEmail);
+    } catch (error) {
+        console.error('Error subiendo foto de usuario:', error);
+        showError('No se pudo subir la foto. Intenta de nuevo.');
+    } finally {
+        if (overlay) overlay.innerHTML = '<i class="fas fa-camera"></i>';
+        if (avatar) avatar.style.opacity = '1';
+    }
+}
+
+/**
+ * Quita la foto de perfil del usuario (vuelve a la inicial).
+ */
+function removeUserPhoto() {
+    const nameOrEmail = document.getElementById('user-name').value || document.getElementById('user-id').value;
+    setUserModalPhoto('', nameOrEmail);
+}
+
+window.renderUsersSettings = renderUsersSettings;
+window.openUserModal = openUserModal;
+window.closeUserModal = closeUserModal;
+window.handleUserPhotoSelect = handleUserPhotoSelect;
+window.removeUserPhoto = removeUserPhoto;
+// --- FIN: Sección de Usuarios / Operadores en Ajustes ---
 
 // --- INICIO: Renderizado de Entrenamiento de IA ---
 async function renderAITrainingView() {
@@ -3560,7 +3758,7 @@ function getKPIsForCampana(campana) {
 }
 
 function renderConversionCampanasView() {
-    if (state.activeView !== 'conversion-campanas') return;
+    if (state.activeView !== 'conversion-campanas' && state.activeView !== 'campanas') return;
     const container = document.getElementById('conversion-campanas-list');
     if (!container) return;
 

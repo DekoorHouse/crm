@@ -27,7 +27,7 @@
     <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/plugins/ranges.js"></script>
 
     <!-- Estilos Personalizados -->
-    <link rel="stylesheet" href="style.css?v=27">
+    <link rel="stylesheet" href="style.css?v=28">
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest-crm.json">
@@ -115,10 +115,6 @@
                     </a>
 
                     <p class="nav-section-title"><span class="sidebar-text">Marketing</span></p>
-                    <a onclick="navigateTo('difusion')" data-view="difusion" class="nav-item">
-                        <i class="fas fa-rocket"></i>
-                        <span class="sidebar-text">Difusión Masiva</span>
-                    </a>
                     <a onclick="navigateTo('campanas')" data-view="campanas" class="nav-item">
                         <i class="fas fa-bullhorn"></i>
                         <span class="sidebar-text">Campañas</span>
@@ -130,10 +126,6 @@
                     <a onclick="navigateTo('ad-routing')" data-view="ad-routing" class="nav-item">
                         <i class="fas fa-route"></i>
                         <span class="sidebar-text">Reglas de Ads</span>
-                    </a>
-                    <a onclick="navigateTo('conversion-campanas')" data-view="conversion-campanas" class="nav-item">
-                        <i class="fas fa-chart-pie"></i>
-                        <span class="sidebar-text">Conversión Campañas</span>
                     </a>
 
                     <p class="nav-section-title"><span class="sidebar-text">IA &amp; automatización</span></p>
@@ -358,6 +350,65 @@
         </div>
     </div>
 
+    <!-- NUEVO: Modal de Edición de Usuario / Operador -->
+    <div id="user-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="user-modal-title">Editar Usuario</h2>
+            <form id="user-form">
+                <input type="hidden" id="user-id">
+                <input type="hidden" id="user-photo-url">
+
+                <div class="flex items-center gap-4 mb-5">
+                    <div id="user-avatar-preview" class="user-avatar-edit" title="Cambiar foto" onclick="document.getElementById('user-photo-input').click()">
+                        <span id="user-avatar-initial"></span>
+                        <span class="user-avatar-edit-overlay"><i class="fas fa-camera"></i></span>
+                    </div>
+                    <div>
+                        <button type="button" class="btn btn-subtle btn-sm" onclick="document.getElementById('user-photo-input').click()">
+                            <i class="fas fa-upload mr-2"></i><span id="user-photo-btn-label">Subir foto</span>
+                        </button>
+                        <button type="button" id="user-photo-remove-btn" class="btn btn-subtle btn-sm hidden" onclick="removeUserPhoto()">
+                            <i class="fas fa-trash-alt mr-2"></i>Quitar
+                        </button>
+                        <p class="text-xs text-gray-400 mt-2">JPG o PNG. Se mostrará como avatar.</p>
+                    </div>
+                    <input type="file" id="user-photo-input" accept="image/*" class="hidden" onchange="handleUserPhotoSelect(event)">
+                </div>
+
+                <div>
+                    <label for="user-name">Nombre</label>
+                    <input type="text" id="user-name" class="!mb-4" placeholder="Ej: Alejandro Pérez">
+                </div>
+
+                <div>
+                    <label for="user-email-display">Correo (no editable)</label>
+                    <input type="text" id="user-email-display" class="!mb-4" disabled>
+                </div>
+
+                <div>
+                    <label for="user-role">Rango del operador</label>
+                    <select id="user-role" class="w-full p-2 border rounded !mb-4 bg-gray-50 border-gray-300">
+                        <option value="admin">Administrador (acceso total)</option>
+                        <option value="agent">Agente (acceso por departamento)</option>
+                    </select>
+                </div>
+
+                <div class="mt-2">
+                    <label class="font-semibold text-gray-700">Departamentos Asignados</label>
+                    <p class="text-xs text-gray-400 mb-2">Solo aplica a los agentes. Define qué chats puede ver.</p>
+                    <div id="user-departments-container" class="mt-1 p-3 border border-gray-200 rounded-lg bg-gray-50 max-h-48 overflow-y-auto space-y-2">
+                        <p class="text-gray-400">Cargando departamentos...</p>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6">
+                    <button type="button" onclick="closeUserModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- NUEVO: Modal de Regla de Enrutamiento -->
     <div id="ad-routing-modal" class="modal-backdrop hidden">
         <div class="modal-content">
@@ -473,15 +524,15 @@
     <!-- Configuración Dinámica de Entorno -->
     <script src="/env-config.js"></script>
     <script src="js/modules/firebase-init.js"></script>
-    <script src="js/modules/state.js?v=4"></script>
+    <script src="js/modules/state.js?v=5"></script>
     <script src="js/modules/utils.js?v=2"></script>
-    <script src="js/ui_templates.js?v=24"></script>
-    <script src="js/modules/api-service.js?v=4"></script>
+    <script src="js/ui_templates.js?v=25"></script>
+    <script src="js/modules/api-service.js?v=5"></script>
     <script src="js/modules/difusion-handlers.js"></script>
-    <script src="js/modules/ui-manager.js?v=10"></script>
+    <script src="js/modules/ui-manager.js?v=11"></script>
     <script src="js/modules/virtual-scroll.js?v=2"></script>
     <script src="js/modules/chat-handlers.js?v=6"></script>
-    <script src="js/modules/feature-handlers.js?v=10"></script>
+    <script src="js/modules/feature-handlers.js?v=11"></script>
     <script src="js/modules/main.js?v=3"></script>
     <script src="js/modules/auth.js?v=3"></script>
     <script src="js/install-pwa.js"></script>

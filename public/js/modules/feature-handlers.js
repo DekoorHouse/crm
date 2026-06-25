@@ -680,7 +680,26 @@ async function handleSendCampaignWithImage() {
 // Cambia entre las sub-pestañas "Enviar campaña" y "Crear plantilla".
 function switchCampaignTab(tab) {
     document.querySelectorAll('.campaign-tab').forEach(t => t.classList.toggle('active', t.dataset.ctab === tab));
-    document.querySelectorAll('.campaign-pane').forEach(p => p.classList.toggle('active', p.dataset.cpane === tab));
+    let activePane = null;
+    document.querySelectorAll('.campaign-pane').forEach(p => {
+        const on = p.dataset.cpane === tab;
+        p.classList.toggle('active', on);
+        if (on) activePane = p;
+    });
+    if (typeof state !== 'undefined') state.campaignTab = tab;
+
+    // Carga diferida de los paneles pesados (solo la primera vez que se abren).
+    // El flag vive en el DOM del panel, que se recrea al volver a entrar al hub.
+    if (activePane && !activePane.dataset.loaded) {
+        if (tab === 'difusion') {
+            activePane.dataset.loaded = '1';
+            if (typeof renderDifusionView === 'function') renderDifusionView();
+        } else if (tab === 'resultados') {
+            activePane.dataset.loaded = '1';
+            if (typeof listenForPedidosConCampana === 'function') listenForPedidosConCampana();
+            if (typeof renderConversionCampanasView === 'function') renderConversionCampanasView();
+        }
+    }
 }
 
 // Muestra/oculta el campo de URL de imagen según la plantilla seleccionada.
@@ -1872,6 +1891,59 @@ async function handleDeleteDepartment(id) {
         showError(error.message);
     }
 }
+
+// --- USUARIOS / OPERADORES ---
+async function handleSaveUser(event) {
+    event.preventDefault();
+    const email = document.getElementById('user-id').value;
+    const name = document.getElementById('user-name').value.trim();
+    const role = document.getElementById('user-role').value;
+    const photoURL = document.getElementById('user-photo-url').value || '';
+
+    if (!email) {
+        showError('No se identificó al usuario a editar.');
+        return;
+    }
+
+    // Departamentos seleccionados (solo aplican a agentes)
+    const assignedDepartments = Array.from(
+        document.querySelectorAll('#user-departments-container input[type="checkbox"]:checked')
+    ).map(cb => cb.value);
+
+    const data = {
+        name,
+        role,
+        photoURL,
+        // Un admin ve todo, así que no necesita departamentos asignados.
+        assignedDepartments: role === 'admin' ? [] : assignedDepartments
+    };
+
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Guardando...'; }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/users/${encodeURIComponent(email)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Error al guardar el usuario.');
+        }
+
+        closeUserModal();
+        showError('Usuario actualizado correctamente.', 'success');
+        // El listener de Firestore (listenForUsers) refrescará state.allUsers y
+        // re-renderizará la lista automáticamente; forzamos un fetch por si acaso.
+        if (typeof fetchAllUsers === 'function') fetchAllUsers();
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = 'Guardar'; }
+    }
+}
+window.handleSaveUser = handleSaveUser;
 
 // --- REGLAS DE ENRUTAMIENTO ---
 async function handleSaveAdRoutingRule(event) {
