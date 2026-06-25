@@ -63,6 +63,10 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = ContactsViewTemplate();
             renderContactsView(); // Dibuja la tabla de contactos
             break;
+        case 'clientes':
+            mainViewContainer.innerHTML = ClientesViewTemplate();
+            loadClientes(); // Carga la lista completa de contactos y dibuja la tabla
+            break;
         // --- NUEVAS VISTAS ---
         case 'departments':
             mainViewContainer.innerHTML = DepartmentsViewTemplate();
@@ -570,6 +574,91 @@ function renderContactsView() {
         `
     }).join('');
 }
+
+// =====================================================================
+// === VISTA CLIENTES — lista completa de contactos (antes /clientes)  ===
+// =====================================================================
+
+/** Carga (una vez) todos los contactos para la vista Clientes y dibuja la tabla. */
+function loadClientes() {
+    if (state.activeView !== 'clientes') return;
+    const body = document.getElementById('clientes-table-body');
+    if (body) body.innerHTML = `<tr><td colspan="5" class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando clientes...</td></tr>`;
+    db.collection('contacts_whatsapp').orderBy('lastMessageTimestamp', 'desc').get()
+        .then(snap => {
+            state.clientesList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            renderClientesView();
+        })
+        .catch(err => {
+            console.error('Error al cargar clientes:', err);
+            if (body) body.innerHTML = `<tr><td colspan="5" class="text-center py-8" style="color:var(--color-danger);"><i class="fas fa-exclamation-triangle mr-2"></i>Hubo un error al cargar los clientes.</td></tr>`;
+        });
+}
+
+/** Rellena el select de estatus con las etiquetas del CRM (state.tags). */
+function populateClientesEstatusFilter() {
+    const sel = document.getElementById('clientes-filtro-estatus');
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Todos los estatus</option>' +
+        (state.tags || []).map(t => `<option value="${t.key}">${escapeHtml(t.label)}</option>`).join('');
+    sel.value = current;
+}
+
+/** Filtra state.clientesList por nombre/teléfono y estatus, y dibuja la tabla. */
+function renderClientesView() {
+    if (state.activeView !== 'clientes') return;
+    const body = document.getElementById('clientes-table-body');
+    if (!body) return;
+    populateClientesEstatusFilter();
+
+    const nombreFilter = (document.getElementById('clientes-filtro-nombre')?.value || '').toLowerCase();
+    const estatusFilter = document.getElementById('clientes-filtro-estatus')?.value || '';
+
+    const filtered = (state.clientesList || []).filter(c => {
+        const nameMatch = (c.name || '').toLowerCase().includes(nombreFilter) || (c.id || '').includes(nombreFilter);
+        const statusMatch = !estatusFilter || c.status === estatusFilter;
+        return nameMatch && statusMatch;
+    });
+
+    const countEl = document.getElementById('clientes-count');
+    if (countEl) countEl.textContent = filtered.length;
+
+    if (filtered.length === 0) {
+        body.innerHTML = `<tr><td colspan="5" class="text-center text-gray-400 py-8">No se encontraron clientes que coincidan con los filtros.</td></tr>`;
+        return;
+    }
+
+    body.innerHTML = filtered.map(c => {
+        const tag = (state.tags || []).find(t => t.key === c.status);
+        const statusHtml = tag
+            ? `<span class="px-2 py-1 text-xs rounded-full" style="background-color:${tag.color}30;color:${tag.color};border:1px solid ${tag.color}80;">${escapeHtml(tag.label)}</span>`
+            : `<span class="px-2 py-1 text-xs rounded-full" style="background-color:#e5e7eb;color:#6b7280;">Sin estatus</span>`;
+        return `
+            <tr>
+                <td class="font-semibold">${escapeHtml(c.name || 'Desconocido')}</td>
+                <td>${escapeHtml(c.id || '')}</td>
+                <td title="${escapeHtml(c.lastMessage || '')}" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.lastMessage || '-')}</td>
+                <td>${statusHtml}</td>
+                <td class="actions-cell">
+                    <button onclick="handleSelectContactFromPipeline('${c.id}')" class="p-2" title="Abrir chat"><i class="fas fa-comments"></i></button>
+                </td>
+            </tr>`;
+    }).join('');
+}
+
+/** Limpia los filtros de la vista Clientes. */
+function clearClientesFiltros() {
+    const n = document.getElementById('clientes-filtro-nombre');
+    const e = document.getElementById('clientes-filtro-estatus');
+    if (n) n.value = '';
+    if (e) e.value = '';
+    renderClientesView();
+}
+
+window.loadClientes = loadClientes;
+window.renderClientesView = renderClientesView;
+window.clearClientesFiltros = clearClientesFiltros;
 
 // Prepara la vista unificada de Campañas (sub-pestañas Enviar + Crear plantilla)
 function renderCampaignsView() {

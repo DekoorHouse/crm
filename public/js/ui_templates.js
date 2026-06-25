@@ -442,6 +442,43 @@ const ContactsViewTemplate = () => `
     </div>
 `;
 
+const ClientesViewTemplate = () => `
+    <div class="view-container">
+        <div class="view-header">
+            <h1>Lista de Clientes <span id="clientes-count" class="orders-badge" style="display:inline-block;margin-left:8px;">0</span></h1>
+        </div>
+        <div style="background:var(--color-container-bg);border:1px solid var(--color-border);border-radius:var(--border-radius-md);padding:16px;margin-bottom:1.5rem;">
+            <div class="flex flex-wrap gap-4 items-end">
+                <div style="flex:1;min-width:220px;">
+                    <label for="clientes-filtro-nombre" class="text-sm font-semibold block mb-1"><i class="fas fa-search mr-1"></i> Por nombre o teléfono</label>
+                    <input type="text" id="clientes-filtro-nombre" placeholder="Buscar..." oninput="renderClientesView()" class="!mb-0">
+                </div>
+                <div style="min-width:200px;">
+                    <label for="clientes-filtro-estatus" class="text-sm font-semibold block mb-1"><i class="fas fa-tag mr-1"></i> Por estatus</label>
+                    <select id="clientes-filtro-estatus" onchange="renderClientesView()" class="!mb-0"></select>
+                </div>
+                <button onclick="clearClientesFiltros()" class="btn btn-subtle"><i class="fas fa-eraser mr-1"></i> Borrar Filtros</button>
+            </div>
+        </div>
+        <div class="table-responsive-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Teléfono</th>
+                        <th>Último Mensaje</th>
+                        <th>Estatus</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="clientes-table-body">
+                    <tr><td colspan="5" class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando clientes...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+`;
+
 const QuickRepliesViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">

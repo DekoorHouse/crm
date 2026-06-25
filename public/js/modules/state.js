@@ -109,7 +109,10 @@ let state = {
     // --- NUEVO: Tracking de campañas WhatsApp ---
     campanasList: [], // Lista de todas las campañas (activas + cerradas)
     pedidosConCampana: [], // Pedidos que tienen campana_id != null (para calcular KPIs)
-    campanaExpandState: {} // Map id -> bool: estado expandido/colapsado en vista tracking
+    campanaExpandState: {}, // Map id -> bool: estado expandido/colapsado en vista tracking
+
+    // --- Vista Clientes (lista completa de contactos) ---
+    clientesList: [] // Snapshot de contacts_whatsapp para la vista Clientes
 };
 
 // --- Variables para cancelar listeners de Firestore ---
