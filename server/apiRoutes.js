@@ -4534,6 +4534,7 @@ router.get('/users', async (req, res) => {
                 email: authUser.email,
                 name: firestoreUser?.name || authUser.displayName || authUser.email.split('@')[0],
                 role: firestoreUser?.role || 'agent',
+                photoURL: firestoreUser?.photoURL || null,
                 assignedDepartments: firestoreUser?.assignedDepartments || [],
                 disabled: authUser.disabled
             };
@@ -4579,7 +4580,7 @@ router.post('/users', async (req, res) => {
 // PUT /api/users/:userId - Actualizar un usuario
 router.put('/users/:userId', async (req, res) => {
     const { userId } = req.params; // Esperamos que sea el email (o ID)
-    const { name, role, assignedDepartments } = req.body;
+    const { name, role, photoURL, assignedDepartments } = req.body;
 
     try {
         const userRef = db.collection('users').doc(userId);
@@ -4592,6 +4593,7 @@ router.put('/users/:userId', async (req, res) => {
         const updates = {};
         if (name !== undefined) updates.name = name;
         if (role !== undefined) updates.role = role;
+        if (photoURL !== undefined) updates.photoURL = photoURL;
         if (assignedDepartments !== undefined) updates.assignedDepartments = assignedDepartments;
         updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
 

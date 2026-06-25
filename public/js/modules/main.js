@@ -149,6 +149,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (transferForm) {
         transferForm.addEventListener('submit', handleTransferChat);
     }
+
+    const userForm = document.getElementById('user-form');
+    if (userForm) {
+        userForm.addEventListener('submit', handleSaveUser);
+    }
     // ------------------------------------------------------------------
 });
 

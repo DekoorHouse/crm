@@ -797,7 +797,12 @@ async function fetchAllUsers() {
                     const newDepts = (updatedProfile.assignedDepartments || []).sort().join(',');
                     
                     state.currentUserProfile = updatedProfile;
-                    
+
+                    // Refrescar el avatar/nombre del sidebar por si el usuario editó su propio perfil.
+                    if (typeof refreshSidebarUser === 'function') {
+                        refreshSidebarUser();
+                    }
+
                     if (oldDepts !== newDepts) {
                         console.log("Departamentos del usuario actualizados en tiempo real. Recargando contactos...");
                         // Si se agregó o quitó un departamento, necesitamos recargar los contactos iniciales

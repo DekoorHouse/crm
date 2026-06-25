@@ -71,6 +71,37 @@ auth.onAuthStateChanged(async user => { // Hacemos la función async para espera
     setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
 });
 
+// Refresca el nombre y avatar del usuario en el sidebar a partir del perfil
+// actual (state.currentUserProfile) y la cuenta de Firebase Auth. Se reutiliza
+// cuando el usuario edita su propio perfil para reflejar el cambio sin recargar.
+function refreshSidebarUser() {
+    const user = auth.currentUser;
+    if (!user) return;
+    const userInfoEl = document.getElementById('user-info');
+
+    const rawName = (state.currentUserProfile?.name || '').trim();
+    const profileName = (rawName && rawName.toLowerCase() !== 'null') ? rawName : '';
+    const emailLocal = (user.email || '').split('@')[0].replace(/[._-]+/g, ' ').trim();
+    const prettyEmail = emailLocal ? emailLocal.replace(/\b\w/g, c => c.toUpperCase()) : '';
+    const displayName = profileName || prettyEmail || 'Usuario';
+    if (userInfoEl) userInfoEl.textContent = displayName;
+
+    const avatarEl = document.getElementById('sidebar-user-avatar');
+    if (avatarEl) {
+        const photo = state.currentUserProfile?.photoURL || user.photoURL || '';
+        if (photo) {
+            avatarEl.style.backgroundImage = `url("${photo}")`;
+            avatarEl.classList.add('has-photo');
+            avatarEl.textContent = '';
+        } else {
+            avatarEl.style.backgroundImage = '';
+            avatarEl.classList.remove('has-photo');
+            avatarEl.textContent = (displayName.trim()[0] || 'U').toUpperCase();
+        }
+    }
+}
+window.refreshSidebarUser = refreshSidebarUser;
+
 function setupAuthEventListeners() {
     const loginForm = document.getElementById('login-form');
     const logoutButton = document.getElementById('logout-button');
