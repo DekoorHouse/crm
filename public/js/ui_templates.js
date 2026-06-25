@@ -451,11 +451,11 @@ const ClientesViewTemplate = () => `
             <div class="flex flex-wrap gap-4 items-end">
                 <div style="flex:1;min-width:220px;">
                     <label for="clientes-filtro-nombre" class="text-sm font-semibold block mb-1"><i class="fas fa-search mr-1"></i> Por nombre o teléfono</label>
-                    <input type="text" id="clientes-filtro-nombre" placeholder="Buscar..." oninput="renderClientesView()" class="!mb-0">
+                    <input type="text" id="clientes-filtro-nombre" placeholder="Buscar..." oninput="onClientesFiltroNombreInput()" class="!mb-0">
                 </div>
                 <div style="min-width:200px;">
                     <label for="clientes-filtro-estatus" class="text-sm font-semibold block mb-1"><i class="fas fa-tag mr-1"></i> Por estatus</label>
-                    <select id="clientes-filtro-estatus" onchange="renderClientesView()" class="!mb-0"></select>
+                    <select id="clientes-filtro-estatus" onchange="loadClientes()" class="!mb-0"></select>
                 </div>
                 <button onclick="clearClientesFiltros()" class="btn btn-subtle"><i class="fas fa-eraser mr-1"></i> Borrar Filtros</button>
             </div>

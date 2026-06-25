@@ -579,20 +579,57 @@ function renderContactsView() {
 // === VISTA CLIENTES — lista completa de contactos (antes /clientes)  ===
 // =====================================================================
 
-/** Carga (una vez) todos los contactos para la vista Clientes y dibuja la tabla. */
+// Antes esta vista leía TODA la colección contacts_whatsapp del lado del cliente
+// (db.collection(...).get() sin límite). Al crecer la base, ese read se volvía enorme
+// y la tabla podía quedarse "Cargando clientes..." sin terminar nunca. Ahora usa el
+// mismo backend que la lista de chats:
+//   - sin texto de búsqueda  -> trae los más recientes (acotado con limit)
+//   - con texto de búsqueda   -> busca en TODA la base por nombre/teléfono en el servidor
+const CLIENTES_LIMIT = 200;
+let clientesSearchTimeout = null;
+
+/** Carga los contactos para la vista Clientes (recientes o resultado de búsqueda) y dibuja la tabla. */
 function loadClientes() {
     if (state.activeView !== 'clientes') return;
     const body = document.getElementById('clientes-table-body');
     if (body) body.innerHTML = `<tr><td colspan="5" class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando clientes...</td></tr>`;
-    db.collection('contacts_whatsapp').orderBy('lastMessageTimestamp', 'desc').get()
-        .then(snap => {
-            state.clientesList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    const nombre = (document.getElementById('clientes-filtro-nombre')?.value || '').trim();
+    const estatus = document.getElementById('clientes-filtro-estatus')?.value || '';
+
+    let url;
+    if (nombre) {
+        // Búsqueda en toda la base (servidor): por nombre, teléfono o número de pedido.
+        url = `${API_BASE_URL}/api/contacts/search?query=${encodeURIComponent(nombre)}`;
+    } else {
+        // Lista reciente acotada para no volver a leer la colección completa.
+        url = `${API_BASE_URL}/api/contacts?limit=${CLIENTES_LIMIT}`;
+        if (estatus) url += `&tag=${encodeURIComponent(estatus)}`;
+    }
+
+    fetch(url)
+        .then(async r => {
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok || data.success === false) throw new Error(data.message || 'Error al cargar clientes.');
+            return data;
+        })
+        .then(data => {
+            if (state.activeView !== 'clientes') return;
+            state.clientesList = data.contacts || [];
             renderClientesView();
         })
         .catch(err => {
             console.error('Error al cargar clientes:', err);
-            if (body) body.innerHTML = `<tr><td colspan="5" class="text-center py-8" style="color:var(--color-danger);"><i class="fas fa-exclamation-triangle mr-2"></i>Hubo un error al cargar los clientes.</td></tr>`;
+            if (state.activeView !== 'clientes') return;
+            const b = document.getElementById('clientes-table-body');
+            if (b) b.innerHTML = `<tr><td colspan="5" class="text-center py-8" style="color:var(--color-danger);"><i class="fas fa-exclamation-triangle mr-2"></i>Hubo un error al cargar los clientes.</td></tr>`;
         });
+}
+
+/** Búsqueda por nombre/teléfono con debounce para no saturar el servidor en cada tecla. */
+function onClientesFiltroNombreInput() {
+    clearTimeout(clientesSearchTimeout);
+    clientesSearchTimeout = setTimeout(loadClientes, 350);
 }
 
 /** Rellena el select de estatus con las etiquetas del CRM (state.tags). */
@@ -605,21 +642,18 @@ function populateClientesEstatusFilter() {
     sel.value = current;
 }
 
-/** Filtra state.clientesList por nombre/teléfono y estatus, y dibuja la tabla. */
+/** Afina state.clientesList por estatus (la búsqueda ya la hizo el servidor) y dibuja la tabla. */
 function renderClientesView() {
     if (state.activeView !== 'clientes') return;
     const body = document.getElementById('clientes-table-body');
     if (!body) return;
     populateClientesEstatusFilter();
 
-    const nombreFilter = (document.getElementById('clientes-filtro-nombre')?.value || '').toLowerCase();
+    // El filtro por nombre/teléfono lo resuelve el servidor (loadClientes); aquí solo
+    // afinamos por estatus sobre lo que se trajo (recientes o resultado de búsqueda).
     const estatusFilter = document.getElementById('clientes-filtro-estatus')?.value || '';
 
-    const filtered = (state.clientesList || []).filter(c => {
-        const nameMatch = (c.name || '').toLowerCase().includes(nombreFilter) || (c.id || '').includes(nombreFilter);
-        const statusMatch = !estatusFilter || c.status === estatusFilter;
-        return nameMatch && statusMatch;
-    });
+    const filtered = (state.clientesList || []).filter(c => !estatusFilter || c.status === estatusFilter);
 
     const countEl = document.getElementById('clientes-count');
     if (countEl) countEl.textContent = filtered.length;
@@ -647,16 +681,17 @@ function renderClientesView() {
     }).join('');
 }
 
-/** Limpia los filtros de la vista Clientes. */
+/** Limpia los filtros de la vista Clientes y recarga la lista reciente. */
 function clearClientesFiltros() {
     const n = document.getElementById('clientes-filtro-nombre');
     const e = document.getElementById('clientes-filtro-estatus');
     if (n) n.value = '';
     if (e) e.value = '';
-    renderClientesView();
+    loadClientes();
 }
 
 window.loadClientes = loadClientes;
+window.onClientesFiltroNombreInput = onClientesFiltroNombreInput;
 window.renderClientesView = renderClientesView;
 window.clearClientesFiltros = clearClientesFiltros;
 
