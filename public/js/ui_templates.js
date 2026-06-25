@@ -950,8 +950,14 @@ const UserIcon = (contact, size = 'h-9 w-9') => {
     }
 
     if (contact && contact.profileImageUrl) {
+        // Las URLs de foto de FB/IG (profile_pic) expiran. Mostramos las iniciales como
+        // capa base y la foto encima; si la foto falla, se quita y quedan las iniciales.
+        const imgTag = state.tags.find(t => t.key === contact.status);
+        const imgBg = imgTag ? imgTag.color : '#d1d5db';
+        const imgInitial = contact.name ? contact.name.charAt(0).toUpperCase() : '?';
         return `<div class="${size} rounded-full flex-shrink-0 relative" style="overflow:visible;">
-                    <img src="${contact.profileImageUrl}" alt="${contact.name}" class="w-full h-full rounded-full object-cover" loading="lazy">
+                    <div class="w-full h-full rounded-full flex items-center justify-center text-white font-bold absolute inset-0" style="background-color:${imgBg};">${imgInitial}</div>
+                    <img src="${contact.profileImageUrl}" alt="${contact.name || ''}" class="w-full h-full rounded-full object-cover absolute inset-0" loading="lazy" onerror="this.remove()">
                 </div>`;
     }
 
