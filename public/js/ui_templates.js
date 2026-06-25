@@ -214,6 +214,12 @@ const CampaignsViewTemplate = () => `
 
         <!-- SUB-PESTAÑA: Enviar -->
         <div class="campaign-pane active" data-cpane="enviar">
+            <div class="campaign-pane-header">
+                <div class="campaign-pane-heading">
+                    <h2 class="campaign-pane-title"><i class="fas fa-paper-plane"></i> Enviar campaña</h2>
+                    <p class="campaign-pane-sub">Envía una plantilla aprobada a tus contactos por etiqueta o a un número específico.</p>
+                </div>
+            </div>
             <div class="max-w-2xl">
                 <div class="campaign-form-section">
                     <label class="font-bold">1. Enviar a (elige una opción):</label>
@@ -251,6 +257,12 @@ const CampaignsViewTemplate = () => `
 
         <!-- SUB-PESTAÑA: Crear plantilla -->
         <div class="campaign-pane" data-cpane="crear">
+            <div class="campaign-pane-header">
+                <div class="campaign-pane-heading">
+                    <h2 class="campaign-pane-title"><i class="fas fa-file-circle-plus"></i> Crear plantilla</h2>
+                    <p class="campaign-pane-sub">Diseña una plantilla de WhatsApp y envíala a revisión de Meta. Estará lista para usar cuando aparezca como aprobada.</p>
+                </div>
+            </div>
             ${CreateTemplateFormTemplate()}
         </div>
 
@@ -269,18 +281,18 @@ const DifusionViewTemplate = () => `
                 width: 100%; transition: all 0.2s ease;
             }
             .table-input:focus, .custom-select:focus {
-                outline: none; border-color: #81B29A;
-                box-shadow: 0 0 0 3px rgba(129, 178, 154, 0.2);
+                outline: none; border-color: var(--color-primary);
+                box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
             }
-            .table-input.verified { border-color: #81B29A; background-color: #f0fff4; }
-            .table-input.error { border-color: #dc3545; background-color: #fff1f2; }
+            .table-input.verified { border-color: var(--color-success); background-color: color-mix(in srgb, var(--color-success) 8%, transparent); }
+            .table-input.error { border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); }
             .photo-cell { display: flex; align-items: center; justify-content: center; width: 120px; height: 80px; }
             .photo-uploader {
                 width: 100%; height: 100%; border: 2px dashed #d1d5db; border-radius: 8px;
                 display: flex; align-items: center; justify-content: center;
                 cursor: pointer; transition: all 0.2s ease; position: relative;
             }
-            .photo-uploader:hover, .photo-uploader.drag-over { border-color: #81B29A; background-color: #f0fff4; }
+            .photo-uploader:hover, .photo-uploader.drag-over { border-color: var(--color-primary); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent); }
             .photo-uploader i { font-size: 1.5rem; color: #9ca3af; }
             .photo-uploader .preview-img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
             .photo-uploader .delete-btn {
@@ -299,19 +311,14 @@ const DifusionViewTemplate = () => `
             .sortable-ghost { opacity: 0.4; background: #e0e7ff; }
         </style>
         <div class="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-lg">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4">
-                <div>
-                    <h1 class="text-3xl font-bold text-gray-800" style="font-family: var(--font-heading);">
-                        <i class="fas fa-rocket text-indigo-500"></i>
-                        Envío Masivo de Fotos
-                    </h1>
-                    <p class="mt-2 text-gray-500">
-                        Añade los pedidos, sube sus fotos y envíalas a todos tus clientes con un solo clic.
-                    </p>
+            <div class="campaign-pane-header">
+                <div class="campaign-pane-heading">
+                    <h2 class="campaign-pane-title"><i class="fas fa-rocket"></i> Envío masivo de fotos</h2>
+                    <p class="campaign-pane-sub">Añade los pedidos, sube sus fotos y envíalas a todos tus clientes con un solo clic.</p>
                 </div>
-                <div class="flex items-center gap-4 mt-4 sm:mt-0">
+                <div class="campaign-pane-actions">
                     <span id="job-counter" class="font-semibold text-gray-600">0 Pedidos en la lista</span>
-                    <button id="send-all-btn" class="btn btn-primary text-base" disabled>
+                    <button id="send-all-btn" class="btn btn-primary" disabled>
                         <i class="fas fa-paper-plane"></i> Enviar Todo
                     </button>
                 </div>
@@ -1847,7 +1854,7 @@ const NewOrderModalTemplate = () => `
                         <div class="form-item form-item-full" style="background:#f8f9fa;padding:14px;border-radius:10px;border:1px solid #e2e8f0;">
                             <div style="display:flex;align-items:center;gap:8px;">
                                 <input type="checkbox" id="pedidoVieneDeCampana" style="width:16px;height:16px;cursor:pointer;" onchange="togglePedidoCampanaSection(false)">
-                                <i class="fas fa-bullhorn" style="color:#81B29A;"></i>
+                                <i class="fas fa-bullhorn" style="color:var(--color-primary);"></i>
                                 <label for="pedidoVieneDeCampana" style="font-weight:600;cursor:pointer;margin:0;">¿Viene de una campaña?</label>
                             </div>
                             <div id="pedidoCampanaSelectors" style="margin-top:12px;grid-template-columns:1fr 1fr;gap:10px;display:none;">
@@ -2107,7 +2114,7 @@ const OrderEditModalTemplate = (order) => `
                         <div class="form-item form-item-full" style="background:#f8f9fa;padding:14px;border-radius:10px;border:1px solid #e2e8f0;">
                             <div style="display:flex;align-items:center;gap:8px;">
                                 <input type="checkbox" id="editPedidoVieneDeCampana" style="width:16px;height:16px;cursor:pointer;" onchange="togglePedidoCampanaSection(true)">
-                                <i class="fas fa-bullhorn" style="color:#81B29A;"></i>
+                                <i class="fas fa-bullhorn" style="color:var(--color-primary);"></i>
                                 <label for="editPedidoVieneDeCampana" style="font-weight:600;cursor:pointer;margin:0;">¿Viene de una campaña?</label>
                             </div>
                             <div id="editPedidoCampanaSelectors" style="margin-top:12px;grid-template-columns:1fr 1fr;gap:10px;display:none;">
@@ -2142,19 +2149,43 @@ const OrderEditModalTemplate = (order) => `
 // =====================================================================
 
 const ConversionCampanasViewTemplate = () => `
-    <div class="view-container" style="padding:24px;max-width:1280px;margin:0 auto;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
-            <div>
-                <h1 style="font-size:24px;font-weight:800;margin:0 0 4px 0;display:flex;align-items:center;gap:10px;">
-                    <i class="fas fa-chart-pie" style="color:#81B29A;"></i> Conversión de Campañas
-                </h1>
-                <p style="color:#6b7280;font-size:13px;margin:0;">Tracking de pedidos por plantilla. Los pedidos se taguean desde el modal "Registrar Pedido".</p>
+    <div class="view-container" style="max-width:1280px;margin:0 auto;">
+        <div class="campaign-pane-header">
+            <div class="campaign-pane-heading">
+                <h2 class="campaign-pane-title"><i class="fas fa-chart-pie"></i> Resultados de campañas</h2>
+                <p class="campaign-pane-sub">Conversión automática por plantilla de WhatsApp. Las compras se atribuyen por teléfono dentro de la ventana posterior al envío — sin tagueo manual.</p>
             </div>
-            <button onclick="openCampanaFormModal(null)" class="btn btn-primary" style="display:flex;align-items:center;gap:6px;">
-                <i class="fas fa-plus"></i> Nueva campaña
-            </button>
         </div>
-        <div id="conversion-campanas-list"></div>
+
+        <!-- Resultados automáticos por plantilla -->
+        <div class="auto-results-section">
+            <div class="auto-results-toolbar">
+                <label for="auto-results-from">Desde</label>
+                <input type="date" id="auto-results-from">
+                <label for="auto-results-to">Hasta</label>
+                <input type="date" id="auto-results-to">
+                <button onclick="renderAutoTemplateResults(true)" class="btn btn-subtle btn-sm"><i class="fas fa-sync-alt mr-1"></i> Actualizar</button>
+                <span id="auto-results-meta" style="font-size:0.72rem;color:var(--color-text-light);"></span>
+            </div>
+            <div id="auto-template-results" class="auto-results-table-wrap">
+                <div class="auto-results-empty"><i class="fas fa-spinner fa-spin"></i> Cargando resultados…</div>
+            </div>
+        </div>
+
+        <!-- Campañas manuales (avanzado, colapsable) -->
+        <div style="margin-top:8px;">
+            <button class="manual-campaigns-toggle" onclick="toggleManualCampaigns()">
+                <i class="fas fa-chevron-right chev" id="manual-campaigns-chev"></i>
+                Campañas manuales
+                <span style="font-weight:400;font-size:0.78rem;color:var(--color-text-light);">— rangos y plantillas definidas a mano, con tagueo desde "Registrar Pedido"</span>
+            </button>
+            <div id="manual-campaigns-body" class="hidden" style="margin-top:12px;">
+                <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+                    <button onclick="openCampanaFormModal(null)" class="btn btn-primary btn-sm"><i class="fas fa-plus mr-1"></i> Nueva campaña</button>
+                </div>
+                <div id="conversion-campanas-list"></div>
+            </div>
+        </div>
     </div>
 `;
 
@@ -2168,7 +2199,7 @@ const CampanaKPIRowTemplate = (k) => {
             <td style="padding:8px 10px;text-align:right;color:#6b7280;">${k.contactados}</td>
             <td style="padding:8px 10px;text-align:right;color:#6b7280;">${k.pedidos}</td>
             <td style="padding:8px 10px;text-align:right;font-weight:600;">${k.pagados}</td>
-            <td style="padding:8px 10px;text-align:right;font-weight:700;color:#81B29A;">${pct}</td>
+            <td style="padding:8px 10px;text-align:right;font-weight:700;color:var(--color-primary);">${pct}</td>
             <td style="padding:8px 10px;text-align:right;font-weight:600;">${monto}</td>
             <td style="padding:8px 10px;text-align:right;color:#6b7280;">${ticket}</td>
         </tr>
@@ -2184,8 +2215,8 @@ const CampanaCardTemplate = (c, kpis) => {
     const totalPct = kpis.totalContactados > 0 ? ((kpis.totalPagados / kpis.totalContactados) * 100).toFixed(1) + '%' : '—';
     const totalMonto = '$' + Math.round(kpis.totalMonto).toLocaleString('es-MX');
     const isActiva = c.estatus === 'activa';
-    const estatusColor = isActiva ? '#81B29A' : '#9ca3af';
-    const estatusBg = isActiva ? 'rgba(129,178,154,0.15)' : '#e5e7eb';
+    const estatusColor = isActiva ? 'var(--color-primary)' : '#9ca3af';
+    const estatusBg = isActiva ? 'color-mix(in srgb, var(--color-primary) 15%, transparent)' : '#e5e7eb';
 
     return `
         <div class="campana-card" style="background:white;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:12px;">
@@ -2206,7 +2237,7 @@ const CampanaCardTemplate = (c, kpis) => {
                         <div style="font-size:10px;">Pagados / Contact.</div>
                     </div>
                     <div style="text-align:right;">
-                        <div style="font-weight:700;color:#81B29A;">${totalPct}</div>
+                        <div style="font-weight:700;color:var(--color-primary);">${totalPct}</div>
                         <div style="font-size:10px;">Conversión</div>
                     </div>
                     <div style="text-align:right;">
@@ -2240,7 +2271,7 @@ const CampanaCardTemplate = (c, kpis) => {
                             <td style="padding:10px;text-align:right;">${kpis.totalContactados}</td>
                             <td style="padding:10px;text-align:right;">${kpis.totalPedidos}</td>
                             <td style="padding:10px;text-align:right;">${kpis.totalPagados}</td>
-                            <td style="padding:10px;text-align:right;color:#81B29A;">${totalPct}</td>
+                            <td style="padding:10px;text-align:right;color:var(--color-primary);">${totalPct}</td>
                             <td style="padding:10px;text-align:right;">${totalMonto}</td>
                             <td style="padding:10px;text-align:right;color:#6b7280;">${kpis.totalPagados > 0 ? '$' + Math.round(kpis.totalMonto / kpis.totalPagados).toLocaleString('es-MX') : '—'}</td>
                         </tr>
@@ -2276,7 +2307,7 @@ const CampanaFormModalTemplate = (campana) => {
         <div class="campana-plantilla-row" data-row-idx="${idx}" style="display:grid;grid-template-columns:5fr 2fr auto 4fr auto;gap:8px;align-items:center;padding:8px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">
             <input type="text" class="campana-plantilla-nombre" value="${escapeHtml(key)}" placeholder="Nombre plantilla" list="meta-templates-list" autocomplete="off" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
             <input type="number" min="0" class="campana-plantilla-contactados" value="${val.contactados || 0}" placeholder="0" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
-            <button type="button" onclick="detectContactadosForRow(this)" title="Detectar automaticamente cuantos contactos recibieron esta plantilla en el rango de fechas" style="background:#81B29A;border:none;color:white;cursor:pointer;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px;white-space:nowrap;">
+            <button type="button" onclick="detectContactadosForRow(this)" title="Detectar automaticamente cuantos contactos recibieron esta plantilla en el rango de fechas" style="background:var(--color-primary);border:none;color:white;cursor:pointer;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px;white-space:nowrap;">
                 <i class="fas fa-search"></i> Detectar
             </button>
             <input type="text" class="campana-plantilla-notas" value="${escapeHtml(val.notas || '')}" placeholder="Notas (opcional)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
@@ -2294,7 +2325,7 @@ const CampanaFormModalTemplate = (campana) => {
         <div id="campana-form-modal" class="modal-backdrop" onclick="closeCampanaFormModal()">
             <div class="modal-content" onclick="event.stopPropagation()" style="max-width:720px;">
                 ${datalistHtml}
-                <h2><i class="fas fa-bullhorn" style="color:#81B29A;"></i> ${isEdit ? 'Editar Campaña' : 'Nueva Campaña'}</h2>
+                <h2><i class="fas fa-bullhorn" style="color:var(--color-primary);"></i> ${isEdit ? 'Editar Campaña' : 'Nueva Campaña'}</h2>
                 <form id="campana-form" data-campana-id="${campana?.id || ''}">
                     <div style="margin-bottom:14px;">
                         <label for="campana-nombre">Nombre *</label>
@@ -2320,7 +2351,7 @@ const CampanaFormModalTemplate = (campana) => {
                     <div style="margin-bottom:14px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                             <label style="margin:0;">Plantillas usadas</label>
-                            <button type="button" onclick="addCampanaPlantillaRow()" style="background:none;border:none;color:#81B29A;font-weight:600;font-size:12px;cursor:pointer;">
+                            <button type="button" onclick="addCampanaPlantillaRow()" style="background:none;border:none;color:var(--color-primary);font-weight:600;font-size:12px;cursor:pointer;">
                                 <i class="fas fa-plus"></i> Agregar plantilla
                             </button>
                         </div>
@@ -2328,7 +2359,7 @@ const CampanaFormModalTemplate = (campana) => {
                             <i class="fas fa-info-circle"></i> Empieza a escribir y se autocompletan las plantillas aprobadas en Meta (${templates.length} disponibles).
                         </p>
                         <p style="font-size:11px;color:#6b7280;margin:0 0 8px 0;">
-                            <i class="fas fa-magic" style="color:#81B29A;"></i> Llena el nombre y luego haz click en <strong style="color:#81B29A;">Detectar</strong> para contar automáticamente cuántos contactos recibieron la plantilla (necesita fecha de inicio).
+                            <i class="fas fa-magic" style="color:var(--color-primary);"></i> Llena el nombre y luego haz click en <strong style="color:var(--color-primary);">Detectar</strong> para contar automáticamente cuántos contactos recibieron la plantilla (necesita fecha de inicio).
                         </p>
                         <div style="display:grid;grid-template-columns:5fr 2fr auto 4fr auto;gap:8px;padding:0 8px 4px 8px;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">
                             <div>Nombre plantilla Meta</div>

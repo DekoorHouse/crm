@@ -698,9 +698,104 @@ function switchCampaignTab(tab) {
             activePane.dataset.loaded = '1';
             if (typeof listenForPedidosConCampana === 'function') listenForPedidosConCampana();
             if (typeof renderConversionCampanasView === 'function') renderConversionCampanasView();
+            if (typeof renderAutoTemplateResults === 'function') renderAutoTemplateResults();
         }
     }
 }
+
+/**
+ * Resultados automáticos por plantilla: lee /api/template-metrics/batches?aggregate=template
+ * (envíos reales + compras atribuidas por teléfono dentro de la ventana posterior al envío).
+ * No requiere crear campañas ni taguear pedidos a mano.
+ */
+async function renderAutoTemplateResults(force) {
+    const container = document.getElementById('auto-template-results');
+    if (!container) return;
+    const fromInput = document.getElementById('auto-results-from');
+    const toInput = document.getElementById('auto-results-to');
+    const meta = document.getElementById('auto-results-meta');
+
+    // Defaults: últimos 30 días
+    if (fromInput && !fromInput.value) {
+        fromInput.value = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    }
+    if (toInput && !toInput.value) {
+        toInput.value = new Date().toISOString().slice(0, 10);
+    }
+
+    const params = new URLSearchParams();
+    params.set('aggregate', 'template');
+    if (fromInput?.value) params.set('from', new Date(fromInput.value + 'T00:00:00').getTime());
+    if (toInput?.value) params.set('to', new Date(toInput.value + 'T23:59:59.999').getTime());
+    if (force) params.set('fresh', '1');
+
+    container.innerHTML = '<div class="auto-results-empty"><i class="fas fa-spinner fa-spin"></i> Cargando resultados…</div>';
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/template-metrics/batches?${params}`);
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.message || 'Error al cargar resultados');
+
+        const rows = (data.aggregated || []).slice().sort((a, b) => (b.sent || 0) - (a.sent || 0));
+        if (rows.length === 0) {
+            container.innerHTML = '<div class="auto-results-empty">Aún no hay envíos de plantillas en este rango. Cuando envíes una plantilla (por ejemplo <strong>foto_lista</strong>) aparecerá aquí automáticamente.</div>';
+            if (meta) meta.textContent = '';
+            return;
+        }
+
+        const fmtMoney = n => '$' + Math.round(n || 0).toLocaleString('es-MX');
+        const pct = (n, d) => d > 0 ? Math.round((n / d) * 100) + '%' : '—';
+        const sub = txt => `<span style="color:var(--color-text-light);font-size:0.7rem;"> ${txt}</span>`;
+
+        let tSent = 0, tDeliv = 0, tRead = 0, tComp = 0, tIng = 0;
+        const bodyRows = rows.map(r => {
+            const sent = r.sent || 0;
+            tSent += sent; tDeliv += r.delivered || 0; tRead += r.read || 0;
+            tComp += r.purchasesCount || 0; tIng += r.purchaseValue || 0;
+            return `<tr>
+                <td>${escapeHtml(r.templateName || '(sin nombre)')}</td>
+                <td class="arz-strong">${sent}</td>
+                <td>${r.delivered || 0}${sub(pct(r.delivered, sent))}</td>
+                <td>${r.read || 0}${sub(pct(r.read, sent))}</td>
+                <td class="arz-strong">${r.purchasesCount || 0}</td>
+                <td class="arz-strong">${fmtMoney(r.purchaseValue)}</td>
+                <td class="arz-rate">${pct(r.purchasesCount, sent)}</td>
+            </tr>`;
+        }).join('');
+
+        const totalRow = `<tr style="background:var(--color-subtle-bg);">
+            <td class="arz-strong">TOTAL</td>
+            <td class="arz-strong">${tSent}</td>
+            <td>${tDeliv}${sub(pct(tDeliv, tSent))}</td>
+            <td>${tRead}${sub(pct(tRead, tSent))}</td>
+            <td class="arz-strong">${tComp}</td>
+            <td class="arz-strong">${fmtMoney(tIng)}</td>
+            <td class="arz-rate">${pct(tComp, tSent)}</td>
+        </tr>`;
+
+        container.innerHTML = `<table class="auto-results-table">
+            <thead><tr>
+                <th>Plantilla</th><th>Enviados</th><th>Entregados</th><th>Leídos</th>
+                <th>Compras</th><th>Ingreso</th><th>Conversión</th>
+            </tr></thead>
+            <tbody>${bodyRows}${totalRow}</tbody>
+        </table>`;
+        if (meta) meta.textContent = data.fromCache ? `caché ${Math.round((data.cacheAgeMs || 0) / 1000)}s` : 'actualizado ahora';
+    } catch (e) {
+        console.error('Error en renderAutoTemplateResults:', e);
+        container.innerHTML = `<div class="auto-results-empty" style="color:var(--color-danger);"><i class="fas fa-exclamation-triangle"></i> ${escapeHtml(e.message || 'Error al cargar')}</div>`;
+    }
+}
+window.renderAutoTemplateResults = renderAutoTemplateResults;
+
+/** Muestra/oculta el bloque de campañas manuales en la pestaña Resultados. */
+function toggleManualCampaigns() {
+    const body = document.getElementById('manual-campaigns-body');
+    const chev = document.getElementById('manual-campaigns-chev');
+    if (!body) return;
+    const isOpen = !body.classList.toggle('hidden');
+    if (chev) chev.style.transform = isOpen ? 'rotate(90deg)' : '';
+}
+window.toggleManualCampaigns = toggleManualCampaigns;
 
 // Muestra/oculta el campo de URL de imagen según la plantilla seleccionada.
 function onCampaignTemplateChange() {
