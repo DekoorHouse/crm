@@ -11431,7 +11431,7 @@ router.get('/debug/messenger-backfill-names', async (req, res) => {
     const confirm = req.query.confirm === '1';
     const platform = req.query.platform === 'instagram' ? 'instagram' : 'messenger';
     const prefix = platform === 'instagram' ? 'ig' : 'fb';
-    const maxPages = Math.min(parseInt(req.query.pages, 10) || 8, 40);
+    const maxPages = Math.min(parseInt(req.query.pages, 10) || 8, 200);
     const out = { success: true, confirm, platform, scanned: 0, conNombreReal: 0, actualizados: 0, ejemplos: [], paginas: 0, hayMas: false };
     if (!token || !pageId) { out.success = false; out.diagnostico = 'Falta FB_PAGE_ACCESS_TOKEN o FB_PAGE_ID.'; return res.json(out); }
     const esGenerico = n => !n || /^Facebook User|^IG User/i.test(n);
