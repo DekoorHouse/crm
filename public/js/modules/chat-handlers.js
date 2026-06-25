@@ -1103,6 +1103,15 @@ function toggleChannelFilter(channel) {
 }
 window.toggleChannelFilter = toggleChannelFilter;
 
+function setDepartmentFilter(deptId) {
+    // Si se vuelve a elegir el mismo departamento, regresar a "todos"
+    state.activeDepartmentFilter = (state.activeDepartmentFilter === deptId) ? 'all' : (deptId || 'all');
+    renderTagFilters();
+    state.contacts = [];
+    fetchInitialContacts();
+}
+window.setDepartmentFilter = setDepartmentFilter;
+
 async function handleDesignToggle(contactId, inDesign) {
     try {
         const contactIndex = state.contacts.findIndex(c => c.id === contactId);

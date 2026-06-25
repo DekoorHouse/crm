@@ -186,6 +186,35 @@ function renderTagFilters() {
     const igActive = state.channelFilter === 'instagram';
     buttonsHtml += `<button id="filter-channel-ig" class="filter-btn filter-channel ${igActive ? 'active' : ''}" onclick="toggleChannelFilter('instagram')" title="Solo Instagram"><i class="fab fa-instagram text-xs" style="color: ${igActive ? 'white' : '#E1306C'};"></i></button>`;
 
+    // Filtro por Departamento (solo se muestra si hay departamentos disponibles para el usuario)
+    const profile = state.currentUserProfile;
+    const isAdmin = !profile || profile.role === 'admin';
+    let availableDepts = state.departments || [];
+    if (!isAdmin && Array.isArray(profile.assignedDepartments) && profile.assignedDepartments.length > 0) {
+        const allowed = new Set(profile.assignedDepartments);
+        availableDepts = availableDepts.filter(d => allowed.has(d.id));
+    }
+    if (availableDepts.length > 0) {
+        const activeDept = state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all'
+            ? availableDepts.find(d => d.id === state.activeDepartmentFilter)
+            : null;
+        let deptItems = `<button class="tag-dropdown-item ${!activeDept ? 'active' : ''}" onclick="setDepartmentFilter('all'); closeDeptDropdown();">Todos los departamentos</button>`;
+        availableDepts.forEach(d => {
+            const dot = d.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${d.color};margin-right:6px;vertical-align:middle;"></span>` : '';
+            deptItems += `<button class="tag-dropdown-item ${state.activeDepartmentFilter === d.id ? 'active' : ''}" onclick="setDepartmentFilter('${d.id}'); closeDeptDropdown();">${dot}${d.name || 'Sin nombre'}</button>`;
+        });
+        // Separador Canal | Departamento
+        buttonsHtml += `<span class="filter-sep" aria-hidden="true"></span>`;
+        buttonsHtml += `<div class="tag-dropdown-wrapper">
+            <button class="filter-btn tag-dropdown-toggle ${activeDept ? 'active' : ''}" onclick="toggleDeptDropdown(event)" title="Filtrar por departamento">
+                ${activeDept ? `<i class="fas fa-sitemap text-xs mr-1"></i>${activeDept.name}` : '<i class="fas fa-sitemap"></i>'}
+            </button>
+            <div id="dept-dropdown-menu" class="tag-dropdown-menu hidden">
+                ${deptItems}
+            </div>
+        </div>`;
+    }
+
     // Menú desplegable de tres puntos con los demás filtros (etiquetas)
     let dropdownItems = '';
     state.tags.forEach(tag => {
@@ -226,9 +255,37 @@ function closeTagDropdown() {
 }
 
 function closeTagDropdownOnOutside(e) {
-    const wrapper = document.querySelector('.tag-dropdown-wrapper');
+    const menu = document.getElementById('tag-dropdown-menu');
+    const wrapper = menu ? menu.closest('.tag-dropdown-wrapper') : null;
     if (wrapper && !wrapper.contains(e.target)) {
         closeTagDropdown();
+    }
+}
+
+// --- Dropdown de filtro por Departamento ---
+function toggleDeptDropdown(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('dept-dropdown-menu');
+    if (!menu) return;
+    closeTagDropdown(); // cerrar el de etiquetas si estaba abierto
+    menu.classList.toggle('hidden');
+    if (!menu.classList.contains('hidden')) {
+        setTimeout(() => {
+            document.addEventListener('click', closeDeptDropdownOnOutside, { once: true });
+        }, 0);
+    }
+}
+
+function closeDeptDropdown() {
+    const menu = document.getElementById('dept-dropdown-menu');
+    if (menu) menu.classList.add('hidden');
+}
+
+function closeDeptDropdownOnOutside(e) {
+    const menu = document.getElementById('dept-dropdown-menu');
+    const wrapper = menu ? menu.closest('.tag-dropdown-wrapper') : null;
+    if (wrapper && !wrapper.contains(e.target)) {
+        closeDeptDropdown();
     }
 }
 
@@ -3135,6 +3192,8 @@ window.navigateTo = navigateTo;
 window.toggleTagSidebar = toggleTagSidebar;
 window.toggleTagDropdown = toggleTagDropdown;
 window.closeTagDropdown = closeTagDropdown;
+window.toggleDeptDropdown = toggleDeptDropdown;
+window.closeDeptDropdown = closeDeptDropdown;
 window.toggleStatusDropdown = toggleStatusDropdown;
 window.closeStatusDropdown = closeStatusDropdown;
 window.switchContactPanelTab = switchContactPanelTab;

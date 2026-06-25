@@ -739,6 +739,10 @@ function listenForDepartments() {
         if (state.activeView === 'departments') {
             renderDepartmentsView();
         }
+        // Si estamos en chats, refrescar los filtros para mostrar el selector de departamento
+        if (state.activeView === 'chats' && typeof renderTagFilters === 'function') {
+            renderTagFilters();
+        }
         // Si el modal de transferencia está abierto, actualizar el select
         const transferSelect = document.getElementById('transfer-dept-select');
         if (transferSelect && !transferSelect.closest('.hidden')) {
