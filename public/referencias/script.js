@@ -82,15 +82,46 @@ function highlightStars(val) {
 }
 
 // --- Fotos (máximo 5) ---
-function addPhotos(input) {
-    if (!input.files) return;
+function addPhotoFiles(fileList) {
+    if (!fileList || !fileList.length) return 0;
     var remaining = 5 - selectedPhotos.length;
-    var files = Array.from(input.files).slice(0, remaining);
+    if (remaining <= 0) return 0;
+    var files = Array.from(fileList).filter(function(f) {
+        return f && f.type && f.type.indexOf('image/') === 0;
+    }).slice(0, remaining);
     for (var i = 0; i < files.length; i++) {
         selectedPhotos.push(files[i]);
     }
-    renderPhotoPreview();
+    if (files.length) renderPhotoPreview();
+    return files.length;
 }
+
+function addPhotos(input) {
+    if (!input.files) return;
+    addPhotoFiles(input.files);
+    input.value = '';
+}
+
+// Pegar fotos con Ctrl+V (desde el portapapeles)
+document.addEventListener('paste', function(e) {
+    var card = document.getElementById('refFormCard');
+    if (!card || card.classList.contains('hidden')) return; // sólo con el formulario abierto
+    var items = (e.clipboardData || window.clipboardData) && (e.clipboardData || window.clipboardData).items;
+    if (!items) return;
+    var imgs = [];
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file' && items[i].type.indexOf('image/') === 0) {
+            var file = items[i].getAsFile();
+            if (file) imgs.push(file);
+        }
+    }
+    if (!imgs.length) return;
+    e.preventDefault();
+    var added = addPhotoFiles(imgs);
+    if (added === 0 && selectedPhotos.length >= 5) {
+        alert('Máximo 5 fotos.');
+    }
+});
 
 function removePhoto(index) {
     selectedPhotos.splice(index, 1);
@@ -134,7 +165,7 @@ function resetPhotoUpload() {
     selectedPhotos = [];
     document.getElementById('photoUploadArea').innerHTML =
         '<i class="fas fa-camera"></i>' +
-        '<p>Toca para subir fotos</p>' +
+        '<p>Toca para subir fotos o pega con Ctrl+V</p>' +
         '<p style="font-size:0.8rem;color:var(--text-gray);margin-top:4px;">Máximo 5 fotos</p>' +
         '<input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="addPhotos(this)">';
 }
