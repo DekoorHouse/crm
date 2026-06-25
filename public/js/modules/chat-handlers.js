@@ -1367,7 +1367,8 @@ async function handleSelectReaction(event, messageDocId, emoji) {
             body: JSON.stringify({ emoji: newReaction })
         });
         if (!response.ok) {
-            throw new Error('No se pudo guardar la reacción.');
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.message || 'No se pudo guardar la reacción.');
         }
     } catch (error) {
         console.error("Error al reaccionar:", error);

@@ -350,6 +350,26 @@ async function sendMessengerUtilityMessage(recipientId, text, tag = 'POST_PURCHA
     return { messageId: response.data.message_id };
 }
 
+/**
+ * Envía o quita una reacción a un mensaje de Instagram via Send API.
+ * Nota: el Send API de Messenger (Facebook) NO permite que la página
+ * reaccione a los mensajes del usuario, así que esto solo aplica a Instagram.
+ * @param {string} recipientId IGSID del destinatario
+ * @param {string} messageId ID del mensaje (mid) al que se reacciona
+ * @param {string|null} emoji Emoji de la reacción, o null/'' para quitarla
+ */
+async function sendInstagramReaction(recipientId, messageId, emoji) {
+    const FB_PAGE_ID_LOCAL = process.env.FB_PAGE_ID;
+    const url = `https://graph.facebook.com/v19.0/${FB_PAGE_ID_LOCAL}/messages`;
+    const accessToken = IG_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN;
+    const payload = emoji
+        ? { recipient: { id: recipientId }, sender_action: 'react', payload: { message_id: messageId, reaction: emoji } }
+        : { recipient: { id: recipientId }, sender_action: 'unreact', payload: { message_id: messageId } };
+    console.log(`[INSTAGRAM REACT] ${emoji ? 'react ' + emoji : 'unreact'} a mensaje ${messageId} de ${recipientId}`);
+    const response = await axios.post(url, payload, { params: { access_token: accessToken } });
+    return response.data;
+}
+
 // =================================================================
 // === SERVICIOS DE SKYDROPX (COTIZACIÓN DE ENVÍOS) =================
 // =================================================================
@@ -1204,6 +1224,7 @@ module.exports = {
     sendAdvancedWhatsAppMessage,
     sendMessengerMessage,
     sendMessengerUtilityMessage,
+    sendInstagramReaction,
     invalidateGeminiCache,
     getMetaSpend,
     getPedidoAttribution,

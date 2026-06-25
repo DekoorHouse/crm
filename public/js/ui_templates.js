@@ -1135,15 +1135,21 @@ const MessageBubbleTemplate = (message) => {
 
     const copyButtonHTML = message.text ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>` : '';
 
-    const actionsHTML = `
-        <div class="message-actions">
+    // Messenger no permite que la página reaccione a los mensajes (limitación de Meta),
+    // así que ocultamos la barra de reacciones para esos contactos.
+    const selectedChannel = state.contacts.find(c => c.id === state.selectedContactId)?.channel || 'whatsapp';
+    const reactionBarHTML = selectedChannel === 'messenger' ? '' : `
              <div class="reaction-bar">
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '👍')">👍</button>
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '❤️')">❤️</button>
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '😂')">😂</button>
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '😢')">😢</button>
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '🙏')">🙏</button>
-             </div>
+             </div>`;
+
+    const actionsHTML = `
+        <div class="message-actions">
+             ${reactionBarHTML}
              <button class="message-action-btn" onclick="handleStartReply(event, '${message.docId}')" title="Responder"><i class="fas fa-reply"></i></button>
              ${copyButtonHTML}
         </div>

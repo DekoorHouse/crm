@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const jtService = require('./jt/jtService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
@@ -4455,22 +4455,61 @@ router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
 // --- Endpoint POST /api/contacts/:contactId/messages/:messageDocId/react (Enviar/quitar reacción) ---
 router.post('/contacts/:contactId/messages/:messageDocId/react', async (req, res) => {
     const { contactId, messageDocId } = req.params;
-    const { emoji } = req.body; // Emoji para reaccionar, o string vacío para quitar
+    const { emoji } = req.body; // Emoji para reaccionar, o string vacío/null para quitar
 
     try {
-        // 1. Obtener el ID de mensaje de WhatsApp (wamid) desde Firestore
-        const messageDoc = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId).get();
+        // 1. Obtener el contacto para conocer el canal (whatsapp | messenger | instagram)
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+        if (!contactDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        }
+        const contactData = contactDoc.data();
+        const channel = contactData.channel || 'whatsapp';
+
+        // 2. Obtener el mensaje
+        const messageRef = contactRef.collection('messages').doc(messageDocId);
+        const messageDoc = await messageRef.get();
         if (!messageDoc.exists) {
             return res.status(404).json({ success: false, message: 'Mensaje no encontrado.' });
         }
         const messageData = messageDoc.data();
-        const wamid = messageData.id; // El ID de WhatsApp
 
+        // === MESSENGER: Meta no permite que la página reaccione a mensajes del usuario ===
+        // El Send API de Messenger solo soporta typing_on/typing_off/mark_seen; las
+        // reacciones únicamente se reciben por webhook, no se pueden enviar.
+        if (channel === 'messenger') {
+            return res.status(400).json({
+                success: false,
+                code: 'REACTION_NOT_SUPPORTED',
+                message: 'Messenger no permite reaccionar a los mensajes desde la página. Las reacciones solo están disponibles en WhatsApp e Instagram.'
+            });
+        }
+
+        // === INSTAGRAM: el Send API soporta react/unreact ===
+        if (channel === 'instagram') {
+            const mid = messageData.id;
+            if (!mid) {
+                return res.status(400).json({ success: false, message: 'Este mensaje no tiene un ID válido para reaccionar.' });
+            }
+            const recipientId = contactData.igsid || contactData.psid || contactId.replace(/^(fb_|ig_)/, '');
+            try {
+                await sendInstagramReaction(recipientId, mid, emoji || null);
+            } catch (sendErr) {
+                const metaErr = sendErr.response?.data?.error;
+                console.error('Error al enviar reacción de Instagram:', metaErr ? JSON.stringify(metaErr) : sendErr.message);
+                return res.status(500).json({ success: false, message: metaErr?.message || 'No se pudo enviar la reacción a Instagram.' });
+            }
+            await messageRef.update({ reaction: emoji || admin.firestore.FieldValue.delete() });
+            return res.status(200).json({ success: true, message: emoji ? 'Reacción enviada.' : 'Reacción eliminada.' });
+        }
+
+        // === WHATSAPP: lógica original ===
+        const wamid = messageData.id; // El ID de WhatsApp
         if (!wamid) {
             return res.status(400).json({ success: false, message: 'Este mensaje no tiene un ID de WhatsApp válido.' });
         }
 
-        // 2. Enviar la reacción a la API de WhatsApp
         const payload = {
             messaging_product: 'whatsapp',
             recipient_type: 'individual',
@@ -4488,8 +4527,7 @@ router.post('/contacts/:contactId/messages/:messageDocId/react', async (req, res
             { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
         );
 
-        // 3. Actualizar el estado en Firestore (opcional, para reflejarlo en UI)
-        await db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId).update({
+        await messageRef.update({
             reaction: emoji || admin.firestore.FieldValue.delete()
         });
 
