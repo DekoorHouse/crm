@@ -11378,4 +11378,45 @@ router.get('/debug/messenger-token', async (_req, res) => {
     res.json(out);
 });
 
+// === DIAGNÓSTICO 3: ¿la Conversations API devuelve nombres? ===
+// GET /api/debug/messenger-conversations
+// La User Profile API (GET /{psid}) está restringida por Meta. La vía moderna para
+// el nombre es /{page}/conversations?fields=participants{name}. Esto prueba si ahí SÍ vienen.
+router.get('/debug/messenger-conversations', async (_req, res) => {
+    const GRAPH = 'https://graph.facebook.com/v19.0';
+    const token = process.env.FB_PAGE_ACCESS_TOKEN;
+    const pageId = process.env.FB_PAGE_ID;
+    const out = { success: true };
+    if (!token || !pageId) { out.success = false; out.diagnostico = 'Falta FB_PAGE_ACCESS_TOKEN o FB_PAGE_ID.'; return res.json(out); }
+    try {
+        const r = await axios.get(`${GRAPH}/${pageId}/conversations`, {
+            params: { platform: 'messenger', fields: 'participants,updated_time', limit: 8, access_token: token }
+        });
+        const convs = r.data?.data || [];
+        const sample = convs.map(c => ({
+            updated: c.updated_time || null,
+            participants: (c.participants?.data || []).map(p => ({ id: p.id, name: p.name || null }))
+        }));
+        out.sample = sample;
+        let conNombre = 0, total = 0;
+        for (const c of sample) for (const p of c.participants) {
+            if (String(p.id) === String(pageId)) continue;
+            total++;
+            if (p.name && !/^Facebook User/i.test(p.name)) conNombre++;
+        }
+        out.resumen = { conversaciones: sample.length, participantesNoPagina: total, conNombreReal: conNombre };
+        out.diagnostico = total === 0
+            ? 'No se encontraron conversaciones de Messenger en la página (o sin participantes).'
+            : (conNombre > 0
+                ? `✅ La Conversations API SÍ devuelve nombres (${conNombre}/${total} con nombre real). SOLUCIÓN: leer el nombre desde aquí en vez de la User Profile API. Es arreglo de código.`
+                : `⚠️ La Conversations API tampoco trae nombres (${conNombre}/${total}). El bloqueo sería más profundo del lado Meta.`);
+    } catch (err) {
+        const e = err.response?.data?.error;
+        out.success = false;
+        out.error = e || { message: err.message };
+        out.diagnostico = 'Error al leer conversaciones: ' + (e?.message || err.message);
+    }
+    res.json(out);
+});
+
 module.exports = router;
