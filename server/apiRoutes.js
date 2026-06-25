@@ -11281,27 +11281,42 @@ router.get('/debug/messenger-profile', async (req, res) => {
         return res.json(out);
     }
 
-    // 2) Perfil de un usuario concreto (misma llamada que en producción)
-    if (!psid) {
-        out.diagnostico = 'Token OK (página: ' + out.page.name + '). Agrega ?psid=<ID del contacto> para probar la obtención de un nombre real.';
-        return res.json(out);
+    // 2) Si no dan psid, autodetectar un contacto de Messenger (de preferencia genérico)
+    let testPsid = psid;
+    if (!testPsid) {
+        try {
+            const snap = await db.collection('contacts_whatsapp').where('channel', '==', 'messenger').limit(40).get();
+            const placeholder = snap.docs.find(d => /^Facebook User \(/.test(d.data().name || ''));
+            const chosen = placeholder || snap.docs[0];
+            if (chosen) {
+                testPsid = chosen.id;
+                out.autoContact = { id: chosen.id, name: chosen.data().name || null, esGenerico: !!placeholder };
+            }
+        } catch (e) {
+            out.autoContactError = e.message;
+        }
+        if (!testPsid) {
+            out.diagnostico = 'Token OK (página: ' + out.page.name + '). No encontré contactos de Messenger para autoprobar. Agrega ?psid=<ID del contacto> manualmente.';
+            return res.json(out);
+        }
     }
 
+    // 3) Perfil del usuario (misma llamada que en producción)
     try {
-        const prof = await axios.get(`${GRAPH}/${psid}`, {
+        const prof = await axios.get(`${GRAPH}/${testPsid}`, {
             params: { fields: 'name,first_name,last_name,profile_pic', access_token: token }
         });
         const data = prof.data || {};
         const resolvedName = (data.name || [data.first_name, data.last_name].filter(Boolean).join(' ')).trim();
-        out.profile = { ok: true, raw: data, resolvedName: resolvedName || null };
+        out.profile = { ok: true, psidProbado: testPsid, raw: data, resolvedName: resolvedName || null };
         out.diagnostico = resolvedName
-            ? '✅ FUNCIONA: la API devolvió "' + resolvedName + '". Si en el CRM sigue genérico, faltaba que el cliente volviera a escribir o un backfill de los contactos viejos.'
-            : '⚠️ Token OK pero la API responde 200 SIN nombre. Esto es falta de ACCESO AVANZADO al permiso "pages_messaging" (App Review en tu app de Meta). Los nombres solo llegan para admins/testers hasta que se apruebe.';
+            ? '✅ FUNCIONA: la API devolvió "' + resolvedName + '". El permiso está bien; los contactos viejos genéricos se reparan cuando el cliente vuelve a escribir (o con un backfill).'
+            : '⚠️ Token OK pero la API responde 200 SIN nombre. Falta ACCESO AVANZADO al permiso "pages_messaging" (App Review en tu app de Meta). Hasta aprobarlo, los nombres solo llegan para admins/testers de la app.';
     } catch (err) {
         const e = err.response?.data?.error;
-        out.profile = { ok: false, error: e || { message: err.message } };
+        out.profile = { ok: false, psidProbado: testPsid, error: e || { message: err.message } };
         out.diagnostico = 'La API devolvió error al pedir el perfil. Código Meta: ' + (e?.code ?? '?') + ' — ' + (e?.message || err.message) +
-            '. (code 190 = token vencido; code 100/200 = permiso/campo no permitido → pages_messaging Acceso Avanzado).';
+            '. (code 190 = token vencido; code 100/200/10 = permiso/campo no permitido → pages_messaging Acceso Avanzado).';
     }
     res.json(out);
 });
