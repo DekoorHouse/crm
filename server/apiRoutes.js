@@ -11333,4 +11333,49 @@ router.get('/debug/messenger-profile', async (req, res) => {
     res.json(out);
 });
 
+// === DIAGNÓSTICO 2: ¿de qué APP es el token de Render y qué scopes tiene? ===
+// GET /api/debug/messenger-token
+// Usa debug_token para revelar app_id, scopes, tipo y página del FB_PAGE_ACCESS_TOKEN.
+// Clave: los PSID son page+APP scoped → si el token es de una app distinta a la que
+// recibe los webhooks de Messenger, la Graph API responde "Object does not exist".
+router.get('/debug/messenger-token', async (_req, res) => {
+    const GRAPH = 'https://graph.facebook.com/v19.0';
+    const token = process.env.FB_PAGE_ACCESS_TOKEN;
+    const appId = process.env.FB_APP_ID;
+    const appSecret = process.env.FB_APP_SECRET;
+    const out = { success: true, tokenPresent: !!token, fbPageIdEnv: process.env.FB_PAGE_ID || null, fbAppIdEnv: appId || null };
+    if (!token) { out.success = false; out.diagnostico = 'No hay FB_PAGE_ACCESS_TOKEN.'; return res.json(out); }
+    if (!appId || !appSecret) { out.success = false; out.diagnostico = 'Faltan FB_APP_ID / FB_APP_SECRET para inspeccionar el token.'; return res.json(out); }
+    try {
+        const r = await axios.get(`${GRAPH}/debug_token`, {
+            params: { input_token: token, access_token: `${appId}|${appSecret}` }
+        });
+        const d = r.data?.data || {};
+        out.token = {
+            appId: d.app_id || null,
+            appName: d.application || null,
+            type: d.type || null,          // PAGE / USER
+            pageId: d.profile_id || null,  // página dueña (si es PAGE token)
+            valid: d.is_valid ?? null,
+            scopes: d.scopes || [],
+            expiresAt: d.expires_at ? (d.expires_at === 0 ? 'nunca' : new Date(d.expires_at * 1000).toISOString()) : null
+        };
+        const CRM_GEMINI = '995915149281962';
+        const tieneMsg = (d.scopes || []).includes('pages_messaging');
+        const esCrmGemini = String(d.app_id || '') === CRM_GEMINI;
+        out.diagnostico =
+            (esCrmGemini
+                ? '✅ El token ES de CRM Gemini (la app con Acceso Avanzado). '
+                : `⚠️ El token es de la app ${d.app_id} (${d.application || '?'}), NO de CRM Gemini (995915149281962). Si los webhooks entran por CRM Gemini, por eso el PSID "no existe" para este token. `) +
+            (tieneMsg ? "Incluye 'pages_messaging'. " : "⚠️ NO incluye 'pages_messaging' en sus scopes. ") +
+            (d.type && d.type !== 'PAGE' ? `⚠️ Tipo de token: ${d.type} (debería ser PAGE). ` : '');
+    } catch (err) {
+        const e = err.response?.data?.error;
+        out.success = false;
+        out.error = e || { message: err.message };
+        out.diagnostico = 'No se pudo inspeccionar el token: ' + (e?.message || err.message);
+    }
+    res.json(out);
+});
+
 module.exports = router;
