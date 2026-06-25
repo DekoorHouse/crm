@@ -11253,4 +11253,57 @@ router.post('/inventario/enviar-reporte', async (_req, res) => {
     }
 });
 
+// === DIAGNÓSTICO: por qué los contactos de Messenger llegan sin nombre real ===
+// GET /api/debug/messenger-profile?psid=<PSID>
+// Replica la llamada exacta de getUserProfile() para saber si el bloqueo es el
+// token de página (vencido/inválido) o el permiso pages_messaging (Acceso Avanzado).
+// Nunca devuelve el token. El PSID es el ID del contacto en el CRM (doc de contacts_whatsapp).
+router.get('/debug/messenger-profile', async (req, res) => {
+    const GRAPH = 'https://graph.facebook.com/v19.0';
+    const token = process.env.FB_PAGE_ACCESS_TOKEN;
+    const { psid } = req.query;
+    const out = { success: true, tokenPresent: !!token, page: null, profile: null, diagnostico: '' };
+
+    if (!token) {
+        out.success = false;
+        out.diagnostico = 'No hay FB_PAGE_ACCESS_TOKEN configurado en el servidor.';
+        return res.json(out);
+    }
+
+    // 1) Salud del token: ¿es válido y de qué página es?
+    try {
+        const me = await axios.get(`${GRAPH}/me`, { params: { fields: 'id,name,category', access_token: token } });
+        out.page = { ok: true, id: me.data.id, name: me.data.name, category: me.data.category || null };
+    } catch (err) {
+        const e = err.response?.data?.error;
+        out.page = { ok: false, error: e || { message: err.message } };
+        out.diagnostico = 'TOKEN INVÁLIDO O VENCIDO. Renueva FB_PAGE_ACCESS_TOKEN (token de página de larga duración).';
+        return res.json(out);
+    }
+
+    // 2) Perfil de un usuario concreto (misma llamada que en producción)
+    if (!psid) {
+        out.diagnostico = 'Token OK (página: ' + out.page.name + '). Agrega ?psid=<ID del contacto> para probar la obtención de un nombre real.';
+        return res.json(out);
+    }
+
+    try {
+        const prof = await axios.get(`${GRAPH}/${psid}`, {
+            params: { fields: 'name,first_name,last_name,profile_pic', access_token: token }
+        });
+        const data = prof.data || {};
+        const resolvedName = (data.name || [data.first_name, data.last_name].filter(Boolean).join(' ')).trim();
+        out.profile = { ok: true, raw: data, resolvedName: resolvedName || null };
+        out.diagnostico = resolvedName
+            ? '✅ FUNCIONA: la API devolvió "' + resolvedName + '". Si en el CRM sigue genérico, faltaba que el cliente volviera a escribir o un backfill de los contactos viejos.'
+            : '⚠️ Token OK pero la API responde 200 SIN nombre. Esto es falta de ACCESO AVANZADO al permiso "pages_messaging" (App Review en tu app de Meta). Los nombres solo llegan para admins/testers hasta que se apruebe.';
+    } catch (err) {
+        const e = err.response?.data?.error;
+        out.profile = { ok: false, error: e || { message: err.message } };
+        out.diagnostico = 'La API devolvió error al pedir el perfil. Código Meta: ' + (e?.code ?? '?') + ' — ' + (e?.message || err.message) +
+            '. (code 190 = token vencido; code 100/200 = permiso/campo no permitido → pages_messaging Acceso Avanzado).';
+    }
+    res.json(out);
+});
+
 module.exports = router;
