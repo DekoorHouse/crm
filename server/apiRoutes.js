@@ -11431,7 +11431,7 @@ router.get('/debug/messenger-backfill-names', async (req, res) => {
     const confirm = req.query.confirm === '1';
     const platform = req.query.platform === 'instagram' ? 'instagram' : 'messenger';
     const prefix = platform === 'instagram' ? 'ig' : 'fb';
-    const maxPages = Math.min(parseInt(req.query.pages, 10) || 20, 60);
+    const maxPages = Math.min(parseInt(req.query.pages, 10) || 8, 40);
     const out = { success: true, confirm, platform, scanned: 0, conNombreReal: 0, actualizados: 0, ejemplos: [], paginas: 0, hayMas: false };
     if (!token || !pageId) { out.success = false; out.diagnostico = 'Falta FB_PAGE_ACCESS_TOKEN o FB_PAGE_ID.'; return res.json(out); }
     const esGenerico = n => !n || /^Facebook User|^IG User/i.test(n);
@@ -11441,6 +11441,8 @@ router.get('/debug/messenger-backfill-names', async (req, res) => {
         while (url && out.paginas < maxPages) {
             const r = await axios.get(url, { params });
             const convs = r.data?.data || [];
+            // Candidatos de la página: participante (no la página) con nombre real
+            const cand = [];
             for (const c of convs) {
                 const parts = c.participants?.data || [];
                 const user = parts.find(p => String(p.id) !== String(pageId));
@@ -11449,20 +11451,29 @@ router.get('/debug/messenger-backfill-names', async (req, res) => {
                 const name = (user.name || '').trim();
                 if (esGenerico(name)) continue;
                 out.conNombreReal++;
-                const ref = db.collection('contacts_whatsapp').doc(`${prefix}_${user.id}`);
-                const doc = await ref.get();
-                if (!doc.exists) continue;            // solo reparamos contactos existentes
-                if (!esGenerico(doc.data().name)) continue; // ya tiene nombre real
-                if (out.ejemplos.length < 15) out.ejemplos.push({ id: `${prefix}_${user.id}`, de: doc.data().name || '(sin nombre)', a: name });
-                if (confirm) {
-                    await ref.update({ name, name_lowercase: name.toLowerCase() });
-                    out.actualizados++;
+                cand.push({ id: `${prefix}_${user.id}`, name });
+            }
+            // Lectura en LOTE: 1 llamada a Firestore por página (no 50)
+            if (cand.length) {
+                const snaps = await db.getAll(...cand.map(x => db.collection('contacts_whatsapp').doc(x.id)));
+                let batch = db.batch();
+                let batchCount = 0;
+                for (let i = 0; i < snaps.length; i++) {
+                    const snap = snaps[i];
+                    if (!snap.exists || !esGenerico(snap.data().name)) continue;
+                    if (out.ejemplos.length < 15) out.ejemplos.push({ id: cand[i].id, de: snap.data().name || '(sin nombre)', a: cand[i].name });
+                    if (confirm) {
+                        batch.update(snap.ref, { name: cand[i].name, name_lowercase: cand[i].name.toLowerCase() });
+                        out.actualizados++;
+                        batchCount++;
+                    }
                 }
+                if (confirm && batchCount > 0) await batch.commit();
             }
             url = r.data?.paging?.next || null;
             params = {};
             out.paginas++;
-            if (url) await new Promise(rs => setTimeout(rs, 250));
+            if (url) await new Promise(rs => setTimeout(rs, 120));
         }
         out.hayMas = !!url;
         out.diagnostico = confirm
