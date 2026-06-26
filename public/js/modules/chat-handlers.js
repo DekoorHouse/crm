@@ -91,6 +91,9 @@ function handleSearchContacts() {
     if (state.designReviewFilter) {
         contactsToRender = contactsToRender.filter(c => c.inDesignReview === true);
     }
+    if (state.adIdFilter) {
+        contactsToRender = contactsToRender.filter(c => Array.isArray(c.adSourceIds) && c.adSourceIds.includes(state.adIdFilter));
+    }
     // Siempre ordenar por fecha descendente antes de renderizar
     contactsToRender.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
     // --------------------------------------------------------------------
@@ -1050,6 +1053,7 @@ function setFilter(filter) {
     state.purchaseFilter = null;
     state.unreadOnly = false;
     state.designReviewFilter = false;
+    state.adIdFilter = null;
     if (filter === 'all') state.channelFilter = null; // "Todos" = reset total (incluye canal)
     renderTagFilters();
 
@@ -1071,6 +1075,7 @@ function toggleUnreadFilter() {
     state.purchaseFilter = null;
     state.designReviewFilter = false;
     state.activeFilter = 'all';
+    state.adIdFilter = null;
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1093,6 +1098,7 @@ function setPurchaseFilter(filter) {
     }
     state.unreadOnly = false;
     state.activeFilter = 'all';
+    state.adIdFilter = null;
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1104,6 +1110,7 @@ function toggleDesignFilter() {
     state.unreadOnly = false;
     state.purchaseFilter = null;
     state.activeFilter = 'all';
+    state.adIdFilter = null;
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1113,11 +1120,35 @@ window.toggleDesignFilter = toggleDesignFilter;
 function toggleChannelFilter(channel) {
     // Si ya está activo, desactivar (volver a "todos los canales")
     state.channelFilter = state.channelFilter === channel ? null : channel;
+    state.adIdFilter = null;
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
 }
 window.toggleChannelFilter = toggleChannelFilter;
+
+/**
+ * Filtro por ID de anuncio: pregunta el ID y muestra las conversaciones que tuvieron ese
+ * anuncio como origen en algún momento (aunque también vinieran de otros anuncios).
+ * Es un filtro exclusivo: limpia los demás para evitar combinaciones y mantener la lista clara.
+ */
+function promptAdIdFilter() {
+    const current = state.adIdFilter || '';
+    const input = window.prompt('Filtrar conversaciones por ID de anuncio.\nMuestra los chats que tuvieron ese anuncio como origen en algún momento (aunque tengan otros).\n\nDeja el campo vacío para quitar el filtro:', current);
+    if (input === null) return; // El usuario canceló: no cambiar nada.
+    const adId = input.trim();
+    state.adIdFilter = adId || null;
+    // Limpiar los demás filtros (exclusividad, igual que ocurre entre los otros filtros).
+    state.activeFilter = 'all';
+    state.purchaseFilter = null;
+    state.unreadOnly = false;
+    state.designReviewFilter = false;
+    state.channelFilter = null;
+    renderTagFilters();
+    state.contacts = [];
+    fetchInitialContacts();
+}
+window.promptAdIdFilter = promptAdIdFilter;
 
 function setDepartmentFilter(deptId) {
     // Si se vuelve a elegir el mismo departamento, regresar a "todos"

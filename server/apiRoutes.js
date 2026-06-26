@@ -3789,6 +3789,14 @@ router.get('/contacts', async (req, res) => {
         }
         // --- FIN: Filtro por Departamento ---
 
+        // --- Filtro por ID de anuncio (origen) ---
+        // Coincide si el contacto tuvo ese anuncio como fuente EN CUALQUIER momento de su historial,
+        // aunque también haya venido de otros anuncios. Usa el campo plano 'adSourceIds'
+        // (poblado desde adReferralHistory) porque Firestore no indexa arreglos de objetos.
+        if (req.query.adSourceId) {
+            query = query.where('adSourceIds', 'array-contains', String(req.query.adSourceId).trim());
+        }
+
         // Ordenar por último mensaje y limitar resultados
         const noLimit = req.query.unreadOnly === 'true';
         if (req.query.unreadOnly === 'true') {
@@ -7053,6 +7061,51 @@ router.post('/maintenance/migrate-orphans', async (req, res) => {
     } catch (error) {
         console.error('Error en la migración de chats huérfanos:', error);
         res.status(500).json({ success: false, message: 'Ocurrió un error en el servidor durante la migración.' });
+    }
+});
+
+// --- Endpoint POST /api/maintenance/backfill-ad-source-ids (Mantenimiento) ---
+// Rellena el campo plano 'adSourceIds' (IDs de anuncio de TODO el historial) en los contactos
+// existentes, para que el filtro por ID de anuncio funcione también con conversaciones previas.
+// Solo necesita ejecutarse una vez; de ahí en adelante el campo se mantiene solo al llegar anuncios.
+router.post('/maintenance/backfill-ad-source-ids', async (req, res) => {
+    try {
+        const snapshot = await db.collection('contacts_whatsapp').get();
+        let updated = 0;
+        let batch = db.batch();
+        let ops = 0;
+
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+
+            // Reunir todos los source_id: del historial y del primer anuncio (adReferral).
+            const ids = new Set();
+            if (Array.isArray(data.adReferralHistory)) {
+                data.adReferralHistory.forEach(e => { if (e && e.source_id) ids.add(String(e.source_id)); });
+            }
+            if (data.adReferral && data.adReferral.source_id) ids.add(String(data.adReferral.source_id));
+            const adSourceIds = Array.from(ids);
+
+            // Escribir solo si hay IDs y el valor realmente cambió (evita writes innecesarios).
+            const current = Array.isArray(data.adSourceIds) ? data.adSourceIds : null;
+            const changed = !current
+                || current.length !== adSourceIds.length
+                || adSourceIds.some(id => !current.includes(id));
+
+            if (adSourceIds.length > 0 && changed) {
+                batch.update(doc.ref, { adSourceIds });
+                updated++;
+                ops++;
+                // Firestore limita los batches a 500 operaciones; commit cada 400 por seguridad.
+                if (ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
+            }
+        }
+
+        if (ops > 0) await batch.commit();
+        res.status(200).json({ success: true, message: `adSourceIds rellenado en ${updated} contactos.`, scanned: snapshot.size });
+    } catch (error) {
+        console.error('Error en backfill de adSourceIds:', error);
+        res.status(500).json({ success: false, message: 'Error en el backfill de adSourceIds.', error: error.message });
     }
 });
 

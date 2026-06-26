@@ -721,6 +721,11 @@ router.post('/', async (req, res) => {
                     // Mantener adReferral apuntando al PRIMER anuncio (retrocompatibilidad con atribución y banner anterior).
                     contactUpdateData.adReferral = adHistory[0];
 
+                    // Lista PLANA de IDs de anuncio (todos los del historial). Firestore no puede hacer
+                    // array-contains sobre objetos dentro de un arreglo, así que mantenemos este arreglo de
+                    // strings para poder filtrar conversaciones por "vino de este anuncio en algún momento".
+                    contactUpdateData.adSourceIds = adHistory.map(e => e && e.source_id).filter(Boolean);
+
                     console.log(`[AD] Anuncio registrado para ${from}. Ad ID: ${message.referral.source_id}, Nombre: ${adName}. Total anuncios distintos: ${adHistory.length}`);
                 }
             }

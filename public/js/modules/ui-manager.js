@@ -184,7 +184,7 @@ function renderTagFilters() {
     const activeDropdownLabel = state.tags.find(t => t.key === state.activeFilter)?.label || null;
 
     // Botón "Todos"
-    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter && !state.designReviewFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
+    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter && !state.designReviewFilter && !state.adIdFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
 
     // Estado de pedido (texto explícito — reemplaza las coronas)
     const greyActive = state.purchaseFilter === 'registered' || state.purchaseFilter === 'both';
@@ -201,6 +201,11 @@ function renderTagFilters() {
 
     // "No leídos"
     buttonsHtml += `<button id="filter-unread" class="filter-btn ${state.unreadOnly ? 'active' : ''}" onclick="toggleUnreadFilter()">No leídos</button>`;
+
+    // "Anuncio" — filtra por ID de anuncio de origen (que haya sido fuente en cualquier momento)
+    const adFilterActive = !!state.adIdFilter;
+    const adIdSafe = adFilterActive ? String(state.adIdFilter).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) : '';
+    buttonsHtml += `<button id="filter-ad-id" class="filter-btn ${adFilterActive ? 'active' : ''}" onclick="promptAdIdFilter()" title="${adFilterActive ? 'Filtrando por anuncio ' + adIdSafe + ' — clic para cambiar o quitar' : 'Filtrar por ID de anuncio (origen)'}"><i class="fas fa-bullhorn text-[10px] mr-1"></i>${adFilterActive ? adIdSafe : 'Anuncio'}</button>`;
 
     // Separador Estado | Canal
     buttonsHtml += `<span class="filter-sep" aria-hidden="true"></span>`;

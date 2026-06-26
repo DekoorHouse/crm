@@ -126,6 +126,10 @@ async function fetchInitialContacts() {
             url += `&channel=${state.channelFilter}`;
         }
 
+        if (state.adIdFilter) {
+            url += `&adSourceId=${encodeURIComponent(state.adIdFilter)}`;
+        }
+
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
         let departmentIdParam = null;
         const profile = state.currentUserProfile;
@@ -370,6 +374,10 @@ async function fetchMoreContacts() {
             url += `&channel=${state.channelFilter}`;
         }
 
+        if (state.adIdFilter) {
+            url += `&adSourceId=${encodeURIComponent(state.adIdFilter)}`;
+        }
+
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
         let departmentIdParam = null;
         const profile = state.currentUserProfile;
@@ -570,6 +578,14 @@ function listenForContactUpdates() {
                         if (ps !== 'registered' && ps !== 'completed') isAllowed = false;
                     } else {
                         if (ps !== state.purchaseFilter) isAllowed = false;
+                    }
+                }
+
+                // Filtro por ID de anuncio de origen
+                if (isAllowed && state.adIdFilter) {
+                    const ids = updatedContactData.adSourceIds;
+                    if (!Array.isArray(ids) || !ids.includes(state.adIdFilter)) {
+                        isAllowed = false;
                     }
                 }
             }
