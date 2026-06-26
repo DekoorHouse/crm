@@ -1855,7 +1855,8 @@ async function loadMessengerWelcomeSetting() {
         const data = await response.json();
         if (data.success) {
             const sel = document.getElementById('messenger-welcome-select');
-            if (sel) sel.value = data.settings.shortcut || '';
+            messengerWelcomeSavedValue = data.settings.shortcut || '';
+            if (sel) sel.value = messengerWelcomeSavedValue;
             if (typeof refreshMessengerWelcomeDisplay === 'function') refreshMessengerWelcomeDisplay();
         }
     } catch (error) {
@@ -1878,6 +1879,9 @@ async function handleSaveMessengerWelcome() {
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.message || 'No se pudo guardar.');
         showError(sel.value ? `Bienvenida de Facebook: /${sel.value}` : 'Bienvenida de Facebook: predeterminada.', 'success');
+        // Confirmado: registra el valor y vuelve al modo guardado (no editable).
+        messengerWelcomeSavedValue = sel.value;
+        if (typeof setMessengerWelcomeEditing === 'function') setMessengerWelcomeEditing(false);
     } catch (error) {
         showError(error.message);
     } finally {
@@ -1952,11 +1956,15 @@ async function handleSimulateAdMessage(event) {
 }
 
 // --- Combobox buscable para la bienvenida de Facebook ---
-// La barra de texto sólo FILTRA las opciones. El valor real vive en el
-// <select id="messenger-welcome-select"> (oculto), que sigue siendo la fuente
-// de verdad para guardar/cargar. El valor sólo cambia al elegir un elemento de
-// la lista; escribir texto no cambia el valor guardado.
+// Dos modos dentro de #messenger-welcome-combo:
+//  · "Guardado": muestra la selección actual como algo asentado (no editable)
+//    con un botón "Cambiar". Así no parece un borrador sin guardar.
+//  · "Edición": barra de texto que FILTRA las respuestas rápidas + Guardar/Cancelar.
+// El valor real vive en el <select id="messenger-welcome-select"> (oculto), la
+// fuente de verdad para guardar/cargar. El valor sólo cambia al elegir un ítem.
 let messengerWelcomeHighlight = -1;
+// Última opción confirmada (cargada del servidor o recién guardada): sirve para Cancelar.
+let messengerWelcomeSavedValue = '';
 
 // Lee las opciones actuales del select oculto: [{ value, label }]
 function messengerWelcomeOptions() {
@@ -1964,13 +1972,34 @@ function messengerWelcomeOptions() {
     return sel ? Array.from(sel.options).map(o => ({ value: o.value, label: o.textContent })) : [];
 }
 
-// Refleja en la barra de texto la opción seleccionada actualmente en el select.
+// Refleja la opción seleccionada del select en la caja "Guardado" y en la barra
+// de búsqueda del modo edición.
 function refreshMessengerWelcomeDisplay() {
     const sel = document.getElementById('messenger-welcome-select');
-    const input = document.getElementById('messenger-welcome-search');
-    if (!sel || !input) return;
+    if (!sel) return;
     const opt = sel.options[sel.selectedIndex];
-    input.value = opt ? opt.textContent : '';
+    const label = opt ? opt.textContent : 'Predeterminada (saludo genérico)';
+    const display = document.getElementById('messenger-welcome-display-text');
+    if (display) display.textContent = label;
+    const input = document.getElementById('messenger-welcome-search');
+    if (input) input.value = opt ? opt.textContent : '';
+}
+
+// Alterna entre el modo guardado (caja + "Cambiar") y el de edición (búsqueda).
+function setMessengerWelcomeEditing(editing) {
+    const display = document.getElementById('messenger-welcome-display');
+    const edit = document.getElementById('messenger-welcome-edit');
+    if (!display || !edit) return;
+    display.classList.toggle('hidden', editing);
+    display.classList.toggle('flex', !editing);
+    edit.classList.toggle('hidden', !editing);
+    edit.classList.toggle('flex', editing);
+    hideMessengerWelcomeOptions();
+    if (editing) {
+        refreshMessengerWelcomeDisplay();
+        const input = document.getElementById('messenger-welcome-search');
+        if (input) input.focus();
+    }
 }
 
 function hideMessengerWelcomeOptions() {
@@ -2022,8 +2051,20 @@ function initMessengerWelcomeCombo() {
     const list = document.getElementById('messenger-welcome-options');
     const combo = document.getElementById('messenger-welcome-combo');
     if (!input || !list || !combo) return;
-    if (input.dataset.comboInit === '1') { refreshMessengerWelcomeDisplay(); return; }
+    if (input.dataset.comboInit === '1') { setMessengerWelcomeEditing(false); refreshMessengerWelcomeDisplay(); return; }
     input.dataset.comboInit = '1';
+
+    // Botón "Cambiar": entra en modo edición.
+    const editBtn = document.getElementById('messenger-welcome-edit-btn');
+    if (editBtn) editBtn.addEventListener('click', () => setMessengerWelcomeEditing(true));
+    // Botón "Cancelar": descarta lo no guardado y vuelve al modo guardado.
+    const cancelBtn = document.getElementById('messenger-welcome-cancel-btn');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => {
+        const sel = document.getElementById('messenger-welcome-select');
+        if (sel) sel.value = messengerWelcomeSavedValue;
+        refreshMessengerWelcomeDisplay();
+        setMessengerWelcomeEditing(false);
+    });
 
     // Al enfocar muestra todas; seleccionar el texto facilita reemplazarlo al buscar.
     input.addEventListener('focus', () => { input.select(); renderMessengerWelcomeOptions(''); });
@@ -2057,6 +2098,7 @@ function initMessengerWelcomeCombo() {
         refreshMessengerWelcomeDisplay();
     }, 150));
 
+    setMessengerWelcomeEditing(false); // arranca en modo guardado
     refreshMessengerWelcomeDisplay();
 }
 

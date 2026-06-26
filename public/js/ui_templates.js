@@ -802,17 +802,32 @@ const SettingsViewTemplate = () => `
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-1"><i class="fab fa-facebook-messenger text-blue-500 mr-2"></i>Respuesta automática de Facebook</h2>
                 <p class="text-sm text-gray-500 mb-4">Elige la respuesta rápida que se enviará automáticamente como primera respuesta a las conversaciones <strong>nuevas</strong> de Facebook Messenger. Déjala en "Predeterminada" para usar el saludo genérico.</p>
-                <div class="flex items-start gap-3">
-                    <div id="messenger-welcome-combo" class="relative flex-1">
-                        <input type="text" id="messenger-welcome-search" class="!mb-0" autocomplete="off"
-                               placeholder="Escribe para buscar una respuesta rápida...">
-                        <select id="messenger-welcome-select" class="hidden">
-                            <option value="">Predeterminada (saludo genérico)</option>
-                        </select>
-                        <ul id="messenger-welcome-options"
-                            class="hidden absolute z-20 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg text-sm"></ul>
+                <div id="messenger-welcome-combo" class="relative">
+                    <!-- Modo guardado: muestra la selección actual como algo asentado (no editable) -->
+                    <div id="messenger-welcome-display" class="flex items-center gap-3">
+                        <div id="messenger-welcome-display-text" class="flex-1 truncate"
+                             style="padding:10px 15px; border:1px solid var(--color-border); border-radius:var(--border-radius-md); background-color:var(--color-subtle-bg); color:var(--color-text); font-size:0.95rem;">
+                            Predeterminada (saludo genérico)
+                        </div>
+                        <button id="messenger-welcome-edit-btn" type="button" class="btn btn-outline flex-shrink-0">
+                            <i class="fas fa-pen"></i> Cambiar
+                        </button>
                     </div>
-                    <button id="save-messenger-welcome-btn" class="btn btn-primary flex-shrink-0">Guardar</button>
+                    <!-- Modo edición: barra de búsqueda (oculta hasta pulsar "Cambiar") -->
+                    <div id="messenger-welcome-edit" class="hidden items-start gap-3">
+                        <div class="relative flex-1">
+                            <input type="text" id="messenger-welcome-search" class="!mb-0" autocomplete="off"
+                                   placeholder="Escribe para buscar una respuesta rápida...">
+                            <select id="messenger-welcome-select" class="hidden">
+                                <option value="">Predeterminada (saludo genérico)</option>
+                            </select>
+                            <ul id="messenger-welcome-options"
+                                class="hidden absolute z-20 left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-lg shadow-lg text-sm"
+                                style="background-color:var(--color-container-bg); border:1px solid var(--color-border); color:var(--color-text);"></ul>
+                        </div>
+                        <button id="save-messenger-welcome-btn" class="btn btn-primary flex-shrink-0">Guardar</button>
+                        <button id="messenger-welcome-cancel-btn" type="button" class="btn btn-outline flex-shrink-0">Cancelar</button>
+                    </div>
                 </div>
             </div>
             </div>
