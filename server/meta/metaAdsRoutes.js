@@ -459,9 +459,10 @@ router.post('/region-report', asyncHandler(async (req, res) => {
 // ===================== AUDIENCES / TARGETING =====================
 
 router.get('/audiences/targeting-search', asyncHandler(async (req, res) => {
-    const { q, type, accountId } = req.query;
+    const { q, type, accountId, location_types } = req.query;
     if (!q) return res.status(400).json({ error: 'q (query) es requerido' });
-    const data = await svc.searchTargeting(q, type, accountId);
+    const locationTypes = location_types ? String(location_types).split(',').map(s => s.trim()).filter(Boolean) : undefined;
+    const data = await svc.searchTargeting(q, type, accountId, { locationTypes });
     res.json(data);
 }));
 

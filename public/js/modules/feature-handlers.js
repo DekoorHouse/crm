@@ -1214,6 +1214,9 @@ let adThumbBlob = null;             // miniatura capturada del video (opcional)
 let adInterests = [];               // [{ id, name }] intereses seleccionados
 let adInterestResults = [];         // últimos resultados del buscador
 let adInterestSearchTimer = null;   // debounce
+let adPlaces = [];                  // [{ id, key, type, name, ... }] lugares (ciudades/estados/país)
+let adPlaceResults = [];            // últimos resultados del buscador de lugares
+let adPlaceSearchTimer = null;      // debounce
 let adCtwaDefaults = { pageId: null, whatsappNumber: '5216181333519' };
 
 // Inicializa el formulario la primera vez que se abre la pestaña.
@@ -1452,6 +1455,82 @@ function hideAdInterestResults() {
     setTimeout(() => { const box = document.getElementById('ad-interest-results'); if (box) box.classList.add('hidden'); }, 180);
 }
 
+// --- Lugares (ciudades / estados / país) ---
+
+// Busca lugares en la API de geo de Meta (con debounce).
+function searchAdPlaces(q) {
+    clearTimeout(adPlaceSearchTimer);
+    const box = document.getElementById('ad-place-results');
+    if (!q || q.trim().length < 2) { if (box) { box.classList.add('hidden'); box.innerHTML = ''; } return; }
+    adPlaceSearchTimer = setTimeout(async () => {
+        const accountId = (document.getElementById('ad-account-select') || {}).value || '';
+        try {
+            const url = `${API_BASE_URL}/api/meta-ads/audiences/targeting-search?q=${encodeURIComponent(q.trim())}&type=adgeolocation&location_types=country,region,city${accountId ? `&accountId=${encodeURIComponent(accountId)}` : ''}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error en la búsqueda.');
+            renderAdPlaceResults(data.data || []);
+        } catch (error) {
+            console.warn('[CrearAd] búsqueda de lugares falló:', error.message);
+            if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
+        }
+    }, 300);
+}
+
+// Etiqueta legible del tipo de lugar.
+function adPlaceTypeLabel(t) {
+    return ({ city: 'Ciudad', region: 'Estado', country: 'País', zip: 'CP' })[t] || t;
+}
+
+function renderAdPlaceResults(list) {
+    adPlaceResults = (list || []).slice(0, 15);
+    const box = document.getElementById('ad-place-results');
+    if (!box) return;
+    if (!adPlaceResults.length) { box.innerHTML = '<div class="opt" style="cursor:default;color:#9ca3af;">Sin resultados</div>'; box.classList.remove('hidden'); return; }
+    box.innerHTML = adPlaceResults.map((it, i) => {
+        const ctx = [it.region, it.country_name].filter(Boolean).join(', ');
+        const ctxTxt = ctx ? ` <small>${escapeTemplatePreview(ctx)}</small>` : '';
+        return `<div class="opt" onmousedown="addAdPlaceByIndex(${i})"><strong>${escapeTemplatePreview(it.name || '')}</strong> <small>· ${adPlaceTypeLabel(it.type)}</small>${ctxTxt}</div>`;
+    }).join('');
+    box.classList.remove('hidden');
+}
+
+function addAdPlaceByIndex(i) {
+    const it = adPlaceResults[i];
+    if (it) addAdPlace(it);
+}
+
+function addAdPlace(it) {
+    if (!it || !it.key) return;
+    const id = `${it.type}:${it.key}`;
+    if (!adPlaces.some(p => p.id === id)) {
+        adPlaces.push({ id, key: String(it.key), type: it.type, name: it.name, country_code: it.country_code, region: it.region });
+    }
+    renderAdPlaceChips();
+    const input = document.getElementById('ad-place-search');
+    if (input) input.value = '';
+    const box = document.getElementById('ad-place-results');
+    if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
+}
+
+function removeAdPlace(id) {
+    adPlaces = adPlaces.filter(p => p.id !== id);
+    renderAdPlaceChips();
+}
+
+function renderAdPlaceChips() {
+    const box = document.getElementById('ad-place-chips');
+    if (!box) return;
+    box.innerHTML = adPlaces.map(p => {
+        const sub = p.type === 'city' ? 'Ciudad' : (p.type === 'region' ? 'Estado' : 'País');
+        return `<span class="ad-chip">${escapeTemplatePreview(p.name)} <small style="opacity:.7;">${sub}</small> <i class="fas fa-times" onclick="removeAdPlace('${String(p.id).replace(/'/g, '')}')"></i></span>`;
+    }).join('');
+}
+
+function hideAdPlaceResults() {
+    setTimeout(() => { const box = document.getElementById('ad-place-results'); if (box) box.classList.add('hidden'); }, 180);
+}
+
 // Construye el spec de targeting a partir de los controles de audiencia.
 function buildAdTargeting() {
     const country = (document.getElementById('ad-geo-country') || {}).value || 'MX';
@@ -1463,8 +1542,24 @@ function buildAdTargeting() {
     ageMax = Math.min(Math.max(ageMax, 13), 65);
     if (ageMin > ageMax) { const t = ageMin; ageMin = ageMax; ageMax = t; }
 
+    // Geo: si hay lugares específicos (ciudades/estados/país), se usan esos;
+    // si no, todo el país seleccionado en el select.
+    let geo;
+    if (adPlaces.length) {
+        geo = {};
+        const cities = adPlaces.filter(p => p.type === 'city').map(p => ({ key: p.key }));
+        const regions = adPlaces.filter(p => p.type === 'region').map(p => ({ key: p.key }));
+        const countries = adPlaces.filter(p => p.type === 'country').map(p => p.country_code || p.key);
+        if (cities.length) geo.cities = cities;
+        if (regions.length) geo.regions = regions;
+        if (countries.length) geo.countries = countries;
+        if (!geo.cities && !geo.regions && !geo.countries) geo = { countries: [country] };
+    } else {
+        geo = { countries: [country] };
+    }
+
     const targeting = {
-        geo_locations: { countries: [country] },
+        geo_locations: geo,
         age_min: ageMin,
         age_max: ageMax
     };
@@ -1596,7 +1691,9 @@ function resetCreateAdForm() {
     adThumbBlob = null;
     adMediaKind = 'image';
     adInterests = [];
+    adPlaces = [];
     renderAdInterestChips();
+    renderAdPlaceChips();
     const prev = document.getElementById('ad-image-preview');
     if (prev) { prev.src = ''; prev.classList.add('hidden'); }
     const vidPrev = document.getElementById('ad-video-preview');
@@ -3112,6 +3209,10 @@ window.addAdInterestByIndex = addAdInterestByIndex;
 window.addAdInterest = addAdInterest;
 window.removeAdInterest = removeAdInterest;
 window.hideAdInterestResults = hideAdInterestResults;
+window.searchAdPlaces = searchAdPlaces;
+window.addAdPlaceByIndex = addAdPlaceByIndex;
+window.removeAdPlace = removeAdPlace;
+window.hideAdPlaceResults = hideAdPlaceResults;
 window.handleCreateMetaAd = handleCreateMetaAd;
 window.handleSaveQuickReply = handleSaveQuickReply;
 window.handleDeleteQuickReply = handleDeleteQuickReply;

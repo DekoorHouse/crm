@@ -525,15 +525,15 @@ async function resolveAdsToCampaigns(adIds) {
 
 // ===================== AUDIENCES / TARGETING =====================
 
-async function searchTargeting(query, type = 'adinterest', accountId) {
+async function searchTargeting(query, type = 'adinterest', accountId, { locationTypes } = {}) {
     const token = await resolveToken(accountId);
-    const response = await axios.get(`${META_API_BASE}/search`, {
-        params: {
-            type,
-            q: query,
-            access_token: token
-        }
-    });
+    const params = { type, q: query, access_token: token };
+    // Busqueda de lugares (ciudades/estados/paises) para el targeting geografico.
+    if (type === 'adgeolocation') {
+        params.location_types = JSON.stringify(locationTypes && locationTypes.length ? locationTypes : ['country', 'region', 'city']);
+        params.limit = 25;
+    }
+    const response = await axios.get(`${META_API_BASE}/search`, { params });
     return response.data;
 }
 
