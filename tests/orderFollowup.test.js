@@ -107,6 +107,13 @@ describe('evaluateOrderFollowup', () => {
         expect(v.reason).toBe('pedido_registrado');
     });
 
+    test('cancela si el contacto ya está en "Pendientes de revisión IA"', () => {
+        // La IA cerró la venta (status pendientes_ia) -> no enviar rescate aunque toque
+        const v = evaluateOrderFollowup(base(), { status: 'pendientes_ia' }, cfg, sends[0] + 60 * 1000);
+        expect(v.action).toBe('cancel');
+        expect(v.reason).toBe('pendientes_revision_ia');
+    });
+
     test('expira fuera de la ventana de 24h', () => {
         const v = evaluateOrderFollowup(base(), {}, cfg, T0 + 25 * HOUR_MS);
         expect(v.action).toBe('expire');

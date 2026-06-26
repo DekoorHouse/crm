@@ -181,6 +181,13 @@ function normalizeOrderConfig(raw) {
 function evaluateOrderFollowup(followup, contact, cfg, nowMs) {
     if (!followup || followup.status !== 'pending') return { action: 'none' };
 
+    // La IA ya cerró la venta: el contacto pasó a "Pendientes de revisión IA"
+    // (status 'pendientes_ia'). Ahí el pedido ya quedó tomado, así que no insistir
+    // con recordatorios de rescate. Cancelamos el seguimiento (queda terminal).
+    if (contact && contact.status === 'pendientes_ia') {
+        return { action: 'cancel', reason: 'pendientes_revision_ia' };
+    }
+
     const stage = followup.stage || 0;
     const sends = Array.isArray(followup.scheduledSends) ? followup.scheduledSends.map(toMillis).filter(v => v != null) : [];
     if (sends.length === 0) return { action: 'cancel', reason: 'sin_agenda' };
