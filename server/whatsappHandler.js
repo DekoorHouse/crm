@@ -779,14 +779,16 @@ router.post('/', async (req, res) => {
                         await contactRef.update({ botActive: false });
                     }
                 } else {
-                     // Fallback: Si el anuncio no tiene regla, asignar a "General"
-                    console.log(`[ROUTING] No se encontraron reglas para Ad ID: ${adId}. Asignando a General.`);
+                     // Fallback: el anuncio no tiene regla → cae a "General". Como General no usa IA,
+                     // también se desactiva el bot del contacto (mismo criterio que una regla sin IA).
+                    console.log(`[ROUTING] No se encontraron reglas para Ad ID: ${adId}. Asignando a General y desactivando IA.`);
                     const generalDeptQuery = await db.collection('departments').where('name', '==', 'General').limit(1).get();
                     if (!generalDeptQuery.empty) {
                         const generalDeptId = generalDeptQuery.docs[0].id;
-                        await contactRef.update({ assignedDepartmentId: generalDeptId });
+                        await contactRef.update({ assignedDepartmentId: generalDeptId, botActive: false });
                         console.log(`[ROUTING] Contacto ${from} asignado al departamento General por falta de regla específica.`);
                     } else {
+                        await contactRef.update({ botActive: false });
                         console.warn(`[ROUTING] No se encontró el departamento "General" para la asignación de fallback.`);
                     }
                 }
