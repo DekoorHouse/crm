@@ -11601,6 +11601,39 @@ router.get('/crm-list/items', async (req, res) => {
             const snap = await col.where('purchaseStatus', '==', ps).limit(CAP).get();
             items = snap.docs.map(d => _slimContact(d.id, d.data()));
             truncated = snap.size >= CAP;
+
+            if (tab === 'clientes') {
+                // Los campos del contacto (totalSpent/orderCount/products) solo se denormalizan
+                // para recurrentes (2+ compras). Para totales CONFIABLES (incluye clientes de 1
+                // sola compra), agregamos desde los pedidos PAGADOS agrupando por contactId.
+                try {
+                    const agg = new Map(); // key -> { orderCount, totalSpent, products:Set, lastOrderDate }
+                    const pedSnap = await db.collection('pedidos')
+                        .where('estatus', 'in', ['Pagado', 'Fabricar'])
+                        .select('contactId', 'telefono', 'precio', 'producto', 'createdAt')
+                        .get();
+                    for (const pd of pedSnap.docs) {
+                        const p = pd.data();
+                        const key = p.contactId || p.telefono;
+                        if (!key) continue;
+                        let a = agg.get(key);
+                        if (!a) { a = { orderCount: 0, totalSpent: 0, products: new Set(), lastOrderDate: null }; agg.set(key, a); }
+                        a.orderCount++;
+                        a.totalSpent += parseFloat(p.precio) || 0;
+                        if (p.producto) a.products.add(p.producto);
+                        const ms = _tsMs(p.createdAt);
+                        if (ms && (!a.lastOrderDate || ms > a.lastOrderDate)) a.lastOrderDate = ms;
+                    }
+                    items = items.map(c => {
+                        const a = agg.get(c.id);
+                        if (!a) return c;
+                        return { ...c, orderCount: a.orderCount, totalSpent: a.totalSpent, products: Array.from(a.products), lastOrderDate: a.lastOrderDate || c.lastOrderDate };
+                    });
+                } catch (aggErr) {
+                    console.warn('crm-list: no se pudieron agregar pedidos:', aggErr.message);
+                }
+            }
+
             items.sort((a, b) => (b.lastOrderDate || b.lastMessageTimestamp || 0) - (a.lastOrderDate || a.lastMessageTimestamp || 0));
         } else {
             // Contactos (colección grande) → solo últimos N días, excluyendo compradores/leads
