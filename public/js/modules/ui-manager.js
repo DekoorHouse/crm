@@ -1216,6 +1216,14 @@ function openUserModal(email) {
         deptContainer.innerHTML = '<p class="text-gray-400 text-sm">No hay departamentos creados.</p>';
     }
 
+    // Oculta "Eliminar" cuando editas tu propia cuenta (no puedes borrarte a ti mismo).
+    const deleteBtn = document.getElementById('user-delete-btn');
+    if (deleteBtn) {
+        const myEmail = (typeof auth !== 'undefined' && auth.currentUser) ? (auth.currentUser.email || '') : '';
+        const isSelf = myEmail && myEmail.toLowerCase() === user.email.toLowerCase();
+        deleteBtn.classList.toggle('hidden', !!isSelf);
+    }
+
     modal.classList.remove('hidden');
 }
 

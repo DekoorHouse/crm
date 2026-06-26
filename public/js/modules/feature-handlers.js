@@ -2575,6 +2575,46 @@ async function handleSaveUser(event) {
 }
 window.handleSaveUser = handleSaveUser;
 
+// Elimina (de la colección de usuarios del CRM) al usuario abierto en el modal.
+async function handleDeleteUser() {
+    const email = document.getElementById('user-id').value;
+    if (!email) {
+        showError('No se identificó al usuario a eliminar.');
+        return;
+    }
+    // No permitir que un usuario borre su propia cuenta.
+    const myEmail = (typeof auth !== 'undefined' && auth.currentUser) ? auth.currentUser.email : '';
+    if (myEmail && myEmail.toLowerCase() === email.toLowerCase()) {
+        showError('No puedes eliminar tu propia cuenta.');
+        return;
+    }
+
+    const nameInput = document.getElementById('user-name');
+    const displayName = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : email;
+    const ok = await showConfirmModal(`¿Eliminar a "${displayName}" del equipo? Perderá acceso al CRM. Esta acción no se puede deshacer.`, {
+        icon: 'delete', confirmText: 'Eliminar', cancelText: 'Cancelar'
+    });
+    if (!ok) return;
+
+    const btn = document.getElementById('user-delete-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Eliminando...'; }
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/users/${encodeURIComponent(email)}`, { method: 'DELETE' });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Error al eliminar el usuario.');
+        }
+        closeUserModal();
+        showError('Usuario eliminado correctamente.', 'success');
+        if (typeof fetchAllUsers === 'function') fetchAllUsers();
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-trash-alt mr-2"></i>Eliminar'; }
+    }
+}
+window.handleDeleteUser = handleDeleteUser;
+
 // --- REGLAS DE ENRUTAMIENTO ---
 async function handleSaveAdRoutingRule(event) {
     event.preventDefault();
