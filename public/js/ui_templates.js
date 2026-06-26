@@ -813,7 +813,7 @@ const SettingsViewTemplate = () => `
                     <!-- Modo guardado: muestra la selección actual como algo asentado (no editable) -->
                     <div id="messenger-welcome-display" class="flex items-center gap-3">
                         <div id="messenger-welcome-display-text" class="flex-1 truncate"
-                             style="padding:10px 15px; border:1px solid var(--color-border); border-radius:var(--border-radius-md); background-color:var(--color-subtle-bg); color:var(--color-text); font-size:0.95rem;">
+                             style="padding:10px 15px; border:1px solid var(--color-border); border-radius:var(--border-radius-md); background-color:var(--color-subtle-bg); color:var(--color-text-light); font-style:italic; font-size:0.95rem;">
                             Predeterminada (saludo genérico)
                         </div>
                         <button id="messenger-welcome-edit-btn" type="button" class="btn btn-outline flex-shrink-0">
