@@ -981,6 +981,22 @@ function populateMessengerWelcomeSelect() {
 
 function renderAjustesView() {
     if (state.activeView !== 'ajustes') return;
+
+    // Respuesta automática de Facebook: poblar el select PRIMERO, antes que el
+    // resto de la vista, para que nunca quede vacío si algo más fallara después.
+    populateMessengerWelcomeSelect();
+    if (typeof loadMessengerWelcomeSetting === 'function') loadMessengerWelcomeSetting();
+    // Si las respuestas rápidas aún no se han cargado, forzar su carga (el listener
+    // luego repoblará el select automáticamente).
+    if ((!state.quickReplies || state.quickReplies.length === 0) && typeof listenForQuickReplies === 'function') {
+        listenForQuickReplies();
+    }
+    const saveMwBtn = document.getElementById('save-messenger-welcome-btn');
+    if (saveMwBtn && typeof handleSaveMessengerWelcome === 'function') {
+        saveMwBtn.removeEventListener('click', handleSaveMessengerWelcome);
+        saveMwBtn.addEventListener('click', handleSaveMessengerWelcome);
+    }
+
     // Actualiza el estado del interruptor de mensaje de ausencia
     const awayToggle = document.getElementById('away-message-toggle');
     if (awayToggle) {
@@ -1005,22 +1021,6 @@ function renderAjustesView() {
          // Evita añadir múltiples listeners
         simulateAdForm.removeEventListener('submit', handleSimulateAdMessage);
         simulateAdForm.addEventListener('submit', handleSimulateAdMessage);
-    }
-
-    // Respuesta automática de Facebook: poblar el select con las respuestas rápidas
-    populateMessengerWelcomeSelect();
-    if (typeof loadMessengerWelcomeSetting === 'function') loadMessengerWelcomeSetting();
-
-    // Si las respuestas rápidas aún no se han cargado, forzar su carga (el listener
-    // luego repoblará el select automáticamente).
-    if ((!state.quickReplies || state.quickReplies.length === 0) && typeof listenForQuickReplies === 'function') {
-        listenForQuickReplies();
-    }
-
-    const saveMwBtn = document.getElementById('save-messenger-welcome-btn');
-    if (saveMwBtn && typeof handleSaveMessengerWelcome === 'function') {
-        saveMwBtn.removeEventListener('click', handleSaveMessengerWelcome);
-        saveMwBtn.addEventListener('click', handleSaveMessengerWelcome);
     }
 
     // Renderiza la lista de usuarios / operadores

@@ -628,8 +628,9 @@ function listenForQuickReplies() {
         if (state.activeView === 'respuestas-rapidas') {
             renderQuickRepliesView();
         }
-        // Si estamos en Ajustes, repoblar el select de bienvenida de Facebook
-        if (state.activeView === 'ajustes' && typeof populateMessengerWelcomeSelect === 'function') {
+        // Repoblar el select de bienvenida de Facebook si está presente en el DOM
+        // (no dependemos de activeView por si las respuestas rápidas llegan tarde).
+        if (typeof populateMessengerWelcomeSelect === 'function' && document.getElementById('messenger-welcome-select')) {
             populateMessengerWelcomeSelect();
             const sel = document.getElementById('messenger-welcome-select');
             // Si aún no hay selección, reaplicar el valor guardado ahora que hay opciones
