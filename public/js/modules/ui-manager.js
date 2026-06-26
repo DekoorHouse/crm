@@ -663,11 +663,20 @@ function loadCrmView() {
     document.querySelectorAll('.crm-tab').forEach(b => b.classList.toggle('active', b.dataset.crmtab === state.crmTab));
     updateCrmSortVisibility();
     if (state.crmCounts) applyCrmCounts(state.crmCounts); else loadCrmCounts();
-    loadCrmList(); // usa caché si ya se cargó antes
+    if (state.crmTab === 'graficos') loadCrmCharts(); // usa caché si ya se cargó antes
+    else loadCrmList();
 }
 
-/** El dropdown de orden y el texto de ayuda dependen de la pestaña activa. */
+/** Alterna barra de filtros / tabla / gráficos y el texto de ayuda según la pestaña. */
 function updateCrmSortVisibility() {
+    const isCharts = state.crmTab === 'graficos';
+    const toolbar = document.querySelector('.crm-toolbar');
+    const table = document.querySelector('.table-responsive-wrapper');
+    const charts = document.getElementById('crm-charts');
+    if (toolbar) toolbar.style.display = isCharts ? 'none' : '';
+    if (table) table.style.display = isCharts ? 'none' : '';
+    if (charts) charts.style.display = isCharts ? '' : 'none';
+
     const wrap = document.getElementById('crm-sort-wrap');
     if (wrap) wrap.style.display = state.crmTab === 'clientes' ? '' : 'none';
     const hint = document.getElementById('crm-tab-hint');
@@ -676,7 +685,9 @@ function updateCrmSortVisibility() {
             ? 'Personas que han pagado al menos un pedido.'
             : state.crmTab === 'leads'
                 ? 'Registraron un pedido pero aún no han pagado.'
-                : `Personas sin pedido. Mostrando los de los últimos ${CRM_CONTACTOS_DAYS} días (el total está en la pestaña).`;
+                : state.crmTab === 'contactos'
+                    ? `Personas sin pedido. Mostrando los de los últimos ${CRM_CONTACTOS_DAYS} días (el total está en la pestaña).`
+                    : 'Resumen visual de tus clientes y compras.';
     }
 }
 
@@ -705,7 +716,117 @@ function switchCrmTab(tab) {
     state.crmTab = tab;
     document.querySelectorAll('.crm-tab').forEach(b => b.classList.toggle('active', b.dataset.crmtab === tab));
     updateCrmSortVisibility();
-    loadCrmList();
+    if (tab === 'graficos') loadCrmCharts();
+    else loadCrmList();
+}
+
+/** Pestaña Gráficos: asegura tener los datos de clientes y dibuja el dashboard. */
+function loadCrmCharts(fresh) {
+    if (state.activeView !== 'clientes') return;
+    const container = document.getElementById('crm-charts');
+    if (!container) return;
+    if (!state.crmCounts) loadCrmCounts();
+    if (!fresh && state.crmCache && state.crmCache.clientes) {
+        renderCrmCharts();
+        return;
+    }
+    container.innerHTML = '<div class="text-center text-gray-400 py-12"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando datos de clientes…</div>';
+    fetch(`${API_BASE_URL}/api/crm-list/items?tab=clientes${fresh ? '&fresh=1' : ''}`)
+        .then(r => r.json())
+        .then(d => {
+            if (!state.crmCache) state.crmCache = {};
+            state.crmCache.clientes = d.items || [];
+            renderCrmCharts();
+        })
+        .catch(e => {
+            console.error('Error cargando datos para gráficos:', e);
+            container.innerHTML = `<div class="text-center py-12" style="color:var(--color-danger);"><i class="fas fa-exclamation-triangle mr-2"></i>No se pudieron cargar los datos.</div>`;
+        });
+}
+
+/** Calcula métricas desde state.crmCache.clientes + conteos y dibuja los charts (Chart.js). */
+function renderCrmCharts() {
+    const container = document.getElementById('crm-charts');
+    if (!container) return;
+    const clientes = (state.crmCache && state.crmCache.clientes) || [];
+    const counts = state.crmCounts || {};
+
+    (state.crmCharts || []).forEach(ch => { try { ch.destroy(); } catch (e) {} });
+    state.crmCharts = [];
+
+    const ingresoTotal = clientes.reduce((s, c) => s + (c.totalSpent || 0), 0);
+    const comprasTotales = clientes.reduce((s, c) => s + (c.orderCount || 0), 0);
+    const ticket = comprasTotales > 0 ? ingresoTotal / comprasTotales : 0;
+    const recurrentes = clientes.filter(c => (c.orderCount || 0) >= 2).length;
+    const pctRec = clientes.length > 0 ? Math.round((recurrentes / clientes.length) * 100) : 0;
+
+    const prod = {};
+    clientes.forEach(c => (c.products || []).forEach(p => { if (p) prod[p] = (prod[p] || 0) + 1; }));
+    const topProd = Object.entries(prod).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+    const dist = { '1': 0, '2': 0, '3': 0, '4+': 0 };
+    clientes.forEach(c => { const n = c.orderCount || 0; if (n <= 1) dist['1']++; else if (n === 2) dist['2']++; else if (n === 3) dist['3']++; else dist['4+']++; });
+
+    const top10 = clientes.slice().sort((a, b) => (b.totalSpent || 0) - (a.totalSpent || 0)).slice(0, 10);
+
+    const byMonth = {};
+    clientes.forEach(c => { if (c.lastOrderDate) { const d = new Date(c.lastOrderDate); const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; byMonth[k] = (byMonth[k] || 0) + 1; } });
+    const months = Object.keys(byMonth).sort().slice(-12);
+
+    const money = n => '$' + Math.round(n).toLocaleString('es-MX');
+    const kpi = (label, val, sub) => `<div class="crm-kpi"><div class="crm-kpi-val">${val}</div><div class="crm-kpi-label">${label}</div>${sub ? `<div class="crm-kpi-sub">${sub}</div>` : ''}</div>`;
+
+    container.innerHTML = `
+        <div class="crm-kpi-grid">
+            ${kpi('Ingreso total', money(ingresoTotal), `${clientes.length.toLocaleString('es-MX')} clientes`)}
+            ${kpi('Compras totales', comprasTotales.toLocaleString('es-MX'), '')}
+            ${kpi('Ticket promedio', money(ticket), 'por compra')}
+            ${kpi('Clientes recurrentes', recurrentes.toLocaleString('es-MX'), `${pctRec}% del total`)}
+        </div>
+        <div class="crm-charts-grid">
+            <div class="crm-chart-card"><h3>Embudo</h3><div class="crm-chart-box"><canvas id="cc-funnel"></canvas></div></div>
+            <div class="crm-chart-card"><h3>Top productos</h3><div class="crm-chart-box"><canvas id="cc-prod"></canvas></div></div>
+            <div class="crm-chart-card"><h3>Clientes por # de compras</h3><div class="crm-chart-box"><canvas id="cc-dist"></canvas></div></div>
+            <div class="crm-chart-card"><h3>Clientes por mes (última compra)</h3><div class="crm-chart-box"><canvas id="cc-month"></canvas></div></div>
+            <div class="crm-chart-card crm-chart-wide"><h3>Top 10 clientes por gasto</h3><div class="crm-chart-box" style="height:320px;"><canvas id="cc-top"></canvas></div></div>
+        </div>`;
+
+    if (typeof Chart === 'undefined') {
+        container.insertAdjacentHTML('afterbegin', '<p class="text-xs" style="color:var(--color-danger);">No se pudo cargar la librería de gráficos (Chart.js).</p>');
+        return;
+    }
+
+    const css = getComputedStyle(document.body);
+    const primary = (css.getPropertyValue('--color-primary') || '#ea580c').trim();
+    const palette = ['#ea580c', '#163C51', '#81B29A', '#F2CC8F', '#E07A5F', '#3D405B', '#1d9e75', '#378add'];
+    const mk = (id, config) => { const el = document.getElementById(id); if (el) state.crmCharts.push(new Chart(el, config)); };
+    const noLegend = { plugins: { legend: { display: false } }, maintainAspectRatio: false };
+
+    mk('cc-funnel', {
+        type: 'bar',
+        data: { labels: ['Contactos', 'Leads', 'Clientes'], datasets: [{ data: [counts.contactos || 0, counts.leads || 0, counts.clientes || clientes.length], backgroundColor: ['#94a3b8', '#F2CC8F', primary] }] },
+        options: { ...noLegend, scales: { y: { beginAtZero: true } } }
+    });
+    mk('cc-prod', {
+        type: 'doughnut',
+        data: { labels: topProd.map(p => p[0]), datasets: [{ data: topProd.map(p => p[1]), backgroundColor: palette }] },
+        options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } } }
+    });
+    mk('cc-dist', {
+        type: 'bar',
+        data: { labels: Object.keys(dist), datasets: [{ data: Object.values(dist), backgroundColor: primary }] },
+        options: { ...noLegend, scales: { y: { beginAtZero: true } } }
+    });
+    mk('cc-month', {
+        type: 'line',
+        data: { labels: months, datasets: [{ data: months.map(m => byMonth[m]), borderColor: primary, backgroundColor: 'rgba(234,88,12,0.12)', fill: true, tension: 0.3 }] },
+        options: { ...noLegend, scales: { y: { beginAtZero: true } } }
+    });
+    mk('cc-top', {
+        type: 'bar',
+        data: { labels: top10.map(c => (c.name || c.id || '').toString().slice(0, 18)), datasets: [{ data: top10.map(c => c.totalSpent || 0), backgroundColor: primary }] },
+        options: { ...noLegend, indexAxis: 'y', scales: { x: { beginAtZero: true } } }
+    });
 }
 
 /** Muestra la lista de la pestaña activa. Si ya está en caché, render inmediato;
@@ -837,12 +958,13 @@ function clearCrmFilters() {
     renderCrmList();
 }
 
-/** Botón "Actualizar": limpia la caché y vuelve a pedir conteos + lista actual. */
+/** Botón "Actualizar": limpia la caché y vuelve a pedir conteos + lista/gráficos. */
 function refreshCrmView() {
     state.crmCache = {};
     state.crmCounts = null;
     loadCrmCounts(true);
-    loadCrmList(true, true);
+    if (state.crmTab === 'graficos') loadCrmCharts(true);
+    else loadCrmList(true, true);
 }
 
 window.loadCrmView = loadCrmView;
@@ -851,6 +973,8 @@ window.loadCrmList = loadCrmList;
 window.renderCrmList = renderCrmList;
 window.clearCrmFilters = clearCrmFilters;
 window.refreshCrmView = refreshCrmView;
+window.loadCrmCharts = loadCrmCharts;
+window.renderCrmCharts = renderCrmCharts;
 
 // Prepara la vista unificada de Campañas (sub-pestañas Enviar + Crear plantilla)
 function renderCampaignsView() {

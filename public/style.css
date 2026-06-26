@@ -1005,6 +1005,18 @@ body.dark-mode .table tr:hover { background-color: #292e42; }
 .crm-tab-count { font-size: 0.72rem; font-weight: 800; background: var(--color-subtle-bg); color: var(--color-text-light); border-radius: 9999px; padding: 1px 8px; min-width: 22px; text-align: center; }
 .crm-tab.active .crm-tab-count { background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary); }
 
+/* Pestaña Gráficos: KPIs + tarjetas de charts */
+.crm-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 1.5rem; }
+.crm-kpi { background: var(--color-container-bg); border: 1px solid var(--color-border); border-radius: var(--border-radius-md); padding: 16px; }
+.crm-kpi-val { font-family: var(--font-heading); font-size: 1.6rem; font-weight: 800; color: var(--color-text); line-height: 1.1; }
+.crm-kpi-label { font-size: 0.8rem; color: var(--color-text-light); margin-top: 4px; }
+.crm-kpi-sub { font-size: 0.72rem; color: var(--color-primary); font-weight: 600; margin-top: 2px; }
+.crm-charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.crm-chart-card { background: var(--color-container-bg); border: 1px solid var(--color-border); border-radius: var(--border-radius-md); padding: 16px; }
+.crm-chart-card h3 { font-family: var(--font-heading); font-size: 0.95rem; font-weight: 700; color: var(--color-text); margin: 0 0 12px 0; }
+.crm-chart-box { position: relative; height: 240px; }
+.crm-chart-wide { grid-column: 1 / -1; }
+
 /* Sub-pestañas de la vista Campañas (Enviar / Crear plantilla) */
 .campaign-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--color-border); margin-bottom: 1.5rem; }
 .campaign-tab { padding: 10px 18px; background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--color-text-light); transition: color 0.15s ease, border-color 0.15s ease; }

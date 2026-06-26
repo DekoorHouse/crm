@@ -712,6 +712,7 @@ const ClientesViewTemplate = () => `
             <button class="crm-tab active" data-crmtab="clientes" onclick="switchCrmTab('clientes')">Clientes <span class="crm-tab-count" id="crm-count-clientes">·</span></button>
             <button class="crm-tab" data-crmtab="leads" onclick="switchCrmTab('leads')">Leads <span class="crm-tab-count" id="crm-count-leads">·</span></button>
             <button class="crm-tab" data-crmtab="contactos" onclick="switchCrmTab('contactos')">Contactos <span class="crm-tab-count" id="crm-count-contactos">·</span></button>
+            <button class="crm-tab" data-crmtab="graficos" onclick="switchCrmTab('graficos')"><i class="fas fa-chart-column mr-1"></i> Gráficos</button>
         </div>
         <p id="crm-tab-hint" class="text-xs" style="color:var(--color-text-light);margin:0 0 12px 0;"></p>
         <div class="crm-toolbar" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:1rem;">
@@ -743,6 +744,7 @@ const ClientesViewTemplate = () => `
                 </tbody>
             </table>
         </div>
+        <div id="crm-charts" style="display:none;"></div>
     </div>
 `;
 
