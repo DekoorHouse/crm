@@ -4677,12 +4677,25 @@ router.put('/users/:userId', async (req, res) => {
     }
 });
 
-// DELETE /api/users/:userId - Eliminar un usuario
+// DELETE /api/users/:userId - Eliminar un usuario (cuenta de Auth + perfil de Firestore)
 router.delete('/users/:userId', async (req, res) => {
-    const { userId } = req.params;
+    const { userId } = req.params; // email
+    const docId = (userId || '').toLowerCase(); // el doc de Firestore usa el email en minúsculas
 
     try {
-        await db.collection('users').doc(userId).delete();
+        // 1. Eliminar la cuenta de Firebase Auth (si existe). GET /users arma la lista
+        //    desde Auth, así que sin esto el usuario reaparece tras borrar solo Firestore.
+        try {
+            const userRecord = await admin.auth().getUserByEmail(userId);
+            await admin.auth().deleteUser(userRecord.uid);
+        } catch (authErr) {
+            // Si no existe en Auth (solo perfil de Firestore), continuamos sin error.
+            if (authErr.code !== 'auth/user-not-found') throw authErr;
+        }
+
+        // 2. Eliminar el perfil de Firestore.
+        await db.collection('users').doc(docId).delete();
+
         res.status(200).json({ success: true, message: 'Usuario eliminado correctamente.' });
     } catch (error) {
         console.error('Error deleting user:', error);
