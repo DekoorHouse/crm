@@ -340,9 +340,10 @@ const CreateAdFormTemplate = () => `
         <div class="campaign-form-section">
             <label class="font-bold">3. Diseña el anuncio</label>
             <label id="ad-image-drop" class="ad-image-drop mt-2" style="display:block;">
-                <input type="file" id="ad-image" accept="image/*" onchange="onAdPhotoChange(event)" hidden>
-                <div id="ad-image-placeholder"><i class="fas fa-image fa-2x mb-2"></i><br>Sube la imagen del anuncio (cuadrada 1:1 recomendada)</div>
+                <input type="file" id="ad-image" accept="image/*,video/*" onchange="onAdMediaChange(event)" hidden>
+                <div id="ad-image-placeholder"><i class="fas fa-photo-film fa-2x mb-2"></i><br>Sube una <strong>imagen</strong> o <strong>video</strong> (cuadrado 1:1 recomendado)<br><span class="text-xs text-gray-400">Imagen JPG/PNG · Video MP4 hasta ~100&nbsp;MB</span></div>
                 <img id="ad-image-preview" class="hidden" alt="imagen del anuncio">
+                <video id="ad-video-preview" class="hidden" controls muted playsinline style="max-height:200px;border-radius:8px;margin:0 auto;display:block;"></video>
             </label>
         </div>
 

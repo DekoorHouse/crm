@@ -9,6 +9,12 @@ const upload = multer({
     limits: { fileSize: 10 * 1024 * 1024 }
 });
 
+// Multer aparte para video (archivos mas grandes que las imagenes).
+const uploadVideo = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 }
+});
+
 // ===================== ACCOUNTS =====================
 
 router.get('/accounts', asyncHandler(async (req, res) => {
@@ -210,6 +216,22 @@ router.post('/creatives/upload-image', upload.single('image'), asyncHandler(asyn
     const base64 = req.file.buffer.toString('base64');
     const data = await svc.uploadAdImage(accountId, base64, req.file.originalname);
     res.json(data);
+}));
+
+// POST /api/meta-ads/creatives/upload-video  (multipart: video, accountId)
+router.post('/creatives/upload-video', uploadVideo.single('video'), asyncHandler(async (req, res) => {
+    const { accountId } = req.body;
+    if (!req.file) return res.status(400).json({ error: 'Se requiere un archivo de video' });
+    const data = await svc.uploadAdVideo(accountId, req.file.buffer, req.file.originalname);
+    res.json(data); // { id }
+}));
+
+// GET /api/meta-ads/video-status?videoId=...&accountId=...
+router.get('/video-status', asyncHandler(async (req, res) => {
+    const { videoId, accountId } = req.query;
+    if (!videoId) return res.status(400).json({ error: 'videoId es requerido' });
+    const data = await svc.getVideoStatus(videoId, accountId);
+    res.json(data); // { id, status: { video_status, ... } }
 }));
 
 router.get('/creatives/:id/preview', asyncHandler(async (req, res) => {
@@ -454,11 +476,10 @@ router.get('/audiences/custom', asyncHandler(async (req, res) => {
 // ===================== PAGES =====================
 
 // GET /api/meta-ads/pages?accountId=...
-// Páginas de Facebook promocionables bajo la cuenta (para el creador de anuncios).
+// Páginas de Facebook disponibles para el creador de anuncios: union de las
+// promocionables bajo la cuenta + las que administra el usuario del token.
 router.get('/pages', asyncHandler(async (req, res) => {
-    const data = await svc.listPromotePages(req.query.accountId, {
-        limit: req.query.limit ? parseInt(req.query.limit) : undefined
-    });
+    const data = await svc.listAllPagesForAd(req.query.accountId);
     res.json(data);
 }));
 
@@ -492,7 +513,7 @@ router.post('/quick-create', asyncHandler(async (req, res) => {
     const {
         accountId, objective, name, pageId, whatsappNumber,
         dailyBudgetCents, targeting, primaryText, headline, description,
-        imageHash, ctaType, status, instagramActorId
+        imageHash, videoId, thumbnailHash, ctaType, status, instagramActorId
     } = req.body || {};
 
     if (!accountId) return res.status(400).json({ error: 'accountId es requerido' });
@@ -500,7 +521,7 @@ router.post('/quick-create', asyncHandler(async (req, res) => {
     if (!name) return res.status(400).json({ error: 'name es requerido' });
     if (!pageId) return res.status(400).json({ error: 'pageId es requerido' });
     if (!whatsappNumber) return res.status(400).json({ error: 'whatsappNumber es requerido' });
-    if (!imageHash) return res.status(400).json({ error: 'imageHash es requerido' });
+    if (!imageHash && !videoId) return res.status(400).json({ error: 'Se requiere imageHash o videoId' });
     if (!primaryText) return res.status(400).json({ error: 'primaryText es requerido' });
 
     const result = await svc.quickCreateCtwaAd(accountId, {
@@ -508,7 +529,7 @@ router.post('/quick-create', asyncHandler(async (req, res) => {
         whatsappNumber: String(whatsappNumber).replace(/[^0-9]/g, ''),
         dailyBudgetCents: parseInt(dailyBudgetCents, 10),
         targeting, primaryText, headline, description, imageHash,
-        ctaType, status, instagramActorId
+        videoId, thumbnailHash, ctaType, status, instagramActorId
     });
 
     res.json({ success: true, ...result });

@@ -36,14 +36,69 @@ async function metaDelete(path, params = {}, accountId) {
 
 async function listAdAccounts(accountId) {
     const token = await resolveToken(accountId);
-    const response = await axios.get(`${META_API_BASE}/me/adaccounts`, {
-        params: {
-            fields: 'name,account_id,account_status,currency,timezone_name,business{name}',
-            limit: 100,
-            access_token: token
+    // Junta cuentas de TODAS las fuentes posibles, porque me/adaccounts solo
+    // devuelve donde el usuario tiene rol directo. Las cuentas que se acceden
+    // via Business Manager (client/owned) NO aparecen ahi.
+    const map = new Map(); // account_id limpio -> obj
+    const addAcc = (a) => {
+        if (!a) return;
+        const cleanId = a.account_id || String(a.id || '').replace('act_', '');
+        if (!cleanId || map.has(cleanId)) return;
+        map.set(cleanId, {
+            id: a.id || `act_${cleanId}`,
+            account_id: cleanId,
+            name: a.name || `Cuenta ${cleanId}`,
+            account_status: a.account_status,
+            currency: a.currency
+        });
+    };
+    const accFields = 'name,account_id,account_status,currency';
+
+    // 1) Cuentas del usuario (paginado).
+    try {
+        let params = { fields: accFields, limit: 100, access_token: token };
+        for (let i = 0; i < 10; i++) {
+            const r = await axios.get(`${META_API_BASE}/me/adaccounts`, { params });
+            (r.data.data || []).forEach(addAcc);
+            const after = r.data.paging?.cursors?.after;
+            if (r.data.paging?.next && after) params = { ...params, after };
+            else break;
         }
-    });
-    return response.data;
+    } catch (e) { /* sigue con las demas fuentes */ }
+
+    // 2) Cuentas de cada negocio (owned + client) del Business Manager.
+    try {
+        const bizR = await axios.get(`${META_API_BASE}/me/businesses`, {
+            params: { fields: 'id,name', limit: 50, access_token: token }
+        });
+        for (const b of (bizR.data.data || [])) {
+            for (const edge of ['owned_ad_accounts', 'client_ad_accounts']) {
+                try {
+                    const r = await axios.get(`${META_API_BASE}/${b.id}/${edge}`, {
+                        params: { fields: accFields, limit: 100, access_token: token }
+                    });
+                    (r.data.data || []).forEach(addAcc);
+                } catch (_) { /* algunos negocios pueden no exponer un edge */ }
+            }
+        }
+    } catch (e) { /* sin acceso a negocios: ignora */ }
+
+    // 3) Red de seguridad: las cuentas KPI configuradas siempre deben aparecer.
+    try {
+        const kpiIds = await getKpiAccountIds();
+        const missing = kpiIds.filter(id => !map.has(id));
+        if (missing.length) {
+            const batch = missing.map(id => ({ method: 'GET', relative_url: `act_${id}?fields=name,account_id,currency` }));
+            const resp = await axios.post(`${META_API_BASE}/`, { access_token: token, batch: JSON.stringify(batch) });
+            (Array.isArray(resp.data) ? resp.data : []).forEach((r, idx) => {
+                if (r && r.code === 200 && r.body) { try { addAcc(JSON.parse(r.body)); } catch (_) {} }
+                if (!map.has(missing[idx])) addAcc({ account_id: missing[idx] });
+            });
+        }
+    } catch (e) { /* ignora */ }
+
+    const data = Array.from(map.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return { data };
 }
 
 async function getActiveAccount() {
@@ -501,6 +556,60 @@ async function listPromotePages(accountId, { limit = 50 } = {}) {
     return metaGet(`${actId}/promote_pages`, { fields: 'id,name', limit }, accountId);
 }
 
+/**
+ * Páginas que administra el usuario del token (no scoped a una cuenta).
+ */
+async function listUserPages(accountId, { limit = 100 } = {}) {
+    const token = await resolveToken(accountId);
+    const r = await axios.get(`${META_API_BASE}/me/accounts`, {
+        params: { fields: 'id,name', limit, access_token: token }
+    });
+    return r.data;
+}
+
+/**
+ * Union de páginas promocionables de la cuenta + páginas que administra el
+ * usuario, deduplicadas. Así el creador de anuncios muestra todas las páginas
+ * disponibles, no solo las que ya estaban ligadas a la cuenta.
+ */
+async function listAllPagesForAd(accountId) {
+    const map = new Map();
+    const add = (p) => { if (p && p.id && !map.has(String(p.id))) map.set(String(p.id), { id: String(p.id), name: p.name || String(p.id) }); };
+    try { const r = await listPromotePages(accountId, { limit: 100 }); (r.data || []).forEach(add); } catch (_) {}
+    try { const r = await listUserPages(accountId, { limit: 100 }); (r.data || []).forEach(add); } catch (_) {}
+    return { data: Array.from(map.values()).sort((a, b) => (a.name || '').localeCompare(b.name || '')) };
+}
+
+// ===================== VIDEOS (subida + estado) =====================
+
+/**
+ * Sube un video a la cuenta publicitaria (act_X/advideos) via multipart.
+ * Devuelve { id }. El video queda "processing" hasta que Meta lo procesa;
+ * hay que esperar a status.video_status === 'ready' antes de usarlo.
+ */
+async function uploadAdVideo(accountId, buffer, filename) {
+    const actId = normalizeAccountId(accountId);
+    const token = await resolveToken(accountId);
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('access_token', token);
+    form.append('name', filename || 'video');
+    form.append('source', buffer, { filename: filename || 'video.mp4' });
+    const r = await axios.post(`${META_API_BASE}/${actId}/advideos`, form, {
+        headers: form.getHeaders(),
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+    });
+    return r.data;
+}
+
+/**
+ * Estado de procesamiento de un video. Devuelve { status: { video_status } }.
+ */
+async function getVideoStatus(videoId, accountId) {
+    return metaGet(videoId, { fields: 'status' }, accountId);
+}
+
 // ===================== CREACION RAPIDA: ANUNCIO CLICK-TO-WHATSAPP =====================
 
 /**
@@ -535,12 +644,13 @@ async function quickCreateCtwaAd(accountId, opts) {
     const {
         objective, name, pageId, whatsappNumber, dailyBudgetCents,
         targeting, primaryText, headline, description, imageHash,
+        videoId, thumbnailHash,
         ctaType = 'WHATSAPP_MESSAGE', status = 'PAUSED', instagramActorId
     } = opts || {};
 
     if (!pageId) throw new Error('Falta la página de Facebook (pageId).');
     if (!whatsappNumber) throw new Error('Falta el número de WhatsApp.');
-    if (!imageHash) throw new Error('Falta la imagen del anuncio.');
+    if (!imageHash && !videoId) throw new Error('Falta la imagen o el video del anuncio.');
     if (!primaryText) throw new Error('Falta el texto principal del anuncio.');
     if (!dailyBudgetCents || dailyBudgetCents <= 0) throw new Error('Presupuesto diario inválido.');
 
@@ -567,21 +677,22 @@ async function quickCreateCtwaAd(accountId, opts) {
             targeting
         });
 
-        // 3. Creativo (link_data click-to-WhatsApp).
+        // 3. Creativo click-to-WhatsApp: video_data si hay video, si no link_data (imagen).
         const waLink = `https://api.whatsapp.com/send?phone=${whatsappNumber}`;
-        const link_data = {
-            link: waLink,
-            message: primaryText,
-            image_hash: imageHash,
-            call_to_action: {
-                type: ctaType,
-                value: { app_destination: 'WHATSAPP', link: waLink }
-            }
-        };
-        if (headline) link_data.name = headline;
-        if (description) link_data.description = description;
-
-        const object_story_spec = { page_id: pageId, link_data };
+        const cta = { type: ctaType, value: { app_destination: 'WHATSAPP', link: waLink } };
+        let object_story_spec;
+        if (videoId) {
+            const video_data = { video_id: videoId, message: primaryText, call_to_action: cta };
+            if (headline) video_data.title = headline;
+            if (description) video_data.link_description = description;
+            if (thumbnailHash) video_data.image_hash = thumbnailHash; // miniatura; si no, Meta la genera
+            object_story_spec = { page_id: pageId, video_data };
+        } else {
+            const link_data = { link: waLink, message: primaryText, image_hash: imageHash, call_to_action: cta };
+            if (headline) link_data.name = headline;
+            if (description) link_data.description = description;
+            object_story_spec = { page_id: pageId, link_data };
+        }
         if (instagramActorId) object_story_spec.instagram_actor_id = instagramActorId;
 
         creative = await createCreative(accountId, {
@@ -630,7 +741,9 @@ module.exports = {
     // Audiences
     searchTargeting, listCustomAudiences,
     // Pages
-    listPromotePages,
+    listPromotePages, listUserPages, listAllPagesForAd,
+    // Videos
+    uploadAdVideo, getVideoStatus,
     // Creacion rapida click-to-WhatsApp
     quickCreateCtwaAd
 };

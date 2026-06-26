@@ -1496,17 +1496,19 @@ async function handleCreateMetaAd() {
     if (waNumber.length < 10) { showError('El número de WhatsApp no es válido (incluye código de país).'); return; }
     if (!budgetMxn || budgetMxn <= 0) { showError('Define un presupuesto diario válido.'); return; }
     if (!primaryText) { showError('Escribe el texto principal del anuncio.'); return; }
-    if (!adImageFile) { showError('Sube la imagen del anuncio.'); return; }
+    if (!adImageFile) { showError('Sube una imagen o un video del anuncio.'); return; }
 
     const dailyBudgetCents = Math.round(budgetMxn * 100);
     const targeting = buildAdTargeting();
     const objLabel = objective === 'OUTCOME_SALES' ? 'Ventas' : 'Mensajes';
     const genderTxt = { all: 'todos', male: 'hombres', female: 'mujeres' }[(document.getElementById('ad-gender') || {}).value || 'all'];
     const interesesTxt = adInterests.length ? `${adInterests.length} interés(es)` : 'audiencia amplia';
+    const formatoTxt = adMediaKind === 'video' ? 'Video' : 'Imagen';
 
     const resumen =
         `Vas a PUBLICAR un anuncio EN VIVO:\n\n` +
         `• Objetivo: ${objLabel} (a WhatsApp)\n` +
+        `• Formato: ${formatoTxt}\n` +
         `• Presupuesto: $${budgetMxn.toLocaleString('es-MX')} MXN / día\n` +
         `• Audiencia: ${targeting.geo_locations.countries[0]}, ${targeting.age_min}-${targeting.age_max} años, ${genderTxt}, ${interesesTxt}\n` +
         `• WhatsApp: ${waNumber}\n\n` +
@@ -1515,19 +1517,48 @@ async function handleCreateMetaAd() {
 
     const btn = document.getElementById('create-ad-btn');
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Subiendo imagen…';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Subiendo…';
 
     try {
-        // 1. Subir la imagen a la cuenta publicitaria → image_hash.
-        const fd = new FormData();
-        fd.append('image', adImageFile);
-        fd.append('accountId', accountId);
-        const upRes = await fetch(`${API_BASE_URL}/api/meta-ads/creatives/upload-image`, { method: 'POST', body: fd });
-        const upData = await upRes.json();
-        if (!upRes.ok) throw new Error(upData.error || 'No se pudo subir la imagen.');
-        const imgObj = upData.images ? Object.values(upData.images)[0] : null;
-        const imageHash = imgObj && imgObj.hash;
-        if (!imageHash) throw new Error('La imagen se subió pero Meta no devolvió un hash.');
+        let imageHash = null, videoId = null, thumbnailHash = null;
+
+        if (adMediaKind === 'video') {
+            // 1a. Miniatura del video (opcional, best-effort).
+            if (adThumbBlob) {
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Subiendo miniatura…';
+                try {
+                    const tf = new FormData();
+                    tf.append('image', adThumbBlob, 'thumb.jpg');
+                    tf.append('accountId', accountId);
+                    const tr = await fetch(`${API_BASE_URL}/api/meta-ads/creatives/upload-image`, { method: 'POST', body: tf });
+                    const td = await tr.json();
+                    if (tr.ok && td.images) { const o = Object.values(td.images)[0]; thumbnailHash = o && o.hash; }
+                } catch (_) { /* miniatura opcional */ }
+            }
+            // 1b. Subir el video.
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Subiendo video…';
+            const vf = new FormData();
+            vf.append('video', adImageFile);
+            vf.append('accountId', accountId);
+            const vr = await fetch(`${API_BASE_URL}/api/meta-ads/creatives/upload-video`, { method: 'POST', body: vf });
+            const vd = await vr.json();
+            if (!vr.ok || !vd.id) throw new Error(vd.error || 'No se pudo subir el video.');
+            videoId = vd.id;
+            // 1c. Esperar a que Meta procese el video.
+            await waitVideoReady(videoId, accountId, btn);
+        } else {
+            // 1. Subir la imagen a la cuenta publicitaria → image_hash.
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Subiendo imagen…';
+            const fd = new FormData();
+            fd.append('image', adImageFile);
+            fd.append('accountId', accountId);
+            const upRes = await fetch(`${API_BASE_URL}/api/meta-ads/creatives/upload-image`, { method: 'POST', body: fd });
+            const upData = await upRes.json();
+            if (!upRes.ok) throw new Error(upData.error || 'No se pudo subir la imagen.');
+            const imgObj = upData.images ? Object.values(upData.images)[0] : null;
+            imageHash = imgObj && imgObj.hash;
+            if (!imageHash) throw new Error('La imagen se subió pero Meta no devolvió un hash.');
+        }
 
         // 2. Crear campaña + conjunto + creativo + anuncio (EN VIVO).
         btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Publicando anuncio…';
@@ -1537,7 +1568,7 @@ async function handleCreateMetaAd() {
             body: JSON.stringify({
                 accountId, objective, name, pageId, whatsappNumber: waNumber,
                 dailyBudgetCents, targeting, primaryText, headline, description,
-                imageHash, ctaType, status: 'ACTIVE'
+                imageHash, videoId, thumbnailHash, ctaType, status: 'ACTIVE'
             })
         });
         const result = await res.json();
@@ -1562,10 +1593,14 @@ function resetCreateAdForm() {
         const el = document.getElementById(id); if (el) el.value = '';
     });
     adImageFile = null;
+    adThumbBlob = null;
+    adMediaKind = 'image';
     adInterests = [];
     renderAdInterestChips();
     const prev = document.getElementById('ad-image-preview');
     if (prev) { prev.src = ''; prev.classList.add('hidden'); }
+    const vidPrev = document.getElementById('ad-video-preview');
+    if (vidPrev) { vidPrev.src = ''; vidPrev.classList.add('hidden'); }
     const ph = document.getElementById('ad-image-placeholder');
     if (ph) ph.classList.remove('hidden');
     const fileInput = document.getElementById('ad-image');
@@ -3028,7 +3063,7 @@ window.handleCreateWhatsappTemplate = handleCreateWhatsappTemplate;
 window.initCreateAdForm = initCreateAdForm;
 window.onAdAccountChange = onAdAccountChange;
 window.onAdObjectiveChange = onAdObjectiveChange;
-window.onAdPhotoChange = onAdPhotoChange;
+window.onAdMediaChange = onAdMediaChange;
 window.updateAdPreview = updateAdPreview;
 window.searchAdInterests = searchAdInterests;
 window.addAdInterestByIndex = addAdInterestByIndex;
