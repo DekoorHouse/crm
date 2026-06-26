@@ -1039,6 +1039,19 @@ body.dark-mode .table tr:hover { background-color: #292e42; }
 .campaign-pane-sub { color: var(--color-text-light); font-size: 0.8125rem; margin: 0; max-width: 70ch; }
 .campaign-pane-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
+/* Hub IA unificado: sub-pestañas Entrenamiento · Simulador · Rescate.
+   Columna flex de altura completa para que el Simulador (que usa h-full) llene
+   el alto y cada panel conserve su propio .view-container con padding/scroll. */
+.ia-hub { height: 100%; display: flex; flex-direction: column; background: var(--color-container-bg); }
+.ia-tabs { flex: none; display: flex; flex-wrap: wrap; gap: 4px; padding: 0 2rem; border-bottom: 1px solid var(--color-border); }
+.ia-tab { padding: 14px 18px; background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--color-text-light); transition: color 0.15s ease, border-color 0.15s ease; }
+.ia-tab:hover { color: var(--color-text); }
+.ia-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.ia-panes { flex: 1; min-height: 0; }
+.ia-pane { display: none; height: 100%; }
+.ia-pane.active { display: block; }
+@media (max-width: 1024px) { .ia-tabs { padding: 0 1.25rem; } }
+
 /* === Sección de resultados automáticos por plantilla (Resultados) === */
 .auto-results-section { margin-bottom: 2rem; }
 .auto-results-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }

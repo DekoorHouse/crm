@@ -15,9 +15,17 @@ function navigateTo(viewName, force = false) {
     else if (viewName === 'conversion-campanas') { campaignSubtab = 'resultados'; viewName = 'campanas'; }
     if (campaignSubtab) state.campaignTab = campaignSubtab;
 
+    // Entrenamiento, Simulador y Rescate se fusionaron en el hub "IA" como sub-pestañas.
+    let iaSubtab = null;
+    if (viewName === 'entrenamiento-ia') { iaSubtab = 'entrenamiento'; viewName = 'ia'; }
+    else if (viewName === 'simulador-ia') { iaSubtab = 'simulador'; viewName = 'ia'; }
+    else if (viewName === 'rescate-ia') { iaSubtab = 'rescate'; viewName = 'ia'; }
+    if (iaSubtab) state.iaTab = iaSubtab;
+
     if (state.activeView === viewName && !force) {
         // Ya estamos en el hub: solo cambiar de sub-pestaña.
         if (campaignSubtab && typeof switchCampaignTab === 'function') switchCampaignTab(campaignSubtab);
+        if (iaSubtab && typeof switchIaTab === 'function') switchIaTab(iaSubtab);
         return;
     }
 
@@ -102,16 +110,10 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = MetricsViewTemplate();
             renderMetricsView(); // Dibuja la vista de métricas (incluyendo la nueva sección)
             break;
-        case 'rescate-ia':
-            mainViewContainer.innerHTML = OrderFollowupViewTemplate();
-            renderOrderFollowupView(); // Embudo de rescate + lista de contactados
-            break;
-        case 'entrenamiento-ia':
-            mainViewContainer.innerHTML = AITrainingViewTemplate();
-            renderAITrainingView();
-            break;
-        case 'simulador-ia':
-            mainViewContainer.innerHTML = AIChatSimulatorViewTemplate();
+        case 'ia':
+            // Hub unificado de IA: Entrenamiento · Simulador · Rescate (sub-pestañas).
+            mainViewContainer.innerHTML = AIHubViewTemplate();
+            switchIaTab(state.iaTab || 'entrenamiento'); // marca activa + carga diferida del panel
             break;
         case 'ajustes':
             mainViewContainer.innerHTML = SettingsViewTemplate();
@@ -119,6 +121,27 @@ function navigateTo(viewName, force = false) {
             break;
         default:
             mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
+    }
+}
+
+// Cambia entre las sub-pestañas del hub IA (Entrenamiento · Simulador · Rescate).
+function switchIaTab(tab) {
+    document.querySelectorAll('.ia-tab').forEach(t => t.classList.toggle('active', t.dataset.iatab === tab));
+    let activePane = null;
+    document.querySelectorAll('.ia-pane').forEach(p => {
+        const on = p.dataset.iapane === tab;
+        p.classList.toggle('active', on);
+        if (on) activePane = p;
+    });
+    if (typeof state !== 'undefined') state.iaTab = tab;
+
+    // Carga diferida de cada panel la primera vez que se abre (el flag vive en el DOM,
+    // que se recrea al volver a entrar al hub).
+    if (activePane && !activePane.dataset.loaded) {
+        activePane.dataset.loaded = '1';
+        if (tab === 'entrenamiento' && typeof renderAITrainingView === 'function') renderAITrainingView();
+        else if (tab === 'rescate' && typeof renderOrderFollowupView === 'function') renderOrderFollowupView();
+        // 'simulador' no requiere render diferido (sus handlers son inline en el template).
     }
 }
 
@@ -1274,7 +1297,7 @@ window.removeUserPhoto = removeUserPhoto;
 
 // --- INICIO: Renderizado de Entrenamiento de IA ---
 async function renderAITrainingView() {
-    if (state.activeView !== 'entrenamiento-ia') return;
+    if (state.activeView !== 'ia') return;
 
     // 1. Cargar instrucciones del bot desde Firestore
     try {

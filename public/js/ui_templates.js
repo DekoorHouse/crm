@@ -740,7 +740,16 @@ const SettingsViewTemplate = () => `
         <div class="view-header">
             <h1>Ajustes Generales</h1>
         </div>
-        <div class="max-w-2xl space-y-8">
+        <div class="settings-tabs">
+            <button class="settings-tab active" data-stab="apariencia" onclick="switchSettingsTab('apariencia')"><i class="fas fa-palette mr-2"></i>Apariencia</button>
+            <button class="settings-tab" data-stab="usuarios" onclick="switchSettingsTab('usuarios')"><i class="fas fa-users mr-2"></i>Usuarios</button>
+            <button class="settings-tab" data-stab="automatizacion" onclick="switchSettingsTab('automatizacion')"><i class="fas fa-robot mr-2"></i>Automatización</button>
+            <button class="settings-tab" data-stab="integraciones" onclick="switchSettingsTab('integraciones')"><i class="fas fa-plug mr-2"></i>Integraciones</button>
+            <button class="settings-tab" data-stab="herramientas" onclick="switchSettingsTab('herramientas')"><i class="fas fa-screwdriver-wrench mr-2"></i>Herramientas</button>
+        </div>
+
+        <div class="max-w-2xl">
+            <div class="settings-pane active" data-spane="apariencia">
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-1">Apariencia</h2>
                 <p class="text-sm text-gray-500 mb-4">Elige el tema del CRM. Se guarda en este navegador.</p>
@@ -764,6 +773,8 @@ const SettingsViewTemplate = () => `
                     }).join('')}
                 </div>
             </div>
+            </div>
+            <div class="settings-pane" data-spane="usuarios">
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-1">Usuarios y Operadores</h2>
                 <p class="text-sm text-gray-500 mb-4">Consulta y edita la información de tu equipo: nombre, foto de perfil, rango y departamentos asignados.</p>
@@ -771,6 +782,9 @@ const SettingsViewTemplate = () => `
                     <p class="text-gray-400 text-sm">Cargando usuarios...</p>
                 </div>
             </div>
+            </div>
+            <div class="settings-pane" data-spane="automatizacion">
+            <div class="space-y-8">
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-4">Automatización</h2>
                 <div class="flex items-center justify-between">
@@ -800,6 +814,9 @@ const SettingsViewTemplate = () => `
                     <button id="save-messenger-welcome-btn" class="btn btn-primary flex-shrink-0">Guardar</button>
                 </div>
             </div>
+            </div>
+            </div>
+            <div class="settings-pane" data-spane="integraciones">
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-4">Integraciones</h2>
                 <div>
@@ -811,6 +828,9 @@ const SettingsViewTemplate = () => `
                     </div>
                 </div>
             </div>
+            </div>
+            <div class="settings-pane" data-spane="herramientas">
+            <div class="space-y-8">
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-4">Herramientas de Prueba</h2>
                 <form id="simulate-ad-form">
@@ -845,6 +865,8 @@ const SettingsViewTemplate = () => `
                         <i class="fas fa-random mr-2"></i> Migrar Chats Huérfanos a General
                     </button>
                 </div>
+            </div>
+            </div>
             </div>
         </div>
     </div>
@@ -1167,6 +1189,22 @@ const OrderFollowupViewTemplate = () => `
                     <div id="rescate-empty" class="text-center py-6 hidden" style="color:var(--color-text-light)">Sin registros en este rango.</div>
                 </div>
             </div>
+        </div>
+    </div>
+`;
+
+// --- Vista unificada IA: sub-pestañas Entrenamiento · Simulador · Rescate ---
+const AIHubViewTemplate = () => `
+    <div class="ia-hub">
+        <div class="ia-tabs">
+            <button class="ia-tab active" data-iatab="entrenamiento" onclick="switchIaTab('entrenamiento')"><i class="fas fa-brain mr-2"></i>Entrenamiento IA</button>
+            <button class="ia-tab" data-iatab="simulador" onclick="switchIaTab('simulador')"><i class="fas fa-robot mr-2"></i>Simulador IA</button>
+            <button class="ia-tab" data-iatab="rescate" onclick="switchIaTab('rescate')"><i class="fas fa-hand-holding-heart mr-2"></i>Rescate IA</button>
+        </div>
+        <div class="ia-panes">
+            <div class="ia-pane active" data-iapane="entrenamiento">${AITrainingViewTemplate()}</div>
+            <div class="ia-pane" data-iapane="simulador">${AIChatSimulatorViewTemplate()}</div>
+            <div class="ia-pane" data-iapane="rescate">${OrderFollowupViewTemplate()}</div>
         </div>
     </div>
 `;
