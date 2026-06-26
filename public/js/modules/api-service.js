@@ -245,6 +245,29 @@ async function fetchPendingAiCount() {
 }
 
 /**
+ * Obtiene del servidor cuántos contactos hay asignados a cada departamento.
+ * Devuelve un mapa { departmentId: n } o null si falla. Usa Firestore count()
+ * en el backend, así que es exacto aunque la lista de chats cargue solo una ventana.
+ */
+async function fetchDepartmentContactCounts() {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const response = await fetch(`${API_BASE_URL}/api/departments/contact-counts`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        const data = await response.json();
+        if (response.ok && data.success) {
+            state.departmentContactCounts = data.counts || {};
+            return state.departmentContactCounts;
+        }
+        return null;
+    } catch (error) {
+        console.error('Error fetching department contact counts:', error);
+        return null;
+    }
+}
+
+/**
  * Inicia un listener en tiempo real para el conteo de chats pendientes de IA.
  * Esto permite que el badge se actualice automáticamente sin recargar, solucionando
  * la falta de reactividad.

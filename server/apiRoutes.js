@@ -3665,6 +3665,39 @@ router.get('/contacts/ia-active-count', async (req, res) => {
     }
 });
 
+// --- GET /api/departments/contact-counts ---
+// Devuelve cuántos contactos hay asignados a CADA departamento.
+// Usa Firestore count() por depto (agregación barata, no lee documentos) en paralelo.
+// Respuesta: { success, counts: { [departmentId]: n }, total }.
+router.get('/departments/contact-counts', async (req, res) => {
+    try {
+        // Tomar los IDs de departamento solicitados, o todos los existentes si no se especifican.
+        let deptIds;
+        if (req.query.departmentIds) {
+            deptIds = req.query.departmentIds.split(',').map(s => s.trim()).filter(Boolean);
+        } else {
+            const deptsSnap = await db.collection('departments').select().get();
+            deptIds = deptsSnap.docs.map(doc => doc.id);
+        }
+
+        const counts = {};
+        let total = 0;
+        await Promise.all(deptIds.map(async (id) => {
+            const snap = await db.collection('contacts_whatsapp')
+                .where('assignedDepartmentId', '==', id)
+                .count().get();
+            const n = snap.data().count || 0;
+            counts[id] = n;
+            total += n;
+        }));
+
+        res.status(200).json({ success: true, counts, total });
+    } catch (error) {
+        console.error('Error getting department contact counts:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener el conteo por departamento.', error: error.message });
+    }
+});
+
 // --- POST /api/contacts/disable-ia-bulk ---
 // Desactiva la IA (botActive=false) para TODOS los contactos del depto que la tengan
 // activa actualmente. Procesa en batches de 500 (limite de Firestore para writes).
