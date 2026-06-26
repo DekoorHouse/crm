@@ -11488,4 +11488,85 @@ router.get('/debug/messenger-backfill-names', async (req, res) => {
     res.json(out);
 });
 
+// === LISTA CRM unificada: Clientes (pagaron) / Leads (registraron sin pagar) / Contactos (sin pedido) ===
+const _tsMs = t => (t && typeof t.toMillis === 'function') ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : (typeof t === 'number' ? t : null));
+const _slimContact = (id, d) => ({
+    id,
+    name: d.name || null,
+    status: d.status || null,
+    channel: d.channel || null,
+    purchaseStatus: d.purchaseStatus || null,
+    lastMessage: d.lastMessage || '',
+    totalSpent: d.totalSpent || 0,
+    orderCount: d.orderCount || 0,
+    products: Array.isArray(d.products) ? d.products : [],
+    lastOrderDate: _tsMs(d.lastOrderDate),
+    lastMessageTimestamp: _tsMs(d.lastMessageTimestamp)
+});
+
+// GET /api/crm-list/counts → cuántos hay de cada tipo (con count(), eficiente)
+router.get('/crm-list/counts', async (_req, res) => {
+    try {
+        const col = db.collection('contacts_whatsapp');
+        const [tot, cli, lead] = await Promise.all([
+            col.count().get(),
+            col.where('purchaseStatus', '==', 'completed').count().get(),
+            col.where('purchaseStatus', '==', 'registered').count().get()
+        ]);
+        const total = tot.data().count;
+        const clientes = cli.data().count;
+        const leads = lead.data().count;
+        res.json({ success: true, total, clientes, leads, contactos: Math.max(0, total - clientes - leads) });
+    } catch (err) {
+        console.error('crm-list/counts error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/crm-list/items?tab=clientes|leads|contactos[&sort=recent|spent|orders|product][&days=3]
+router.get('/crm-list/items', async (req, res) => {
+    try {
+        const tab = ['clientes', 'leads', 'contactos'].includes(req.query.tab) ? req.query.tab : 'clientes';
+        const col = db.collection('contacts_whatsapp');
+        let items = [];
+        let truncated = false;
+
+        if (tab === 'clientes' || tab === 'leads') {
+            // Acotado (compradores/leads) → cargamos todos y ordenamos en memoria
+            const ps = tab === 'clientes' ? 'completed' : 'registered';
+            const CAP = 5000;
+            const snap = await col.where('purchaseStatus', '==', ps).limit(CAP).get();
+            items = snap.docs.map(d => _slimContact(d.id, d.data()));
+            truncated = snap.size >= CAP;
+            if (tab === 'clientes') {
+                const sort = req.query.sort || 'recent';
+                if (sort === 'spent') items.sort((a, b) => b.totalSpent - a.totalSpent);
+                else if (sort === 'orders') items.sort((a, b) => b.orderCount - a.orderCount);
+                else if (sort === 'product') items.sort((a, b) => (a.products[0] || '~').localeCompare(b.products[0] || '~'));
+                else items.sort((a, b) => (b.lastOrderDate || b.lastMessageTimestamp || 0) - (a.lastOrderDate || a.lastMessageTimestamp || 0));
+            } else {
+                items.sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0));
+            }
+        } else {
+            // Contactos (colección grande) → solo últimos N días, excluyendo compradores/leads
+            const days = Math.min(Math.max(parseInt(req.query.days, 10) || 3, 1), 90);
+            const since = admin.firestore.Timestamp.fromMillis(Date.now() - days * 86400000);
+            const snap = await col.where('lastMessageTimestamp', '>=', since)
+                .orderBy('lastMessageTimestamp', 'desc').limit(1500).get();
+            items = snap.docs.map(d => _slimContact(d.id, d.data()))
+                .filter(c => c.purchaseStatus !== 'completed' && c.purchaseStatus !== 'registered');
+            truncated = snap.size >= 1500;
+        }
+
+        res.json({ success: true, tab, count: items.length, truncated, items });
+    } catch (err) {
+        console.error('crm-list/items error:', err);
+        const msg = err.message || 'error';
+        if (/requires an index|needs.*index/i.test(msg)) {
+            return res.status(500).json({ success: false, needsIndex: true, message: 'Falta índice Firestore: ' + msg });
+        }
+        res.status(500).json({ success: false, message: msg });
+    }
+});
+
 module.exports = router;

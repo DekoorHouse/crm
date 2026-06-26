@@ -986,6 +986,14 @@ body.dark-mode .table tr:hover { background-color: #292e42; }
 .campaign-form-section label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
 #recipient-count-display { margin-top: 0.5rem; font-style: italic; color: var(--color-text-light); }
 
+/* Pestañas de la vista Clientes (Clientes / Leads / Contactos) */
+.crm-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--color-border); margin-bottom: 1rem; }
+.crm-tab { padding: 10px 18px; background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-weight: 600; font-size: 0.95rem; color: var(--color-text-light); transition: color 0.15s ease, border-color 0.15s ease; display: inline-flex; align-items: center; gap: 8px; }
+.crm-tab:hover { color: var(--color-text); }
+.crm-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.crm-tab-count { font-size: 0.72rem; font-weight: 800; background: var(--color-subtle-bg); color: var(--color-text-light); border-radius: 9999px; padding: 1px 8px; min-width: 22px; text-align: center; }
+.crm-tab.active .crm-tab-count { background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary); }
+
 /* Sub-pestañas de la vista Campañas (Enviar / Crear plantilla) */
 .campaign-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--color-border); margin-bottom: 1.5rem; }
 .campaign-tab { padding: 10px 18px; background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--color-text-light); transition: color 0.15s ease, border-color 0.15s ease; }

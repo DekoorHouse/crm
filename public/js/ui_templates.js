@@ -445,34 +445,39 @@ const ContactsViewTemplate = () => `
 const ClientesViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">
-            <h1>Lista de Clientes <span id="clientes-count" class="orders-badge" style="display:inline-block;margin-left:8px;">0</span></h1>
+            <h1>Clientes</h1>
         </div>
-        <div style="background:var(--color-container-bg);border:1px solid var(--color-border);border-radius:var(--border-radius-md);padding:16px;margin-bottom:1.5rem;">
-            <div class="flex flex-wrap gap-4 items-end">
-                <div style="flex:1;min-width:220px;">
-                    <label for="clientes-filtro-nombre" class="text-sm font-semibold block mb-1"><i class="fas fa-search mr-1"></i> Por nombre o teléfono</label>
-                    <input type="text" id="clientes-filtro-nombre" placeholder="Buscar..." oninput="onClientesFiltroNombreInput()" class="!mb-0">
-                </div>
-                <div style="min-width:200px;">
-                    <label for="clientes-filtro-estatus" class="text-sm font-semibold block mb-1"><i class="fas fa-tag mr-1"></i> Por estatus</label>
-                    <select id="clientes-filtro-estatus" onchange="loadClientes()" class="!mb-0"></select>
-                </div>
-                <button onclick="clearClientesFiltros()" class="btn btn-subtle"><i class="fas fa-eraser mr-1"></i> Borrar Filtros</button>
+        <div class="crm-tabs">
+            <button class="crm-tab active" data-crmtab="clientes" onclick="switchCrmTab('clientes')">Clientes <span class="crm-tab-count" id="crm-count-clientes">·</span></button>
+            <button class="crm-tab" data-crmtab="leads" onclick="switchCrmTab('leads')">Leads <span class="crm-tab-count" id="crm-count-leads">·</span></button>
+            <button class="crm-tab" data-crmtab="contactos" onclick="switchCrmTab('contactos')">Contactos <span class="crm-tab-count" id="crm-count-contactos">·</span></button>
+        </div>
+        <p id="crm-tab-hint" class="text-xs" style="color:var(--color-text-light);margin:0 0 12px 0;"></p>
+        <div class="crm-toolbar" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:1rem;">
+            <div style="flex:1;min-width:220px;">
+                <label for="crm-search" class="text-xs font-semibold block mb-1" style="color:var(--color-text-light);"><i class="fas fa-search mr-1"></i> Nombre o teléfono</label>
+                <input type="text" id="crm-search" placeholder="Buscar..." oninput="renderCrmList()" class="!mb-0">
             </div>
+            <div style="min-width:170px;">
+                <label for="crm-status-filter" class="text-xs font-semibold block mb-1" style="color:var(--color-text-light);"><i class="fas fa-tag mr-1"></i> Estatus</label>
+                <select id="crm-status-filter" onchange="renderCrmList()" class="!mb-0"></select>
+            </div>
+            <div id="crm-sort-wrap" style="min-width:190px;">
+                <label for="crm-sort" class="text-xs font-semibold block mb-1" style="color:var(--color-text-light);"><i class="fas fa-sort-amount-down mr-1"></i> Ordenar por</label>
+                <select id="crm-sort" onchange="loadCrmList()" class="!mb-0">
+                    <option value="recent">Más reciente</option>
+                    <option value="spent">Más ha comprado ($)</option>
+                    <option value="orders"># de compras</option>
+                    <option value="product">Producto</option>
+                </select>
+            </div>
+            <button onclick="clearCrmFilters()" class="btn btn-subtle"><i class="fas fa-eraser mr-1"></i> Limpiar</button>
         </div>
         <div class="table-responsive-wrapper">
             <table class="table">
-                <thead>
-                    <tr>
-                        <th>Nombre</th>
-                        <th>Teléfono</th>
-                        <th>Último Mensaje</th>
-                        <th>Estatus</th>
-                        <th>Acciones</th>
-                    </tr>
-                </thead>
-                <tbody id="clientes-table-body">
-                    <tr><td colspan="5" class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando clientes...</td></tr>
+                <thead id="crm-thead"></thead>
+                <tbody id="crm-tbody">
+                    <tr><td colspan="7" class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando…</td></tr>
                 </tbody>
             </table>
         </div>

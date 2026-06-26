@@ -55,17 +55,17 @@ function navigateTo(viewName, force = false) {
             setupChatListEventListeners(); // Añade scroll infinito, etc.
             scheduleContactListRender(); // Renderiza la lista de contactos inicial
             break;
-        case 'pipeline':
-            mainViewContainer.innerHTML = PipelineViewTemplate();
-            renderPipelineView(); // Dibuja el pipeline
-            break;
         case 'contacts':
-            mainViewContainer.innerHTML = ContactsViewTemplate();
-            renderContactsView(); // Dibuja la tabla de contactos
+            // "Contactos" se fusionó en la vista Clientes (pestaña Contactos).
+            state.activeView = 'clientes';
+            state.crmTab = 'contactos';
+            mainViewContainer.innerHTML = ClientesViewTemplate();
+            loadCrmView();
             break;
         case 'clientes':
+            if (!['clientes', 'leads', 'contactos'].includes(state.crmTab)) state.crmTab = 'clientes';
             mainViewContainer.innerHTML = ClientesViewTemplate();
-            loadClientes(); // Carga la lista completa de contactos y dibuja la tabla
+            loadCrmView(); // Carga conteos + lista de la pestaña activa
             break;
         // --- NUEVAS VISTAS ---
         case 'departments':
@@ -576,65 +576,92 @@ function renderContactsView() {
 }
 
 // =====================================================================
-// === VISTA CLIENTES — lista completa de contactos (antes /clientes)  ===
+// === VISTA CLIENTES — pestañas Clientes / Leads / Contactos          ===
 // =====================================================================
+// Clientes  = pagaron (purchaseStatus 'completed')
+// Leads     = registraron pedido sin pagar (purchaseStatus 'registered')
+// Contactos = sin pedido (resto). Para no saturar, Contactos solo carga los
+//             últimos 3 días; los conteos totales vienen de /api/crm-list/counts.
+const CRM_CONTACTOS_DAYS = 3;
 
-// Antes esta vista leía TODA la colección contacts_whatsapp del lado del cliente
-// (db.collection(...).get() sin límite). Al crecer la base, ese read se volvía enorme
-// y la tabla podía quedarse "Cargando clientes..." sin terminar nunca. Ahora usa el
-// mismo backend que la lista de chats:
-//   - sin texto de búsqueda  -> trae los más recientes (acotado con limit)
-//   - con texto de búsqueda   -> busca en TODA la base por nombre/teléfono en el servidor
-const CLIENTES_LIMIT = 200;
-let clientesSearchTimeout = null;
-
-/** Carga los contactos para la vista Clientes (recientes o resultado de búsqueda) y dibuja la tabla. */
-function loadClientes() {
+/** Punto de entrada de la vista (lo llama navigateTo('clientes')). */
+function loadCrmView() {
     if (state.activeView !== 'clientes') return;
-    const body = document.getElementById('clientes-table-body');
-    if (body) body.innerHTML = `<tr><td colspan="5" class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando clientes...</td></tr>`;
+    if (!state.crmTab) state.crmTab = 'clientes';
+    document.querySelectorAll('.crm-tab').forEach(b => b.classList.toggle('active', b.dataset.crmtab === state.crmTab));
+    updateCrmSortVisibility();
+    loadCrmCounts();
+    loadCrmList();
+}
 
-    const nombre = (document.getElementById('clientes-filtro-nombre')?.value || '').trim();
-    const estatus = document.getElementById('clientes-filtro-estatus')?.value || '';
-
-    let url;
-    if (nombre) {
-        // Búsqueda en toda la base (servidor): por nombre, teléfono o número de pedido.
-        url = `${API_BASE_URL}/api/contacts/search?query=${encodeURIComponent(nombre)}`;
-    } else {
-        // Lista reciente acotada para no volver a leer la colección completa.
-        url = `${API_BASE_URL}/api/contacts?limit=${CLIENTES_LIMIT}`;
-        if (estatus) url += `&tag=${encodeURIComponent(estatus)}`;
+/** El dropdown de orden y el texto de ayuda dependen de la pestaña activa. */
+function updateCrmSortVisibility() {
+    const wrap = document.getElementById('crm-sort-wrap');
+    if (wrap) wrap.style.display = state.crmTab === 'clientes' ? '' : 'none';
+    const hint = document.getElementById('crm-tab-hint');
+    if (hint) {
+        hint.textContent = state.crmTab === 'clientes'
+            ? 'Personas que han pagado al menos un pedido.'
+            : state.crmTab === 'leads'
+                ? 'Registraron un pedido pero aún no han pagado.'
+                : `Personas sin pedido. Mostrando los de los últimos ${CRM_CONTACTOS_DAYS} días (el total está en la pestaña).`;
     }
+}
+
+/** Trae los conteos totales (clientes / leads / contactos) y llena los badges. */
+function loadCrmCounts() {
+    fetch(`${API_BASE_URL}/api/crm-list/counts`)
+        .then(r => r.json())
+        .then(d => {
+            if (!d || d.success === false) return;
+            const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = (n ?? 0).toLocaleString('es-MX'); };
+            set('crm-count-clientes', d.clientes);
+            set('crm-count-leads', d.leads);
+            set('crm-count-contactos', d.contactos);
+        })
+        .catch(e => console.error('Error conteos CRM:', e));
+}
+
+function switchCrmTab(tab) {
+    state.crmTab = tab;
+    document.querySelectorAll('.crm-tab').forEach(b => b.classList.toggle('active', b.dataset.crmtab === tab));
+    updateCrmSortVisibility();
+    loadCrmList();
+}
+
+/** Pide al backend la lista de la pestaña activa (con orden/días según corresponda). */
+function loadCrmList() {
+    if (state.activeView !== 'clientes') return;
+    const body = document.getElementById('crm-tbody');
+    if (body) body.innerHTML = `<tr><td colspan="7" class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando…</td></tr>`;
+
+    const tab = state.crmTab || 'clientes';
+    let url = `${API_BASE_URL}/api/crm-list/items?tab=${tab}`;
+    if (tab === 'clientes') url += `&sort=${document.getElementById('crm-sort')?.value || 'recent'}`;
+    if (tab === 'contactos') url += `&days=${CRM_CONTACTOS_DAYS}`;
 
     fetch(url)
         .then(async r => {
-            const data = await r.json().catch(() => ({}));
-            if (!r.ok || data.success === false) throw new Error(data.message || 'Error al cargar clientes.');
-            return data;
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok || d.success === false) throw new Error(d.message || 'Error al cargar la lista.');
+            return d;
         })
-        .then(data => {
+        .then(d => {
             if (state.activeView !== 'clientes') return;
-            state.clientesList = data.contacts || [];
-            renderClientesView();
+            state.crmItems = d.items || [];
+            state.crmTruncated = !!d.truncated;
+            renderCrmList();
         })
         .catch(err => {
-            console.error('Error al cargar clientes:', err);
+            console.error('Error al cargar lista CRM:', err);
             if (state.activeView !== 'clientes') return;
-            const b = document.getElementById('clientes-table-body');
-            if (b) b.innerHTML = `<tr><td colspan="5" class="text-center py-8" style="color:var(--color-danger);"><i class="fas fa-exclamation-triangle mr-2"></i>Hubo un error al cargar los clientes.</td></tr>`;
+            const b = document.getElementById('crm-tbody');
+            if (b) b.innerHTML = `<tr><td colspan="7" class="text-center py-8" style="color:var(--color-danger);"><i class="fas fa-exclamation-triangle mr-2"></i>${escapeHtml(err.message || 'Error al cargar.')}</td></tr>`;
         });
 }
 
-/** Búsqueda por nombre/teléfono con debounce para no saturar el servidor en cada tecla. */
-function onClientesFiltroNombreInput() {
-    clearTimeout(clientesSearchTimeout);
-    clientesSearchTimeout = setTimeout(loadClientes, 350);
-}
-
-/** Rellena el select de estatus con las etiquetas del CRM (state.tags). */
-function populateClientesEstatusFilter() {
-    const sel = document.getElementById('clientes-filtro-estatus');
+function populateCrmStatusFilter() {
+    const sel = document.getElementById('crm-status-filter');
     if (!sel) return;
     const current = sel.value;
     sel.innerHTML = '<option value="">Todos los estatus</option>' +
@@ -642,58 +669,80 @@ function populateClientesEstatusFilter() {
     sel.value = current;
 }
 
-/** Afina state.clientesList por estatus (la búsqueda ya la hizo el servidor) y dibuja la tabla. */
-function renderClientesView() {
+function crmStatusBadge(c) {
+    const tag = (state.tags || []).find(t => t.key === c.status);
+    return tag
+        ? `<span class="px-2 py-1 text-xs rounded-full" style="background-color:${tag.color}30;color:${tag.color};border:1px solid ${tag.color}80;">${escapeHtml(tag.label)}</span>`
+        : `<span class="px-2 py-1 text-xs rounded-full" style="background-color:#e5e7eb;color:#6b7280;">Sin estatus</span>`;
+}
+
+const crmFmtMoney = n => '$' + Math.round(n || 0).toLocaleString('es-MX');
+const crmFmtDate = ms => { if (!ms) return '—'; return new Date(ms).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); };
+
+/** Filtra (buscador + estatus, en cliente) y dibuja columnas según la pestaña. */
+function renderCrmList() {
     if (state.activeView !== 'clientes') return;
-    const body = document.getElementById('clientes-table-body');
-    if (!body) return;
-    populateClientesEstatusFilter();
+    const head = document.getElementById('crm-thead');
+    const body = document.getElementById('crm-tbody');
+    if (!head || !body) return;
+    populateCrmStatusFilter();
 
-    // El filtro por nombre/teléfono lo resuelve el servidor (loadClientes); aquí solo
-    // afinamos por estatus sobre lo que se trajo (recientes o resultado de búsqueda).
-    const estatusFilter = document.getElementById('clientes-filtro-estatus')?.value || '';
+    const q = (document.getElementById('crm-search')?.value || '').toLowerCase().trim();
+    const estatus = document.getElementById('crm-status-filter')?.value || '';
+    const tab = state.crmTab || 'clientes';
 
-    const filtered = (state.clientesList || []).filter(c => !estatusFilter || c.status === estatusFilter);
+    const filtered = (state.crmItems || []).filter(c => {
+        const matchQ = !q || (c.name || '').toLowerCase().includes(q) || (c.id || '').includes(q);
+        const matchE = !estatus || c.status === estatus;
+        return matchQ && matchE;
+    });
 
-    const countEl = document.getElementById('clientes-count');
-    if (countEl) countEl.textContent = filtered.length;
+    const action = c => `<td class="actions-cell"><button onclick="handleSelectContactFromPipeline('${c.id}')" class="p-2" title="Abrir chat"><i class="fas fa-comments"></i></button></td>`;
 
-    if (filtered.length === 0) {
-        body.innerHTML = `<tr><td colspan="5" class="text-center text-gray-400 py-8">No se encontraron clientes que coincidan con los filtros.</td></tr>`;
-        return;
-    }
-
-    body.innerHTML = filtered.map(c => {
-        const tag = (state.tags || []).find(t => t.key === c.status);
-        const statusHtml = tag
-            ? `<span class="px-2 py-1 text-xs rounded-full" style="background-color:${tag.color}30;color:${tag.color};border:1px solid ${tag.color}80;">${escapeHtml(tag.label)}</span>`
-            : `<span class="px-2 py-1 text-xs rounded-full" style="background-color:#e5e7eb;color:#6b7280;">Sin estatus</span>`;
-        return `
+    if (tab === 'clientes') {
+        head.innerHTML = `<tr><th>Nombre</th><th>Teléfono</th><th class="text-right">Total</th><th class="text-right">Compras</th><th>Producto(s)</th><th>Última compra</th><th>Acciones</th></tr>`;
+        if (!filtered.length) { body.innerHTML = `<tr><td colspan="7" class="text-center text-gray-400 py-8">Sin clientes que coincidan.</td></tr>`; return; }
+        body.innerHTML = filtered.map(c => `
             <tr>
                 <td class="font-semibold">${escapeHtml(c.name || 'Desconocido')}</td>
                 <td>${escapeHtml(c.id || '')}</td>
-                <td title="${escapeHtml(c.lastMessage || '')}" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.lastMessage || '-')}</td>
-                <td>${statusHtml}</td>
-                <td class="actions-cell">
-                    <button onclick="handleSelectContactFromPipeline('${c.id}')" class="p-2" title="Abrir chat"><i class="fas fa-comments"></i></button>
-                </td>
-            </tr>`;
-    }).join('');
+                <td class="text-right font-semibold">${crmFmtMoney(c.totalSpent)}</td>
+                <td class="text-right">${c.orderCount || 0}</td>
+                <td title="${escapeHtml((c.products || []).join(', '))}" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml((c.products || []).join(', ') || '—')}</td>
+                <td>${crmFmtDate(c.lastOrderDate)}</td>
+                ${action(c)}
+            </tr>`).join('');
+    } else {
+        head.innerHTML = `<tr><th>Nombre</th><th>Teléfono</th><th>Último mensaje</th><th>Estatus</th><th>Acciones</th></tr>`;
+        if (!filtered.length) {
+            const vacio = tab === 'contactos' ? `Sin contactos con actividad en los últimos ${CRM_CONTACTOS_DAYS} días.` : 'Sin registros que coincidan.';
+            body.innerHTML = `<tr><td colspan="5" class="text-center text-gray-400 py-8">${vacio}</td></tr>`;
+            return;
+        }
+        body.innerHTML = filtered.map(c => `
+            <tr>
+                <td class="font-semibold">${escapeHtml(c.name || 'Desconocido')}</td>
+                <td>${escapeHtml(c.id || '')}</td>
+                <td title="${escapeHtml(c.lastMessage || '')}" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.lastMessage || '-')}</td>
+                <td>${crmStatusBadge(c)}</td>
+                ${action(c)}
+            </tr>`).join('');
+    }
 }
 
-/** Limpia los filtros de la vista Clientes y recarga la lista reciente. */
-function clearClientesFiltros() {
-    const n = document.getElementById('clientes-filtro-nombre');
-    const e = document.getElementById('clientes-filtro-estatus');
-    if (n) n.value = '';
+function clearCrmFilters() {
+    const s = document.getElementById('crm-search');
+    const e = document.getElementById('crm-status-filter');
+    if (s) s.value = '';
     if (e) e.value = '';
-    loadClientes();
+    renderCrmList();
 }
 
-window.loadClientes = loadClientes;
-window.onClientesFiltroNombreInput = onClientesFiltroNombreInput;
-window.renderClientesView = renderClientesView;
-window.clearClientesFiltros = clearClientesFiltros;
+window.loadCrmView = loadCrmView;
+window.switchCrmTab = switchCrmTab;
+window.loadCrmList = loadCrmList;
+window.renderCrmList = renderCrmList;
+window.clearCrmFilters = clearCrmFilters;
 
 // Prepara la vista unificada de Campañas (sub-pestañas Enviar + Crear plantilla)
 function renderCampaignsView() {
