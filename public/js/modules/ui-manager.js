@@ -584,14 +584,18 @@ function renderContactsView() {
 //             últimos 3 días; los conteos totales vienen de /api/crm-list/counts.
 const CRM_CONTACTOS_DAYS = 3;
 
-/** Punto de entrada de la vista (lo llama navigateTo('clientes')). */
+/** Punto de entrada de la vista (lo llama navigateTo('clientes')).
+ * Usa caché en memoria (state.crmCache / state.crmCounts): la primera vez pide al
+ * servidor; las siguientes veces se muestra al instante sin recargar. Botón "Actualizar"
+ * para refrescar a demanda. */
 function loadCrmView() {
     if (state.activeView !== 'clientes') return;
     if (!state.crmTab) state.crmTab = 'clientes';
+    if (!state.crmCache) state.crmCache = {};
     document.querySelectorAll('.crm-tab').forEach(b => b.classList.toggle('active', b.dataset.crmtab === state.crmTab));
     updateCrmSortVisibility();
-    loadCrmCounts();
-    loadCrmList();
+    if (state.crmCounts) applyCrmCounts(state.crmCounts); else loadCrmCounts();
+    loadCrmList(); // usa caché si ya se cargó antes
 }
 
 /** El dropdown de orden y el texto de ayuda dependen de la pestaña activa. */
@@ -608,16 +612,22 @@ function updateCrmSortVisibility() {
     }
 }
 
-/** Trae los conteos totales (clientes / leads / contactos) y llena los badges. */
+/** Pinta los badges de conteo en las pestañas. */
+function applyCrmCounts(d) {
+    const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = (n ?? 0).toLocaleString('es-MX'); };
+    set('crm-count-clientes', d.clientes);
+    set('crm-count-leads', d.leads);
+    set('crm-count-contactos', d.contactos);
+}
+
+/** Trae los conteos totales (clientes / leads / contactos), los cachea y los pinta. */
 function loadCrmCounts() {
     fetch(`${API_BASE_URL}/api/crm-list/counts`)
         .then(r => r.json())
         .then(d => {
             if (!d || d.success === false) return;
-            const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = (n ?? 0).toLocaleString('es-MX'); };
-            set('crm-count-clientes', d.clientes);
-            set('crm-count-leads', d.leads);
-            set('crm-count-contactos', d.contactos);
+            state.crmCounts = d;
+            applyCrmCounts(d);
         })
         .catch(e => console.error('Error conteos CRM:', e));
 }
@@ -629,15 +639,25 @@ function switchCrmTab(tab) {
     loadCrmList();
 }
 
-/** Pide al backend la lista de la pestaña activa (con orden/días según corresponda). */
-function loadCrmList() {
+/** Muestra la lista de la pestaña activa. Si ya está en caché, render inmediato;
+ * si no (o force=true), la pide al backend y la cachea. El orden se aplica en el
+ * cliente (renderCrmList), así cambiar el orden no vuelve a pedir datos. */
+function loadCrmList(force) {
     if (state.activeView !== 'clientes') return;
+    const tab = state.crmTab || 'clientes';
+    if (!state.crmCache) state.crmCache = {};
+
+    // Caché: si ya cargamos esta pestaña, mostramos al instante sin volver a pedir.
+    if (!force && state.crmCache[tab]) {
+        state.crmItems = state.crmCache[tab];
+        renderCrmList();
+        return;
+    }
+
     const body = document.getElementById('crm-tbody');
     if (body) body.innerHTML = `<tr><td colspan="7" class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando…</td></tr>`;
 
-    const tab = state.crmTab || 'clientes';
     let url = `${API_BASE_URL}/api/crm-list/items?tab=${tab}`;
-    if (tab === 'clientes') url += `&sort=${document.getElementById('crm-sort')?.value || 'recent'}`;
     if (tab === 'contactos') url += `&days=${CRM_CONTACTOS_DAYS}`;
 
     fetch(url)
@@ -648,7 +668,8 @@ function loadCrmList() {
         })
         .then(d => {
             if (state.activeView !== 'clientes') return;
-            state.crmItems = d.items || [];
+            state.crmCache[tab] = d.items || [];
+            state.crmItems = state.crmCache[tab];
             state.crmTruncated = !!d.truncated;
             renderCrmList();
         })
@@ -700,6 +721,14 @@ function renderCrmList() {
     const action = c => `<td class="actions-cell"><button onclick="handleSelectContactFromPipeline('${c.id}')" class="p-2" title="Abrir chat"><i class="fas fa-comments"></i></button></td>`;
 
     if (tab === 'clientes') {
+        // Orden en el cliente (sobre todos los clientes cargados): cambiar el orden es instantáneo.
+        const sort = document.getElementById('crm-sort')?.value || 'recent';
+        filtered.sort((a, b) => {
+            if (sort === 'spent') return (b.totalSpent || 0) - (a.totalSpent || 0);
+            if (sort === 'orders') return (b.orderCount || 0) - (a.orderCount || 0);
+            if (sort === 'product') return ((a.products && a.products[0]) || '~').localeCompare((b.products && b.products[0]) || '~');
+            return (b.lastOrderDate || b.lastMessageTimestamp || 0) - (a.lastOrderDate || a.lastMessageTimestamp || 0);
+        });
         head.innerHTML = `<tr><th>Nombre</th><th>Teléfono</th><th class="text-right">Total</th><th class="text-right">Compras</th><th>Producto(s)</th><th>Última compra</th><th>Acciones</th></tr>`;
         if (!filtered.length) { body.innerHTML = `<tr><td colspan="7" class="text-center text-gray-400 py-8">Sin clientes que coincidan.</td></tr>`; return; }
         body.innerHTML = filtered.map(c => `
@@ -738,11 +767,20 @@ function clearCrmFilters() {
     renderCrmList();
 }
 
+/** Botón "Actualizar": limpia la caché y vuelve a pedir conteos + lista actual. */
+function refreshCrmView() {
+    state.crmCache = {};
+    state.crmCounts = null;
+    loadCrmCounts();
+    loadCrmList(true);
+}
+
 window.loadCrmView = loadCrmView;
 window.switchCrmTab = switchCrmTab;
 window.loadCrmList = loadCrmList;
 window.renderCrmList = renderCrmList;
 window.clearCrmFilters = clearCrmFilters;
+window.refreshCrmView = refreshCrmView;
 
 // Prepara la vista unificada de Campañas (sub-pestañas Enviar + Crear plantilla)
 function renderCampaignsView() {

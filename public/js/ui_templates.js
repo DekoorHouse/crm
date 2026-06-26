@@ -464,7 +464,7 @@ const ClientesViewTemplate = () => `
             </div>
             <div id="crm-sort-wrap" style="min-width:190px;">
                 <label for="crm-sort" class="text-xs font-semibold block mb-1" style="color:var(--color-text-light);"><i class="fas fa-sort-amount-down mr-1"></i> Ordenar por</label>
-                <select id="crm-sort" onchange="loadCrmList()" class="!mb-0">
+                <select id="crm-sort" onchange="renderCrmList()" class="!mb-0">
                     <option value="recent">Más reciente</option>
                     <option value="spent">Más ha comprado ($)</option>
                     <option value="orders"># de compras</option>
@@ -472,6 +472,7 @@ const ClientesViewTemplate = () => `
                 </select>
             </div>
             <button onclick="clearCrmFilters()" class="btn btn-subtle"><i class="fas fa-eraser mr-1"></i> Limpiar</button>
+            <button onclick="refreshCrmView()" class="btn btn-subtle" title="Volver a leer del servidor"><i class="fas fa-sync-alt mr-1"></i> Actualizar</button>
         </div>
         <div class="table-responsive-wrapper">
             <table class="table">
