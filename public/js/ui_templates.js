@@ -330,14 +330,14 @@ const CreateAdFormTemplate = () => `
             </div>
             <div class="mt-3" style="position:relative;">
                 <label class="text-xs font-semibold text-gray-500">Ciudades o estados (opcional)</label>
-                <input type="text" id="ad-place-search" placeholder="Busca lugares: Monterrey, Guadalajara, Jalisco…" autocomplete="off" oninput="searchAdPlaces(this.value)" onblur="hideAdPlaceResults()" class="!mb-0">
+                <input type="text" id="ad-place-search" placeholder="Busca lugares: Monterrey, Guadalajara, Jalisco…" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" data-form-type="other" oninput="searchAdPlaces(this.value)" onblur="hideAdPlaceResults()" class="!mb-0">
                 <div id="ad-place-results" class="ad-interest-results hidden"></div>
                 <div id="ad-place-chips" class="ad-interest-chips"></div>
                 <p class="text-xs text-gray-400 mt-1">Vacío = todo el país de arriba. Agrega ciudades/estados para enfocar el anuncio a esas zonas.</p>
             </div>
             <div class="mt-3" style="position:relative;">
                 <label class="text-xs font-semibold text-gray-500">Intereses (opcional)</label>
-                <input type="text" id="ad-interest-search" placeholder="Busca intereses: decoración, hogar, regalos…" autocomplete="off" oninput="searchAdInterests(this.value)" onblur="hideAdInterestResults()" class="!mb-0">
+                <input type="text" id="ad-interest-search" placeholder="Busca intereses: decoración, hogar, regalos…" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" data-form-type="other" oninput="searchAdInterests(this.value)" onblur="hideAdInterestResults()" class="!mb-0">
                 <div id="ad-interest-results" class="ad-interest-results hidden"></div>
                 <div id="ad-interest-chips" class="ad-interest-chips"></div>
                 <p class="text-xs text-gray-400 mt-1">Sin intereses = audiencia amplia (Meta decide). Agrega 1-3 para enfocar.</p>
