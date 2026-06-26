@@ -512,8 +512,9 @@ router.get('/ctwa-defaults', asyncHandler(async (req, res) => {
  */
 router.post('/quick-create', asyncHandler(async (req, res) => {
     const {
-        accountId, objective, name, pageId, whatsappNumber,
-        dailyBudgetCents, targeting, primaryText, headline, description,
+        accountId, objective, name, campaignName, adsetName, adName,
+        pageId, whatsappNumber, dailyBudgetCents, budgetLevel, optimizationGoal,
+        targeting, primaryText, headline, description,
         imageHash, videoId, thumbnailHash, greeting, faqs, ctaType, status, instagramActorId
     } = req.body || {};
 
@@ -526,9 +527,10 @@ router.post('/quick-create', asyncHandler(async (req, res) => {
     if (!primaryText) return res.status(400).json({ error: 'primaryText es requerido' });
 
     const result = await svc.quickCreateCtwaAd(accountId, {
-        objective, name, pageId,
+        objective, name, campaignName, adsetName, adName, pageId,
         whatsappNumber: String(whatsappNumber).replace(/[^0-9]/g, ''),
         dailyBudgetCents: parseInt(dailyBudgetCents, 10),
+        budgetLevel, optimizationGoal,
         targeting, primaryText, headline, description, imageHash,
         videoId, thumbnailHash, greeting, faqs, ctaType, status, instagramActorId
     });

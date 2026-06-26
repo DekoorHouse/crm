@@ -1526,6 +1526,17 @@ function setAdPlaceRadius(id, km) {
     if (p) p.radiusKm = parseInt(km, 10) || 0;
 }
 
+// Estrategia de presupuesto: 'campaign' (CBO/Advantage+) o 'adset' (ABO).
+function setAdBudgetLevel(btn, level) {
+    document.querySelectorAll('.ad-seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+    const hidden = document.getElementById('ad-budget-level');
+    if (hidden) hidden.value = level;
+    const hint = document.getElementById('ad-budget-hint');
+    if (hint) hint.textContent = level === 'campaign'
+        ? 'Meta reparte el presupuesto entre las mejores oportunidades de la campaña (Advantage+).'
+        : 'Tú controlas el presupuesto directamente en el conjunto de anuncios.';
+}
+
 function renderAdPlaceChips() {
     const box = document.getElementById('ad-place-chips');
     if (!box) return;
@@ -1664,7 +1675,11 @@ async function handleCreateMetaAd() {
     const accountId = (document.getElementById('ad-account-select') || {}).value || '';
     const pageId = (document.getElementById('ad-page-select') || {}).value || '';
     const objective = (document.getElementById('ad-objective') || {}).value || 'OUTCOME_ENGAGEMENT';
-    const name = ((document.getElementById('ad-name') || {}).value || '').trim();
+    const campaignName = ((document.getElementById('ad-campaign-name') || {}).value || '').trim();
+    const adsetName = ((document.getElementById('ad-adset-name') || {}).value || '').trim();
+    const adName = ((document.getElementById('ad-name') || {}).value || '').trim();
+    const budgetLevel = (document.getElementById('ad-budget-level') || {}).value || 'campaign';
+    const optimizationGoal = (document.getElementById('ad-optimization') || {}).value || 'CONVERSATIONS';
     const waNumber = ((document.getElementById('ad-wa-number') || {}).value || '').replace(/[^0-9]/g, '');
     const budgetMxn = parseFloat((document.getElementById('ad-daily-budget') || {}).value);
     const primaryText = ((document.getElementById('ad-primary-text') || {}).value || '').trim();
@@ -1674,7 +1689,7 @@ async function handleCreateMetaAd() {
 
     if (!accountId) { showError('Selecciona una cuenta publicitaria.'); return; }
     if (!pageId) { showError('Selecciona una página de Facebook.'); return; }
-    if (!name) { showError('Ponle un nombre al anuncio.'); return; }
+    if (!campaignName) { showError('Ponle un nombre a la campaña.'); return; }
     if (waNumber.length < 10) { showError('El número de WhatsApp no es válido (incluye código de país).'); return; }
     if (!budgetMxn || budgetMxn <= 0) { showError('Define un presupuesto diario válido.'); return; }
     if (!primaryText) { showError('Escribe el texto principal del anuncio.'); return; }
@@ -1690,12 +1705,15 @@ async function handleCreateMetaAd() {
     const greeting = ((document.getElementById('ad-greeting') || {}).value || '').trim();
     const faqs = getAdFaqs();
     const convoTxt = greeting ? `saludo + ${faqs.length} pregunta(s)` : 'mensaje por defecto de Meta';
+    const budgetTxt = budgetLevel === 'campaign' ? 'campaña (Advantage+)' : 'conjunto de anuncios';
+    const optTxt = { CONVERSATIONS: 'conversaciones', LINK_CLICKS: 'clics', REACH: 'alcance', IMPRESSIONS: 'impresiones' }[optimizationGoal] || optimizationGoal;
 
     const resumen =
         `Vas a PUBLICAR un anuncio EN VIVO:\n\n` +
-        `• Objetivo: ${objLabel} (a WhatsApp)\n` +
+        `• Campaña: ${campaignName}\n` +
+        `• Objetivo: ${objLabel} (a WhatsApp) · maximizar ${optTxt}\n` +
         `• Formato: ${formatoTxt}\n` +
-        `• Presupuesto: $${budgetMxn.toLocaleString('es-MX')} MXN / día\n` +
+        `• Presupuesto: $${budgetMxn.toLocaleString('es-MX')} MXN / día (${budgetTxt})\n` +
         `• Audiencia: ${geoTxt}, ${targeting.age_min}-${targeting.age_max} años, ${genderTxt}, ${interesesTxt}\n` +
         `• Conversación: ${convoTxt}\n` +
         `• WhatsApp: ${waNumber}\n\n` +
@@ -1753,8 +1771,9 @@ async function handleCreateMetaAd() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                accountId, objective, name, pageId, whatsappNumber: waNumber,
-                dailyBudgetCents, targeting, primaryText, headline, description,
+                accountId, objective, campaignName, adsetName, adName, pageId, whatsappNumber: waNumber,
+                dailyBudgetCents, budgetLevel, optimizationGoal,
+                targeting, primaryText, headline, description,
                 imageHash, videoId, thumbnailHash, greeting, faqs, ctaType, status: 'ACTIVE'
             })
         });
@@ -1776,7 +1795,7 @@ async function handleCreateMetaAd() {
 
 // Limpia el formulario tras publicar con éxito.
 function resetCreateAdForm() {
-    ['ad-name', 'ad-primary-text', 'ad-headline', 'ad-description', 'ad-interest-search'].forEach(id => {
+    ['ad-campaign-name', 'ad-adset-name', 'ad-name', 'ad-primary-text', 'ad-headline', 'ad-description', 'ad-interest-search'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
     });
     adImageFile = null;
@@ -3310,6 +3329,7 @@ window.searchAdPlaces = searchAdPlaces;
 window.addAdPlaceByIndex = addAdPlaceByIndex;
 window.removeAdPlace = removeAdPlace;
 window.setAdPlaceRadius = setAdPlaceRadius;
+window.setAdBudgetLevel = setAdBudgetLevel;
 window.hideAdPlaceResults = hideAdPlaceResults;
 window.addAdFaqRow = addAdFaqRow;
 window.updateAdWelcomePreview = updateAdWelcomePreview;

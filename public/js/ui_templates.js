@@ -213,6 +213,11 @@ const CreateAdFormTemplate = () => `
         .ad-builder textarea {
             padding: 9px 12px; font-size: 14px; border-radius: 8px; box-sizing: border-box;
         }
+        /* Control segmentado (estrategia de presupuesto) */
+        .ad-seg { display: inline-flex; flex-wrap: wrap; background: var(--color-subtle-bg, #f3f4f6); border-radius: 10px; padding: 3px; gap: 3px; }
+        .ad-seg-btn { border: none; background: transparent; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--color-text-secondary, #6b7280); transition: all .15s ease; }
+        .ad-seg-btn.active { background: var(--color-container-bg, #fff); color: var(--color-primary, #E07A5F); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+        .ad-chip { white-space: nowrap; }
         .ad-objective-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .ad-objective-card {
             border: 2px solid var(--color-border, #e5e7eb); border-radius: 12px; padding: 14px;
@@ -289,21 +294,51 @@ const CreateAdFormTemplate = () => `
         </div>
 
         <div class="campaign-form-section">
-            <label class="font-bold" for="ad-name">Nombre del anuncio (interno)</label>
-            <input type="text" id="ad-name" placeholder="ej. Promo lámparas - junio" class="!mb-0">
+            <label class="font-bold" for="ad-campaign-name">Nombre de la campaña</label>
+            <input type="text" id="ad-campaign-name" placeholder="ej. Promo lámparas - junio" class="!mb-0">
+            <div class="grid grid-cols-2 gap-3 mt-2">
+                <div>
+                    <label class="text-xs font-semibold text-gray-500" for="ad-adset-name">Nombre del conjunto</label>
+                    <input type="text" id="ad-adset-name" placeholder="Automático" class="!mb-0">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500" for="ad-name">Nombre del anuncio</label>
+                    <input type="text" id="ad-name" placeholder="Automático" class="!mb-0">
+                </div>
+            </div>
+            <p class="text-xs text-gray-400 mt-1">Si dejas el conjunto y el anuncio en blanco, se nombran a partir de la campaña.</p>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
-            <div class="campaign-form-section">
-                <label class="font-bold" for="ad-wa-number">Número de WhatsApp</label>
-                <input type="text" id="ad-wa-number" placeholder="5216181333519" oninput="this.value=this.value.replace(/[^0-9]/g,'')" class="!mb-0">
-                <p class="text-xs text-gray-400">Con código de país, sin signos. Aquí llegarán los mensajes.</p>
+        <div class="campaign-form-section">
+            <label class="font-bold" for="ad-wa-number">Número de WhatsApp</label>
+            <input type="text" id="ad-wa-number" placeholder="5216181333519" oninput="this.value=this.value.replace(/[^0-9]/g,'')" class="!mb-0">
+            <p class="text-xs text-gray-400">Con código de país, sin signos. Aquí llegarán los mensajes.</p>
+        </div>
+
+        <div class="campaign-form-section">
+            <label class="font-bold">Presupuesto y optimización</label>
+            <div class="ad-seg mt-2">
+                <button type="button" class="ad-seg-btn active" data-budget="campaign" onclick="setAdBudgetLevel(this,'campaign')">Presupuesto de la campaña ✦</button>
+                <button type="button" class="ad-seg-btn" data-budget="adset" onclick="setAdBudgetLevel(this,'adset')">Presupuesto del conjunto</button>
             </div>
-            <div class="campaign-form-section">
-                <label class="font-bold" for="ad-daily-budget">Presupuesto diario (MXN)</label>
-                <input type="number" id="ad-daily-budget" min="1" step="1" value="100" class="!mb-0">
-                <p class="text-xs text-gray-400">Lo máximo que gastarás por día. Mínimo ~$10 MXN.</p>
+            <input type="hidden" id="ad-budget-level" value="campaign">
+            <p class="text-xs text-gray-400 mt-1" id="ad-budget-hint">Meta reparte el presupuesto entre las mejores oportunidades de la campaña (Advantage+).</p>
+            <div class="grid grid-cols-2 gap-4 mt-2">
+                <div>
+                    <label class="text-xs font-semibold text-gray-500" for="ad-daily-budget">Presupuesto diario (MXN)</label>
+                    <input type="number" id="ad-daily-budget" min="1" step="1" value="100" class="!mb-0">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500" for="ad-optimization">Objetivo de rendimiento</label>
+                    <select id="ad-optimization" class="!mb-0">
+                        <option value="CONVERSATIONS" selected>Maximizar conversaciones</option>
+                        <option value="LINK_CLICKS">Maximizar clics en el enlace</option>
+                        <option value="REACH">Maximizar alcance</option>
+                        <option value="IMPRESSIONS">Maximizar impresiones</option>
+                    </select>
+                </div>
             </div>
+            <p class="text-xs text-gray-400 mt-1">Mínimo ~$10 MXN/día. "Conversaciones" es lo ideal para WhatsApp.</p>
         </div>
 
         <div class="campaign-form-section">

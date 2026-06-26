@@ -692,7 +692,9 @@ function buildCtwaWelcomeMessage(greeting, faqs) {
  */
 async function quickCreateCtwaAd(accountId, opts) {
     const {
-        objective, name, pageId, whatsappNumber, dailyBudgetCents,
+        objective, name, campaignName, adsetName, adName,
+        pageId, whatsappNumber, dailyBudgetCents,
+        budgetLevel = 'adset', optimizationGoal = 'CONVERSATIONS',
         targeting, primaryText, headline, description, imageHash,
         videoId, thumbnailHash, greeting, faqs,
         ctaType = 'WHATSAPP_MESSAGE', status = 'PAUSED', instagramActorId
@@ -704,26 +706,35 @@ async function quickCreateCtwaAd(accountId, opts) {
     if (!primaryText) throw new Error('Falta el texto principal del anuncio.');
     if (!dailyBudgetCents || dailyBudgetCents <= 0) throw new Error('Presupuesto diario inválido.');
 
-    // 1. Campaña (ABO: sin presupuesto a nivel campaña).
+    // Nombres por nivel (con defaults derivados de un nombre base).
+    const base = String(campaignName || name || 'Anuncio').trim();
+    const cName = String(campaignName || base).trim();
+    const asName = String(adsetName || `${base} · Conjunto`).trim();
+    const aName = String(adName || `${base} · Anuncio`).trim();
+    // CBO (presupuesto en la campaña / Advantage+) vs ABO (en el conjunto).
+    const useCbo = budgetLevel === 'campaign';
+
+    // 1. Campaña (con presupuesto aquí si es CBO).
     const campaign = await createCampaign(accountId, {
-        name,
+        name: cName,
         objective,
         status,
-        special_ad_categories: []
+        special_ad_categories: [],
+        ...(useCbo ? { daily_budget: dailyBudgetCents } : {})
     });
 
     let adset, creative, ad;
     try {
-        // 2. Conjunto de anuncios (destino WhatsApp, optimiza conversaciones).
+        // 2. Conjunto de anuncios (destino WhatsApp; presupuesto aquí si es ABO).
         adset = await createAdSet(accountId, {
-            name: `${name} · Conjunto`,
+            name: asName,
             campaign_id: campaign.id,
             status,
-            optimization_goal: 'CONVERSATIONS',
+            optimization_goal: optimizationGoal || 'CONVERSATIONS',
             billing_event: 'IMPRESSIONS',
             destination_type: 'WHATSAPP',
             promoted_object: { page_id: pageId },
-            daily_budget: dailyBudgetCents,
+            ...(useCbo ? {} : { daily_budget: dailyBudgetCents }),
             targeting
         });
 
@@ -750,14 +761,14 @@ async function quickCreateCtwaAd(accountId, opts) {
         if (instagramActorId) object_story_spec.instagram_actor_id = instagramActorId;
 
         creative = await createCreative(accountId, {
-            name: `${name} · Creativo`,
+            name: `${base} · Creativo`,
             object_story_spec
         });
 
         // 4. Anuncio.
         ad = await createAd(accountId, {
             adset_id: adset.id,
-            name: `${name} · Anuncio`,
+            name: aName,
             creative_id: creative.id,
             status
         });
