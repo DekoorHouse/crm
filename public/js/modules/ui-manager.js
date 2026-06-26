@@ -1403,6 +1403,10 @@ async function loadDepartmentPrompts() {
     renderDepartmentPrompts();
 }
 
+// Departamentos cuyo acordeón de instrucciones está expandido (se conserva entre
+// re-renderizados, p. ej. tras guardar o subir una imagen).
+const openDeptPrompts = new Set();
+
 function renderDepartmentPrompts() {
     const container = document.getElementById('department-prompts-container');
     if (!container) return;
@@ -1416,6 +1420,7 @@ function renderDepartmentPrompts() {
         const deptId = dept.id;
         const color = dept.color || '#6c757d';
         const name = escapeHtml(dept.name || 'Sin nombre');
+        const isOpen = openDeptPrompts.has(deptId);
 
         const thumbnailsHtml = images.map((img, idx) => `
             <div class="relative group w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0">
@@ -1433,15 +1438,16 @@ function renderDepartmentPrompts() {
 
         return `
             <div class="mb-4 border border-gray-200 rounded-lg overflow-hidden" data-dept-prompt-card="${deptId}">
-                <div class="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+                <div class="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-100 transition-colors" onclick="toggleDepartmentPrompt('${deptId}')">
                     <div class="flex items-center gap-3">
                         <div class="w-4 h-4 rounded" style="background-color: ${color};"></div>
                         <span class="font-semibold text-gray-800">${name}</span>
                         ${hasPrompt ? '<span class="text-[10px] font-bold uppercase tracking-wider text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Configurado</span>' : ''}
                         ${images.length > 0 ? `<span class="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">${images.length} ${images.length === 1 ? 'imagen' : 'imágenes'}</span>` : ''}
                     </div>
+                    <i class="fas fa-chevron-down text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}" id="dept-prompt-chevron-${deptId}"></i>
                 </div>
-                <div class="p-4">
+                <div class="p-4 ${isOpen ? '' : 'hidden'}" id="dept-prompt-body-${deptId}">
                     <textarea
                         id="dept-prompt-textarea-${deptId}"
                         rows="6"
@@ -1487,6 +1493,18 @@ function renderDepartmentPrompts() {
             </div>
         `;
     }).join('');
+}
+
+// Expande/contrae el acordeón de instrucciones de un departamento.
+function toggleDepartmentPrompt(deptId) {
+    const body = document.getElementById(`dept-prompt-body-${deptId}`);
+    if (!body) return;
+    const willOpen = body.classList.contains('hidden');
+    body.classList.toggle('hidden', !willOpen);
+    const chevron = document.getElementById(`dept-prompt-chevron-${deptId}`);
+    if (chevron) chevron.classList.toggle('rotate-180', willOpen);
+    if (willOpen) openDeptPrompts.add(deptId);
+    else openDeptPrompts.delete(deptId);
 }
 
 async function handleSaveDepartmentPrompt(deptId) {
