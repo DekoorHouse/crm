@@ -765,11 +765,18 @@ router.post('/', async (req, res) => {
                         console.log(`[ROUTING] Contacto ${from} asignado al departamento '${ruleData.targetDepartmentId}' por regla: ${ruleData.ruleName || 'Sin nombre'}`);
                     }
                     
-                    // --- NUEVO: ACTIVACIÓN DE IA POR REGLA ---
+                    // --- SINCRONIZAR IA CON EL DEPARTAMENTO DEL ANUNCIO ---
+                    // La IA del contacto se alinea con el departamento al que enruta el anuncio entrante
+                    // (incluido un anuncio NUEVO/distinto al original): si la regla activa IA, se prende el
+                    // bot; si la regla NO tiene IA, se apaga. Así, al escribir desde otro anuncio cuyo
+                    // departamento no usa IA, la IA se desactiva sola, y viceversa.
                     if (ruleData.enableAi) {
-                        console.log(`[ROUTING-AI] Regla con IA detectada para ${from}`);
+                        console.log(`[ROUTING-AI] Anuncio ${adId} con IA: activando bot para ${from}`);
                         await contactRef.update({ botActive: true });
                         isAiRuleEnabled = true;
+                    } else {
+                        console.log(`[ROUTING-AI] Anuncio ${adId} sin IA: desactivando bot para ${from}`);
+                        await contactRef.update({ botActive: false });
                     }
                 } else {
                      // Fallback: Si el anuncio no tiene regla, asignar a "General"
