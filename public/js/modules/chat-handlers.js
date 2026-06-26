@@ -554,6 +554,7 @@ async function handleSelectContact(contactId) {
         if (doc.exists) {
             const updatedContact = processContacts([{ id: doc.id, ...doc.data() }])[0];
             const idx = state.contacts.findIndex(c => c.id === contactId);
+            const wasMissing = idx === -1;
             if (idx > -1) {
                 state.contacts[idx] = updatedContact;
             } else {
@@ -561,6 +562,13 @@ async function handleSelectContact(contactId) {
             }
             // Re-renderizar la lista para reflejar cambios (ej. corona plateada→zafiro)
             scheduleContactListRender();
+            // Si el contacto NO estaba en la lista (ej. cliente viejo abierto desde la
+            // vista Clientes), la ventana se pintó sin sus datos y se quedó en "Selecciona
+            // un chat". Ahora que ya tenemos el contacto, re-renderizamos la ventana para
+            // que abra la conversación correctamente.
+            if (wasMissing && state.selectedContactId === contactId) {
+                renderChatWindow();
+            }
             // Si el timer cambió o se activó, actualizarlo en la UI
             if (window.checkAiTimer) window.checkAiTimer();
         }
