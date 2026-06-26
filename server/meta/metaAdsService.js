@@ -198,6 +198,10 @@ async function createAdSet(accountId, data) {
     if (data.start_time) payload.start_time = data.start_time;
     if (data.end_time) payload.end_time = data.end_time;
     if (data.bid_amount) payload.bid_amount = data.bid_amount;
+    // Destinos de mensajeria (click-to-WhatsApp/Messenger): Meta exige
+    // destination_type + promoted_object.page_id en el conjunto de anuncios.
+    if (data.destination_type) payload.destination_type = data.destination_type;
+    if (data.promoted_object) payload.promoted_object = data.promoted_object;
     return metaPost(`${actId}/adsets`, payload, accountId);
 }
 
@@ -485,6 +489,127 @@ async function listCustomAudiences(accountId, { limit = 50, after } = {}) {
     return metaGet(`${actId}/customaudiences`, params, accountId);
 }
 
+// ===================== PAGES (paginas promocionables de la cuenta) =====================
+
+/**
+ * Lista las paginas de Facebook que se pueden promocionar bajo una cuenta
+ * publicitaria. Se usan como object_story_spec.page_id / promoted_object.page_id
+ * al crear anuncios de click-to-WhatsApp.
+ */
+async function listPromotePages(accountId, { limit = 50 } = {}) {
+    const actId = normalizeAccountId(accountId);
+    return metaGet(`${actId}/promote_pages`, { fields: 'id,name', limit }, accountId);
+}
+
+// ===================== CREACION RAPIDA: ANUNCIO CLICK-TO-WHATSAPP =====================
+
+/**
+ * Crea de una sola vez un anuncio completo de "click to WhatsApp":
+ * campaña → conjunto de anuncios → creativo → anuncio.
+ *
+ * Modelo de presupuesto: ABO (el presupuesto vive en el conjunto de anuncios),
+ * por eso la campaña NO lleva budget.
+ *
+ * Si algo falla a mitad del proceso, intenta borrar la campaña recién creada
+ * (Meta cascadea a sus conjuntos/anuncios) para no dejar entidades ACTIVAS
+ * gastando dinero a medias. El creativo huérfano no gasta y es inofensivo.
+ *
+ * @param {string} accountId  Cuenta publicitaria (con o sin prefijo act_).
+ * @param {object} opts
+ * @param {string} opts.objective         'OUTCOME_ENGAGEMENT' (Mensajes) | 'OUTCOME_SALES' (Ventas)
+ * @param {string} opts.name              Nombre base (campaña/conjunto/anuncio).
+ * @param {string} opts.pageId            ID de la página de Facebook.
+ * @param {string} opts.whatsappNumber    Número de WhatsApp (solo dígitos, con país).
+ * @param {number} opts.dailyBudgetCents  Presupuesto diario en centavos de la moneda de la cuenta.
+ * @param {object} opts.targeting         Spec de targeting (geo_locations, age_min/max, genders, flexible_spec...).
+ * @param {string} opts.primaryText       Texto principal (cuerpo arriba de la imagen).
+ * @param {string} [opts.headline]        Título.
+ * @param {string} [opts.description]     Descripción.
+ * @param {string} opts.imageHash         Hash de imagen ya subida (via uploadAdImage).
+ * @param {string} [opts.ctaType]         Tipo de CTA (default 'WHATSAPP_MESSAGE').
+ * @param {string} [opts.status]          'ACTIVE' (en vivo) | 'PAUSED' (borrador). Default 'PAUSED'.
+ * @param {string} [opts.instagramActorId] ID de cuenta de IG para entregar también en Instagram.
+ * @returns {Promise<{campaignId,adsetId,creativeId,adId}>}
+ */
+async function quickCreateCtwaAd(accountId, opts) {
+    const {
+        objective, name, pageId, whatsappNumber, dailyBudgetCents,
+        targeting, primaryText, headline, description, imageHash,
+        ctaType = 'WHATSAPP_MESSAGE', status = 'PAUSED', instagramActorId
+    } = opts || {};
+
+    if (!pageId) throw new Error('Falta la página de Facebook (pageId).');
+    if (!whatsappNumber) throw new Error('Falta el número de WhatsApp.');
+    if (!imageHash) throw new Error('Falta la imagen del anuncio.');
+    if (!primaryText) throw new Error('Falta el texto principal del anuncio.');
+    if (!dailyBudgetCents || dailyBudgetCents <= 0) throw new Error('Presupuesto diario inválido.');
+
+    // 1. Campaña (ABO: sin presupuesto a nivel campaña).
+    const campaign = await createCampaign(accountId, {
+        name,
+        objective,
+        status,
+        special_ad_categories: []
+    });
+
+    let adset, creative, ad;
+    try {
+        // 2. Conjunto de anuncios (destino WhatsApp, optimiza conversaciones).
+        adset = await createAdSet(accountId, {
+            name: `${name} · Conjunto`,
+            campaign_id: campaign.id,
+            status,
+            optimization_goal: 'CONVERSATIONS',
+            billing_event: 'IMPRESSIONS',
+            destination_type: 'WHATSAPP',
+            promoted_object: { page_id: pageId },
+            daily_budget: dailyBudgetCents,
+            targeting
+        });
+
+        // 3. Creativo (link_data click-to-WhatsApp).
+        const waLink = `https://api.whatsapp.com/send?phone=${whatsappNumber}`;
+        const link_data = {
+            link: waLink,
+            message: primaryText,
+            image_hash: imageHash,
+            call_to_action: {
+                type: ctaType,
+                value: { app_destination: 'WHATSAPP', link: waLink }
+            }
+        };
+        if (headline) link_data.name = headline;
+        if (description) link_data.description = description;
+
+        const object_story_spec = { page_id: pageId, link_data };
+        if (instagramActorId) object_story_spec.instagram_actor_id = instagramActorId;
+
+        creative = await createCreative(accountId, {
+            name: `${name} · Creativo`,
+            object_story_spec
+        });
+
+        // 4. Anuncio.
+        ad = await createAd(accountId, {
+            adset_id: adset.id,
+            name: `${name} · Anuncio`,
+            creative_id: creative.id,
+            status
+        });
+    } catch (err) {
+        // Rollback: borra la campaña para no dejar entidades a medias gastando.
+        try { await deleteCampaign(campaign.id, accountId); } catch (_) { /* best-effort */ }
+        throw err;
+    }
+
+    return {
+        campaignId: campaign.id,
+        adsetId: adset.id,
+        creativeId: creative.id,
+        adId: ad.id
+    };
+}
+
 module.exports = {
     // Accounts
     listAdAccounts, getActiveAccount, setActiveAccount, storeAccountToken, storeGlobalToken,
@@ -503,5 +628,9 @@ module.exports = {
     // Reporte por region
     getCampaignSpendForAccounts, resolveAdsToCampaigns,
     // Audiences
-    searchTargeting, listCustomAudiences
+    searchTargeting, listCustomAudiences,
+    // Pages
+    listPromotePages,
+    // Creacion rapida click-to-WhatsApp
+    quickCreateCtwaAd
 };

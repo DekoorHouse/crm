@@ -451,4 +451,67 @@ router.get('/audiences/custom', asyncHandler(async (req, res) => {
     res.json(data);
 }));
 
+// ===================== PAGES =====================
+
+// GET /api/meta-ads/pages?accountId=...
+// Páginas de Facebook promocionables bajo la cuenta (para el creador de anuncios).
+router.get('/pages', asyncHandler(async (req, res) => {
+    const data = await svc.listPromotePages(req.query.accountId, {
+        limit: req.query.limit ? parseInt(req.query.limit) : undefined
+    });
+    res.json(data);
+}));
+
+// ===================== CREADOR DE ANUNCIOS (click-to-WhatsApp) =====================
+
+// GET /api/meta-ads/ctwa-defaults
+// Defaults para precargar el formulario "Crear Ad": página e (idealmente)
+// número de WhatsApp del negocio. El page id sale de FB_PAGE_ID (env del server).
+router.get('/ctwa-defaults', asyncHandler(async (req, res) => {
+    res.json({
+        pageId: process.env.FB_PAGE_ID || null,
+        whatsappNumber: process.env.CTWA_WHATSAPP_NUMBER || '5216181333519'
+    });
+}));
+
+/**
+ * POST /api/meta-ads/quick-create
+ * Crea de una sola vez un anuncio completo de click-to-WhatsApp.
+ *
+ * Body (JSON):
+ *   accountId, objective ('OUTCOME_ENGAGEMENT'|'OUTCOME_SALES'), name,
+ *   pageId, whatsappNumber, dailyBudgetCents (int),
+ *   targeting { geo_locations, age_min, age_max, genders, flexible_spec },
+ *   primaryText, headline?, description?, imageHash, ctaType?, status?,
+ *   instagramActorId?
+ *
+ * La imagen se sube antes con POST /creatives/upload-image y aquí se manda
+ * sólo su imageHash. El token de Meta nunca sale del servidor.
+ */
+router.post('/quick-create', asyncHandler(async (req, res) => {
+    const {
+        accountId, objective, name, pageId, whatsappNumber,
+        dailyBudgetCents, targeting, primaryText, headline, description,
+        imageHash, ctaType, status, instagramActorId
+    } = req.body || {};
+
+    if (!accountId) return res.status(400).json({ error: 'accountId es requerido' });
+    if (!objective) return res.status(400).json({ error: 'objective es requerido' });
+    if (!name) return res.status(400).json({ error: 'name es requerido' });
+    if (!pageId) return res.status(400).json({ error: 'pageId es requerido' });
+    if (!whatsappNumber) return res.status(400).json({ error: 'whatsappNumber es requerido' });
+    if (!imageHash) return res.status(400).json({ error: 'imageHash es requerido' });
+    if (!primaryText) return res.status(400).json({ error: 'primaryText es requerido' });
+
+    const result = await svc.quickCreateCtwaAd(accountId, {
+        objective, name, pageId,
+        whatsappNumber: String(whatsappNumber).replace(/[^0-9]/g, ''),
+        dailyBudgetCents: parseInt(dailyBudgetCents, 10),
+        targeting, primaryText, headline, description, imageHash,
+        ctaType, status, instagramActorId
+    });
+
+    res.json({ success: true, ...result });
+}));
+
 module.exports = router;
