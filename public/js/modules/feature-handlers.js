@@ -6,20 +6,32 @@
  * Modal de confirmación que reemplaza confirm() nativo.
  * Retorna una Promise<boolean>.
  */
-function showConfirmModal(message, { icon = 'help', confirmText = 'Aceptar', cancelText = 'Cancelar' } = {}) {
+function showConfirmModal(message, { icon = 'help', confirmText = 'Aceptar', cancelText = 'Cancelar', danger } = {}) {
     return new Promise((resolve) => {
+        // El CRM usa Font Awesome (no Material Symbols): mapeamos las palabras clave
+        // de icono a sus clases FA. Si ya viene una clase "fa-...", se usa tal cual.
+        const FA_ICONS = {
+            delete: 'fa-trash-alt', help: 'fa-circle-question', warning: 'fa-triangle-exclamation',
+            info: 'fa-circle-info', cancel: 'fa-ban', local_shipping: 'fa-truck',
+            pin_drop: 'fa-location-dot', two_wheeler: 'fa-motorcycle'
+        };
+        const faClass = (icon && icon.indexOf('fa-') !== -1) ? icon : (FA_ICONS[icon] || 'fa-circle-question');
+        // Acciones destructivas en rojo; el resto en el acento primario de la marca.
+        const isDanger = (danger !== undefined) ? danger : (icon === 'delete');
+        const accent = isDanger ? 'var(--color-danger, #e24b4a)' : 'var(--color-primary, #ea580c)';
+
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);';
         const card = document.createElement('div');
-        card.style.cssText = 'background:var(--color-surface-container-lowest,#fff);border-radius:16px;padding:24px;width:340px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.25);text-align:center;font-family:Manrope,sans-serif;';
+        card.style.cssText = 'background:var(--color-container-bg,#fff);border:1px solid var(--color-border,rgba(0,0,0,.08));border-radius:16px;padding:24px;width:340px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.22);text-align:center;font-family:var(--font-body,Inter,sans-serif);';
         card.innerHTML = `
-            <div style="width:44px;height:44px;border-radius:50%;background:var(--color-primary-container,#81b29a);display:flex;align-items:center;justify-content:center;margin:0 auto 12px">
-                <span class="material-symbols-outlined" style="font-size:24px;color:var(--color-on-primary-container,#134532)">${icon}</span>
+            <div style="width:48px;height:48px;border-radius:50%;background:color-mix(in srgb, ${accent} 14%, transparent);display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+                <i class="fas ${faClass}" style="font-size:20px;color:${accent}"></i>
             </div>
-            <p style="font-size:14px;color:var(--color-on-surface,#1b1b1f);margin:0 0 20px;line-height:1.5">${message}</p>
+            <p style="font-size:14px;color:var(--color-text,#1c1c1a);margin:0 0 20px;line-height:1.5">${message}</p>
             <div style="display:flex;gap:8px">
-                <button id="_cm_cancel" style="flex:1;padding:10px;border-radius:12px;border:none;font-size:13px;font-weight:700;cursor:pointer;background:var(--color-surface-container-low,#f6f2f8);color:var(--color-on-surface-variant,#414944);transition:background .15s">${cancelText}</button>
-                <button id="_cm_ok" style="flex:1;padding:10px;border-radius:12px;border:none;font-size:13px;font-weight:700;cursor:pointer;background:var(--color-primary,#386753);color:var(--color-on-primary,#fff);box-shadow:0 1px 3px rgba(0,0,0,.15);transition:opacity .15s">${confirmText}</button>
+                <button id="_cm_cancel" style="flex:1;padding:10px 12px;border-radius:10px;border:none;font-size:13px;font-weight:700;cursor:pointer;background:var(--color-subtle-bg,#f4f4f2);color:var(--color-text,#1c1c1a);transition:background .15s">${cancelText}</button>
+                <button id="_cm_ok" style="flex:1;padding:10px 12px;border-radius:10px;border:none;font-size:13px;font-weight:700;cursor:pointer;background:${accent};color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);transition:opacity .15s">${confirmText}</button>
             </div>`;
         overlay.appendChild(card);
         document.body.appendChild(overlay);
@@ -1196,7 +1208,9 @@ async function handleCreateWhatsappTemplate() {
 // --- Creador de anuncios click-to-WhatsApp (sub-pestaña "Crear Ad") ---
 // =====================================================================
 
-let adImageFile = null;             // File de la imagen del anuncio (se sube al publicar)
+let adImageFile = null;             // File de la imagen O video del anuncio (se sube al publicar)
+let adMediaKind = 'image';          // 'image' | 'video'
+let adThumbBlob = null;             // miniatura capturada del video (opcional)
 let adInterests = [];               // [{ id, name }] intereses seleccionados
 let adInterestResults = [];         // últimos resultados del buscador
 let adInterestSearchTimer = null;   // debounce
@@ -1280,20 +1294,71 @@ function onAdObjectiveChange(card) {
 }
 
 // Lee la imagen elegida, la muestra en el drop y en la vista previa.
-function onAdPhotoChange(event) {
+function onAdMediaChange(event) {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
     adImageFile = file;
-    const reader = new FileReader();
-    reader.onload = () => {
-        const prev = document.getElementById('ad-image-preview');
-        const ph = document.getElementById('ad-image-placeholder');
-        if (prev) { prev.src = reader.result; prev.classList.remove('hidden'); }
-        if (ph) ph.classList.add('hidden');
-        const box = document.getElementById('ad-preview-image');
-        if (box) box.innerHTML = `<img src="${reader.result}" alt="">`;
-    };
-    reader.readAsDataURL(file);
+    adThumbBlob = null;
+    adMediaKind = (file.type || '').startsWith('video') ? 'video' : 'image';
+
+    const imgPrev = document.getElementById('ad-image-preview');
+    const vidPrev = document.getElementById('ad-video-preview');
+    const ph = document.getElementById('ad-image-placeholder');
+    const box = document.getElementById('ad-preview-image');
+    if (ph) ph.classList.add('hidden');
+
+    if (adMediaKind === 'video') {
+        const url = URL.createObjectURL(file);
+        if (imgPrev) imgPrev.classList.add('hidden');
+        if (vidPrev) { vidPrev.src = url; vidPrev.classList.remove('hidden'); }
+        if (box) box.innerHTML = `<video src="${url}" muted autoplay loop playsinline style="width:100%;height:100%;object-fit:cover;"></video>`;
+        // Captura la primera imagen del video como miniatura (best-effort).
+        captureVideoThumb(file, (blob) => { adThumbBlob = blob; });
+    } else {
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (vidPrev) vidPrev.classList.add('hidden');
+            if (imgPrev) { imgPrev.src = reader.result; imgPrev.classList.remove('hidden'); }
+            if (box) box.innerHTML = `<img src="${reader.result}" alt="">`;
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+// Extrae el primer fotograma de un video como miniatura JPEG (para el creativo).
+function captureVideoThumb(file, cb) {
+    try {
+        const url = URL.createObjectURL(file);
+        const v = document.createElement('video');
+        v.preload = 'metadata'; v.muted = true; v.playsInline = true; v.src = url;
+        v.onloadeddata = () => { try { v.currentTime = Math.min(0.1, (v.duration || 1) / 2); } catch (_) { cb(null); } };
+        v.onseeked = () => {
+            try {
+                const c = document.createElement('canvas');
+                c.width = v.videoWidth || 720; c.height = v.videoHeight || 720;
+                c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+                c.toBlob((b) => { URL.revokeObjectURL(url); cb(b); }, 'image/jpeg', 0.85);
+            } catch (_) { cb(null); }
+        };
+        v.onerror = () => { cb(null); };
+    } catch (_) { cb(null); }
+}
+
+// Espera a que Meta termine de procesar el video antes de crear el anuncio.
+async function waitVideoReady(videoId, accountId, btn) {
+    for (let i = 0; i < 60; i++) { // ~3 min máx (60 × 3s)
+        let st = 'processing';
+        try {
+            const r = await fetch(`${API_BASE_URL}/api/meta-ads/video-status?videoId=${encodeURIComponent(videoId)}&accountId=${encodeURIComponent(accountId)}`);
+            const d = await r.json();
+            st = (d && d.status && d.status.video_status) || 'processing';
+        } catch (_) { /* reintenta */ }
+        if (st === 'ready') return true;
+        if (st === 'error') throw new Error('Meta no pudo procesar el video. Prueba con otro archivo.');
+        if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Procesando video en Meta… (${i * 3 + 3}s)`;
+        await new Promise((res) => setTimeout(res, 3000));
+    }
+    throw new Error('El video sigue procesando en Meta. Espera unos segundos y vuelve a dar Publicar.');
 }
 
 // Refresca la vista previa estilo feed de Facebook.
