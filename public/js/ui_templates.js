@@ -381,6 +381,16 @@ const CreateAdFormTemplate = () => `
             <input type="text" id="ad-description" maxlength="60" oninput="updateAdPreview()" placeholder="Atención por WhatsApp" class="!mb-0">
         </div>
 
+        <div class="campaign-form-section">
+            <label class="font-bold">4. Conversación (mensaje de bienvenida)</label>
+            <p class="text-xs text-gray-400 !mb-2">Lo que verá la persona en WhatsApp al tocar el anuncio: un saludo y preguntas que puede tocar para empezar el chat.</p>
+            <label class="text-xs font-semibold text-gray-500">Saludo</label>
+            <textarea id="ad-greeting" rows="2" oninput="updateAdWelcomePreview()" placeholder="¡Hola! 👋 ¿Cómo podemos ayudarte?" class="!mb-2"></textarea>
+            <label class="text-xs font-semibold text-gray-500">Preguntas frecuentes (máx. 4)</label>
+            <div id="ad-faqs" class="space-y-2 mt-1"></div>
+            <button type="button" id="ad-faq-add" onclick="addAdFaqRow()" class="btn btn-outline btn-sm mt-2"><i class="fas fa-plus mr-1"></i> Agregar pregunta</button>
+        </div>
+
         <div class="campaign-form-section" style="background:color-mix(in srgb, var(--color-warning, #f59e0b) 10%, transparent);border:1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 35%, transparent);border-radius:10px;padding:12px;">
             <p class="text-sm" style="margin:0;"><i class="fas fa-circle-info mr-1" style="color:var(--color-warning,#f59e0b);"></i> Al publicar, el anuncio queda <strong>EN VIVO</strong> y empezará a gastar tu presupuesto en cuanto Meta lo apruebe.</p>
         </div>
@@ -415,6 +425,13 @@ const CreateAdFormTemplate = () => `
             </div>
         </div>
         <p class="text-xs text-gray-400 mt-2">Así se verá aproximadamente en el feed. La ubicación real la optimiza Meta.</p>
+
+        <!-- Vista previa del chat de WhatsApp (Conversaciones) -->
+        <p class="fb-preview-title mt-4"><i class="fab fa-whatsapp mr-1" style="color:#25D366;"></i> Conversación</p>
+        <div style="background:#E5DDD5;border-radius:12px;padding:12px;">
+            <div id="ad-welcome-greeting" style="background:#fff;border-radius:8px;padding:8px 10px;font-size:13px;color:#111;max-width:85%;box-shadow:0 1px 1px rgba(0,0,0,.1);">¡Hola! 👋 ¿Cómo podemos ayudarte?</div>
+            <div id="ad-welcome-faqs" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;align-items:flex-end;"></div>
+        </div>
       </div>
     </div>
 `;

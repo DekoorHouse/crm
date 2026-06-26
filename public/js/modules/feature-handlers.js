@@ -1230,8 +1230,10 @@ async function initCreateAdForm() {
     const waInput = document.getElementById('ad-wa-number');
     if (waInput && !waInput.value && adCtwaDefaults.whatsappNumber) waInput.value = adCtwaDefaults.whatsappNumber;
 
+    seedAdFaqs();
     await loadAdAccounts();
     updateAdPreview();
+    updateAdWelcomePreview();
 }
 
 // Carga las cuentas publicitarias y selecciona la activa por default.
@@ -1531,6 +1533,72 @@ function hideAdPlaceResults() {
     setTimeout(() => { const box = document.getElementById('ad-place-results'); if (box) box.classList.add('hidden'); }, 180);
 }
 
+// --- Conversación: saludo + preguntas frecuentes (mensaje de bienvenida) ---
+
+const AD_FAQ_DEFAULTS = ['¿Dónde están ubicados?', '¿Cuál es el precio?', '¿Cómo realizo una compra?'];
+
+// Siembra preguntas por default la primera vez (no pisa lo que el usuario ya tenga).
+function seedAdFaqs() {
+    const box = document.getElementById('ad-faqs');
+    if (!box || box.querySelector('.ad-faq-row')) return;
+    AD_FAQ_DEFAULTS.forEach(q => addAdFaqRow(q));
+}
+
+// Agrega una fila de pregunta frecuente (máx. 4).
+function addAdFaqRow(value = '') {
+    const box = document.getElementById('ad-faqs');
+    if (!box || box.querySelectorAll('.ad-faq-row').length >= 4) return;
+    const row = document.createElement('div');
+    row.className = 'ad-faq-row';
+    row.style.cssText = 'display:flex;gap:8px;align-items:center;';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'ad-faq-input !mb-0';
+    input.maxLength = 80;
+    input.placeholder = 'Pregunta frecuente';
+    input.style.flex = '1';
+    input.value = typeof value === 'string' ? value : '';
+    input.addEventListener('input', updateAdWelcomePreview);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'text-red-500 px-2';
+    btn.title = 'Quitar';
+    btn.innerHTML = '<i class="fas fa-times"></i>';
+    btn.addEventListener('click', () => { row.remove(); refreshAdFaqAddBtn(); updateAdWelcomePreview(); });
+    row.appendChild(input);
+    row.appendChild(btn);
+    box.appendChild(row);
+    refreshAdFaqAddBtn();
+    updateAdWelcomePreview();
+}
+
+function refreshAdFaqAddBtn() {
+    const box = document.getElementById('ad-faqs');
+    const btn = document.getElementById('ad-faq-add');
+    if (!box || !btn) return;
+    const full = box.querySelectorAll('.ad-faq-row').length >= 4;
+    btn.disabled = full;
+    btn.style.opacity = full ? '0.5' : '';
+}
+
+function getAdFaqs() {
+    return Array.from(document.querySelectorAll('#ad-faqs .ad-faq-input'))
+        .map(i => i.value.trim()).filter(Boolean).slice(0, 4);
+}
+
+// Refresca la vista previa del chat de WhatsApp (saludo + preguntas).
+function updateAdWelcomePreview() {
+    const greeting = ((document.getElementById('ad-greeting') || {}).value || '').trim() || '¡Hola! 👋 ¿Cómo podemos ayudarte?';
+    const gEl = document.getElementById('ad-welcome-greeting');
+    if (gEl) gEl.textContent = greeting;
+    const faqsEl = document.getElementById('ad-welcome-faqs');
+    if (faqsEl) {
+        faqsEl.innerHTML = getAdFaqs().map(q =>
+            `<div style="background:#fff;border:1px solid #25D366;color:#075E54;border-radius:16px;padding:5px 12px;font-size:12px;max-width:90%;">${escapeTemplatePreview(q)}</div>`
+        ).join('');
+    }
+}
+
 // Construye el spec de targeting a partir de los controles de audiencia.
 function buildAdTargeting() {
     const country = (document.getElementById('ad-geo-country') || {}).value || 'MX';
@@ -1599,13 +1667,18 @@ async function handleCreateMetaAd() {
     const genderTxt = { all: 'todos', male: 'hombres', female: 'mujeres' }[(document.getElementById('ad-gender') || {}).value || 'all'];
     const interesesTxt = adInterests.length ? `${adInterests.length} interés(es)` : 'audiencia amplia';
     const formatoTxt = adMediaKind === 'video' ? 'Video' : 'Imagen';
+    const geoTxt = adPlaces.length ? adPlaces.map(p => p.name).join(', ') : ((document.getElementById('ad-geo-country') || {}).value || 'MX');
+    const greeting = ((document.getElementById('ad-greeting') || {}).value || '').trim();
+    const faqs = getAdFaqs();
+    const convoTxt = greeting ? `saludo + ${faqs.length} pregunta(s)` : 'mensaje por defecto de Meta';
 
     const resumen =
         `Vas a PUBLICAR un anuncio EN VIVO:\n\n` +
         `• Objetivo: ${objLabel} (a WhatsApp)\n` +
         `• Formato: ${formatoTxt}\n` +
         `• Presupuesto: $${budgetMxn.toLocaleString('es-MX')} MXN / día\n` +
-        `• Audiencia: ${targeting.geo_locations.countries[0]}, ${targeting.age_min}-${targeting.age_max} años, ${genderTxt}, ${interesesTxt}\n` +
+        `• Audiencia: ${geoTxt}, ${targeting.age_min}-${targeting.age_max} años, ${genderTxt}, ${interesesTxt}\n` +
+        `• Conversación: ${convoTxt}\n` +
         `• WhatsApp: ${waNumber}\n\n` +
         `Empezará a gastar tu presupuesto en cuanto Meta lo apruebe. ¿Continuar?`;
     if (!confirm(resumen)) return;
@@ -1663,7 +1736,7 @@ async function handleCreateMetaAd() {
             body: JSON.stringify({
                 accountId, objective, name, pageId, whatsappNumber: waNumber,
                 dailyBudgetCents, targeting, primaryText, headline, description,
-                imageHash, videoId, thumbnailHash, ctaType, status: 'ACTIVE'
+                imageHash, videoId, thumbnailHash, greeting, faqs, ctaType, status: 'ACTIVE'
             })
         });
         const result = await res.json();
@@ -1694,6 +1767,11 @@ function resetCreateAdForm() {
     adPlaces = [];
     renderAdInterestChips();
     renderAdPlaceChips();
+    const greetingEl = document.getElementById('ad-greeting');
+    if (greetingEl) greetingEl.value = '';
+    const faqsBox = document.getElementById('ad-faqs');
+    if (faqsBox) { faqsBox.innerHTML = ''; seedAdFaqs(); }
+    updateAdWelcomePreview();
     const prev = document.getElementById('ad-image-preview');
     if (prev) { prev.src = ''; prev.classList.add('hidden'); }
     const vidPrev = document.getElementById('ad-video-preview');
@@ -3213,6 +3291,8 @@ window.searchAdPlaces = searchAdPlaces;
 window.addAdPlaceByIndex = addAdPlaceByIndex;
 window.removeAdPlace = removeAdPlace;
 window.hideAdPlaceResults = hideAdPlaceResults;
+window.addAdFaqRow = addAdFaqRow;
+window.updateAdWelcomePreview = updateAdWelcomePreview;
 window.handleCreateMetaAd = handleCreateMetaAd;
 window.handleSaveQuickReply = handleSaveQuickReply;
 window.handleDeleteQuickReply = handleDeleteQuickReply;

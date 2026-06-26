@@ -613,6 +613,56 @@ async function getVideoStatus(videoId, accountId) {
 // ===================== CREACION RAPIDA: ANUNCIO CLICK-TO-WHATSAPP =====================
 
 /**
+ * Construye el page_welcome_message (sección "Conversaciones" de Meta) como
+ * JSON string, con la estructura VISUAL_EDITOR real que usa Ads Manager:
+ * un saludo + preguntas frecuentes (ice breakers). Devuelve null si no hay
+ * saludo (entonces Meta usa su mensaje por defecto).
+ *
+ * @param {string} greeting  Saludo que ve el cliente al abrir el chat.
+ * @param {string[]} faqs     Preguntas frecuentes (máx. 4) que puede tocar.
+ */
+function buildCtwaWelcomeMessage(greeting, faqs) {
+    const text = (greeting || '').trim();
+    if (!text) return null;
+    const breakers = (Array.isArray(faqs) ? faqs : [])
+        .map(s => String(s || '').trim())
+        .filter(Boolean)
+        .slice(0, 4)
+        .map(title => ({ title }));
+    const quickReplies = breakers.map(b => ({ title: b.title, content_type: 'text' }));
+
+    const pwm = {
+        type: 'VISUAL_EDITOR',
+        version: 2,
+        landing_screen_type: 'welcome_message',
+        media_type: 'text',
+        text_format: {
+            customer_action_type: 'ice_breakers',
+            message: { text, ice_breakers: breakers }
+        },
+        image_format: {
+            customer_action_type: 'quick_replies',
+            message: {
+                attachment: { type: 'template', payload: { template_type: 'generic', elements: [{ title: '', buttons: [] }] } },
+                quick_replies: quickReplies,
+                text
+            }
+        },
+        video_format: {
+            customer_action_type: 'quick_replies',
+            message: {
+                attachment: { type: 'video', payload: { attachment_id: '' } },
+                quick_replies: quickReplies,
+                text
+            }
+        },
+        user_edit: true,
+        surface: 'visual_editor_new'
+    };
+    return JSON.stringify(pwm);
+}
+
+/**
  * Crea de una sola vez un anuncio completo de "click to WhatsApp":
  * campaña → conjunto de anuncios → creativo → anuncio.
  *
@@ -644,7 +694,7 @@ async function quickCreateCtwaAd(accountId, opts) {
     const {
         objective, name, pageId, whatsappNumber, dailyBudgetCents,
         targeting, primaryText, headline, description, imageHash,
-        videoId, thumbnailHash,
+        videoId, thumbnailHash, greeting, faqs,
         ctaType = 'WHATSAPP_MESSAGE', status = 'PAUSED', instagramActorId
     } = opts || {};
 
@@ -680,17 +730,21 @@ async function quickCreateCtwaAd(accountId, opts) {
         // 3. Creativo click-to-WhatsApp: video_data si hay video, si no link_data (imagen).
         const waLink = `https://api.whatsapp.com/send?phone=${whatsappNumber}`;
         const cta = { type: ctaType, value: { app_destination: 'WHATSAPP', link: waLink } };
+        // Sección "Conversaciones": saludo + preguntas frecuentes (ice breakers).
+        const welcomeMessage = buildCtwaWelcomeMessage(greeting, faqs);
         let object_story_spec;
         if (videoId) {
             const video_data = { video_id: videoId, message: primaryText, call_to_action: cta };
             if (headline) video_data.title = headline;
             if (description) video_data.link_description = description;
             if (thumbnailHash) video_data.image_hash = thumbnailHash; // miniatura; si no, Meta la genera
+            if (welcomeMessage) video_data.page_welcome_message = welcomeMessage;
             object_story_spec = { page_id: pageId, video_data };
         } else {
             const link_data = { link: waLink, message: primaryText, image_hash: imageHash, call_to_action: cta };
             if (headline) link_data.name = headline;
             if (description) link_data.description = description;
+            if (welcomeMessage) link_data.page_welcome_message = welcomeMessage;
             object_story_spec = { page_id: pageId, link_data };
         }
         if (instagramActorId) object_story_spec.instagram_actor_id = instagramActorId;

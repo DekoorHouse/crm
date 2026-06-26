@@ -514,7 +514,7 @@ router.post('/quick-create', asyncHandler(async (req, res) => {
     const {
         accountId, objective, name, pageId, whatsappNumber,
         dailyBudgetCents, targeting, primaryText, headline, description,
-        imageHash, videoId, thumbnailHash, ctaType, status, instagramActorId
+        imageHash, videoId, thumbnailHash, greeting, faqs, ctaType, status, instagramActorId
     } = req.body || {};
 
     if (!accountId) return res.status(400).json({ error: 'accountId es requerido' });
@@ -530,7 +530,7 @@ router.post('/quick-create', asyncHandler(async (req, res) => {
         whatsappNumber: String(whatsappNumber).replace(/[^0-9]/g, ''),
         dailyBudgetCents: parseInt(dailyBudgetCents, 10),
         targeting, primaryText, headline, description, imageHash,
-        videoId, thumbnailHash, ctaType, status, instagramActorId
+        videoId, thumbnailHash, greeting, faqs, ctaType, status, instagramActorId
     });
 
     res.json({ success: true, ...result });
