@@ -535,12 +535,18 @@ async function loadDepartmentCounts() {
 }
 
 /**
- * "Entrar" a un departamento: activa el filtro de ese departamento y
- * abre la vista de Chats mostrando solo sus contactos.
+ * "Entrar" a un departamento: fuerza el filtro a ese departamento, abre la
+ * vista de Chats y recarga la lista desde el servidor ya filtrada (mismo
+ * comportamiento que elegir el departamento en el filtro de Chats).
  */
 function enterDepartment(deptId) {
+    // Forzar el filtro a ESTE departamento (sin togglear a "todos").
     state.activeDepartmentFilter = deptId || 'all';
     navigateTo('chats', true);
+    // Traer del servidor los chats de ese departamento (no usar solo la caché).
+    state.contacts = [];
+    if (typeof renderTagFilters === 'function') renderTagFilters();
+    if (typeof fetchInitialContacts === 'function') fetchInitialContacts();
 }
 window.enterDepartment = enterDepartment;
 
