@@ -1012,6 +1012,15 @@ body.dark-mode .table tr:hover { background-color: #292e42; }
 .campaign-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
 .campaign-pane { display: none; }
 .campaign-pane.active { display: block; }
+
+/* Pestañas de Ajustes (mismo estilo de subpestañas que CRM/Campañas) */
+.settings-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--color-border); margin-bottom: 1.5rem; }
+.settings-tab { padding: 10px 18px; background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--color-text-light); transition: color 0.15s ease, border-color 0.15s ease; display: inline-flex; align-items: center; }
+.settings-tab:hover { color: var(--color-text); }
+.settings-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.settings-pane { display: none; }
+.settings-pane.active { display: block; }
+
 /* Difusión y Resultados se embeben dentro del hub: neutralizar el view-container
    anidado (evita doble padding/scroll y conflicto de height:100%). */
 .campaign-pane .view-container { padding: 0; height: auto; overflow: visible; background: transparent; }

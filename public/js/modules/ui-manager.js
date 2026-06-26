@@ -1045,6 +1045,14 @@ function populateMessengerWelcomeSelect() {
     if (typeof refreshMessengerWelcomeDisplay === 'function') refreshMessengerWelcomeDisplay();
 }
 
+// Cambia de pestaña dentro de Ajustes (Apariencia / Usuarios / Automatización / etc.).
+function switchSettingsTab(tab) {
+    state.settingsTab = tab;
+    document.querySelectorAll('.settings-tab').forEach(b => b.classList.toggle('active', b.dataset.stab === tab));
+    document.querySelectorAll('.settings-pane').forEach(p => p.classList.toggle('active', p.dataset.spane === tab));
+}
+window.switchSettingsTab = switchSettingsTab;
+
 function renderAjustesView() {
     if (state.activeView !== 'ajustes') return;
 
@@ -1096,6 +1104,9 @@ function renderAjustesView() {
     if ((!state.allUsers || state.allUsers.length === 0) && typeof fetchAllUsers === 'function') {
         fetchAllUsers();
     }
+
+    // Restaura la pestaña de Ajustes que estaba activa (por defecto: Apariencia).
+    if (typeof switchSettingsTab === 'function') switchSettingsTab(state.settingsTab || 'apariencia');
 
     // Nota: la sección "Reactivación de Leads" (genérica) se retiró del CRM; la
     // reemplaza "Rescate IA" (seguimiento de pedido en proceso). El backend genérico
