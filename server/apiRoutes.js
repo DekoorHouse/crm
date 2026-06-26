@@ -11504,9 +11504,30 @@ const _slimContact = (id, d) => ({
     lastMessageTimestamp: _tsMs(d.lastMessageTimestamp)
 });
 
-// GET /api/crm-list/counts → cuántos hay de cada tipo (con count(), eficiente)
-router.get('/crm-list/counts', async (_req, res) => {
+// Caché en memoria del servidor (TTL): evita releer Firestore en cada F5 / cada usuario.
+// ?fresh=1 la salta (botón "Actualizar"). Es compartida entre todos los usuarios.
+const CRM_LIST_CACHE = new Map();
+const CRM_LIST_TTL_MS = 3 * 60 * 1000; // 3 minutos
+function _crmCacheGet(key, fresh) {
+    if (fresh) return null;
+    const e = CRM_LIST_CACHE.get(key);
+    return (e && (Date.now() - e.at) < CRM_LIST_TTL_MS) ? e.data : null;
+}
+function _crmCacheSet(key, data) {
+    CRM_LIST_CACHE.set(key, { at: Date.now(), data });
+    if (CRM_LIST_CACHE.size > 40) {
+        const cutoff = Date.now() - CRM_LIST_TTL_MS;
+        for (const [k, v] of CRM_LIST_CACHE) if (v.at < cutoff) CRM_LIST_CACHE.delete(k);
+    }
+}
+
+// GET /api/crm-list/counts[&fresh=1] → cuántos hay de cada tipo (count(), barato + cacheado)
+router.get('/crm-list/counts', async (req, res) => {
     try {
+        const fresh = req.query.fresh === '1';
+        const cached = _crmCacheGet('counts', fresh);
+        if (cached) return res.json({ ...cached, fromCache: true });
+
         const col = db.collection('contacts_whatsapp');
         const [tot, cli, lead] = await Promise.all([
             col.count().get(),
@@ -11516,40 +11537,40 @@ router.get('/crm-list/counts', async (_req, res) => {
         const total = tot.data().count;
         const clientes = cli.data().count;
         const leads = lead.data().count;
-        res.json({ success: true, total, clientes, leads, contactos: Math.max(0, total - clientes - leads) });
+        const data = { success: true, total, clientes, leads, contactos: Math.max(0, total - clientes - leads) };
+        _crmCacheSet('counts', data);
+        res.json({ ...data, fromCache: false });
     } catch (err) {
         console.error('crm-list/counts error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
-// GET /api/crm-list/items?tab=clientes|leads|contactos[&sort=recent|spent|orders|product][&days=3]
+// GET /api/crm-list/items?tab=clientes|leads|contactos[&days=3][&fresh=1]
+// El orden lo hace el frontend (sobre todo lo cargado); aquí solo entregamos los datos.
 router.get('/crm-list/items', async (req, res) => {
     try {
         const tab = ['clientes', 'leads', 'contactos'].includes(req.query.tab) ? req.query.tab : 'clientes';
+        const fresh = req.query.fresh === '1';
+        const days = tab === 'contactos' ? Math.min(Math.max(parseInt(req.query.days, 10) || 3, 1), 90) : 0;
+        const cacheKey = `items_${tab}${tab === 'contactos' ? '_' + days : ''}`;
+        const cached = _crmCacheGet(cacheKey, fresh);
+        if (cached) return res.json({ ...cached, fromCache: true });
+
         const col = db.collection('contacts_whatsapp');
         let items = [];
         let truncated = false;
 
         if (tab === 'clientes' || tab === 'leads') {
-            // Acotado (compradores/leads) → cargamos todos y ordenamos en memoria
+            // Acotado (compradores/leads) → cargamos todos; el frontend ordena/filtra.
             const ps = tab === 'clientes' ? 'completed' : 'registered';
-            const CAP = 5000;
+            const CAP = 12000; // cubre el total actual con margen
             const snap = await col.where('purchaseStatus', '==', ps).limit(CAP).get();
             items = snap.docs.map(d => _slimContact(d.id, d.data()));
             truncated = snap.size >= CAP;
-            if (tab === 'clientes') {
-                const sort = req.query.sort || 'recent';
-                if (sort === 'spent') items.sort((a, b) => b.totalSpent - a.totalSpent);
-                else if (sort === 'orders') items.sort((a, b) => b.orderCount - a.orderCount);
-                else if (sort === 'product') items.sort((a, b) => (a.products[0] || '~').localeCompare(b.products[0] || '~'));
-                else items.sort((a, b) => (b.lastOrderDate || b.lastMessageTimestamp || 0) - (a.lastOrderDate || a.lastMessageTimestamp || 0));
-            } else {
-                items.sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0));
-            }
+            items.sort((a, b) => (b.lastOrderDate || b.lastMessageTimestamp || 0) - (a.lastOrderDate || a.lastMessageTimestamp || 0));
         } else {
             // Contactos (colección grande) → solo últimos N días, excluyendo compradores/leads
-            const days = Math.min(Math.max(parseInt(req.query.days, 10) || 3, 1), 90);
             const since = admin.firestore.Timestamp.fromMillis(Date.now() - days * 86400000);
             const snap = await col.where('lastMessageTimestamp', '>=', since)
                 .orderBy('lastMessageTimestamp', 'desc').limit(1500).get();
@@ -11558,7 +11579,9 @@ router.get('/crm-list/items', async (req, res) => {
             truncated = snap.size >= 1500;
         }
 
-        res.json({ success: true, tab, count: items.length, truncated, items });
+        const data = { success: true, tab, count: items.length, truncated, items };
+        _crmCacheSet(cacheKey, data);
+        res.json({ ...data, fromCache: false });
     } catch (err) {
         console.error('crm-list/items error:', err);
         const msg = err.message || 'error';

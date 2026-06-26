@@ -620,9 +620,10 @@ function applyCrmCounts(d) {
     set('crm-count-contactos', d.contactos);
 }
 
-/** Trae los conteos totales (clientes / leads / contactos), los cachea y los pinta. */
-function loadCrmCounts() {
-    fetch(`${API_BASE_URL}/api/crm-list/counts`)
+/** Trae los conteos totales (clientes / leads / contactos), los cachea y los pinta.
+ * fresh=true salta la caché del servidor (botón Actualizar). */
+function loadCrmCounts(fresh) {
+    fetch(`${API_BASE_URL}/api/crm-list/counts${fresh ? '?fresh=1' : ''}`)
         .then(r => r.json())
         .then(d => {
             if (!d || d.success === false) return;
@@ -642,7 +643,7 @@ function switchCrmTab(tab) {
 /** Muestra la lista de la pestaña activa. Si ya está en caché, render inmediato;
  * si no (o force=true), la pide al backend y la cachea. El orden se aplica en el
  * cliente (renderCrmList), así cambiar el orden no vuelve a pedir datos. */
-function loadCrmList(force) {
+function loadCrmList(force, fresh) {
     if (state.activeView !== 'clientes') return;
     const tab = state.crmTab || 'clientes';
     if (!state.crmCache) state.crmCache = {};
@@ -659,6 +660,7 @@ function loadCrmList(force) {
 
     let url = `${API_BASE_URL}/api/crm-list/items?tab=${tab}`;
     if (tab === 'contactos') url += `&days=${CRM_CONTACTOS_DAYS}`;
+    if (fresh) url += `&fresh=1`;
 
     fetch(url)
         .then(async r => {
@@ -771,8 +773,8 @@ function clearCrmFilters() {
 function refreshCrmView() {
     state.crmCache = {};
     state.crmCounts = null;
-    loadCrmCounts();
-    loadCrmList(true);
+    loadCrmCounts(true);
+    loadCrmList(true, true);
 }
 
 window.loadCrmView = loadCrmView;
