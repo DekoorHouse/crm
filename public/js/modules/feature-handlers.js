@@ -1506,7 +1506,7 @@ function addAdPlace(it) {
     if (!it || !it.key) return;
     const id = `${it.type}:${it.key}`;
     if (!adPlaces.some(p => p.id === id)) {
-        adPlaces.push({ id, key: String(it.key), type: it.type, name: it.name, country_code: it.country_code, region: it.region });
+        adPlaces.push({ id, key: String(it.key), type: it.type, name: it.name, country_code: it.country_code, region: it.region, radiusKm: 0 });
     }
     renderAdPlaceChips();
     const input = document.getElementById('ad-place-search');
@@ -1520,12 +1520,27 @@ function removeAdPlace(id) {
     renderAdPlaceChips();
 }
 
+// Cambia el radio (km) de una ciudad. 0 = solo la ciudad actual.
+function setAdPlaceRadius(id, km) {
+    const p = adPlaces.find(x => x.id === id);
+    if (p) p.radiusKm = parseInt(km, 10) || 0;
+}
+
 function renderAdPlaceChips() {
     const box = document.getElementById('ad-place-chips');
     if (!box) return;
+    const RADII = [0, 17, 25, 40, 60, 80];
     box.innerHTML = adPlaces.map(p => {
         const sub = p.type === 'city' ? 'Ciudad' : (p.type === 'region' ? 'Estado' : 'País');
-        return `<span class="ad-chip">${escapeTemplatePreview(p.name)} <small style="opacity:.7;">${sub}</small> <i class="fas fa-times" onclick="removeAdPlace('${String(p.id).replace(/'/g, '')}')"></i></span>`;
+        const safeId = String(p.id).replace(/'/g, '');
+        let radiusCtl = '';
+        if (p.type === 'city') {
+            const opts = RADII.map(r =>
+                `<option value="${r}" ${Number(p.radiusKm || 0) === r ? 'selected' : ''}>${r === 0 ? 'Solo ciudad' : '+' + r + ' km'}</option>`
+            ).join('');
+            radiusCtl = `<select onchange="setAdPlaceRadius('${safeId}', this.value)" style="margin:0 2px;border:none;background:transparent;font-size:11px;font-weight:700;color:inherit;cursor:pointer;height:auto;line-height:normal;padding:0;">${opts}</select>`;
+        }
+        return `<span class="ad-chip">${escapeTemplatePreview(p.name)} <small style="opacity:.7;">${sub}</small>${radiusCtl}<i class="fas fa-times" onclick="removeAdPlace('${safeId}')"></i></span>`;
     }).join('');
 }
 
@@ -1615,7 +1630,11 @@ function buildAdTargeting() {
     let geo;
     if (adPlaces.length) {
         geo = {};
-        const cities = adPlaces.filter(p => p.type === 'city').map(p => ({ key: p.key }));
+        const cities = adPlaces.filter(p => p.type === 'city').map(p => {
+            const c = { key: p.key };
+            if (p.radiusKm && p.radiusKm > 0) { c.radius = p.radiusKm; c.distance_unit = 'kilometer'; }
+            return c;
+        });
         const regions = adPlaces.filter(p => p.type === 'region').map(p => ({ key: p.key }));
         const countries = adPlaces.filter(p => p.type === 'country').map(p => p.country_code || p.key);
         if (cities.length) geo.cities = cities;
@@ -3290,6 +3309,7 @@ window.hideAdInterestResults = hideAdInterestResults;
 window.searchAdPlaces = searchAdPlaces;
 window.addAdPlaceByIndex = addAdPlaceByIndex;
 window.removeAdPlace = removeAdPlace;
+window.setAdPlaceRadius = setAdPlaceRadius;
 window.hideAdPlaceResults = hideAdPlaceResults;
 window.addAdFaqRow = addAdFaqRow;
 window.updateAdWelcomePreview = updateAdWelcomePreview;

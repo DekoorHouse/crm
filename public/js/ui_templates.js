@@ -204,6 +204,15 @@ const CreateAdFormTemplate = () => `
     <style>
         .ad-builder { display: grid; grid-template-columns: 1fr 360px; gap: 28px; align-items: start; }
         @media (max-width: 900px) { .ad-builder { grid-template-columns: 1fr; } }
+        /* Tamaño uniforme de todos los campos del formulario */
+        .ad-builder input:not([type=file]):not([type=checkbox]):not([type=radio]),
+        .ad-builder select {
+            height: 42px; padding: 0 12px; font-size: 14px; line-height: 42px;
+            border-radius: 8px; box-sizing: border-box; vertical-align: middle;
+        }
+        .ad-builder textarea {
+            padding: 9px 12px; font-size: 14px; border-radius: 8px; box-sizing: border-box;
+        }
         .ad-objective-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .ad-objective-card {
             border: 2px solid var(--color-border, #e5e7eb); border-radius: 12px; padding: 14px;
