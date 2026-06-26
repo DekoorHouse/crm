@@ -461,7 +461,7 @@ function renderDepartmentsView() {
     if (!tableBody) return;
 
     if (state.departments.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="3" class="text-center text-gray-500 py-4">No hay departamentos creados.</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500 py-4">No hay departamentos creados.</td></tr>`;
         return;
     }
 
@@ -474,13 +474,52 @@ function renderDepartmentsView() {
                     <span>${dept.color || '#6c757d'}</span>
                 </div>
             </td>
+            <td>
+                <button onclick="enterDepartment('${dept.id}')" class="dept-count-badge" title="Ver los chats de este departamento">
+                    <i class="fas fa-comments mr-1 text-gray-400"></i>
+                    <span id="dept-count-${dept.id}" class="dept-count-value text-gray-400"><i class="fas fa-spinner fa-spin"></i></span>
+                </button>
+            </td>
             <td class="actions-cell">
                 <button onclick="openDepartmentModal(state.departments.find(d => d.id === '${dept.id}'))" class="p-2"><i class="fas fa-pencil-alt"></i></button>
                 <button onclick="handleDeleteDepartment('${dept.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
             </td>
         </tr>
     `).join('');
+
+    // Cargar los conteos de contactos por departamento (asíncrono) y parchear las celdas.
+    loadDepartmentCounts();
 }
+
+/**
+ * Obtiene del servidor cuántos contactos hay en cada departamento y
+ * actualiza las celdas de la columna "Contactos" sin recargar la tabla.
+ */
+async function loadDepartmentCounts() {
+    const counts = await fetchDepartmentContactCounts();
+    if (state.activeView !== 'departments') return; // El usuario ya navegó a otra vista.
+
+    state.departments.forEach(dept => {
+        const cell = document.getElementById(`dept-count-${dept.id}`);
+        if (!cell) return;
+        if (counts && typeof counts[dept.id] === 'number') {
+            cell.textContent = counts[dept.id];
+            cell.classList.remove('text-gray-400');
+        } else {
+            cell.textContent = '—';
+        }
+    });
+}
+
+/**
+ * "Entrar" a un departamento: activa el filtro de ese departamento y
+ * abre la vista de Chats mostrando solo sus contactos.
+ */
+function enterDepartment(deptId) {
+    state.activeDepartmentFilter = deptId || 'all';
+    navigateTo('chats', true);
+}
+window.enterDepartment = enterDepartment;
 
 // --- NUEVO: Renderiza la tabla de reglas de enrutamiento ---
 function renderAdRoutingView() {
@@ -979,6 +1018,8 @@ function populateMessengerWelcomeSelect() {
     );
     sel.innerHTML = opts.join('');
     if (current) sel.value = current;
+    // Refleja la opción seleccionada en la barra de texto del combobox buscable.
+    if (typeof refreshMessengerWelcomeDisplay === 'function') refreshMessengerWelcomeDisplay();
 }
 
 function renderAjustesView() {
@@ -987,6 +1028,7 @@ function renderAjustesView() {
     // Respuesta automática de Facebook: poblar el select PRIMERO, antes que el
     // resto de la vista, para que nunca quede vacío si algo más fallara después.
     populateMessengerWelcomeSelect();
+    if (typeof initMessengerWelcomeCombo === 'function') initMessengerWelcomeCombo();
     if (typeof loadMessengerWelcomeSetting === 'function') loadMessengerWelcomeSetting();
     // Si las respuestas rápidas aún no se han cargado, forzar su carga (el listener
     // luego repoblará el select automáticamente).
@@ -1012,14 +1054,14 @@ function renderAjustesView() {
     }
     // Añade listener al botón de guardar ID de Google Sheet
     const saveSheetIdBtn = document.getElementById('save-google-sheet-id-btn');
-    if (saveSheetIdBtn) {
+    if (saveSheetIdBtn && typeof handleSaveGoogleSheetId === 'function') {
         // Evita añadir múltiples listeners
         saveSheetIdBtn.removeEventListener('click', handleSaveGoogleSheetId);
         saveSheetIdBtn.addEventListener('click', handleSaveGoogleSheetId);
     }
     // Añade listener al formulario de simulación de mensaje de Ad
     const simulateAdForm = document.getElementById('simulate-ad-form');
-    if (simulateAdForm) {
+    if (simulateAdForm && typeof handleSimulateAdMessage === 'function') {
          // Evita añadir múltiples listeners
         simulateAdForm.removeEventListener('submit', handleSimulateAdMessage);
         simulateAdForm.addEventListener('submit', handleSimulateAdMessage);

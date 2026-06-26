@@ -70,6 +70,7 @@ const DepartmentsViewTemplate = () => `
                     <tr>
                         <th>Nombre</th>
                         <th>Color</th>
+                        <th>Contactos</th>
                         <th>Acciones</th>
                     </tr>
                 </thead>
@@ -198,6 +199,218 @@ const CreateTemplateFormTemplate = () => `
     </div>
 `;
 
+// Formulario constructor de anuncios click-to-WhatsApp (sub-pestaña "Crear Ad")
+const CreateAdFormTemplate = () => `
+    <style>
+        .ad-builder { display: grid; grid-template-columns: 1fr 360px; gap: 28px; align-items: start; }
+        @media (max-width: 900px) { .ad-builder { grid-template-columns: 1fr; } }
+        .ad-objective-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .ad-objective-card {
+            border: 2px solid var(--color-border, #e5e7eb); border-radius: 12px; padding: 14px;
+            cursor: pointer; transition: all .15s ease; background: var(--color-container-bg, #fff);
+        }
+        .ad-objective-card:hover { border-color: var(--color-primary, #E07A5F); }
+        .ad-objective-card.selected { border-color: var(--color-primary, #E07A5F); background: color-mix(in srgb, var(--color-primary, #E07A5F) 8%, transparent); }
+        .ad-objective-card .ttl { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .ad-objective-card .desc { font-size: 12px; color: var(--color-text-secondary, #6b7280); margin-top: 4px; }
+        .ad-image-drop {
+            border: 2px dashed var(--color-border, #d1d5db); border-radius: 12px; padding: 22px;
+            text-align: center; cursor: pointer; transition: all .15s ease; color: var(--color-text-secondary, #6b7280);
+        }
+        .ad-image-drop:hover { border-color: var(--color-primary, #E07A5F); background: color-mix(in srgb, var(--color-primary, #E07A5F) 6%, transparent); }
+        .ad-image-drop img { max-height: 160px; border-radius: 8px; margin: 0 auto; }
+        .ad-interest-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .ad-chip {
+            display: inline-flex; align-items: center; gap: 6px; background: color-mix(in srgb, var(--color-primary, #E07A5F) 12%, transparent);
+            color: var(--color-primary, #E07A5F); border-radius: 9999px; padding: 4px 10px; font-size: 12px; font-weight: 600;
+        }
+        .ad-chip i { cursor: pointer; opacity: .7; }
+        .ad-chip i:hover { opacity: 1; }
+        .ad-interest-results {
+            position: absolute; z-index: 40; background: var(--color-container-bg, #fff); border: 1px solid var(--color-border, #e5e7eb);
+            border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); max-height: 240px; overflow-y: auto; width: 100%; margin-top: 4px;
+        }
+        .ad-interest-results .opt { padding: 9px 12px; cursor: pointer; font-size: 13px; }
+        .ad-interest-results .opt:hover { background: var(--color-subtle-bg, #f3f4f6); }
+        .ad-interest-results .opt small { color: var(--color-text-secondary, #9ca3af); }
+        /* Vista previa estilo feed de Facebook */
+        .fb-preview { position: sticky; top: 12px; }
+        .fb-preview-title { font-size: 12px; font-weight: 700; color: var(--color-text-secondary, #6b7280); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 10px; }
+        .fb-card { background: #fff; border: 1px solid #dadde1; border-radius: 12px; overflow: hidden; color: #050505; font-size: 14px; }
+        .fb-card-head { display: flex; align-items: center; gap: 8px; padding: 12px; }
+        .fb-avatar { width: 40px; height: 40px; border-radius: 50%; background: #E07A5F; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; }
+        .fb-pagename { font-weight: 600; line-height: 1.2; }
+        .fb-sponsored { font-size: 12px; color: #65676b; display: flex; align-items: center; gap: 4px; }
+        .fb-primary { padding: 0 12px 10px; white-space: pre-wrap; word-break: break-word; }
+        .fb-image { width: 100%; aspect-ratio: 1/1; background: #e4e6eb url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="%23b0b3b8" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>') center/48px no-repeat; display: flex; align-items: center; justify-content: center; }
+        .fb-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .fb-foot { display: flex; align-items: center; gap: 12px; padding: 12px; background: #f7f8fa; border-top: 1px solid #dadde1; }
+        .fb-foot-text { flex: 1; min-width: 0; }
+        .fb-foot-domain { font-size: 12px; color: #65676b; }
+        .fb-foot-headline { font-weight: 700; line-height: 1.25; }
+        .fb-foot-desc { font-size: 13px; color: #65676b; }
+        .fb-cta { background: #e4e6eb; color: #050505; font-weight: 600; border-radius: 6px; padding: 8px 14px; white-space: nowrap; font-size: 14px; }
+    </style>
+    <div class="ad-builder">
+      <div class="ad-builder-form">
+        <div class="campaign-form-section">
+            <label class="font-bold">1. ¿Qué quieres lograr?</label>
+            <div class="ad-objective-grid mt-2">
+                <div class="ad-objective-card selected" data-objective="OUTCOME_ENGAGEMENT" onclick="onAdObjectiveChange(this)">
+                    <div class="ttl"><i class="fab fa-whatsapp" style="color:#25D366;"></i> Mensajes</div>
+                    <div class="desc">Más conversaciones nuevas en WhatsApp. Ideal para generar prospectos.</div>
+                </div>
+                <div class="ad-objective-card" data-objective="OUTCOME_SALES" onclick="onAdObjectiveChange(this)">
+                    <div class="ttl"><i class="fas fa-cart-shopping" style="color:#E07A5F;"></i> Ventas</div>
+                    <div class="desc">Optimiza hacia personas con intención de compra, también por WhatsApp.</div>
+                </div>
+            </div>
+            <input type="hidden" id="ad-objective" value="OUTCOME_ENGAGEMENT">
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div class="campaign-form-section">
+                <label class="font-bold" for="ad-account-select">Cuenta publicitaria</label>
+                <select id="ad-account-select" onchange="onAdAccountChange()" class="!mb-0"><option value="">Cargando…</option></select>
+            </div>
+            <div class="campaign-form-section">
+                <label class="font-bold" for="ad-page-select">Página de Facebook</label>
+                <select id="ad-page-select" onchange="updateAdPreview()" class="!mb-0"><option value="">Selecciona una cuenta…</option></select>
+            </div>
+        </div>
+
+        <div class="campaign-form-section">
+            <label class="font-bold" for="ad-name">Nombre del anuncio (interno)</label>
+            <input type="text" id="ad-name" placeholder="ej. Promo lámparas - junio" class="!mb-0">
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div class="campaign-form-section">
+                <label class="font-bold" for="ad-wa-number">Número de WhatsApp</label>
+                <input type="text" id="ad-wa-number" placeholder="5216181333519" oninput="this.value=this.value.replace(/[^0-9]/g,'')" class="!mb-0">
+                <p class="text-xs text-gray-400">Con código de país, sin signos. Aquí llegarán los mensajes.</p>
+            </div>
+            <div class="campaign-form-section">
+                <label class="font-bold" for="ad-daily-budget">Presupuesto diario (MXN)</label>
+                <input type="number" id="ad-daily-budget" min="1" step="1" value="100" class="!mb-0">
+                <p class="text-xs text-gray-400">Lo máximo que gastarás por día. Mínimo ~$10 MXN.</p>
+            </div>
+        </div>
+
+        <div class="campaign-form-section">
+            <label class="font-bold">2. ¿A quién se lo mostramos?</label>
+            <div class="grid grid-cols-3 gap-3 mt-2">
+                <div>
+                    <label class="text-xs font-semibold text-gray-500">País</label>
+                    <select id="ad-geo-country" class="!mb-0">
+                        <option value="MX" selected>México</option>
+                        <option value="US">Estados Unidos</option>
+                        <option value="CO">Colombia</option>
+                        <option value="AR">Argentina</option>
+                        <option value="CL">Chile</option>
+                        <option value="ES">España</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500">Edad</label>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <input type="number" id="ad-age-min" min="13" max="65" value="18" class="!mb-0" style="width:64px;">
+                        <span class="text-gray-400">a</span>
+                        <input type="number" id="ad-age-max" min="13" max="65" value="65" class="!mb-0" style="width:64px;">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500">Género</label>
+                    <select id="ad-gender" class="!mb-0">
+                        <option value="all">Todos</option>
+                        <option value="male">Hombres</option>
+                        <option value="female">Mujeres</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-3" style="position:relative;">
+                <label class="text-xs font-semibold text-gray-500">Intereses (opcional)</label>
+                <input type="text" id="ad-interest-search" placeholder="Busca intereses: decoración, hogar, regalos…" autocomplete="off" oninput="searchAdInterests(this.value)" onblur="hideAdInterestResults()" class="!mb-0">
+                <div id="ad-interest-results" class="ad-interest-results hidden"></div>
+                <div id="ad-interest-chips" class="ad-interest-chips"></div>
+                <p class="text-xs text-gray-400 mt-1">Sin intereses = audiencia amplia (Meta decide). Agrega 1-3 para enfocar.</p>
+            </div>
+        </div>
+
+        <div class="campaign-form-section">
+            <label class="font-bold">3. Diseña el anuncio</label>
+            <label id="ad-image-drop" class="ad-image-drop mt-2" style="display:block;">
+                <input type="file" id="ad-image" accept="image/*" onchange="onAdPhotoChange(event)" hidden>
+                <div id="ad-image-placeholder"><i class="fas fa-image fa-2x mb-2"></i><br>Sube la imagen del anuncio (cuadrada 1:1 recomendada)</div>
+                <img id="ad-image-preview" class="hidden" alt="imagen del anuncio">
+            </label>
+        </div>
+
+        <div class="campaign-form-section">
+            <label class="font-bold" for="ad-primary-text">Texto principal *</label>
+            <textarea id="ad-primary-text" rows="3" oninput="updateAdPreview()" placeholder="¿Buscas algo especial para tu hogar? 🏡 Escríbenos y te ayudamos a elegir. ✨"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div class="campaign-form-section">
+                <label class="font-bold" for="ad-headline">Título (opcional)</label>
+                <input type="text" id="ad-headline" maxlength="40" oninput="updateAdPreview()" placeholder="Envíanos un mensaje" class="!mb-0">
+            </div>
+            <div class="campaign-form-section">
+                <label class="font-bold" for="ad-cta">Botón</label>
+                <select id="ad-cta" onchange="updateAdPreview()" class="!mb-0">
+                    <option value="WHATSAPP_MESSAGE">Enviar mensaje</option>
+                    <option value="LEARN_MORE">Más información</option>
+                    <option value="SHOP_NOW">Comprar ahora</option>
+                    <option value="ORDER_NOW">Ordenar ahora</option>
+                    <option value="GET_QUOTE">Obtener cotización</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="campaign-form-section">
+            <label class="font-bold" for="ad-description">Descripción (opcional)</label>
+            <input type="text" id="ad-description" maxlength="60" oninput="updateAdPreview()" placeholder="Atención por WhatsApp" class="!mb-0">
+        </div>
+
+        <div class="campaign-form-section" style="background:color-mix(in srgb, var(--color-warning, #f59e0b) 10%, transparent);border:1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 35%, transparent);border-radius:10px;padding:12px;">
+            <p class="text-sm" style="margin:0;"><i class="fas fa-circle-info mr-1" style="color:var(--color-warning,#f59e0b);"></i> Al publicar, el anuncio queda <strong>EN VIVO</strong> y empezará a gastar tu presupuesto en cuanto Meta lo apruebe.</p>
+        </div>
+
+        <div class="campaign-form-section">
+            <button id="create-ad-btn" onclick="handleCreateMetaAd()" class="btn btn-primary btn-lg">
+                <i class="fas fa-rocket mr-2"></i> Publicar anuncio
+            </button>
+        </div>
+      </div>
+
+      <!-- Vista previa estilo Facebook -->
+      <div class="fb-preview">
+        <p class="fb-preview-title"><i class="fab fa-facebook mr-1" style="color:#1877F2;"></i> Vista previa</p>
+        <div class="fb-card">
+            <div class="fb-card-head">
+                <div class="fb-avatar" id="ad-preview-avatar">D</div>
+                <div>
+                    <div class="fb-pagename" id="ad-preview-pagename">Tu página</div>
+                    <div class="fb-sponsored">Patrocinado · <i class="fas fa-earth-americas"></i></div>
+                </div>
+            </div>
+            <div class="fb-primary" id="ad-preview-primary"><span style="color:#90949c;">El texto principal aparecerá aquí…</span></div>
+            <div class="fb-image" id="ad-preview-image"></div>
+            <div class="fb-foot">
+                <div class="fb-foot-text">
+                    <div class="fb-foot-domain">WHATSAPP.COM</div>
+                    <div class="fb-foot-headline" id="ad-preview-headline">Envíanos un mensaje</div>
+                    <div class="fb-foot-desc" id="ad-preview-desc"></div>
+                </div>
+                <div class="fb-cta" id="ad-preview-cta">Enviar mensaje</div>
+            </div>
+        </div>
+        <p class="text-xs text-gray-400 mt-2">Así se verá aproximadamente en el feed. La ubicación real la optimiza Meta.</p>
+      </div>
+    </div>
+`;
+
 // Vista unificada de Campañas: sub-pestañas "Enviar" y "Crear plantilla"
 const CampaignsViewTemplate = () => `
     <div class="view-container">
@@ -209,6 +422,7 @@ const CampaignsViewTemplate = () => `
             <button class="campaign-tab active" data-ctab="enviar" onclick="switchCampaignTab('enviar')"><i class="fas fa-paper-plane mr-2"></i>Enviar campaña</button>
             <button class="campaign-tab" data-ctab="difusion" onclick="switchCampaignTab('difusion')"><i class="fas fa-rocket mr-2"></i>Difusión masiva</button>
             <button class="campaign-tab" data-ctab="crear" onclick="switchCampaignTab('crear')"><i class="fas fa-file-circle-plus mr-2"></i>Crear plantilla</button>
+            <button class="campaign-tab" data-ctab="crear-ad" onclick="switchCampaignTab('crear-ad')"><i class="fab fa-facebook mr-2"></i>Crear Ad</button>
             <button class="campaign-tab" data-ctab="resultados" onclick="switchCampaignTab('resultados')"><i class="fas fa-chart-pie mr-2"></i>Resultados</button>
         </div>
 
@@ -267,6 +481,19 @@ const CampaignsViewTemplate = () => `
                 </div>
             </div>
             ${CreateTemplateFormTemplate()}
+          </div>
+        </div>
+
+        <!-- SUB-PESTAÑA: Crear Ad (anuncio click-to-WhatsApp) -->
+        <div class="campaign-pane" data-cpane="crear-ad">
+          <div class="campaign-pane-content">
+            <div class="campaign-pane-header">
+                <div class="campaign-pane-heading">
+                    <h2 class="campaign-pane-title"><i class="fab fa-facebook"></i> Crear anuncio (Ads)</h2>
+                    <p class="campaign-pane-sub">Crea un anuncio de Facebook/Instagram que abre un chat de WhatsApp, sin entrar al Administrador de Anuncios de Meta.</p>
+                </div>
+            </div>
+            ${CreateAdFormTemplate()}
           </div>
         </div>
 
@@ -560,10 +787,16 @@ const SettingsViewTemplate = () => `
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-1"><i class="fab fa-facebook-messenger text-blue-500 mr-2"></i>Respuesta automática de Facebook</h2>
                 <p class="text-sm text-gray-500 mb-4">Elige la respuesta rápida que se enviará automáticamente como primera respuesta a las conversaciones <strong>nuevas</strong> de Facebook Messenger. Déjala en "Predeterminada" para usar el saludo genérico.</p>
-                <div class="flex items-center gap-3">
-                    <select id="messenger-welcome-select" class="!mb-0">
-                        <option value="">Predeterminada (saludo genérico)</option>
-                    </select>
+                <div class="flex items-start gap-3">
+                    <div id="messenger-welcome-combo" class="relative flex-1">
+                        <input type="text" id="messenger-welcome-search" class="!mb-0" autocomplete="off"
+                               placeholder="Escribe para buscar una respuesta rápida...">
+                        <select id="messenger-welcome-select" class="hidden">
+                            <option value="">Predeterminada (saludo genérico)</option>
+                        </select>
+                        <ul id="messenger-welcome-options"
+                            class="hidden absolute z-20 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg text-sm"></ul>
+                    </div>
                     <button id="save-messenger-welcome-btn" class="btn btn-primary flex-shrink-0">Guardar</button>
                 </div>
             </div>

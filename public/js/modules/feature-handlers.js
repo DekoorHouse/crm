@@ -694,6 +694,9 @@ function switchCampaignTab(tab) {
         if (tab === 'difusion') {
             activePane.dataset.loaded = '1';
             if (typeof renderDifusionView === 'function') renderDifusionView();
+        } else if (tab === 'crear-ad') {
+            activePane.dataset.loaded = '1';
+            if (typeof initCreateAdForm === 'function') initCreateAdForm();
         } else if (tab === 'resultados') {
             activePane.dataset.loaded = '1';
             if (typeof listenForPedidosConCampana === 'function') listenForPedidosConCampana();
@@ -1189,6 +1192,325 @@ async function handleCreateWhatsappTemplate() {
 }
 
 
+// =====================================================================
+// --- Creador de anuncios click-to-WhatsApp (sub-pestaña "Crear Ad") ---
+// =====================================================================
+
+let adImageFile = null;             // File de la imagen del anuncio (se sube al publicar)
+let adInterests = [];               // [{ id, name }] intereses seleccionados
+let adInterestResults = [];         // últimos resultados del buscador
+let adInterestSearchTimer = null;   // debounce
+let adCtwaDefaults = { pageId: null, whatsappNumber: '5216181333519' };
+
+// Inicializa el formulario la primera vez que se abre la pestaña.
+async function initCreateAdForm() {
+    // Defaults (página + número de WhatsApp del negocio).
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/meta-ads/ctwa-defaults`);
+        if (r.ok) adCtwaDefaults = await r.json();
+    } catch (_) { /* usa defaults locales */ }
+
+    const waInput = document.getElementById('ad-wa-number');
+    if (waInput && !waInput.value && adCtwaDefaults.whatsappNumber) waInput.value = adCtwaDefaults.whatsappNumber;
+
+    await loadAdAccounts();
+    updateAdPreview();
+}
+
+// Carga las cuentas publicitarias y selecciona la activa por default.
+async function loadAdAccounts() {
+    const sel = document.getElementById('ad-account-select');
+    if (!sel) return;
+    try {
+        const [accRes, activeRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/api/meta-ads/accounts`),
+            fetch(`${API_BASE_URL}/api/meta-ads/accounts/active`).catch(() => null)
+        ]);
+        const accData = await accRes.json();
+        if (!accRes.ok) throw new Error(accData.error || 'No se pudieron cargar las cuentas publicitarias.');
+        const accounts = accData.data || [];
+        if (!accounts.length) { sel.innerHTML = '<option value="">No hay cuentas (configura el token de Meta)</option>'; return; }
+
+        let activeId = null;
+        try { const a = activeRes && activeRes.ok ? await activeRes.json() : null; activeId = a && a.activeAccountId ? String(a.activeAccountId).replace('act_', '') : null; } catch (_) {}
+
+        sel.innerHTML = accounts.map(a => {
+            const id = a.account_id || String(a.id || '').replace('act_', '');
+            return `<option value="${id}">${a.name || id}</option>`;
+        }).join('');
+        if (activeId && accounts.some(a => (a.account_id || '') === activeId)) sel.value = activeId;
+
+        await onAdAccountChange();
+    } catch (error) {
+        console.error('[CrearAd] Error cargando cuentas:', error);
+        sel.innerHTML = '<option value="">Error al cargar cuentas</option>';
+        showError(error.message);
+    }
+}
+
+// Al cambiar de cuenta, recarga las páginas promocionables de esa cuenta.
+async function onAdAccountChange() {
+    const accountId = (document.getElementById('ad-account-select') || {}).value || '';
+    const pageSel = document.getElementById('ad-page-select');
+    if (!pageSel || !accountId) return;
+    pageSel.innerHTML = '<option value="">Cargando páginas…</option>';
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/meta-ads/pages?accountId=${encodeURIComponent(accountId)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'No se pudieron cargar las páginas.');
+        const pages = data.data || [];
+        if (!pages.length) { pageSel.innerHTML = '<option value="">Esta cuenta no tiene páginas</option>'; updateAdPreview(); return; }
+        pageSel.innerHTML = pages.map(p => `<option value="${p.id}">${p.name || p.id}</option>`).join('');
+        // Default: la página configurada en el server (FB_PAGE_ID) si está disponible.
+        if (adCtwaDefaults.pageId && pages.some(p => String(p.id) === String(adCtwaDefaults.pageId))) {
+            pageSel.value = String(adCtwaDefaults.pageId);
+        }
+    } catch (error) {
+        console.error('[CrearAd] Error cargando páginas:', error);
+        pageSel.innerHTML = '<option value="">Error al cargar páginas</option>';
+    }
+    updateAdPreview();
+}
+
+// Selecciona el objetivo (Mensajes / Ventas).
+function onAdObjectiveChange(card) {
+    document.querySelectorAll('.ad-objective-card').forEach(c => c.classList.toggle('selected', c === card));
+    const hidden = document.getElementById('ad-objective');
+    if (hidden) hidden.value = card.dataset.objective || 'OUTCOME_ENGAGEMENT';
+}
+
+// Lee la imagen elegida, la muestra en el drop y en la vista previa.
+function onAdPhotoChange(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    adImageFile = file;
+    const reader = new FileReader();
+    reader.onload = () => {
+        const prev = document.getElementById('ad-image-preview');
+        const ph = document.getElementById('ad-image-placeholder');
+        if (prev) { prev.src = reader.result; prev.classList.remove('hidden'); }
+        if (ph) ph.classList.add('hidden');
+        const box = document.getElementById('ad-preview-image');
+        if (box) box.innerHTML = `<img src="${reader.result}" alt="">`;
+    };
+    reader.readAsDataURL(file);
+}
+
+// Refresca la vista previa estilo feed de Facebook.
+function updateAdPreview() {
+    const primary = (document.getElementById('ad-primary-text') || {}).value || '';
+    const headline = (document.getElementById('ad-headline') || {}).value || '';
+    const desc = (document.getElementById('ad-description') || {}).value || '';
+    const ctaSel = document.getElementById('ad-cta');
+    const pageSel = document.getElementById('ad-page-select');
+    const pageName = pageSel && pageSel.selectedIndex >= 0 && pageSel.value ? pageSel.options[pageSel.selectedIndex].text : 'Tu página';
+
+    const elPrimary = document.getElementById('ad-preview-primary');
+    if (elPrimary) {
+        if (primary.trim()) elPrimary.textContent = primary;
+        else elPrimary.innerHTML = '<span style="color:#90949c;">El texto principal aparecerá aquí…</span>';
+    }
+    const elHeadline = document.getElementById('ad-preview-headline');
+    if (elHeadline) elHeadline.textContent = headline.trim() || 'Envíanos un mensaje';
+    const elDesc = document.getElementById('ad-preview-desc');
+    if (elDesc) elDesc.textContent = desc.trim();
+    const elCta = document.getElementById('ad-preview-cta');
+    if (elCta && ctaSel && ctaSel.selectedIndex >= 0) elCta.textContent = ctaSel.options[ctaSel.selectedIndex].text;
+    const elName = document.getElementById('ad-preview-pagename');
+    if (elName) elName.textContent = pageName;
+    const elAvatar = document.getElementById('ad-preview-avatar');
+    if (elAvatar) elAvatar.textContent = (pageName || 'D').trim().charAt(0).toUpperCase();
+}
+
+// Busca intereses en la API de targeting de Meta (con debounce).
+function searchAdInterests(q) {
+    clearTimeout(adInterestSearchTimer);
+    const box = document.getElementById('ad-interest-results');
+    if (!q || q.trim().length < 2) { if (box) { box.classList.add('hidden'); box.innerHTML = ''; } return; }
+    adInterestSearchTimer = setTimeout(async () => {
+        const accountId = (document.getElementById('ad-account-select') || {}).value || '';
+        try {
+            const url = `${API_BASE_URL}/api/meta-ads/audiences/targeting-search?q=${encodeURIComponent(q.trim())}&type=adinterest${accountId ? `&accountId=${encodeURIComponent(accountId)}` : ''}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error en la búsqueda.');
+            renderAdInterestResults(data.data || []);
+        } catch (error) {
+            console.warn('[CrearAd] búsqueda de intereses falló:', error.message);
+            if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
+        }
+    }, 300);
+}
+
+function renderAdInterestResults(list) {
+    adInterestResults = (list || []).slice(0, 15);
+    const box = document.getElementById('ad-interest-results');
+    if (!box) return;
+    if (!adInterestResults.length) { box.classList.add('hidden'); box.innerHTML = '<div class="opt" style="cursor:default;color:#9ca3af;">Sin resultados</div>'; box.classList.remove('hidden'); return; }
+    box.innerHTML = adInterestResults.map((it, i) => {
+        const topic = it.topic ? ` <small>(${escapeTemplatePreview(it.topic)})</small>` : '';
+        return `<div class="opt" onmousedown="addAdInterestByIndex(${i})">${escapeTemplatePreview(it.name || '')}${topic}</div>`;
+    }).join('');
+    box.classList.remove('hidden');
+}
+
+function addAdInterestByIndex(i) {
+    const it = adInterestResults[i];
+    if (it) addAdInterest(it.id, it.name);
+}
+
+function addAdInterest(id, name) {
+    if (!id) return;
+    if (!adInterests.some(x => String(x.id) === String(id))) adInterests.push({ id: String(id), name: name || String(id) });
+    renderAdInterestChips();
+    const input = document.getElementById('ad-interest-search');
+    if (input) input.value = '';
+    const box = document.getElementById('ad-interest-results');
+    if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
+}
+
+function removeAdInterest(id) {
+    adInterests = adInterests.filter(x => String(x.id) !== String(id));
+    renderAdInterestChips();
+}
+
+function renderAdInterestChips() {
+    const box = document.getElementById('ad-interest-chips');
+    if (!box) return;
+    box.innerHTML = adInterests.map(it =>
+        `<span class="ad-chip">${escapeTemplatePreview(it.name)} <i class="fas fa-times" onclick="removeAdInterest('${String(it.id).replace(/'/g, '')}')"></i></span>`
+    ).join('');
+}
+
+function hideAdInterestResults() {
+    // Pequeño delay para permitir el onmousedown de las opciones.
+    setTimeout(() => { const box = document.getElementById('ad-interest-results'); if (box) box.classList.add('hidden'); }, 180);
+}
+
+// Construye el spec de targeting a partir de los controles de audiencia.
+function buildAdTargeting() {
+    const country = (document.getElementById('ad-geo-country') || {}).value || 'MX';
+    let ageMin = parseInt((document.getElementById('ad-age-min') || {}).value, 10);
+    let ageMax = parseInt((document.getElementById('ad-age-max') || {}).value, 10);
+    if (isNaN(ageMin)) ageMin = 18;
+    if (isNaN(ageMax)) ageMax = 65;
+    ageMin = Math.min(Math.max(ageMin, 13), 65);
+    ageMax = Math.min(Math.max(ageMax, 13), 65);
+    if (ageMin > ageMax) { const t = ageMin; ageMin = ageMax; ageMax = t; }
+
+    const targeting = {
+        geo_locations: { countries: [country] },
+        age_min: ageMin,
+        age_max: ageMax
+    };
+    const gender = (document.getElementById('ad-gender') || {}).value || 'all';
+    if (gender === 'male') targeting.genders = [1];
+    else if (gender === 'female') targeting.genders = [2];
+    if (adInterests.length) {
+        targeting.flexible_spec = [{ interests: adInterests.map(i => ({ id: i.id, name: i.name })) }];
+    }
+    return targeting;
+}
+
+// Valida, confirma, sube la imagen y publica el anuncio (EN VIVO).
+async function handleCreateMetaAd() {
+    const accountId = (document.getElementById('ad-account-select') || {}).value || '';
+    const pageId = (document.getElementById('ad-page-select') || {}).value || '';
+    const objective = (document.getElementById('ad-objective') || {}).value || 'OUTCOME_ENGAGEMENT';
+    const name = ((document.getElementById('ad-name') || {}).value || '').trim();
+    const waNumber = ((document.getElementById('ad-wa-number') || {}).value || '').replace(/[^0-9]/g, '');
+    const budgetMxn = parseFloat((document.getElementById('ad-daily-budget') || {}).value);
+    const primaryText = ((document.getElementById('ad-primary-text') || {}).value || '').trim();
+    const headline = ((document.getElementById('ad-headline') || {}).value || '').trim();
+    const description = ((document.getElementById('ad-description') || {}).value || '').trim();
+    const ctaType = (document.getElementById('ad-cta') || {}).value || 'WHATSAPP_MESSAGE';
+
+    if (!accountId) { showError('Selecciona una cuenta publicitaria.'); return; }
+    if (!pageId) { showError('Selecciona una página de Facebook.'); return; }
+    if (!name) { showError('Ponle un nombre al anuncio.'); return; }
+    if (waNumber.length < 10) { showError('El número de WhatsApp no es válido (incluye código de país).'); return; }
+    if (!budgetMxn || budgetMxn <= 0) { showError('Define un presupuesto diario válido.'); return; }
+    if (!primaryText) { showError('Escribe el texto principal del anuncio.'); return; }
+    if (!adImageFile) { showError('Sube la imagen del anuncio.'); return; }
+
+    const dailyBudgetCents = Math.round(budgetMxn * 100);
+    const targeting = buildAdTargeting();
+    const objLabel = objective === 'OUTCOME_SALES' ? 'Ventas' : 'Mensajes';
+    const genderTxt = { all: 'todos', male: 'hombres', female: 'mujeres' }[(document.getElementById('ad-gender') || {}).value || 'all'];
+    const interesesTxt = adInterests.length ? `${adInterests.length} interés(es)` : 'audiencia amplia';
+
+    const resumen =
+        `Vas a PUBLICAR un anuncio EN VIVO:\n\n` +
+        `• Objetivo: ${objLabel} (a WhatsApp)\n` +
+        `• Presupuesto: $${budgetMxn.toLocaleString('es-MX')} MXN / día\n` +
+        `• Audiencia: ${targeting.geo_locations.countries[0]}, ${targeting.age_min}-${targeting.age_max} años, ${genderTxt}, ${interesesTxt}\n` +
+        `• WhatsApp: ${waNumber}\n\n` +
+        `Empezará a gastar tu presupuesto en cuanto Meta lo apruebe. ¿Continuar?`;
+    if (!confirm(resumen)) return;
+
+    const btn = document.getElementById('create-ad-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Subiendo imagen…';
+
+    try {
+        // 1. Subir la imagen a la cuenta publicitaria → image_hash.
+        const fd = new FormData();
+        fd.append('image', adImageFile);
+        fd.append('accountId', accountId);
+        const upRes = await fetch(`${API_BASE_URL}/api/meta-ads/creatives/upload-image`, { method: 'POST', body: fd });
+        const upData = await upRes.json();
+        if (!upRes.ok) throw new Error(upData.error || 'No se pudo subir la imagen.');
+        const imgObj = upData.images ? Object.values(upData.images)[0] : null;
+        const imageHash = imgObj && imgObj.hash;
+        if (!imageHash) throw new Error('La imagen se subió pero Meta no devolvió un hash.');
+
+        // 2. Crear campaña + conjunto + creativo + anuncio (EN VIVO).
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Publicando anuncio…';
+        const res = await fetch(`${API_BASE_URL}/api/meta-ads/quick-create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                accountId, objective, name, pageId, whatsappNumber: waNumber,
+                dailyBudgetCents, targeting, primaryText, headline, description,
+                imageHash, ctaType, status: 'ACTIVE'
+            })
+        });
+        const result = await res.json();
+        if (!res.ok || !result.success) throw new Error(result.error || 'No se pudo crear el anuncio.');
+
+        const adsManagerUrl = `https://www.facebook.com/adsmanager/manage/ads?act=${accountId}`;
+        alert(`✅ ¡Anuncio publicado!\n\nSe creó la campaña y está EN REVISIÓN de Meta. Empezará a entregarse cuando la aprueben (suele tardar minutos).\n\nID del anuncio: ${result.adId}`);
+        window.open(adsManagerUrl, '_blank');
+        resetCreateAdForm();
+    } catch (error) {
+        console.error('[CrearAd] Error al publicar:', error);
+        showError(error.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-rocket mr-2"></i> Publicar anuncio';
+    }
+}
+
+// Limpia el formulario tras publicar con éxito.
+function resetCreateAdForm() {
+    ['ad-name', 'ad-primary-text', 'ad-headline', 'ad-description', 'ad-interest-search'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+    });
+    adImageFile = null;
+    adInterests = [];
+    renderAdInterestChips();
+    const prev = document.getElementById('ad-image-preview');
+    if (prev) { prev.src = ''; prev.classList.add('hidden'); }
+    const ph = document.getElementById('ad-image-placeholder');
+    if (ph) ph.classList.remove('hidden');
+    const fileInput = document.getElementById('ad-image');
+    if (fileInput) fileInput.value = '';
+    const box = document.getElementById('ad-preview-image');
+    if (box) box.innerHTML = '';
+    updateAdPreview();
+}
+
+
 // --- All other handlers (Tags, Quick Replies, Ad Responses, Settings etc.) ---
 
 /**
@@ -1434,6 +1756,7 @@ async function loadMessengerWelcomeSetting() {
         if (data.success) {
             const sel = document.getElementById('messenger-welcome-select');
             if (sel) sel.value = data.settings.shortcut || '';
+            if (typeof refreshMessengerWelcomeDisplay === 'function') refreshMessengerWelcomeDisplay();
         }
     } catch (error) {
         console.error('Error al cargar la bienvenida de Facebook:', error);
@@ -1460,6 +1783,181 @@ async function handleSaveMessengerWelcome() {
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
     }
+}
+
+// --- Integraciones: guardar el ID de la Google Sheet de cobertura ---
+async function handleSaveGoogleSheetId() {
+    const input = document.getElementById('google-sheet-id-input');
+    const button = document.getElementById('save-google-sheet-id-btn');
+    if (!input || !button) return;
+
+    const googleSheetId = input.value.trim();
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/settings/google-sheet`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ googleSheetId })
+        });
+        if (!response.ok) throw new Error('No se pudo guardar el ID.');
+        state.googleSheetSettings.googleSheetId = googleSheetId;
+        showError("ID de Google Sheet guardado con éxito.", 'success');
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Guardar';
+    }
+}
+
+// --- Herramientas de prueba: simular un mensaje entrante de un anuncio ---
+async function handleSimulateAdMessage(event) {
+    event.preventDefault();
+    const phoneInput = document.getElementById('sim-phone-number');
+    const adIdInput = document.getElementById('sim-ad-id');
+    const textInput = document.getElementById('sim-message-text');
+    const button = document.getElementById('simulate-ad-btn');
+
+    const from = phoneInput.value.trim();
+    const adId = adIdInput.value.trim();
+    const text = textInput.value.trim();
+
+    if (!from || !adId || !text) {
+        showError("Por favor, completa todos los campos de simulación.");
+        return;
+    }
+
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...';
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/test/simulate-ad-message`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from, adId, text })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.message || 'Error en la simulación.');
+        }
+        showError('Simulación enviada con éxito. Revisa la lista de chats para ver el nuevo contacto/mensaje.', 'success');
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Enviar Simulación';
+    }
+}
+
+// --- Combobox buscable para la bienvenida de Facebook ---
+// La barra de texto sólo FILTRA las opciones. El valor real vive en el
+// <select id="messenger-welcome-select"> (oculto), que sigue siendo la fuente
+// de verdad para guardar/cargar. El valor sólo cambia al elegir un elemento de
+// la lista; escribir texto no cambia el valor guardado.
+let messengerWelcomeHighlight = -1;
+
+// Lee las opciones actuales del select oculto: [{ value, label }]
+function messengerWelcomeOptions() {
+    const sel = document.getElementById('messenger-welcome-select');
+    return sel ? Array.from(sel.options).map(o => ({ value: o.value, label: o.textContent })) : [];
+}
+
+// Refleja en la barra de texto la opción seleccionada actualmente en el select.
+function refreshMessengerWelcomeDisplay() {
+    const sel = document.getElementById('messenger-welcome-select');
+    const input = document.getElementById('messenger-welcome-search');
+    if (!sel || !input) return;
+    const opt = sel.options[sel.selectedIndex];
+    input.value = opt ? opt.textContent : '';
+}
+
+function hideMessengerWelcomeOptions() {
+    const list = document.getElementById('messenger-welcome-options');
+    if (list) list.classList.add('hidden');
+}
+
+// Dibuja la lista filtrada por el texto escrito.
+function renderMessengerWelcomeOptions(filter) {
+    const list = document.getElementById('messenger-welcome-options');
+    if (!list) return;
+    const q = (filter || '').trim().toLowerCase();
+    const items = messengerWelcomeOptions().filter(o => !q || o.label.toLowerCase().includes(q));
+    messengerWelcomeHighlight = -1;
+    if (items.length === 0) {
+        list.innerHTML = '<li class="px-3 py-2 text-gray-400">Sin coincidencias</li>';
+    } else {
+        list.innerHTML = items.map(o =>
+            `<li class="messenger-welcome-option px-3 py-2 cursor-pointer hover:bg-blue-50" data-value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</li>`
+        ).join('');
+    }
+    list.classList.remove('hidden');
+}
+
+// Aplica la selección: fija el valor del select oculto y refleja el texto.
+function chooseMessengerWelcome(value) {
+    const sel = document.getElementById('messenger-welcome-select');
+    if (!sel) return;
+    sel.value = value;
+    refreshMessengerWelcomeDisplay();
+    hideMessengerWelcomeOptions();
+}
+
+// Mueve el resaltado con las flechas del teclado.
+function moveMessengerWelcomeHighlight(delta) {
+    const list = document.getElementById('messenger-welcome-options');
+    if (!list || list.classList.contains('hidden')) return;
+    const opts = Array.from(list.querySelectorAll('.messenger-welcome-option'));
+    if (opts.length === 0) return;
+    messengerWelcomeHighlight = (messengerWelcomeHighlight + delta + opts.length) % opts.length;
+    opts.forEach((el, i) => el.classList.toggle('bg-blue-100', i === messengerWelcomeHighlight));
+    opts[messengerWelcomeHighlight].scrollIntoView({ block: 'nearest' });
+}
+
+// Inicializa (una sola vez) los listeners del combobox. Idempotente: si ya está
+// inicializado sólo refresca el texto mostrado.
+function initMessengerWelcomeCombo() {
+    const input = document.getElementById('messenger-welcome-search');
+    const list = document.getElementById('messenger-welcome-options');
+    const combo = document.getElementById('messenger-welcome-combo');
+    if (!input || !list || !combo) return;
+    if (input.dataset.comboInit === '1') { refreshMessengerWelcomeDisplay(); return; }
+    input.dataset.comboInit = '1';
+
+    // Al enfocar muestra todas; seleccionar el texto facilita reemplazarlo al buscar.
+    input.addEventListener('focus', () => { input.select(); renderMessengerWelcomeOptions(''); });
+    input.addEventListener('input', () => renderMessengerWelcomeOptions(input.value));
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (list.classList.contains('hidden')) renderMessengerWelcomeOptions(input.value);
+            else moveMessengerWelcomeHighlight(1);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            moveMessengerWelcomeHighlight(-1);
+        } else if (e.key === 'Enter') {
+            const hl = list.querySelector('.messenger-welcome-option.bg-blue-100');
+            if (hl) { e.preventDefault(); chooseMessengerWelcome(hl.dataset.value); }
+        } else if (e.key === 'Escape') {
+            hideMessengerWelcomeOptions();
+        }
+    });
+    // mousedown (no click) para que corra antes del blur del input.
+    list.addEventListener('mousedown', (e) => {
+        const li = e.target.closest('.messenger-welcome-option');
+        if (!li) return;
+        e.preventDefault();
+        chooseMessengerWelcome(li.dataset.value);
+    });
+    // Al salir del campo: cerrar y revertir el texto a la opción seleccionada
+    // (un timeout deja que corra primero la selección por mousedown).
+    input.addEventListener('blur', () => setTimeout(() => {
+        hideMessengerWelcomeOptions();
+        refreshMessengerWelcomeDisplay();
+    }, 150));
+
+    refreshMessengerWelcomeDisplay();
 }
 
 // --- Reactivación de Leads (Ajustes Generales) ---
@@ -2421,6 +2919,18 @@ window.updateTemplatePreview = updateTemplatePreview;
 window.onAiTemplatePhotoChange = onAiTemplatePhotoChange;
 window.handleGenerateTemplateWithAI = handleGenerateTemplateWithAI;
 window.handleCreateWhatsappTemplate = handleCreateWhatsappTemplate;
+// --- Creador de anuncios (Crear Ad) ---
+window.initCreateAdForm = initCreateAdForm;
+window.onAdAccountChange = onAdAccountChange;
+window.onAdObjectiveChange = onAdObjectiveChange;
+window.onAdPhotoChange = onAdPhotoChange;
+window.updateAdPreview = updateAdPreview;
+window.searchAdInterests = searchAdInterests;
+window.addAdInterestByIndex = addAdInterestByIndex;
+window.addAdInterest = addAdInterest;
+window.removeAdInterest = removeAdInterest;
+window.hideAdInterestResults = hideAdInterestResults;
+window.handleCreateMetaAd = handleCreateMetaAd;
 window.handleSaveQuickReply = handleSaveQuickReply;
 window.handleDeleteQuickReply = handleDeleteQuickReply;
 window.handleSaveAdResponse = handleSaveAdResponse;
