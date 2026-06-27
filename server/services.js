@@ -3,6 +3,7 @@ const fetch = require('node-fetch');
 const axios = require('axios');
 const fs = require('fs');
 const tmp = require('tmp');
+const crypto = require('crypto');
 const ffmpeg = require('fluent-ffmpeg');
 const { db, admin, bucket } = require('./config');
 
@@ -310,11 +311,44 @@ async function transcodeVideoForMessenger(inputBuffer) {
     }
 }
 
+// Entregamos la media por URL de descarga estilo Firebase (token público en la
+// metadata del objeto). Es exactamente el tipo de URL que genera getDownloadURL en
+// el frontend (la que YA funcionaba al mandar a uno mismo) y NO depende de getSignedUrl
+// (que en varios entornos de GCP falla si la cuenta de servicio no puede signBlob).
+function firebaseDownloadUrl(objectPath, token) {
+    return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(objectPath)}?alt=media&token=${token}`;
+}
+
+/** Sube un buffer y devuelve una URL pública estilo Firebase (token en metadata). */
+async function uploadAndGetPublicUrl(objectPath, buffer, contentType) {
+    const token = crypto.randomUUID();
+    await bucket.file(objectPath).save(buffer, {
+        contentType,
+        resumable: false,
+        metadata: { metadata: { firebaseStorageDownloadTokens: token } },
+    });
+    return firebaseDownloadUrl(objectPath, token);
+}
+
+/** Garantiza un token de descarga en un objeto existente y devuelve su URL pública estilo Firebase. */
+async function ensurePublicUrlForObject(objectPath) {
+    const file = bucket.file(objectPath);
+    const [meta] = await file.getMetadata();
+    let token = meta.metadata && meta.metadata.firebaseStorageDownloadTokens;
+    if (token) {
+        token = String(token).split(',')[0];
+    } else {
+        token = crypto.randomUUID();
+        await file.setMetadata({ metadata: { firebaseStorageDownloadTokens: token } });
+    }
+    return firebaseDownloadUrl(objectPath, token);
+}
+
 /**
  * Devuelve una URL que Meta SÍ puede descargar y procesar para entregar el adjunto.
  * - VIDEO: lo descarga (venga de Firebase, de storage.googleapis.com o externo),
- *   lo transcodifica a mp4 limpio (<25 MB, faststart), lo sube y firma esa copia.
- * - IMAGEN/AUDIO/DOC de nuestro bucket privado: firma una URL de lectura temporal.
+ *   lo transcodifica a mp4 limpio (<25 MB, faststart) y lo entrega por URL pública (token).
+ * - IMAGEN/AUDIO/DOC de nuestro bucket privado: garantiza token y devuelve URL pública.
  * - Cualquier otra URL (ya pública): se devuelve igual.
  * @returns {Promise<string>} URL accesible por Meta.
  */
@@ -341,33 +375,67 @@ async function resolveMetaAccessibleMediaUrl(fileUrl, fileType) {
             const baseName = objectPath ? (objectPath.split('/').pop() || 'video') : 'video';
             const cleanName = baseName.replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_') || 'video';
             const outPath = `messenger_media/outbound/${Date.now()}_${cleanName}.mp4`;
-            await bucket.file(outPath).save(mp4, { contentType: 'video/mp4', resumable: false });
-            const [signedUrl] = await bucket.file(outPath).getSignedUrl({
-                version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000, // 1 hora
-            });
+            const url = await uploadAndGetPublicUrl(outPath, mp4, 'video/mp4');
             console.log(`[MESSENGER MEDIA] mp4 listo ${(mp4.length / 1024 / 1024).toFixed(2)} MB -> ${outPath}`);
-            return signedUrl;
+            return url;
         } catch (err) {
             console.error(`[MESSENGER MEDIA] No se pudo normalizar el video; se intenta entregar el original:`, err.message);
-            // Fallback: si es objeto de bucket privado, al menos fírmalo; si no, deja la URL original.
+            // Fallback: si es objeto de bucket privado, al menos publícalo por token; si no, deja la URL original.
             if (objectPath) {
-                try {
-                    const [s] = await bucket.file(objectPath).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000 });
-                    return s;
-                } catch (_) { /* cae a original */ }
+                try { return await ensurePublicUrlForObject(objectPath); } catch (_) { /* cae a original */ }
             }
             return fileUrl;
         }
     }
 
-    // No-video: firmar si es objeto de nuestro bucket privado; si no, dejar igual (ya es pública).
+    // No-video: si es objeto de nuestro bucket privado, publícalo por token; si no, dejar igual.
     if (objectPath) {
-        const [signedUrl] = await bucket.file(objectPath).getSignedUrl({
-            version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000,
-        });
-        return signedUrl;
+        try { return await ensurePublicUrlForObject(objectPath); }
+        catch (e) { console.error('[MESSENGER MEDIA] No se pudo publicar el objeto:', e.message); return fileUrl; }
     }
     return fileUrl;
+}
+
+/**
+ * Autodiagnóstico accesible desde el navegador: genera un video de prueba con ffmpeg,
+ * lo sube + publica por token, y lo descarga del lado servidor (simulando a Meta).
+ * Sirve para confirmar, sin pelear con los logs, que ffmpeg corre y que la URL de
+ * entrega es alcanzable. NO usa datos de ningún cliente.
+ */
+async function messengerMediaSelfTest() {
+    const report = { ok: false, steps: {} };
+    const tmpOut = tmp.fileSync({ postfix: '.mp4' });
+    try {
+        await new Promise((resolve, reject) => {
+            ffmpeg()
+                .input('testsrc=duration=2:size=320x240:rate=15').inputFormat('lavfi')
+                .outputOptions(['-c:v libx264', '-pix_fmt yuv420p', '-movflags +faststart', '-t 2'])
+                .on('end', resolve)
+                .on('error', (e) => reject(new Error('ffmpeg: ' + e.message)))
+                .save(tmpOut.name);
+        });
+        const buf = await fs.promises.readFile(tmpOut.name);
+        report.steps.ffmpeg = { ok: true, bytes: buf.length };
+
+        const outPath = `messenger_media/outbound/selftest_${Date.now()}.mp4`;
+        const url = await uploadAndGetPublicUrl(outPath, buf, 'video/mp4');
+        report.steps.upload = { ok: true, path: outPath };
+        report.deliveryUrl = url;
+
+        const resp = await axios.get(url, { responseType: 'arraybuffer', maxContentLength: Infinity });
+        report.steps.fetch = {
+            ok: true,
+            status: resp.status,
+            contentType: resp.headers['content-type'],
+            contentLength: resp.headers['content-length'],
+        };
+        report.ok = true;
+    } catch (e) {
+        report.error = e.message;
+    } finally {
+        tmpOut.removeCallback();
+    }
+    return report;
 }
 
 /**
@@ -1377,6 +1445,7 @@ module.exports = {
     sendConversionEvent,
     sendAdvancedWhatsAppMessage,
     sendMessengerMessage,
+    messengerMediaSelfTest,
     sendMessengerUtilityMessage,
     sendInstagramReaction,
     invalidateGeminiCache,

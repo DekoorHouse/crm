@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const jtService = require('./jt/jtService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
@@ -5332,6 +5332,18 @@ router.post('/campaigns/send-template-with-image', async (req, res) => {
         message: `Campaña con imagen procesada.`,
         results: { successful: successful, failed: failed, details: failedDetails }
     });
+});
+
+// --- GET /api/debug/media-selftest (Diagnóstico de envío de media a Messenger/IG) ---
+// Abrir en el navegador (sesión iniciada). Confirma que ffmpeg corre y que la URL de
+// entrega es alcanzable, sin necesidad de revisar los logs del servidor.
+router.get('/debug/media-selftest', async (req, res) => {
+    try {
+        const report = await messengerMediaSelfTest();
+        res.json(report);
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
 });
 
 // --- Endpoint POST /api/storage/generate-signed-url (Generar URL firmada para subida a GCS) ---
