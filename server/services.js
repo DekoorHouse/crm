@@ -4,6 +4,7 @@ const axios = require('axios');
 const fs = require('fs');
 const tmp = require('tmp');
 const crypto = require('crypto');
+const FormData = require('form-data');
 const ffmpeg = require('fluent-ffmpeg');
 const { db, admin, bucket } = require('./config');
 
@@ -311,6 +312,43 @@ async function transcodeVideoForMessenger(inputBuffer) {
     }
 }
 
+/** Descarga el video (bucket o URL pública) y lo transcodifica a mp4 limpio. Devuelve los bytes. */
+async function getTranscodedVideoBytes(fileUrl, objectPath) {
+    const inputBuffer = objectPath
+        ? (await bucket.file(objectPath).download())[0]
+        : Buffer.from((await axios.get(fileUrl, {
+              responseType: 'arraybuffer',
+              maxContentLength: Infinity,
+              maxBodyLength: Infinity,
+              timeout: 120000,
+          })).data);
+    console.log(`[MESSENGER MEDIA] Video recibido ${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB; normalizando a mp4.`);
+    return await transcodeVideoForMessenger(inputBuffer);
+}
+
+/**
+ * Sube los BYTES del adjunto a Meta (Attachment Upload API) y devuelve un attachment_id
+ * reusable. Subir los bytes (en vez de pasar una URL) hace que Meta procese el video de
+ * forma nativa y le genere la miniatura/poster — que por URL a veces no aparece. Solo
+ * Messenger (Facebook); Instagram no soporta este endpoint.
+ */
+async function uploadMessengerAttachment(buffer, contentType, attachmentType, accessToken, pageId) {
+    const url = `https://graph.facebook.com/v19.0/${pageId}/message_attachments`;
+    const form = new FormData();
+    form.append('access_token', accessToken);
+    form.append('message', JSON.stringify({ attachment: { type: attachmentType, payload: { is_reusable: true } } }));
+    form.append('filedata', buffer, { filename: `media.${contentType.split('/')[1] || 'bin'}`, contentType });
+    const resp = await axios.post(url, form, {
+        headers: form.getHeaders(),
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+    });
+    if (!resp.data || !resp.data.attachment_id) {
+        throw new Error('Meta no devolvió attachment_id: ' + JSON.stringify(resp.data));
+    }
+    return resp.data.attachment_id;
+}
+
 // Entregamos la media por URL de descarga estilo Firebase (token público en la
 // metadata del objeto). Es exactamente el tipo de URL que genera getDownloadURL en
 // el frontend (la que YA funcionaba al mandar a uno mismo) y NO depende de getSignedUrl
@@ -359,18 +397,7 @@ async function resolveMetaAccessibleMediaUrl(fileUrl, fileType) {
 
     if (isVideo) {
         try {
-            // Descarga los bytes: del bucket (SDK autenticado) o de la URL pública (Firebase/externa).
-            const inputBuffer = objectPath
-                ? (await bucket.file(objectPath).download())[0]
-                : Buffer.from((await axios.get(fileUrl, {
-                      responseType: 'arraybuffer',
-                      maxContentLength: Infinity,
-                      maxBodyLength: Infinity,
-                      timeout: 120000,
-                  })).data);
-
-            console.log(`[MESSENGER MEDIA] Video recibido ${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB; normalizando a mp4.`);
-            const mp4 = await transcodeVideoForMessenger(inputBuffer);
+            const mp4 = await getTranscodedVideoBytes(fileUrl, objectPath);
 
             const baseName = objectPath ? (objectPath.split('/').pop() || 'video') : 'video';
             const cleanName = baseName.replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_') || 'video';
@@ -429,6 +456,15 @@ async function messengerMediaSelfTest() {
             contentType: resp.headers['content-type'],
             contentLength: resp.headers['content-length'],
         };
+
+        // Prueba la subida de BYTES a Meta (el método que ahora usa el video de Facebook).
+        try {
+            const attachmentId = await uploadMessengerAttachment(buf, 'video/mp4', 'video', FB_PAGE_ACCESS_TOKEN, process.env.FB_PAGE_ID);
+            report.steps.metaUpload = { ok: true, attachmentId };
+        } catch (e) {
+            report.steps.metaUpload = { ok: false, error: e.response ? JSON.stringify(e.response.data) : e.message };
+        }
+
         report.ok = true;
     } catch (e) {
         report.error = e.message;
@@ -463,19 +499,34 @@ async function sendMessengerMessage(recipientId, { text, fileUrl, fileType, chan
                                fileType.startsWith('video/') ? 'video' :
                                fileType.startsWith('audio/') ? 'audio' : 'file';
 
-        // Meta descarga la URL por su cuenta. Nuestro bucket es privado, así que firmamos
-        // una URL temporal (y comprimimos el video si excede el límite del Send API).
-        // Si esto falla, caemos a la URL original para no bloquear el envío.
-        let mediaUrl = fileUrl;
-        try {
-            mediaUrl = await resolveMetaAccessibleMediaUrl(fileUrl, fileType);
-        } catch (prepErr) {
-            console.error(`❌ [${logPrefix}] No se pudo preparar la URL accesible para Meta; se usa la original:`, prepErr.message);
+        // Estrategia de adjunto:
+        // - Video por Messenger (FB): subimos los BYTES transcodificados a Meta (attachment_id).
+        //   Meta lo procesa nativo y le genera la miniatura/poster, que por URL no siempre aparece.
+        //   Si falla, caemos al método por URL.
+        // - Resto (Instagram, imagen/audio/doc): URL accesible por Meta.
+        let mediaPayload = null;
+        if (!isInstagram && attachmentType === 'video') {
+            try {
+                const objectPath = getBucketObjectPath(fileUrl);
+                const mp4 = await getTranscodedVideoBytes(fileUrl, objectPath);
+                const attachmentId = await uploadMessengerAttachment(mp4, 'video/mp4', 'video', accessToken, FB_PAGE_ID_LOCAL);
+                console.log(`[${logPrefix}] Video subido a Meta (attachment_id=${attachmentId}).`);
+                mediaPayload = { recipient: { id: recipientId }, message: { attachment: { type: 'video', payload: { attachment_id: attachmentId } } } };
+            } catch (upErr) {
+                console.error(`❌ [${logPrefix}] Falló la subida de bytes a Meta; uso método por URL:`, upErr.response ? JSON.stringify(upErr.response.data) : upErr.message);
+            }
         }
-
-        const mediaPayload = isInstagram
-            ? { recipient: { id: recipientId }, message: { attachment: { type: attachmentType, payload: { url: mediaUrl } } } }
-            : { recipient: { id: recipientId }, message: { attachment: { type: attachmentType, payload: { url: mediaUrl, is_reusable: true } } } };
+        if (!mediaPayload) {
+            let mediaUrl = fileUrl;
+            try {
+                mediaUrl = await resolveMetaAccessibleMediaUrl(fileUrl, fileType);
+            } catch (prepErr) {
+                console.error(`❌ [${logPrefix}] No se pudo preparar la URL accesible para Meta; se usa la original:`, prepErr.message);
+            }
+            mediaPayload = isInstagram
+                ? { recipient: { id: recipientId }, message: { attachment: { type: attachmentType, payload: { url: mediaUrl } } } }
+                : { recipient: { id: recipientId }, message: { attachment: { type: attachmentType, payload: { url: mediaUrl, is_reusable: true } } } };
+        }
 
         try {
             console.log(`[${logPrefix}] Enviando ${attachmentType} a ${recipientId}`);
