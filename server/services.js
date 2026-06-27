@@ -244,11 +244,16 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
 // privado (Uniform Bucket-Level Access), las URLs storage.googleapis.com dan 403
 // a Meta: el adjunto "se envía" (devuelve message_id) pero NUNCA llega al cliente.
 // Por eso aquí firmamos una URL de lectura temporal que Meta sí puede descargar.
-// Límite de adjunto del Send API: 25 MB. Para video comprimimos por encima de un
-// umbral seguro (Messenger no comprime solo, como sí hacemos con WhatsApp).
+// Límite de adjunto del Send API: 25 MB. Para VIDEO no basta con firmar la URL:
+// el chat sube los archivos con el SDK de Firebase (getDownloadURL), que ya es una
+// URL pública; el problema real es que Messenger entrega el adjunto "roto" (círculo
+// gris con play) cuando el video pesa > 25 MB o viene en un contenedor que no procesa
+// por URL (típico .mov de iPhone, o mp4 sin el moov atom al frente). Por eso SIEMPRE
+// transcodificamos el video a un mp4 limpio (H.264 + AAC, yuv420p, faststart) acotado
+// por debajo del límite, y lo entregamos por una URL firmada — igual de robusto que
+// el camino de WhatsApp, que descarga + re-sube los bytes.
 const MESSENGER_MEDIA_LIMIT_MB = 24;
 const MESSENGER_MEDIA_LIMIT_BYTES = MESSENGER_MEDIA_LIMIT_MB * 1024 * 1024;
-const MESSENGER_VIDEO_TARGET_BITRATE = '1200k';
 
 /** Extrae la ruta del objeto si la URL apunta a nuestro bucket; si no, null. */
 function getBucketObjectPath(fileUrl) {
@@ -259,82 +264,110 @@ function getBucketObjectPath(fileUrl) {
     return decodeURIComponent(fileUrl.slice(idx + marker.length).split('?')[0]).replace(/^\/+/, '');
 }
 
-/** Comprime un buffer de video con ffmpeg si excede el límite; si no, lo devuelve igual. */
-function compressVideoBufferIfNeeded(inputBuffer, limitBytes) {
+/** Una pasada de ffmpeg a mp4 compatible con Messenger, con bitrate acotado (maxrateK kbps). */
+function ffmpegToMessengerMp4(inputPath, outputPath, maxrateK) {
     return new Promise((resolve, reject) => {
-        if (inputBuffer.length <= limitBytes) return resolve(inputBuffer);
-        const tempInput = tmp.fileSync({ postfix: '.mp4' });
-        const tempOutput = tmp.fileSync({ postfix: '.mp4' });
-        fs.writeFile(tempInput.name, inputBuffer, (err) => {
-            if (err) { tempInput.removeCallback(); tempOutput.removeCallback(); return reject(err); }
-            ffmpeg(tempInput.name)
-                .outputOptions([
-                    '-c:v libx264',
-                    `-b:v ${MESSENGER_VIDEO_TARGET_BITRATE}`,
-                    '-c:a aac',
-                    '-b:a 128k',
-                    '-preset ultrafast',
-                    '-crf 28'
-                ])
-                .on('end', () => {
-                    fs.readFile(tempOutput.name, (e2, out) => {
-                        tempInput.removeCallback(); tempOutput.removeCallback();
-                        if (e2) return reject(e2);
-                        resolve(out);
-                    });
-                })
-                .on('error', (e) => {
-                    tempInput.removeCallback(); tempOutput.removeCallback();
-                    reject(new Error('No se pudo comprimir el video. ' + e.message));
-                })
-                .save(tempOutput.name);
-        });
+        ffmpeg(inputPath)
+            .outputOptions([
+                '-c:v libx264',
+                '-preset ultrafast',     // prioriza velocidad (el envío espera este paso)
+                '-crf 28',
+                `-maxrate ${maxrateK}k`,
+                `-bufsize ${maxrateK * 2}k`,
+                '-pix_fmt yuv420p',      // compatibilidad amplia de reproductores
+                '-movflags +faststart',  // moov atom al frente -> reproducible por streaming
+                '-c:a aac',
+                '-b:a 128k',
+            ])
+            .on('end', () => resolve())
+            .on('error', (e) => reject(new Error('ffmpeg: ' + e.message)))
+            .save(outputPath);
     });
 }
 
 /**
- * Devuelve una URL que Meta SÍ puede descargar para entregar el adjunto.
- * - Si la URL no es de nuestro bucket, se asume pública y se devuelve igual.
- * - Para video que excede ~24 MB: descarga (autenticado), comprime y sube una
- *   copia comprimida; firma esa copia.
- * - Para el resto (o video chico): firma el objeto original.
- * La URL firmada expira en 1h; Meta la descarga y cachea de inmediato (is_reusable).
+ * Convierte CUALQUIER video a un mp4 limpio y ligero para Messenger/Instagram.
+ * Arregla videos pesados (>25 MB), .mov de iPhone y mp4 sin faststart, que llegaban rotos.
+ */
+async function transcodeVideoForMessenger(inputBuffer) {
+    const tempInput = tmp.fileSync({ postfix: '.bin' });
+    const tempOutput = tmp.fileSync({ postfix: '.mp4' });
+    try {
+        await fs.promises.writeFile(tempInput.name, inputBuffer);
+        // 1er intento: buena calidad acotada (~2.2 Mbps).
+        await ffmpegToMessengerMp4(tempInput.name, tempOutput.name, 2200);
+        let out = await fs.promises.readFile(tempOutput.name);
+        // Si aun así pasa del límite (video largo), reintenta más comprimido.
+        if (out.length > MESSENGER_MEDIA_LIMIT_BYTES) {
+            console.log(`[MESSENGER MEDIA] mp4 ${(out.length / 1024 / 1024).toFixed(2)} MB sigue > ${MESSENGER_MEDIA_LIMIT_MB} MB; reintentando más comprimido.`);
+            await ffmpegToMessengerMp4(tempInput.name, tempOutput.name, 900);
+            out = await fs.promises.readFile(tempOutput.name);
+        }
+        return out;
+    } finally {
+        tempInput.removeCallback();
+        tempOutput.removeCallback();
+    }
+}
+
+/**
+ * Devuelve una URL que Meta SÍ puede descargar y procesar para entregar el adjunto.
+ * - VIDEO: lo descarga (venga de Firebase, de storage.googleapis.com o externo),
+ *   lo transcodifica a mp4 limpio (<25 MB, faststart), lo sube y firma esa copia.
+ * - IMAGEN/AUDIO/DOC de nuestro bucket privado: firma una URL de lectura temporal.
+ * - Cualquier otra URL (ya pública): se devuelve igual.
  * @returns {Promise<string>} URL accesible por Meta.
  */
 async function resolveMetaAccessibleMediaUrl(fileUrl, fileType) {
+    if (!fileUrl) return fileUrl;
     const objectPath = getBucketObjectPath(fileUrl);
-    if (!objectPath) return fileUrl; // URL externa: se asume accesible públicamente.
+    const isVideo = (fileType || '').startsWith('video/');
 
-    let pathToSign = objectPath;
-
-    if ((fileType || '').startsWith('video/')) {
+    if (isVideo) {
         try {
-            const srcFile = bucket.file(objectPath);
-            const [meta] = await srcFile.getMetadata();
-            const size = Number(meta.size || 0);
-            if (size > MESSENGER_MEDIA_LIMIT_BYTES) {
-                console.log(`[MESSENGER MEDIA] Video ${(size / 1024 / 1024).toFixed(2)} MB > ${MESSENGER_MEDIA_LIMIT_MB} MB; comprimiendo para Messenger/Instagram.`);
-                const [buf] = await srcFile.download();
-                const compressed = await compressVideoBufferIfNeeded(buf, MESSENGER_MEDIA_LIMIT_BYTES);
-                const baseName = (objectPath.split('/').pop() || 'video').replace(/\.[^.]+$/, '');
-                // Copia solo para entrega a Meta. Vive bajo messenger_media/ (carpeta de medios conocida).
-                const compressedPath = `messenger_media/outbound/${Date.now()}_${baseName}.mp4`;
-                await bucket.file(compressedPath).save(compressed, { contentType: 'video/mp4', resumable: false });
-                console.log(`[MESSENGER MEDIA] Comprimido a ${(compressed.length / 1024 / 1024).toFixed(2)} MB -> ${compressedPath}`);
-                pathToSign = compressedPath;
-            }
+            // Descarga los bytes: del bucket (SDK autenticado) o de la URL pública (Firebase/externa).
+            const inputBuffer = objectPath
+                ? (await bucket.file(objectPath).download())[0]
+                : Buffer.from((await axios.get(fileUrl, {
+                      responseType: 'arraybuffer',
+                      maxContentLength: Infinity,
+                      maxBodyLength: Infinity,
+                      timeout: 120000,
+                  })).data);
+
+            console.log(`[MESSENGER MEDIA] Video recibido ${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB; normalizando a mp4.`);
+            const mp4 = await transcodeVideoForMessenger(inputBuffer);
+
+            const baseName = objectPath ? (objectPath.split('/').pop() || 'video') : 'video';
+            const cleanName = baseName.replace(/\.[^.]+$/, '').replace(/[^\w.-]+/g, '_') || 'video';
+            const outPath = `messenger_media/outbound/${Date.now()}_${cleanName}.mp4`;
+            await bucket.file(outPath).save(mp4, { contentType: 'video/mp4', resumable: false });
+            const [signedUrl] = await bucket.file(outPath).getSignedUrl({
+                version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000, // 1 hora
+            });
+            console.log(`[MESSENGER MEDIA] mp4 listo ${(mp4.length / 1024 / 1024).toFixed(2)} MB -> ${outPath}`);
+            return signedUrl;
         } catch (err) {
-            console.error(`[MESSENGER MEDIA] No se pudo medir/comprimir el video (${objectPath}); se firmará el original:`, err.message);
-            pathToSign = objectPath;
+            console.error(`[MESSENGER MEDIA] No se pudo normalizar el video; se intenta entregar el original:`, err.message);
+            // Fallback: si es objeto de bucket privado, al menos fírmalo; si no, deja la URL original.
+            if (objectPath) {
+                try {
+                    const [s] = await bucket.file(objectPath).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000 });
+                    return s;
+                } catch (_) { /* cae a original */ }
+            }
+            return fileUrl;
         }
     }
 
-    const [signedUrl] = await bucket.file(pathToSign).getSignedUrl({
-        version: 'v4',
-        action: 'read',
-        expires: Date.now() + 60 * 60 * 1000, // 1 hora
-    });
-    return signedUrl;
+    // No-video: firmar si es objeto de nuestro bucket privado; si no, dejar igual (ya es pública).
+    if (objectPath) {
+        const [signedUrl] = await bucket.file(objectPath).getSignedUrl({
+            version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000,
+        });
+        return signedUrl;
+    }
+    return fileUrl;
 }
 
 /**
