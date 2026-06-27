@@ -14,6 +14,9 @@ const FB_PAGE_ID = process.env.FB_PAGE_ID;
 // --- HORARIO Y MENSAJES AUTOMÁTICOS (reutilizados de WhatsApp) ---
 const BUSINESS_HOURS = { 1: [7, 19], 2: [7, 19], 3: [7, 19], 4: [7, 19], 5: [7, 19], 6: [7, 14] };
 const TIMEZONE = 'America/Mexico_City';
+// Si es true, la IA responde a CUALQUIER hora y NO se envía el mensaje de ausencia fuera de horario.
+// Cambiar a false para reactivar el horario de atención (BUSINESS_HOURS) + aviso de ausencia.
+const AI_ALWAYS_ON = true;
 const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.\n\n🕑 Nuestro horario de atención es:\n\n🗓 Lunes a Viernes: 7:00 am - 7:00 pm\n\n🗓 Sábado: 7:00 am - 2:00 pm\nTe responderemos tan pronto como regresemos.\n\n🙏 ¡Gracias por tu paciencia!`;
 const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
 
@@ -492,7 +495,7 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
     const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
     const awayMessageActive = generalSettingsDoc.exists ? generalSettingsDoc.data().awayMessageActive : true;
 
-    if (!isWithinBusinessHours() && awayMessageActive) {
+    if (!AI_ALWAYS_ON && !isWithinBusinessHours() && awayMessageActive) {
         const recentMessages = await contactRef.collection('messages')
             .where('isAutoReply', '==', true)
             .where('text', '==', AWAY_MESSAGE)

@@ -17,6 +17,9 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 // --- HORARIO Y MENSAJES AUTOMÁTICOS ---
 const BUSINESS_HOURS = { 1: [7, 19], 2: [7, 19], 3: [7, 19], 4: [7, 19], 5: [7, 19], 6: [7, 14] }; // Lunes a Sábado
 const TIMEZONE = 'America/Mexico_City';
+// Si es true, la IA responde a CUALQUIER hora y NO se envía el mensaje de ausencia fuera de horario.
+// Cambiar a false para reactivar el horario de atención (BUSINESS_HOURS) + aviso de ausencia.
+const AI_ALWAYS_ON = true;
 const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.\n\n🕑 Nuestro horario de atención es:\n\n🗓 Lunes a Viernes: 7:00 am - 7:00 pm\n\n🗓 Sábado: 7:00 am - 2:00 pm\nTe responderemos tan pronto como regresemos.\n\n🙏 ¡Gracias por tu paciencia!`;
 const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
 
@@ -879,7 +882,7 @@ router.post('/', async (req, res) => {
             const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
             const awayMessageActive = generalSettingsDoc.exists ? generalSettingsDoc.data().awayMessageActive : true; // Default to active
 
-            if (!isWithinBusinessHours() && awayMessageActive) {
+            if (!AI_ALWAYS_ON && !isWithinBusinessHours() && awayMessageActive) {
                 // Check if an away message was sent recently to avoid spamming
                 const recentMessages = await contactRef.collection('messages')
                     .where('isAutoReply', '==', true)
