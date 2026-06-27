@@ -1498,8 +1498,14 @@ const MessageBubbleTemplate = (message) => {
             timeAndStatusHTML = '';
         } else if (message.fileType.startsWith('video/')) {
             bubbleExtraClass = 'has-video';
+            // El cache-buster ?v= solo aplica a URLs remotas. Las URLs locales blob:/data:
+            // (previsualización optimista al enviar) no admiten query string: si se les
+            // pega ?v= el navegador no las encuentra (ERR_FILE_NOT_FOUND).
+            const isLocalPreview = effectiveFileUrl.startsWith('blob:') || effectiveFileUrl.startsWith('data:');
             const separator = effectiveFileUrl.includes('?') ? '&' : '?';
-            const videoUrl = message.timestamp ? `${effectiveFileUrl}${separator}v=${message.timestamp.seconds}` : effectiveFileUrl;
+            const videoUrl = (message.timestamp && !isLocalPreview)
+                ? `${effectiveFileUrl}${separator}v=${message.timestamp.seconds}`
+                : effectiveFileUrl;
             const fullVideoUrl = resolveMediaUrl(videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`);
             contentHTML += `<video controls playsinline preload="metadata" class="video rounded-lg mb-1" src="${fullVideoUrl}" onclick="event.stopPropagation()">Tu navegador no soporta videos.</video>`;
             if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
