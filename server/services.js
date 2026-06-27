@@ -1,7 +1,17 @@
 const { google } = require('googleapis');
 const fetch = require('node-fetch');
 const axios = require('axios');
-const { db, admin } = require('./config');
+const fs = require('fs');
+const tmp = require('tmp');
+const ffmpeg = require('fluent-ffmpeg');
+const { db, admin, bucket } = require('./config');
+
+// El path de ffmpeg ya suele configurarlo apiRoutes.js sobre el mismo módulo
+// (fluent-ffmpeg es singleton), pero lo fijamos aquí también por si services.js
+// ejecuta la compresión antes de que apiRoutes termine de cargar. Es idempotente.
+try {
+    ffmpeg.setFfmpegPath(require('@ffmpeg-installer/ffmpeg').path);
+} catch (_) { /* ya configurado en otro módulo */ }
 
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
@@ -226,6 +236,107 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
     }
 }
 
+// =================================================================
+// === MEDIA SALIENTE MESSENGER / INSTAGRAM ========================
+// =================================================================
+// Messenger e Instagram entregan adjuntos DESCARGANDO la URL que les pasamos
+// (a diferencia de WhatsApp, donde subimos los bytes). Como nuestro bucket es
+// privado (Uniform Bucket-Level Access), las URLs storage.googleapis.com dan 403
+// a Meta: el adjunto "se envía" (devuelve message_id) pero NUNCA llega al cliente.
+// Por eso aquí firmamos una URL de lectura temporal que Meta sí puede descargar.
+// Límite de adjunto del Send API: 25 MB. Para video comprimimos por encima de un
+// umbral seguro (Messenger no comprime solo, como sí hacemos con WhatsApp).
+const MESSENGER_MEDIA_LIMIT_MB = 24;
+const MESSENGER_MEDIA_LIMIT_BYTES = MESSENGER_MEDIA_LIMIT_MB * 1024 * 1024;
+const MESSENGER_VIDEO_TARGET_BITRATE = '1200k';
+
+/** Extrae la ruta del objeto si la URL apunta a nuestro bucket; si no, null. */
+function getBucketObjectPath(fileUrl) {
+    if (!fileUrl || !bucket || !bucket.name) return null;
+    const marker = `storage.googleapis.com/${bucket.name}/`;
+    const idx = fileUrl.indexOf(marker);
+    if (idx < 0) return null;
+    return decodeURIComponent(fileUrl.slice(idx + marker.length).split('?')[0]).replace(/^\/+/, '');
+}
+
+/** Comprime un buffer de video con ffmpeg si excede el límite; si no, lo devuelve igual. */
+function compressVideoBufferIfNeeded(inputBuffer, limitBytes) {
+    return new Promise((resolve, reject) => {
+        if (inputBuffer.length <= limitBytes) return resolve(inputBuffer);
+        const tempInput = tmp.fileSync({ postfix: '.mp4' });
+        const tempOutput = tmp.fileSync({ postfix: '.mp4' });
+        fs.writeFile(tempInput.name, inputBuffer, (err) => {
+            if (err) { tempInput.removeCallback(); tempOutput.removeCallback(); return reject(err); }
+            ffmpeg(tempInput.name)
+                .outputOptions([
+                    '-c:v libx264',
+                    `-b:v ${MESSENGER_VIDEO_TARGET_BITRATE}`,
+                    '-c:a aac',
+                    '-b:a 128k',
+                    '-preset ultrafast',
+                    '-crf 28'
+                ])
+                .on('end', () => {
+                    fs.readFile(tempOutput.name, (e2, out) => {
+                        tempInput.removeCallback(); tempOutput.removeCallback();
+                        if (e2) return reject(e2);
+                        resolve(out);
+                    });
+                })
+                .on('error', (e) => {
+                    tempInput.removeCallback(); tempOutput.removeCallback();
+                    reject(new Error('No se pudo comprimir el video. ' + e.message));
+                })
+                .save(tempOutput.name);
+        });
+    });
+}
+
+/**
+ * Devuelve una URL que Meta SÍ puede descargar para entregar el adjunto.
+ * - Si la URL no es de nuestro bucket, se asume pública y se devuelve igual.
+ * - Para video que excede ~24 MB: descarga (autenticado), comprime y sube una
+ *   copia comprimida; firma esa copia.
+ * - Para el resto (o video chico): firma el objeto original.
+ * La URL firmada expira en 1h; Meta la descarga y cachea de inmediato (is_reusable).
+ * @returns {Promise<string>} URL accesible por Meta.
+ */
+async function resolveMetaAccessibleMediaUrl(fileUrl, fileType) {
+    const objectPath = getBucketObjectPath(fileUrl);
+    if (!objectPath) return fileUrl; // URL externa: se asume accesible públicamente.
+
+    let pathToSign = objectPath;
+
+    if ((fileType || '').startsWith('video/')) {
+        try {
+            const srcFile = bucket.file(objectPath);
+            const [meta] = await srcFile.getMetadata();
+            const size = Number(meta.size || 0);
+            if (size > MESSENGER_MEDIA_LIMIT_BYTES) {
+                console.log(`[MESSENGER MEDIA] Video ${(size / 1024 / 1024).toFixed(2)} MB > ${MESSENGER_MEDIA_LIMIT_MB} MB; comprimiendo para Messenger/Instagram.`);
+                const [buf] = await srcFile.download();
+                const compressed = await compressVideoBufferIfNeeded(buf, MESSENGER_MEDIA_LIMIT_BYTES);
+                const baseName = (objectPath.split('/').pop() || 'video').replace(/\.[^.]+$/, '');
+                // Copia solo para entrega a Meta. Vive bajo messenger_media/ (carpeta de medios conocida).
+                const compressedPath = `messenger_media/outbound/${Date.now()}_${baseName}.mp4`;
+                await bucket.file(compressedPath).save(compressed, { contentType: 'video/mp4', resumable: false });
+                console.log(`[MESSENGER MEDIA] Comprimido a ${(compressed.length / 1024 / 1024).toFixed(2)} MB -> ${compressedPath}`);
+                pathToSign = compressedPath;
+            }
+        } catch (err) {
+            console.error(`[MESSENGER MEDIA] No se pudo medir/comprimir el video (${objectPath}); se firmará el original:`, err.message);
+            pathToSign = objectPath;
+        }
+    }
+
+    const [signedUrl] = await bucket.file(pathToSign).getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + 60 * 60 * 1000, // 1 hora
+    });
+    return signedUrl;
+}
+
 /**
  * Envía un mensaje de texto o multimedia a través de la API de Messenger.
  * Messenger no soporta captions en adjuntos, así que si hay texto + media,
@@ -251,9 +362,19 @@ async function sendMessengerMessage(recipientId, { text, fileUrl, fileType, chan
                                fileType.startsWith('video/') ? 'video' :
                                fileType.startsWith('audio/') ? 'audio' : 'file';
 
+        // Meta descarga la URL por su cuenta. Nuestro bucket es privado, así que firmamos
+        // una URL temporal (y comprimimos el video si excede el límite del Send API).
+        // Si esto falla, caemos a la URL original para no bloquear el envío.
+        let mediaUrl = fileUrl;
+        try {
+            mediaUrl = await resolveMetaAccessibleMediaUrl(fileUrl, fileType);
+        } catch (prepErr) {
+            console.error(`❌ [${logPrefix}] No se pudo preparar la URL accesible para Meta; se usa la original:`, prepErr.message);
+        }
+
         const mediaPayload = isInstagram
-            ? { recipient: { id: recipientId }, message: { attachment: { type: attachmentType, payload: { url: fileUrl } } } }
-            : { recipient: { id: recipientId }, message: { attachment: { type: attachmentType, payload: { url: fileUrl, is_reusable: true } } } };
+            ? { recipient: { id: recipientId }, message: { attachment: { type: attachmentType, payload: { url: mediaUrl } } } }
+            : { recipient: { id: recipientId }, message: { attachment: { type: attachmentType, payload: { url: mediaUrl, is_reusable: true } } } };
 
         try {
             console.log(`[${logPrefix}] Enviando ${attachmentType} a ${recipientId}`);
