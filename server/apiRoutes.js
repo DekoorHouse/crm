@@ -5601,6 +5601,36 @@ router.get('/orders/:orderId', async (req, res) => {
     }
 });
 
+// Helper: envía el evento Purchase a Meta CAPI cuando un pedido entra a "Fabricar" por
+// primera vez. Idempotente vía pedido.metaPurchaseSentAt para no duplicar el evento aunque
+// el estatus rebote o se edite el pedido varias veces. Nunca lanza (atrapa sus errores).
+async function sendPurchaseEventOnFabricar(orderId, orderData, oldStatusLower) {
+    try {
+        if (!orderData || orderData.estatus !== 'Fabricar') return; // solo al entrar a Fabricar
+        if ((oldStatusLower || '').includes('fabricar')) return;    // ya estaba en Fabricar
+        if (orderData.metaPurchaseSentAt) return;                   // idempotencia: ya se envió
+        if (!orderData.contactId) return;
+
+        const contactSnap = await db.collection('contacts_whatsapp').doc(orderData.contactId).get();
+        const contactData = contactSnap.exists ? contactSnap.data() : null;
+        if (!contactData?.wa_id) {
+            console.warn(`[META EVENT] Contacto ${orderData.contactId} sin wa_id. No se envió Purchase (pedido ${orderId}).`);
+            return;
+        }
+
+        const eventInfo = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
+        const customData = { value: Number(orderData.precio) || 0, currency: 'MXN' };
+        console.log(`[META EVENT] Enviando Purchase por cambio a Fabricar, pedido ${orderId}, contacto ${orderData.contactId}`);
+        await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
+        await db.collection('pedidos').doc(orderId).update({ metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp() });
+        console.log(`[META EVENT] ✅ Evento Purchase enviado por Fabricar, pedido ${orderId}, valor $${Number(orderData.precio) || 0}`);
+    } catch (metaError) {
+        console.error(`[META EVENT] Error al enviar Purchase por Fabricar (pedido ${orderId}):`, metaError.message);
+        if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
+        // No fallar el request principal por un error en Meta
+    }
+}
+
 // --- Endpoint PUT /api/orders/:orderId (Actualizar un pedido) ---
 router.put('/orders/:orderId', async (req, res) => {
     const { orderId } = req.params;
@@ -5713,6 +5743,9 @@ router.put('/orders/:orderId', async (req, res) => {
 
         // Actualizar el documento del pedido en Firestore con los nuevos datos
         await orderRef.update(updateData);
+
+        // Si esta edición llevó el pedido a "Fabricar", enviar el evento Purchase a Meta (idempotente)
+        await sendPurchaseEventOnFabricar(orderId, { ...existingData, ...updateData }, (existingData.estatus || '').toLowerCase());
 
         res.status(200).json({ success: true, message: 'Pedido actualizado con éxito.' });
 
@@ -5845,10 +5878,6 @@ router.post('/orders', async (req, res) => {
             console.error(`[ATTRIBUTION] No se pudo escribir atribución para pedido ${newOrderRef.id}:`, attrErr.message);
         }
 
-        // Leer datos del contacto para enviar evento Purchase a Meta CAPI
-        const contactDoc = await contactRef.get();
-        const contactData = contactDoc.exists ? contactDoc.data() : null;
-
         // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
         await contactRef.update({
             lastOrderNumber: newOrderNumber,
@@ -5866,29 +5895,9 @@ router.post('/orders', async (req, res) => {
                 .catch(() => {});
         } catch (_) {}
 
-        // Enviar evento Purchase a Meta CAPI al registrar el pedido (no al pagar/fabricar)
-        // Optimiza campañas con señal rápida y mayor volumen; el ROAS real se mide aparte en el CRM.
-        if (contactData?.wa_id) {
-            try {
-                const eventInfo = {
-                    wa_id: contactData.wa_id,
-                    profile: { name: contactData.name }
-                };
-                const customData = {
-                    value: totalValue,
-                    currency: 'MXN'
-                };
-                console.log(`[META EVENT] Enviando Purchase por registro de pedido DH${newOrderNumber}, contacto ${contactId}`);
-                await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
-                console.log(`[META EVENT] ✅ Evento Purchase enviado por registro, pedido DH${newOrderNumber}, valor $${totalValue}`);
-            } catch (metaError) {
-                console.error('[META EVENT] Error al enviar evento Purchase por registro:', metaError.message);
-                if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
-                // No fallar el registro del pedido por un error en Meta
-            }
-        } else if (contactData) {
-            console.warn(`[META EVENT] Contacto ${contactId} sin wa_id. No se envió evento Purchase.`);
-        }
+        // NOTA: El evento Purchase a Meta YA NO se envía aquí (al registrar el pedido).
+        // Ahora se dispara cuando el pedido cambia de estatus a "Fabricar" (venta confirmada),
+        // vía el helper sendPurchaseEventOnFabricar() en los endpoints PUT y change-status.
 
         // --- Detección automática de cliente recurrente ---
         // Buscar si este teléfono ya tiene otros pedidos PAGADOS anteriores
@@ -6006,8 +6015,7 @@ router.post('/orders/:orderId/change-status', async (req, res) => {
             }
         }
 
-        // Si cambia a "Fabricar" y antes no era Fabricar → corona zafiro
-        // El evento Purchase a Meta ya se envió al registrar el pedido (en POST /api/orders)
+        // Si cambia a "Fabricar" y antes no era Fabricar → corona zafiro (compra completada)
         if (newStatus === 'Fabricar' && !oldStatus.includes('fabricar') && orderData.contactId) {
             try {
                 const contactRef = db.collection('contacts_whatsapp').doc(orderData.contactId);
@@ -6020,6 +6028,9 @@ router.post('/orders/:orderId/change-status', async (req, res) => {
                 // No fallar el request principal
             }
         }
+
+        // Enviar el evento Purchase a Meta al confirmar la fabricación (idempotente por pedido)
+        await sendPurchaseEventOnFabricar(orderId, { ...orderData, estatus: newStatus }, oldStatus);
 
         // --- Detección de recurrente al confirmar pago ---
         if (isConfirming && !wasConfirmed) {
