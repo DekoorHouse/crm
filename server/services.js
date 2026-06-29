@@ -965,21 +965,36 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
         cachedContent: cacheName
     };
 
-    const geminiResponse = await geminiHttp(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-    });
-
-    if (!geminiResponse.ok) {
-        const errBody = await geminiResponse.text();
-        if (geminiResponse.status === 404) {
-            console.warn(`[AI] Cache 404 detectado (${cacheName}). Invalidando...`);
-            invalidateGeminiCache();
+    let result;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        let geminiResponse;
+        try {
+            geminiResponse = await geminiHttp(apiUrl, {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+        } catch (e) {
+            const retriable = /premature close|terminated|econnreset|fetch failed|network|aborted/i.test(String(e && e.message));
+            if (attempt < 2 && retriable) {
+                console.warn(`[AI] Gemini con caché falló (${e.message}), reintentando...`);
+                await new Promise(r => setTimeout(r, 800));
+                continue;
+            }
+            throw e;
         }
-        throw new Error(`Gemini API con caché respondió ${geminiResponse.status}: ${errBody}`);
-    }
 
-    const result = await geminiResponse.json();
+        if (!geminiResponse.ok) {
+            const errBody = await geminiResponse.text();
+            if (geminiResponse.status === 404) {
+                console.warn(`[AI] Cache 404 detectado (${cacheName}). Invalidando...`);
+                invalidateGeminiCache();
+            }
+            throw new Error(`Gemini API con caché respondió ${geminiResponse.status}: ${errBody}`);
+        }
+
+        result = await geminiResponse.json();
+        break;
+    }
     let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
     if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA (cached).');
     if (generatedText.startsWith('Asistente:')) {
@@ -1047,6 +1062,54 @@ async function skipAiTimer(contactId) {
         return true;
     }
     return false;
+}
+
+// --- Preparación segura de multimedia para Gemini -------------------------------
+// Re-habilita el envío de imágenes/audios/videos del cliente al modelo, acotando el
+// tamaño del request para NO reintroducir el "Premature close" que se daba con
+// requests grandes en Render. Imágenes se redimensionan/comprimen; audio y video se
+// incluyen solo si están por debajo del tope (si no, se omiten con aviso al modelo).
+const GEMINI_MAX_IMAGE_DIM = 1024;                       // px (lado mayor) tras redimensionar
+const GEMINI_IMAGE_QUALITY = 80;                         // calidad JPEG de salida
+const GEMINI_MAX_IMAGE_FALLBACK_BYTES = 4 * 1024 * 1024; // tope si sharp no está disponible
+const GEMINI_MAX_AUDIO_BYTES = 8 * 1024 * 1024;          // 8 MB por audio
+const GEMINI_MAX_VIDEO_BYTES = 8 * 1024 * 1024;          // 8 MB por video
+const GEMINI_MAX_TOTAL_MEDIA_BYTES = 12 * 1024 * 1024;   // 12 MB en total por request
+
+/**
+ * Convierte un archivo multimedia (imagen/audio/video) en una "part" inline segura
+ * para Gemini. Devuelve { part, bytes } si se puede enviar, o { skipped: motivo } si no.
+ */
+async function buildSafeGeminiMediaPart(buffer, mimeType, type) {
+    const cleanMime = String(mimeType || '').split(';')[0].trim();
+    try {
+        if (type === 'image') {
+            try {
+                const sharp = require('sharp');
+                const out = await sharp(buffer)
+                    .rotate() // respeta la orientación EXIF
+                    .resize({ width: GEMINI_MAX_IMAGE_DIM, height: GEMINI_MAX_IMAGE_DIM, fit: 'inside', withoutEnlargement: true })
+                    .jpeg({ quality: GEMINI_IMAGE_QUALITY })
+                    .toBuffer();
+                return { part: { inlineData: { data: out.toString('base64'), mimeType: 'image/jpeg' } }, bytes: out.length };
+            } catch (e) {
+                // Si sharp falla o no está disponible, mandar la imagen original solo si es chica.
+                if (buffer.length > GEMINI_MAX_IMAGE_FALLBACK_BYTES) return { skipped: 'imagen grande sin redimensionar' };
+                return { part: { inlineData: { data: buffer.toString('base64'), mimeType: cleanMime || 'image/jpeg' } }, bytes: buffer.length };
+            }
+        }
+        if (type === 'audio') {
+            if (buffer.length > GEMINI_MAX_AUDIO_BYTES) return { skipped: 'audio demasiado grande' };
+            return { part: { inlineData: { data: buffer.toString('base64'), mimeType: cleanMime || 'audio/ogg' } }, bytes: buffer.length };
+        }
+        if (type === 'video') {
+            if (buffer.length > GEMINI_MAX_VIDEO_BYTES) return { skipped: 'video demasiado grande' };
+            return { part: { inlineData: { data: buffer.toString('base64'), mimeType: cleanMime || 'video/mp4' } }, bytes: buffer.length };
+        }
+        return { skipped: 'tipo no soportado' };
+    } catch (e) {
+        return { skipped: 'error al procesar: ' + e.message };
+    }
 }
 
 // Lógica principal movida a otra función
@@ -1167,26 +1230,49 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         }
         const departmentImagesHashInput = departmentImageIds.sort().join(';');
 
-        // --- Descargar multimedia de la conversación (dinámico) ---
+        // --- Descargar y preparar multimedia de la conversación (dinámico) ---
+        // Se redimensiona/acota cada archivo para evitar "Premature close" por requests
+        // grandes (ver buildSafeGeminiMediaPart). Lo que no se pueda procesar se omite con aviso.
         const mediaParts = [];
+        const skippedMediaTypes = [];
+        let totalMediaBytes = 0;
         for (const media of downloadedMedia.reverse()) { // Voltear para mantener orden cronológico
-            if (media.url.startsWith('http')) {
-                try {
-                    const response = await fetch(media.url, { signal: AbortSignal.timeout(15000) });
-                    if (!response.ok) {
-                        console.warn(`[AI] Multimedia de conversación no disponible (HTTP ${response.status}). Se omite.`);
-                        continue;
-                    }
-                    const buffer = Buffer.from(await response.arrayBuffer());
-                    if (buffer.length > 0) {
-                        mediaParts.push({ inlineData: { data: buffer.toString('base64'), mimeType: media.mimeType } });
-                        console.log(`[AI] Archivo multimedia leído y convertido a Base64 para contexto (${media.mimeType}).`);
-                    }
-                } catch (e) {
-                    console.warn('[AI] Error descargando multimedia para contexto:', e.message);
+            if (!media.url || !media.url.startsWith('http')) continue;
+            try {
+                const response = await fetch(media.url, { signal: AbortSignal.timeout(15000) });
+                if (!response.ok) {
+                    console.warn(`[AI] Multimedia de conversación no disponible (HTTP ${response.status}). Se omite.`);
+                    skippedMediaTypes.push(media.type);
+                    continue;
                 }
+                const buffer = Buffer.from(await response.arrayBuffer());
+                if (buffer.length === 0) continue;
+                const prepared = await buildSafeGeminiMediaPart(buffer, media.mimeType, media.type);
+                if (prepared.skipped) {
+                    console.warn(`[AI] Multimedia (${media.type}) omitida: ${prepared.skipped}.`);
+                    skippedMediaTypes.push(media.type);
+                    continue;
+                }
+                if (totalMediaBytes + prepared.bytes > GEMINI_MAX_TOTAL_MEDIA_BYTES) {
+                    console.warn(`[AI] Multimedia (${media.type}) omitida: excede el total permitido por request.`);
+                    skippedMediaTypes.push(media.type);
+                    continue;
+                }
+                mediaParts.push(prepared.part);
+                totalMediaBytes += prepared.bytes;
+                console.log(`[AI] Multimedia (${media.type}) lista para Gemini: ${Math.round(prepared.bytes / 1024)} KB${media.type === 'image' ? ' (redimensionada)' : ''}.`);
+            } catch (e) {
+                console.warn('[AI] Error preparando multimedia para contexto:', e.message);
+                skippedMediaTypes.push(media.type);
             }
         }
+        const esTipoMedia = (t) => t === 'image' ? 'imagen' : t === 'audio' ? 'audio' : t === 'video' ? 'video' : 'archivo';
+        const skippedMediaNote = skippedMediaTypes.length > 0
+            ? `\n\n**Nota:** El cliente envió ${skippedMediaTypes.length} archivo(s) (${skippedMediaTypes.map(esTipoMedia).join(', ')}) que no se pudieron procesar (probablemente muy grandes). Pídele amablemente que te describa por texto su contenido o que lo reenvíe más corto.`
+            : '';
+        const fallbackMediaNote = downloadedMedia.length > 0
+            ? `\n\n**Nota:** El cliente envió archivo(s) multimedia (${downloadedMedia.map(m => esTipoMedia(m.type)).join(', ')}) que no pudiste analizar en este momento. Pídele amablemente que te describa por texto su contenido.`
+            : '';
 
         // Detectar código postal y cotizar envío
         let shippingInfo = '';
@@ -1204,33 +1290,32 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             ? `\n\n**Imágenes de referencia del producto/departamento:**\nLas primeras ${departmentReferenceImages.length} ${departmentReferenceImages.length === 1 ? 'imagen adjunta es una referencia visual' : 'imágenes adjuntas son referencias visuales'} del producto o catálogo del departamento. Úsalas para describir, comparar o responder preguntas del cliente. Las imágenes posteriores (si las hay) son las que el cliente envió en la conversación.`
             : '';
 
-        const dynamicPrompt = `${shippingInfo}${deptImagesNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos o audios, analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+        const dynamicPrompt = `${shippingInfo}${deptImagesNote}${skippedMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, audios o videos, analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
 
         // --- Intentar usar Context Caching ---
         let aiResult;
         try {
-            // Caché SOLO de texto: no incluir imágenes del departamento. Las imágenes
-            // grandes en el request de Gemini causan "Premature close". (TODO: re-habilitar
-            // imágenes con tope de tamaño y URL firmada.)
+            // El caché guarda SOLO texto (instrucciones). Las imágenes de referencia del
+            // departamento NO se cachean (podían ser grandes y causaban "Premature close").
+            // La multimedia que envía el CLIENTE sí se manda al modelo, ya acotada, en mediaParts.
             const cacheName = await getOrCreateCache(botInstructions, [], '');
             if (cacheName) {
-                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (texto; ${departmentImageParts.length} imgs dept cacheadas)`);
-                // NOTA: NO enviamos las imágenes de la conversación (mediaParts) a Gemini.
-                // Bajo UBLA las imágenes ahora SÍ se descargan completas y el request grande
-                // provocaba "Premature close" colgando la respuesta. Respuestas de texto
-                // (como funcionaba antes). TODO: re-habilitar imágenes con tope de tamaño.
-                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, []);
+                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (texto + ${mediaParts.length} archivo(s) multimedia; ${departmentImageParts.length} imgs dept cacheadas)`);
+                // Enviamos la multimedia de la conversación (mediaParts) ya redimensionada/acotada
+                // por buildSafeGeminiMediaPart. El tope de tamaño evita el "Premature close" que
+                // antes provocaban los requests grandes; el reintento interno cubre fallos transitorios.
+                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, mediaParts);
                 console.log(`[AI] 💰 Tokens cacheados: ${aiResult.cachedTokens}, Tokens nuevos de entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}`);
             } else {
                 throw new Error('Caché no disponible, usando fallback.');
             }
         } catch (cacheError) {
             // Fallback: si el caching falla por cualquier razón, usar el método tradicional con systemInstruction.
-            // En este caso las imágenes del departamento NO están cacheadas, así que las incluimos en mediaParts.
-            console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché.`);
+            // Aquí vamos SOLO con texto (sin multimedia) para garantizar que el cliente reciba respuesta
+            // aunque el caché o la multimedia estén fallando; avisamos a la IA que hubo archivos sin analizar.
+            console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché (solo texto).`);
             const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions);
-            const fullPrompt = `${fallbackRef}${shippingInfo}${deptImagesNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-            // Solo texto (sin imágenes de conversación) para evitar "Premature close" con requests grandes.
+            const fullPrompt = `${fallbackRef}${shippingInfo}${deptImagesNote}${fallbackMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
             aiResult = await generateGeminiResponse(fullPrompt, [], fallbackSystem);
         }
 
