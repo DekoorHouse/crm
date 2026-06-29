@@ -1987,6 +1987,34 @@ async function handleBotToggle(contactId, isActive) {
 }
 // --- END: Bot Toggle Logic ---
 
+// --- START: Stage Reset Logic (post-venta -> venta para nuevo pedido) ---
+async function handleStageReset(contactId) {
+    const contact = state.contacts.find(c => c.id === contactId);
+    const name = (contact && contact.name) || 'este contacto';
+    if (!window.confirm(`¿Regresar a ${name} a la etapa de VENTA para un nuevo pedido? La IA volverá a atender como en una venta normal (deja de estar en post-venta).`)) return;
+
+    const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+    try {
+        // 1. Actualización optimista de la UI
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].aiStage = 'venta';
+            scheduleContactListRender();
+            if (state.selectedContactId === contactId) renderChatWindow();
+        }
+        // 2. Persistir en Firestore (el bot sigue activo; el próximo turno lo atiende ventas)
+        await db.collection('contacts_whatsapp').doc(contactId).update({ aiStage: 'venta' });
+    } catch (error) {
+        console.error('Error al regresar el chat a la etapa de venta:', error);
+        if (window.showError) showError('No se pudo regresar el chat a la etapa de venta.');
+        // Revertir cambio optimista
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].aiStage = 'postventa';
+            if (state.selectedContactId === contactId) renderChatWindow();
+        }
+    }
+}
+// --- END: Stage Reset Logic ---
+
 // --- START: Read Receipt (hora de visto) ---
 /**
  * Muestra un tooltip con la hora (y la fecha si fue otro día) en que el
@@ -2048,6 +2076,7 @@ function hideReadReceipt() {
 // Exportar las funciones globalmente
 window.handleMarkAsUnread = handleMarkAsUnread;
 window.handleBotToggle = handleBotToggle;
+window.handleStageReset = handleStageReset;
 window.showReadReceipt = showReadReceipt;
 
 

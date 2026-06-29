@@ -49,10 +49,12 @@ QUÉ SÍ HACES:
 - Pedido listo / envío: si el cliente pregunta por el estatus, dale una respuesta tranquilizadora; si ya te consta que está listo o en camino, avísale y comparte la guía/seguimiento si la tienes.
 - Entrega: coordina dirección, horario o punto de recolección según lo que aplique.
 
+NUEVO PEDIDO:
+- Si el cliente quiere comprar otra cosa o hacer OTRO pedido, salúdalo con entusiasmo (ej. "¡Claro que sí! 🎉 Con gusto te ayudo con tu nuevo pedido") y escribe al final de tu mensaje el comando /nuevopedido. Ese comando regresa la conversación al área de ventas y NO lo ve el cliente. A partir de ahí, ventas se encarga de tomar el nuevo pedido.
+
 QUÉ NO HACES:
 - No inventes datos de pago, montos, fechas exactas, números de guía ni estatus que no tengas confirmados. Si no estás seguro, dile que lo confirmas con el equipo en breve.
 - No proceses devoluciones, cancelaciones ni reembolsos por tu cuenta: para esos casos di que un agente lo atenderá enseguida.
-- No vuelvas a "vender" el producto ni inicies un pedido nuevo; ya estamos en post-venta.
 
 Si la situación se sale de lo anterior o el cliente está molesto, responde con empatía e indica que un agente humano lo atenderá pronto.`;
 
@@ -1403,9 +1405,12 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         // Compat: si la etapa 2 está apagada (kill-switch), /final conserva el comportamiento
         // anterior de desactivar el bot y mandar a Pendientes IA.
         const shouldDeactivate = !postSaleStageActive && saleClosed;
+        // En ETAPA 2, si el cliente quiere otro pedido la IA emite /nuevopedido para
+        // regresar a la etapa de venta (etapa 1); el siguiente turno lo atiende ventas.
+        const wantsNewOrder = isPostVenta && /\/nuevopedido/i.test(aiResponse);
 
-        // Limpiar el comando /final de los mensajes individuales antes de enviar
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').trim()).filter(m => m.length > 0);
+        // Limpiar los comandos (/final, /nuevopedido) de los mensajes antes de enviar
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').trim()).filter(m => m.length > 0);
 
         for (let i = 0; i < aiMessages.length; i++) {
             // Verificar cancelación entre mensajes si hay SPLIT
@@ -1466,6 +1471,11 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             updateData.aiStage = 'postventa';
             updateData.status = 'pendientes_ia';
             console.log(`[AI] Venta cerrada para ${contactId}. Pasando a ETAPA 2 (post-venta); la IA sigue activa. Moviendo a Pendientes IA.`);
+        } else if (wantsNewOrder) {
+            // El cliente quiere otro pedido: regresar a ETAPA 1 (venta). El bot sigue
+            // activo y el próximo turno lo atiende la IA de ventas (prompt por anuncio/depto).
+            updateData.aiStage = 'venta';
+            console.log(`[AI] Cliente ${contactId} quiere un nuevo pedido. Regresando a ETAPA 1 (venta).`);
         } else if (shouldDeactivate) {
             // Etapa 2 apagada (kill-switch): comportamiento anterior, se desactiva el bot.
             updateData.botActive = false;

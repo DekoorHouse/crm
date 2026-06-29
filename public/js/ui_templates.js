@@ -980,6 +980,7 @@ const AITrainingViewTemplate = () => `
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-2">📦 Instrucciones de Post-Venta (Etapa 2)</h2>
                 <p class="text-sm text-gray-500 mb-3">Cuando se cierra la venta (comando <strong>/final</strong>), la IA <strong>no se apaga</strong>: pasa a esta etapa para acompañar al cliente con el cobro, avisarle cuando su pedido esté listo y coordinar la entrega. Es un prompt global (aplica a todos los productos). Sigue activa hasta que apagues la IA del contacto a mano.</p>
+                <p class="text-xs text-gray-500 mb-3 p-2 rounded-lg" style="background:#fff7ed;border:1px solid #fed7aa;">💡 <strong>Nuevo pedido:</strong> si escribes tu propio texto, incluye que cuando el cliente quiera otro pedido la IA debe responder y escribir el comando <strong>/nuevopedido</strong> (regresa el chat a ventas). También puedes regresarlo a mano con el botón ámbar “Post-venta” en la cabecera del chat.</p>
                 <label class="flex items-center gap-2 mb-3 text-sm font-medium text-gray-700 cursor-pointer">
                     <input type="checkbox" id="postventa-enabled-toggle" class="h-4 w-4" ${state.postSaleStageActive !== false ? 'checked' : ''}>
                     Activar etapa 2 (post-venta) automáticamente tras /final
@@ -1964,9 +1965,10 @@ const ChatWindowTemplate = (contact) => {
             <i class="fas fa-robot text-xl"></i>
         </button>
     `;
-    // Badge de etapa 2 junto al nombre (solo si el bot sigue activo en post-venta)
+    // Badge de etapa 2 junto al nombre (solo si el bot sigue activo en post-venta).
+    // Clic = regresar el chat a la etapa de venta (cuando el cliente quiere un nuevo pedido).
     const postVentaBadge = (isBotActiveForContact && isPostVentaContact)
-        ? `<span class="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap" style="background:#fff7ed;color:#b45309;border:1px solid #fed7aa;" title="La IA está atendiendo la post-venta (cobro/entrega)"><i class="fas fa-box"></i>Post-venta</span>`
+        ? `<button type="button" onclick="handleStageReset('${contact.id}')" class="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap cursor-pointer hover:brightness-95" style="background:#fff7ed;color:#b45309;border:1px solid #fed7aa;" title="IA en post-venta — clic para regresar a venta (nuevo pedido)"><i class="fas fa-box"></i>Post-venta<i class="fas fa-rotate-left opacity-60 ml-0.5"></i></button>`
         : '';
 
     // --- Botón de Revisión de Diseño ---
