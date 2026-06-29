@@ -26,8 +26,13 @@
     <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/plugins/ranges.js"></script>
 
+    <!-- Flatpickr: selector de fecha y hora (formato 24h) para programar envíos -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+
     <!-- Estilos Personalizados -->
-    <link rel="stylesheet" href="style.css?v=31">
+    <link rel="stylesheet" href="style.css?v=32">
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest-crm.json">
@@ -486,8 +491,9 @@
             <div class="schedule-or"><span>o a una hora exacta</span></div>
 
             <div class="mb-2">
-                <label for="schedule-datetime">Fecha y hora</label>
-                <input type="datetime-local" id="schedule-datetime" class="!mb-0" oninput="updateScheduleSummary()">
+                <label>Fecha y hora <span style="color: var(--color-text-light, #9ca3af); font-weight: 400;">(24 h)</span></label>
+                <input type="text" id="schedule-datetime" class="hidden" tabindex="-1" aria-hidden="true">
+                <div id="schedule-cal" class="schedule-cal"></div>
             </div>
 
             <div id="schedule-summary" class="schedule-summary hidden"></div>
@@ -555,7 +561,7 @@
     <script src="js/modules/difusion-handlers.js"></script>
     <script src="js/modules/ui-manager.js?v=16"></script>
     <script src="js/modules/virtual-scroll.js?v=2"></script>
-    <script src="js/modules/chat-handlers.js?v=11"></script>
+    <script src="js/modules/chat-handlers.js?v=12"></script>
     <script src="js/modules/feature-handlers.js?v=12"></script>
     <script src="js/modules/main.js?v=4"></script>
     <script src="js/modules/auth.js?v=5"></script>

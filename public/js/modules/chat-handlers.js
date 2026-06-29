@@ -788,10 +788,27 @@ async function processMessageQueue() {
 // === PROGRAMAR ENVÍO DE MENSAJES (modo programado por conversación) ===
 // =====================================================================
 
-// Formatea un Date al valor que espera <input type="datetime-local"> (hora local).
-function toDatetimeLocalValue(d) {
-    const pad = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+let scheduleFp = null; // instancia de flatpickr del modal de programación
+
+// Inicializa (una sola vez) el selector de fecha/hora flatpickr en formato 24h.
+function ensureScheduleFlatpickr() {
+    if (scheduleFp || typeof flatpickr === 'undefined') return;
+    const input = document.getElementById('schedule-datetime');
+    const container = document.getElementById('schedule-cal');
+    if (!input || !container) return;
+    const esLocale = (flatpickr.l10ns && flatpickr.l10ns.es) ? flatpickr.l10ns.es : undefined;
+    scheduleFp = flatpickr(input, {
+        inline: true,
+        appendTo: container,
+        enableTime: true,
+        time_24hr: true,
+        minuteIncrement: 1,
+        minDate: 'today',
+        dateFormat: 'Y-m-d H:i',
+        locale: esLocale,
+        defaultDate: new Date(),
+        onChange: function () { updateScheduleSummary(); }
+    });
 }
 
 // Re-renderiza el chat preservando lo que el operador tenga escrito en el input.
@@ -828,17 +845,18 @@ function openScheduleModal() {
     const idInput = document.getElementById('schedule-contact-id');
     if (idInput) idInput.value = contactId;
 
-    // Prellenar: hora ya configurada si sigue siendo futura, si no +30 min.
+    // Valor inicial: la hora ya configurada (si sigue futura) o la hora ACTUAL.
     const info = state.scheduleByContact[contactId];
-    const base = (info && info.scheduledAt && info.scheduledAt > Date.now()) ? info.scheduledAt : (Date.now() + 30 * 60000);
-    const input = document.getElementById('schedule-datetime');
-    if (input) {
-        input.value = toDatetimeLocalValue(new Date(base));
-        input.min = toDatetimeLocalValue(new Date(Date.now() + 60000));
-    }
+    const base = (info && info.scheduledAt && info.scheduledAt > Date.now()) ? new Date(info.scheduledAt) : new Date();
+
     document.querySelectorAll('#schedule-presets .schedule-preset-btn.active').forEach(b => b.classList.remove('active'));
+    modal.classList.remove('hidden'); // mostrar antes de inicializar para que el calendario tenga dimensiones
+    ensureScheduleFlatpickr();
+    if (scheduleFp) {
+        scheduleFp.setDate(base, false);
+        scheduleFp.redraw();
+    }
     updateScheduleSummary();
-    modal.classList.remove('hidden');
 }
 
 function closeScheduleModal() {
@@ -856,25 +874,24 @@ function applySchedulePreset(kind, btn) {
     } else {
         target = new Date(Date.now() + Number(kind) * 60000);
     }
-    const input = document.getElementById('schedule-datetime');
-    if (input) input.value = toDatetimeLocalValue(target);
+    ensureScheduleFlatpickr();
+    if (scheduleFp) scheduleFp.setDate(target, false);
     document.querySelectorAll('#schedule-presets .schedule-preset-btn').forEach(b => b.classList.remove('active'));
     if (btn && btn.classList) btn.classList.add('active');
     updateScheduleSummary();
 }
 
 function updateScheduleSummary() {
-    const input = document.getElementById('schedule-datetime');
     const summary = document.getElementById('schedule-summary');
     const confirmBtn = document.getElementById('schedule-confirm-btn');
-    if (!input || !summary) return;
-    const val = input.value;
-    if (!val) {
+    if (!summary) return;
+    const date = scheduleFp && scheduleFp.selectedDates && scheduleFp.selectedDates[0];
+    if (!date) {
         summary.classList.add('hidden');
         if (confirmBtn) confirmBtn.disabled = false;
         return;
     }
-    const ms = new Date(val).getTime();
+    const ms = date.getTime();
     summary.classList.remove('hidden');
     if (!ms || ms <= Date.now()) {
         summary.classList.add('error');
@@ -893,9 +910,9 @@ function updateScheduleSummary() {
 
 function confirmSchedule() {
     const contactId = (document.getElementById('schedule-contact-id') || {}).value || state.selectedContactId;
-    const input = document.getElementById('schedule-datetime');
-    if (!contactId || !input || !input.value) { showError('Elige una fecha y hora.'); return; }
-    const ms = new Date(input.value).getTime();
+    const date = scheduleFp && scheduleFp.selectedDates && scheduleFp.selectedDates[0];
+    if (!contactId || !date) { showError('Elige una fecha y hora.'); return; }
+    const ms = date.getTime();
     if (!ms || ms <= Date.now()) { showError('La hora programada debe ser futura.'); return; }
     state.scheduleByContact[contactId] = { scheduledAt: ms };
     closeScheduleModal();
