@@ -818,9 +818,26 @@ async function buildStaticContext(botInstructions) {
     const systemText = `${botInstructions}\n\n**Regla Especial de Cierre de Pedido:** Cuando el usuario haya proporcionado todos los datos necesarios y el pedido esté listo para ser procesado por un humano, debes responder ÚNICAMENTE incluyendo la frase exacta "Ya registramos tu pedido" seguido de cualquier instrucción adicional de despedida. Esta frase es un comando interno para el sistema.\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.`;
 
     // Material de referencia va en contents (como contexto, no como instrucciones)
-    const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}`;
+    const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo:** Si una de estas respuestas aplica perfectamente, puedes enviarla respondiendo ÚNICAMENTE con su atajo (ejemplo: responde exactamente "/ttt" y nada más); el sistema lo reemplazará automáticamente por su contenido completo, incluida cualquier imagen. También puedes escribir el contenido directamente si lo prefieres. NUNCA combines un atajo con más texto en el mismo mensaje.\n${quickReplies || 'No hay respuestas rápidas.'}`;
 
     return { systemText, referenceText };
+}
+
+/**
+ * Busca una respuesta rápida por su atajo. Normaliza (sin "/" inicial, minúsculas) para
+ * tolerar que el atajo venga con o sin barra. Devuelve los datos de la quick reply o null.
+ */
+async function findQuickReplyByShortcut(shortcut) {
+    if (!shortcut) return null;
+    try {
+        const norm = String(shortcut).replace(/^\/+/, '').toLowerCase();
+        const snap = await db.collection('quick_replies').get();
+        const doc = snap.docs.find(d => String(d.data().shortcut || '').replace(/^\/+/, '').toLowerCase() === norm);
+        return doc ? doc.data() : null;
+    } catch (e) {
+        console.warn('[AI] No se pudo leer quick_replies para expandir atajo:', e.message);
+        return null;
+    }
 }
 
 /**
@@ -1424,21 +1441,40 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             }
             let msgText = aiMessages[i];
             let shouldQuote = false;
-            
+
             if (/\[CITA\]/i.test(msgText)) {
                 shouldQuote = true;
                 msgText = msgText.replace(/\[CITA\]/ig, '').trim();
             }
+
+            // Si la IA respondió SOLO con un atajo de respuesta rápida (ej. "/ttt"), expandirlo
+            // a su contenido real (texto + archivo) en vez de mandar el atajo crudo al cliente.
+            let qrFileUrl = null, qrFileType = null;
+            const shortcutMatch = msgText.match(/^\/(\S+)$/);
+            if (shortcutMatch) {
+                const qr = await findQuickReplyByShortcut(shortcutMatch[1]);
+                if (qr) {
+                    msgText = qr.message || '';
+                    qrFileUrl = qr.fileUrl || null;
+                    qrFileType = qr.fileType || null;
+                    console.log(`[AI] Atajo "${shortcutMatch[0]}" expandido a respuesta rápida para ${contactId}.`);
+                } else {
+                    // Atajo inexistente: no mandar el "/xxx" crudo al cliente.
+                    console.warn(`[AI] La IA usó un atajo desconocido "${shortcutMatch[0]}" para ${contactId}; se omite.`);
+                    continue;
+                }
+            }
+            if (!msgText && !qrFileUrl) continue; // nada que enviar
 
             const contactChannel = contactData.channel || 'whatsapp';
             let sentMessageData;
 
             if (contactChannel === 'messenger' || contactChannel === 'instagram') {
                 const recipientId = contactData.psid || contactData.igsid || contactId.replace(/^(fb_|ig_)/, '');
-                const result = await sendMessengerMessage(recipientId, { text: msgText, channel: contactChannel });
-                sentMessageData = { id: result.messages?.[0]?.id || null, textForDb: msgText };
+                const result = await sendMessengerMessage(recipientId, { text: msgText, fileUrl: qrFileUrl, fileType: qrFileType, channel: contactChannel });
+                sentMessageData = { id: result.messages?.[0]?.id || null, textForDb: msgText || result.lastTextForDb || '' };
             } else {
-                const sendOptions = { text: msgText };
+                const sendOptions = { text: msgText, fileUrl: qrFileUrl, fileType: qrFileType };
                 if (shouldQuote && message.id) {
                     sendOptions.reply_to_wamid = message.id;
                 }
@@ -1446,11 +1482,13 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             }
 
             const fromId = (contactChannel === 'messenger' || contactChannel === 'instagram') ? FB_PAGE_ID : PHONE_NUMBER_ID;
-            await contactRef.collection('messages').add({
+            const aiMsgToSave = {
                 from: fromId, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true,
                 context: { id: message.id }, channel: contactChannel,
-            });
+            };
+            if (qrFileUrl) { aiMsgToSave.fileUrl = qrFileUrl; aiMsgToSave.fileType = qrFileType; }
+            await contactRef.collection('messages').add(aiMsgToSave);
             lastText = sentMessageData.textForDb;
 
             if (i < aiMessages.length - 1) {
