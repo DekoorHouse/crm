@@ -1073,8 +1073,10 @@ async function handleMarkAsUnread(event, contactId) {
 // --- END: Mark as Unread Logic ---
 // --- NUEVO: Obtener perfil de usuario ---
 async function fetchUserProfile(email) {
+    // Email inválido o ausente (p. ej. la sesión aún no expone el correo): no pedir, evita un 500 ruidoso.
+    if (!email || email === 'null' || email === 'undefined') return null;
     try {
-        const response = await fetch(`${API_BASE_URL}/api/users/profile/${email}`);
+        const response = await fetch(`${API_BASE_URL}/api/users/profile/${encodeURIComponent(email)}`);
         if (!response.ok) {
             if (response.status === 404) return null; // Usuario no encontrado
             throw new Error('Error al obtener perfil de usuario');

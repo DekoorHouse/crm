@@ -4804,6 +4804,10 @@ router.delete('/users/:userId', async (req, res) => {
 // GET /api/users/profile/:email - Obtener perfil por email (para login)
 router.get('/users/profile/:email', async (req, res) => {
     const { email } = req.params;
+    // Email inválido o ausente (p. ej. el front lo mandó como "null"): 404 limpio, no 500.
+    if (!email || !email.includes('@')) {
+        return res.status(404).json({ success: false, message: 'Email inválido o no proporcionado.' });
+    }
     try {
         const userId = email.toLowerCase().trim();
         const doc = await db.collection('users').doc(userId).get();
@@ -4836,8 +4840,8 @@ router.get('/users/profile/:email', async (req, res) => {
 
             } catch (authError) {
                 // Si el usuario NO existe en Authentication (error user-not-found), devolvemos 404 real
-                if (authError.code === 'auth/user-not-found') {
-                    console.warn(`[LOGIN] Intento de acceso para email no registrado en Auth: ${userId}`);
+                if (authError.code === 'auth/user-not-found' || authError.code === 'auth/invalid-email') {
+                    console.warn(`[LOGIN] Email no registrado o inválido en Auth: ${userId}`);
                     return res.status(404).json({ success: false, message: 'Usuario no registrado en el sistema.' });
                 }
                 throw authError; // Otros errores

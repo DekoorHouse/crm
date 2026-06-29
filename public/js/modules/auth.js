@@ -13,7 +13,7 @@ auth.onAuthStateChanged(async user => { // Hacemos la función async para espera
         // --- INICIO DE MODIFICACIÓN: Cargar perfil del usuario ---
         try {
             // Intentamos cargar el perfil extendido (roles, departamentos)
-            if (window.fetchUserProfile) {
+            if (window.fetchUserProfile && user.email) {
                 const profile = await window.fetchUserProfile(user.email);
                 if (profile) {
                     state.currentUserProfile = profile;
