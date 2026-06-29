@@ -56,6 +56,7 @@ let state = {
     activeView: 'chats', // Vista principal activa ('chats', 'pipeline', 'etiquetas', etc.)
     appLoadTimestamp: null, // Momento en que se cargó la app (para listener de updates)
     isSessionExpired: false, // Indica si la ventana de 24h ha cerrado para el chat actual
+    scheduleByContact: {}, // Modo "programar envío" por conversación: { [contactId]: { scheduledAt: ms } }
 
     // --- Virtual Scroll para la lista de contactos ---
     virtualScroll: {

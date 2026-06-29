@@ -733,16 +733,17 @@ async function processMessageQueue() {
         try {
             if (task.type === 'file') {
                 // Enviar archivo
-                await uploadAndSendFile(task.file, task.text, task.isExpired, task.contactId, task.replyTo);
+                await uploadAndSendFile(task.file, task.text, task.isExpired, task.contactId, task.replyTo, task.scheduleAt, task.tempId);
             } else {
-                // Enviar texto o archivo remoto
-                if (!task.isExpired) {
+                // Enviar texto o archivo remoto (o programarlo si el modo está activo)
+                if (!task.isExpired && !task.scheduleAt) {
                     await db.collection('contacts_whatsapp').doc(task.contactId).update({ unreadCount: 0 });
                 }
-                
-                const endpoint = task.isExpired ? 'queue-message' : 'messages';
+
+                const endpoint = task.scheduleAt ? 'schedule-message' : (task.isExpired ? 'queue-message' : 'messages');
                 const messageData = { text: task.text, tempId: task.tempId };
-                
+                if (task.scheduleAt) messageData.scheduledAt = task.scheduleAt;
+
                 if (task.remoteFile) {
                     messageData.fileUrl = task.remoteFile.url;
                     messageData.fileType = task.remoteFile.type;
@@ -783,6 +784,159 @@ async function processMessageQueue() {
 
 // --- FIN NUEVA LÓGICA ---
 
+// =====================================================================
+// === PROGRAMAR ENVÍO DE MENSAJES (modo programado por conversación) ===
+// =====================================================================
+
+// Formatea un Date al valor que espera <input type="datetime-local"> (hora local).
+function toDatetimeLocalValue(d) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Re-renderiza el chat preservando lo que el operador tenga escrito en el input.
+function rerenderChatPreservingInput() {
+    const input = document.getElementById('message-input');
+    const val = input ? input.value : '';
+    renderChatWindow({ preserveScroll: true });
+    const newInput = document.getElementById('message-input');
+    if (newInput && val) {
+        newInput.value = val;
+        newInput.style.height = 'auto';
+        newInput.style.height = newInput.scrollHeight + 'px';
+    }
+}
+
+// Clic en el botón ⏰: si el modo ya está activo lo desactiva; si no, abre el modal.
+function toggleScheduleMode() {
+    const contactId = state.selectedContactId;
+    if (!contactId) return;
+    const info = state.scheduleByContact[contactId];
+    const active = info && info.scheduledAt && info.scheduledAt > Date.now();
+    if (active) {
+        cancelScheduleMode();
+    } else {
+        openScheduleModal();
+    }
+}
+
+function openScheduleModal() {
+    const contactId = state.selectedContactId;
+    if (!contactId) return;
+    const modal = document.getElementById('schedule-modal');
+    if (!modal) return;
+    const idInput = document.getElementById('schedule-contact-id');
+    if (idInput) idInput.value = contactId;
+
+    // Prellenar: hora ya configurada si sigue siendo futura, si no +30 min.
+    const info = state.scheduleByContact[contactId];
+    const base = (info && info.scheduledAt && info.scheduledAt > Date.now()) ? info.scheduledAt : (Date.now() + 30 * 60000);
+    const input = document.getElementById('schedule-datetime');
+    if (input) {
+        input.value = toDatetimeLocalValue(new Date(base));
+        input.min = toDatetimeLocalValue(new Date(Date.now() + 60000));
+    }
+    document.querySelectorAll('#schedule-presets .schedule-preset-btn.active').forEach(b => b.classList.remove('active'));
+    updateScheduleSummary();
+    modal.classList.remove('hidden');
+}
+
+function closeScheduleModal() {
+    const modal = document.getElementById('schedule-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// Presets de cuenta atrás: calculan la hora objetivo y llenan el datetime-local.
+function applySchedulePreset(kind, btn) {
+    let target;
+    if (kind === 'tomorrow9') {
+        target = new Date();
+        target.setDate(target.getDate() + 1);
+        target.setHours(9, 0, 0, 0);
+    } else {
+        target = new Date(Date.now() + Number(kind) * 60000);
+    }
+    const input = document.getElementById('schedule-datetime');
+    if (input) input.value = toDatetimeLocalValue(target);
+    document.querySelectorAll('#schedule-presets .schedule-preset-btn').forEach(b => b.classList.remove('active'));
+    if (btn && btn.classList) btn.classList.add('active');
+    updateScheduleSummary();
+}
+
+function updateScheduleSummary() {
+    const input = document.getElementById('schedule-datetime');
+    const summary = document.getElementById('schedule-summary');
+    const confirmBtn = document.getElementById('schedule-confirm-btn');
+    if (!input || !summary) return;
+    const val = input.value;
+    if (!val) {
+        summary.classList.add('hidden');
+        if (confirmBtn) confirmBtn.disabled = false;
+        return;
+    }
+    const ms = new Date(val).getTime();
+    summary.classList.remove('hidden');
+    if (!ms || ms <= Date.now()) {
+        summary.classList.add('error');
+        summary.textContent = 'Elige una hora futura.';
+        if (confirmBtn) confirmBtn.disabled = true;
+        return;
+    }
+    summary.classList.remove('error');
+    const diffMin = Math.round((ms - Date.now()) / 60000);
+    const h = Math.floor(diffMin / 60);
+    const m = diffMin % 60;
+    const rel = h > 0 ? `${h} h${m ? ' ' + m + ' min' : ''}` : `${m} min`;
+    summary.textContent = `Se enviarán ${formatScheduleLabel(ms)} (en ${rel}).`;
+    if (confirmBtn) confirmBtn.disabled = false;
+}
+
+function confirmSchedule() {
+    const contactId = (document.getElementById('schedule-contact-id') || {}).value || state.selectedContactId;
+    const input = document.getElementById('schedule-datetime');
+    if (!contactId || !input || !input.value) { showError('Elige una fecha y hora.'); return; }
+    const ms = new Date(input.value).getTime();
+    if (!ms || ms <= Date.now()) { showError('La hora programada debe ser futura.'); return; }
+    state.scheduleByContact[contactId] = { scheduledAt: ms };
+    closeScheduleModal();
+    if (state.selectedContactId === contactId) rerenderChatPreservingInput();
+}
+
+// Desactiva el modo programado para el chat actual (los mensajes ya programados siguen en cola).
+function cancelScheduleMode() {
+    const contactId = state.selectedContactId;
+    if (!contactId) return;
+    delete state.scheduleByContact[contactId];
+    rerenderChatPreservingInput();
+}
+
+// Cancela un mensaje individual ya programado (borra el doc de Firestore).
+async function cancelScheduledMessage(messageId) {
+    const contactId = state.selectedContactId;
+    if (!contactId || !messageId) return;
+    if (!window.confirm('¿Cancelar este mensaje programado?')) return;
+    try {
+        await db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageId).delete();
+        const idx = state.messages.findIndex(m => m.docId === messageId);
+        if (idx > -1) {
+            state.messages.splice(idx, 1);
+            renderMessages();
+        }
+    } catch (e) {
+        console.error('Error al cancelar mensaje programado:', e);
+        if (window.showError) showError('No se pudo cancelar el mensaje programado.');
+    }
+}
+
+window.toggleScheduleMode = toggleScheduleMode;
+window.openScheduleModal = openScheduleModal;
+window.closeScheduleModal = closeScheduleModal;
+window.applySchedulePreset = applySchedulePreset;
+window.updateScheduleSummary = updateScheduleSummary;
+window.confirmSchedule = confirmSchedule;
+window.cancelScheduleMode = cancelScheduleMode;
+window.cancelScheduledMessage = cancelScheduledMessage;
+
 async function handleSendMessage(event) {
     event.preventDefault();
     const input = document.getElementById('message-input');
@@ -803,6 +957,15 @@ async function handleSendMessage(event) {
     // Instagram y Messenger no tienen ventana de 24h
     const selectedContact = state.contacts.find(c => c.id === state.selectedContactId);
     const isExpired = (selectedContact && (selectedContact.channel === 'messenger' || selectedContact.channel === 'instagram')) ? false : state.isSessionExpired;
+
+    // Modo programado por conversación: si está activo (con hora futura), el mensaje
+    // no se envía ahora; se guarda como "programado" y el scheduler lo manda a su hora.
+    const scheduleInfo = state.scheduleByContact && state.scheduleByContact[currentContactId];
+    const scheduleAt = (scheduleInfo && scheduleInfo.scheduledAt && scheduleInfo.scheduledAt > Date.now()) ? scheduleInfo.scheduledAt : null;
+    if (scheduleInfo && scheduleInfo.scheduledAt && scheduleInfo.scheduledAt <= Date.now()) {
+        delete state.scheduleByContact[currentContactId]; // la hora ya pasó: enviar normal
+    }
+
     const tempId = `temp_${Date.now()}`;
 
     // --- Definir el texto del mensaje temporal ---
@@ -827,10 +990,11 @@ async function handleSendMessage(event) {
     const pendingMessage = {
         docId: tempId,
         from: 'me',
-        status: isExpired ? 'queued' : 'pending',
-        timestamp: { seconds: Math.floor(Date.now() / 1000) },
+        status: scheduleAt ? 'scheduled' : (isExpired ? 'queued' : 'pending'),
+        timestamp: { seconds: Math.floor((scheduleAt || Date.now()) / 1000) },
         text: messageText,
     };
+    if (scheduleAt) pendingMessage.scheduledAt = { seconds: Math.floor(scheduleAt / 1000) };
 
     if (filesToSend.length > 0) {
         pendingMessage.fileUrl = URL.createObjectURL(filesToSend[0]);
@@ -860,7 +1024,8 @@ async function handleSendMessage(event) {
             contactId: currentContactId,
             replyTo: currentReplyingTo,
             isExpired: isExpired,
-            tempId: tempId
+            tempId: tempId,
+            scheduleAt: scheduleAt
         });
         // Archivos adicionales van sin texto
         for (let i = 1; i < filesToSend.length; i++) {
@@ -871,7 +1036,8 @@ async function handleSendMessage(event) {
                 contactId: currentContactId,
                 replyTo: null,
                 isExpired: isExpired,
-                tempId: `temp_${Date.now()}_${i}`
+                tempId: `temp_${Date.now()}_${i}`,
+                scheduleAt: scheduleAt
             });
         }
     } else {
@@ -882,7 +1048,8 @@ async function handleSendMessage(event) {
             contactId: currentContactId,
             replyTo: currentReplyingTo,
             isExpired: isExpired,
-            tempId: tempId
+            tempId: tempId,
+            scheduleAt: scheduleAt
         });
     }
 
@@ -928,7 +1095,7 @@ async function handleDeleteNote(noteId) {
     } catch (error) { showError(error.message); }
 }
 
-async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyingToMessage) { 
+async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyingToMessage, scheduleAt, tempId) {
     // Usar el contactId pasado o fallback al state (para compatibilidad), pero preferir el pasado
     const targetContactId = contactId || state.selectedContactId;
     if (!file || !targetContactId) return; // Removido state.isUploading check para permitir llamadas desde la cola
@@ -986,7 +1153,12 @@ async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyi
                         messageData.reply_to_wamid = contextMsg.id;
                     }
 
-                    const endpoint = isExpired ? 'queue-message' : 'messages';
+                    if (scheduleAt) {
+                        messageData.scheduledAt = scheduleAt;
+                        messageData.tempId = tempId;
+                    }
+
+                    const endpoint = scheduleAt ? 'schedule-message' : (isExpired ? 'queue-message' : 'messages');
                     const response = await fetch(`${API_BASE_URL}/api/contacts/${targetContactId}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) });
                     resolve(response);
                 } catch (error) { 

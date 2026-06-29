@@ -22,6 +22,7 @@ const jtService = require('./jt/jtService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
 const { calcularReporte } = require('./inventario/inventarioReporte');
 const { ejecutarReporteDiario } = require('./inventario/inventarioScheduler');
+const { runScheduledMessagesSweep } = require('./scheduledMessages/scheduledMessagesScheduler');
 
 const router = express.Router();
 const uploadRef = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -4463,6 +4464,77 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
             meta_code: metaErr?.code || null,
             meta_subcode: metaErr?.error_subcode || null
         });
+    }
+});
+
+// --- Endpoint POST /api/contacts/:contactId/schedule-message (Programar envío a hora futura) ---
+// Guarda el mensaje en la subcolección 'messages' con status:'scheduled' y scheduledAt.
+// NO envía a Meta: el scheduledMessagesScheduler lo enviará cuando llegue el momento.
+router.post('/contacts/:contactId/schedule-message', async (req, res) => {
+    const { contactId } = req.params;
+    const { text, fileUrl, fileType, scheduledAt, tempId } = req.body;
+
+    if (!text && !fileUrl) {
+        return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
+    }
+    const scheduledMs = Number(scheduledAt);
+    if (!scheduledMs || Number.isNaN(scheduledMs)) {
+        return res.status(400).json({ success: false, message: 'Falta la fecha/hora de programación (scheduledAt).' });
+    }
+    if (scheduledMs <= Date.now()) {
+        return res.status(400).json({ success: false, message: 'La hora programada debe ser futura.' });
+    }
+
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+        const channel = contactDoc.exists ? (contactDoc.data().channel || 'whatsapp') : 'whatsapp';
+
+        // Texto para guardar (igual que el envío normal: si solo hay archivo, etiqueta por tipo)
+        let messageToSaveText = text;
+        if (fileUrl && !text) {
+            const type = fileType && fileType.startsWith('image/') ? 'image' :
+                fileType && fileType.startsWith('video/') ? 'video' :
+                fileType && fileType.startsWith('audio/') ? 'audio' : 'document';
+            messageToSaveText = (type === 'video' ? '🎥 Video' : type === 'image' ? '📷 Imagen' : type === 'audio' ? '🎵 Audio' : '📄 Documento');
+        }
+
+        const scheduledTs = admin.firestore.Timestamp.fromMillis(scheduledMs);
+        const messageToSave = {
+            from: channel === 'whatsapp' ? PHONE_NUMBER_ID : 'page',
+            status: 'scheduled',
+            scheduledAt: scheduledTs,
+            timestamp: scheduledTs, // ordena al fondo del chat (es el mensaje "más futuro")
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            text: messageToSaveText || '',
+            fileUrl: fileUrl || null,
+            fileType: fileType || null,
+            channel,
+            source: 'scheduled',
+            attempts: 0,
+        };
+        Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
+
+        // Usar el tempId como id del doc (igual que /messages) para reconciliar el mensaje optimista del frontend.
+        const docRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
+        await docRef.set(messageToSave);
+
+        return res.status(200).json({ success: true, message: 'Mensaje programado.', id: docRef.id, scheduledAt: scheduledMs });
+    } catch (error) {
+        console.error('❌ Error al programar mensaje:', error.message);
+        return res.status(500).json({ success: false, message: error.message || 'Error al programar el mensaje.' });
+    }
+});
+
+// --- Endpoint POST /api/scheduled-messages/sweep (barrido manual de programados; útil para pruebas) ---
+router.post('/scheduled-messages/sweep', async (req, res) => {
+    try {
+        const dryRun = !!(req.body && req.body.dryRun === true);
+        const summary = await runScheduledMessagesSweep({ dryRun });
+        return res.status(200).json({ success: true, summary });
+    } catch (error) {
+        console.error('❌ Error en sweep de programados:', error.message);
+        return res.status(500).json({ success: false, message: error.message });
     }
 });
 

@@ -27,7 +27,7 @@
     <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/plugins/ranges.js"></script>
 
     <!-- Estilos Personalizados -->
-    <link rel="stylesheet" href="style.css?v=30">
+    <link rel="stylesheet" href="style.css?v=31">
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest-crm.json">
@@ -464,6 +464,41 @@
 
 
 
+    <!-- NUEVO: Modal de Programación de Envío -->
+    <div id="schedule-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2><i class="fas fa-clock mr-2" style="color: var(--color-primary);"></i>Programar envío</h2>
+            <p class="mb-4 text-gray-600">Mientras esté activo, los mensajes que escribas no se enviarán al instante: se acumulan y salen todos juntos en el momento que elijas.</p>
+            <input type="hidden" id="schedule-contact-id">
+
+            <div class="mb-4">
+                <label>En cuánto tiempo</label>
+                <div id="schedule-presets" class="schedule-presets">
+                    <button type="button" class="schedule-preset-btn" onclick="applySchedulePreset(15, this)">+15 min</button>
+                    <button type="button" class="schedule-preset-btn" onclick="applySchedulePreset(30, this)">+30 min</button>
+                    <button type="button" class="schedule-preset-btn" onclick="applySchedulePreset(60, this)">+1 h</button>
+                    <button type="button" class="schedule-preset-btn" onclick="applySchedulePreset(120, this)">+2 h</button>
+                    <button type="button" class="schedule-preset-btn" onclick="applySchedulePreset(180, this)">+3 h</button>
+                    <button type="button" class="schedule-preset-btn" onclick="applySchedulePreset('tomorrow9', this)">Mañana 9:00</button>
+                </div>
+            </div>
+
+            <div class="schedule-or"><span>o a una hora exacta</span></div>
+
+            <div class="mb-2">
+                <label for="schedule-datetime">Fecha y hora</label>
+                <input type="datetime-local" id="schedule-datetime" class="!mb-0" oninput="updateScheduleSummary()">
+            </div>
+
+            <div id="schedule-summary" class="schedule-summary hidden"></div>
+
+            <div class="flex justify-end gap-3 mt-4">
+                <button type="button" onclick="closeScheduleModal()" class="btn btn-subtle">Cancelar</button>
+                <button type="button" id="schedule-confirm-btn" onclick="confirmSchedule()" class="btn btn-primary">Activar programación</button>
+            </div>
+        </div>
+    </div>
+
     <!-- NUEVO: Modal de Base de Conocimiento de IA -->
     <div id="knowledge-modal" class="modal-backdrop hidden">
         <div class="modal-content">
@@ -513,14 +548,14 @@
     <!-- Configuración Dinámica de Entorno -->
     <script src="/env-config.js"></script>
     <script src="js/modules/firebase-init.js"></script>
-    <script src="js/modules/state.js?v=6"></script>
+    <script src="js/modules/state.js?v=7"></script>
     <script src="js/modules/utils.js?v=2"></script>
-    <script src="js/ui_templates.js?v=30"></script>
+    <script src="js/ui_templates.js?v=31"></script>
     <script src="js/modules/api-service.js?v=7"></script>
     <script src="js/modules/difusion-handlers.js"></script>
     <script src="js/modules/ui-manager.js?v=16"></script>
     <script src="js/modules/virtual-scroll.js?v=2"></script>
-    <script src="js/modules/chat-handlers.js?v=10"></script>
+    <script src="js/modules/chat-handlers.js?v=11"></script>
     <script src="js/modules/feature-handlers.js?v=12"></script>
     <script src="js/modules/main.js?v=4"></script>
     <script src="js/modules/auth.js?v=4"></script>

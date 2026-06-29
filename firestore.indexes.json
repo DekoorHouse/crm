@@ -124,6 +124,14 @@
         { "fieldPath": "adSourceIds", "arrayConfig": "CONTAINS" },
         { "fieldPath": "lastMessageTimestamp", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "scheduledAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

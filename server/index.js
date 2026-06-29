@@ -20,6 +20,7 @@ const { startCartRecoveryScheduler } = require('./carritos/carritosScheduler');
 const { startInventarioScheduler } = require('./inventario/inventarioScheduler');
 const { startLeadReactivationScheduler } = require('./leads/leadReactivationScheduler');
 const { startOrderFollowupScheduler } = require('./leads/orderFollowupScheduler');
+const { startScheduledMessagesScheduler } = require('./scheduledMessages/scheduledMessagesScheduler');
 const orderFollowupRouter = require('./leads/orderFollowupRoutes');
 const path = require('path');
 const express = require('express');
@@ -365,6 +366,8 @@ const server = app.listen(PORT, () => {
   startOrderFollowupScheduler();
   // Iniciar scheduler de reporte diario de inventario (18:00 hora MX)
   startInventarioScheduler();
+  // Iniciar scheduler de mensajes programados (envío diferido desde el chat)
+  startScheduledMessagesScheduler();
   // Conectar bridge TCP a MeerK40t
   laserBridge.connect();
 });

@@ -2751,6 +2751,124 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
 .message-bubble.sent .template-button-url:hover,
 .message-bubble.sent .template-button-phone:hover { background: rgba(255,255,255,0.28); }
 
+/* === Programar envío de mensajes (modo programado del chat) === */
+.chat-icon-btn.schedule-active,
+.chat-icon-btn.schedule-active i { color: var(--color-primary); }
+
+/* Barra indicadora sobre el input cuando el modo programado está activo */
+.schedule-context-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    background: #f5f3ff;
+    border-left: 3px solid #8b5cf6;
+    color: #5b21b6;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+}
+.schedule-context-bar .fa-clock { color: #8b5cf6; }
+.schedule-context-text { flex: 1; min-width: 120px; }
+.schedule-context-action {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: #7c3aed;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+.schedule-context-action:hover { background: rgba(124, 58, 237, 0.12); }
+.schedule-context-cancel { color: #b91c1c; }
+.schedule-context-cancel:hover { background: rgba(185, 28, 28, 0.1); }
+
+/* Burbuja de un mensaje programado (aún no enviado) */
+.message-bubble.message-scheduled {
+    opacity: 0.95;
+    border: 1px dashed rgba(139, 92, 246, 0.6);
+}
+.scheduled-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(139, 92, 246, 0.25);
+    font-size: 0.72rem;
+    color: #7c3aed;
+    font-weight: 600;
+}
+.scheduled-badge span { flex: 1; }
+.message-bubble.sent .scheduled-badge { color: #ede9fe; border-top-color: rgba(255, 255, 255, 0.25); }
+.scheduled-cancel-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.75;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+.scheduled-cancel-btn:hover { opacity: 1; background: rgba(0, 0, 0, 0.08); }
+
+/* Modal de programación */
+.schedule-presets {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 6px;
+}
+.schedule-preset-btn {
+    padding: 8px 6px;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text, #374151);
+    transition: all 0.15s ease;
+}
+.schedule-preset-btn:hover {
+    border-color: #8b5cf6;
+    background: #f5f3ff;
+    color: #6d28d9;
+}
+.schedule-preset-btn.active {
+    border-color: #8b5cf6;
+    background: #ede9fe;
+    color: #6d28d9;
+}
+.schedule-or {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 0.78rem;
+    margin: 14px 0 10px;
+}
+.schedule-or::before,
+.schedule-or::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+.schedule-or span { padding: 0 10px; }
+.schedule-summary {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: #f5f3ff;
+    border-radius: 8px;
+    color: #5b21b6;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.schedule-summary.error { background: #fef2f2; color: #b91c1c; }
+
 /* =====================================================================
    MOBILE RESPONSIVE FIXES (auditoría 2026-05)
    - Sidebar más compacto en pantallas chicas

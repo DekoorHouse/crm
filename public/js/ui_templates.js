@@ -1425,12 +1425,27 @@ const ContactHandleTemplate = (contact) => {
     return `+${contact.id}`;
 };
 
+// Formatea un momento (ms) como etiqueta corta para la UI de programación:
+// "hoy 17:00", "mañana 09:00" o "25/6 17:00".
+const formatScheduleLabel = (ms) => {
+    if (!ms) return '';
+    const d = new Date(ms);
+    const now = new Date();
+    const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    if (d.toDateString() === now.toDateString()) return `hoy ${time}`;
+    if (d.toDateString() === tomorrow.toDateString()) return `mañana ${time}`;
+    return `${d.getDate()}/${d.getMonth() + 1} ${time}`;
+};
+
 const MessageStatusIconTemplate = (status, readAt) => {
     const sentColor = '#9ca3af';
     const readColor = '#53bdeb';
     switch (status) {
         case 'pending': return `<i class="far fa-clock message-status-icon" style="color: ${sentColor};"></i>`;
         case 'queued': return `<i class="far fa-clock message-status-icon" style="color: #60a5fa;"></i>`;
+        case 'scheduled': return `<i class="far fa-clock message-status-icon" style="color: #8b5cf6;"></i>`;
         case 'read': {
             const secs = readAt && typeof readAt.seconds === 'number' ? readAt.seconds : null;
             // Si tenemos la hora de lectura, la palomita es clickeable para mostrarla
@@ -1600,6 +1615,17 @@ const MessageBubbleTemplate = (message) => {
     const bubbleAlignment = isSent ? 'sent' : 'received';
     let bubbleClasses = isSent ? 'sent' : 'received';
     if (message.status === 'queued') bubbleClasses += ' message-queued';
+    if (message.status === 'scheduled') bubbleClasses += ' message-scheduled';
+
+    // Badge "Programado · HH:MM" con botón para cancelar, dentro de la burbuja.
+    const scheduledMsForBadge = message.status === 'scheduled'
+        ? (message.scheduledAt && message.scheduledAt.seconds ? message.scheduledAt.seconds * 1000
+            : (typeof message.scheduledAt === 'number' ? message.scheduledAt
+                : (message.timestamp && message.timestamp.seconds ? message.timestamp.seconds * 1000 : null)))
+        : null;
+    const scheduledBadgeHTML = message.status === 'scheduled'
+        ? `<div class="scheduled-badge"><i class="far fa-clock"></i><span>Programado · ${formatScheduleLabel(scheduledMsForBadge)}</span><button class="scheduled-cancel-btn" onclick="cancelScheduledMessage('${message.docId}')" title="Cancelar envío programado"><i class="fas fa-times"></i></button></div>`
+        : '';
 
     const msgIdAttr = message.id ? ` data-msg-id="${message.id}"` : '';
     return `
@@ -1607,6 +1633,7 @@ const MessageBubbleTemplate = (message) => {
             <div class="message-bubble ${bubbleClasses} ${bubbleExtraClass}">
                 ${replyPreviewHTML}
                 ${contentHTML}
+                ${scheduledBadgeHTML}
                 ${timeAndStatusHTML}
                 ${reactionHTML}
                 ${actionsHTML}
@@ -1901,6 +1928,9 @@ const ChatWindowTemplate = (contact) => {
 
     const isSessionExpired = state.isSessionExpired;
 
+    const scheduleInfo = state.scheduleByContact && state.scheduleByContact[contact.id];
+    const scheduleActive = !!(scheduleInfo && scheduleInfo.scheduledAt && scheduleInfo.scheduledAt > Date.now());
+
     const sessionExpiredNotification = isSessionExpired
         ? `<div class="session-expired-banner">
              <i class="fas fa-lock mr-2"></i> Chat cerrado. Envía una plantilla para reactivar.
@@ -1918,6 +1948,7 @@ const ChatWindowTemplate = (contact) => {
              <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*,audio/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" multiple>
              <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
              ${contact.channel !== 'messenger' ? '<button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>' : ''}
+             <button type="button" id="schedule-toggle-btn" onclick="toggleScheduleMode()" class="p-2 chat-icon-btn ${scheduleActive ? 'schedule-active' : ''}" title="Programar envío"><i class="fas fa-clock text-xl"></i></button>
              <textarea id="message-input" placeholder="${placeholderText}" class="flex-1 !mb-0" rows="1"></textarea>
              <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
         </form>`;
@@ -1949,6 +1980,14 @@ const ChatWindowTemplate = (contact) => {
 
     const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
     const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
+    const scheduleBarHTML = scheduleActive
+        ? `<div id="schedule-context-bar" class="schedule-context-bar">
+                <i class="fas fa-clock"></i>
+                <span class="schedule-context-text">Los mensajes se enviarán <strong>${formatScheduleLabel(scheduleInfo.scheduledAt)}</strong></span>
+                <button type="button" onclick="openScheduleModal()" class="schedule-context-action" title="Cambiar hora">Cambiar</button>
+                <button type="button" onclick="cancelScheduleMode()" class="schedule-context-action schedule-context-cancel" title="Desactivar programación">Cancelar</button>
+           </div>`
+        : '';
 
     const isBotActiveForContact = contact.botActive === true;
     const isPostVentaContact = contact.aiStage === 'postventa';
@@ -2029,6 +2068,7 @@ const ChatWindowTemplate = (contact) => {
             </div>
             ${sessionExpiredNotification}
             ${replyContextBarHTML}
+            ${scheduleBarHTML}
             <div id="quick-reply-picker" class="picker-container hidden"></div>
             <div id="template-picker" class="picker-container hidden"></div>
             <div id="upload-progress" class="text-center text-sm text-yellow-600 mb-2 hidden"></div>
