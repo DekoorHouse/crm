@@ -2877,20 +2877,26 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
     border-radius: 12px;
     padding-bottom: 4px;
 }
-.flatpickr-day.selected,
-.flatpickr-day.selected:hover,
-.flatpickr-day.startRange,
-.flatpickr-day.endRange { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
-.flatpickr-day.today { border-color: var(--color-primary); }
-.flatpickr-day.today:hover { background: var(--color-primary); color: #fff; }
-.flatpickr-day:hover,
-.flatpickr-day:focus { background: #eef6ee; }
-.flatpickr-months .flatpickr-prev-month:hover svg,
-.flatpickr-months .flatpickr-next-month:hover svg { fill: var(--color-primary); }
-.flatpickr-time input:hover,
-.flatpickr-time input:focus { background: #eef6ee; }
-.flatpickr-time .flatpickr-time-separator { font-weight: 600; }
-.flatpickr-time .flatpickr-am-pm { display: none; }
+/* Números de los días: flatpickr los atenúa demasiado por defecto (10% opacidad),
+   se veían casi blancos. Subimos el contraste manteniendo la jerarquía visual. */
+.schedule-cal .flatpickr-day { color: var(--color-text, #1c1c1a); }
+.schedule-cal .flatpickr-day.prevMonthDay,
+.schedule-cal .flatpickr-day.nextMonthDay { color: var(--color-text-light, #5f5e5a); }
+.schedule-cal .flatpickr-day.flatpickr-disabled,
+.schedule-cal .flatpickr-day.flatpickr-disabled:hover { color: rgba(0, 0, 0, 0.28); cursor: default; }
+.schedule-cal .flatpickr-day:hover,
+.schedule-cal .flatpickr-day:focus { background: #eef6ee; }
+.schedule-cal .flatpickr-day.today { border-color: var(--color-primary); }
+.schedule-cal .flatpickr-day.today:hover { background: var(--color-primary); color: #fff; }
+.schedule-cal .flatpickr-day.selected,
+.schedule-cal .flatpickr-day.selected:hover { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.schedule-cal .flatpickr-months .flatpickr-prev-month:hover svg,
+.schedule-cal .flatpickr-months .flatpickr-next-month:hover svg { fill: var(--color-primary); }
+.schedule-cal .flatpickr-time input { color: var(--color-text, #1c1c1a); font-weight: 600; }
+.schedule-cal .flatpickr-time input:hover,
+.schedule-cal .flatpickr-time input:focus { background: #eef6ee; }
+.schedule-cal .flatpickr-time .flatpickr-time-separator { font-weight: 600; }
+.schedule-cal .flatpickr-time .flatpickr-am-pm { display: none; }
 
 /* =====================================================================
    MOBILE RESPONSIVE FIXES (auditoría 2026-05)
