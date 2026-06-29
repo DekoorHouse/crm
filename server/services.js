@@ -33,6 +33,30 @@ const SKYDROPX_BASE_URL = 'https://pro.skydropx.com';
 const META_GRAPH_TOKEN = process.env.META_GRAPH_TOKEN;
 
 // =================================================================
+// === ETAPA 2: POST-VENTA (cobro / pedido listo / entrega) ========
+// =================================================================
+// Prompt GLOBAL por defecto para la "etapa 2" de la IA. Se usa cuando el
+// contacto ya cerró su venta (aiStage === 'postventa') y no hay un prompt
+// personalizado en crm_settings/postventa.instructions. Editable desde
+// Ajustes → Entrenamiento de IA.
+const DEFAULT_POSTVENTA_INSTRUCTIONS = `Eres el asistente de POST-VENTA de DekoorHouse. El cliente YA cerró su pedido; tu trabajo es acompañarlo después de la compra: confirmar datos, gestionar el pago (cobro), avisar cuando su pedido esté listo y coordinar la entrega o envío.
+
+TONO: cálido, cercano y breve, en español de México. Usa emojis con mesura. Si necesitas mandar varios mensajes cortos, sepáralos con [SPLIT].
+
+QUÉ SÍ HACES:
+- Confirmar con amabilidad que su pedido quedó registrado y resolver dudas sobre tiempos, pago y entrega.
+- Cobro: cuando el cliente pregunte cómo pagar o pida los datos, comparte el método de pago y pídele que envíe su comprobante. Cuando mande comprobante, agradécele y dile que validamos el pago y le confirmamos.
+- Pedido listo / envío: si el cliente pregunta por el estatus, dale una respuesta tranquilizadora; si ya te consta que está listo o en camino, avísale y comparte la guía/seguimiento si la tienes.
+- Entrega: coordina dirección, horario o punto de recolección según lo que aplique.
+
+QUÉ NO HACES:
+- No inventes datos de pago, montos, fechas exactas, números de guía ni estatus que no tengas confirmados. Si no estás seguro, dile que lo confirmas con el equipo en breve.
+- No proceses devoluciones, cancelaciones ni reembolsos por tu cuenta: para esos casos di que un agente lo atenderá enseguida.
+- No vuelvas a "vender" el producto ni inicies un pedido nuevo; ya estamos en post-venta.
+
+Si la situación se sale de lo anterior o el cliente está molesto, responde con empatía e indica que un agente humano lo atenderá pronto.`;
+
+// =================================================================
 // === LÓGICA DE MAYOREO ===========================================
 // =================================================================
 
@@ -1128,7 +1152,11 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
     });
     try {
         const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
-        const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive === true;
+        const generalSettings = generalSettingsDoc.exists ? generalSettingsDoc.data() : {};
+        const globalBotActive = generalSettings.globalBotActive === true;
+        // Kill-switch de la etapa 2 (post-venta). Activa por defecto; se apaga poniendo
+        // crm_settings/general.postSaleStageActive = false desde Ajustes.
+        const postSaleStageActive = generalSettings.postSaleStageActive !== false;
 
         const isIndividuallyActive = contactData.botActive === true;
         const shouldRun = isIndividuallyActive;
@@ -1140,50 +1168,62 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         }
 
         // --- Obtener instrucciones del bot ---
-        // Prioridad: prompt por anuncio → prompt por departamento → prompt general
         let botInstructions = 'Eres un asistente virtual amigable y servicial.';
-        let promptResolved = false;
         let departmentReferenceImages = []; // Imágenes estáticas del departamento como contexto
 
-        // 1) Prompt por Ad ID
-        const adId = contactData.adReferral?.source_id;
-        if (adId) {
-            const adPromptSnapshot = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
-            if (!adPromptSnapshot.empty) {
-                botInstructions = adPromptSnapshot.docs[0].data().prompt;
-                console.log(`[AI] Usando prompt específico para Ad ID: ${adId}`);
-                promptResolved = true;
-            } else {
-                console.log(`[AI] No se encontró prompt para Ad ID: ${adId}. Intentando por departamento.`);
-            }
-        }
+        // ¿El contacto ya cerró su venta y está en etapa 2 (post-venta)?
+        const isPostVenta = postSaleStageActive && contactData.aiStage === 'postventa';
 
-        // 2) Prompt por departamento (producto) + imágenes de referencia
-        if (!promptResolved) {
-            const departmentId = contactData.assignedDepartmentId;
-            if (departmentId) {
-                const deptPromptDoc = await db.collection('ai_department_prompts').doc(departmentId).get();
-                if (deptPromptDoc.exists) {
-                    const deptData = deptPromptDoc.data();
-                    if (deptData.prompt) {
-                        botInstructions = deptData.prompt;
-                        console.log(`[AI] Usando prompt específico para Departamento: ${departmentId}`);
-                        promptResolved = true;
-                    }
-                    if (Array.isArray(deptData.images) && deptData.images.length > 0) {
-                        departmentReferenceImages = deptData.images;
-                        console.log(`[AI] Departamento ${departmentId} tiene ${deptData.images.length} imágenes de referencia.`);
-                    }
+        if (isPostVenta) {
+            // === ETAPA 2: prompt GLOBAL de post-venta (cobro / pedido listo / entrega) ===
+            const postSettingsDoc = await db.collection('crm_settings').doc('postventa').get();
+            const customPost = postSettingsDoc.exists ? (postSettingsDoc.data().instructions || '').trim() : '';
+            botInstructions = customPost || DEFAULT_POSTVENTA_INSTRUCTIONS;
+            console.log(`[AI] Contacto ${contactId} en ETAPA 2 (post-venta). Usando prompt global de post-venta${customPost ? ' personalizado' : ' por defecto'}.`);
+        } else {
+            // === ETAPA 1: prompt por anuncio → por departamento → general ===
+            let promptResolved = false;
+
+            // 1) Prompt por Ad ID
+            const adId = contactData.adReferral?.source_id;
+            if (adId) {
+                const adPromptSnapshot = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
+                if (!adPromptSnapshot.empty) {
+                    botInstructions = adPromptSnapshot.docs[0].data().prompt;
+                    console.log(`[AI] Usando prompt específico para Ad ID: ${adId}`);
+                    promptResolved = true;
                 } else {
-                    console.log(`[AI] No se encontró prompt para Departamento: ${departmentId}. Usando instrucciones generales.`);
+                    console.log(`[AI] No se encontró prompt para Ad ID: ${adId}. Intentando por departamento.`);
                 }
             }
-        }
 
-        // 3) Fallback: prompt general
-        if (!promptResolved) {
-            const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
-            if (botSettingsDoc.exists) botInstructions = botSettingsDoc.data().instructions;
+            // 2) Prompt por departamento (producto) + imágenes de referencia
+            if (!promptResolved) {
+                const departmentId = contactData.assignedDepartmentId;
+                if (departmentId) {
+                    const deptPromptDoc = await db.collection('ai_department_prompts').doc(departmentId).get();
+                    if (deptPromptDoc.exists) {
+                        const deptData = deptPromptDoc.data();
+                        if (deptData.prompt) {
+                            botInstructions = deptData.prompt;
+                            console.log(`[AI] Usando prompt específico para Departamento: ${departmentId}`);
+                            promptResolved = true;
+                        }
+                        if (Array.isArray(deptData.images) && deptData.images.length > 0) {
+                            departmentReferenceImages = deptData.images;
+                            console.log(`[AI] Departamento ${departmentId} tiene ${deptData.images.length} imágenes de referencia.`);
+                        }
+                    } else {
+                        console.log(`[AI] No se encontró prompt para Departamento: ${departmentId}. Usando instrucciones generales.`);
+                    }
+                }
+            }
+
+            // 3) Fallback: prompt general
+            if (!promptResolved) {
+                const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
+                if (botSettingsDoc.exists) botInstructions = botSettingsDoc.data().instructions;
+            }
         }
 
         // --- Contenido dinámico (cambia en cada petición) ---
@@ -1355,8 +1395,14 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         let aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);
         let lastText = "";
 
-        // Detectar si el bot debe desactivarse (/final o frase de pedido) de forma insensible a mayúsculas
-        const shouldDeactivate = /\/final/i.test(aiResponse) || /ya registramos tu pedido/i.test(aiResponse);
+        // Detectar cierre de venta (/final o frase de pedido) de forma insensible a mayúsculas.
+        // En ETAPA 1 esto NO apaga el bot: lo hace pasar a ETAPA 2 (post-venta) para que la
+        // IA siga atendiendo (cobro, pedido listo, entrega). En etapa 2 ya no aplica.
+        const saleClosed = /\/final/i.test(aiResponse) || /ya registramos tu pedido/i.test(aiResponse);
+        const shouldTransitionToPostVenta = postSaleStageActive && !isPostVenta && saleClosed;
+        // Compat: si la etapa 2 está apagada (kill-switch), /final conserva el comportamiento
+        // anterior de desactivar el bot y mandar a Pendientes IA.
+        const shouldDeactivate = !postSaleStageActive && saleClosed;
 
         // Limpiar el comando /final de los mensajes individuales antes de enviar
         aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').trim()).filter(m => m.length > 0);
@@ -1413,8 +1459,15 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             aiStatus: admin.firestore.FieldValue.delete()
         };
 
-        // Si se detectó /final o la frase de registro de pedido, desactivar bot y mover a Pendientes IA
-        if (shouldDeactivate) {
+        if (shouldTransitionToPostVenta) {
+            // Cierre de venta con etapa 2 activa: la IA NO se apaga, pasa a post-venta y
+            // sigue atendiendo. Se mantiene el envío a Pendientes IA para que un humano
+            // registre/procese el pedido mientras la IA gestiona cobro y entrega.
+            updateData.aiStage = 'postventa';
+            updateData.status = 'pendientes_ia';
+            console.log(`[AI] Venta cerrada para ${contactId}. Pasando a ETAPA 2 (post-venta); la IA sigue activa. Moviendo a Pendientes IA.`);
+        } else if (shouldDeactivate) {
+            // Etapa 2 apagada (kill-switch): comportamiento anterior, se desactiva el bot.
             updateData.botActive = false;
             updateData.status = 'pendientes_ia';
             console.log(`[AI] Desactivación automática activada para ${contactId} por comando o frase clave. Moviendo a Pendientes IA.`);
@@ -1426,8 +1479,9 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         // Híbrido: si el pedido NO se acaba de registrar, etiquetar "en vivo" el estado
         // del pedido (pendiente de foto, etc.) reutilizando el historial ya armado. El
         // scheduler de order_followup leerá esta etiqueta y se ahorrará una clasificación.
-        // Fire-and-forget: nunca debe afectar la respuesta principal.
-        if (!shouldDeactivate) {
+        // Fire-and-forget: nunca debe afectar la respuesta principal. En post-venta el
+        // pedido ya está tomado, así que no se etiqueta.
+        if (!shouldTransitionToPostVenta && !shouldDeactivate && !isPostVenta) {
             tagOrderInProgress(contactId, contactRef, conversationHistory, contactData.name)
                 .catch(e => console.warn('[ORDER_FOLLOWUP] live-tag falló:', e.message));
         }
@@ -1586,6 +1640,7 @@ module.exports = {
     getOrCreateCache,
     triggerAutoReplyAI,
     skipAiTimer,
+    processAutoReplyAI,
     cancelAiResponse,
     getShippingQuote,
     sendConversionEvent,

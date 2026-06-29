@@ -780,7 +780,9 @@ router.post('/', async (req, res) => {
                     // departamento no usa IA, la IA se desactiva sola, y viceversa.
                     if (ruleData.enableAi) {
                         console.log(`[ROUTING-AI] Anuncio ${adId} con IA: activando bot para ${from}`);
-                        await contactRef.update({ botActive: true });
+                        // Un anuncio nuevo es una venta nueva: reiniciar a etapa 1 (venta) por si
+                        // el contacto venía de una compra anterior en etapa 2 (post-venta).
+                        await contactRef.update({ botActive: true, aiStage: 'venta' });
                         isAiRuleEnabled = true;
                     } else {
                         console.log(`[ROUTING-AI] Anuncio ${adId} sin IA: desactivando bot para ${from}`);

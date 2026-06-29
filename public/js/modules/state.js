@@ -100,7 +100,9 @@ let state = {
 
     // --- NUEVO: Estado para Entrenamiento de IA ---
     aiKnowledgeBase: [], // Documentos de la base de conocimiento
-    aiBotInstructions: '', // Instrucciones generales del bot
+    aiBotInstructions: '', // Instrucciones generales del bot (etapa 1: venta)
+    aiPostventaInstructions: '', // Instrucciones globales de post-venta (etapa 2)
+    postSaleStageActive: true, // Kill-switch de la etapa 2 (post-venta tras /final)
     aiDepartmentPrompts: {}, // Instrucciones del bot por departamento (map: deptId -> prompt)
 
     // --- NUEVO: Cola de Mensajes ---

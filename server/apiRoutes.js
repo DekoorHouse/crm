@@ -4348,7 +4348,16 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         };
 
         if (isFinalCommand) {
-            contactUpdateData.botActive = false;
+            // /final cierra la venta. Con la etapa 2 (post-venta) activa, la IA NO se apaga:
+            // el contacto pasa a post-venta y la IA sigue atendiendo (cobro/entrega). Con el
+            // kill-switch apagado se conserva el comportamiento anterior (desactivar bot).
+            const genDoc = await db.collection('crm_settings').doc('general').get();
+            const postSaleStageActive = !genDoc.exists || genDoc.data().postSaleStageActive !== false;
+            if (postSaleStageActive) {
+                contactUpdateData.aiStage = 'postventa';
+            } else {
+                contactUpdateData.botActive = false;
+            }
             contactUpdateData.status = 'pendientes_ia';
         }
 
@@ -4427,7 +4436,16 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
         };
 
         if (isFinalCommand) {
-            contactUpdateData.botActive = false;
+            // /final cierra la venta. Con la etapa 2 (post-venta) activa, la IA NO se apaga:
+            // el contacto pasa a post-venta y la IA sigue atendiendo (cobro/entrega). Con el
+            // kill-switch apagado se conserva el comportamiento anterior (desactivar bot).
+            const genDoc = await db.collection('crm_settings').doc('general').get();
+            const postSaleStageActive = !genDoc.exists || genDoc.data().postSaleStageActive !== false;
+            if (postSaleStageActive) {
+                contactUpdateData.aiStage = 'postventa';
+            } else {
+                contactUpdateData.botActive = false;
+            }
             contactUpdateData.status = 'pendientes_ia';
         }
 

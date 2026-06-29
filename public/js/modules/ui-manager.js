@@ -1465,10 +1465,32 @@ async function renderAITrainingView() {
         console.error('Error al cargar instrucciones del bot:', error);
     }
 
+    // 1b. Cargar instrucciones de post-venta (etapa 2) + estado del kill-switch
+    try {
+        const [postDoc, generalDoc] = await Promise.all([
+            db.collection('crm_settings').doc('postventa').get(),
+            db.collection('crm_settings').doc('general').get()
+        ]);
+        state.aiPostventaInstructions = (postDoc.exists && postDoc.data().instructions) || '';
+        state.postSaleStageActive = !generalDoc.exists || generalDoc.data().postSaleStageActive !== false;
+        const postTextarea = document.getElementById('ai-postventa-instructions');
+        if (postTextarea) postTextarea.value = state.aiPostventaInstructions;
+        const postToggle = document.getElementById('postventa-enabled-toggle');
+        if (postToggle) postToggle.checked = state.postSaleStageActive;
+    } catch (error) {
+        console.error('Error al cargar instrucciones de post-venta:', error);
+    }
+
     // 2. Listener de botón guardar instrucciones
     const saveBtn = document.getElementById('save-bot-instructions-btn');
     if (saveBtn) {
         saveBtn.addEventListener('click', handleSaveBotInstructions);
+    }
+
+    // 2b. Listener de botón guardar post-venta
+    const savePostBtn = document.getElementById('save-postventa-instructions-btn');
+    if (savePostBtn) {
+        savePostBtn.addEventListener('click', handleSavePostventaInstructions);
     }
 
     // 3. Listener de formulario de conocimiento
@@ -1787,6 +1809,39 @@ async function handleSaveBotInstructions() {
         console.error('Error al guardar instrucciones:', error);
         showError('No se pudieron guardar las instrucciones.');
         btn.innerHTML = '<i class="fas fa-save mr-2"></i>Guardar Instrucciones';
+        btn.disabled = false;
+    }
+}
+
+async function handleSavePostventaInstructions() {
+    const textarea = document.getElementById('ai-postventa-instructions');
+    const toggle = document.getElementById('postventa-enabled-toggle');
+    const btn = document.getElementById('save-postventa-instructions-btn');
+    if (!textarea || !btn) return;
+
+    const instructions = textarea.value.trim();
+    const enabled = toggle ? toggle.checked : true;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Guardando...';
+
+    try {
+        // El prompt vive en crm_settings/postventa; el kill-switch en crm_settings/general
+        // (mismo doc que lee el backend junto a globalBotActive, sin lectura extra por turno).
+        await Promise.all([
+            db.collection('crm_settings').doc('postventa').set({ instructions }, { merge: true }),
+            db.collection('crm_settings').doc('general').set({ postSaleStageActive: enabled }, { merge: true })
+        ]);
+        state.aiPostventaInstructions = instructions;
+        state.postSaleStageActive = enabled;
+        btn.innerHTML = '<i class="fas fa-check mr-2"></i>¡Guardado!';
+        setTimeout(() => {
+            btn.innerHTML = '<i class="fas fa-save mr-2"></i>Guardar Post-Venta';
+            btn.disabled = false;
+        }, 2000);
+    } catch (error) {
+        console.error('Error al guardar post-venta:', error);
+        showError('No se pudieron guardar las instrucciones de post-venta.');
+        btn.innerHTML = '<i class="fas fa-save mr-2"></i>Guardar Post-Venta';
         btn.disabled = false;
     }
 }

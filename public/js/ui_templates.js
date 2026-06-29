@@ -976,6 +976,23 @@ const AITrainingViewTemplate = () => `
                 </div>
             </div>
 
+            <!-- Sección: Instrucciones de Post-Venta (Etapa 2) -->
+            <div class="settings-card">
+                <h2 class="text-xl font-bold mb-2">📦 Instrucciones de Post-Venta (Etapa 2)</h2>
+                <p class="text-sm text-gray-500 mb-3">Cuando se cierra la venta (comando <strong>/final</strong>), la IA <strong>no se apaga</strong>: pasa a esta etapa para acompañar al cliente con el cobro, avisarle cuando su pedido esté listo y coordinar la entrega. Es un prompt global (aplica a todos los productos). Sigue activa hasta que apagues la IA del contacto a mano.</p>
+                <label class="flex items-center gap-2 mb-3 text-sm font-medium text-gray-700 cursor-pointer">
+                    <input type="checkbox" id="postventa-enabled-toggle" class="h-4 w-4" ${state.postSaleStageActive !== false ? 'checked' : ''}>
+                    Activar etapa 2 (post-venta) automáticamente tras /final
+                </label>
+                <textarea id="ai-postventa-instructions" rows="8" class="w-full p-3 border border-gray-300 rounded-lg text-sm" placeholder="Ej: Eres el asistente de post-venta. El cliente ya cerró su pedido; ayúdale con el pago, avísale cuando esté listo y coordina la entrega...">${state.aiPostventaInstructions || ''}</textarea>
+                <p class="text-xs text-gray-400 mt-2">Si lo dejas vacío, se usa un texto por defecto de post-venta para que la IA nunca deje de responder.</p>
+                <div class="flex justify-end mt-3">
+                    <button id="save-postventa-instructions-btn" class="btn btn-primary">
+                        <i class="fas fa-save mr-2"></i>Guardar Post-Venta
+                    </button>
+                </div>
+            </div>
+
             <!-- Sección: Instrucciones por Departamento / Producto -->
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-2">🏢 Instrucciones del Bot por Departamento</h2>
@@ -1933,14 +1950,24 @@ const ChatWindowTemplate = (contact) => {
     const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
 
     const isBotActiveForContact = contact.botActive === true;
+    const isPostVentaContact = contact.aiStage === 'postventa';
+    // En etapa 2 (post-venta) el robot se muestra ámbar para distinguirlo de la venta (verde).
+    const botColorClass = isBotActiveForContact ? (isPostVentaContact ? 'text-amber-500' : 'text-green-500') : 'text-gray-400';
+    const botTitle = isBotActiveForContact
+        ? (isPostVentaContact ? 'IA en post-venta (etapa 2) — clic para desactivar' : 'Desactivar IA para este chat')
+        : 'Activar IA para este chat';
     const botToggleHTML = `
         <button
             onclick="handleBotToggle('${contact.id}', ${!isBotActiveForContact})"
-            class="p-2 rounded-full hover:bg-gray-200 transition-colors ${isBotActiveForContact ? 'text-green-500' : 'text-gray-400'}"
-            title="${isBotActiveForContact ? 'Desactivar IA para este chat' : 'Activar IA para este chat'}">
+            class="p-2 rounded-full hover:bg-gray-200 transition-colors ${botColorClass}"
+            title="${botTitle}">
             <i class="fas fa-robot text-xl"></i>
         </button>
     `;
+    // Badge de etapa 2 junto al nombre (solo si el bot sigue activo en post-venta)
+    const postVentaBadge = (isBotActiveForContact && isPostVentaContact)
+        ? `<span class="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap" style="background:#fff7ed;color:#b45309;border:1px solid #fed7aa;" title="La IA está atendiendo la post-venta (cobro/entrega)"><i class="fas fa-box"></i>Post-venta</span>`
+        : '';
 
     // --- Botón de Revisión de Diseño ---
     const isInDesign = contact.inDesignReview === true;
@@ -1978,6 +2005,7 @@ const ChatWindowTemplate = (contact) => {
             <div class="flex-grow flex items-center min-w-0" style="gap: 6px;">
                 <h2 class="text-base font-semibold cursor-pointer truncate" style="color: var(--color-text);" onclick="openContactDetails()">${contact.name}</h2>
                 ${HeaderTagControlTemplate(contact)}
+                ${postVentaBadge}
                 <span id="order-pending-host" class="flex-shrink-0">${OrderPendingBadge(contact)}</span>
             </div>
             <div class="flex items-center pr-2 chat-header-actions">
