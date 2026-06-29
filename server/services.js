@@ -1290,7 +1290,17 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             ? `\n\n**Imágenes de referencia del producto/departamento:**\nLas primeras ${departmentReferenceImages.length} ${departmentReferenceImages.length === 1 ? 'imagen adjunta es una referencia visual' : 'imágenes adjuntas son referencias visuales'} del producto o catálogo del departamento. Úsalas para describir, comparar o responder preguntas del cliente. Las imágenes posteriores (si las hay) son las que el cliente envió en la conversación.`
             : '';
 
-        const dynamicPrompt = `${shippingInfo}${deptImagesNote}${skippedMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, audios o videos, analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+        // Fecha/hora actual de México para que la IA calcule bien los tiempos de entrega.
+        // Sin esto el modelo no sabe qué día es "hoy" (su conocimiento es de ene-2025) y su
+        // regla de fechas límite no funciona.
+        const nowMx = new Date().toLocaleString('es-MX', {
+            timeZone: 'America/Mexico_City',
+            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: true
+        });
+        const fechaActualNote = `\n\n**Fecha y hora actual en México:** ${nowMx}. Usa SIEMPRE esta fecha como "hoy" para calcular tiempos de entrega cuando el cliente mencione una fecha límite; nunca la inventes.`;
+
+        const dynamicPrompt = `${fechaActualNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, audios o videos, analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
 
         // --- Intentar usar Context Caching ---
         let aiResult;
@@ -1315,7 +1325,7 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             // aunque el caché o la multimedia estén fallando; avisamos a la IA que hubo archivos sin analizar.
             console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché (solo texto).`);
             const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions);
-            const fullPrompt = `${fallbackRef}${shippingInfo}${deptImagesNote}${fallbackMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            const fullPrompt = `${fallbackRef}${fechaActualNote}${shippingInfo}${deptImagesNote}${fallbackMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
             aiResult = await generateGeminiResponse(fullPrompt, [], fallbackSystem);
         }
 
