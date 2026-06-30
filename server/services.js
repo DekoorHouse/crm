@@ -1117,6 +1117,7 @@ const GEMINI_IMAGE_QUALITY = 80;                         // calidad JPEG de sali
 const GEMINI_MAX_IMAGE_FALLBACK_BYTES = 4 * 1024 * 1024; // tope si sharp no está disponible
 const GEMINI_MAX_AUDIO_BYTES = 8 * 1024 * 1024;          // 8 MB por audio
 const GEMINI_MAX_VIDEO_BYTES = 8 * 1024 * 1024;          // 8 MB por video
+const GEMINI_MAX_PDF_BYTES = 8 * 1024 * 1024;            // 8 MB por PDF (comprobantes son chicos)
 const GEMINI_MAX_TOTAL_MEDIA_BYTES = 12 * 1024 * 1024;   // 12 MB en total por request
 
 /**
@@ -1148,6 +1149,19 @@ async function buildSafeGeminiMediaPart(buffer, mimeType, type) {
         if (type === 'video') {
             if (buffer.length > GEMINI_MAX_VIDEO_BYTES) return { skipped: 'video demasiado grande' };
             return { part: { inlineData: { data: buffer.toString('base64'), mimeType: cleanMime || 'video/mp4' } }, bytes: buffer.length };
+        }
+        if (type === 'document') {
+            // Gemini 3 lee PDFs nativamente (clave para comprobantes de pago en PDF).
+            if (cleanMime === 'application/pdf') {
+                if (buffer.length > GEMINI_MAX_PDF_BYTES) return { skipped: 'PDF demasiado grande' };
+                return { part: { inlineData: { data: buffer.toString('base64'), mimeType: 'application/pdf' } }, bytes: buffer.length };
+            }
+            // A veces mandan una imagen (jpg/png) como "documento": tratarla como imagen.
+            if (cleanMime.startsWith('image/')) {
+                return await buildSafeGeminiMediaPart(buffer, cleanMime, 'image');
+            }
+            // Word/Excel/etc. no se soportan inline en Gemini.
+            return { skipped: 'documento no soportado (solo PDF o imagen)' };
         }
         return { skipped: 'tipo no soportado' };
     } catch (e) {
@@ -1254,9 +1268,10 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             const d = doc.data();
             const fromLabel = d.from === contactId ? 'Cliente' : 'Asistente';
             
-            // Recolectar hasta los últimos 2 archivos multimedia (imágenes, audios o videos)
-            if ((d.type === 'image' || d.type === 'audio' || d.type === 'video') && d.fileUrl && mediaCount < 2) {
-                let mimeType = d.fileType || (d.type === 'image' ? 'image/jpeg' : (d.type === 'audio' ? 'audio/mpeg' : 'video/mp4'));
+            // Recolectar hasta los últimos 2 archivos multimedia (imágenes, audios, videos o
+            // documentos/PDF — p. ej. comprobantes de pago que algunos bancos mandan en PDF)
+            if ((d.type === 'image' || d.type === 'audio' || d.type === 'video' || d.type === 'document') && d.fileUrl && mediaCount < 2) {
+                let mimeType = d.fileType || (d.type === 'image' ? 'image/jpeg' : (d.type === 'audio' ? 'audio/mpeg' : (d.type === 'video' ? 'video/mp4' : 'application/pdf')));
                 downloadedMedia.push({ url: d.fileUrl, mimeType: mimeType, type: d.type });
                 mediaCount++;
             }
@@ -1325,7 +1340,7 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
                 skippedMediaTypes.push(media.type);
             }
         }
-        const esTipoMedia = (t) => t === 'image' ? 'imagen' : t === 'audio' ? 'audio' : t === 'video' ? 'video' : 'archivo';
+        const esTipoMedia = (t) => t === 'image' ? 'imagen' : t === 'audio' ? 'audio' : t === 'video' ? 'video' : t === 'document' ? 'documento/PDF' : 'archivo';
         const skippedMediaNote = skippedMediaTypes.length > 0
             ? `\n\n**Nota:** El cliente envió ${skippedMediaTypes.length} archivo(s) (${skippedMediaTypes.map(esTipoMedia).join(', ')}) que no se pudieron procesar (probablemente muy grandes). Pídele amablemente que te describa por texto su contenido o que lo reenvíe más corto.`
             : '';
@@ -1359,7 +1374,7 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         });
         const fechaActualNote = `\n\n**Fecha y hora actual en México:** ${nowMx}. Usa SIEMPRE esta fecha como "hoy" para calcular tiempos de entrega cuando el cliente mencione una fecha límite; nunca la inventes.`;
 
-        const dynamicPrompt = `${fechaActualNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, audios o videos, analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+        const dynamicPrompt = `${fechaActualNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, audios, videos o documentos/PDF (como comprobantes de pago), analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
 
         // --- Intentar usar Context Caching ---
         let aiResult;
