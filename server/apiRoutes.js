@@ -3811,15 +3811,40 @@ router.get('/contacts', async (req, res) => {
             query = query.where('channel', '==', req.query.channel);
         }
 
+        // --- Filtro por anuncio(s) de origen ---
+        // Coincide si el contacto tuvo ese anuncio como fuente EN CUALQUIER momento de su historial,
+        // aunque también haya venido de otros anuncios. Usa el campo plano 'adSourceIds'
+        // (poblado desde adReferralHistory) porque Firestore no indexa arreglos de objetos.
+        // Acepta uno (adSourceId, retrocompat) o varios (adSourceIds, separados por coma).
+        let adSourceIdsFilter = [];
+        if (req.query.adSourceIds) {
+            adSourceIdsFilter = String(req.query.adSourceIds).split(',').map(s => s.trim()).filter(Boolean);
+        } else if (req.query.adSourceId) {
+            adSourceIdsFilter = [String(req.query.adSourceId).trim()].filter(Boolean);
+        }
+        // 'array-contains-any' admite hasta 30 valores; recortamos por seguridad y quitamos duplicados.
+        adSourceIdsFilter = [...new Set(adSourceIdsFilter)].slice(0, 30);
+        const multiAds = adSourceIdsFilter.length > 1;
+
         // --- INICIO: Filtro por Departamento ---
-        // Si se proporciona departmentId, filtrar por 'assignedDepartmentId'
+        // Si se proporciona departmentId, filtrar por 'assignedDepartmentId'.
+        // Firestore NO permite combinar 'in' con 'array-contains-any' en la misma consulta; por eso,
+        // cuando hay varios anuncios + varios departamentos, el de departamentos se aplica en memoria
+        // tras la consulta (sin perder la restricción de visibilidad del agente).
+        let deptIdsInMemory = null;
         if (departmentId && departmentId !== 'all') {
             // Soporte para múltiples IDs separados por coma (para usuarios con múltiples departamentos)
             if (departmentId.includes(',')) {
-                const ids = departmentId.split(',').map(id => id.trim()).filter(id => id);
-                if (ids.length > 0) {
-                    // Nota: Firestore limita el operador 'in' a 10 valores.
-                    query = query.where('assignedDepartmentId', 'in', ids.slice(0, 10));
+                // Nota: Firestore limita el operador 'in' a 10 valores.
+                const ids = departmentId.split(',').map(id => id.trim()).filter(id => id).slice(0, 10);
+                if (ids.length === 1) {
+                    query = query.where('assignedDepartmentId', '==', ids[0]);
+                } else if (ids.length > 1) {
+                    if (multiAds) {
+                        deptIdsInMemory = ids; // se filtra en memoria para no chocar con array-contains-any
+                    } else {
+                        query = query.where('assignedDepartmentId', 'in', ids);
+                    }
                 }
             } else {
                 query = query.where('assignedDepartmentId', '==', departmentId);
@@ -3827,12 +3852,11 @@ router.get('/contacts', async (req, res) => {
         }
         // --- FIN: Filtro por Departamento ---
 
-        // --- Filtro por ID de anuncio (origen) ---
-        // Coincide si el contacto tuvo ese anuncio como fuente EN CUALQUIER momento de su historial,
-        // aunque también haya venido de otros anuncios. Usa el campo plano 'adSourceIds'
-        // (poblado desde adReferralHistory) porque Firestore no indexa arreglos de objetos.
-        if (req.query.adSourceId) {
-            query = query.where('adSourceIds', 'array-contains', String(req.query.adSourceId).trim());
+        // Aplicar el filtro de anuncio(s): uno → array-contains; varios → array-contains-any.
+        if (adSourceIdsFilter.length === 1) {
+            query = query.where('adSourceIds', 'array-contains', adSourceIdsFilter[0]);
+        } else if (adSourceIdsFilter.length > 1) {
+            query = query.where('adSourceIds', 'array-contains-any', adSourceIdsFilter);
         }
 
         // Ordenar por último mensaje y limitar resultados
@@ -3855,7 +3879,13 @@ router.get('/contacts', async (req, res) => {
 
         // Ejecutar la consulta
         const snapshot = await query.get();
-        const contacts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        let contacts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Restricción de departamentos aplicada en memoria (ver nota del filtro de departamento arriba).
+        if (deptIdsInMemory) {
+            const allow = new Set(deptIdsInMemory);
+            contacts = contacts.filter(c => allow.has(c.assignedDepartmentId));
+        }
 
         // Obtener el ID del último documento para la siguiente página
         const lastVisibleId = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1].id : null;
@@ -7197,6 +7227,78 @@ router.delete('/ad-routing-rules/:id', async (req, res) => {
     } catch (error) {
         console.error('Error al eliminar regla de enrutamiento:', error);
         res.status(500).json({ success: false, message: 'Error del servidor al eliminar regla.' });
+    }
+});
+
+// --- GET /api/ads: lista de anuncios para el selector del filtro de conversaciones ---
+// Combina los anuncios CONFIGURADOS (ad_routing_rules / ad_responses, con nombre curado por el usuario)
+// con los DETECTADOS en los chats (adReferralHistory de los contactos). Devuelve por cada anuncio:
+//   { id (source_id), name, count (chats donde apareció), configured }.
+// Cachea el resultado en memoria unos minutos porque escanea la colección de contactos.
+let __adsListCache = { data: null, ts: 0 };
+const ADS_LIST_CACHE_MS = 5 * 60 * 1000;
+
+router.get('/ads', async (req, res) => {
+    try {
+        const force = req.query.refresh === 'true';
+        const now = Date.now();
+        if (!force && __adsListCache.data && (now - __adsListCache.ts) < ADS_LIST_CACHE_MS) {
+            return res.status(200).json({ success: true, ads: __adsListCache.data, cached: true });
+        }
+
+        // Mapa source_id -> { id, name, count, configured }
+        const adsMap = new Map();
+        const upsert = (rawId, { name, configured, addCount } = {}) => {
+            if (rawId === undefined || rawId === null || rawId === '') return;
+            const id = String(rawId);
+            const cur = adsMap.get(id) || { id, name: '', count: 0, configured: false };
+            // Preferimos un nombre curado (configurado) sobre el del referral.
+            if (name && (!cur.name || (configured && !cur.configured))) cur.name = String(name);
+            if (configured) cur.configured = true;
+            if (addCount) cur.count += addCount;
+            adsMap.set(id, cur);
+        };
+
+        // 1) Anuncios configurados (nombre curado por el usuario)
+        const [rulesSnap, respSnap] = await Promise.all([
+            db.collection('ad_routing_rules').get(),
+            db.collection('ad_responses').get()
+        ]);
+        rulesSnap.forEach(doc => {
+            const d = doc.data() || {};
+            (Array.isArray(d.adIds) ? d.adIds : []).forEach(id => upsert(id, { name: d.ruleName, configured: true }));
+        });
+        respSnap.forEach(doc => {
+            const d = doc.data() || {};
+            (Array.isArray(d.adIds) ? d.adIds : []).forEach(id => upsert(id, { name: d.adName, configured: true }));
+        });
+
+        // 2) Anuncios detectados en las conversaciones (solo traemos los campos de anuncio)
+        const contactsSnap = await db.collection('contacts_whatsapp')
+            .select('adReferralHistory', 'adReferral')
+            .get();
+        contactsSnap.forEach(doc => {
+            const d = doc.data() || {};
+            const hist = (Array.isArray(d.adReferralHistory) && d.adReferralHistory.length)
+                ? d.adReferralHistory
+                : (d.adReferral ? [d.adReferral] : []);
+            hist.forEach(ref => {
+                if (!ref || !ref.source_id) return;
+                const name = ref.ad_name || ref.headline || ref.body || '';
+                upsert(ref.source_id, { name, addCount: 1 });
+            });
+        });
+
+        const ads = Array.from(adsMap.values())
+            .map(a => ({ id: a.id, name: a.name || `Anuncio ${a.id}`, count: a.count, configured: a.configured }))
+            // Primero los que tienen más conversaciones; a igualdad, por nombre.
+            .sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name, 'es'));
+
+        __adsListCache = { data: ads, ts: now };
+        res.status(200).json({ success: true, ads, cached: false });
+    } catch (error) {
+        console.error('Error al obtener la lista de anuncios:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al obtener la lista de anuncios.' });
     }
 });
 

@@ -184,7 +184,8 @@ function renderTagFilters() {
     const activeDropdownLabel = state.tags.find(t => t.key === state.activeFilter)?.label || null;
 
     // Botón "Todos"
-    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter && !state.designReviewFilter && !state.adIdFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
+    const anyAdFilter = Array.isArray(state.adIdFilters) && state.adIdFilters.length > 0;
+    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter && !state.designReviewFilter && !anyAdFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
 
     // Estado de pedido (texto explícito — reemplaza las coronas)
     const greyActive = state.purchaseFilter === 'registered' || state.purchaseFilter === 'both';
@@ -202,10 +203,25 @@ function renderTagFilters() {
     // "No leídos"
     buttonsHtml += `<button id="filter-unread" class="filter-btn ${state.unreadOnly ? 'active' : ''}" onclick="toggleUnreadFilter()">No leídos</button>`;
 
-    // "Anuncio" — filtra por ID de anuncio de origen (que haya sido fuente en cualquier momento)
-    const adFilterActive = !!state.adIdFilter;
-    const adIdSafe = adFilterActive ? String(state.adIdFilter).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) : '';
-    buttonsHtml += `<button id="filter-ad-id" class="filter-btn ${adFilterActive ? 'active' : ''}" onclick="promptAdIdFilter()" title="${adFilterActive ? 'Filtrando por anuncio ' + adIdSafe + ' — clic para cambiar o quitar' : 'Filtrar por ID de anuncio (origen)'}"><i class="fas fa-bullhorn text-[10px] mr-1"></i>${adFilterActive ? adIdSafe : 'Anuncio'}</button>`;
+    // "Anuncio" — selector multi-anuncio (dropdown con buscador + casillas). Filtra por anuncio(s)
+    // de origen: muestra los chats que tuvieron CUALQUIERA de los anuncios marcados como fuente.
+    const adCount = anyAdFilter ? state.adIdFilters.length : 0;
+    const adLabel = adCount > 0 ? `${adCount} anuncio${adCount > 1 ? 's' : ''}` : 'Anuncio';
+    buttonsHtml += `<div class="tag-dropdown-wrapper ad-filter-wrapper">
+        <button id="filter-ad-id" class="filter-btn tag-dropdown-toggle ${anyAdFilter ? 'active' : ''}" onclick="toggleAdDropdown(event)" title="Filtrar por anuncio(s) de origen">
+            <i class="fas fa-bullhorn text-[10px]"></i><span>${adLabel}</span>
+        </button>
+        <div id="ad-dropdown-menu" class="tag-dropdown-menu ad-dropdown-menu hidden">
+            <div class="ad-dropdown-head">
+                <input id="ad-filter-search" type="text" class="ad-filter-search" placeholder="Buscar anuncio…" oninput="filterAdOptions(this.value)" onclick="event.stopPropagation()">
+            </div>
+            <div id="ad-dropdown-list" class="ad-dropdown-list"></div>
+            <div class="ad-dropdown-foot">
+                <button class="ad-foot-btn" onclick="clearAdFilters()">Limpiar</button>
+                <button id="ad-apply-btn" class="ad-foot-btn primary" onclick="applyPendingAdFilters()">Aplicar</button>
+            </div>
+        </div>
+    </div>`;
 
     // Separador Estado | Canal
     buttonsHtml += `<span class="filter-sep" aria-hidden="true"></span>`;
@@ -320,6 +336,106 @@ function closeDeptDropdownOnOutside(e) {
         closeDeptDropdown();
     }
 }
+
+// --- Dropdown de filtro por Anuncio (selector multi con buscador) ---
+// La selección queda "pendiente" mientras el panel está abierto; se confirma con "Aplicar".
+let adFilterPending = new Set();
+
+function toggleAdDropdown(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('ad-dropdown-menu');
+    if (!menu) return;
+    closeTagDropdown();
+    closeDeptDropdown();
+    const willOpen = menu.classList.contains('hidden');
+    if (!willOpen) { closeAdDropdown(); return; }
+    menu.classList.remove('hidden');
+    adFilterPending = new Set((state.adIdFilters || []).map(String));
+    const search = document.getElementById('ad-filter-search');
+    if (search) search.value = '';
+    // Dispara la carga del catálogo PRIMERO (marca loading) y luego pinta, para mostrar "Cargando…".
+    const loadPromise = (typeof fetchAdsList === 'function') ? fetchAdsList() : Promise.resolve();
+    renderAdDropdownList('');
+    updateAdApplyLabel();
+    loadPromise.then(() => {
+        const s = document.getElementById('ad-filter-search');
+        renderAdDropdownList(s ? s.value : '');
+    });
+    setTimeout(() => document.addEventListener('click', closeAdDropdownOnOutside), 0);
+    setTimeout(() => { const s = document.getElementById('ad-filter-search'); if (s) s.focus(); }, 30);
+}
+
+function closeAdDropdown() {
+    const menu = document.getElementById('ad-dropdown-menu');
+    if (menu) menu.classList.add('hidden');
+    document.removeEventListener('click', closeAdDropdownOnOutside);
+}
+
+function closeAdDropdownOnOutside(e) {
+    const menu = document.getElementById('ad-dropdown-menu');
+    const wrapper = menu ? menu.closest('.tag-dropdown-wrapper') : null;
+    if (!wrapper || !wrapper.contains(e.target)) {
+        closeAdDropdown();
+    }
+}
+
+function renderAdDropdownList(filterStr) {
+    const listEl = document.getElementById('ad-dropdown-list');
+    if (!listEl) return;
+    const ads = Array.isArray(state.adsList) ? state.adsList : [];
+    if (!ads.length) {
+        listEl.innerHTML = `<div class="ad-empty">${state.adsListLoading ? 'Cargando anuncios…' : 'No hay anuncios con conversaciones todavía.'}</div>`;
+        return;
+    }
+    const q = (filterStr || '').trim().toLowerCase();
+    const filtered = q
+        ? ads.filter(a => (a.name || '').toLowerCase().includes(q) || String(a.id).includes(q))
+        : ads;
+    if (!filtered.length) {
+        listEl.innerHTML = `<div class="ad-empty">Sin coincidencias</div>`;
+        return;
+    }
+    listEl.innerHTML = filtered.map(a => {
+        const checked = adFilterPending.has(String(a.id)) ? 'checked' : '';
+        const name = escapeHtml(a.name || ('Anuncio ' + a.id));
+        const cfg = a.configured ? `<i class="fas fa-circle-check ad-badge" title="Configurado en reglas/respuestas"></i>` : '';
+        const count = a.count ? `<span class="ad-count" title="Conversaciones de este anuncio">${a.count}</span>` : '';
+        const idAttr = escapeHtml(String(a.id));
+        return `<label class="ad-option">
+            <input type="checkbox" data-ad-id="${idAttr}" ${checked} onchange="toggleAdPending(this.dataset.adId, this.checked)">
+            <span class="ad-option-name">${name}${cfg}</span>
+            ${count}
+        </label>`;
+    }).join('');
+}
+
+function filterAdOptions(value) {
+    renderAdDropdownList(value);
+}
+
+function toggleAdPending(id, checked) {
+    id = String(id);
+    if (checked) adFilterPending.add(id); else adFilterPending.delete(id);
+    updateAdApplyLabel();
+}
+
+function updateAdApplyLabel() {
+    const btn = document.getElementById('ad-apply-btn');
+    if (btn) {
+        const n = adFilterPending.size;
+        btn.textContent = n > 0 ? `Aplicar (${n})` : 'Aplicar';
+    }
+}
+
+function applyPendingAdFilters() {
+    closeAdDropdown();
+    if (typeof applyAdFilters === 'function') applyAdFilters(Array.from(adFilterPending));
+}
+
+window.toggleAdDropdown = toggleAdDropdown;
+window.filterAdOptions = filterAdOptions;
+window.toggleAdPending = toggleAdPending;
+window.applyPendingAdFilters = applyPendingAdFilters;
 
 function toggleStatusDropdown(event) {
     event.stopPropagation();

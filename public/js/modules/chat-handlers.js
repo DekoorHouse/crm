@@ -91,8 +91,9 @@ function handleSearchContacts() {
     if (state.designReviewFilter) {
         contactsToRender = contactsToRender.filter(c => c.inDesignReview === true);
     }
-    if (state.adIdFilter) {
-        contactsToRender = contactsToRender.filter(c => Array.isArray(c.adSourceIds) && c.adSourceIds.includes(state.adIdFilter));
+    if (Array.isArray(state.adIdFilters) && state.adIdFilters.length) {
+        const selAds = new Set(state.adIdFilters);
+        contactsToRender = contactsToRender.filter(c => Array.isArray(c.adSourceIds) && c.adSourceIds.some(id => selAds.has(id)));
     }
     // Siempre ordenar por fecha descendente antes de renderizar
     contactsToRender.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
@@ -1242,7 +1243,7 @@ function setFilter(filter) {
     state.purchaseFilter = null;
     state.unreadOnly = false;
     state.designReviewFilter = false;
-    state.adIdFilter = null;
+    state.adIdFilters = [];
     if (filter === 'all') state.channelFilter = null; // "Todos" = reset total (incluye canal)
     renderTagFilters();
 
@@ -1264,7 +1265,7 @@ function toggleUnreadFilter() {
     state.purchaseFilter = null;
     state.designReviewFilter = false;
     state.activeFilter = 'all';
-    state.adIdFilter = null;
+    state.adIdFilters = [];
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1287,7 +1288,7 @@ function setPurchaseFilter(filter) {
     }
     state.unreadOnly = false;
     state.activeFilter = 'all';
-    state.adIdFilter = null;
+    state.adIdFilters = [];
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1299,7 +1300,7 @@ function toggleDesignFilter() {
     state.unreadOnly = false;
     state.purchaseFilter = null;
     state.activeFilter = 'all';
-    state.adIdFilter = null;
+    state.adIdFilters = [];
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1309,7 +1310,7 @@ window.toggleDesignFilter = toggleDesignFilter;
 function toggleChannelFilter(channel) {
     // Si ya está activo, desactivar (volver a "todos los canales")
     state.channelFilter = state.channelFilter === channel ? null : channel;
-    state.adIdFilter = null;
+    state.adIdFilters = [];
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1317,16 +1318,13 @@ function toggleChannelFilter(channel) {
 window.toggleChannelFilter = toggleChannelFilter;
 
 /**
- * Filtro por ID de anuncio: pregunta el ID y muestra las conversaciones que tuvieron ese
- * anuncio como origen en algún momento (aunque también vinieran de otros anuncios).
- * Es un filtro exclusivo: limpia los demás para evitar combinaciones y mantener la lista clara.
+ * Aplica el filtro por anuncio(s) de origen. Recibe un array de source_id.
+ * Muestra las conversaciones que tuvieron CUALQUIERA de esos anuncios como origen en algún
+ * momento (aunque también vinieran de otros). Es un filtro exclusivo: limpia los demás para
+ * mantener la lista clara, igual que el resto de filtros entre sí.
  */
-function promptAdIdFilter() {
-    const current = state.adIdFilter || '';
-    const input = window.prompt('Filtrar conversaciones por ID de anuncio.\nMuestra los chats que tuvieron ese anuncio como origen en algún momento (aunque tengan otros).\n\nDeja el campo vacío para quitar el filtro:', current);
-    if (input === null) return; // El usuario canceló: no cambiar nada.
-    const adId = input.trim();
-    state.adIdFilter = adId || null;
+function applyAdFilters(ids) {
+    state.adIdFilters = Array.isArray(ids) ? [...new Set(ids.filter(Boolean).map(String))] : [];
     // Limpiar los demás filtros (exclusividad, igual que ocurre entre los otros filtros).
     state.activeFilter = 'all';
     state.purchaseFilter = null;
@@ -1337,7 +1335,13 @@ function promptAdIdFilter() {
     state.contacts = [];
     fetchInitialContacts();
 }
-window.promptAdIdFilter = promptAdIdFilter;
+window.applyAdFilters = applyAdFilters;
+
+/** Quita el filtro de anuncios y recarga la lista completa. */
+function clearAdFilters() {
+    applyAdFilters([]);
+}
+window.clearAdFilters = clearAdFilters;
 
 function setDepartmentFilter(deptId) {
     // Si se vuelve a elegir el mismo departamento, regresar a "todos"

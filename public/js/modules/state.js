@@ -40,7 +40,10 @@ let state = {
     purchaseFilter: null, // Filtro por estatus de compra ('registered' = corona gris, 'completed' = corona azul)
     designReviewFilter: false, // Filtro para chats en revisión de diseño
     channelFilter: null, // Filtro por canal: 'whatsapp', 'messenger', 'instagram', o null (todos)
-    adIdFilter: null, // Filtro por ID de anuncio de origen (string) o null. Muestra chats que tuvieron ese anuncio como fuente en algún momento.
+    adIdFilters: [], // Filtro por anuncio(s) de origen: array de source_id. Vacío = sin filtro. Muestra chats que tuvieron CUALQUIERA de esos anuncios como fuente en algún momento.
+    adsList: [], // Catálogo de anuncios para el selector del filtro [{ id, name, count, configured }]
+    adsListLoadedAt: 0, // Timestamp (ms) de la última carga de adsList (para refrescar)
+    adsListLoading: false, // Indicador de carga de la lista de anuncios
     activeTab: 'chat', // Pestaña activa en el chat ('chat' o 'notes')
     emojiPickerOpen: false, // Estado del selector de emojis
     quickReplyPickerOpen: false, // Estado del selector de respuestas rápidas

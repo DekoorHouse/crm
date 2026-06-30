@@ -88,6 +88,34 @@ function listenForContactOrders(contactId, callback) {
 // --- NUEVAS FUNCIONES DE CARGA PAGINADA ---
 
 /**
+ * Carga el catálogo de anuncios para el selector del filtro (combina configurados + detectados).
+ * Cachea en state.adsList; refresca si pasaron más de 5 min o si force=true.
+ */
+async function fetchAdsList(force = false) {
+    const FRESH_MS = 5 * 60 * 1000;
+    const fresh = state.adsListLoadedAt && (Date.now() - state.adsListLoadedAt) < FRESH_MS;
+    if (!force && fresh && Array.isArray(state.adsList) && state.adsList.length) {
+        return state.adsList;
+    }
+    if (state.adsListLoading) return state.adsList || [];
+    state.adsListLoading = true;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/ads${force ? '?refresh=true' : ''}`);
+        const data = await res.json();
+        if (data && data.success && Array.isArray(data.ads)) {
+            state.adsList = data.ads;
+            state.adsListLoadedAt = Date.now();
+        }
+    } catch (e) {
+        console.error('Error al cargar la lista de anuncios:', e);
+    } finally {
+        state.adsListLoading = false;
+    }
+    return state.adsList || [];
+}
+window.fetchAdsList = fetchAdsList;
+
+/**
  * Carga la primera página de contactos desde la API, aplicando el filtro de etiqueta activo.
  * Actualiza el estado global de contactos y paginación.
  */
@@ -126,8 +154,8 @@ async function fetchInitialContacts() {
             url += `&channel=${state.channelFilter}`;
         }
 
-        if (state.adIdFilter) {
-            url += `&adSourceId=${encodeURIComponent(state.adIdFilter)}`;
+        if (Array.isArray(state.adIdFilters) && state.adIdFilters.length) {
+            url += `&adSourceIds=${encodeURIComponent(state.adIdFilters.join(','))}`;
         }
 
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
@@ -374,8 +402,8 @@ async function fetchMoreContacts() {
             url += `&channel=${state.channelFilter}`;
         }
 
-        if (state.adIdFilter) {
-            url += `&adSourceId=${encodeURIComponent(state.adIdFilter)}`;
+        if (Array.isArray(state.adIdFilters) && state.adIdFilters.length) {
+            url += `&adSourceIds=${encodeURIComponent(state.adIdFilters.join(','))}`;
         }
 
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
@@ -581,10 +609,11 @@ function listenForContactUpdates() {
                     }
                 }
 
-                // Filtro por ID de anuncio de origen
-                if (isAllowed && state.adIdFilter) {
+                // Filtro por anuncio(s) de origen
+                if (isAllowed && Array.isArray(state.adIdFilters) && state.adIdFilters.length) {
                     const ids = updatedContactData.adSourceIds;
-                    if (!Array.isArray(ids) || !ids.includes(state.adIdFilter)) {
+                    const sel = new Set(state.adIdFilters);
+                    if (!Array.isArray(ids) || !ids.some(id => sel.has(id))) {
                         isAllowed = false;
                     }
                 }
