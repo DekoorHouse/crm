@@ -1325,10 +1325,31 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         const downloadedMedia = [];
         let mediaCount = 0;
 
+        // Etiqueta legible de un mensaje. Las imágenes, audios y PDF se marcan como tales
+        // (con su caption si lo tienen) para que la IA sepa que hubo un archivo, no texto vacío.
+        const msgDisplayText = (d) => {
+            const t = (d.text || '').trim();
+            switch (d.type) {
+                case 'image': return t ? `[imagen: ${t}]` : '[imagen]';
+                case 'audio': return (t && t !== '🎤 Mensaje de voz' && t !== '🎵 Audio') ? `[audio: ${t}]` : '[audio/nota de voz]';
+                case 'video': return t ? `[video: ${t}]` : '[video]';
+                case 'document': return t ? `[PDF/documento: ${t}]` : '[PDF/documento]';
+                case 'sticker': return '[sticker]';
+                default: return t;
+            }
+        };
+
+        // Mapa wamid -> mensaje, para resolver respuestas/citas (context.id apunta al wamid citado).
+        const byWamid = {};
+        for (const doc of messagesSnapshot.docs) {
+            const d = doc.data();
+            if (d.id) byWamid[d.id] = d;
+        }
+
         const conversationHistory = messagesSnapshot.docs.map(doc => {
             const d = doc.data();
             const fromLabel = d.from === contactId ? 'Cliente' : 'Asistente';
-            
+
             // Recolectar hasta los últimos 2 archivos multimedia (imágenes, audios, videos o
             // documentos/PDF — p. ej. comprobantes de pago que algunos bancos mandan en PDF)
             if ((d.type === 'image' || d.type === 'audio' || d.type === 'video' || d.type === 'document') && d.fileUrl && mediaCount < 2) {
@@ -1336,7 +1357,16 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
                 downloadedMedia.push({ url: d.fileUrl, mimeType: mimeType, type: d.type });
                 mediaCount++;
             }
-            return `${fromLabel}: ${d.text}`;
+
+            // Si el mensaje es una RESPUESTA/CITA a otro (context.id), indicar a qué responde,
+            // para que la IA entienda referencias como "este no?", "el segundo", "ese sí", etc.
+            const quotedId = d.context && d.context.id;
+            const quoted = quotedId ? byWamid[quotedId] : null;
+            if (quoted) {
+                const quotedWho = quoted.from === contactId ? 'del cliente' : 'tuyo (Asistente)';
+                return `${fromLabel} (respondiendo a un mensaje ${quotedWho}: "${msgDisplayText(quoted)}"): ${msgDisplayText(d)}`;
+            }
+            return `${fromLabel}: ${msgDisplayText(d)}`;
         }).reverse().join('\n');
 
         // --- Descargar imágenes de referencia del departamento (contexto estático → van al caché) ---
