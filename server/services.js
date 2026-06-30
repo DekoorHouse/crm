@@ -854,6 +854,53 @@ async function findQuickReplyByShortcut(shortcut) {
     }
 }
 
+// Número del admin que verifica comprobantes sospechosos (formato internacional, 52 + 1 + 10 díg.)
+const ADMIN_VERIFY_PHONE = process.env.ADMIN_VERIFY_PHONE || '5216182297167';
+
+/**
+ * Devuelve el número del último pedido registrado del contacto en formato "DH####",
+ * o null si no tiene pedidos. Se usa para rellenar el atajo /DatosEstafeta.
+ */
+async function getLastOrderNumberForContact(contactId) {
+    try {
+        const snap = await db.collection('pedidos').where('telefono', '==', contactId).get();
+        if (snap.empty) return null;
+        let bestNum = null, bestMs = -1;
+        snap.forEach(doc => {
+            const d = doc.data();
+            if (d.consecutiveOrderNumber == null) return;
+            const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
+            if (ms >= bestMs) { bestMs = ms; bestNum = d.consecutiveOrderNumber; }
+        });
+        return bestNum != null ? `DH${bestNum}` : null;
+    } catch (e) {
+        console.warn('[AI] No se pudo obtener el último pedido para', contactId, e.message);
+        return null;
+    }
+}
+
+/**
+ * Reenvía un comprobante sospechoso al admin por WhatsApp (texto + imagen) para que lo
+ * verifique manualmente. Fire-and-forget: cualquier error solo se loguea. OJO: si el admin
+ * no tiene ventana de 24h abierta con el número del negocio, el envío libre puede fallar
+ * (pendiente: plantilla aprobada para garantizar la entrega).
+ */
+async function alertAdminSuspiciousReceipt(contactId, contactData, comprobante) {
+    try {
+        const name = (contactData && contactData.name) || contactId;
+        const text = `⚠️ *Comprobante a verificar*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nLa IA detectó que este comprobante NO coincide con nuestros datos. Revísalo y confirma si el pago es válido. (Al cliente solo se le dijo que estamos validando su pago.)`;
+        const opts = { text };
+        if (comprobante && comprobante.fileUrl) {
+            opts.fileUrl = comprobante.fileUrl;
+            opts.fileType = comprobante.fileType || 'image/jpeg';
+        }
+        await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, opts);
+        console.log(`[AI] Alerta de comprobante sospechoso enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
+    } catch (e) {
+        console.warn('[AI] No se pudo alertar al admin del comprobante sospechoso:', e.message);
+    }
+}
+
 /**
  * Crea o renueva el caché de contexto en la API de Gemini.
  * Solo se recrea si el contenido cambió o el TTL ha expirado.
@@ -1454,9 +1501,12 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         // En ETAPA 2, si el cliente quiere otro pedido la IA emite /nuevopedido para
         // regresar a la etapa de venta (etapa 1); el siguiente turno lo atiende ventas.
         const wantsNewOrder = isPostVenta && /\/nuevopedido/i.test(aiResponse);
+        // En ETAPA 2, si la IA detecta un comprobante sospechoso emite /sospechoso: se reenvía
+        // la imagen al admin para verificación; al cliente solo se le dice que estamos validando.
+        const suspiciousReceipt = isPostVenta && /\/sospechoso/i.test(aiResponse);
 
-        // Limpiar los comandos (/final, /nuevopedido) de los mensajes antes de enviar
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').trim()).filter(m => m.length > 0);
+        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso) de los mensajes antes de enviar
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').trim()).filter(m => m.length > 0);
 
         for (let i = 0; i < aiMessages.length; i++) {
             // Verificar cancelación entre mensajes si hay SPLIT
@@ -1486,6 +1536,15 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
                     msgText = qr.message || '';
                     qrFileUrl = qr.fileUrl || null;
                     qrFileType = qr.fileType || null;
+                    // Si la respuesta rápida trae el marcador ** (ej. /DatosEstafeta:
+                    // "Numero de pedido:**"), insertar el número del último pedido del cliente
+                    // entre los asteriscos (queda en negrita en WhatsApp). Si no hay pedido, se omite.
+                    if (msgText.includes('**')) {
+                        const lastOrder = await getLastOrderNumberForContact(contactId);
+                        msgText = msgText.replace(/\*\*/, lastOrder ? `*${lastOrder}*` : '');
+                        if (lastOrder) console.log(`[AI] /DatosEstafeta: insertado número de pedido ${lastOrder} para ${contactId}.`);
+                        else console.warn(`[AI] /DatosEstafeta: ${contactId} no tiene pedido registrado; se deja el número en blanco.`);
+                    }
                     console.log(`[AI] Atajo "${shortcutMatch[0]}" expandido a respuesta rápida para ${contactId}.`);
                 } else {
                     // Atajo inexistente: no mandar el "/xxx" crudo al cliente.
@@ -1552,6 +1611,22 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
 
         await contactRef.update(updateData);
         console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas enviadas: ${aiMessages.length})`);
+
+        // Comprobante sospechoso: reenviar al admin la última imagen/PDF que mandó el cliente
+        // (el comprobante) para verificación manual. Fire-and-forget. Al cliente ya se le dijo
+        // que estamos validando su pago (lo escribió la IA).
+        if (suspiciousReceipt) {
+            let comprobante = null;
+            for (const mdoc of messagesSnapshot.docs) { // orden desc: el más reciente primero
+                const md = mdoc.data();
+                if (md.from === contactId && (md.type === 'image' || md.type === 'document') && md.fileUrl) {
+                    comprobante = { fileUrl: md.fileUrl, fileType: md.fileType };
+                    break;
+                }
+            }
+            alertAdminSuspiciousReceipt(contactId, contactData, comprobante)
+                .catch(e => console.warn('[AI] alertAdminSuspiciousReceipt falló:', e.message));
+        }
 
         // Híbrido: si el pedido NO se acaba de registrar, etiquetar "en vivo" el estado
         // del pedido (pendiente de foto, etc.) reutilizando el historial ya armado. El
