@@ -1544,11 +1544,10 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         // Detectar cierre de venta (/final o frase de pedido) de forma insensible a mayúsculas.
         // En ETAPA 1 esto NO apaga el bot: lo hace pasar a ETAPA 2 (post-venta) para que la
         // IA siga atendiendo (cobro, pedido listo, entrega). En etapa 2 ya no aplica.
-        const saleClosed = /\/final/i.test(aiResponse) || /ya registramos tu pedido/i.test(aiResponse);
-        const shouldTransitionToPostVenta = postSaleStageActive && !isPostVenta && saleClosed;
-        // Compat: si la etapa 2 está apagada (kill-switch), /final conserva el comportamiento
-        // anterior de desactivar el bot y mandar a Pendientes IA.
-        const shouldDeactivate = !postSaleStageActive && saleClosed;
+        // OJO: `saleClosed` puede volverse true DENTRO del loop si la IA mandó la frase a través
+        // de un ATAJO de respuesta rápida (ej. /confirmar → "Ya registramos tu pedido..."); el
+        // check inicial solo ve "/confirmar". Por eso es `let` y la decisión se calcula tras el loop.
+        let saleClosed = /\/final/i.test(aiResponse) || /ya registramos tu pedido/i.test(aiResponse);
         // En ETAPA 2, si el cliente quiere otro pedido la IA emite /nuevopedido para
         // regresar a la etapa de venta (etapa 1); el siguiente turno lo atiende ventas.
         const wantsNewOrder = isPostVenta && /\/nuevopedido/i.test(aiResponse);
@@ -1596,6 +1595,9 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
                         if (lastOrder) console.log(`[AI] /DatosEstafeta: insertado número de pedido ${lastOrder} para ${contactId}.`);
                         else console.warn(`[AI] /DatosEstafeta: ${contactId} no tiene pedido registrado; se deja el número en blanco.`);
                     }
+                    // Si el atajo expandido contiene la frase de cierre de venta, marcar la
+                    // transición a post-venta (el check sobre aiResponse solo veía el "/atajo").
+                    if (/ya registramos tu pedido/i.test(msgText)) saleClosed = true;
                     console.log(`[AI] Atajo "${shortcutMatch[0]}" expandido a respuesta rápida para ${contactId}.`);
                 } else {
                     // Atajo inexistente: no mandar el "/xxx" crudo al cliente.
@@ -1631,12 +1633,18 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             lastText = sentMessageData.textForDb;
 
             if (i < aiMessages.length - 1) {
-                await new Promise(r => setTimeout(r, 1500)); 
+                await new Promise(r => setTimeout(r, 1500));
             }
         }
-        
-        const updateData = { 
-            lastMessage: lastText, 
+
+        // Decisión de transición DESPUÉS del loop, para que cuente también la frase de cierre que
+        // pudo venir expandida desde un atajo. En etapa 1 con etapa 2 activa → pasa a post-venta
+        // sin apagar el bot. Si la etapa 2 está apagada (kill-switch), /final apaga el bot (viejo).
+        const shouldTransitionToPostVenta = postSaleStageActive && !isPostVenta && saleClosed;
+        const shouldDeactivate = !postSaleStageActive && saleClosed;
+
+        const updateData = {
+            lastMessage: lastText,
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
             aiStatus: admin.firestore.FieldValue.delete()
         };
