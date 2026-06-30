@@ -1,0 +1,62 @@
+/* ============================================================
+   DEKOOR · Capa de mejoras 3D / animadas
+   Aditiva: NO modifica los estilos base del sitio.
+   Para revertir: borra este archivo + sus 2 includes en index.html
+   ============================================================ */
+
+/* Accesibilidad: si el usuario pidió menos movimiento, desactivar todo */
+@media (prefers-reduced-motion: reduce) {
+  .tilt3d { transform: none !important; }
+  .hero-particles { display: none !important; }
+}
+
+/* ---------- Partículas / bokeh del hero ---------- */
+.hero { position: relative; }
+.hero-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+.hero-particles.on { opacity: 1; }
+.hero-inner { position: relative; z-index: 1; }
+
+/* ---------- Tilt 3D (tarjetas de colección + carrusel) ---------- */
+.collections-grid-5 { perspective: 1100px; }
+.hero-visual { perspective: 1300px; }
+
+.tilt3d {
+  transform-style: preserve-3d;
+  will-change: transform;
+  transition: transform .4s cubic-bezier(.22,.61,.36,1), box-shadow .4s ease;
+}
+.tilt3d.is-tilting {
+  transition: transform .08s linear, box-shadow .4s ease;
+}
+
+/* Brillo que sigue al cursor para vender la profundidad */
+.tilt3d-glare {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle at var(--gx, 50%) var(--gy, 50%),
+    rgba(255, 255, 255, .45),
+    rgba(255, 255, 255, 0) 55%
+  );
+  opacity: 0;
+  transition: opacity .35s ease;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+  z-index: 4;
+}
+.tilt3d.is-tilting .tilt3d-glare { opacity: 1; }
+
+/* El carrusel del hero gana un sombreado más rico al inclinarse */
+.hero-visual .carousel.tilt3d.is-tilting {
+  box-shadow: 0 30px 60px -20px rgba(27, 77, 92, .45);
+}

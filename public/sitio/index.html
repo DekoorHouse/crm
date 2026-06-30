@@ -46,6 +46,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
     <link rel="stylesheet" href="/sitio/style.css">
+    <link rel="stylesheet" href="/sitio/enhance-3d.css">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -212,19 +213,20 @@
     <div class="hero-inner">
         <div class="hero-text fade-section">
             <h1>REGALOS QUE<br>CUENTAN HISTORIAS</h1>
-            <p class="hero-subtitle">Transforma tus recuerdos en tesoros únicos</p>
+            <p class="hero-subtitle">Lámparas personalizadas con foto, nombre o frase. Elige un modelo, mándanos tu idea y te mostramos cómo quedaría antes de pagar.</p>
             <div class="hero-ctas">
                 <a href="#colecciones" class="btn btn-primary btn-lg">
-                    <i class="fas fa-gift"></i> Crear mi regalo
+                    <i class="fas fa-layer-group"></i> Ver modelos por categoría
                 </a>
                 <a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20quiero%20un%20regalo%20personalizado" class="btn btn-outline btn-lg" target="_blank" rel="noopener">
-                    <i class="fab fa-whatsapp"></i> Asesoría gratis
+                    <i class="fab fa-whatsapp"></i> Asesoría gratis por WhatsApp
                 </a>
             </div>
             <div class="trust-strip">
                 <div class="trust-item"><i class="fas fa-check-circle"></i> <strong>+5,000</strong> pedidos</div>
                 <div class="trust-item"><i class="fas fa-truck-fast"></i> Envío nacional</div>
                 <div class="trust-item"><i class="fas fa-star"></i> <strong>4.9</strong> estrellas</div>
+                <div class="trust-item"><i class="fas fa-camera"></i> Paga hasta ver foto terminada</div>
             </div>
         </div>
         <div class="hero-visual fade-section">
@@ -249,67 +251,91 @@
 <!-- ========== COLECCIONES DESTACADAS ========== -->
 <section class="section" id="colecciones">
     <div class="container">
-        <h2 class="section-title fade-section">COLECCIONES DESTACADAS</h2>
+        <h2 class="section-title fade-section">Elige una colección y mira más modelos</h2>
+        <p class="section-subtitle fade-section">Lámparas personalizadas para pareja, familia, niños, negocios, memoriales y más. Elige el estilo que más se parece a tu regalo.</p>
         <div class="collections-grid-5 fade-section">
-            <a href="/sitio/coleccion/?id=ninos" class="collection-card-v2">
+            <a href="/sitio/coleccion/?id=ninos" class="collection-card-v2" aria-label="Ver modelos de la colección Niños">
                 <div class="collection-img-v2">
                     <img src="/sitio/img/lamp-ariel.webp" alt="Colección de lámparas 3D personalizadas para niños con personajes y nombres grabados" loading="lazy" width="400" height="400">
-                    <span class="collection-badge-price" data-price="unit" data-price-fmt="from">Desde $650</span>
                 </div>
                 <div class="collection-card-info">
                     <div class="collection-name">Niños</div>
+                    <p class="collection-desc">Cumpleaños, graduación y personajes favoritos</p>
                     <div class="collection-rating"><i class="fas fa-star"></i> 4.9 <span class="collection-orders">+800 pedidos</span></div>
+                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $650</span> personalizada</div>
+                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/?id=pareja" class="collection-card-v2">
+            <a href="/sitio/coleccion/?id=pareja" class="collection-card-v2" aria-label="Ver modelos de la colección Pareja">
                 <div class="collection-img-v2">
                     <img src="/sitio/img/lamp-pareja.webp" alt="Colección de lámparas 3D personalizadas para parejas con fotos y mensajes románticos" loading="lazy" width="400" height="400">
-                    <span class="collection-badge-price" data-price="unit" data-price-fmt="from">Desde $650</span>
                 </div>
                 <div class="collection-card-info">
                     <div class="collection-name">Pareja</div>
+                    <p class="collection-desc">Aniversarios, novios y esposos</p>
                     <div class="collection-rating"><i class="fas fa-star"></i> 4.9 <span class="collection-orders">+1,500 pedidos</span></div>
+                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $650</span> personalizada</div>
+                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/?id=empresas" class="collection-card-v2">
+            <a href="/sitio/coleccion/?id=empresas" class="collection-card-v2" aria-label="Ver modelos de la colección Empresas">
                 <div class="collection-img-v2">
                     <img src="/sitio/img/lamp-empresas.webp" alt="Colección de lámparas y reconocimientos corporativos con logo grabado con láser" loading="lazy" width="400" height="400">
-                    <span class="collection-badge-price" data-price="unit" data-price-fmt="from">Desde $650</span>
                 </div>
                 <div class="collection-card-info">
                     <div class="collection-name">Empresas</div>
+                    <p class="collection-desc">Regalos para clientes, negocios o colaboradores</p>
                     <div class="collection-rating"><i class="fas fa-star"></i> 5.0 <span class="collection-orders">+500 pedidos</span></div>
+                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $650</span> personalizada</div>
+                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/?id=familia" class="collection-card-v2">
+            <a href="/sitio/coleccion/?id=familia" class="collection-card-v2" aria-label="Ver modelos de la colección Familia">
                 <div class="collection-img-v2">
                     <img src="/sitio/img/lamp-mascotas.webp" alt="Colección de lámparas 3D personalizadas para familia con fotos de mascotas e hijos" loading="lazy" width="400" height="400">
-                    <span class="collection-badge-price" data-price="unit" data-price-fmt="from">Desde $650</span>
                 </div>
                 <div class="collection-card-info">
                     <div class="collection-name">Familia</div>
+                    <p class="collection-desc">Mamá, papá, abuelos e hijos</p>
                     <div class="collection-rating"><i class="fas fa-star"></i> 4.9 <span class="collection-orders">+1,200 pedidos</span></div>
+                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $650</span> personalizada</div>
+                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/?id=memorial" class="collection-card-v2">
+            <a href="/sitio/coleccion/?id=memorial" class="collection-card-v2" aria-label="Ver modelos de la colección Memorial">
                 <div class="collection-img-v2">
                     <img src="/sitio/img/lamp-memorial.webp" alt="Colección de lámparas 3D memorial para honrar la memoria de seres queridos" loading="lazy" width="400" height="400">
-                    <span class="collection-badge-price" data-price="unit" data-price-fmt="from">Desde $650</span>
                 </div>
                 <div class="collection-card-info">
                     <div class="collection-name">Memorial</div>
+                    <p class="collection-desc">Un recuerdo especial para siempre</p>
                     <div class="collection-rating"><i class="fas fa-star"></i> 5.0 <span class="collection-orders">+700 pedidos</span></div>
+                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $650</span> personalizada</div>
+                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/?id=religiosas" class="collection-card-v2">
+            <a href="/sitio/coleccion/?id=religiosas" class="collection-card-v2" aria-label="Ver modelos de la colección Religiosas">
                 <div class="collection-img-v2">
                     <img src="/sitio/img/col/religiosas/69a79735-4829-4261-b957-8f1559f5ff52.jpg" alt="Colección de lámparas 3D religiosas con vírgenes y santos grabados con láser" loading="lazy" width="400" height="400">
-                    <span class="collection-badge-price" data-price="unit" data-price-fmt="from">Desde $650</span>
                 </div>
                 <div class="collection-card-info">
                     <div class="collection-name">Religiosas</div>
+                    <p class="collection-desc">Virgen, santos, ángeles y comunión</p>
                     <div class="collection-rating"><i class="fas fa-star"></i> 5.0 <span class="collection-orders">Nuevo</span></div>
+                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $650</span> personalizada</div>
+                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
                 </div>
+            </a>
+        </div>
+
+        <!-- Bloque de ayuda / conversión -->
+        <div class="collection-help fade-section">
+            <div class="collection-help-text">
+                <h3>¿No sabes cuál elegir?</h3>
+                <p>Mándanos tu foto o idea y te recomendamos modelos para tu regalo.</p>
+            </div>
+            <a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20no%20s%C3%A9%20qu%C3%A9%20modelo%20elegir.%20Les%20mando%20mi%20foto%20o%20idea%20y%20me%20recomiendan%3F" class="btn btn-primary btn-lg" target="_blank" rel="noopener">
+                <i class="fab fa-whatsapp"></i> Pedir ayuda por WhatsApp
             </a>
         </div>
     </div>
@@ -558,6 +584,9 @@ if (localStorage.getItem('cookie_consent') === 'rejected') {
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="/env-config.js"></script>
 <script src="/sitio/script.js"></script>
+
+<!-- Mejoras 3D / animadas (capa aditiva) -->
+<script src="/sitio/enhance-3d.js"></script>
 
 <!-- Service Worker Registration -->
 <script>

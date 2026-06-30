@@ -36,6 +36,14 @@ html {
     scroll-padding-top: calc(var(--nav-height) + 32px);
 }
 
+/* Header fijo (ticker + navbar): deja hueco al saltar a una ancla, tanto en
+   navegación nativa (#hash) como con scrollIntoView del JS (a[href^="#"]). */
+section[id],
+.hero[id],
+.footer[id] {
+    scroll-margin-top: calc(var(--nav-height) + 32px);
+}
+
 body {
     font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background-color: var(--cream);
@@ -524,8 +532,8 @@ body {
    ============================================================ */
 .collections-grid-5 {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 1.25rem;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
 }
 
 .collection-card-v2 {
@@ -1451,12 +1459,25 @@ body {
 }
 
 .collection-card-info {
-    padding: 0.9rem 1rem;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
 }
 
 .collection-card-info .collection-name {
     padding: 0;
-    margin-bottom: 4px;
+    margin-bottom: 0;
+}
+
+.collection-desc {
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--text-medium);
+    text-align: center;
+    margin: 0;
 }
 
 .collection-rating {
@@ -1465,6 +1486,7 @@ body {
     color: #f59e0b;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 4px;
 }
 
@@ -1476,6 +1498,93 @@ body {
     color: var(--text-light);
     font-weight: 500;
     margin-left: 4px;
+}
+
+.collection-price {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--teal);
+}
+
+.collection-price span {
+    color: var(--primary);
+}
+
+/* Botón visible "Ver modelos →" (la tarjeta entera es el enlace) */
+.collection-cta {
+    margin-top: auto;
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: var(--primary);
+    color: var(--white);
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 11px 18px;
+    border-radius: var(--radius);
+    box-shadow: 0 4px 14px rgba(212, 114, 44, 0.25);
+    transition: var(--transition);
+}
+
+.collection-cta i {
+    transition: transform 0.3s ease;
+}
+
+.collection-card-v2:hover .collection-cta {
+    background: var(--primary-hover);
+    box-shadow: 0 6px 20px rgba(212, 114, 44, 0.35);
+}
+
+.collection-card-v2:hover .collection-cta i {
+    transform: translateX(4px);
+}
+
+/* ============================================================
+   BLOQUE DE AYUDA / CONVERSIÓN (bajo colecciones)
+   ============================================================ */
+.collection-help {
+    margin-top: 2.5rem;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    padding: 1.75rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.collection-help-text h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--teal);
+    margin-bottom: 0.35rem;
+}
+
+.collection-help-text p {
+    color: var(--text-medium);
+    font-size: 0.98rem;
+    margin: 0;
+}
+
+.collection-help .btn {
+    flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+    .collection-help {
+        flex-direction: column;
+        text-align: center;
+        padding: 1.5rem 1.25rem;
+    }
+    .collection-help .btn {
+        width: 100%;
+        justify-content: center;
+    }
 }
 
 /* ============================================================
@@ -1851,6 +1960,12 @@ body {
     .categories-grid-v2 {
         grid-template-columns: 1fr;
         max-width: 400px;
+        margin: 0 auto;
+    }
+
+    .collections-grid-5 {
+        grid-template-columns: 1fr;
+        max-width: 420px;
         margin: 0 auto;
     }
 
