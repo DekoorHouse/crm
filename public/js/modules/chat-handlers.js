@@ -2160,10 +2160,19 @@ async function handleBotToggle(contactId, isActive) {
             }
         }
 
-        // 2. Actualizar en Firestore
-        await db.collection("contacts_whatsapp").doc(contactId).update({ 
-            botActive: isActive 
-        });
+        // 2. Persistir
+        if (isActive) {
+            // Encender: vía backend, que además contesta el mensaje del cliente sin responder
+            // (si lo hay), igual que el botón de post-venta. No toca la etapa del contacto.
+            const resp = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/activate-ai`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }
+            });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            await resp.json().catch(() => ({}));
+        } else {
+            // Apagar: solo escribir Firestore (no hay nada que disparar)
+            await db.collection("contacts_whatsapp").doc(contactId).update({ botActive: false });
+        }
 
     } catch (error) {
         console.error("Error al cambiar estado de la IA:", error);
