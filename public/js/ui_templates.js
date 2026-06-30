@@ -944,6 +944,23 @@ const SettingsViewTemplate = () => `
                 </form>
             </div>
             <div class="settings-card">
+                <h2 class="text-xl font-bold mb-1">Evento de compra de Meta</h2>
+                <p class="text-sm text-gray-500 mb-4">Define en qué momento se envía el evento <strong>Purchase</strong> a Meta para cada pedido.</p>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-semibold" id="purchase-trigger-label">Al cambiar a "Fabricar"</h3>
+                        <p class="text-sm text-gray-500">
+                            <strong>Encendido</strong>: se envía al cambiar el pedido a <strong>"Fabricar"</strong> (venta confirmada).<br>
+                            <strong>Apagado</strong>: se envía al <strong>registrar</strong> el pedido.
+                        </p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="purchase-trigger-toggle" onchange="handlePurchaseTriggerToggle(this.checked)" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="settings-card">
                 <h2 class="text-xl font-bold mb-4">Mantenimiento</h2>
                 <div>
                     <p class="text-sm text-gray-500 mb-3">Asigna todos los chats que actualmente no tienen un departamento al departamento por defecto "General".</p>

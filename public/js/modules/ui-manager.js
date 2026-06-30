@@ -1213,6 +1213,16 @@ function renderAjustesView() {
         awayToggle.checked = state.awayMessageSettings.isActive;
     }
 
+    // Estado del interruptor de "evento de compra de Meta" (registro vs Fabricar)
+    const purchaseToggle = document.getElementById('purchase-trigger-toggle');
+    if (purchaseToggle) {
+        db.collection('crm_settings').doc('general').get().then(doc => {
+            const trigger = (doc.exists && doc.data().purchaseEventTrigger === 'registration') ? 'registration' : 'fabricar';
+            purchaseToggle.checked = (trigger === 'fabricar');
+            updatePurchaseTriggerLabel(trigger);
+        }).catch(() => {});
+    }
+
     // Rellena el input del ID de Google Sheet
     const sheetIdInput = document.getElementById('google-sheet-id-input');
     if (sheetIdInput) {
@@ -1845,6 +1855,29 @@ async function handleSavePostventaInstructions() {
         btn.disabled = false;
     }
 }
+
+// --- Toggle: cuándo se envía el evento Purchase a Meta (registro vs Fabricar) ---
+function updatePurchaseTriggerLabel(trigger) {
+    const label = document.getElementById('purchase-trigger-label');
+    if (label) label.textContent = (trigger === 'registration') ? 'Al registrar el pedido' : 'Al cambiar a "Fabricar"';
+}
+
+async function handlePurchaseTriggerToggle(checked) {
+    const trigger = checked ? 'fabricar' : 'registration';
+    try {
+        await db.collection('crm_settings').doc('general').set({ purchaseEventTrigger: trigger }, { merge: true });
+        updatePurchaseTriggerLabel(trigger);
+        showError(trigger === 'fabricar'
+            ? 'Listo: el evento de compra se enviará al pasar a "Fabricar".'
+            : 'Listo: el evento de compra se enviará al registrar el pedido.', 'success');
+    } catch (error) {
+        console.error('Error al guardar el disparador del evento de compra:', error);
+        showError('No se pudo guardar la configuración del evento de compra.');
+        const t = document.getElementById('purchase-trigger-toggle');
+        if (t) t.checked = !checked; // revertir visualmente
+    }
+}
+window.handlePurchaseTriggerToggle = handlePurchaseTriggerToggle;
 
 async function loadKnowledgeBase() {
     try {

@@ -5695,6 +5695,18 @@ router.get('/orders/:orderId', async (req, res) => {
     }
 });
 
+// Lee de crm_settings/general cuándo enviar el evento Purchase a Meta: 'registration'
+// (al registrar el pedido) o 'fabricar' (al pasar a estatus "Fabricar", valor por defecto).
+// Configurable desde Ajustes > Herramientas (toggle). Nunca lanza.
+async function getPurchaseEventTrigger() {
+    try {
+        const doc = await db.collection('crm_settings').doc('general').get();
+        return (doc.exists && doc.data().purchaseEventTrigger === 'registration') ? 'registration' : 'fabricar';
+    } catch (e) {
+        return 'fabricar';
+    }
+}
+
 // Helper: envía el evento Purchase a Meta CAPI cuando un pedido entra a "Fabricar" por
 // primera vez. Idempotente vía pedido.metaPurchaseSentAt para no duplicar el evento aunque
 // el estatus rebote o se edite el pedido varias veces. Nunca lanza (atrapa sus errores).
@@ -5704,6 +5716,7 @@ async function sendPurchaseEventOnFabricar(orderId, orderData, oldStatusLower) {
         if ((oldStatusLower || '').includes('fabricar')) return;    // ya estaba en Fabricar
         if (orderData.metaPurchaseSentAt) return;                   // idempotencia: ya se envió
         if (!orderData.contactId) return;
+        if ((await getPurchaseEventTrigger()) !== 'fabricar') return; // el ajuste lo cambió a "registro"
 
         const contactSnap = await db.collection('contacts_whatsapp').doc(orderData.contactId).get();
         const contactData = contactSnap.exists ? contactSnap.data() : null;
@@ -5989,9 +6002,30 @@ router.post('/orders', async (req, res) => {
                 .catch(() => {});
         } catch (_) {}
 
-        // NOTA: El evento Purchase a Meta YA NO se envía aquí (al registrar el pedido).
-        // Ahora se dispara cuando el pedido cambia de estatus a "Fabricar" (venta confirmada),
-        // vía el helper sendPurchaseEventOnFabricar() en los endpoints PUT y change-status.
+        // Evento Purchase a Meta — SOLO si el ajuste (Ajustes > Herramientas) está en "registro".
+        // Por defecto el ajuste es "fabricar", así que normalmente esto NO se envía aquí; el Purchase
+        // se manda al pasar a "Fabricar" vía sendPurchaseEventOnFabricar(). El flag metaPurchaseSentAt
+        // evita duplicados si después cambia el estatus.
+        try {
+            if ((await getPurchaseEventTrigger()) === 'registration' && contactRef) {
+                const contactSnap = await contactRef.get();
+                const cData = contactSnap.exists ? contactSnap.data() : null;
+                if (cData?.wa_id) {
+                    const eventInfo = { wa_id: cData.wa_id, profile: { name: cData.name } };
+                    const customData = { value: totalValue, currency: 'MXN' };
+                    console.log(`[META EVENT] Enviando Purchase por registro de pedido DH${newOrderNumber}, contacto ${contactId}`);
+                    await sendConversionEvent('Purchase', eventInfo, cData.adReferral || {}, customData);
+                    await newOrderRef.update({ metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp() });
+                    console.log(`[META EVENT] ✅ Evento Purchase enviado por registro, pedido DH${newOrderNumber}, valor $${totalValue}`);
+                } else {
+                    console.warn(`[META EVENT] Contacto ${contactId} sin wa_id. No se envió Purchase por registro.`);
+                }
+            }
+        } catch (metaError) {
+            console.error('[META EVENT] Error al enviar Purchase por registro:', metaError.message);
+            if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
+            // No fallar el registro del pedido por un error en Meta
+        }
 
         // --- Detección automática de cliente recurrente ---
         // Buscar si este teléfono ya tiene otros pedidos PAGADOS anteriores
