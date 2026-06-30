@@ -1960,6 +1960,9 @@ const ChatWindowTemplate = (contact) => {
         ? (isMobileWidth ? 'Ventana de 24h cerrada' : 'La ventana de 24h ha cerrado. Los mensajes se encolarán.')
         : (isMobileWidth ? 'Mensaje' : 'Escribe un mensaje o usa / para respuestas rápidas...');
 
+    // Autocorrector ortográfico (IA): ON por defecto, recordando la preferencia en localStorage.
+    const spellcheckOn = (typeof localStorage === 'undefined') || localStorage.getItem('crm_spellcheck_enabled') !== '0';
+
     const footerContent = `
         <form id="message-form" class="flex items-center space-x-3">
              <label for="file-input" class="cursor-pointer p-2 chat-icon-btn"><i class="fas fa-paperclip text-xl"></i></label>
@@ -1967,6 +1970,7 @@ const ChatWindowTemplate = (contact) => {
              <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
              ${contact.channel !== 'messenger' ? '<button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>' : ''}
              <button type="button" id="schedule-toggle-btn" onclick="toggleScheduleMode()" class="p-2 chat-icon-btn ${scheduleActive ? 'schedule-active' : ''}" title="Programar envío"><i class="fas fa-clock text-xl"></i></button>
+             <button type="button" id="spellcheck-toggle-btn" onclick="toggleSpellcheck()" class="p-2 chat-icon-btn ${spellcheckOn ? 'spellcheck-active' : ''}" title="Autocorrector de ortografía (IA) — corrige mientras escribes"><i class="fas fa-spell-check text-xl"></i></button>
              <textarea id="message-input" placeholder="${placeholderText}" class="flex-1 !mb-0" rows="1"></textarea>
              <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
         </form>`;

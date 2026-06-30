@@ -290,9 +290,10 @@ function renderChatWindow(options = {}) {
             const messageInput = document.getElementById('message-input'); 
             if (messageForm) messageForm.addEventListener('submit', handleSendMessage); 
             if (messageInput) { 
-                messageInput.addEventListener('paste', handlePaste); 
+                messageInput.addEventListener('paste', handlePaste);
                 messageInput.addEventListener('input', handleQuickReplyInput);
                 messageInput.addEventListener('keydown', handleMessageInputKeyDown);
+                messageInput.addEventListener('input', handleSpellcheckInput); // autocorrector IA
                 
                 messageInput.addEventListener('input', () => {
                     messageInput.style.height = 'auto';
@@ -954,6 +955,110 @@ window.updateScheduleSummary = updateScheduleSummary;
 window.confirmSchedule = confirmSchedule;
 window.cancelScheduleMode = cancelScheduleMode;
 window.cancelScheduledMessage = cancelScheduledMessage;
+
+// =================================================================
+// AUTOCORRECTOR ORTOGRÁFICO CON CONTEXTO (IA)
+// Corrige ortografía y acentos "conforme escribes": al hacer una pausa,
+// manda el texto a /api/spellcheck y reemplaza el resultado preservando el
+// historial de deshacer (Ctrl+Z). Solo actúa con el cursor al final (mientras
+// escribes), nunca cuando estás editando en medio del texto.
+// =================================================================
+const _spellcheck = { timer: null, abort: null, lastText: '', applying: false, toastTimer: null };
+const SPELLCHECK_DEBOUNCE_MS = 1000;
+
+function isSpellcheckEnabled() {
+    return localStorage.getItem('crm_spellcheck_enabled') !== '0'; // ON por defecto
+}
+
+function toggleSpellcheck() {
+    const nowEnabled = !isSpellcheckEnabled();
+    localStorage.setItem('crm_spellcheck_enabled', nowEnabled ? '1' : '0');
+    const btn = document.getElementById('spellcheck-toggle-btn');
+    if (btn) btn.classList.toggle('spellcheck-active', nowEnabled);
+    if (!nowEnabled && _spellcheck.timer) { clearTimeout(_spellcheck.timer); _spellcheck.timer = null; }
+    showSpellcheckToast(nowEnabled ? 'Autocorrector activado' : 'Autocorrector desactivado');
+}
+window.toggleSpellcheck = toggleSpellcheck;
+
+function handleSpellcheckInput(event) {
+    if (!isSpellcheckEnabled()) return;
+    if (_spellcheck.applying) return; // ignorar el input que generamos nosotros al aplicar
+    const input = event.target;
+    if (_spellcheck.timer) clearTimeout(_spellcheck.timer);
+    if (_spellcheck.abort) { _spellcheck.abort.abort(); _spellcheck.abort = null; }
+    _spellcheck.timer = setTimeout(() => runSpellcheck(input), SPELLCHECK_DEBOUNCE_MS);
+}
+
+async function runSpellcheck(input) {
+    _spellcheck.timer = null;
+    if (!isSpellcheckEnabled() || !input || input.disabled) return;
+    if (document.activeElement !== input) return; // solo mientras el cuadro tiene foco
+    const cursorAtEnd = () => input.selectionStart === input.value.length && input.selectionStart === input.selectionEnd;
+    if (!cursorAtEnd()) return; // estás editando en medio: no tocar
+
+    const text = input.value;
+    const trimmed = text.trim();
+    if (trimmed.length < 6 || !/\s/.test(trimmed)) return; // muy corto / una sola palabra
+    if (text === _spellcheck.lastText) return;             // ya revisado este texto
+
+    _spellcheck.abort = new AbortController();
+    let corrected;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/spellcheck`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+            signal: _spellcheck.abort.signal
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        corrected = data && data.corrected;
+    } catch (err) {
+        return; // abortado o error de red: silencioso, nunca estorbar al usuario
+    } finally {
+        _spellcheck.abort = null;
+    }
+
+    _spellcheck.lastText = text; // marcado como revisado pase lo que pase
+    if (typeof corrected !== 'string' || corrected === text) return;
+    if (input.value !== text || !cursorAtEnd()) return; // el usuario siguió escribiendo: descartar
+
+    applySpellcheckCorrection(input, corrected);
+}
+
+function applySpellcheckCorrection(input, corrected) {
+    _spellcheck.applying = true;
+    try {
+        input.focus();
+        input.setSelectionRange(0, input.value.length);
+        let ok = false;
+        // execCommand preserva el historial nativo de deshacer (Ctrl+Z revierte la corrección)
+        try { ok = document.execCommand && document.execCommand('insertText', false, corrected); } catch (_) { ok = false; }
+        if (!ok) input.value = corrected;
+        input.setSelectionRange(input.value.length, input.value.length);
+        _spellcheck.lastText = corrected; // no volver a corregir lo ya corregido
+        // Reajustar el alto del textarea (mismo criterio que el auto-resize)
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+        showSpellcheckToast('Ortografía corregida · Ctrl+Z para deshacer');
+    } finally {
+        setTimeout(() => { _spellcheck.applying = false; }, 0);
+    }
+}
+
+function showSpellcheckToast(message) {
+    let toast = document.getElementById('spellcheck-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'spellcheck-toast';
+        document.body.appendChild(toast);
+    }
+    toast.innerHTML = `<i class="fas fa-spell-check"></i><span></span>`;
+    toast.querySelector('span').textContent = message;
+    toast.classList.add('show');
+    if (_spellcheck.toastTimer) clearTimeout(_spellcheck.toastTimer);
+    _spellcheck.toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 3000);
+}
 
 async function handleSendMessage(event) {
     event.preventDefault();

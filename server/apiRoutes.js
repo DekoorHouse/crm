@@ -2650,6 +2650,71 @@ ${question}`;
 });
 
 
+// --- Endpoint POST /api/spellcheck (autocorrector ortográfico con contexto, IA) ---
+// Recibe { text } y devuelve { corrected, changed }. Corrige SOLO ortografía y
+// acentuación, preservando nombres, números, códigos, URLs y emojis. Pensado para
+// usarse "conforme el usuario escribe" en el cuadro de mensaje del CRM.
+// Filosofía: ante cualquier duda, devolver el texto ORIGINAL (mejor no tocar que romper).
+router.post('/spellcheck', async (req, res) => {
+    const original = (req.body && typeof req.body.text === 'string') ? req.body.text : '';
+    try {
+        const trimmed = original.trim();
+        // Nada útil que corregir o texto demasiado largo: devolver tal cual.
+        if (trimmed.length < 3 || original.length > 1200) {
+            return res.json({ corrected: original, changed: false });
+        }
+
+        const systemInstruction = `Eres un corrector ortográfico para mensajes de atención a clientes por WhatsApp, en español de México.
+Tu ÚNICA tarea es corregir errores de ORTOGRAFÍA y ACENTUACIÓN (tildes), además de la mayúscula al inicio de oración y signos de puntuación claramente faltantes.
+
+REGLAS ESTRICTAS:
+- Devuelve EXCLUSIVAMENTE el texto corregido. Sin comillas, sin explicaciones, sin etiquetas, sin prefijos.
+- NO cambies el significado, el tono ni el estilo. NO reformules ni reescribas frases.
+- NO agregues, quites ni completes palabras. Conserva el MISMO número de palabras y el mismo orden.
+- Si la última palabra parece incompleta (porque el usuario aún está escribiendo), NO la completes ni la cambies; déjala igual.
+- NO toques: nombres propios, marcas, números, precios, códigos/SKU (p. ej. DK-123), URLs, correos, @menciones, #hashtags ni emojis.
+- Respeta tal cual los saltos de línea, los espacios y las mayúsculas intencionales.
+- Si el texto ya está correcto, devuélvelo IDÉNTICO.`;
+
+        const aiResult = await generateGeminiResponse(original, [], systemInstruction);
+        let corrected = (aiResult && aiResult.text ? aiResult.text : '').trim();
+
+        // --- Saneamiento defensivo de la respuesta del modelo ---
+        // 1) Quitar comillas que envuelvan TODO el texto si el original no las tenía.
+        if (corrected.length >= 2) {
+            const f = corrected[0], l = corrected[corrected.length - 1];
+            const wrapped = (f === '"' && l === '"') || (f === '«' && l === '»') || (f === '“' && l === '”') || (f === "'" && l === "'");
+            if (wrapped && trimmed[0] !== f) corrected = corrected.slice(1, -1).trim();
+        }
+        // 2) Quitar prefijos típicos que a veces agrega el modelo.
+        corrected = corrected.replace(/^(texto corregido|correcci[oó]n|resultado)\s*:\s*/i, '').trim();
+
+        // --- Validaciones de seguridad: si no se cumplen, devolver el ORIGINAL ---
+        const wordCount = s => (s.trim().match(/\S+/g) || []).length;
+        const safe =
+            corrected.length > 0 &&
+            wordCount(corrected) === wordCount(original) &&        // mismo nº de palabras
+            corrected.length <= original.length + 12 &&            // no crece de más (tildes/signos)
+            corrected.length >= Math.floor(original.length * 0.6); // no se encoge de más
+        if (!safe) {
+            return res.json({ corrected: original, changed: false });
+        }
+
+        // Preservar los espacios inicial/final del original (el .trim() del modelo los quita)
+        // para no mover el cursor de forma rara mientras el usuario escribe.
+        const leading = (original.match(/^\s*/) || [''])[0];
+        const trailing = (original.match(/\s*$/) || [''])[0];
+        const finalCorrected = leading + corrected + trailing;
+
+        return res.json({ corrected: finalCorrected, changed: finalCorrected !== original });
+    } catch (err) {
+        console.error('[SPELLCHECK] Error:', err.message);
+        // Ante cualquier error, no interrumpir la escritura: devolver lo que vino.
+        return res.status(200).json({ corrected: original, changed: false });
+    }
+});
+
+
 // --- Endpoint Temporal: Actualizar nombres de anuncios de las últimas 20 horas ---
 router.get('/admin/test-update-ads-20h', async (req, res) => {
     console.log('[DEBUG] Entrando a la ruta test-update-ads-20h');

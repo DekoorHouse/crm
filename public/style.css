@@ -2783,6 +2783,37 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
 .message-bubble.sent .template-button-url:hover,
 .message-bubble.sent .template-button-phone:hover { background: rgba(255,255,255,0.28); }
 
+/* === Autocorrector ortográfico (IA) === */
+.chat-icon-btn.spellcheck-active,
+.chat-icon-btn.spellcheck-active i { color: var(--color-success); }
+
+#spellcheck-toast {
+    position: fixed;
+    bottom: 90px;
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    background: var(--color-text);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100vw - 32px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+    z-index: 9999;
+}
+#spellcheck-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+#spellcheck-toast i { color: var(--color-success); }
+
 /* === Programar envío de mensajes (modo programado del chat) === */
 .chat-icon-btn.schedule-active,
 .chat-icon-btn.schedule-active i { color: var(--color-primary); }
