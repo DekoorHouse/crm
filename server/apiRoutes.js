@@ -3739,6 +3739,43 @@ router.post('/contacts/disable-ia-bulk', async (req, res) => {
     }
 });
 
+// --- POST /api/contacts/:contactId/activate-postventa ---
+// Activa la etapa 2 (post-venta) para un contacto SIN enviarle /final: pone
+// aiStage='postventa' y botActive=true. Si el último mensaje es del cliente (sin
+// contestar), dispara la IA para que lo revise y responda ya en modo post-venta.
+router.post('/contacts/:contactId/activate-postventa', async (req, res) => {
+    try {
+        const { contactId } = req.params;
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const snap = await contactRef.get();
+        if (!snap.exists) {
+            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        }
+
+        await contactRef.update({ aiStage: 'postventa', botActive: true });
+
+        // ¿Hay un mensaje del cliente sin contestar? (el último mensaje es entrante)
+        let answering = false;
+        const lastSnap = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(1).get();
+        if (!lastSnap.empty) {
+            const lastMsg = lastSnap.docs[0].data();
+            if (lastMsg.from === contactId) {
+                answering = true;
+                const { processAutoReplyAI } = require('./services');
+                const message = { id: lastMsg.id, text: lastMsg.text || '' };
+                const freshData = { ...snap.data(), aiStage: 'postventa', botActive: true };
+                // Fire-and-forget: no bloquear la respuesta HTTP con la generación de la IA.
+                processAutoReplyAI(contactId, message, contactRef, freshData)
+                    .catch(e => console.error(`[activate-postventa] IA falló para ${contactId}:`, e.message));
+            }
+        }
+        return res.status(200).json({ success: true, answering });
+    } catch (error) {
+        console.error('[activate-postventa] error:', error.message);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // --- Endpoint GET /api/contacts (Paginado y con filtro de etiqueta) ---
 router.get('/contacts', async (req, res) => {
     try {

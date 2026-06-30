@@ -2222,12 +2222,20 @@ async function handleActivatePostventa(contactId) {
             scheduleContactListRender();
             if (state.selectedContactId === contactId) renderChatWindow();
         }
-        // 2. Persistir: pasa a etapa 2 y enciende la IA (no se manda nada al cliente)
-        await db.collection('contacts_whatsapp').doc(contactId).update({ aiStage: 'postventa', botActive: true });
+        // 2. Endpoint backend: pasa a etapa 2, enciende la IA y, si hay un mensaje del cliente
+        //    sin contestar, dispara la IA para que lo revise y responda (sin mandar /final).
+        const resp = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/activate-postventa`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        await resp.json().catch(() => ({}));
+        // Si había un mensaje sin contestar, el backend ya disparó la IA; la UI muestra el
+        // estado "generando" en el chat. El robot ámbar + badge confirman la activación.
     } catch (error) {
         console.error('Error al activar la post-venta:', error);
         if (window.showError) showError('No se pudo activar la post-venta.');
-        // Revertir cambio optimista
+        // Revertir cambio optimista (el listener de Firestore corrige igual)
         if (contactIndex > -1 && prev) {
             state.contacts[contactIndex].aiStage = prev.aiStage;
             state.contacts[contactIndex].botActive = prev.botActive;
