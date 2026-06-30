@@ -2249,6 +2249,152 @@ async function handleActivatePostventa(contactId) {
 }
 // --- END: Activar Post-venta a mano ---
 
+// --- START: Reenviar mensaje a otro contacto (+ recientes) ---
+const FORWARD_RECENTS_KEY = 'crm_forward_recents';
+
+function getForwardRecents() {
+    try { return JSON.parse(localStorage.getItem(FORWARD_RECENTS_KEY) || '[]'); }
+    catch (e) { return []; }
+}
+
+function pushForwardRecent(contact) {
+    try {
+        let recents = getForwardRecents().filter(c => c && c.id && c.id !== contact.id);
+        recents.unshift({ id: contact.id, name: contact.name || contact.id });
+        localStorage.setItem(FORWARD_RECENTS_KEY, JSON.stringify(recents.slice(0, 8)));
+    } catch (e) { /* localStorage no disponible: recientes opcional */ }
+}
+
+function escapeForwardHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Abre el selector de contacto para reenviar el mensaje (texto y/o multimedia).
+function handleForwardMessage(event, docId) {
+    if (event) event.stopPropagation();
+    const msg = (state.messages || []).find(m => m.docId === docId);
+    if (!msg) { if (window.showError) showError('No se encontró el mensaje a reenviar.'); return; }
+    if (!msg.text && !msg.fileUrl) { if (window.showError) showError('Este mensaje no se puede reenviar.'); return; }
+    state.forwardingMessage = msg;
+    openForwardModal();
+}
+
+function closeForwardModal() {
+    const o = document.getElementById('forward-modal-overlay');
+    if (o) o.remove();
+}
+
+function openForwardModal() {
+    closeForwardModal();
+    const msg = state.forwardingMessage;
+    let preview = '';
+    if (msg) {
+        if (msg.fileUrl) {
+            const kind = msg.type === 'audio' ? 'Audio' : msg.type === 'image' ? 'Imagen' : msg.type === 'video' ? 'Video' : 'Archivo';
+            preview = `📎 ${kind}${msg.text ? ': ' + msg.text : ''}`;
+        } else {
+            preview = msg.text || '';
+        }
+    }
+    const overlay = document.createElement('div');
+    overlay.id = 'forward-modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding-top:8vh;background:rgba(0,0,0,.45);';
+    overlay.innerHTML = `
+        <div style="background:var(--color-container-bg,#fff);border:1px solid var(--color-border,rgba(0,0,0,.08));border-radius:16px;width:380px;max-width:92vw;max-height:78vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.22);font-family:var(--font-body,Inter,sans-serif);overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--color-border,rgba(0,0,0,.08));">
+                <span style="font-weight:700;font-size:15px;color:var(--color-text,#1c1c1a);">Reenviar a…</span>
+                <button onclick="closeForwardModal()" style="border:none;background:transparent;cursor:pointer;color:var(--color-text-light,#888);font-size:16px;"><i class="fas fa-times"></i></button>
+            </div>
+            ${preview ? `<div style="padding:8px 18px;font-size:12px;color:var(--color-text-light,#888);border-bottom:1px solid var(--color-border,rgba(0,0,0,.06));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Reenviando: ${escapeForwardHtml(preview).slice(0, 90)}</div>` : ''}
+            <div style="padding:12px 14px;">
+                <input type="text" id="forward-search-input" placeholder="Buscar por nombre o número…" autocomplete="off" style="width:100%;padding:9px 12px;border:1px solid var(--color-border,#ddd);border-radius:10px;font-size:13px;background:var(--color-subtle-bg,#f7f7f5);color:var(--color-text,#1c1c1a);outline:none;box-sizing:border-box;">
+            </div>
+            <div id="forward-results" style="overflow-y:auto;padding:0 8px 10px;"></div>
+        </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeForwardModal(); });
+    const input = document.getElementById('forward-search-input');
+    let t;
+    input.addEventListener('input', () => { clearTimeout(t); const q = input.value.trim(); t = setTimeout(() => renderForwardResults(q), 250); });
+    renderForwardResults('');
+    setTimeout(() => input.focus(), 50);
+}
+
+function forwardRowHTML(c) {
+    const name = escapeForwardHtml(c.name || c.id);
+    const idAttr = escapeForwardHtml(c.id);
+    return `<button class="forward-row" data-id="${idAttr}" data-name="${name}" style="display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:none;background:transparent;cursor:pointer;border-radius:10px;text-align:left;color:var(--color-text,#1c1c1a);">
+        <span style="width:32px;height:32px;border-radius:50%;background:var(--color-subtle-bg,#eee);display:flex;align-items:center;justify-content:center;color:var(--color-text-light,#888);flex-shrink:0;"><i class="fas fa-user"></i></span>
+        <span style="flex:1;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</span>
+        <i class="fas fa-share" style="color:var(--color-primary,#ea580c);font-size:13px;"></i>
+    </button>`;
+}
+
+function bindForwardRows(box) {
+    box.querySelectorAll('.forward-row').forEach(btn => {
+        btn.addEventListener('mouseenter', () => { btn.style.background = 'var(--color-subtle-bg,#f4f4f2)'; });
+        btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; });
+        btn.addEventListener('click', () => doForward(btn.dataset.id, btn.dataset.name));
+    });
+}
+
+async function renderForwardResults(query) {
+    const box = document.getElementById('forward-results');
+    if (!box) return;
+    const emptyStyle = 'padding:18px;text-align:center;font-size:12px;color:var(--color-text-light,#999);';
+    if (!query) {
+        const recents = getForwardRecents();
+        box.innerHTML = recents.length
+            ? `<div style="padding:8px 12px 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--color-text-light,#999);">Recientes</div>` + recents.map(forwardRowHTML).join('')
+            : `<div style="${emptyStyle}">Escribe para buscar un contacto.</div>`;
+        bindForwardRows(box);
+        return;
+    }
+    box.innerHTML = `<div style="${emptyStyle}">Buscando…</div>`;
+    try {
+        const resp = await fetch(`${API_BASE_URL}/api/contacts/search?query=${encodeURIComponent(query)}`);
+        const data = await resp.json();
+        const contacts = (data.contacts || []).slice(0, 25).map(c => ({ id: c.id, name: c.name || c.profileName || c.id }));
+        box.innerHTML = contacts.length ? contacts.map(forwardRowHTML).join('') : `<div style="${emptyStyle}">Sin resultados.</div>`;
+    } catch (e) {
+        box.innerHTML = `<div style="${emptyStyle}">Error al buscar.</div>`;
+    }
+    bindForwardRows(box);
+}
+
+async function doForward(targetId, targetName) {
+    const msg = state.forwardingMessage;
+    if (!msg || !targetId) { closeForwardModal(); return; }
+    const payload = { forwarded: true };
+    if (msg.text) payload.text = msg.text;
+    if (msg.fileUrl) { payload.fileUrl = msg.fileUrl; payload.fileType = msg.fileType || ''; }
+    closeForwardModal();
+    try {
+        const resp = await fetch(`${API_BASE_URL}/api/contacts/${targetId}/messages`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.success === false) throw new Error(data.message || ('HTTP ' + resp.status));
+        pushForwardRecent({ id: targetId, name: targetName });
+        showForwardToast(`Reenviado a ${targetName} ✅`);
+    } catch (e) {
+        if (window.showError) showError('No se pudo reenviar: ' + (e.message || ''));
+    }
+    state.forwardingMessage = null;
+}
+
+function showForwardToast(text) {
+    const el = document.createElement('div');
+    el.textContent = text;
+    el.style.cssText = 'position:fixed;left:50%;bottom:40px;transform:translateX(-50%);z-index:10000;background:var(--color-text,#1c1c1a);color:#fff;padding:10px 18px;border-radius:24px;font-size:13px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.25);font-family:var(--font-body,Inter,sans-serif);';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2600);
+}
+
+window.handleForwardMessage = handleForwardMessage;
+window.closeForwardModal = closeForwardModal;
+// --- END: Reenviar mensaje a otro contacto ---
+
 // --- START: Read Receipt (hora de visto) ---
 /**
  * Muestra un tooltip con la hora (y la fecha si fue otro día) en que el

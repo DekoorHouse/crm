@@ -1623,6 +1623,7 @@ const MessageBubbleTemplate = (message) => {
         <div class="message-actions">
              ${reactionBarHTML}
              <button class="message-action-btn" onclick="handleStartReply(event, '${message.docId}')" title="Responder"><i class="fas fa-reply"></i></button>
+             <button class="message-action-btn" onclick="handleForwardMessage(event, '${message.docId}')" title="Reenviar"><i class="fas fa-share"></i></button>
              ${copyButtonHTML}
         </div>
     `;
