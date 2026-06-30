@@ -2204,6 +2204,39 @@ async function handleStageReset(contactId) {
 }
 // --- END: Stage Reset Logic ---
 
+// --- START: Activar Post-venta a mano (venta -> post-venta, sin enviar /final) ---
+async function handleActivatePostventa(contactId) {
+    const contact = state.contacts.find(c => c.id === contactId);
+    const name = (contact && contact.name) || 'este contacto';
+    if (!window.confirm(`¿Activar la IA de POST-VENTA para ${name}? Empezará a atender cobro, validación de comprobante y entrega, y se ENCENDERÁ la IA del chat. NO se le envía ningún mensaje al cliente (a diferencia de /final).`)) return;
+
+    const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+    const prev = contactIndex > -1
+        ? { aiStage: state.contacts[contactIndex].aiStage, botActive: state.contacts[contactIndex].botActive }
+        : null;
+    try {
+        // 1. Actualización optimista de la UI
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].aiStage = 'postventa';
+            state.contacts[contactIndex].botActive = true;
+            scheduleContactListRender();
+            if (state.selectedContactId === contactId) renderChatWindow();
+        }
+        // 2. Persistir: pasa a etapa 2 y enciende la IA (no se manda nada al cliente)
+        await db.collection('contacts_whatsapp').doc(contactId).update({ aiStage: 'postventa', botActive: true });
+    } catch (error) {
+        console.error('Error al activar la post-venta:', error);
+        if (window.showError) showError('No se pudo activar la post-venta.');
+        // Revertir cambio optimista
+        if (contactIndex > -1 && prev) {
+            state.contacts[contactIndex].aiStage = prev.aiStage;
+            state.contacts[contactIndex].botActive = prev.botActive;
+            if (state.selectedContactId === contactId) renderChatWindow();
+        }
+    }
+}
+// --- END: Activar Post-venta a mano ---
+
 // --- START: Read Receipt (hora de visto) ---
 /**
  * Muestra un tooltip con la hora (y la fecha si fue otro día) en que el
@@ -2266,6 +2299,7 @@ function hideReadReceipt() {
 window.handleMarkAsUnread = handleMarkAsUnread;
 window.handleBotToggle = handleBotToggle;
 window.handleStageReset = handleStageReset;
+window.handleActivatePostventa = handleActivatePostventa;
 window.showReadReceipt = showReadReceipt;
 
 

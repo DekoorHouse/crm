@@ -2027,6 +2027,12 @@ const ChatWindowTemplate = (contact) => {
         ? `<button type="button" onclick="handleStageReset('${contact.id}')" class="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap cursor-pointer hover:brightness-95" style="background:#fff7ed;color:#b45309;border:1px solid #fed7aa;" title="IA en post-venta — clic para regresar a venta (nuevo pedido)"><i class="fas fa-box"></i>Post-venta<i class="fas fa-rotate-left opacity-60 ml-0.5"></i></button>`
         : '';
 
+    // Botón para activar la POST-VENTA a mano (sin mandarle /final al cliente). Pasa el chat
+    // a etapa 2 y enciende la IA. Solo se muestra cuando el contacto NO está ya en post-venta.
+    const activatePostventaHTML = !isPostVentaContact
+        ? `<button onclick="handleActivatePostventa('${contact.id}')" class="p-2 rounded-full hover:bg-amber-50 transition-colors text-gray-400 hover:text-amber-500 ml-2" title="Activar post-venta (cobro/validación) y encender la IA — NO le envía ningún mensaje al cliente"><i class="fas fa-box text-xl"></i></button>`
+        : '';
+
     // --- Botón de Revisión de Diseño ---
     const isInDesign = contact.inDesignReview === true;
     const designToggleHTML = `
@@ -2069,6 +2075,7 @@ const ChatWindowTemplate = (contact) => {
             <div class="flex items-center pr-2 chat-header-actions">
                 ${designToggleHTML}
                 ${botToggleHTML}
+                ${activatePostventaHTML}
                 ${transferButtonHTML}
                 ${clearHistoryButtonHTML}
             </div>
