@@ -1369,6 +1369,27 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             return `${fromLabel}: ${msgDisplayText(d)}`;
         }).reverse().join('\n');
 
+        // --- FASE 2: incluir la imagen/archivo CITADO por el cliente ---
+        // Si el ÚLTIMO mensaje del cliente responde (cita) a una imagen o PDF anterior, incluir
+        // ESE archivo entre los que se mandan al modelo (aunque sea viejo y no esté en los
+        // últimos 2), para que la IA lo compare visualmente ("este no?", "el segundo", etc.).
+        let quotedMediaNote = '';
+        for (const doc of messagesSnapshot.docs) { // desc: el primer match es el último msg del cliente
+            const d = doc.data();
+            if (d.from !== contactId) continue;
+            const qId = d.context && d.context.id;
+            const q = qId ? byWamid[qId] : null;
+            if (q && (q.type === 'image' || q.type === 'document') && q.fileUrl) {
+                if (!downloadedMedia.some(m => m.url === q.fileUrl)) {
+                    const qMime = q.fileType || (q.type === 'image' ? 'image/jpeg' : 'application/pdf');
+                    downloadedMedia.push({ url: q.fileUrl, mimeType: qMime, type: q.type });
+                    console.log(`[AI] Incluyendo ${q.type} citado por el cliente para ${contactId}.`);
+                }
+                quotedMediaNote = `\n\n**Importante:** El cliente está respondiendo/citando ${q.type === 'image' ? 'una imagen' : 'un archivo'} anterior${q.text ? ` ("${q.text}")` : ''} que está incluido entre los archivos adjuntos. Úsalo para entender su mensaje (ej.: "este no?", "ese sí", "el segundo").`;
+            }
+            break; // solo evaluamos el último mensaje del cliente
+        }
+
         // --- Descargar imágenes de referencia del departamento (contexto estático → van al caché) ---
         const departmentImageParts = [];
         const departmentImageIds = []; // Para el hash del caché
@@ -1465,7 +1486,7 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         });
         const fechaActualNote = `\n\n**Fecha y hora actual en México:** ${nowMx}. Usa SIEMPRE esta fecha como "hoy" para calcular tiempos de entrega cuando el cliente mencione una fecha límite; nunca la inventes.`;
 
-        const dynamicPrompt = `${fechaActualNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, audios, videos o documentos/PDF (como comprobantes de pago), analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+        const dynamicPrompt = `${fechaActualNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, audios, videos o documentos/PDF (como comprobantes de pago), analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
 
         // --- Intentar usar Context Caching ---
         let aiResult;
