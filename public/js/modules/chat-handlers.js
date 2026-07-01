@@ -1265,6 +1265,8 @@ function _onSpellMenuKey(e) { if (e.key === 'Escape') _closeSpellMenu(); }
 // Clic derecho sobre el cuadro de mensaje: menú para gestionar el diccionario.
 function handleSpellcheckContextMenu(event) {
     if (!isSpellcheckEnabled()) return;                 // apagado: dejar el menú nativo del navegador
+    // En táctil (móvil/tablet) el long-press debe conservar el menú nativo (copiar/pegar/seleccionar).
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
     const input = event.target;
     const info = _wordAtCursor(input);
     if (!info || info.word.length < 2 || /[0-9@#/\\]/.test(info.word)) return; // sin palabra útil: menú nativo
