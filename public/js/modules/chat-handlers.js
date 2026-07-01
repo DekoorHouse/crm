@@ -411,6 +411,8 @@ async function handleSelectContact(contactId) {
 
     // Badge "pendiente" del seguimiento IA (no bloquea; pinta cuando llega)
     if (typeof fetchOrderPending === 'function') fetchOrderPending(contactId);
+    // Badge de recordatorio programado a fecha futura (no bloquea; pinta cuando llega)
+    if (typeof fetchReminder === 'function') fetchReminder(contactId);
     state.isEditingNote = null;
     state.notes = []; // LIMPIAR NOTAS al cambiar de contacto
     state.isSessionExpired = false; // Resetear al cambiar de contacto
@@ -2490,6 +2492,152 @@ async function handleActivatePostventa(contactId) {
 }
 // --- END: Activar Post-venta a mano ---
 
+// --- START: Recordatorio programado a fecha futura (plantilla + IA) ---
+
+// Trae el estado del recordatorio del contacto y pinta el badge en el chat.
+async function fetchReminder(contactId) {
+    if (!contactId) return;
+    if (!state.reminderByContact) state.reminderByContact = {};
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/reminders/contact/${encodeURIComponent(contactId)}`);
+        state.reminderByContact[contactId] = (await res.json()) || { exists: false };
+    } catch (e) {
+        state.reminderByContact[contactId] = { exists: false };
+    }
+    if (state.selectedContactId === contactId) {
+        const host = document.getElementById('reminder-host');
+        if (host && typeof ReminderBadge === 'function') {
+            const contact = (state.contacts || []).find(c => c.id === contactId) || { id: contactId };
+            host.innerHTML = ReminderBadge(contact);
+        }
+    }
+}
+
+function reminderEscapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function closeReminderModal() {
+    const el = document.getElementById('reminder-modal-overlay');
+    if (el) el.remove();
+}
+
+// Modal autocontenido: fijar/editar fecha + mensaje, pedir sugerencia a la IA, guardar o cancelar.
+async function openReminderModal(contactId) {
+    closeReminderModal();
+    const contact = (state.contacts || []).find(c => c.id === contactId) || { id: contactId };
+    const name = reminderEscapeHtml(contact.name || 'este contacto');
+    const minDate = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10); // mañana
+
+    const overlay = document.createElement('div');
+    overlay.id = 'reminder-modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    overlay.innerHTML = `
+        <div style="background:var(--color-surface,#fff);color:var(--color-text,#111827);width:100%;max-width:460px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow:hidden;">
+            <div style="padding:16px 18px;border-bottom:1px solid rgba(0,0,0,.08);display:flex;align-items:center;gap:8px;">
+                <i class="fas fa-calendar-plus" style="color:#4f46e5;"></i>
+                <strong style="font-size:15px;">Recordatorio programado</strong>
+                <span style="margin-left:auto;font-size:12px;color:#888;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>
+            </div>
+            <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px;">
+                <div id="reminder-status-line" style="font-size:12px;color:#6b7280;min-height:16px;"></div>
+                <label style="font-size:12px;font-weight:600;">Fecha de envío
+                    <input id="reminder-date" type="date" min="${minDate}" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;background:#fff;color:#111;">
+                </label>
+                <label style="font-size:12px;font-weight:600;">Mensaje (la IA lo redacta; puedes editarlo)
+                    <textarea id="reminder-message" rows="3" placeholder="Ej. ¿Ya supiste si tu bebé es niño o niña? Retomamos tus 2 lámparas con la promo 🎉" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;resize:vertical;background:#fff;color:#111;"></textarea>
+                </label>
+                <button id="reminder-suggest" type="button" style="align-self:flex-start;font-size:13px;color:#4f46e5;background:none;border:none;cursor:pointer;padding:0;font-weight:600;"><i class="fas fa-wand-magic-sparkles"></i> IA sugiere fecha y mensaje</button>
+                <p style="font-size:11px;color:#9ca3af;line-height:1.4;margin:0;">Se enviará ese día con una plantilla aprobada de WhatsApp (la ventana de 24h ya estará cerrada). El texto se inserta en “<strong>¡Hola, ${name}! 👋 …</strong>”.</p>
+            </div>
+            <div style="padding:12px 18px;border-top:1px solid rgba(0,0,0,.08);display:flex;gap:8px;align-items:center;">
+                <button id="reminder-delete" type="button" style="display:none;font-size:13px;color:#dc2626;background:none;border:none;cursor:pointer;"><i class="fas fa-trash"></i> Cancelar recordatorio</button>
+                <div style="margin-left:auto;display:flex;gap:8px;">
+                    <button id="reminder-close" type="button" style="padding:8px 14px;border:1px solid #d1d5db;background:#fff;color:#111;border-radius:8px;cursor:pointer;font-size:14px;">Cerrar</button>
+                    <button id="reminder-save" type="button" style="padding:8px 14px;border:none;background:#4f46e5;color:#fff;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;">Guardar</button>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+
+    const $ = id => overlay.querySelector('#' + id);
+    const dateEl = $('reminder-date'), msgEl = $('reminder-message'), statusEl = $('reminder-status-line');
+    const suggestBtn = $('reminder-suggest'), saveBtn = $('reminder-save'), delBtn = $('reminder-delete');
+
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeReminderModal(); });
+    $('reminder-close').addEventListener('click', closeReminderModal);
+
+    // Prefill: si ya hay un recordatorio agendado, cargarlo.
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/reminders/contact/${encodeURIComponent(contactId)}`);
+        const info = await res.json();
+        if (info && info.exists && info.status === 'scheduled') {
+            if (info.remindDate) dateEl.value = info.remindDate;
+            if (info.message) msgEl.value = info.message;
+            statusEl.textContent = `Programado para ${info.remindDate || '—'}${info.source === 'ai' ? ' (lo detectó la IA)' : ''}.`;
+            delBtn.style.display = 'inline-block';
+        } else {
+            statusEl.textContent = 'Sin recordatorio. Pon una fecha o pídele una sugerencia a la IA.';
+        }
+    } catch (e) { statusEl.textContent = ''; }
+
+    suggestBtn.addEventListener('click', async () => {
+        suggestBtn.disabled = true;
+        const orig = suggestBtn.innerHTML;
+        suggestBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Pensando…';
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/reminders/suggest/${encodeURIComponent(contactId)}`, { method: 'POST' });
+            const s = await res.json();
+            if (s && s.remindDate) dateEl.value = s.remindDate;
+            if (s && s.message) msgEl.value = s.message;
+            statusEl.textContent = s && s.defer
+                ? `IA: el cliente pidió esperar (${s.reason || 'fecha futura'}).`
+                : 'IA: no detectó un aplazamiento claro; propuse un default editable.';
+        } catch (e) {
+            if (window.showError) showError('No se pudo generar la sugerencia.');
+        } finally {
+            suggestBtn.disabled = false;
+            suggestBtn.innerHTML = orig;
+        }
+    });
+
+    saveBtn.addEventListener('click', async () => {
+        const remindAt = dateEl.value;
+        if (!remindAt) { if (window.showError) showError('Elige una fecha.'); return; }
+        saveBtn.disabled = true;
+        const orig = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/reminders/contact/${encodeURIComponent(contactId)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ remindAt, message: msgEl.value || '' })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            if (window.showSuccess) showSuccess('Recordatorio programado.');
+            closeReminderModal();
+            fetchReminder(contactId);
+        } catch (e) {
+            if (window.showError) showError('No se pudo guardar el recordatorio.');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = orig;
+        }
+    });
+
+    delBtn.addEventListener('click', async () => {
+        if (!window.confirm('¿Cancelar este recordatorio programado?')) return;
+        try {
+            await fetch(`${API_BASE_URL}/api/reminders/contact/${encodeURIComponent(contactId)}`, { method: 'DELETE' });
+            if (window.showSuccess) showSuccess('Recordatorio cancelado.');
+            closeReminderModal();
+            fetchReminder(contactId);
+        } catch (e) {
+            if (window.showError) showError('No se pudo cancelar.');
+        }
+    });
+}
+// --- END: Recordatorio programado ---
+
 // --- START: Reenviar mensaje a otro contacto (+ recientes) ---
 const FORWARD_RECENTS_KEY = 'crm_forward_recents';
 
@@ -2699,6 +2847,8 @@ window.handleMarkAsUnread = handleMarkAsUnread;
 window.handleBotToggle = handleBotToggle;
 window.handleStageReset = handleStageReset;
 window.handleActivatePostventa = handleActivatePostventa;
+window.openReminderModal = openReminderModal;
+window.fetchReminder = fetchReminder;
 window.showReadReceipt = showReadReceipt;
 
 

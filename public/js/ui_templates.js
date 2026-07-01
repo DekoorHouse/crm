@@ -1929,6 +1929,23 @@ function OrderPendingBadge(contact) {
     return `<span class="order-pending-pill" title="Seguimiento IA · quedó pendiente" style="display:inline-flex;align-items:center;gap:4px;background:${color};color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;"><i class="fas fa-hourglass-half"></i> ${pend}</span>`;
 }
 
+// Insignia de "recordatorio programado" en el header del chat. Lee de un caché en
+// state que llena fetchReminder(contactId) al seleccionar el chat. Clic = editar.
+function ReminderBadge(contact) {
+    if (!contact) return '';
+    const cache = (typeof state !== 'undefined' && state.reminderByContact) || {};
+    const info = cache[contact.id];
+    if (!info || !info.exists || info.status !== 'scheduled') return '';
+    let label = '';
+    if (info.remindDate) {
+        const m = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+        const p = String(info.remindDate).split('-'); // YYYY-MM-DD
+        if (p.length === 3) label = `${parseInt(p[2], 10)} ${m[parseInt(p[1], 10) - 1] || ''}`;
+    }
+    const src = info.source === 'ai' ? ' · IA' : '';
+    return `<button type="button" onclick="openReminderModal('${contact.id}')" class="order-pending-pill" title="Recordatorio programado${src} — clic para ver o editar" style="display:inline-flex;align-items:center;gap:4px;background:#4f46e5;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;border:none;cursor:pointer;"><i class="fas fa-calendar-check"></i> ${label}</button>`;
+}
+
 const ChatWindowTemplate = (contact) => {
     const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fas fa-comments text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
     if (!contact) { return emptyChat; }
@@ -2061,6 +2078,13 @@ const ChatWindowTemplate = (contact) => {
         </button>
     `;
 
+    // --- Botón: programar recordatorio a fecha futura (plantilla + IA) ---
+    const reminderButtonHTML = `
+        <button onclick="openReminderModal('${contact.id}')" class="p-2 rounded-full hover:bg-indigo-50 transition-colors text-gray-400 hover:text-indigo-500 ml-2" title="Programar recordatorio a fecha futura (se manda con plantilla; la IA redacta el texto)">
+            <i class="fas fa-calendar-plus text-xl"></i>
+        </button>
+    `;
+
     return `
         <div id="drag-drop-overlay-chat" class="drag-overlay hidden">
             <div class="drag-overlay-content">
@@ -2076,11 +2100,13 @@ const ChatWindowTemplate = (contact) => {
                 ${HeaderTagControlTemplate(contact)}
                 ${postVentaBadge}
                 <span id="order-pending-host" class="flex-shrink-0">${OrderPendingBadge(contact)}</span>
+                <span id="reminder-host" class="flex-shrink-0">${ReminderBadge(contact)}</span>
             </div>
             <div class="flex items-center pr-2 chat-header-actions">
                 ${designToggleHTML}
                 ${botToggleHTML}
                 ${activatePostventaHTML}
+                ${reminderButtonHTML}
                 ${transferButtonHTML}
                 ${clearHistoryButtonHTML}
             </div>
