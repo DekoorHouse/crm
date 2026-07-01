@@ -24,6 +24,7 @@ const IG_BUSINESS_ID = process.env.IG_BUSINESS_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID; // para enviar plantillas aprobadas
 
 // Skydropx
 const SKYDROPX_CLIENT_ID = process.env.SKYDROPX_CLIENT_ID;
@@ -903,6 +904,9 @@ async function alertAdminSuspiciousReceipt(contactId, contactData, comprobante) 
 
 // Número de Rosario (encargada de generar las guías de envío). Formato internacional 52 + 1 + 10 díg.
 const SHIPPING_NOTIFY_PHONE = process.env.ROSARIO_PHONE || '5216181441382';
+// Plantilla aprobada en Meta para avisar a Rosario (funciona aunque la ventana de 24h esté cerrada).
+// {{1}}=nº de pedido, {{2}}=nombre del cliente, {{3}}=datos de envío (aplanados a una línea).
+const SHIPPING_READY_TEMPLATE = process.env.SHIPPING_READY_TEMPLATE || 'datos_envio_listos';
 
 // Lee de crm_settings/general cuándo enviar el evento Purchase a Meta: 'registration'
 // (al registrar el pedido) o 'fabricar' (al pasar a estatus "Fabricar", valor por defecto).
@@ -973,20 +977,107 @@ async function getLatestOrderForContact(contactId) {
     }
 }
 
+// Sanitiza el texto de un parámetro de plantilla de Meta: sin saltos de línea/tabs ni espacios
+// corridos (Meta los rechaza), recortado a un largo prudente.
+function sanitizeTemplateParam(text) {
+    return String(text || '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 700);
+}
+
 /**
- * Avisa por WhatsApp a Rosario que un pedido ya mandó sus datos de envío completos para que
- * genere la guía. Incluye los datos que escribió el cliente. OJO: envío de forma libre; si
- * Rosario no tiene ventana de 24h abierta con el número del negocio, Meta puede rechazarlo
- * (pendiente: plantilla aprobada para garantizar la entrega, igual que el aviso al admin).
+ * Envía un mensaje de PLANTILLA aprobada de Meta (patrón carritos/recordatorios). A diferencia
+ * del envío libre, funciona AUNQUE la ventana de 24h esté cerrada. Busca la plantilla aprobada
+ * por nombre, rellena sus {{n}} con `params` en orden, la manda y refleja el texto renderizado en
+ * el chat del CRM. Lanza si faltan credenciales o la plantilla no está aprobada (para que el
+ * llamador pueda hacer fallback a envío libre).
+ */
+async function sendApprovedTemplateMessage(waId, templateName, params = [], { source } = {}) {
+    if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        throw new Error('Faltan credenciales de WhatsApp Business (WHATSAPP_BUSINESS_ACCOUNT_ID/WHATSAPP_TOKEN/PHONE_NUMBER_ID)');
+    }
+    // 1) Buscar la plantilla APROBADA por nombre
+    const listUrl = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates?limit=200`;
+    const listRes = await axios.get(listUrl, { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
+    const approved = (listRes.data?.data || []).filter(t => t.status === 'APPROVED');
+    const template = approved.find(t => t.name === templateName);
+    if (!template) {
+        const names = approved.map(t => t.name).join(', ') || '(ninguna)';
+        throw new Error(`Plantilla "${templateName}" no encontrada o no aprobada. Aprobadas: ${names}`);
+    }
+    // 2) Rellenar los {{n}} del BODY con params en orden (Meta rechaza parámetros vacíos → '—')
+    const bodyComp = (template.components || []).find(c => c.type === 'BODY');
+    const placeholders = (bodyComp?.text || '').match(/\{\{\d+\}\}/g) || [];
+    const langCode = template.language || 'es_MX';
+    const cleanParams = placeholders.map((_, i) => sanitizeTemplateParam(params[i] != null ? params[i] : '') || '—');
+    const components = placeholders.length > 0
+        ? [{ type: 'body', parameters: cleanParams.map(text => ({ type: 'text', text })) }]
+        : [];
+    const payload = {
+        messaging_product: 'whatsapp',
+        to: waId,
+        type: 'template',
+        template: { name: template.name, language: { code: langCode } }
+    };
+    if (components.length > 0) payload.template.components = components;
+
+    // 3) Enviar
+    const sendUrl = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+    const sendRes = await axios.post(sendUrl, payload, {
+        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
+    });
+    const messageId = sendRes.data?.messages?.[0]?.id || null;
+
+    // 4) Reflejar el mensaje renderizado en el chat del CRM (para que se vea el envío)
+    let renderedText = bodyComp?.text || '';
+    cleanParams.forEach((val, i) => { renderedText = renderedText.replace(new RegExp(`\\{\\{${i + 1}\\}\\}`, 'g'), val); });
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(waId);
+        await contactRef.collection('messages').add({
+            from: PHONE_NUMBER_ID, status: 'sent',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: messageId, text: renderedText, templateName: template.name,
+            source: source || 'template'
+        });
+        await contactRef.update({
+            lastMessage: renderedText.substring(0, 100),
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (e) {
+        console.warn('[TEMPLATE] No se pudo reflejar el mensaje en el CRM:', e.message);
+    }
+    return { messageId, renderedText };
+}
+
+/**
+ * Avisa por WhatsApp a Rosario que un pedido ya mandó sus datos de envío completos para que genere
+ * la guía. Intenta primero con la PLANTILLA aprobada (`SHIPPING_READY_TEMPLATE`), que llega aunque
+ * la ventana de 24h esté cerrada; si la plantilla no está aprobada/configurada, cae a envío libre
+ * (que solo llega si Rosario tiene ventana de 24h abierta con el número del negocio).
  */
 async function notifyShippingDataReady(orderNumber, contactData, addressText) {
     const name = (contactData && contactData.name) || 'Cliente';
+    const flatAddress = (addressText || '').replace(/\n+/g, ' · ').trim();
+
+    // 1) Preferir la PLANTILLA aprobada (no depende de la ventana de 24h).
+    try {
+        await sendApprovedTemplateMessage(
+            SHIPPING_NOTIFY_PHONE,
+            SHIPPING_READY_TEMPLATE,
+            [orderNumber, name, flatAddress || 'Ver datos en el chat del cliente'],
+            { source: 'datos_envio_listos' }
+        );
+        console.log(`[POSTVENTA] Aviso a Rosario (${SHIPPING_NOTIFY_PHONE}) enviado por PLANTILLA "${SHIPPING_READY_TEMPLATE}" para ${orderNumber}.`);
+        return;
+    } catch (tplErr) {
+        console.warn(`[POSTVENTA] No se pudo enviar la plantilla a Rosario (${tplErr.message}). Fallback a texto libre (requiere ventana 24h).`);
+    }
+
+    // 2) Fallback: envío libre (solo llega dentro de la ventana de 24h).
     let text = `📦 *Pedido listo para guía*\n\n*${orderNumber}* — ${name}\nYa mandó sus datos de envío completos. Por favor genera su guía. 🙌`;
     if (addressText && addressText.trim()) {
         text += `\n\n*Datos que envió el cliente:*\n${addressText.trim()}`;
     }
     await sendAdvancedWhatsAppMessage(SHIPPING_NOTIFY_PHONE, { text });
-    console.log(`[POSTVENTA] Aviso de datos completos enviado a Rosario (${SHIPPING_NOTIFY_PHONE}) por ${orderNumber}.`);
+    console.log(`[POSTVENTA] Aviso a Rosario (${SHIPPING_NOTIFY_PHONE}) enviado por TEXTO LIBRE para ${orderNumber}.`);
 }
 
 /**
