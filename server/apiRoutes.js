@@ -2657,6 +2657,10 @@ ${question}`;
 // Filosofía: ante cualquier duda, devolver el texto ORIGINAL (mejor no tocar que romper).
 router.post('/spellcheck', async (req, res) => {
     const original = (req.body && typeof req.body.text === 'string') ? req.body.text : '';
+    // Palabras del diccionario compartido marcadas como "válidas": la IA NO debe tocarlas.
+    const protect = Array.isArray(req.body && req.body.protect)
+        ? req.body.protect.filter(w => typeof w === 'string' && w.trim()).slice(0, 100)
+        : [];
     try {
         const trimmed = original.trim();
         // Nada útil que corregir o texto demasiado largo: devolver tal cual.
@@ -2664,7 +2668,7 @@ router.post('/spellcheck', async (req, res) => {
             return res.json({ corrected: original, changed: false });
         }
 
-        const systemInstruction = `Eres un corrector ortográfico para mensajes de atención a clientes por WhatsApp, en español de México.
+        let systemInstruction = `Eres un corrector ortográfico para mensajes de atención a clientes por WhatsApp, en español de México.
 Tu ÚNICA tarea es corregir errores de ORTOGRAFÍA y ACENTUACIÓN (tildes), además de la mayúscula al inicio de oración y signos de puntuación claramente faltantes.
 
 REGLAS ESTRICTAS:
@@ -2675,6 +2679,9 @@ REGLAS ESTRICTAS:
 - NO toques: nombres propios, marcas, números, precios, códigos/SKU (p. ej. DK-123), URLs, correos, @menciones, #hashtags ni emojis.
 - Respeta tal cual los saltos de línea, los espacios y las mayúsculas intencionales.
 - Si el texto ya está correcto, devuélvelo IDÉNTICO.`;
+        if (protect.length) {
+            systemInstruction += `\n- Palabras que NO debes modificar bajo ninguna circunstancia (déjalas EXACTAMENTE igual aunque parezcan mal escritas; son nombres/marca/jerga válidos): ${protect.join(', ')}.`;
+        }
 
         const aiResult = await generateGeminiResponse(original, [], systemInstruction);
         let corrected = (aiResult && aiResult.text ? aiResult.text : '').trim();
@@ -2711,6 +2718,68 @@ REGLAS ESTRICTAS:
         console.error('[SPELLCHECK] Error:', err.message);
         // Ante cualquier error, no interrumpir la escritura: devolver lo que vino.
         return res.status(200).json({ corrected: original, changed: false });
+    }
+});
+
+
+// --- Diccionario COMPARTIDO del autocorrector (todos los agentes) ---
+// Guardado en crm_settings/spellcheck_dictionary como dos mapas:
+//   corrections: { "porfa": "por favor", ... }  (from en minúsculas -> to)
+//   ignores:     { "dekoor": true, ... }        (palabras válidas que NO se corrigen)
+const SPELLCHECK_DICT_REF = () => db.collection('crm_settings').doc('spellcheck_dictionary');
+const _normWord = s => (typeof s === 'string' ? s.trim() : '');
+
+// GET: leer el diccionario compartido (lo usa el frontend como respaldo del onSnapshot).
+router.get('/spellcheck/dictionary', async (req, res) => {
+    try {
+        const doc = await SPELLCHECK_DICT_REF().get();
+        const data = doc.exists ? doc.data() : {};
+        res.json({ success: true, corrections: data.corrections || {}, ignores: data.ignores || {} });
+    } catch (err) {
+        console.error('[SPELLCHECK DICT GET] Error:', err.message);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// POST: agregar/quitar entradas. Body: { action, from, to, word }.
+//   add-correction    { from, to }  -> corrige "from" por "to"
+//   add-ignore        { word }      -> marca "word" como válida (no corregir)
+//   remove-correction { from }
+//   remove-ignore     { word }
+router.post('/spellcheck/dictionary', async (req, res) => {
+    try {
+        const { action } = req.body || {};
+        const ref = SPELLCHECK_DICT_REF();
+        const del = admin.firestore.FieldValue.delete();
+
+        if (action === 'add-correction') {
+            const from = _normWord(req.body.from).toLowerCase();
+            const to = _normWord(req.body.to);
+            if (!from || !to) return res.status(400).json({ success: false, message: 'Faltan la palabra y su corrección.' });
+            if (/\s/.test(from)) return res.status(400).json({ success: false, message: 'La palabra a corregir debe ser una sola palabra.' });
+            if (from === to.toLowerCase()) return res.status(400).json({ success: false, message: 'La corrección es igual a la palabra.' });
+            if (to.length > 60) return res.status(400).json({ success: false, message: 'La corrección es demasiado larga.' });
+            await ref.set({ corrections: { [from]: to } }, { merge: true });
+        } else if (action === 'add-ignore') {
+            const word = _normWord(req.body.word).toLowerCase();
+            if (!word) return res.status(400).json({ success: false, message: 'Falta la palabra.' });
+            if (/\s/.test(word)) return res.status(400).json({ success: false, message: 'Debe ser una sola palabra.' });
+            await ref.set({ ignores: { [word]: true } }, { merge: true });
+        } else if (action === 'remove-correction') {
+            const from = _normWord(req.body.from).toLowerCase();
+            if (!from) return res.status(400).json({ success: false, message: 'Falta la palabra.' });
+            await ref.set({ corrections: { [from]: del } }, { merge: true });
+        } else if (action === 'remove-ignore') {
+            const word = _normWord(req.body.word).toLowerCase();
+            if (!word) return res.status(400).json({ success: false, message: 'Falta la palabra.' });
+            await ref.set({ ignores: { [word]: del } }, { merge: true });
+        } else {
+            return res.status(400).json({ success: false, message: 'Acción no válida.' });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[SPELLCHECK DICT POST] Error:', err.message);
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 

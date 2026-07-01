@@ -2814,6 +2814,75 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
 }
 #spellcheck-toast i { color: var(--color-success); }
 
+/* Menú de clic derecho para gestionar el diccionario del autocorrector */
+.spellcheck-context-menu {
+    position: fixed;
+    z-index: 10000;
+    min-width: 240px;
+    max-width: 320px;
+    background: var(--color-container-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    padding: 6px;
+    font-size: 13px;
+    color: var(--color-text);
+    overflow: hidden;
+}
+.spellcheck-context-menu .sc-menu-header {
+    padding: 6px 10px 8px;
+    font-weight: 600;
+    color: var(--color-text-light);
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.spellcheck-context-menu .sc-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 10px;
+    cursor: pointer;
+    color: var(--color-text);
+    font-size: 13px;
+    line-height: 1.2;
+}
+.spellcheck-context-menu .sc-menu-item:hover { background: var(--color-subtle-hover-bg); }
+.spellcheck-context-menu .sc-menu-item i { width: 16px; text-align: center; color: var(--color-text-light); }
+.spellcheck-context-menu .sc-menu-item.sc-danger { color: var(--color-danger); }
+.spellcheck-context-menu .sc-menu-item.sc-danger i { color: var(--color-danger); }
+.spellcheck-context-menu .sc-menu-form { padding: 8px 10px 4px; }
+.spellcheck-context-menu .sc-menu-form label { display: block; margin-bottom: 6px; color: var(--color-text-light); }
+.spellcheck-context-menu .sc-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-size: 13px;
+    outline: none;
+}
+.spellcheck-context-menu .sc-input:focus { border-color: var(--color-primary); }
+.spellcheck-context-menu .sc-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.spellcheck-context-menu .sc-btn {
+    border: none;
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.spellcheck-context-menu .sc-btn.sc-cancel { background: var(--color-subtle-bg); color: var(--color-text-light); }
+.spellcheck-context-menu .sc-btn.sc-save { background: var(--color-primary); color: #fff; }
+
 /* === Programar envío de mensajes (modo programado del chat) === */
 .chat-icon-btn.schedule-active,
 .chat-icon-btn.schedule-active i { color: var(--color-primary); }

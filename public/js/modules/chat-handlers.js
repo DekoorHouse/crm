@@ -294,6 +294,8 @@ function renderChatWindow(options = {}) {
                 messageInput.addEventListener('input', handleQuickReplyInput);
                 messageInput.addEventListener('keydown', handleMessageInputKeyDown);
                 messageInput.addEventListener('input', handleSpellcheckInput); // autocorrector IA
+                messageInput.addEventListener('contextmenu', handleSpellcheckContextMenu); // clic derecho: diccionario
+                initSpellcheckDictionary(); // carga y sincroniza el diccionario compartido
                 
                 messageInput.addEventListener('input', () => {
                     messageInput.style.height = 'auto';
@@ -968,7 +970,8 @@ window.cancelScheduledMessage = cancelScheduledMessage;
 // Ambas capas preservan el historial de deshacer (Ctrl+Z) y solo reemplazan el
 // fragmento que realmente cambió, sin mover el cursor de donde estás escribiendo.
 // =================================================================
-const _spellcheck = { timer: null, abort: null, lastText: '', applying: false, toastTimer: null };
+const _spellcheck = { timer: null, abort: null, lastText: '', applying: false, toastTimer: null,
+    custom: { corrections: {}, ignores: {} }, dictReady: false, menuEl: null };
 const SPELLCHECK_DEBOUNCE_MS = 300; // antes 1000: la sensación de "lento" venía de aquí
 
 // Diccionario LOCAL de correcciones seguras (clave siempre en minúsculas, sin ambigüedad
@@ -1055,11 +1058,17 @@ function _matchCase(original, corrected) {
     return corrected;
 }
 
-// Busca una palabra en el diccionario local; devuelve la corrección o null.
+// Busca una palabra en el diccionario; devuelve la corrección o null.
+// Prioridad: 1) palabras marcadas como válidas (no corregir) -> null
+//            2) correcciones personalizadas del diccionario compartido
+//            3) diccionario base local
 function _lookupLocal(word) {
     if (!word || word.length < 2) return null;
     if (/[0-9@#/\\_·]/.test(word)) return null;          // códigos, @menciones, links: no tocar
-    const fix = SPELLCHECK_LOCAL[word.toLowerCase()];
+    const lower = word.toLowerCase();
+    const custom = _spellcheck.custom || { corrections: {}, ignores: {} };
+    if (custom.ignores && custom.ignores[lower]) return null; // marcada como válida por un agente
+    const fix = (custom.corrections && custom.corrections[lower]) || SPELLCHECK_LOCAL[lower];
     if (!fix) return null;
     const cased = _matchCase(word, fix);
     return cased === word ? null : cased;
@@ -1128,13 +1137,18 @@ async function runSpellcheck(input) {
     if (trimmed.length < 6 || !/\s/.test(trimmed)) return; // muy corto / una sola palabra
     if (text === _spellcheck.lastText) return;             // ya revisado este texto
 
+    // Palabras marcadas como válidas que aparecen en el texto: la IA no debe tocarlas.
+    const lowerText = text.toLowerCase();
+    const protect = Object.keys((_spellcheck.custom && _spellcheck.custom.ignores) || {})
+        .filter(w => lowerText.includes(w));
+
     _spellcheck.abort = new AbortController();
     let corrected;
     try {
         const res = await fetch(`${API_BASE_URL}/api/spellcheck`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text }),
+            body: JSON.stringify({ text, protect }),
             signal: _spellcheck.abort.signal
         });
         if (!res.ok) return;
@@ -1187,6 +1201,202 @@ function showSpellcheckToast(message) {
     toast.classList.add('show');
     if (_spellcheck.toastTimer) clearTimeout(_spellcheck.toastTimer);
     _spellcheck.toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 2500);
+}
+
+// =================================================================
+// DICCIONARIO COMPARTIDO (clic derecho para enseñarle al autocorrector)
+// Se guarda en crm_settings/spellcheck_dictionary y se sincroniza en vivo entre
+// todos los agentes. Clic derecho sobre una palabra del cuadro de mensaje permite:
+//   • Agregar al diccionario  -> marcarla como válida (el corrector no la toca)
+//   • Crear corrección X→Y     -> reemplazo personalizado de la marca
+// =================================================================
+
+// Carga el diccionario compartido y lo mantiene sincronizado (tiempo real vía Firestore,
+// con respaldo por HTTP si onSnapshot no está disponible).
+function initSpellcheckDictionary() {
+    if (_spellcheck.dictReady) return;
+    _spellcheck.dictReady = true;
+    const apply = (data) => {
+        _spellcheck.custom = {
+            corrections: (data && data.corrections) || {},
+            ignores: (data && data.ignores) || {}
+        };
+    };
+    const httpFallback = () => {
+        fetch(`${API_BASE_URL}/api/spellcheck/dictionary`)
+            .then(r => r.json()).then(d => { if (d && d.success) apply(d); })
+            .catch(() => {});
+    };
+    try {
+        if (typeof db === 'undefined' || !db.collection) return httpFallback();
+        db.collection('crm_settings').doc('spellcheck_dictionary').onSnapshot(
+            (doc) => apply(doc.exists ? doc.data() : {}),
+            (err) => { console.warn('[spellcheck] onSnapshot falló, uso HTTP:', err && err.message); httpFallback(); }
+        );
+    } catch (e) {
+        httpFallback();
+    }
+}
+
+// Extrae la palabra bajo el cursor/selección del textarea.
+function _wordAtCursor(input) {
+    const v = input.value;
+    let s = input.selectionStart, e = input.selectionEnd;
+    if (typeof s !== 'number') return null;
+    if (s !== e) {
+        const sel = v.slice(s, e).trim();
+        return sel ? { word: sel } : null;
+    }
+    let start = s, end = s;
+    while (start > 0 && !_isSpellSep(v[start - 1])) start--;
+    while (end < v.length && !_isSpellSep(v[end])) end++;
+    const word = v.slice(start, end).trim();
+    return word ? { word } : null;
+}
+
+function _closeSpellMenu() {
+    if (_spellcheck.menuEl) { _spellcheck.menuEl.remove(); _spellcheck.menuEl = null; }
+    document.removeEventListener('mousedown', _onSpellMenuOutside, true);
+    document.removeEventListener('keydown', _onSpellMenuKey, true);
+}
+function _onSpellMenuOutside(e) { if (_spellcheck.menuEl && !_spellcheck.menuEl.contains(e.target)) _closeSpellMenu(); }
+function _onSpellMenuKey(e) { if (e.key === 'Escape') _closeSpellMenu(); }
+
+// Clic derecho sobre el cuadro de mensaje: menú para gestionar el diccionario.
+function handleSpellcheckContextMenu(event) {
+    if (!isSpellcheckEnabled()) return;                 // apagado: dejar el menú nativo del navegador
+    const input = event.target;
+    const info = _wordAtCursor(input);
+    if (!info || info.word.length < 2 || /[0-9@#/\\]/.test(info.word)) return; // sin palabra útil: menú nativo
+    event.preventDefault();
+    _closeSpellMenu();
+
+    const word = info.word;
+    const lower = word.toLowerCase();
+    const custom = _spellcheck.custom || { corrections: {}, ignores: {} };
+    const isIgnored = !!(custom.ignores && custom.ignores[lower]);
+    const existing = custom.corrections && custom.corrections[lower];
+
+    const menu = document.createElement('div');
+    menu.className = 'spellcheck-context-menu';
+
+    const header = document.createElement('div');
+    header.className = 'sc-menu-header';
+    header.textContent = `“${word}”`;
+    menu.appendChild(header);
+
+    const addItem = (icon, label, onClick, danger) => {
+        const it = document.createElement('button');
+        it.type = 'button';
+        it.className = 'sc-menu-item' + (danger ? ' sc-danger' : '');
+        it.innerHTML = `<i class="fas ${icon}"></i><span></span>`;
+        it.querySelector('span').textContent = label;
+        it.addEventListener('click', onClick);
+        menu.appendChild(it);
+    };
+
+    if (isIgnored) {
+        addItem('fa-rotate-left', 'Quitar del diccionario (volver a corregir)', () => {
+            _saveDictionaryEntry({ action: 'remove-ignore', word: lower });
+            _closeSpellMenu();
+        });
+    } else {
+        addItem('fa-circle-check', 'Agregar al diccionario (no corregir)', () => {
+            _saveDictionaryEntry({ action: 'add-ignore', word: lower });
+            _closeSpellMenu();
+        });
+    }
+
+    addItem('fa-wand-magic-sparkles', existing ? `Editar corrección (→ “${existing}”)` : 'Crear corrección…', () => {
+        _showCorrectionForm(menu, word, existing || '');
+    });
+
+    if (existing) {
+        addItem('fa-trash', 'Quitar corrección', () => {
+            _saveDictionaryEntry({ action: 'remove-correction', from: lower });
+            _closeSpellMenu();
+        }, true);
+    }
+
+    document.body.appendChild(menu);
+    _spellcheck.menuEl = menu;
+    _positionSpellMenu(menu, event.clientX, event.clientY);
+    setTimeout(() => {
+        document.addEventListener('mousedown', _onSpellMenuOutside, true);
+        document.addEventListener('keydown', _onSpellMenuKey, true);
+    }, 0);
+}
+
+// Mini-formulario inline: "Reemplazar «word» por: [____]".
+function _showCorrectionForm(menu, word, current) {
+    menu.querySelectorAll('.sc-menu-item').forEach(el => el.remove());
+    const form = document.createElement('form');
+    form.className = 'sc-menu-form';
+    const label = document.createElement('label');
+    label.textContent = `Reemplazar “${word}” por:`;
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.className = 'sc-input'; inp.maxLength = 60;
+    inp.placeholder = 'texto correcto'; inp.value = current || '';
+    const actions = document.createElement('div');
+    actions.className = 'sc-form-actions';
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'sc-btn sc-cancel'; cancel.textContent = 'Cancelar';
+    const save = document.createElement('button');
+    save.type = 'submit'; save.className = 'sc-btn sc-save'; save.textContent = 'Guardar';
+    actions.appendChild(cancel); actions.appendChild(save);
+    form.appendChild(label); form.appendChild(inp); form.appendChild(actions);
+    cancel.addEventListener('click', () => _closeSpellMenu());
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const to = inp.value.trim();
+        if (!to || to.toLowerCase() === word.toLowerCase()) { _closeSpellMenu(); return; }
+        _saveDictionaryEntry({ action: 'add-correction', from: word.toLowerCase(), to });
+        _closeSpellMenu();
+    });
+    menu.appendChild(form);
+    inp.focus(); inp.select();
+}
+
+// Posiciona el menú evitando que se salga de la ventana.
+function _positionSpellMenu(menu, x, y) {
+    const r = menu.getBoundingClientRect();
+    let left = x, top = y;
+    if (left + r.width > window.innerWidth - 8) left = window.innerWidth - r.width - 8;
+    if (top + r.height > window.innerHeight - 8) top = window.innerHeight - r.height - 8;
+    menu.style.left = Math.max(8, left) + 'px';
+    menu.style.top = Math.max(8, top) + 'px';
+}
+
+// Guarda una entrada: actualiza el estado local al instante (optimista) y persiste en
+// el servidor; el onSnapshot reconcilia con lo que quede guardado para todos.
+async function _saveDictionaryEntry(payload) {
+    const custom = _spellcheck.custom || { corrections: {}, ignores: {} };
+    const corrections = Object.assign({}, custom.corrections);
+    const ignores = Object.assign({}, custom.ignores);
+    if (payload.action === 'add-correction') corrections[payload.from] = payload.to;
+    else if (payload.action === 'remove-correction') delete corrections[payload.from];
+    else if (payload.action === 'add-ignore') ignores[payload.word] = true;
+    else if (payload.action === 'remove-ignore') delete ignores[payload.word];
+    _spellcheck.custom = { corrections, ignores };
+
+    showSpellcheckToast({
+        'add-correction': 'Corrección guardada para todos',
+        'remove-correction': 'Corrección eliminada',
+        'add-ignore': 'Palabra agregada al diccionario',
+        'remove-ignore': 'Palabra quitada del diccionario'
+    }[payload.action] || 'Diccionario actualizado');
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/spellcheck/dictionary`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) showSpellcheckToast('No se pudo guardar en el servidor');
+    } catch (e) {
+        showSpellcheckToast('Sin conexión: no se guardó');
+    }
 }
 
 async function handleSendMessage(event) {
