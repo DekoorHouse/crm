@@ -29,7 +29,7 @@ Responde ÚNICAMENTE con un JSON válido (sin texto antes ni después, sin markd
   "remindAt": string,    // fecha objetivo en formato "YYYY-MM-DD" (día en que se le debe escribir); "" si defer=false
   "reason": string,      // por qué esperar, breve, p. ej. "sabrá el sexo del bebé en ~1 mes"
   "context": string,     // qué quiere el cliente, para personalizar después, p. ej. "2 lámparas: hijo de 7 y bebé; quiere la promo 2x$1000"
-  "message": string      // el texto a enviar ese día, SIN saludo y SIN firma (la plantilla ya pone "Hola <nombre>" y la firma)
+  "message": string      // el texto a enviar ese día, SIN saludo y SIN firma (la plantilla ya pone "¡Hola! 👋" y la firma; NO uses el nombre del cliente)
 }
 
 Cómo calcular remindAt:

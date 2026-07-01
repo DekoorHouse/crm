@@ -30,7 +30,6 @@ const {
     computeSendAtMs,
     sanitizeTemplateParam,
     hasDeferralHint,
-    firstName,
     renderText,
     localHourOf,
     toMillis,
@@ -136,9 +135,11 @@ function renderTemplateBody(template, params) {
     return text;
 }
 
-async function sendReminderTemplate(waId, nameParam, messageParam, cfg) {
+async function sendReminderTemplate(waId, messageParam, cfg) {
     const template = await fetchApprovedTemplate(cfg.templateName);
-    const params = [nameParam, messageParam];
+    // La plantilla lleva UNA sola variable {{1}} = el mensaje. Sin nombre a propósito:
+    // muchos contactos tienen nombres "raros" (no el suyo) y saludarlos así se siente mal.
+    const params = [messageParam];
     const payload = buildTemplatePayload(waId, template, params, cfg);
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const res = await axios.post(url, payload, {
@@ -342,16 +343,15 @@ async function runReminderSweep({ dryRun = false } = {}) {
                 continue;
             }
 
-            const nameParam = firstName((contact && contact.name) || rem.name) || 'qué tal';
             const messageParam = sanitizeTemplateParam(rem.message) || renderText(cfg.fallbackMessage, (contact && contact.name) || rem.name);
 
             if (dryRun) {
-                summary.wouldSend.push({ waId: doc.id, remindAt: new Date(remindMs).toISOString(), nameParam, messageParam });
+                summary.wouldSend.push({ waId: doc.id, remindAt: new Date(remindMs).toISOString(), messageParam });
                 continue;
             }
 
             try {
-                const { messageId, renderedText } = await sendReminderTemplate(doc.id, nameParam, messageParam, cfg);
+                const { messageId, renderedText } = await sendReminderTemplate(doc.id, messageParam, cfg);
                 await doc.ref.update({
                     status: 'sent', sentAt: new Date(), messageId,
                     sentText: renderedText.slice(0, 300), attempts: 0, updatedAt: new Date()

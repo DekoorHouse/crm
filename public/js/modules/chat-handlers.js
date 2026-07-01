@@ -2760,7 +2760,7 @@ async function openReminderModal(contactId) {
                     <textarea id="reminder-message" rows="3" placeholder="Ej. ¿Ya supiste si tu bebé es niño o niña? Retomamos tus 2 lámparas con la promo 🎉" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;resize:vertical;background:#fff;color:#111;"></textarea>
                 </label>
                 <button id="reminder-suggest" type="button" style="align-self:flex-start;font-size:13px;color:#4f46e5;background:none;border:none;cursor:pointer;padding:0;font-weight:600;"><i class="fas fa-wand-magic-sparkles"></i> IA sugiere fecha y mensaje</button>
-                <p style="font-size:11px;color:#9ca3af;line-height:1.4;margin:0;">Se enviará ese día con una plantilla aprobada de WhatsApp (la ventana de 24h ya estará cerrada). El texto se inserta en “<strong>¡Hola, ${name}! 👋 …</strong>”.</p>
+                <p style="font-size:11px;color:#9ca3af;line-height:1.4;margin:0;">Se enviará ese día con una plantilla aprobada de WhatsApp (la ventana de 24h ya estará cerrada). El texto se inserta en “<strong>¡Hola! 👋 …</strong>” (sin nombre, a propósito).</p>
             </div>
             <div style="padding:12px 18px;border-top:1px solid rgba(0,0,0,.08);display:flex;gap:8px;align-items:center;">
                 <button id="reminder-delete" type="button" style="display:none;font-size:13px;color:#dc2626;background:none;border:none;cursor:pointer;"><i class="fas fa-trash"></i> Cancelar recordatorio</button>
