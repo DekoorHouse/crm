@@ -16,7 +16,10 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 const DEFAULT_REMINDER_CONFIG = {
-    enabled: false,                 // OFF por defecto: es envío saliente; se activa explícitamente
+    enabled: true,                  // Encendido en TODAS las conversaciones (decisión del user): la IA
+                                    // detecta aplazamientos de compra o de PAGO en cualquier momento.
+                                    // Nada se ENVÍA hasta que exista la plantilla aprobada, y los
+                                    // recordatorios siempre son a fecha futura (no manda al instante).
     templateName: 'recordatorio_lead', // plantilla aprobada en Meta ({{1}}=nombre, {{2}}=texto IA)
     langCode: 'es_MX',              // idioma de la plantilla (fallback si Meta no lo trae)
     utcOffsetHours: -6,             // México Centro (sin DST desde 2022)
@@ -132,7 +135,10 @@ const DEFERRAL_HINT_RE = new RegExp([
     'apart(a|ar|en|ado)', 'te (escribo|aviso|marco|contacto)', 'les (escribo|aviso|marco|contacto)',
     'me (escribes|avisas|contactas|marcas)', 'cont[aá]cten', 'reci[eé]n',
     '(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)',
-    'navidad', 'reyes', 'quincena', 'd[ií]a de'
+    'navidad', 'reyes', 'quincena', 'd[ií]a de',
+    // Pago diferido (post-venta): "te pago el 15", "te deposito la quincena", "junto para el viernes"
+    'pag', 'deposit', 'transfer', 'transfier', 'abon', 'junt(o|ar|e|amos)',
+    'el d[ií]a\\s*\\d', 'el\\s+\\d{1,2}\\b'
 ].join('|'), 'i');
 
 function hasDeferralHint(text) {

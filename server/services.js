@@ -1989,10 +1989,13 @@ Reglas:
         if (!shouldTransitionToPostVenta && !shouldDeactivate && !isPostVenta) {
             tagOrderInProgress(contactId, contactRef, conversationHistory, contactData.name)
                 .catch(e => console.warn('[ORDER_FOLLOWUP] live-tag falló:', e.message));
+        }
 
-            // Detección en vivo de aplazamientos ("contáctame en un mes") -> agenda un
-            // recordatorio a fecha futura (plantilla). require perezoso para evitar ciclo
-            // de módulos (scheduledReminderScheduler requiere services). Fire-and-forget.
+        // Detección en vivo de aplazamientos -> agenda un recordatorio a fecha futura (plantilla).
+        // Corre en TODAS las conversaciones, INCLUYENDO post-venta: ahí sirve para recordatorios de
+        // PAGO ("te pago el día 15"). Solo se salta si el bot se está apagando en este turno.
+        // require perezoso para evitar ciclo de módulos (scheduledReminderScheduler requiere services).
+        if (!shouldDeactivate) {
             require('./leads/scheduledReminderScheduler')
                 .detectAndArmReminder(contactId, contactRef, conversationHistory, contactData.name)
                 .catch(e => console.warn('[REMINDER] detección en vivo falló:', e.message));
