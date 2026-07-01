@@ -745,6 +745,8 @@ function listenForTags() {
 
 // Evita intentar sembrar los productos por defecto más de una vez por sesión.
 let productsSeedAttempted = false;
+// Evita intentar aplicar el precio por defecto ($750) más de una vez por sesión.
+let productsPriceMigrationAttempted = false;
 
 // Escucha en tiempo real la lista de productos configurables (colección crm_products).
 // Mantiene state.products sincronizado y refresca los selects/modal abiertos.
@@ -757,6 +759,10 @@ function listenForProducts() {
         if (snapshot.empty && !productsSeedAttempted) {
             productsSeedAttempted = true;
             seedDefaultProducts();
+        } else if (!snapshot.empty) {
+            // Migración: asigna precio $750 a los productos que aún no tienen precio
+            // (excepto los de "Corazón", que se manejan aparte).
+            applyDefaultPricesIfNeeded();
         }
 
         // Actualiza cualquier select de producto abierto (modal de nuevo/editar pedido).
@@ -784,6 +790,30 @@ function seedDefaultProducts() {
         });
     });
     batch.commit().catch(err => console.error("Error al sembrar productos por defecto:", err));
+}
+
+// Migración idempotente: asigna precio por defecto de $750 a todos los productos
+// que aún no tienen precio, EXCEPTO los de "Corazón" (que llevan otro precio y se
+// configuran a mano). Se ejecuta una sola vez por sesión; como sólo toca productos
+// sin precio, es segura aunque corra en varios dispositivos.
+const DEFAULT_PRODUCT_PRICE = 750;
+function applyDefaultPricesIfNeeded() {
+    if (productsPriceMigrationAttempted) return;
+    const products = state.products || [];
+    if (!products.length) return;
+    const isCorazon = (name) => (typeof normalizeForSearch === 'function'
+        ? normalizeForSearch(name)
+        : String(name || '').toLowerCase()).includes('corazon');
+    const targets = products.filter(p =>
+        (p.price == null || p.price === '') && !isCorazon(p.name)
+    );
+    productsPriceMigrationAttempted = true; // no reintentar esta sesión
+    if (!targets.length) return;
+    const batch = db.batch();
+    targets.forEach(p => batch.update(db.collection('crm_products').doc(p.id), { price: DEFAULT_PRODUCT_PRICE }));
+    batch.commit()
+        .then(() => console.log(`[productos] Precio $${DEFAULT_PRODUCT_PRICE} aplicado a ${targets.length} producto(s) sin precio.`))
+        .catch(err => console.error("Error al aplicar precios por defecto:", err));
 }
 
 // Escucha cambios en los mensajes automáticos por anuncio

@@ -1647,6 +1647,64 @@ body.dark-mode .product-manager-row input.product-name-edit:focus {
     background-color: #16161e;
 }
 
+/* --- Campo de precio (gestor de productos y alta de producto) --- */
+.products-manager-add #new-product-name-input { flex: 1 1 auto; min-width: 0; }
+.product-price-wrap {
+    display: flex;
+    align-items: center;
+    flex: 0 0 112px;
+    gap: 2px;
+    padding-left: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    background-color: #fff;
+}
+.product-price-wrap:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+.product-price-currency { color: #9ca3af; font-weight: 600; font-size: 0.9rem; flex-shrink: 0; }
+input.product-price-edit {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    margin-bottom: 0;
+    border: none;
+    background: transparent;
+    padding: 8px 8px 8px 2px;
+    font-weight: 600;
+    font-size: 0.92rem;
+    outline: none;
+    -moz-appearance: textfield;
+}
+input.product-price-edit::-webkit-outer-spin-button,
+input.product-price-edit::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Botón para quitar duplicados en el gestor de productos */
+.products-dedup-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding: 7px 12px;
+    border: 1px solid #f59e0b;
+    border-radius: var(--border-radius-md);
+    background-color: #fff7ed;
+    color: #b45309;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+.products-dedup-btn:hover { background-color: #ffedd5; }
+
+/* Dark mode del campo de precio y el botón de duplicados */
+body.dark-mode .product-price-wrap { background-color: #16161e; border-color: #414868; }
+body.dark-mode input.product-price-edit { color: #c0caf5; }
+body.dark-mode .product-price-currency { color: #565f89; }
+body.dark-mode .products-dedup-btn { background-color: #2a2a1e; border-color: #7c5e10; color: #f0c674; }
+body.dark-mode .products-dedup-btn:hover { background-color: #3a3a26; }
+
 body.dark-mode #new-order-modal select, body.dark-mode #order-edit-modal select {
     background-color: #1f2335;
     color: #c0caf5;

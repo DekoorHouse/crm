@@ -381,6 +381,8 @@ async function handleSaveOrder(event) {
         }
 
         // --- 5. Manejar éxito ---
+        // Marca los productos usados para que suban al tope de la lista la próxima vez.
+        if (typeof markProductsUsed === 'function') markProductsUsed(items.map(it => it.producto));
         cerrarModalPedido(); // Cierra el modal de entrada
 
         // Renderiza el modal de confirmación unificado (un solo número de pedido)
@@ -503,6 +505,8 @@ async function handleUpdateExistingOrder(event, orderId) {
         }
 
         // --- Éxito ---
+        // Marca los productos usados para que suban al tope de la lista la próxima vez.
+        if (typeof markProductsUsed === 'function') markProductsUsed(items.map(it => it.producto));
         closeOrderEditModal(); // Cierra modal
         showError('Pedido actualizado con éxito.', 'success'); // Muestra mensaje
         // El listener de pedidos actualizará la barra lateral

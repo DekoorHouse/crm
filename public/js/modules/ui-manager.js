@@ -2864,6 +2864,13 @@ function selectProductPickerValue(picker, value) {
     if (hidden) hidden.value = value;
     if (label) label.textContent = value || 'Selecciona un producto';
     if (trigger) trigger.classList.toggle('is-placeholder', !value);
+    // Autollena el precio unitario con el precio configurado del producto (si tiene).
+    const row = picker.closest('.order-item-row');
+    if (row && value) {
+        const priceInput = row.querySelector('.order-item-price, .edit-order-item-price');
+        const price = (typeof getProductPrice === 'function') ? getProductPrice(value) : null;
+        if (priceInput && price != null) priceInput.value = price;
+    }
     const panel = picker.querySelector('.product-picker-panel');
     if (panel) panel.hidden = true;
     picker.classList.remove('is-open');
@@ -2941,6 +2948,25 @@ function renderProductsManagerList() {
     const listEl = document.getElementById('products-manager-list');
     if (!listEl) return; // el gestor no está abierto
     const products = state.products || [];
+    // Detecta cuántos productos son duplicados (mismo nombre normalizado).
+    const counts = new Map();
+    products.forEach(p => {
+        const key = normalizeForSearch(p.name).trim();
+        if (!key) return;
+        counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    let duplicateCount = 0;
+    counts.forEach(n => { if (n > 1) duplicateCount += (n - 1); });
+
+    const toolsEl = document.getElementById('products-manager-tools');
+    if (toolsEl) {
+        toolsEl.innerHTML = duplicateCount > 0
+            ? `<button type="button" class="products-dedup-btn" onclick="removeDuplicateProducts()">
+                   <i class="fas fa-broom"></i> Quitar ${duplicateCount} duplicado${duplicateCount === 1 ? '' : 's'}
+               </button>`
+            : '';
+    }
+
     if (!products.length) {
         listEl.innerHTML = '<p class="products-manager-empty">Aún no hay productos. Agrega el primero arriba.</p>';
         return;
@@ -2954,17 +2980,29 @@ window.submitNewProduct = async function() {
     if (!input) return;
     const name = input.value.trim();
     if (!name) { showError("Escribe un nombre para el producto."); return; }
-    const exists = (state.products || []).some(p => (p.name || '').toLowerCase() === name.toLowerCase());
+    const key = normalizeForSearch(name).trim();
+    const exists = (state.products || []).some(p => normalizeForSearch(p.name).trim() === key);
     if (exists) { showError(`El producto "${name}" ya existe.`); return; }
+    // Precio (opcional). El input trae $750 por defecto.
+    const priceInput = document.getElementById('new-product-price-input');
+    const priceRaw = priceInput ? priceInput.value.trim() : '';
+    let price = null;
+    if (priceRaw !== '') {
+        price = Number(priceRaw);
+        if (isNaN(price) || price < 0) { showError("El precio no es válido."); return; }
+    }
     input.value = '';
+    if (priceInput) priceInput.value = '750';
     input.focus();
     try {
         const maxOrder = (state.products || []).reduce((m, p) => Math.max(m, Number(p.order) || 0), -1);
-        await db.collection('crm_products').add({
+        const data = {
             name,
             order: maxOrder + 1,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        if (price != null) data.price = price;
+        await db.collection('crm_products').add(data);
         showError(`Producto "${name}" agregado.`, 'success');
     } catch (err) {
         console.error("Error al agregar producto:", err);
@@ -3015,6 +3053,108 @@ window.deleteProductEntry = async function(id, btnEl) {
         console.error("Error al eliminar producto:", err);
         showError("No se pudo eliminar el producto.");
     }
+};
+
+// Guarda el precio de un producto cuando el input pierde el foco (solo si cambió).
+window.saveProductPrice = async function(id, inputEl) {
+    if (!inputEl) return;
+    const raw = inputEl.value.trim();
+    const original = inputEl.dataset.originalPrice || '';
+    if (raw === original) return; // sin cambios
+    let price = null;
+    if (raw !== '') {
+        price = Number(raw);
+        if (isNaN(price) || price < 0) {
+            inputEl.value = original;
+            showError("El precio no es válido.");
+            return;
+        }
+    }
+    inputEl.dataset.originalPrice = raw;
+    try {
+        await db.collection('crm_products').doc(id).update({
+            price: price === null ? firebase.firestore.FieldValue.delete() : price
+        });
+        showError("Precio actualizado.", 'success');
+    } catch (err) {
+        console.error("Error al guardar el precio:", err);
+        inputEl.value = original;
+        showError("No se pudo actualizar el precio.");
+    }
+};
+
+// Elimina productos duplicados (mismo nombre normalizado), conservando una copia
+// de cada uno. Prefiere conservar la copia usada recientemente o con precio, y le
+// traspasa el precio si no lo tenía. Pide confirmación antes de borrar.
+window.removeDuplicateProducts = async function() {
+    const products = state.products || [];
+    const groups = new Map();
+    products.forEach(p => {
+        const key = normalizeForSearch(p.name).trim();
+        if (!key) return;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(p);
+    });
+    const toDelete = [];
+    const priceUpdates = []; // traspaso de precio al superviviente sin precio
+    groups.forEach(group => {
+        if (group.length < 2) return;
+        group.sort((a, b) => {
+            const ua = a.lastUsedAt ? 1 : 0, ub = b.lastUsedAt ? 1 : 0;
+            if (ub - ua) return ub - ua;
+            const pa = (a.price != null && a.price !== '') ? 1 : 0;
+            const pb = (b.price != null && b.price !== '') ? 1 : 0;
+            if (pb - pa) return pb - pa;
+            return (Number(a.order) || 0) - (Number(b.order) || 0);
+        });
+        const survivor = group[0];
+        const rest = group.slice(1);
+        if (survivor.price == null || survivor.price === '') {
+            const withPrice = rest.find(r => r.price != null && r.price !== '');
+            if (withPrice) priceUpdates.push({ id: survivor.id, price: Number(withPrice.price) });
+        }
+        rest.forEach(r => toDelete.push(r.id));
+    });
+    if (!toDelete.length) { showError("No hay productos duplicados.", 'success'); return; }
+    const ok = await showConfirmModal(
+        `Se encontraron ${toDelete.length} producto(s) duplicado(s). ¿Quitarlos y conservar una copia de cada uno?`,
+        { icon: 'delete', confirmText: 'Quitar duplicados', cancelText: 'Cancelar' }
+    );
+    if (!ok) return;
+    try {
+        const batch = db.batch();
+        priceUpdates.forEach(u => batch.update(db.collection('crm_products').doc(u.id), { price: u.price }));
+        toDelete.forEach(id => batch.delete(db.collection('crm_products').doc(id)));
+        await batch.commit();
+        showError(`Se quitaron ${toDelete.length} producto(s) duplicado(s).`, 'success');
+    } catch (err) {
+        console.error("Error al quitar duplicados:", err);
+        showError("No se pudieron quitar los duplicados.");
+    }
+};
+
+// Marca los productos indicados (por nombre) como usados ahora, para que suban a
+// la parte superior de la lista la próxima vez. Fire-and-forget (no bloquea).
+window.markProductsUsed = function(names) {
+    if (!Array.isArray(names) || !names.length) return;
+    const products = state.products || [];
+    if (!products.length) return;
+    const seen = new Set();
+    const batch = db.batch();
+    let count = 0;
+    names.forEach(name => {
+        const key = normalizeForSearch(name).trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        const match = products.find(p => normalizeForSearch(p.name).trim() === key);
+        if (match) {
+            batch.update(db.collection('crm_products').doc(match.id), {
+                lastUsedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            count++;
+        }
+    });
+    if (count) batch.commit().catch(err => console.error("Error al marcar productos usados:", err));
 };
 /**
  * Abre el modal para registrar un nuevo pedido, pre-rellenando datos si es posible.
@@ -3325,7 +3465,9 @@ window.addEditOrderItem = function() {
     const container = document.getElementById('edit-order-items-container');
     if (!container) return;
     const index = editOrderItemsNextIndex++;
-    container.insertAdjacentHTML('beforeend', EditOrderItemRowTemplate(index, { producto: 'Spiderman', precio: 650, datosProducto: '' }, false));
+    const defProduct = (typeof getProductNamesRecent === 'function' && getProductNamesRecent()[0]) || 'Spiderman';
+    const defPrice = (typeof getProductPrice === 'function') ? getProductPrice(defProduct) : null;
+    container.insertAdjacentHTML('beforeend', EditOrderItemRowTemplate(index, { producto: defProduct, precio: defPrice != null ? defPrice : '', datosProducto: '' }, false));
     updateEditOrderItemNumbering();
 };
 

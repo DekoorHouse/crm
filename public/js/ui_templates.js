@@ -2300,11 +2300,62 @@ function buildProductOptionsHTML(selectedValue) {
     ).join('');
 }
 
-// Devuelve los nombres de producto ordenados por MÁS RECIENTE primero.
-// state.products se carga ordenado por 'order' ascendente (los recién agregados
-// tienen el 'order' más alto), así que lo invertimos para mostrarlos arriba.
+// Clave normalizada de un producto (sin acentos, minúsculas) para comparar y
+// deduplicar por nombre. Reutiliza normalizeForSearch (ui-manager) si ya cargó.
+function normalizeProductKey(name) {
+    if (typeof normalizeForSearch === 'function') return normalizeForSearch(name).trim();
+    return String(name == null ? '' : name).trim().toLowerCase();
+}
+
+// Convierte un lastUsedAt (Timestamp de Firestore, {seconds}, o ISO) a milisegundos.
+function productLastUsedMillis(p) {
+    const t = p && p.lastUsedAt;
+    if (!t) return 0;
+    if (typeof t.toMillis === 'function') return t.toMillis();   // Firestore Timestamp
+    if (typeof t.seconds === 'number') return t.seconds * 1000;  // Timestamp plano
+    const ms = Date.parse(t);                                    // string/ISO
+    return isNaN(ms) ? 0 : ms;
+}
+
+// Devuelve los productos ordenados por USO MÁS RECIENTE primero y deduplicados
+// por nombre. Criterio: lastUsedAt desc (los recién usados suben a la cima),
+// y como desempate 'order' desc (los recién agregados). Así, si acabas de usar un
+// producto que estaba abajo, la próxima vez aparece hasta arriba.
+function getProductsSorted() {
+    const products = (typeof state !== 'undefined' && Array.isArray(state.products))
+        ? state.products.slice()
+        : [];
+    products.sort((a, b) => {
+        const byUsed = productLastUsedMillis(b) - productLastUsedMillis(a);
+        if (byUsed) return byUsed;
+        return (Number(b.order) || 0) - (Number(a.order) || 0);
+    });
+    const seen = new Set();
+    const unique = [];
+    for (const p of products) {
+        const key = normalizeProductKey(p && p.name);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        unique.push(p);
+    }
+    return unique;
+}
+
+// Devuelve los nombres de producto ordenados por uso más reciente (ver arriba).
+// Si aún no hay productos en el estado, cae al fallback DEFAULT_PRODUCTS.
 function getProductNamesRecent() {
+    const sorted = getProductsSorted();
+    if (sorted.length) return sorted.map(p => p.name).filter(Boolean);
     return getProductNames().slice().reverse();
+}
+
+// Devuelve el precio configurado de un producto por nombre, o null si no tiene.
+function getProductPrice(name) {
+    const key = normalizeProductKey(name);
+    if (!key) return null;
+    const products = (typeof state !== 'undefined' && Array.isArray(state.products)) ? state.products : [];
+    const match = products.find(p => normalizeProductKey(p && p.name) === key && p.price != null && p.price !== '');
+    return match ? Number(match.price) : null;
 }
 
 // Combobox de producto con buscador y "ver más" (reemplaza el <select> nativo).
@@ -2332,18 +2383,28 @@ function ProductPickerTemplate(selectedValue, inputClass) {
 }
 
 // Fila editable de un producto dentro del gestor de productos.
-const ProductManagerRowTemplate = (product) => `
+const ProductManagerRowTemplate = (product) => {
+    const priceVal = (product.price != null && product.price !== '') ? escapeHtml(String(product.price)) : '';
+    return `
     <div class="product-manager-row" data-product-id="${escapeHtml(product.id)}">
         <input type="text" class="product-name-edit" value="${escapeHtml(product.name || '')}"
                data-original="${escapeHtml(product.name || '')}"
                onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
                onblur="saveProductName('${escapeHtml(product.id)}', this)">
+        <div class="product-price-wrap" title="Precio del producto">
+            <span class="product-price-currency">$</span>
+            <input type="number" class="product-price-edit" placeholder="Precio" step="0.01" min="0"
+                   value="${priceVal}" data-original-price="${priceVal}"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+                   onblur="saveProductPrice('${escapeHtml(product.id)}', this)">
+        </div>
         <button type="button" class="product-delete-btn" title="Eliminar producto"
                 onclick="deleteProductEntry('${escapeHtml(product.id)}', this)">
             <i class="fas fa-trash-alt"></i>
         </button>
     </div>
 `;
+};
 
 // Modal para gestionar (agregar / renombrar / eliminar) la lista de productos.
 const ProductsManagerModalTemplate = () => `
@@ -2351,21 +2412,32 @@ const ProductsManagerModalTemplate = () => `
         <button onclick="closeProductsManager()" class="modal-close-btn" title="Cerrar">&times;</button>
         <h2><i class="fas fa-box-open"></i> Editar productos</h2>
         <p style="margin-top:-10px;margin-bottom:18px;font-size:0.85rem;color:#6b7280;">
-            Agrega nuevos productos, renombra (clic en el nombre) o elimina. Los cambios se aplican en todos los dispositivos.
+            Agrega nuevos productos (con precio), renombra o edita el precio (clic en el campo) o elimina. Los cambios se aplican en todos los dispositivos.
         </p>
         <div class="products-manager-add">
             <input type="text" id="new-product-name-input" placeholder="Nombre del nuevo producto..."
                    autocomplete="off"
-                   onkeydown="if(event.key==='Enter'){event.preventDefault();submitNewProduct();}">
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('new-product-price-input').focus();}">
+            <div class="product-price-wrap" title="Precio del nuevo producto">
+                <span class="product-price-currency">$</span>
+                <input type="number" id="new-product-price-input" class="product-price-edit" placeholder="Precio"
+                       value="750" step="0.01" min="0" autocomplete="off"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();submitNewProduct();}">
+            </div>
             <button type="button" class="btn btn-primary" onclick="submitNewProduct()" style="white-space:nowrap;">
                 <i class="fas fa-plus"></i> Agregar
             </button>
         </div>
+        <div id="products-manager-tools"></div>
         <div id="products-manager-list" class="products-manager-list"></div>
     </div>
 `;
 
-const NewOrderItemRowTemplate = (index, isFirst = false) => `
+const NewOrderItemRowTemplate = (index, isFirst = false) => {
+    const defaultProduct = getProductNamesRecent()[0] || '';
+    const defaultPrice = getProductPrice(defaultProduct);
+    const priceValue = defaultPrice != null ? defaultPrice : '';
+    return `
     <div class="order-item-row" data-item-index="${index}">
         <div class="order-item-header">
             <span class="order-item-number">Producto ${index + 1}</span>
@@ -2376,7 +2448,7 @@ const NewOrderItemRowTemplate = (index, isFirst = false) => `
         <div class="order-item-fields">
             <div class="form-item">
                 <label>Producto (*):</label>
-                ${ProductPickerTemplate(getProductNamesRecent()[0] || '', 'order-item-product')}
+                ${ProductPickerTemplate(defaultProduct, 'order-item-product')}
             </div>
             <div class="form-item">
                 <label>Cantidad (*):</label>
@@ -2384,7 +2456,7 @@ const NewOrderItemRowTemplate = (index, isFirst = false) => `
             </div>
             <div class="form-item">
                 <label>Precio unitario (MXN):</label>
-                <input type="number" class="order-item-price" step="0.01" placeholder="Ej: 650.00" value="650">
+                <input type="number" class="order-item-price" step="0.01" placeholder="Ej: 750.00" value="${priceValue}">
             </div>
             <div class="form-item form-item-full">
                 <label>Detalles del Producto:</label>
@@ -2393,6 +2465,7 @@ const NewOrderItemRowTemplate = (index, isFirst = false) => `
         </div>
     </div>
 `;
+};
 
 const NewOrderModalTemplate = () => `
     <div id="new-order-modal" class="modal-overlay">
