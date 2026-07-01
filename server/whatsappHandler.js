@@ -942,8 +942,18 @@ router.post('/', async (req, res) => {
             // Lanzamos la IA pero no hacemos un AWAIT de modo que podamos responder el 200 rápido a Meta
             // MODIFICACIÓN: No disparamos la IA si es un contacto nuevo, para que NO responda al mensaje inicial del Ad
             if (updatedContactData.botActive && !isNewContact) {
-                const delay = 20000; // Delay estándar de 20s para conversaciones en curso
-                console.log(`[AI] Programando respuesta de IA para ${from} en ${delay/1000}s (Bot activo: ${updatedContactData.botActive})`);
+                let delay = 20000; // Delay estándar de 20s para conversaciones en curso
+                // Si la IA ya pidió los datos de envío (awaitingShippingData), damos 10 min a que el
+                // cliente termine de mandarlos en partes antes de que la IA le pida lo que falte —
+                // EXCEPTO si el cliente pregunta qué falta / si ya está completo: ahí respondemos rápido.
+                if (updatedContactData.awaitingShippingData) {
+                    const incomingText = (message.text?.body || '').toLowerCase();
+                    const asksWhatsMissing = /(falta|faltan|qu[eé] m[aá]s|qu[eé] datos|cu[aá]l|es todo|eso es todo|ya (?:te )?(?:lo|los|las|le)?\s*(?:di|mand|envi|env[ií]|pas)|ya est|ya qued|list[oa]|complet|algo m[aá]s)/i.test(incomingText);
+                    if (!asksWhatsMissing) {
+                        delay = 10 * 60 * 1000; // 10 min: esperar a que el cliente complete sus datos
+                    }
+                }
+                console.log(`[AI] Programando respuesta de IA para ${from} en ${delay/1000}s (Bot activo: ${updatedContactData.botActive}${updatedContactData.awaitingShippingData ? ', esperando datos de envío' : ''})`);
                 triggerAutoReplyAI(message, contactRef, updatedContactData, delay).catch(err => {
                     console.error('[WEBHOOK] Error asíncrono en respuesta de IA:', err);
                 });

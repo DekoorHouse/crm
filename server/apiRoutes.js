@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const jtService = require('./jt/jtService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
@@ -5849,48 +5849,8 @@ router.get('/orders/:orderId', async (req, res) => {
     }
 });
 
-// Lee de crm_settings/general cuándo enviar el evento Purchase a Meta: 'registration'
-// (al registrar el pedido) o 'fabricar' (al pasar a estatus "Fabricar", valor por defecto).
-// Configurable desde Ajustes > Herramientas (toggle). Nunca lanza.
-async function getPurchaseEventTrigger() {
-    try {
-        const doc = await db.collection('crm_settings').doc('general').get();
-        return (doc.exists && doc.data().purchaseEventTrigger === 'registration') ? 'registration' : 'fabricar';
-    } catch (e) {
-        return 'fabricar';
-    }
-}
-
-// Helper: envía el evento Purchase a Meta CAPI cuando un pedido entra a "Fabricar" por
-// primera vez. Idempotente vía pedido.metaPurchaseSentAt para no duplicar el evento aunque
-// el estatus rebote o se edite el pedido varias veces. Nunca lanza (atrapa sus errores).
-async function sendPurchaseEventOnFabricar(orderId, orderData, oldStatusLower) {
-    try {
-        if (!orderData || orderData.estatus !== 'Fabricar') return; // solo al entrar a Fabricar
-        if ((oldStatusLower || '').includes('fabricar')) return;    // ya estaba en Fabricar
-        if (orderData.metaPurchaseSentAt) return;                   // idempotencia: ya se envió
-        if (!orderData.contactId) return;
-        if ((await getPurchaseEventTrigger()) !== 'fabricar') return; // el ajuste lo cambió a "registro"
-
-        const contactSnap = await db.collection('contacts_whatsapp').doc(orderData.contactId).get();
-        const contactData = contactSnap.exists ? contactSnap.data() : null;
-        if (!contactData?.wa_id) {
-            console.warn(`[META EVENT] Contacto ${orderData.contactId} sin wa_id. No se envió Purchase (pedido ${orderId}).`);
-            return;
-        }
-
-        const eventInfo = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        const customData = { value: Number(orderData.precio) || 0, currency: 'MXN' };
-        console.log(`[META EVENT] Enviando Purchase por cambio a Fabricar, pedido ${orderId}, contacto ${orderData.contactId}`);
-        await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
-        await db.collection('pedidos').doc(orderId).update({ metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp() });
-        console.log(`[META EVENT] ✅ Evento Purchase enviado por Fabricar, pedido ${orderId}, valor $${Number(orderData.precio) || 0}`);
-    } catch (metaError) {
-        console.error(`[META EVENT] Error al enviar Purchase por Fabricar (pedido ${orderId}):`, metaError.message);
-        if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
-        // No fallar el request principal por un error en Meta
-    }
-}
+// getPurchaseEventTrigger() y sendPurchaseEventOnFabricar() se movieron a services.js para
+// poder reutilizarlos desde la IA de post-venta (markOrderFabricarForContact). Se importan arriba.
 
 // --- Endpoint PUT /api/orders/:orderId (Actualizar un pedido) ---
 router.put('/orders/:orderId', async (req, res) => {

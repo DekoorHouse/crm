@@ -901,6 +901,152 @@ async function alertAdminSuspiciousReceipt(contactId, contactData, comprobante) 
     }
 }
 
+// Número de Rosario (encargada de generar las guías de envío). Formato internacional 52 + 1 + 10 díg.
+const SHIPPING_NOTIFY_PHONE = process.env.ROSARIO_PHONE || '5216181441382';
+
+// Lee de crm_settings/general cuándo enviar el evento Purchase a Meta: 'registration'
+// (al registrar el pedido) o 'fabricar' (al pasar a estatus "Fabricar", valor por defecto).
+// Movido desde apiRoutes.js para poder reutilizarlo también en la IA de post-venta. Nunca lanza.
+async function getPurchaseEventTrigger() {
+    try {
+        const doc = await db.collection('crm_settings').doc('general').get();
+        return (doc.exists && doc.data().purchaseEventTrigger === 'registration') ? 'registration' : 'fabricar';
+    } catch (e) {
+        return 'fabricar';
+    }
+}
+
+// Envía el evento Purchase a Meta CAPI cuando un pedido entra a "Fabricar" por primera vez.
+// Idempotente vía pedido.metaPurchaseSentAt para no duplicar el evento aunque el estatus
+// rebote o se edite el pedido varias veces. Nunca lanza (atrapa sus errores).
+// Movido desde apiRoutes.js para compartirlo con markOrderFabricarForContact.
+async function sendPurchaseEventOnFabricar(orderId, orderData, oldStatusLower) {
+    try {
+        if (!orderData || orderData.estatus !== 'Fabricar') return; // solo al entrar a Fabricar
+        if ((oldStatusLower || '').includes('fabricar')) return;    // ya estaba en Fabricar
+        if (orderData.metaPurchaseSentAt) return;                   // idempotencia: ya se envió
+        if (!orderData.contactId) return;
+        if ((await getPurchaseEventTrigger()) !== 'fabricar') return; // el ajuste lo cambió a "registro"
+
+        const contactSnap = await db.collection('contacts_whatsapp').doc(orderData.contactId).get();
+        const contactData = contactSnap.exists ? contactSnap.data() : null;
+        if (!contactData?.wa_id) {
+            console.warn(`[META EVENT] Contacto ${orderData.contactId} sin wa_id. No se envió Purchase (pedido ${orderId}).`);
+            return;
+        }
+
+        const eventInfo = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
+        const customData = { value: Number(orderData.precio) || 0, currency: 'MXN' };
+        console.log(`[META EVENT] Enviando Purchase por cambio a Fabricar, pedido ${orderId}, contacto ${orderData.contactId}`);
+        await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
+        await db.collection('pedidos').doc(orderId).update({ metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp() });
+        console.log(`[META EVENT] ✅ Evento Purchase enviado por Fabricar, pedido ${orderId}, valor $${Number(orderData.precio) || 0}`);
+    } catch (metaError) {
+        console.error(`[META EVENT] Error al enviar Purchase por Fabricar (pedido ${orderId}):`, metaError.message);
+        if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
+        // No fallar el request principal por un error en Meta
+    }
+}
+
+/**
+ * Devuelve el pedido MÁS RECIENTE del contacto (doc snapshot) o null. Los pedidos guardan
+ * el teléfono tanto en `telefono` como en `contactId`; se consultan ambos por seguridad.
+ */
+async function getLatestOrderForContact(contactId) {
+    try {
+        const seen = new Map();
+        for (const field of ['telefono', 'contactId']) {
+            const snap = await db.collection('pedidos').where(field, '==', contactId).get();
+            snap.forEach(doc => seen.set(doc.id, doc));
+        }
+        if (seen.size === 0) return null;
+        let best = null, bestMs = -1;
+        for (const doc of seen.values()) {
+            const d = doc.data();
+            const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
+            if (ms >= bestMs) { bestMs = ms; best = doc; }
+        }
+        return best;
+    } catch (e) {
+        console.warn('[POSTVENTA] No se pudo obtener el último pedido para', contactId, e.message);
+        return null;
+    }
+}
+
+/**
+ * Avisa por WhatsApp a Rosario que un pedido ya mandó sus datos de envío completos para que
+ * genere la guía. Incluye los datos que escribió el cliente. OJO: envío de forma libre; si
+ * Rosario no tiene ventana de 24h abierta con el número del negocio, Meta puede rechazarlo
+ * (pendiente: plantilla aprobada para garantizar la entrega, igual que el aviso al admin).
+ */
+async function notifyShippingDataReady(orderNumber, contactData, addressText) {
+    const name = (contactData && contactData.name) || 'Cliente';
+    let text = `📦 *Pedido listo para guía*\n\n*${orderNumber}* — ${name}\nYa mandó sus datos de envío completos. Por favor genera su guía. 🙌`;
+    if (addressText && addressText.trim()) {
+        text += `\n\n*Datos que envió el cliente:*\n${addressText.trim()}`;
+    }
+    await sendAdvancedWhatsAppMessage(SHIPPING_NOTIFY_PHONE, { text });
+    console.log(`[POSTVENTA] Aviso de datos completos enviado a Rosario (${SHIPPING_NOTIFY_PHONE}) por ${orderNumber}.`);
+}
+
+/**
+ * Cuando la IA de post-venta confirma que el cliente ya mandó TODOS sus datos de envío (comando
+ * interno /datoscompletos), marca su pedido más reciente como "Fabricar" — con los mismos efectos
+ * que el cambio manual: confirmedAt, descuento de inventario, corona de compra completada y evento
+ * Purchase a Meta — y avisa a Rosario para que genere la guía. Idempotente (no repite si ya estaba
+ * en Fabricar). Devuelve el número de pedido marcado, o null si no había pedido / ya estaba.
+ */
+async function markOrderFabricarForContact(contactId, contactData, addressText) {
+    const orderDoc = await getLatestOrderForContact(contactId);
+    if (!orderDoc) {
+        console.warn(`[POSTVENTA] ${contactId} confirmó datos pero no tiene pedido registrado; no se cambia estatus ni se avisa a Rosario.`);
+        return null;
+    }
+    const orderId = orderDoc.id;
+    const orderData = orderDoc.data();
+    const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : `(pedido ${orderId})`;
+    const oldStatus = (orderData.estatus || 'Sin estatus').toLowerCase();
+
+    if (oldStatus.includes('fabricar')) {
+        console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Fabricar; no se repite el aviso a Rosario.`);
+        return null;
+    }
+
+    // 1) Cambiar estatus a Fabricar (+ confirmedAt la primera vez)
+    const updatePayload = { estatus: 'Fabricar' };
+    if (!orderData.confirmedAt) updatePayload.confirmedAt = admin.firestore.FieldValue.serverTimestamp();
+    await orderDoc.ref.update(updatePayload);
+    console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderId}) → Fabricar por datos de envío completos (${contactId}).`);
+
+    // 2) Descuento de inventario (idempotente)
+    try {
+        const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
+        const result = await descontarInventarioPorPedido(orderId, orderData, 'Fabricar');
+        if (result && result.ok && result.descontado) console.log(`[INVENTARIO] Pedido ${orderId} descontó ${result.movimientos} materiales (Fabricar por IA).`);
+    } catch (invErr) {
+        console.error(`[INVENTARIO] Error descontando pedido ${orderId} (Fabricar por IA):`, invErr.message);
+    }
+
+    // 3) Corona de compra completada en el contacto
+    try {
+        await db.collection('contacts_whatsapp').doc(contactId).update({
+            purchaseStatus: 'completed',
+            purchaseDate: admin.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (crownErr) {
+        console.error('[CROWN] Error al marcar compra completada (Fabricar por IA):', crownErr.message);
+    }
+
+    // 4) Evento Purchase a Meta (idempotente por metaPurchaseSentAt)
+    await sendPurchaseEventOnFabricar(orderId, { ...orderData, estatus: 'Fabricar' }, oldStatus);
+
+    // 5) Avisar a Rosario para que haga la guía
+    await notifyShippingDataReady(orderNumber, contactData, addressText)
+        .catch(e => console.warn('[POSTVENTA] Aviso a Rosario falló:', e.message));
+
+    return orderNumber;
+}
+
 /**
  * Crea o renueva el caché de contexto en la API de Gemini.
  * Solo se recrea si el contenido cambió o el TTL ha expirado.
@@ -1486,7 +1632,26 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         });
         const fechaActualNote = `\n\n**Fecha y hora actual en México:** ${nowMx}. Usa SIEMPRE esta fecha como "hoy" para calcular tiempos de entrega cuando el cliente mencione una fecha límite; nunca la inventes.`;
 
-        const dynamicPrompt = `${fechaActualNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, audios, videos o documentos/PDF (como comprobantes de pago), analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+        // Protocolo de recolección de datos de envío (solo post-venta). Se agrega SIEMPRE por
+        // código —aunque el prompt de post-venta esté personalizado en la UI— para que la IA sepa
+        // cuándo los datos están completos y avise al equipo con el comando interno /datoscompletos.
+        const postventaProtocolNote = isPostVenta ? `\n\n**PROTOCOLO DE DATOS DE ENVÍO (post-venta):**
+Cuando estés recopilando los datos de envío del cliente, los datos COMPLETOS que se necesitan son:
+1) Nombre completo
+2) Calle y número (interior y exterior)
+3) Colonia / Fraccionamiento
+4) Código Postal (C.P.)
+5) Entre calles
+6) Referencia del domicilio
+7) Estado y Municipio
+8) Teléfono
+Reglas:
+- El cliente suele mandar sus datos EN PARTES y en varios mensajes; revisa TODO el historial y arma los datos juntando lo que haya escrito, no solo su último mensaje.
+- Si YA tienes TODOS los datos de la lista, agradécele, confírmale que ya quedaron completos y que enseguida preparamos su pedido y su guía, y escribe al final de tu mensaje el comando /datoscompletos (el cliente NO lo ve; sirve para avisar al equipo que fabrique y genere la guía). Emítelo UNA sola vez por pedido.
+- Si AÚN faltan datos, pídele en una lista breve SOLO los que faltan (nunca repitas los que ya dio).
+- Si el cliente pregunta "¿qué falta?" o "¿ya está completo?", respóndele de inmediato con lo que falta, o confírmale que ya está todo (y emite /datoscompletos si corresponde).` : '';
+
+        const dynamicPrompt = `${fechaActualNote}${postventaProtocolNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, audios, videos o documentos/PDF (como comprobantes de pago), analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
 
         // --- Intentar usar Context Caching ---
         let aiResult;
@@ -1511,7 +1676,7 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             // aunque el caché o la multimedia estén fallando; avisamos a la IA que hubo archivos sin analizar.
             console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché (solo texto).`);
             const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions);
-            const fullPrompt = `${fallbackRef}${fechaActualNote}${shippingInfo}${deptImagesNote}${fallbackMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            const fullPrompt = `${fallbackRef}${fechaActualNote}${postventaProtocolNote}${shippingInfo}${deptImagesNote}${fallbackMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
             aiResult = await generateGeminiResponse(fullPrompt, [], fallbackSystem);
         }
 
@@ -1540,6 +1705,10 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         // Separar la respuesta en múltiples mensajes si contiene [SPLIT]
         let aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);
         let lastText = "";
+        // Se activa si en este turno la IA envió el atajo de datos de envío (/DatosEstafeta):
+        // marca al contacto en "esperando datos" para que el webhook le dé 10 min a que los
+        // termine de escribir en partes antes de que la IA le pida lo que falte.
+        let shippingDataRequested = false;
 
         // Detectar cierre de venta (/final o frase de pedido) de forma insensible a mayúsculas.
         // En ETAPA 1 esto NO apaga el bot: lo hace pasar a ETAPA 2 (post-venta) para que la
@@ -1554,9 +1723,14 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         // En ETAPA 2, si la IA detecta un comprobante sospechoso emite /sospechoso: se reenvía
         // la imagen al admin para verificación; al cliente solo se le dice que estamos validando.
         const suspiciousReceipt = isPostVenta && /\/sospechoso/i.test(aiResponse);
+        // En ETAPA 2, si el cliente ya mandó TODOS sus datos de envío la IA emite /datoscompletos:
+        // el pedido pasa a "Fabricar" y se avisa a Rosario para que genere la guía (ver más abajo).
+        // Se exige que ANTES se le hubieran pedido los datos (awaitingShippingData) para no fabricar
+        // por error si la IA emitiera el comando fuera del flujo de recolección de datos de envío.
+        const shippingDataComplete = isPostVenta && contactData.awaitingShippingData === true && /\/datoscompletos/i.test(aiResponse);
 
-        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso) de los mensajes antes de enviar
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').trim()).filter(m => m.length > 0);
+        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos) de los mensajes antes de enviar
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').trim()).filter(m => m.length > 0);
 
         for (let i = 0; i < aiMessages.length; i++) {
             // Verificar cancelación entre mensajes si hay SPLIT
@@ -1594,6 +1768,8 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
                         msgText = msgText.replace(/\*\*/, lastOrder ? `*${lastOrder}*` : '');
                         if (lastOrder) console.log(`[AI] /DatosEstafeta: insertado número de pedido ${lastOrder} para ${contactId}.`);
                         else console.warn(`[AI] /DatosEstafeta: ${contactId} no tiene pedido registrado; se deja el número en blanco.`);
+                        // La IA acaba de pedir los datos de envío → esperar a que el cliente los complete.
+                        shippingDataRequested = true;
                     }
                     // Si el atajo expandido contiene la frase de cierre de venta, marcar la
                     // transición a post-venta (el check sobre aiResponse solo veía el "/atajo").
@@ -1668,6 +1844,15 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             console.log(`[AI] Desactivación automática activada para ${contactId} por comando o frase clave. Moviendo a Pendientes IA.`);
         }
 
+        // Bandera "esperando datos de envío": el webhook la usa para darle 10 min al cliente a que
+        // termine de mandar sus datos en partes. Se enciende cuando la IA los pide (/DatosEstafeta)
+        // y se apaga cuando ya están completos (/datoscompletos) o si se abre un pedido nuevo.
+        if (shippingDataComplete || wantsNewOrder) {
+            updateData.awaitingShippingData = admin.firestore.FieldValue.delete();
+        } else if (shippingDataRequested) {
+            updateData.awaitingShippingData = true;
+        }
+
         await contactRef.update(updateData);
         console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas enviadas: ${aiMessages.length})`);
 
@@ -1685,6 +1870,24 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             }
             alertAdminSuspiciousReceipt(contactId, contactData, comprobante)
                 .catch(e => console.warn('[AI] alertAdminSuspiciousReceipt falló:', e.message));
+        }
+
+        // Datos de envío completos (/datoscompletos): pasar el pedido a "Fabricar" y avisar a Rosario
+        // para que genere la guía. Se juntan los mensajes de texto del cliente (sus datos) para
+        // incluirlos en el aviso. Fire-and-forget: nunca debe tumbar la respuesta al cliente.
+        if (shippingDataComplete) {
+            const addressLines = [];
+            for (const mdoc of messagesSnapshot.docs) { // desc: del más reciente al más viejo
+                const md = mdoc.data();
+                if (md.from === contactId) {
+                    const t = (md.text || '').trim();
+                    if (t) addressLines.push(t);
+                }
+                if (addressLines.length >= 12) break;
+            }
+            const addressText = addressLines.reverse().join('\n');
+            markOrderFabricarForContact(contactId, contactData, addressText)
+                .catch(e => console.warn('[POSTVENTA] markOrderFabricarForContact falló:', e.message));
         }
 
         // Híbrido: si el pedido NO se acaba de registrar, etiquetar "en vivo" el estado
@@ -1870,7 +2073,9 @@ module.exports = {
     invalidateGeminiCache,
     getMetaSpend,
     getPedidoAttribution,
-    askGeminiPro
+    askGeminiPro,
+    getPurchaseEventTrigger,
+    sendPurchaseEventOnFabricar
 };
 
 /**
