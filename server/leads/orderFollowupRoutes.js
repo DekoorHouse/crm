@@ -12,7 +12,8 @@ const { db } = require('../config');
 const {
     runOrderFollowupSweep,
     getOrderFollowupConfig,
-    saveOrderFollowupConfig
+    saveOrderFollowupConfig,
+    setOrderFollowupOptOut
 } = require('./orderFollowupScheduler');
 const { getOrderFollowupMetrics, listOrderFollowupSends, getContactFollowup } = require('./orderFollowupMetrics');
 
@@ -123,6 +124,19 @@ router.get('/contact/:waId', async (req, res) => {
     } catch (e) {
         console.error('[ORDER_FOLLOWUP] Error en contact:', e.message);
         res.status(500).json({ exists: false, error: 'Error' });
+    }
+});
+
+// Apagar / reactivar el seguimiento para UN contacto (control manual del operador).
+// POST /api/order-followup/contact/:waId/opt-out  { optOut: true|false }  (default true)
+router.post('/contact/:waId/opt-out', async (req, res) => {
+    try {
+        const optOut = !(req.body && req.body.optOut === false);
+        const result = await setOrderFollowupOptOut(req.params.waId, optOut);
+        res.json(result);
+    } catch (e) {
+        console.error('[ORDER_FOLLOWUP] Error en opt-out:', e.message);
+        res.status(500).json({ error: 'Error al actualizar el seguimiento' });
     }
 });
 

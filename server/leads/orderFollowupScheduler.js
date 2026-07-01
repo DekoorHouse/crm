@@ -83,6 +83,10 @@ async function armOrderFollowup(waId, name) {
     const snap = await ref.get();
     const prev = snap.exists ? snap.data() : null;
 
+    // Apagado manual del operador: no volver a armar para este contacto aunque siga
+    // escribiendo. La bandera es durable (se quita con setOrderFollowupOptOut(waId, false)).
+    if (prev && prev.optOut === true) return;
+
     // Cooldown anti-spam: si una secuencia ya terminó (con envíos) hace poco, no reiniciar
     if (prev && prev.status !== 'pending') {
         const lastSentMs = toMillis(prev.lastSentAt);
@@ -112,6 +116,33 @@ async function armOrderFollowup(waId, name) {
         createdAt: (prev && prev.createdAt) || nowTs,
         updatedAt: nowTs
     });
+}
+
+/**
+ * Apaga o reactiva el seguimiento de "pedido en proceso" para UN contacto (control
+ * manual del operador desde el chat).
+ *   optOut=true  -> cancela el seguimiento vivo y deja una bandera durable para que NO
+ *                   se vuelva a armar con los próximos mensajes del cliente.
+ *   optOut=false -> quita la bandera; el próximo mensaje entrante podrá armar de nuevo.
+ * Usa merge, así que crea el doc si no existía (opt-out preventivo).
+ */
+async function setOrderFollowupOptOut(waId, optOut) {
+    if (!waId) throw new Error('waId requerido');
+    const ref = db.collection('order_followups').doc(waId);
+    const nowTs = admin.firestore.Timestamp.now();
+    if (optOut) {
+        await ref.set({
+            waId,
+            track: 'order_in_progress',
+            optOut: true,
+            status: 'cancelled',
+            cancelReason: 'opt_out_manual',
+            updatedAt: nowTs
+        }, { merge: true });
+    } else {
+        await ref.set({ optOut: false, updatedAt: nowTs }, { merge: true });
+    }
+    return { waId, optOut: !!optOut };
 }
 
 // Lee la etiqueta "en vivo" que el bot pudo dejar en el contacto (híbrido).
@@ -442,6 +473,7 @@ module.exports = {
     startOrderFollowupScheduler,
     runOrderFollowupSweep,
     armOrderFollowup,
+    setOrderFollowupOptOut,
     backfillOrderFollowups,
     getOrderFollowupConfig,
     saveOrderFollowupConfig

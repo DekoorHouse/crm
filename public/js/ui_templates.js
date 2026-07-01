@@ -491,6 +491,7 @@ const CampaignsViewTemplate = () => `
             <button class="campaign-tab active" data-ctab="enviar" onclick="switchCampaignTab('enviar')"><i class="fas fa-paper-plane mr-2"></i>Enviar campaña</button>
             <button class="campaign-tab" data-ctab="difusion" onclick="switchCampaignTab('difusion')"><i class="fas fa-rocket mr-2"></i>Difusión masiva</button>
             <button class="campaign-tab" data-ctab="crear" onclick="switchCampaignTab('crear')"><i class="fas fa-file-circle-plus mr-2"></i>Crear plantilla</button>
+            <button class="campaign-tab" data-ctab="plantillas" onclick="switchCampaignTab('plantillas')"><i class="fas fa-list-check mr-2"></i>Plantillas</button>
             <button class="campaign-tab" data-ctab="crear-ad" onclick="switchCampaignTab('crear-ad')"><i class="fab fa-facebook mr-2"></i>Crear Ad</button>
             <button class="campaign-tab" data-ctab="resultados" onclick="switchCampaignTab('resultados')"><i class="fas fa-chart-pie mr-2"></i>Resultados</button>
         </div>
@@ -550,6 +551,22 @@ const CampaignsViewTemplate = () => `
                 </div>
             </div>
             ${CreateTemplateFormTemplate()}
+          </div>
+        </div>
+
+        <!-- SUB-PESTAÑA: Plantillas (estatus tipo Meta) -->
+        <div class="campaign-pane" data-cpane="plantillas">
+          <div class="campaign-pane-content">
+            <div class="campaign-pane-header">
+                <div class="campaign-pane-heading">
+                    <h2 class="campaign-pane-title"><i class="fas fa-list-check"></i> Plantillas</h2>
+                    <p class="campaign-pane-sub">Todas tus plantillas de WhatsApp y su estatus en Meta (aprobada, en revisión o rechazada).</p>
+                </div>
+                <div class="campaign-pane-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="renderTemplatesStatus(true)"><i class="fas fa-sync-alt mr-2"></i>Actualizar</button>
+                </div>
+            </div>
+            <div id="templates-status-container"><p class="text-gray-500">Cargando plantillas…</p></div>
           </div>
         </div>
 
@@ -1918,15 +1935,25 @@ function OrderPendingBadge(contact) {
     if (!contact) return '';
     const cache = (typeof state !== 'undefined' && state.orderPendingByContact) || {};
     const info = cache[contact.id];
-    if (!info || !info.exists) return '';
+    if (!info) return '';
+    const id = String(contact.id).replace(/'/g, "\\'");
+    const pillBase = 'display:inline-flex;align-items:center;gap:4px;color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;';
+    const iconBtn = 'background:none;border:none;color:#fff;cursor:pointer;padding:0 0 0 4px;font-size:11px;line-height:1;';
+
+    // Apagado manual por el operador: pill silenciada + botón para reactivar.
+    if (info.optOut) {
+        return `<span class="order-pending-pill" title="Recordatorios de pedido apagados para este chat" style="${pillBase}background:var(--color-text-secondary,#6b7280);"><i class="fas fa-bell-slash"></i> Recordatorios apagados<button onclick="event.stopPropagation(); toggleOrderFollowupOptOut('${id}', false)" title="Reactivar recordatorios de pedido" style="${iconBtn}"><i class="fas fa-rotate-left"></i></button></span>`;
+    }
+
+    if (!info.exists) return '';
     if (info.status === 'converted') {
         const ord = info.orderNumber ? ` ${String(info.orderNumber).replace(/</g, '&lt;')}` : '';
-        return `<span class="order-pending-pill" title="Pedido recuperado por seguimiento IA" style="display:inline-flex;align-items:center;gap:4px;background:var(--color-success);color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;"><i class="fas fa-check"></i> Recuperado${ord}</span>`;
+        return `<span class="order-pending-pill" title="Pedido recuperado por seguimiento IA" style="${pillBase}background:var(--color-success);"><i class="fas fa-check"></i> Recuperado${ord}</span>`;
     }
     if (!info.pendiente) return '';
     const color = info.status === 'replied' ? 'var(--color-primary)' : 'var(--color-info)';
     const pend = String(info.pendiente).replace(/</g, '&lt;');
-    return `<span class="order-pending-pill" title="Seguimiento IA · quedó pendiente" style="display:inline-flex;align-items:center;gap:4px;background:${color};color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;"><i class="fas fa-hourglass-half"></i> ${pend}</span>`;
+    return `<span class="order-pending-pill" title="Seguimiento IA · quedó pendiente" style="${pillBase}background:${color};"><i class="fas fa-hourglass-half"></i> ${pend}<button onclick="event.stopPropagation(); toggleOrderFollowupOptOut('${id}', true)" title="Apagar recordatorios de pedido para este chat" style="${iconBtn}"><i class="fas fa-bell-slash"></i></button></span>`;
 }
 
 // Insignia de "recordatorio programado" en el header del chat. Lee de un caché en

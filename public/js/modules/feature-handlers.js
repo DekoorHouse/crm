@@ -709,6 +709,9 @@ function switchCampaignTab(tab) {
         } else if (tab === 'crear-ad') {
             activePane.dataset.loaded = '1';
             if (typeof initCreateAdForm === 'function') initCreateAdForm();
+        } else if (tab === 'plantillas') {
+            activePane.dataset.loaded = '1';
+            if (typeof renderTemplatesStatus === 'function') renderTemplatesStatus();
         } else if (tab === 'resultados') {
             activePane.dataset.loaded = '1';
             if (typeof listenForPedidosConCampana === 'function') listenForPedidosConCampana();
@@ -716,6 +719,87 @@ function switchCampaignTab(tab) {
             if (typeof renderAutoTemplateResults === 'function') renderAutoTemplateResults();
         }
     }
+}
+
+/**
+ * Pestaña "Plantillas": lista TODAS las plantillas de WhatsApp con su estatus en Meta
+ * (aprobada / en revisión / rechazada), tipo el panel de WhatsApp Manager. Lee
+ * /api/whatsapp-templates?all=1 (incluye las no aprobadas y el motivo de rechazo).
+ */
+async function renderTemplatesStatus(force) {
+    const container = document.getElementById('templates-status-container');
+    if (!container) return;
+    container.innerHTML = `<p class="text-gray-500">${force ? 'Actualizando' : 'Cargando'} plantillas…</p>`;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/whatsapp-templates?all=1`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || 'Error al consultar Meta');
+        const templates = data.templates || [];
+        if (templates.length === 0) {
+            container.innerHTML = '<p class="text-gray-500">No hay plantillas todavía. Crea una en la pestaña “Crear plantilla”.</p>';
+            return;
+        }
+        // Orden: en revisión primero, luego aprobadas, luego rechazadas/otras; alfabético dentro.
+        const rank = s => ({ PENDING: 0, IN_APPEAL: 0, PENDING_DELETION: 0, APPROVED: 1 }[s] ?? 2);
+        templates.sort((a, b) => rank(a.status) - rank(b.status) || (a.name || '').localeCompare(b.name || ''));
+
+        const count = (st) => templates.filter(t => t.status === st).length;
+        const summary = `
+            <div class="text-sm text-gray-500 mb-3">
+                ${templates.length} plantilla(s):
+                <b style="color:#166534">${count('APPROVED')} aprobada(s)</b> ·
+                <b style="color:#854d0e">${count('PENDING')} en revisión</b> ·
+                <b style="color:#991b1b">${count('REJECTED')} rechazada(s)</b>
+            </div>`;
+
+        const rows = templates.map(t => {
+            const body = (t.components || []).find(c => c.type === 'BODY');
+            const preview = body && body.text ? escapeHtml(body.text) : '<span class="text-gray-400">(sin cuerpo)</span>';
+            const rej = (t.status === 'REJECTED' && t.rejected_reason)
+                ? `<div class="text-xs mt-1" style="color:#991b1b">Motivo: ${escapeHtml(String(t.rejected_reason))}</div>` : '';
+            return `
+                <tr style="border-bottom:1px solid var(--color-border);vertical-align:top">
+                    <td style="padding:10px 16px 10px 0;font-weight:600">${escapeHtml(t.name || '')}</td>
+                    <td style="padding:10px 16px 10px 0;white-space:nowrap">${escapeHtml(t.category || '—')}</td>
+                    <td style="padding:10px 16px 10px 0;white-space:nowrap">${escapeHtml(t.language || '—')}</td>
+                    <td style="padding:10px 16px 10px 0">${templateStatusBadge(t.status)}${rej}</td>
+                    <td style="padding:10px 0;color:var(--color-text-light);max-width:420px;white-space:pre-wrap">${preview}</td>
+                </tr>`;
+        }).join('');
+
+        container.innerHTML = summary + `
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
+                <thead>
+                  <tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light)">
+                    <th style="padding:8px 16px 8px 0">Plantilla</th>
+                    <th style="padding:8px 16px 8px 0">Categoría</th>
+                    <th style="padding:8px 16px 8px 0">Idioma</th>
+                    <th style="padding:8px 16px 8px 0">Estatus</th>
+                    <th style="padding:8px 0">Contenido</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>`;
+    } catch (e) {
+        container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar las plantillas: ${escapeHtml(e.message || String(e))}</p>`;
+    }
+}
+
+// Píldora de color según el estatus de la plantilla en Meta.
+function templateStatusBadge(status) {
+    const map = {
+        APPROVED: ['Aprobada', '#dcfce7', '#166534'],
+        PENDING: ['En revisión', '#fef9c3', '#854d0e'],
+        IN_APPEAL: ['En apelación', '#fef9c3', '#854d0e'],
+        PENDING_DELETION: ['Por eliminar', '#e5e7eb', '#374151'],
+        REJECTED: ['Rechazada', '#fee2e2', '#991b1b'],
+        DISABLED: ['Deshabilitada', '#fee2e2', '#991b1b'],
+        PAUSED: ['Pausada', '#e5e7eb', '#374151'],
+    };
+    const [label, bg, fg] = map[status] || [status || '—', '#e5e7eb', '#374151'];
+    return `<span style="background:${bg};color:${fg};padding:2px 10px;border-radius:9999px;font-size:12px;font-weight:600;white-space:nowrap">${escapeHtml(label)}</span>`;
 }
 
 /**
@@ -3304,6 +3388,7 @@ window.handleUpdateExistingOrder = handleUpdateExistingOrder;
 window.handleSendCampaign = handleSendCampaign;
 window.handleSendCampaignWithImage = handleSendCampaignWithImage;
 window.switchCampaignTab = switchCampaignTab;
+window.renderTemplatesStatus = renderTemplatesStatus;
 window.onCampaignTemplateChange = onCampaignTemplateChange;
 window.handleSendUnifiedCampaign = handleSendUnifiedCampaign;
 window.onTemplateHeaderTypeChange = onTemplateHeaderTypeChange;
@@ -3853,7 +3938,30 @@ async function fetchOrderPending(contactId) {
     }
 }
 
+// Apaga (optOut=true) o reactiva (optOut=false) los recordatorios de "pedido en
+// proceso" para el contacto actual. Refresca el badge del chat al terminar.
+async function toggleOrderFollowupOptOut(contactId, optOut) {
+    if (!contactId) return;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/order-followup/contact/${encodeURIComponent(contactId)}/opt-out`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ optOut: !!optOut })
+        });
+        if (!res.ok) throw new Error('No se pudo actualizar');
+        if (typeof fetchOrderPending === 'function') await fetchOrderPending(contactId);
+        if (typeof showError === 'function') {
+            showError(optOut
+                ? 'Recordatorios de pedido apagados para este chat.'
+                : 'Recordatorios de pedido reactivados.', 'success');
+        }
+    } catch (e) {
+        if (typeof showError === 'function') showError('Error al actualizar los recordatorios.');
+    }
+}
+
 window.renderOrderFollowupView = renderOrderFollowupView;
 window.openRescateChat = openRescateChat;
 window.renderRescateChart = renderRescateChart;
 window.fetchOrderPending = fetchOrderPending;
+window.toggleOrderFollowupOptOut = toggleOrderFollowupOptOut;

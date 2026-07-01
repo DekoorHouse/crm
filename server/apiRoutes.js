@@ -5212,28 +5212,32 @@ router.get('/whatsapp-templates', async (req, res) => {
         return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp Business.' });
     }
 
+    // ?all=1 devuelve TODAS las plantillas con su estatus (para la pestaña "Plantillas" tipo Meta);
+    // por defecto solo las APROBADAS (que es lo que usa el selector de "Enviar campaña").
+    const includeAll = req.query.all === '1' || req.query.all === 'true';
     const url = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
     try {
-        // Llamar a la API de Meta
-        const response = await axios.get(url, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
+        // limit alto para no truncar (Meta pagina de a 25 por defecto)
+        const response = await axios.get(url, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }, params: { limit: 200 } });
 
-        // Filtrar solo plantillas APROBADAS y mapear a formato útil
-        const templates = response.data.data
-            .filter(t => t.status === 'APPROVED') // Solo aprobadas
-            .map(t => ({
-                name: t.name,
-                language: t.language,
-                status: t.status,
-                category: t.category,
-                // Mapear componentes (header, body, footer, buttons)
-                components: t.components.map(c => ({
-                    type: c.type,
-                    text: c.text, // Texto (puede tener variables {{n}})
-                    format: c.format, // Para header (IMAGE, TEXT, VIDEO, DOCUMENT)
-                    buttons: c.buttons, // Array de botones si type es BUTTONS
-                    example: c.example // Valores ejemplo de Meta para sustituir {{2}}, {{3}}, ...
-                }))
-            }));
+        let list = response.data.data || [];
+        if (!includeAll) list = list.filter(t => t.status === 'APPROVED'); // Solo aprobadas
+        const templates = list.map(t => ({
+            id: t.id,
+            name: t.name,
+            language: t.language,
+            status: t.status,               // APPROVED | PENDING | REJECTED | DISABLED | ...
+            category: t.category,
+            rejected_reason: t.rejected_reason || null, // motivo si status === REJECTED
+            // Mapear componentes (header, body, footer, buttons)
+            components: (t.components || []).map(c => ({
+                type: c.type,
+                text: c.text, // Texto (puede tener variables {{n}})
+                format: c.format, // Para header (IMAGE, TEXT, VIDEO, DOCUMENT)
+                buttons: c.buttons, // Array de botones si type es BUTTONS
+                example: c.example // Valores ejemplo de Meta para sustituir {{2}}, {{3}}, ...
+            }))
+        }));
         res.status(200).json({ success: true, templates });
     } catch (error) {
         console.error('Error al obtener plantillas de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);

@@ -213,13 +213,20 @@ async function migrateSendsFromFollowups() {
 
 // Estado de seguimiento de un contacto (para mostrar "pendiente: foto" en el chat).
 async function getContactFollowup(waId) {
-    if (!waId) return { exists: false };
+    if (!waId) return { exists: false, optOut: false };
     try {
+        // El apagado manual (optOut) vive en order_followups; lo leemos siempre para que
+        // el chat pueda mostrar el estado "recordatorios apagados" y el botón para reactivar.
+        const f = await db.collection('order_followups').doc(waId).get();
+        const fd = f.exists ? f.data() : null;
+        const optOut = !!(fd && fd.optOut === true);
+
         const snap = await db.collection(COLLECTION).doc(waId).get();
         if (snap.exists) {
             const d = snap.data();
             return {
                 exists: true,
+                optOut,
                 pendiente: d.pendiente || null,
                 status: d.status || 'contacted',
                 messagesSent: d.messagesSent || 0,
@@ -228,11 +235,10 @@ async function getContactFollowup(waId) {
             };
         }
         // Fallback: aún no se envía nada pero ya está clasificado como pedido en proceso
-        const f = await db.collection('order_followups').doc(waId).get();
-        if (f.exists && f.data().enProceso) {
-            const fd = f.data();
+        if (fd && fd.enProceso) {
             return {
                 exists: true,
+                optOut,
                 pendiente: fd.pendiente || null,
                 status: 'pending',
                 messagesSent: fd.totalSent || 0,
@@ -240,10 +246,11 @@ async function getContactFollowup(waId) {
                 orderNumber: null
             };
         }
+        return { exists: false, optOut };
     } catch (e) {
         console.warn('[ORDER_FOLLOWUP] getContactFollowup falló:', e.message);
     }
-    return { exists: false };
+    return { exists: false, optOut: false };
 }
 
 module.exports = {
