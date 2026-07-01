@@ -957,14 +957,61 @@ window.cancelScheduleMode = cancelScheduleMode;
 window.cancelScheduledMessage = cancelScheduledMessage;
 
 // =================================================================
-// AUTOCORRECTOR ORTOGRÁFICO CON CONTEXTO (IA)
-// Corrige ortografía y acentos "conforme escribes": al hacer una pausa,
-// manda el texto a /api/spellcheck y reemplaza el resultado preservando el
-// historial de deshacer (Ctrl+Z). Solo actúa con el cursor al final (mientras
-// escribes), nunca cuando estás editando en medio del texto.
+// AUTOCORRECTOR ORTOGRÁFICO CON CONTEXTO (IA) — dos capas para que sea INSTANTÁNEO
+//   1) LOCAL (sin red): al escribir un espacio/puntuación se corrige al momento la
+//      palabra que acabas de terminar, usando un diccionario de errores y acentos
+//      comunes 100% seguros. Cero espera -> se siente "en cuanto escribes la palabra".
+//   2) IA (con contexto): en segundo plano, con debounce corto, pule lo que el
+//      diccionario no cubre (acentos ambiguos por contexto, etc.).
+// Ambas capas preservan el historial de deshacer (Ctrl+Z) y solo reemplazan el
+// fragmento que realmente cambió, sin mover el cursor de donde estás escribiendo.
 // =================================================================
 const _spellcheck = { timer: null, abort: null, lastText: '', applying: false, toastTimer: null };
-const SPELLCHECK_DEBOUNCE_MS = 1000;
+const SPELLCHECK_DEBOUNCE_MS = 300; // antes 1000: la sensación de "lento" venía de aquí
+
+// Diccionario LOCAL de correcciones seguras (clave siempre en minúsculas, sin ambigüedad
+// de contexto). Los acentos que dependen del contexto (mas/más, esta/está, el/él, si/sí,
+// tu/tú, se/sé, aun/aún, solo/sólo...) NO van aquí: los resuelve la capa de IA.
+const SPELLCHECK_LOCAL = {
+    // --- typos de dedo / abreviaturas / fonéticos ---
+    'qeu': 'que', 'euq': 'que', 'quee': 'que', 'qe': 'que', 'ke': 'que',
+    'porqe': 'porque', 'porke': 'porque', 'xq': 'porque', 'xk': 'porque', 'pq': 'porque',
+    'kiero': 'quiero', 'kieres': 'quieres', 'kiere': 'quiere', 'keria': 'quería', 'kisiera': 'quisiera',
+    'ase': 'hace', 'asen': 'hacen', 'aser': 'hacer', 'aciendo': 'haciendo', 'aria': 'haría',
+    'iso': 'hizo', 'izo': 'hizo', 'ise': 'hice', 'isimos': 'hicimos',
+    'boi': 'voy', 'voi': 'voy', 'bamos': 'vamos', 'balla': 'vaya',
+    'aki': 'aquí', 'aqi': 'aquí', 'akí': 'aquí',
+    'tmb': 'también', 'tb': 'también', 'tambn': 'también', 'tambien': 'también',
+    'xfa': 'por favor', 'xfavor': 'por favor', 'porfa': 'por favor', 'porfavor': 'por favor',
+    'pofavor': 'por favor', 'porfabor': 'por favor', 'porfvor': 'por favor',
+    'grasias': 'gracias', 'grax': 'gracias', 'gracas': 'gracias', 'graciad': 'gracias',
+    'aora': 'ahora', 'aorita': 'ahorita', 'orita': 'ahorita', 'ahi': 'ahí',
+    'dnd': 'dónde', 'cmo': 'cómo', 'komo': 'como', 'muxo': 'mucho', 'muxos': 'muchos', 'muxa': 'mucha',
+    'nesesito': 'necesito', 'nececito': 'necesito', 'nesecito': 'necesito',
+    // --- acentos inequívocos frecuentes en atención a clientes ---
+    'informacion': 'información', 'direccion': 'dirección', 'atencion': 'atención',
+    'opcion': 'opción', 'promocion': 'promoción', 'confirmacion': 'confirmación',
+    'aplicacion': 'aplicación', 'ubicacion': 'ubicación', 'devolucion': 'devolución',
+    'telefono': 'teléfono', 'numero': 'número', 'codigo': 'código', 'articulo': 'artículo',
+    'pagina': 'página', 'categoria': 'categoría', 'garantia': 'garantía', 'envio': 'envío',
+    'credito': 'crédito', 'rapido': 'rápido', 'rapida': 'rápida', 'economico': 'económico',
+    'minimo': 'mínimo', 'maximo': 'máximo', 'proximo': 'próximo', 'proxima': 'próxima',
+    'ultimo': 'último', 'ultima': 'última', 'unico': 'único', 'unica': 'única',
+    'facil': 'fácil', 'dificil': 'difícil', 'dolar': 'dólar', 'dolares': 'dólares',
+    'metodo': 'método', 'tambien': 'también', 'despues': 'después', 'ademas': 'además',
+    'adios': 'adiós', 'quiza': 'quizá', 'jamas': 'jamás', 'atras': 'atrás', 'detras': 'detrás',
+    'alli': 'allí', 'alla': 'allá', 'aca': 'acá', 'asi': 'así',
+    'estan': 'están', 'tenia': 'tenía', 'tenias': 'tenías', 'tenian': 'tenían',
+    'habia': 'había', 'habian': 'habían', 'queria': 'quería', 'querias': 'querías',
+    'podria': 'podría', 'podrian': 'podrían', 'gustaria': 'gustaría', 'encantaria': 'encantaría',
+    'haria': 'haría', 'deberia': 'debería', 'tendria': 'tendría', 'estaria': 'estaría',
+    'dia': 'día', 'dias': 'días', 'ningun': 'ningún', 'algun': 'algún', 'pense': 'pensé',
+    // --- palabras juntas -> separadas ---
+    'aveces': 'a veces', 'osea': 'o sea', 'enserio': 'en serio', 'porcierto': 'por cierto',
+    'talvez': 'tal vez', 'almenos': 'al menos', 'deacuerdo': 'de acuerdo',
+    'porsupuesto': 'por supuesto', 'asique': 'así que', 'sinembargo': 'sin embargo',
+    'apartir': 'a partir', 'atravez': 'a través', 'através': 'a través', 'encuanto': 'en cuanto'
+};
 
 function isSpellcheckEnabled() {
     return localStorage.getItem('crm_spellcheck_enabled') !== '0'; // ON por defecto
@@ -980,13 +1027,91 @@ function toggleSpellcheck() {
 }
 window.toggleSpellcheck = toggleSpellcheck;
 
+// Un carácter separa palabras (espacios, saltos y signos de puntuación/apertura).
+function _isSpellSep(c) { return c === undefined || /[\s.,;:!?()\[\]{}"'«»¡¿…]/.test(c); }
+
+// ¿El input que acaba de ocurrir "cerró" una palabra? (escribió espacio/puntuación/enter)
+function _closedWord(event) {
+    if (event.inputType === 'insertLineBreak' || event.inputType === 'insertParagraph') return true;
+    const d = event.data;
+    return typeof d === 'string' && d.length === 1 && _isSpellSep(d);
+}
+// ¿Terminó una frase? (para pedirle a la IA de inmediato, sin esperar el debounce)
+function _endedSentence(event) {
+    if (event.inputType === 'insertLineBreak' || event.inputType === 'insertParagraph') return true;
+    return event.data === '.' || event.data === '?' || event.data === '!';
+}
+
+// Ajusta may/minúsculas de la corrección para que coincida con cómo escribió el usuario.
+function _matchCase(original, corrected) {
+    if (original.length > 1 && original === original.toUpperCase() && original !== original.toLowerCase()) {
+        return corrected.toUpperCase();
+    }
+    if (original[0] === original[0].toUpperCase() && original[0] !== original[0].toLowerCase()) {
+        return corrected.charAt(0).toUpperCase() + corrected.slice(1);
+    }
+    return corrected;
+}
+
+// Busca una palabra en el diccionario local; devuelve la corrección o null.
+function _lookupLocal(word) {
+    if (!word || word.length < 2) return null;
+    if (/[0-9@#/\\_·]/.test(word)) return null;          // códigos, @menciones, links: no tocar
+    const fix = SPELLCHECK_LOCAL[word.toLowerCase()];
+    if (!fix) return null;
+    const cased = _matchCase(word, fix);
+    return cased === word ? null : cased;
+}
+
+// Reemplaza input.value[start..end) por `replacement` preservando el deshacer (Ctrl+Z)
+// y dejando el cursor en `newCursorPos`. Solo toca ese fragmento, no todo el texto.
+function _replaceRangeUndoable(input, start, end, replacement, newCursorPos) {
+    _spellcheck.applying = true;
+    try {
+        input.focus();
+        input.setSelectionRange(start, end);
+        let ok = false;
+        try { ok = document.execCommand && document.execCommand('insertText', false, replacement); } catch (_) { ok = false; }
+        if (!ok) input.value = input.value.slice(0, start) + replacement + input.value.slice(end);
+        if (typeof newCursorPos === 'number') {
+            const p = Math.max(0, Math.min(newCursorPos, input.value.length));
+            input.setSelectionRange(p, p);
+        }
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    } finally {
+        setTimeout(() => { _spellcheck.applying = false; }, 0);
+    }
+}
+
+// CAPA 1 (instantánea): corrige la palabra que quedó justo antes del separador recién escrito.
+function applyLocalSpellcheck(input) {
+    if (input.selectionStart !== input.selectionEnd) return;
+    const pos = input.selectionStart;          // el separador recién escrito está en pos-1
+    const value = input.value;
+    const wordEnd = pos - 1;                    // la palabra termina aquí (exclusivo)
+    if (wordEnd < 1) return;
+    if (!_isSpellSep(value[wordEnd])) return;   // por seguridad: el char en pos-1 debe ser separador
+    let start = wordEnd;
+    while (start > 0 && !_isSpellSep(value[start - 1])) start--;
+    if (start >= wordEnd) return;               // no había palabra
+    const word = value.slice(start, wordEnd);
+    const fix = _lookupLocal(word);
+    if (!fix) return;
+    _replaceRangeUndoable(input, start, wordEnd, fix, pos + (fix.length - word.length));
+}
+
 function handleSpellcheckInput(event) {
     if (!isSpellcheckEnabled()) return;
     if (_spellcheck.applying) return; // ignorar el input que generamos nosotros al aplicar
     const input = event.target;
+    // 1) Corrección local instantánea al cerrar una palabra (sin red)
+    if (_closedWord(event)) applyLocalSpellcheck(input);
+    // 2) Revisión con IA (contexto) en segundo plano, con debounce corto
     if (_spellcheck.timer) clearTimeout(_spellcheck.timer);
     if (_spellcheck.abort) { _spellcheck.abort.abort(); _spellcheck.abort = null; }
-    _spellcheck.timer = setTimeout(() => runSpellcheck(input), SPELLCHECK_DEBOUNCE_MS);
+    const delay = _endedSentence(event) ? 0 : SPELLCHECK_DEBOUNCE_MS;
+    _spellcheck.timer = setTimeout(() => runSpellcheck(input), delay);
 }
 
 async function runSpellcheck(input) {
@@ -1026,26 +1151,28 @@ async function runSpellcheck(input) {
     applySpellcheckCorrection(input, corrected);
 }
 
+// CAPA 2 (IA): aplica solo el fragmento que difiere (prefijo/sufijo común) para que
+// el cambio sea mínimo, el cursor no salte y Ctrl+Z revierta solo lo corregido.
 function applySpellcheckCorrection(input, corrected) {
-    _spellcheck.applying = true;
-    try {
-        input.focus();
-        input.setSelectionRange(0, input.value.length);
-        let ok = false;
-        // execCommand preserva el historial nativo de deshacer (Ctrl+Z revierte la corrección)
-        try { ok = document.execCommand && document.execCommand('insertText', false, corrected); } catch (_) { ok = false; }
-        if (!ok) input.value = corrected;
-        input.setSelectionRange(input.value.length, input.value.length);
-        _spellcheck.lastText = corrected; // no volver a corregir lo ya corregido
-        // Reajustar el alto del textarea (mismo criterio que el auto-resize)
-        input.style.height = 'auto';
-        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-        showSpellcheckToast('Ortografía corregida · Ctrl+Z para deshacer');
-    } finally {
-        setTimeout(() => { _spellcheck.applying = false; }, 0);
-    }
+    const before = input.value;
+    if (before === corrected) return;
+    let s = 0;
+    const minLen = Math.min(before.length, corrected.length);
+    while (s < minLen && before[s] === corrected[s]) s++;
+    let e1 = before.length, e2 = corrected.length;
+    while (e1 > s && e2 > s && before[e1 - 1] === corrected[e2 - 1]) { e1--; e2--; }
+    const replacement = corrected.slice(s, e2);
+    const cursor = input.selectionStart;
+    let newCursor;
+    if (cursor <= s) newCursor = cursor;
+    else if (cursor >= e1) newCursor = cursor + (e2 - e1); // desplazar por el delta de longitud
+    else newCursor = s + replacement.length;
+    _spellcheck.lastText = corrected; // no volver a corregir lo ya corregido
+    _replaceRangeUndoable(input, s, e1, replacement, newCursor);
 }
 
+// Aviso discreto (solo se usa al prender/apagar el autocorrector; las correcciones
+// automáticas no muestran aviso para no estorbar el ritmo de escritura).
 function showSpellcheckToast(message) {
     let toast = document.getElementById('spellcheck-toast');
     if (!toast) {
@@ -1057,7 +1184,7 @@ function showSpellcheckToast(message) {
     toast.querySelector('span').textContent = message;
     toast.classList.add('show');
     if (_spellcheck.toastTimer) clearTimeout(_spellcheck.toastTimer);
-    _spellcheck.toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 3000);
+    _spellcheck.toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 2500);
 }
 
 async function handleSendMessage(event) {
