@@ -215,7 +215,9 @@ async function armReminder(waId, { name, remindAt, context, reason, message, sou
         langCode: langCode || cfg.langCode,
         attempts: 0,
         lastError: null,
-        createdAt: (prev.exists && prev.data().createdAt) || nowTs,
+        // createdAt = momento de ESTE agendado (el guard "ya compró" del sweep compara
+        // la fecha de compra contra createdAt; preservar uno viejo cancelaría de más).
+        createdAt: nowTs,
         updatedAt: nowTs
     });
     return { ok: true, sendMs };
