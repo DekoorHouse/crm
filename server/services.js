@@ -795,12 +795,14 @@ async function geminiHttp(url, { method = 'GET', body } = {}) {
 }
 
 // --- Estado en memoria del caché ---
-let geminiCache = {
-    name: null,          // Nombre del recurso del caché en Gemini (ej: "cachedContents/abc123")
-    contentHash: null,   // Hash del contenido cacheado para detectar cambios
-    createdAt: 0,        // Timestamp de creación
-    ttlMs: 30 * 60 * 1000 // 30 minutos en ms
-};
+// Un caché por prompt (hash del contenido). Los prompts varían por anuncio, por
+// departamento y por etapa (post-venta); con un slot único, cada alternancia de
+// contactos con prompts distintos borraba y recreaba el caché (thrashing) y una
+// petición podía borrar el caché que otra estaba usando (404 → fallback degradado).
+const GEMINI_CACHE_TTL_MS = 30 * 60 * 1000; // debe coincidir con CACHE_TTL
+const GEMINI_CACHE_MAX_ENTRIES = 20;
+const geminiCaches = new Map();         // contentHash -> { name, createdAt }
+const geminiCacheCreations = new Map(); // contentHash -> Promise (creación en vuelo)
 
 /**
  * Genera un hash simple de un string para detectar cambios en el contenido.
@@ -1151,75 +1153,98 @@ async function getOrCreateCache(botInstructions, departmentImageParts = [], imag
     const { systemText, referenceText } = await buildStaticContext(botInstructions);
     const currentHash = simpleHash(systemText + referenceText + '|imgs:' + imagesHashInput);
     const now = Date.now();
-    const cacheExpired = (now - geminiCache.createdAt) > geminiCache.ttlMs;
 
-    // Si el caché es válido y el contenido no cambió, reutilizarlo
-    if (geminiCache.name && geminiCache.contentHash === currentHash && !cacheExpired) {
-        console.log(`[CACHE] Reutilizando caché existente: ${geminiCache.name}`);
-        return geminiCache.name;
+    // Si ya hay un caché vigente para ESTE contenido, reutilizarlo. Los cachés de otros
+    // prompts no se tocan: expiran solos por TTL (Gemini los borra del lado del servidor).
+    const existing = geminiCaches.get(currentHash);
+    if (existing && (now - existing.createdAt) <= GEMINI_CACHE_TTL_MS) {
+        return existing.name;
     }
+    if (existing) geminiCaches.delete(currentHash);
 
-    // Si hay un caché viejo, intentar borrarlo (best effort)
-    if (geminiCache.name) {
-        try {
-            await geminiHttp(`${GEMINI_BASE_URL}/${geminiCache.name}?key=${GEMINI_API_KEY}`, { method: 'DELETE' });
-            console.log(`[CACHE] Caché anterior eliminado: ${geminiCache.name}`);
-        } catch (e) {
-            console.warn(`[CACHE] No se pudo eliminar el caché anterior: ${e.message}`);
-        }
+    // Si otra petición ya está creando el caché de este mismo contenido, esperarla
+    // en vez de crear un duplicado (evita cachés huérfanos con tráfico concurrente).
+    if (geminiCacheCreations.has(currentHash)) {
+        return geminiCacheCreations.get(currentHash);
     }
 
     // Crear un nuevo caché
     // Las instrucciones del bot van en systemInstruction para que Gemini las trate como directivas,
     // no como un mensaje del usuario al que debe "responder".
-    // El material de referencia (knowledge base, quick replies) va en contents, junto con las imágenes
-    // estáticas del departamento (si las hay).
-    console.log(`[CACHE] Creando nuevo caché de contexto (hash: ${currentHash}, ${departmentImageParts.length} imgs).`);
-    const contentParts = [{ text: referenceText }, ...departmentImageParts];
-    const cachePayload = {
-        model: `models/${GEMINI_MODEL}`,
-        contents: [{
-            parts: contentParts,
-            role: 'user'
-        }],
-        systemInstruction: {
-            parts: [{ text: systemText }]
-        },
-        ttl: CACHE_TTL
-    };
+    // El material de referencia (knowledge base, quick replies) va en contents.
+    const creation = (async () => {
+        console.log(`[CACHE] Creando caché de contexto (hash: ${currentHash}, ${departmentImageParts.length} imgs).`);
+        const contentParts = [{ text: referenceText }, ...departmentImageParts];
+        const cachePayload = {
+            model: `models/${GEMINI_MODEL}`,
+            contents: [{
+                parts: contentParts,
+                role: 'user'
+            }],
+            systemInstruction: {
+                parts: [{ text: systemText }]
+            },
+            ttl: CACHE_TTL
+        };
 
-    const response = await geminiHttp(`${GEMINI_BASE_URL}/cachedContents?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        body: JSON.stringify(cachePayload)
-    });
+        const response = await geminiHttp(`${GEMINI_BASE_URL}/cachedContents?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            body: JSON.stringify(cachePayload)
+        });
 
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error(`[CACHE] Error al crear caché:`, JSON.stringify(errorData));
-        // Si falla el caching (ej: contenido muy corto), devolver null para usar fallback
-        return null;
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error(`[CACHE] Error al crear caché:`, JSON.stringify(errorData));
+            // Si falla el caching (ej: contenido muy corto), devolver null para usar fallback
+            return null;
+        }
+
+        const cacheData = await response.json();
+        geminiCaches.set(currentHash, { name: cacheData.name, createdAt: Date.now() });
+
+        // Acotar el número de cachés vivos: si nos pasamos, desalojar el más viejo (best effort).
+        if (geminiCaches.size > GEMINI_CACHE_MAX_ENTRIES) {
+            let oldestKey = null, oldestAt = Infinity;
+            for (const [key, value] of geminiCaches) {
+                if (value.createdAt < oldestAt) { oldestAt = value.createdAt; oldestKey = key; }
+            }
+            if (oldestKey) {
+                const evicted = geminiCaches.get(oldestKey);
+                geminiCaches.delete(oldestKey);
+                geminiHttp(`${GEMINI_BASE_URL}/${evicted.name}?key=${GEMINI_API_KEY}`, { method: 'DELETE' })
+                    .catch(e => console.warn(`[CACHE] No se pudo eliminar el caché desalojado: ${e.message}`));
+            }
+        }
+
+        const cachedTokens = cacheData.usageMetadata?.totalTokenCount || 'desconocido';
+        console.log(`[CACHE] ✅ Caché creado exitosamente: ${cacheData.name} (${cachedTokens} tokens cacheados)`);
+
+        return cacheData.name;
+    })();
+
+    geminiCacheCreations.set(currentHash, creation);
+    try {
+        return await creation;
+    } finally {
+        geminiCacheCreations.delete(currentHash);
     }
-
-    const cacheData = await response.json();
-    geminiCache.name = cacheData.name;
-    geminiCache.contentHash = currentHash;
-    geminiCache.createdAt = now;
-
-    const cachedTokens = cacheData.usageMetadata?.totalTokenCount || 'desconocido';
-    console.log(`[CACHE] ✅ Caché creado exitosamente: ${cacheData.name} (${cachedTokens} tokens cacheados)`);
-
-    return cacheData.name;
 }
 
 /**
  * Invalida el caché para que se reconstruya en la próxima petición.
- * Llamar cuando se actualicen instrucciones, conocimiento o respuestas rápidas.
+ * Con nombre: invalida solo ese caché (ej. cuando Gemini devuelve 404 sobre él).
+ * Sin nombre: invalida todos (ej. al actualizar conocimiento o respuestas rápidas).
  */
-function invalidateGeminiCache() {
+function invalidateGeminiCache(cacheName = null) {
+    if (cacheName) {
+        for (const [key, value] of geminiCaches) {
+            if (value.name === cacheName) geminiCaches.delete(key);
+        }
+        console.log(`[CACHE] Caché ${cacheName} invalidado. Se recreará en la próxima petición.`);
+        return;
+    }
     console.log('[CACHE] Caché invalidado manualmente. Se recreará en la próxima petición.');
-    geminiCache.name = null;
-    geminiCache.contentHash = null;
-    geminiCache.createdAt = 0;
+    geminiCaches.clear();
 }
 
 /**
@@ -1258,10 +1283,56 @@ async function askGeminiPro(prompt, systemInstruction = null) {
     };
 }
 
+/**
+ * Normaliza el contenido a enviar a Gemini. Acepta:
+ *  - un string (prompt plano, comportamiento histórico), o
+ *  - un array de turnos [{ role: 'user'|'model', parts: [{text}] }] (conversación multi-turno).
+ * Los imageParts se anexan al ÚLTIMO turno user. Turnos consecutivos del mismo rol se
+ * fusionan (la API espera turnos alternados) y el resultado siempre termina en rol user.
+ */
+function buildGeminiContents(promptOrContents, imageParts = []) {
+    if (!Array.isArray(promptOrContents)) {
+        return [{ parts: [{ text: promptOrContents }, ...imageParts], role: 'user' }];
+    }
+    const contents = [];
+    for (const turn of promptOrContents) {
+        if (!turn || !Array.isArray(turn.parts) || turn.parts.length === 0) continue;
+        // Copia superficial de cada part: la fusión muta el texto y no debe tocar
+        // los objetos del llamador (el historial se reutiliza en el fallback).
+        const parts = turn.parts.map(p => ({ ...p }));
+        const prev = contents[contents.length - 1];
+        if (prev && prev.role === turn.role) {
+            // Fusionar: si ambos terminan/empiezan con texto, unirlos con salto de línea.
+            const lastPart = prev.parts[prev.parts.length - 1];
+            const firstPart = parts[0];
+            if (lastPart.text !== undefined && firstPart.text !== undefined) {
+                lastPart.text += `\n${firstPart.text}`;
+                prev.parts.push(...parts.slice(1));
+            } else {
+                prev.parts.push(...parts);
+            }
+        } else {
+            contents.push({ role: turn.role, parts });
+        }
+    }
+    if (imageParts.length > 0) {
+        const last = contents[contents.length - 1];
+        if (last && last.role === 'user') last.parts.push(...imageParts);
+        else contents.push({ role: 'user', parts: [...imageParts] });
+    }
+    if (contents.length === 0) contents.push({ role: 'user', parts: [{ text: '' }] });
+    // La API rechaza conversaciones que empiezan con rol "model" (p. ej. cuando el
+    // primer mensaje del historial es la bienvenida del bot): anteponer un turno user mínimo.
+    if (contents[0].role === 'model') {
+        contents.unshift({ role: 'user', parts: [{ text: '(inicio de la conversación)' }] });
+    }
+    return contents;
+}
+
 async function generateGeminiResponse(prompt, imageParts = [], systemInstruction = null) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-    const payload = { contents: [{ parts: [{ text: prompt }, ...imageParts] }] };
+    const payload = { contents: buildGeminiContents(prompt, imageParts) };
     if (systemInstruction) {
         payload.systemInstruction = { parts: [{ text: systemInstruction }] };
     }
@@ -1300,9 +1371,10 @@ async function generateGeminiResponse(prompt, imageParts = [], systemInstruction
 async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imageParts = []) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-    
+
+    // dynamicPrompt puede ser un string (prompt plano) o un array de turnos user/model.
     const payload = {
-        contents: [{ parts: [{ text: dynamicPrompt }, ...imageParts], role: 'user' }],
+        contents: buildGeminiContents(dynamicPrompt, imageParts),
         cachedContent: cacheName
     };
 
@@ -1328,7 +1400,7 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
             const errBody = await geminiResponse.text();
             if (geminiResponse.status === 404) {
                 console.warn(`[AI] Cache 404 detectado (${cacheName}). Invalidando...`);
-                invalidateGeminiCache();
+                invalidateGeminiCache(cacheName);
             }
             throw new Error(`Gemini API con caché respondió ${geminiResponse.status}: ${errBody}`);
         }
@@ -1417,6 +1489,13 @@ const GEMINI_MAX_AUDIO_BYTES = 8 * 1024 * 1024;          // 8 MB por audio
 const GEMINI_MAX_VIDEO_BYTES = 8 * 1024 * 1024;          // 8 MB por video
 const GEMINI_MAX_PDF_BYTES = 8 * 1024 * 1024;            // 8 MB por PDF (comprobantes son chicos)
 const GEMINI_MAX_TOTAL_MEDIA_BYTES = 12 * 1024 * 1024;   // 12 MB en total por request
+
+// Ventana de contexto de la IA: cuántos mensajes del historial ve y qué tan viejos
+// pueden ser los archivos que se le re-adjuntan. Mandar el historial completo hacía
+// que el modelo "re-resumiera" información ya dada; adjuntar multimedia vieja hacía
+// que volviera a comentar fotos/comprobantes de días atrás.
+const AI_HISTORY_MESSAGE_LIMIT = 50;
+const AI_MEDIA_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 h
 
 /**
  * Convierte un archivo multimedia (imagen/audio/video) en una "part" inline segura
@@ -1558,7 +1637,9 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         }
 
         // --- Contenido dinámico (cambia en cada petición) ---
-        const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').get();
+        // Solo los últimos N mensajes: el historial completo inflaba el prompt con
+        // información vieja ya dada y empujaba al modelo a repetirla.
+        const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(AI_HISTORY_MESSAGE_LIMIT).get();
         const downloadedMedia = [];
         let mediaCount = 0;
 
@@ -1583,28 +1664,79 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             if (d.id) byWamid[d.id] = d;
         }
 
-        const conversationHistory = messagesSnapshot.docs.map(doc => {
+        // Si el ÚLTIMO mensaje del cliente cita un mensaje que quedó fuera de la ventana
+        // de mensajes (byWamid solo cubre los últimos AI_HISTORY_MESSAGE_LIMIT), resolver
+        // el citado con una consulta puntual para no perder la referencia (la decoración
+        // del historial y la FASE 2 dependen de byWamid).
+        for (const doc of messagesSnapshot.docs) { // desc: el primer match es el último msg del cliente
             const d = doc.data();
-            const fromLabel = d.from === contactId ? 'Cliente' : 'Asistente';
-
-            // Recolectar hasta los últimos 2 archivos multimedia (imágenes, audios, videos o
-            // documentos/PDF — p. ej. comprobantes de pago que algunos bancos mandan en PDF)
-            if ((d.type === 'image' || d.type === 'audio' || d.type === 'video' || d.type === 'document') && d.fileUrl && mediaCount < 2) {
-                let mimeType = d.fileType || (d.type === 'image' ? 'image/jpeg' : (d.type === 'audio' ? 'audio/mpeg' : (d.type === 'video' ? 'video/mp4' : 'application/pdf')));
-                downloadedMedia.push({ url: d.fileUrl, mimeType: mimeType, type: d.type });
-                mediaCount++;
+            if (d.from !== contactId) continue;
+            const qId = d.context && d.context.id;
+            if (qId && !byWamid[qId]) {
+                try {
+                    const quotedSnap = await contactRef.collection('messages').where('id', '==', qId).limit(1).get();
+                    if (!quotedSnap.empty) byWamid[qId] = quotedSnap.docs[0].data();
+                } catch (e) {
+                    console.warn('[AI] No se pudo resolver el mensaje citado fuera de ventana:', e.message);
+                }
             }
+            break; // solo evaluamos el último mensaje del cliente
+        }
 
-            // Si el mensaje es una RESPUESTA/CITA a otro (context.id), indicar a qué responde,
-            // para que la IA entienda referencias como "este no?", "el segundo", "ese sí", etc.
-            const quotedId = d.context && d.context.id;
-            const quoted = quotedId ? byWamid[quotedId] : null;
-            if (quoted) {
-                const quotedWho = quoted.from === contactId ? 'del cliente' : 'tuyo (Asistente)';
-                return `${fromLabel} (respondiendo a un mensaje ${quotedWho}: "${msgDisplayText(quoted)}"): ${msgDisplayText(d)}`;
+        // Recolectar hasta 2 archivos multimedia RECIENTES y DEL CLIENTE (imágenes, audios,
+        // videos o documentos/PDF — p. ej. comprobantes de pago que mandan en PDF). Antes se
+        // tomaban los 2 más recientes de todo el historial sin importar antigüedad ni remitente,
+        // y el modelo volvía a comentar archivos viejos en cada turno.
+        for (const doc of messagesSnapshot.docs) { // desc: primero los más recientes
+            if (mediaCount >= 2) break;
+            const d = doc.data();
+            if (d.from !== contactId) continue;
+            if (!((d.type === 'image' || d.type === 'audio' || d.type === 'video' || d.type === 'document') && d.fileUrl)) continue;
+            const ts = (d.timestamp && typeof d.timestamp.toMillis === 'function') ? d.timestamp.toMillis() : 0;
+            if (!ts || (Date.now() - ts) > AI_MEDIA_MAX_AGE_MS) continue;
+            const mimeType = d.fileType || (d.type === 'image' ? 'image/jpeg' : (d.type === 'audio' ? 'audio/mpeg' : (d.type === 'video' ? 'video/mp4' : 'application/pdf')));
+            downloadedMedia.push({ url: d.fileUrl, mimeType: mimeType, type: d.type });
+            mediaCount++;
+        }
+
+        // Historial en dos formatos:
+        //  - historyTurns: turnos reales user/model para Gemini. Mandar la conversación
+        //    aplanada como texto en un solo turno hacía que el modelo "continuara el
+        //    documento" (respuestas acartonadas, prefijo "Asistente:", re-resúmenes).
+        //  - conversationHistory: transcript plano que reutilizan los clasificadores
+        //    (tagOrderInProgress, detectAndArmReminder).
+        const historyTurns = [];
+        const historyLines = [];
+        for (const doc of [...messagesSnapshot.docs].reverse()) { // cronológico
+            const d = doc.data();
+            if (d.status === 'scheduled') continue; // programado aún NO enviado: el cliente no lo ha visto
+            const isClient = d.from === contactId;
+            let text = msgDisplayText(d);
+
+            // Si el CLIENTE responde/cita otro mensaje (context.id), indicar a cuál, para que
+            // la IA entienda referencias como "este no?", "el segundo", "ese sí", etc. Las
+            // respuestas del bot no llevan esta decoración: duplicaba el texto del cliente
+            // en cada línea del Asistente y engordaba el prompt con repeticiones.
+            if (isClient) {
+                const quotedId = d.context && d.context.id;
+                const quoted = quotedId ? byWamid[quotedId] : null;
+                if (quoted) {
+                    const quotedWho = quoted.from === contactId ? 'suyo anterior' : 'tuyo (Asistente)';
+                    text = `(respondiendo a un mensaje ${quotedWho}: "${msgDisplayText(quoted)}") ${text}`;
+                }
             }
-            return `${fromLabel}: ${msgDisplayText(d)}`;
-        }).reverse().join('\n');
+            if (!text) continue;
+
+            historyLines.push(`${isClient ? 'Cliente' : 'Asistente'}: ${text}`);
+            const role = isClient ? 'user' : 'model';
+            const lastTurn = historyTurns[historyTurns.length - 1];
+            if (lastTurn && lastTurn.role === role) {
+                lastTurn.parts[0].text += `\n${text}`;
+            } else {
+                historyTurns.push({ role, parts: [{ text }] });
+            }
+        }
+        const conversationHistory = historyLines.join('\n');
 
         // --- FASE 2: incluir la imagen/archivo CITADO por el cliente ---
         // Si el ÚLTIMO mensaje del cliente responde (cita) a una imagen o PDF anterior, incluir
@@ -1627,38 +1759,51 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             break; // solo evaluamos el último mensaje del cliente
         }
 
-        // --- Descargar imágenes de referencia del departamento (contexto estático → van al caché) ---
+        // --- Descargar imágenes de referencia del departamento ---
+        // Se adjuntan al request (redimensionadas/acotadas) para que la IA pueda describir y
+        // comparar el producto. NO van al caché (requests grandes causaban "Premature close").
+        // Antes se descargaban pero nunca se enviaban, y una nota le decía al modelo que las
+        // imágenes "venían adjuntas": el modelo confundía las fotos del cliente con el catálogo.
         const departmentImageParts = [];
-        const departmentImageIds = []; // Para el hash del caché
+        let departmentImagesBytes = 0;
         for (const refImage of departmentReferenceImages) {
-            if (refImage && refImage.url && typeof refImage.url === 'string' && refImage.url.startsWith('http')) {
-                try {
-                    const response = await fetch(refImage.url, { signal: AbortSignal.timeout(15000) });
-                    if (!response.ok) {
-                        // Con Uniform Bucket-Level Access, las URLs storage.googleapis.com dan 403.
-                        // NO metemos el cuerpo del error como "imagen" (eso cuelga/atraganta a Gemini): la omitimos.
-                        console.warn(`[AI] Imagen de referencia del departamento no disponible (HTTP ${response.status}). Se omite.`);
-                        continue;
-                    }
-                    const buffer = Buffer.from(await response.arrayBuffer());
-                    if (buffer.length > 0) {
-                        departmentImageParts.push({ inlineData: { data: buffer.toString('base64'), mimeType: refImage.mimeType || 'image/jpeg' } });
-                        departmentImageIds.push(refImage.path || refImage.url);
-                        console.log(`[AI] Imagen de referencia del departamento cargada (${refImage.mimeType || 'image/jpeg'}).`);
-                    }
-                } catch (e) {
-                    console.warn('[AI] Error descargando imagen de referencia del departamento:', e.message);
+            if (!(refImage && refImage.url && typeof refImage.url === 'string' && refImage.url.startsWith('http'))) continue;
+            try {
+                const response = await fetch(refImage.url, { signal: AbortSignal.timeout(15000) });
+                if (!response.ok) {
+                    // Con Uniform Bucket-Level Access, las URLs storage.googleapis.com dan 403.
+                    // NO metemos el cuerpo del error como "imagen" (eso cuelga/atraganta a Gemini): la omitimos.
+                    console.warn(`[AI] Imagen de referencia del departamento no disponible (HTTP ${response.status}). Se omite.`);
+                    continue;
                 }
+                const buffer = Buffer.from(await response.arrayBuffer());
+                if (buffer.length === 0) continue;
+                const prepared = await buildSafeGeminiMediaPart(buffer, refImage.mimeType || 'image/jpeg', 'image');
+                if (prepared.skipped) {
+                    console.warn(`[AI] Imagen de referencia del departamento omitida: ${prepared.skipped}.`);
+                    continue;
+                }
+                // Las imágenes de referencia usan como máximo la mitad del presupuesto total,
+                // para que los archivos del cliente (comprobantes, fotos) siempre quepan.
+                if (departmentImagesBytes + prepared.bytes > GEMINI_MAX_TOTAL_MEDIA_BYTES / 2) {
+                    console.warn('[AI] Imagen de referencia del departamento omitida: excede el presupuesto de tamaño.');
+                    continue;
+                }
+                departmentImageParts.push(prepared.part);
+                departmentImagesBytes += prepared.bytes;
+                console.log(`[AI] Imagen de referencia del departamento lista (${Math.round(prepared.bytes / 1024)} KB).`);
+            } catch (e) {
+                console.warn('[AI] Error descargando imagen de referencia del departamento:', e.message);
             }
         }
-        const departmentImagesHashInput = departmentImageIds.sort().join(';');
 
         // --- Descargar y preparar multimedia de la conversación (dinámico) ---
         // Se redimensiona/acota cada archivo para evitar "Premature close" por requests
         // grandes (ver buildSafeGeminiMediaPart). Lo que no se pueda procesar se omite con aviso.
-        const mediaParts = [];
+        // Las imágenes de referencia del departamento van PRIMERO (la nota del prompt lo indica).
+        const mediaParts = [...departmentImageParts];
         const skippedMediaTypes = [];
-        let totalMediaBytes = 0;
+        let totalMediaBytes = departmentImagesBytes;
         for (const media of downloadedMedia.reverse()) { // Voltear para mantener orden cronológico
             if (!media.url || !media.url.startsWith('http')) continue;
             try {
@@ -1693,9 +1838,6 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         const skippedMediaNote = skippedMediaTypes.length > 0
             ? `\n\n**Nota:** El cliente envió ${skippedMediaTypes.length} archivo(s) (${skippedMediaTypes.map(esTipoMedia).join(', ')}) que no se pudieron procesar (probablemente muy grandes). Pídele amablemente que te describa por texto su contenido o que lo reenvíe más corto.`
             : '';
-        const fallbackMediaNote = downloadedMedia.length > 0
-            ? `\n\n**Nota:** El cliente envió archivo(s) multimedia (${downloadedMedia.map(m => esTipoMedia(m.type)).join(', ')}) que no pudiste analizar en este momento. Pídele amablemente que te describa por texto su contenido.`
-            : '';
 
         // Detectar código postal y cotizar envío
         let shippingInfo = '';
@@ -1709,8 +1851,10 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             }
         }
 
-        const deptImagesNote = departmentReferenceImages.length > 0
-            ? `\n\n**Imágenes de referencia del producto/departamento:**\nLas primeras ${departmentReferenceImages.length} ${departmentReferenceImages.length === 1 ? 'imagen adjunta es una referencia visual' : 'imágenes adjuntas son referencias visuales'} del producto o catálogo del departamento. Úsalas para describir, comparar o responder preguntas del cliente. Las imágenes posteriores (si las hay) son las que el cliente envió en la conversación.`
+        // Solo se menciona lo que REALMENTE va adjunto (departmentImageParts, no la lista
+        // configurada): prometer imágenes que no llegan hacía alucinar al modelo.
+        const deptImagesNote = departmentImageParts.length > 0
+            ? `\n\n**Imágenes de referencia del producto/departamento:**\nLas primeras ${departmentImageParts.length} ${departmentImageParts.length === 1 ? 'imagen adjunta es una referencia visual' : 'imágenes adjuntas son referencias visuales'} del producto o catálogo del departamento. Úsalas para describir, comparar o responder preguntas del cliente. Los archivos posteriores (si los hay) son los que el cliente envió en la conversación.`
             : '';
 
         // Fecha/hora actual de México para que la IA calcule bien los tiempos de entrega.
@@ -1742,33 +1886,50 @@ Reglas:
 - Si AÚN faltan datos, pídele en una lista breve SOLO los que faltan (nunca repitas los que ya dio).
 - Si el cliente pregunta "¿qué falta?" o "¿ya está completo?", respóndele de inmediato con lo que falta, o confírmale que ya está todo (y emite /datoscompletos si corresponde).` : '';
 
-        const dynamicPrompt = `${fechaActualNote}${postventaProtocolNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, audios, videos o documentos/PDF (como comprobantes de pago), analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+        // Notas dinámicas + tarea: van como el ÚLTIMO turno user de la conversación.
+        // La tarea es solo mecánica; el tono y el estilo salen únicamente de las
+        // instrucciones configuradas (el "concisa y útil" y el "indica que un agente
+        // humano lo atenderá" hardcodeados pisaban el tono y contradecían post-venta).
+        const shippingTaskNote = shippingInfo
+            ? ' Si el cliente pregunta por envío, paquetería o entrega y tienes cotización disponible, comparte las mejores opciones; si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos.'
+            : '';
+        // Solo si hay archivos DEL CLIENTE (mediaParts arranca con las imágenes de
+        // referencia del departamento; contarlas aquí afirmaría archivos inexistentes).
+        const mediaTaskNote = mediaParts.length > departmentImageParts.length
+            ? ' Vienen adjuntos archivos de la conversación (fotos, audios, videos o documentos/PDF, p. ej. comprobantes de pago): analízalos con cuidado cuando sean relevantes para el último mensaje del cliente; si ya los atendiste en un turno anterior, no los vuelvas a comentar.'
+            : '';
+        const finalUserText = `${fechaActualNote}${postventaProtocolNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+
+        // La conversación se manda como turnos reales user/model + un turno final con las
+        // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
+        const dynamicContents = [...historyTurns, { role: 'user', parts: [{ text: finalUserText }] }];
 
         // --- Intentar usar Context Caching ---
         let aiResult;
         try {
-            // El caché guarda SOLO texto (instrucciones). Las imágenes de referencia del
-            // departamento NO se cachean (podían ser grandes y causaban "Premature close").
-            // La multimedia que envía el CLIENTE sí se manda al modelo, ya acotada, en mediaParts.
+            // El caché guarda SOLO texto (instrucciones + conocimiento + respuestas rápidas).
+            // La multimedia (del cliente y de referencia del departamento) va en mediaParts,
+            // ya redimensionada/acotada por buildSafeGeminiMediaPart.
             const cacheName = await getOrCreateCache(botInstructions, [], '');
             if (cacheName) {
-                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (texto + ${mediaParts.length} archivo(s) multimedia; ${departmentImageParts.length} imgs dept cacheadas)`);
-                // Enviamos la multimedia de la conversación (mediaParts) ya redimensionada/acotada
-                // por buildSafeGeminiMediaPart. El tope de tamaño evita el "Premature close" que
-                // antes provocaban los requests grandes; el reintento interno cubre fallos transitorios.
-                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, mediaParts);
+                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (${historyTurns.length} turnos + ${mediaParts.length} archivo(s) multimedia, ${departmentImageParts.length} de referencia del depto)`);
+                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicContents, mediaParts);
                 console.log(`[AI] 💰 Tokens cacheados: ${aiResult.cachedTokens}, Tokens nuevos de entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}`);
             } else {
                 throw new Error('Caché no disponible, usando fallback.');
             }
         } catch (cacheError) {
-            // Fallback: si el caching falla por cualquier razón, usar el método tradicional con systemInstruction.
-            // Aquí vamos SOLO con texto (sin multimedia) para garantizar que el cliente reciba respuesta
-            // aunque el caché o la multimedia estén fallando; avisamos a la IA que hubo archivos sin analizar.
-            console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché (solo texto).`);
+            // Fallback: si el caching falla por cualquier razón, usar el método tradicional con
+            // systemInstruction. Se manda la MISMA conversación y la MISMA multimedia (antes el
+            // fallback iba solo texto y le pedía al cliente re-describir archivos ya enviados).
+            console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché.`);
             const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions);
-            const fullPrompt = `${fallbackRef}${fechaActualNote}${postventaProtocolNote}${shippingInfo}${deptImagesNote}${fallbackMediaNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-            aiResult = await generateGeminiResponse(fullPrompt, [], fallbackSystem);
+            const fallbackContents = [
+                { role: 'user', parts: [{ text: fallbackRef }] },
+                ...historyTurns,
+                { role: 'user', parts: [{ text: finalUserText }] }
+            ];
+            aiResult = await generateGeminiResponse(fallbackContents, mediaParts, fallbackSystem);
         }
 
         const aiResponse = aiResult.text;
@@ -1893,8 +2054,12 @@ Reglas:
             const aiMsgToSave = {
                 from: fromId, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true,
-                context: { id: message.id }, channel: contactChannel,
+                channel: contactChannel,
             };
+            // Guardar la cita SOLO cuando la IA citó de verdad ([CITA] → reply_to_wamid).
+            // Antes se guardaba siempre y el historial re-imprimía el texto del cliente en
+            // cada línea del Asistente, inflando el prompt con repeticiones.
+            if (shouldQuote && message.id) aiMsgToSave.context = { id: message.id };
             if (qrFileUrl) { aiMsgToSave.fileUrl = qrFileUrl; aiMsgToSave.fileType = qrFileType; }
             await contactRef.collection('messages').add(aiMsgToSave);
             lastText = sentMessageData.textForDb;

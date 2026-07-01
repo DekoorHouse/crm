@@ -3058,18 +3058,24 @@ router.post('/simulate-ai', async (req, res) => {
             const fullPrompt = `${canvasSection}${ordersSection}**Historial de la Conversación:**\n${conversationHistory}\n\n**Tarea:**\nResponde al último mensaje del usuario. Si pide realizar una acción en el editor, incluye el bloque \`\`\`actions correspondiente con el JSON de acciones. Si solo pregunta algo, responde con texto.`;
             aiResult = await generateGeminiResponse(fullPrompt, mediaParts, editorSystemPrompt);
         } else {
-            // CRM: cache-first con knowledge base + quick replies fallback
-            const dynamicPrompt = `**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            // CRM: cache-first con knowledge base + quick replies fallback.
+            // Igual que producción (processAutoReplyAI): turnos reales user/model + turno
+            // final con la tarea mecánica (el tono viene solo de las instrucciones del bot).
+            const historyTurns = dbHistory
+                .filter(d => d.text)
+                .map(d => ({ role: d.role, parts: [{ text: d.text }] }));
+            const tareaText = `**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${mediaParts.length > 0 ? ' Vienen adjuntos archivos de la conversación: analízalos con cuidado cuando sean relevantes para el último mensaje del cliente.' : ''} Si no tienes un dato, no lo inventes.`;
+            const dynamicContents = [...historyTurns, { role: 'user', parts: [{ text: tareaText }] }];
 
             try {
                 const cacheName = await getOrCreateCache(systemPrompt);
                 if (cacheName) {
-                    aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, mediaParts);
+                    aiResult = await generateGeminiResponseWithCache(cacheName, dynamicContents, mediaParts);
                 } else {
                     throw new Error('Caché no disponible');
                 }
             } catch (cacheError) {
-                // Fallback: construir prompt completo sin caché, usando systemInstruction
+                // Fallback: misma conversación sin caché, usando systemInstruction
                 console.warn(`[SIMULATOR] Caché falló (${cacheError.message}). Usando método sin caché.`);
                 const kbSnapshot = await db.collection('ai_knowledge_base').get();
                 const knowledgeBase = kbSnapshot.docs.map(doc => `P: ${doc.data().topic}\nR: ${doc.data().answer}`).join('\n\n');
@@ -3077,8 +3083,12 @@ router.post('/simulate-ai', async (req, res) => {
                 const quickRepliesText = qrSnapshot.docs.filter(doc => doc.data().message).map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`).join('\n');
 
                 const fallbackSystem = `${systemPrompt}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.`;
-                const fullPrompt = `**Base de Conocimiento:**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas:**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió multimedia, analízala cuidadosamente. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-                aiResult = await generateGeminiResponse(fullPrompt, mediaParts, fallbackSystem);
+                const fallbackContents = [
+                    { role: 'user', parts: [{ text: `**Base de Conocimiento:**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas:**\n${quickRepliesText || 'No hay respuestas rápidas.'}` }] },
+                    ...historyTurns,
+                    { role: 'user', parts: [{ text: tareaText }] }
+                ];
+                aiResult = await generateGeminiResponse(fallbackContents, mediaParts, fallbackSystem);
             }
         }
 
