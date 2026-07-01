@@ -1695,6 +1695,13 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         if (!shouldTransitionToPostVenta && !shouldDeactivate && !isPostVenta) {
             tagOrderInProgress(contactId, contactRef, conversationHistory, contactData.name)
                 .catch(e => console.warn('[ORDER_FOLLOWUP] live-tag falló:', e.message));
+
+            // Detección en vivo de aplazamientos ("contáctame en un mes") -> agenda un
+            // recordatorio a fecha futura (plantilla). require perezoso para evitar ciclo
+            // de módulos (scheduledReminderScheduler requiere services). Fire-and-forget.
+            require('./leads/scheduledReminderScheduler')
+                .detectAndArmReminder(contactId, contactRef, conversationHistory, contactData.name)
+                .catch(e => console.warn('[REMINDER] detección en vivo falló:', e.message));
         }
     } catch (error) {
         console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
