@@ -2071,6 +2071,18 @@ Reglas:
             return;
         }
 
+        // ¿El último mensaje del cliente YA fue respondido mientras generábamos? (otra
+        // generación solapada, un agente humano o un auto-sender). Si el último mensaje
+        // real de la conversación ya no es del cliente, no mandar OTRA respuesta encima:
+        // era la causa de las respuestas dobles ("$750... ¿así lo grabamos? ✅" dos veces).
+        const lastMsgsSnap = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(3).get();
+        const lastRealMsg = lastMsgsSnap.docs.map(x => x.data()).find(m => m.status !== 'scheduled');
+        if (lastRealMsg && lastRealMsg.from !== contactId) {
+            console.log(`[AI] El último mensaje de ${contactId} ya fue respondido (${lastRealMsg.isAutoReply ? 'por la IA' : 'por un humano/auto-sender'}). Omitiendo envío duplicado.`);
+            await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() });
+            return;
+        }
+
         // Separar la respuesta en múltiples mensajes si contiene [SPLIT]
         let aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);
         let lastText = "";
