@@ -1344,7 +1344,7 @@ async function generateGeminiResponse(prompt, imageParts = [], systemInstruction
             result = await geminiResponse.json();
             break;
         } catch (e) {
-            const retriable = /premature close|terminated|econnreset|fetch failed|network|aborted/i.test(String(e && e.message));
+            const retriable = /premature close|terminated|econnreset|fetch failed|network|aborted|timeout/i.test(String(e && e.message));
             if (attempt < 2 && retriable) { console.warn(`[AI] Gemini falló (${e.message}), reintentando...`); await new Promise(r => setTimeout(r, 800)); continue; }
             throw e;
         }
@@ -1387,7 +1387,7 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
                 body: JSON.stringify(payload)
             });
         } catch (e) {
-            const retriable = /premature close|terminated|econnreset|fetch failed|network|aborted/i.test(String(e && e.message));
+            const retriable = /premature close|terminated|econnreset|fetch failed|network|aborted|timeout/i.test(String(e && e.message));
             if (attempt < 2 && retriable) {
                 console.warn(`[AI] Gemini con caché falló (${e.message}), reintentando...`);
                 await new Promise(r => setTimeout(r, 800));
