@@ -1473,10 +1473,21 @@ const formatScheduleLabel = (ms) => {
     return `${d.getDate()}/${d.getMonth() + 1} ${time}`;
 };
 
-const MessageStatusIconTemplate = (status, readAt) => {
+const MessageStatusIconTemplate = (status, readAt, error) => {
     const sentColor = '#9ca3af';
     const readColor = '#53bdeb';
     switch (status) {
+        case 'failed': {
+            // Razón amigable del fallo (guardada por el webhook de estados de Meta)
+            let reason = 'Mensaje no entregado';
+            if (error && error.code === 131047) {
+                reason = 'No entregado: el cliente lleva más de 24h sin escribir. Usa una plantilla.';
+            } else if (error && (error.title || error.detail)) {
+                reason = `No entregado: ${error.detail || error.title}`;
+            }
+            const safeReason = String(reason).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            return `<i class="fas fa-exclamation-circle message-status-icon" style="color: #ef4444;" title="${safeReason}"></i>`;
+        }
         case 'pending': return `<i class="far fa-clock message-status-icon" style="color: ${sentColor};"></i>`;
         case 'queued': return `<i class="far fa-clock message-status-icon" style="color: #60a5fa;"></i>`;
         case 'scheduled': return `<i class="far fa-clock message-status-icon" style="color: #8b5cf6;"></i>`;
@@ -1537,7 +1548,7 @@ const MessageBubbleTemplate = (message) => {
 
     let contentHTML = '';
     let bubbleExtraClass = '';
-    let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status, message.readAt) : ''}</div>`;
+    let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status, message.readAt, message.error) : ''}</div>`;
 
     const defaultTexts = ['📷 Imagen', '🎥 Video', '🎵 Audio', '📄 Documento', 'Sticker'];
     
@@ -1561,7 +1572,7 @@ const MessageBubbleTemplate = (message) => {
             bubbleExtraClass = 'has-image';
             const bubbleBgColor = isSent ? 'var(--color-bubble-sent-bg)' : 'var(--color-bubble-received-bg)';
             const fullImageUrl = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
-            contentHTML += `<div style="background-color: ${bubbleBgColor}" class="rounded-lg overflow-hidden"><img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}<div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status, message.readAt) : ''}</div></div>`;
+            contentHTML += `<div style="background-color: ${bubbleBgColor}" class="rounded-lg overflow-hidden"><img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}<div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status, message.readAt, message.error) : ''}</div></div>`;
             timeAndStatusHTML = '';
         } else if (message.fileType.startsWith('video/')) {
             bubbleExtraClass = 'has-video';

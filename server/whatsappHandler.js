@@ -1011,6 +1011,16 @@ router.post('/', async (req, res) => {
                             if (newStatus === 'read') updateData.readAt = fsTs;
                             else if (newStatus === 'delivered') updateData.deliveredAt = fsTs;
                         }
+                        // Persistir la razón del fallo (Meta la manda solo en este webhook;
+                        // sin esto el error queda únicamente en los logs del servidor)
+                        if (newStatus === 'failed' && Array.isArray(errors) && errors.length) {
+                            const e = errors[0] || {};
+                            updateData.error = {
+                                code: typeof e.code === 'number' ? e.code : null,
+                                title: e.title || null,
+                                detail: e.error_data?.details || e.message || null
+                            };
+                        }
                         await messageDoc.ref.update(updateData);
                         console.log(`[LOG] Estado del mensaje ${messageId} actualizado a '${newStatus}' en Firestore.`);
                     } else {

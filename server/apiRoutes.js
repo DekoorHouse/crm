@@ -4379,6 +4379,26 @@ router.post('/contacts/:contactId/utility-message', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/contacts/:contactId/window-state (ventana de 24h) ---
+// Devuelve si el contacto está dentro de la ventana de servicio de 24h de Meta
+// (último mensaje ENTRANTE hace menos de 24h). Fuera de ella, los mensajes de
+// formato libre se aceptan pero luego fallan (error 131047), así que el frontend
+// lo usa para avisar antes de enviar/reenviar.
+router.get('/contacts/:contactId/window-state', async (req, res) => {
+    const { contactId } = req.params;
+    try {
+        const snap = await db.collection('contacts_whatsapp').doc(contactId)
+            .collection('messages').orderBy('timestamp', 'desc').limit(50).get();
+        const lastInboundMsg = snap.docs.find(d => d.data().from === contactId);
+        const lastInboundTime = lastInboundMsg?.data()?.timestamp?.toDate();
+        const windowOpen = !!(lastInboundTime && (Date.now() - lastInboundTime.getTime() < 24 * 60 * 60 * 1000));
+        res.json({ success: true, windowOpen, lastInboundAt: lastInboundTime ? lastInboundTime.toISOString() : null });
+    } catch (error) {
+        console.error(`[WINDOW-STATE] Error para ${contactId}:`, error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // --- Endpoint POST /api/contacts/:contactId/messages (Enviar mensaje) ---
 router.post('/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;

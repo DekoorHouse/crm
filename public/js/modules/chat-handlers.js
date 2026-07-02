@@ -2966,6 +2966,16 @@ async function renderForwardResults(query) {
 async function doForward(targetId, targetName) {
     const msg = state.forwardingMessage;
     if (!msg || !targetId) { closeForwardModal(); return; }
+    // Fuera de la ventana de 24h Meta acepta el mensaje pero luego lo marca como
+    // fallido (131047) y nunca llega: avisar antes de reenviar.
+    try {
+        const wResp = await fetch(`${API_BASE_URL}/api/contacts/${targetId}/window-state`);
+        const w = await wResp.json();
+        if (wResp.ok && w && w.windowOpen === false) {
+            const ok = confirm(`⚠️ ${targetName} lleva más de 24h sin escribir.\nWhatsApp probablemente NO entregue este reenvío (fuera de la ventana de 24h; solo llegan plantillas).\n\n¿Reenviar de todos modos?`);
+            if (!ok) return;
+        }
+    } catch (e) { /* si el check falla, continuar con el reenvío normal */ }
     const payload = { forwarded: true };
     if (msg.text) payload.text = msg.text;
     if (msg.fileUrl) { payload.fileUrl = msg.fileUrl; payload.fileType = msg.fileType || ''; }
