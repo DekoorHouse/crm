@@ -205,7 +205,9 @@ router.post('/subscribe-page', express.json(), async (req, res) => {
             null,
             {
                 params: {
-                    subscribed_fields: 'messages,messaging_postbacks,message_deliveries,messaging_optins',
+                    // message_echoes: respuestas del equipo desde la app de Meta/Business Suite,
+                    // para que queden en el historial del CRM y la IA no responda encima.
+                    subscribed_fields: 'messages,messaging_postbacks,message_deliveries,messaging_optins,message_echoes',
                     access_token: page.accessToken,
                 },
             }

@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const { db, admin, bucket } = require('./config');
-const { triggerAutoReplyAI, sendMessengerMessage } = require('./services');
+const { triggerAutoReplyAI, sendMessengerMessage, cancelPendingAiTimer } = require('./services');
 
 const router = express.Router();
 
@@ -259,7 +259,22 @@ router.post('/', async (req, res) => {
             for (const event of messagingEvents) {
                 const senderId = event.sender?.id;
 
-                // Ignore messages sent by the page itself
+                // Respuestas del equipo desde la app de Meta/Business Suite llegan como
+                // "echo" (message.is_echo, con sender = la página). Antes se descartaban:
+                // la IA no veía lo que el humano ya contestó (repetía la misma info) y
+                // respondía encima. Ahora se registran en el historial y cancelan la IA.
+                if (event.message && event.message.is_echo) {
+                    // try/catch propio: un error procesando el echo NO debe abortar los
+                    // demás eventos del batch (mensajes entrantes de otros clientes).
+                    try {
+                        await handleEchoMessage(event, channel);
+                    } catch (echoErr) {
+                        console.error(`[${logPrefix} ECHO] Error procesando echo:`, echoErr.message);
+                    }
+                    continue;
+                }
+
+                // Ignore other events sent by the page itself
                 if (!senderId || senderId === FB_PAGE_ID) {
                     continue;
                 }
@@ -368,6 +383,10 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
                 );
                 messageData.fileUrl = publicUrl;
                 messageData.fileType = mimeType;
+                // Guardar el tipo con la misma nomenclatura que WhatsApp: la IA depende de
+                // este campo para ADJUNTAR el archivo a Gemini (services.js exige d.type).
+                // Sin él, la IA nunca veía las imágenes/audios/PDF de FB/IG y respondía a ciegas.
+                messageData.type = attachType === 'file' ? 'document' : attachType;
 
                 if (!messageData.text) {
                     const fallbackTexts = {
@@ -568,12 +587,122 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
     // AI auto-reply
     if (updatedContactData.botActive) {
         const incomingMsg = { type: 'text', text: { body: messageData.text } };
-        const delay = 20000;
-        console.log(`[${logPrefix} AI] Programando respuesta de IA para ${contactId} en ${delay/1000}s`);
+        let delay = 20000;
+        // Igual que WhatsApp: si la IA ya pidió los datos de envío (awaitingShippingData),
+        // dar 10 min a que el cliente los mande en partes antes de pedirle lo que falta —
+        // EXCEPTO si pregunta qué falta / si ya está completo: ahí se responde rápido.
+        if (updatedContactData.awaitingShippingData) {
+            const incomingText = (messageData.text || '').toLowerCase();
+            const asksWhatsMissing = /(falta|faltan|qu[eé] m[aá]s|qu[eé] datos|cu[aá]l|es todo|eso es todo|ya (?:te )?(?:lo|los|las|le)?\s*(?:di|mand|envi|env[ií]|pas)|ya est|ya qued|list[oa]|complet|algo m[aá]s)/i.test(incomingText);
+            if (!asksWhatsMissing) {
+                delay = 10 * 60 * 1000;
+            }
+        }
+        console.log(`[${logPrefix} AI] Programando respuesta de IA para ${contactId} en ${delay/1000}s${updatedContactData.awaitingShippingData ? ' (esperando datos de envío)' : ''}`);
         triggerAutoReplyAI(incomingMsg, contactRef, updatedContactData, delay).catch(err => {
             console.error(`[${logPrefix}] Error asíncrono en respuesta de IA:`, err);
         });
     }
+}
+
+/**
+ * Registra un "echo": mensaje enviado por la página desde FUERA del CRM (un humano
+ * respondiendo en la app de Messenger/Instagram o Business Suite). Los envíos hechos
+ * por el propio CRM/IA ya se guardaron con su mid al enviarse, así que aquí el
+ * create() con el mismo mid falla con ALREADY_EXISTS y se ignoran solos: únicamente
+ * quedan los mensajes tecleados por un humano en la app de Meta. Además se cancela
+ * la respuesta pendiente de la IA para que no conteste encima del humano.
+ */
+async function handleEchoMessage(event, channel = 'messenger') {
+    const prefix = channel === 'instagram' ? 'ig' : 'fb';
+    const logPrefix = channel === 'instagram' ? 'INSTAGRAM' : 'MESSENGER';
+    const recipientId = event.recipient?.id; // en un echo, el cliente es el destinatario
+    const message = event.message || {};
+    if (!recipientId) return;
+
+    // FILTRO 1 — echoes de la PROPIA app (envíos del CRM/IA vía Send API traen nuestro
+    // app_id): descartarlos SIEMPRE. Sin esto, cada mensaje saliente se duplicaría como
+    // "humanEcho" y el bloque de cancelación de abajo abortaría a la propia IA (p. ej.
+    // el echo de la burbuja 1 de un [SPLIT] cancelaría las burbujas restantes).
+    const ownAppId = process.env.FB_APP_ID || '';
+    if (message.app_id && ownAppId && String(message.app_id) === ownAppId) {
+        return;
+    }
+
+    const contactId = `${prefix}_${recipientId}`;
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+    const contactDoc = await contactRef.get();
+    if (!contactDoc.exists) return; // chat que no seguimos en el CRM
+
+    // FILTRO 2 — respaldo: si ya existe un mensaje con este mid (las rutas de envío del
+    // CRM/IA guardan el mid en el CAMPO 'id', no como ID de documento), es un envío
+    // propio: no duplicar ni cancelar nada.
+    if (message.mid) {
+        const dup = await contactRef.collection('messages').where('id', '==', message.mid).limit(1).get();
+        if (!dup.empty) return;
+    }
+
+    // Texto legible del echo + media adjunta (p. ej. una foto que el equipo manda
+    // desde la app de Meta): se sube a Storage para que se vea en el CRM.
+    let text = message.text || '';
+    let fileUrl = null, fileType = null;
+    if (Array.isArray(message.attachments) && message.attachments.length > 0) {
+        const attachment = message.attachments[0];
+        const fallbackTexts = { image: '📷 Imagen', video: '🎥 Video', audio: '🎵 Audio', file: '📄 Documento' };
+        if (!text) text = fallbackTexts[attachment.type] || 'Archivo adjunto';
+        if (['image', 'video', 'audio', 'file'].includes(attachment.type) && attachment.payload?.url) {
+            try {
+                const uploaded = await downloadAndUploadMessengerMedia(attachment.payload.url, recipientId, message.mid || `echo_${event.timestamp}`);
+                fileUrl = uploaded.publicUrl;
+                fileType = uploaded.mimeType;
+            } catch (mediaErr) {
+                console.warn(`[${logPrefix} ECHO] No se pudo guardar la media del echo:`, mediaErr.message);
+            }
+        }
+    }
+    if (!text) text = 'Mensaje enviado desde la app de Meta';
+
+    const messageData = {
+        timestamp: admin.firestore.Timestamp.fromMillis(event.timestamp || Date.now()),
+        from: 'page',
+        status: 'sent',
+        id: message.mid || null,
+        text,
+        fileUrl,
+        fileType,
+        humanEcho: true, // lo escribió un humano fuera del CRM
+        channel
+    };
+    Object.keys(messageData).forEach(key => messageData[key] == null && delete messageData[key]);
+
+    try {
+        if (message.mid) {
+            const msgDocId = message.mid.replace(/\//g, '_');
+            // create() con el mid como doc ID: idempotente frente a webhooks repetidos.
+            await contactRef.collection('messages').doc(msgDocId).create(messageData);
+        } else {
+            await contactRef.collection('messages').add(messageData);
+        }
+    } catch (saveErr) {
+        if (saveErr.code === 6 || /already exist/i.test(saveErr.message || '')) {
+            return; // webhook repetido
+        }
+        throw saveErr;
+    }
+    console.log(`[${logPrefix} ECHO] Respuesta humana desde la app de Meta registrada para ${contactId}.`);
+
+    // Un humano ya está atendiendo este chat: cancelar la respuesta pendiente de la IA
+    // y abortar la generación en vuelo si la hay.
+    cancelPendingAiTimer(contactId);
+    const contactUpdate = {
+        lastMessage: text,
+        lastMessageTimestamp: messageData.timestamp,
+        aiNextRun: admin.firestore.FieldValue.delete()
+    };
+    if (contactDoc.data().aiStatus === 'generating') {
+        contactUpdate.aiStatus = 'cancelled';
+    }
+    await contactRef.update(contactUpdate);
 }
 
 /**
@@ -582,6 +711,14 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
 async function handlePostback(senderPsid, postback, eventTimestamp) {
     const contactId = `fb_${senderPsid}`;
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+
+    // No escribir mensajes bajo contactos que no existen (quedaba un doc "fantasma"
+    // invisible en el CRM); el primer mensaje real del cliente creará el contacto.
+    const contactDoc = await contactRef.get();
+    if (!contactDoc.exists) {
+        console.log(`[MESSENGER POSTBACK] de ${contactId} ignorado: el contacto aún no existe.`);
+        return;
+    }
 
     const messageData = {
         timestamp: admin.firestore.Timestamp.fromMillis(eventTimestamp),
@@ -592,8 +729,32 @@ async function handlePostback(senderPsid, postback, eventTimestamp) {
         channel: 'messenger'
     };
 
-    await contactRef.collection('messages').add(messageData);
+    // ID determinista + create(): un reintento de Meta (mismo timestamp) no duplica el clic.
+    try {
+        await contactRef.collection('messages').doc(`postback_${eventTimestamp}`).create(messageData);
+    } catch (saveErr) {
+        if (saveErr.code === 6 || /already exist/i.test(saveErr.message || '')) {
+            console.log(`[MESSENGER POSTBACK] Duplicado (postback_${eventTimestamp}). Ignorando reintento.`);
+            return;
+        }
+        throw saveErr;
+    }
     console.log(`[MESSENGER POSTBACK] de fb_${senderPsid}: "${messageData.text}"`);
+
+    // Reflejar el clic en el chat y responder: antes el postback solo se guardaba y el
+    // bot se quedaba callado hasta que el cliente escribiera texto.
+    await contactRef.update({
+        lastMessage: messageData.text,
+        lastMessageTimestamp: messageData.timestamp,
+        unreadCount: admin.firestore.FieldValue.increment(1)
+    });
+    const contactData = contactDoc.data();
+    if (contactData.botActive) {
+        console.log(`[MESSENGER AI] Programando respuesta de IA para ${contactId} (clic de botón).`);
+        triggerAutoReplyAI({ type: 'text', text: { body: messageData.text } }, contactRef, contactData, 20000).catch(err => {
+            console.error('[MESSENGER] Error asíncrono en respuesta de IA (postback):', err);
+        });
+    }
 }
 
 /**
