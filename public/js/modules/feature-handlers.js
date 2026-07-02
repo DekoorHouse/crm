@@ -814,6 +814,138 @@ async function deleteWhatsappTemplate(name, id, btn) {
     }
 }
 
+// --- Ajustes → Personalizar mi empresa (perfil del número de WhatsApp Business) ---
+
+function businessProfileMsg(text, isError) {
+    const el = document.getElementById('business-profile-msg');
+    if (!el) return;
+    el.textContent = text || '';
+    el.style.color = isError ? '#991b1b' : '#166534';
+}
+
+async function renderBusinessProfile(force) {
+    const box = document.getElementById('business-profile-container');
+    if (!box) return;
+    if (box.dataset.loaded === '1' && !force) return;
+    box.innerHTML = '<p class="text-gray-400 text-sm">Cargando perfil de WhatsApp…</p>';
+    try {
+        const resp = await fetch(`${API_BASE_URL}/api/whatsapp-business-profile`);
+        const data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.message || ('HTTP ' + resp.status));
+        box.dataset.loaded = '1';
+        const p = data.profile || {};
+        const ph = data.phone || {};
+
+        const photoHtml = p.profile_picture_url
+            ? `<img id="business-profile-photo" src="${escapeHtml(p.profile_picture_url)}" alt="Foto de perfil" style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:1px solid var(--color-border);">`
+            : `<div id="business-profile-photo" style="width:96px;height:96px;border-radius:50%;background:var(--color-subtle-bg);display:flex;align-items:center;justify-content:center;color:var(--color-text-light);font-size:34px;border:1px solid var(--color-border);"><i class="fas fa-store"></i></div>`;
+
+        const nameBadges = {
+            APPROVED: ['Nombre aprobado', '#dcfce7', '#166534'],
+            AVAILABLE_WITHOUT_REVIEW: ['Nombre aprobado', '#dcfce7', '#166534'],
+            PENDING_REVIEW: ['Cambio en revisión de Meta', '#fef9c3', '#854d0e'],
+            DECLINED: ['Último cambio rechazado por Meta', '#fee2e2', '#991b1b'],
+            EXPIRED: ['Solicitud expirada', '#fee2e2', '#991b1b'],
+        };
+        const nb = nameBadges[ph.name_status];
+        const nameBadge = nb ? `<span style="background:${nb[1]};color:${nb[2]};padding:2px 10px;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap">${nb[0]}</span>` : '';
+
+        const quality = { GREEN: ['Alta 🟢', '#166534'], YELLOW: ['Media 🟡', '#854d0e'], RED: ['Baja 🔴', '#991b1b'] }[ph.quality_rating];
+
+        box.innerHTML = `
+            <div class="flex items-center gap-5 mb-6">
+                ${photoHtml}
+                <div>
+                    <button id="business-profile-photo-btn" class="btn btn-primary btn-sm" onclick="document.getElementById('business-profile-photo-input').click()"><i class="fas fa-camera mr-2"></i>Cambiar foto</button>
+                    <p class="text-xs text-gray-500 mt-2">JPG o PNG, de preferencia cuadrada (640×640). El cambio es inmediato.</p>
+                    <input type="file" id="business-profile-photo-input" accept="image/png,image/jpeg" class="hidden" onchange="handleBusinessProfilePhotoChange(this)">
+                </div>
+            </div>
+            <div class="mb-5">
+                <label class="font-semibold">Nombre de la empresa ${nameBadge}</label>
+                <p class="text-xs text-gray-500 mb-2">Meta revisa todo cambio de nombre (minutos a días). Si lo aprueban y no se refleja, confírmalo en WhatsApp Manager (re-registro del número).</p>
+                <div class="flex items-center gap-3">
+                    <input type="text" id="business-profile-name-input" class="!mb-0" value="${escapeHtml(ph.verified_name || '')}" maxlength="75">
+                    <button id="business-profile-name-btn" class="btn btn-primary flex-shrink-0" onclick="handleBusinessProfileNameChange()">Solicitar cambio</button>
+                </div>
+            </div>
+            <div class="mb-2">
+                <label class="font-semibold">Teléfono</label>
+                <p class="text-sm" style="color:var(--color-text-light)"><i class="fab fa-whatsapp mr-1" style="color:#25d366"></i>${escapeHtml(ph.display_phone_number || '—')}${quality ? ` &nbsp;·&nbsp; Calidad del número: <b style="color:${quality[1]}">${quality[0]}</b>` : ''}</p>
+            </div>
+            <p id="business-profile-msg" class="text-sm mt-3 font-semibold"></p>`;
+    } catch (e) {
+        box.innerHTML = `<p style="color:#991b1b">No se pudo cargar el perfil: ${escapeHtml(e.message || String(e))}</p>
+            <button class="btn btn-outline btn-sm mt-2" onclick="renderBusinessProfile(true)">Reintentar</button>`;
+    }
+}
+
+async function handleBusinessProfilePhotoChange(input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    if (!/^image\/(jpe?g|png)$/i.test(file.type)) { businessProfileMsg('La foto debe ser JPG o PNG.', true); return; }
+    if (file.size > 8 * 1024 * 1024) { businessProfileMsg('La imagen es demasiado grande (máx. 8 MB).', true); return; }
+
+    const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+    });
+
+    const btn = document.getElementById('business-profile-photo-btn');
+    const originalHtml = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Subiendo…'; }
+    businessProfileMsg('Subiendo la foto a WhatsApp…', false);
+    try {
+        const resp = await fetch(`${API_BASE_URL}/api/whatsapp-business-profile/photo`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageBase64: base64, mimeType: file.type })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.success === false) throw new Error(data.message || ('HTTP ' + resp.status));
+        // Recargar el panel y forzar la vista previa con la imagen local (la URL de
+        // Meta puede tardar unos segundos en refrescar; el placeholder era un <div>).
+        await renderBusinessProfile(true);
+        const el = document.getElementById('business-profile-photo');
+        if (el) {
+            if (el.tagName === 'IMG') el.src = base64;
+            else el.outerHTML = `<img id="business-profile-photo" src="${base64}" alt="Foto de perfil" style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:1px solid var(--color-border);">`;
+        }
+        businessProfileMsg('Foto de perfil actualizada ✅ Puede tardar unos minutos en verse en los chats.', false);
+    } catch (e) {
+        businessProfileMsg(`No se pudo cambiar la foto: ${e.message || e}`, true);
+    }
+    const btnAfter = document.getElementById('business-profile-photo-btn');
+    if (btnAfter) { btnAfter.disabled = false; btnAfter.innerHTML = originalHtml; }
+}
+
+async function handleBusinessProfileNameChange() {
+    const inputEl = document.getElementById('business-profile-name-input');
+    const newName = (inputEl && inputEl.value || '').trim();
+    if (newName.length < 3) { businessProfileMsg('Escribe el nuevo nombre (mínimo 3 caracteres).', true); return; }
+    const ok = confirm(`¿Solicitar a Meta el cambio de nombre a "${newName}"?\n\nEl nombre visible cambia hasta que Meta lo apruebe. Debe estar relacionado con tu negocio o pueden rechazarlo.`);
+    if (!ok) return;
+    const btn = document.getElementById('business-profile-name-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+    try {
+        const resp = await fetch(`${API_BASE_URL}/api/whatsapp-business-profile/name`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ newDisplayName: newName })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.success === false) throw new Error(data.message || ('HTTP ' + resp.status));
+        // Recargar para que el badge muestre el estatus nuevo (p.ej. "en revisión")
+        await renderBusinessProfile(true);
+        businessProfileMsg(data.message || 'Solicitud enviada a Meta ✅', false);
+    } catch (e) {
+        businessProfileMsg(`No se pudo solicitar el cambio: ${e.message || e}`, true);
+    }
+    const btnAfter = document.getElementById('business-profile-name-btn');
+    if (btnAfter) { btnAfter.disabled = false; btnAfter.textContent = 'Solicitar cambio'; }
+}
+
 // Píldora de color según el estatus de la plantilla en Meta.
 function templateStatusBadge(status) {
     const map = {
@@ -3427,6 +3559,10 @@ window.onAiTemplatePhotoChange = onAiTemplatePhotoChange;
 window.handleGenerateTemplateWithAI = handleGenerateTemplateWithAI;
 window.handleCreateWhatsappTemplate = handleCreateWhatsappTemplate;
 window.deleteWhatsappTemplate = deleteWhatsappTemplate;
+// --- Personalizar mi empresa (perfil de WhatsApp Business) ---
+window.renderBusinessProfile = renderBusinessProfile;
+window.handleBusinessProfilePhotoChange = handleBusinessProfilePhotoChange;
+window.handleBusinessProfileNameChange = handleBusinessProfileNameChange;
 // --- Creador de anuncios (Crear Ad) ---
 window.initCreateAdForm = initCreateAdForm;
 window.onAdAccountChange = onAdAccountChange;

@@ -5334,6 +5334,134 @@ router.delete('/whatsapp-templates/:name', async (req, res) => {
     }
 });
 
+// =============================================================
+// PERFIL DE EMPRESA DE WHATSAPP (Ajustes → Personalizar mi empresa)
+// =============================================================
+
+// --- GET /api/whatsapp-business-profile (foto, nombre verificado, teléfono, estatus) ---
+router.get('/whatsapp-business-profile', async (_req, res) => {
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
+    }
+    try {
+        const headers = { Authorization: `Bearer ${WHATSAPP_TOKEN}` };
+        const [profileRes, phoneRes] = await Promise.all([
+            axios.get(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/whatsapp_business_profile`, {
+                headers, params: { fields: 'about,address,description,email,profile_picture_url,websites,vertical' }
+            }),
+            axios.get(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}`, {
+                headers, params: { fields: 'display_phone_number,verified_name,name_status,quality_rating' }
+            })
+        ]);
+        res.json({ success: true, profile: profileRes.data?.data?.[0] || {}, phone: phoneRes.data || {} });
+    } catch (error) {
+        const metaErr = error.response?.data?.error;
+        console.error('[BUSINESS-PROFILE] Error al leer el perfil:', metaErr ? JSON.stringify(metaErr) : error.message);
+        res.status(500).json({ success: false, message: metaErr?.message || 'Error al leer el perfil de WhatsApp.' });
+    }
+});
+
+// --- POST /api/whatsapp-business-profile/photo (cambiar foto de perfil) ---
+// Recibe { imageBase64, mimeType }, la sube con el Resumable Upload API y aplica el
+// handle al perfil. Se usa el nodo "app" (la app dueña del token) para no depender
+// de FB_APP_ID. El cambio de foto es inmediato (no pasa por revisión de Meta).
+router.post('/whatsapp-business-profile/photo', async (req, res) => {
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
+    }
+    try {
+        const { imageBase64, mimeType } = req.body || {};
+        if (!imageBase64) return res.status(400).json({ success: false, message: 'Falta la imagen.' });
+        const mime = String(mimeType || 'image/jpeg').split(';')[0].trim().toLowerCase();
+        if (!/^image\/(jpe?g|png)$/.test(mime)) {
+            return res.status(400).json({ success: false, message: 'La foto debe ser JPG o PNG.' });
+        }
+        const data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+        let buffer = Buffer.from(data, 'base64');
+        if (!buffer.length) return res.status(400).json({ success: false, message: 'Imagen vacía o inválida.' });
+
+        // Meta limita la foto de perfil a 5MB: comprimir si se pasa (mismo compresor de plantillas)
+        let finalMime = mime;
+        if (buffer.length > 5 * 1024 * 1024) {
+            const compressed = await compressImageIfNeeded(buffer, mime);
+            buffer = compressed.buffer;
+            finalMime = compressed.mimeType;
+            if (buffer.length > 5 * 1024 * 1024) {
+                return res.status(400).json({ success: false, message: 'La imagen es demasiado grande (máx. 5 MB).' });
+            }
+        }
+
+        // 1) Sesión de subida (Resumable Upload API)
+        const appNode = process.env.FB_APP_ID || 'app';
+        const startResp = await axios.post(`https://graph.facebook.com/v19.0/${appNode}/uploads`, null, {
+            params: {
+                file_name: `profile.${finalMime.split('/')[1] || 'jpg'}`,
+                file_length: buffer.length,
+                file_type: finalMime,
+                access_token: WHATSAPP_TOKEN
+            }
+        });
+        const sessionId = startResp.data?.id;
+        if (!sessionId) throw new Error('Meta no devolvió una sesión de subida.');
+
+        // 2) Subir los bytes → handle
+        const uploadResp = await axios.post(`https://graph.facebook.com/v19.0/${sessionId}`, buffer, {
+            headers: { Authorization: `OAuth ${WHATSAPP_TOKEN}`, file_offset: '0', 'Content-Type': finalMime },
+            maxContentLength: Infinity, maxBodyLength: Infinity
+        });
+        const handle = uploadResp.data?.h;
+        if (!handle) throw new Error('Meta no devolvió el handle de la imagen.');
+
+        // 3) Aplicar la foto al perfil
+        await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/whatsapp_business_profile`,
+            { messaging_product: 'whatsapp', profile_picture_handle: handle },
+            { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+        );
+
+        // 4) Releer la URL nueva (puede tardar unos segundos en reflejarse del lado de Meta)
+        let newUrl = null;
+        try {
+            const check = await axios.get(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/whatsapp_business_profile`, {
+                headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }, params: { fields: 'profile_picture_url' }
+            });
+            newUrl = check.data?.data?.[0]?.profile_picture_url || null;
+        } catch (_) { /* opcional: el frontend recarga después */ }
+
+        console.log('[BUSINESS-PROFILE] ✓ Foto de perfil de WhatsApp actualizada.');
+        res.json({ success: true, profile_picture_url: newUrl });
+    } catch (error) {
+        const metaErr = error.response?.data?.error;
+        console.error('[BUSINESS-PROFILE] Error al cambiar la foto:', metaErr ? JSON.stringify(metaErr) : error.message);
+        res.status(500).json({ success: false, message: metaErr?.error_user_msg || metaErr?.message || 'Error al actualizar la foto de perfil.' });
+    }
+});
+
+// --- POST /api/whatsapp-business-profile/name (solicitar cambio de nombre) ---
+// El nombre visible (display name) SIEMPRE pasa por revisión de Meta: esto solo
+// crea la solicitud; el nombre cambia cuando Meta la aprueba (minutos a días).
+router.post('/whatsapp-business-profile/name', async (req, res) => {
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
+    }
+    const newDisplayName = String((req.body || {}).newDisplayName || '').trim();
+    if (newDisplayName.length < 3) {
+        return res.status(400).json({ success: false, message: 'Escribe el nuevo nombre (mínimo 3 caracteres).' });
+    }
+    try {
+        await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}`, null, {
+            params: { new_display_name: newDisplayName, access_token: WHATSAPP_TOKEN }
+        });
+        console.log(`[BUSINESS-PROFILE] Solicitud de cambio de nombre enviada a Meta: "${newDisplayName}"`);
+        // Ojo: al aprobarse, Cloud API suele exigir re-registrar el número (POST /register con el
+        // PIN de 2FA, que no guardamos) para aplicar el nombre; se avisa al usuario en el mensaje.
+        res.json({ success: true, message: `Solicitud enviada ✅ Meta revisará el nombre "${newDisplayName}" (minutos a días). Si al aprobarse no se refleja en los chats, confírmalo en WhatsApp Manager (re-registro del número).` });
+    } catch (error) {
+        const metaErr = error.response?.data?.error;
+        console.error('[BUSINESS-PROFILE] Error al solicitar cambio de nombre:', metaErr ? JSON.stringify(metaErr) : error.message);
+        res.status(400).json({ success: false, message: metaErr?.error_user_msg || metaErr?.message || 'No se pudo solicitar el cambio de nombre.' });
+    }
+});
+
 // Sube una imagen de muestra a Meta (resumable upload) y devuelve el `handle`
 // requerido para plantillas con cabecera de IMAGEN. Usa FB_APP_ID + WHATSAPP_TOKEN.
 async function uploadSampleHeaderImage(imageUrl) {

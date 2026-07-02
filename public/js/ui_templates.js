@@ -830,6 +830,7 @@ const SettingsViewTemplate = () => `
         </div>
         <div class="settings-tabs">
             <button class="settings-tab active" data-stab="apariencia" onclick="switchSettingsTab('apariencia')"><i class="fas fa-palette mr-2"></i>Apariencia</button>
+            <button class="settings-tab" data-stab="empresa" onclick="switchSettingsTab('empresa')"><i class="fab fa-whatsapp mr-2"></i>Personalizar mi empresa</button>
             <button class="settings-tab" data-stab="usuarios" onclick="switchSettingsTab('usuarios')"><i class="fas fa-users mr-2"></i>Usuarios</button>
             <button class="settings-tab" data-stab="automatizacion" onclick="switchSettingsTab('automatizacion')"><i class="fas fa-robot mr-2"></i>Automatización</button>
             <button class="settings-tab" data-stab="integraciones" onclick="switchSettingsTab('integraciones')"><i class="fas fa-plug mr-2"></i>Integraciones</button>
@@ -860,6 +861,13 @@ const SettingsViewTemplate = () => `
                         </button>`;
                     }).join('')}
                 </div>
+            </div>
+            </div>
+            <div class="settings-pane" data-spane="empresa">
+            <div class="settings-card">
+                <h2 class="text-xl font-bold mb-1">Personalizar mi empresa</h2>
+                <p class="text-sm text-gray-500 mb-4">El perfil de tu número de WhatsApp Business: lo que ven tus clientes en el chat.</p>
+                <div id="business-profile-container"><p class="text-gray-400 text-sm">Cargando perfil de WhatsApp…</p></div>
             </div>
             </div>
             <div class="settings-pane" data-spane="usuarios">

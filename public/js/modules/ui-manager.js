@@ -1301,6 +1301,8 @@ function switchSettingsTab(tab) {
     state.settingsTab = tab;
     document.querySelectorAll('.settings-tab').forEach(b => b.classList.toggle('active', b.dataset.stab === tab));
     document.querySelectorAll('.settings-pane').forEach(p => p.classList.toggle('active', p.dataset.spane === tab));
+    // Carga diferida: el perfil de WhatsApp Business se consulta a Meta solo al abrir su pestaña.
+    if (tab === 'empresa' && typeof renderBusinessProfile === 'function') renderBusinessProfile();
 }
 window.switchSettingsTab = switchSettingsTab;
 
