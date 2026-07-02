@@ -1,0 +1,463 @@
+:root {
+    --primary-color: #D4722C;
+    --primary-hover: #bf5f1e;
+    --background-dark: #FAF0E6;
+    --surface-dark: #FFFFFF;
+    --text-white: #1B3A4B;
+    --text-gray: #4a6274;
+    --glass-background: rgba(27, 77, 92, 0.03);
+    --glass-border: rgba(27, 77, 92, 0.1);
+    --accent-glow: rgba(212, 114, 44, 0.1);
+    --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+    background-color: var(--background-dark);
+    color: var(--text-white);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* Background Animation */
+.bg-gradient {
+    display: none;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+/* Old header/nav removed - using shared navbar from /sitio/style.css */
+
+.hero {
+    text-align: center;
+    margin-bottom: 4rem;
+    background: transparent;
+    padding-top: 2rem;
+}
+
+h1 {
+    font-size: 3.5rem;
+    margin-bottom: 1rem;
+    color: #1B4D5C;
+    font-weight: 700;
+}
+
+.hero p {
+    color: var(--text-gray);
+    font-size: 1.2rem;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+/* Search Box */
+.search-container {
+    max-width: 600px;
+    margin: 0 auto 4rem;
+    position: relative;
+    padding: 4px;
+    background: var(--glass-border);
+    border-radius: 20px;
+    backdrop-filter: blur(10px);
+    transition: var(--transition);
+}
+
+.search-container:focus-within {
+    background: var(--primary-color);
+    box-shadow: 0 0 30px rgba(255, 142, 65, 0.3);
+}
+
+.search-inner {
+    background: var(--surface-dark);
+    border-radius: 16px;
+    display: flex;
+    padding: 0.5rem;
+}
+
+input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-white);
+    padding: 1rem 1.5rem;
+    font-size: 1.1rem;
+    outline: none;
+    font-family: inherit;
+}
+
+input::placeholder {
+    color: #7a9aab;
+}
+
+button {
+    background: var(--primary-color);
+    color: #FFFFFF;
+    border: none;
+    padding: 0 2.5rem;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 1rem;
+    transition: var(--transition);
+}
+
+button:hover {
+    background: var(--primary-hover);
+    transform: translateY(-2px);
+}
+
+/* Results Area */
+.results-container {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: var(--transition);
+    display: none;
+}
+
+.results-container.active {
+    opacity: 1;
+    transform: translateY(0);
+    display: block;
+}
+
+.tracking-card {
+    background: var(--surface-dark);
+    border: 1px solid var(--glass-border);
+    border-radius: 24px;
+    padding: 2.5rem;
+    box-shadow: 0 4px 24px rgba(27, 77, 92, 0.08);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 1.5rem;
+}
+
+.meta-info h3 {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-white);
+}
+
+.meta-info p {
+    color: var(--text-gray);
+}
+
+.status-badge {
+    background: var(--accent-glow);
+    color: var(--primary-color);
+    padding: 0.6rem 1.8rem;
+    border-radius: 100px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.5px;
+    height: fit-content;
+    border: 1px solid rgba(255, 142, 65, 0.2);
+}
+
+
+/* Timeline */
+.timeline {
+    position: relative;
+    margin-top: 3rem;
+    padding-left: 2rem;
+}
+
+.timeline-item {
+    position: relative;
+    padding-bottom: 3rem;
+    border-left: 2px solid var(--glass-border);
+    padding-left: 2rem;
+}
+
+.timeline-item:last-child {
+    border-left: 2px solid transparent;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -11px;
+    top: 0;
+    width: 20px;
+    height: 20px;
+    background: var(--background-dark);
+    border: 2px solid var(--glass-border);
+    border-radius: 50%;
+    transition: var(--transition);
+}
+
+.timeline-item.active::before {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 12px rgba(212, 114, 44, 0.3);
+}
+
+.time {
+    font-size: 0.9rem;
+    color: var(--text-gray);
+    margin-bottom: 0.5rem;
+}
+
+.status-text {
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+}
+
+.location {
+    font-size: 0.95rem;
+    color: var(--text-gray);
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(27, 58, 75, 0.7);
+    backdrop-filter: blur(15px);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+
+.modal-overlay.active {
+    display: flex;
+    opacity: 1;
+}
+
+.modal-content {
+    background: var(--surface-dark);
+    border: 1px solid var(--glass-border);
+    border-radius: 32px;
+    padding: 3rem;
+    max-width: 500px;
+    width: 90%;
+    text-align: center;
+    position: relative;
+    transform: translateY(40px);
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+}
+
+.modal-overlay.active .modal-content {
+    transform: translateY(0);
+}
+
+.close-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: rgba(27, 77, 92, 0.05);
+    border: none;
+    color: var(--text-gray);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    line-height: 1;
+}
+
+.close-btn:hover {
+    color: var(--text-white);
+    transform: none;
+}
+
+.pulse-icon {
+    width: 80px;
+    height: 80px;
+    background: var(--primary-color);
+    border-radius: 50%;
+    margin: 0 auto 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.pulse-icon::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+    z-index: -1;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 0.5; }
+    100% { transform: scale(2); opacity: 0; }
+}
+
+.main-description {
+    font-size: 1.2rem;
+    margin-bottom: 2rem;
+    line-height: 1.6;
+}
+
+.estimate-box {
+    background: rgba(255, 142, 65, 0.1);
+    border: 1px solid rgba(255, 142, 65, 0.3);
+    border-radius: 16px;
+    padding: 1.25rem;
+    margin-bottom: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.estimate-label {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-gray);
+}
+
+.estimate-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.reassurance-box {
+    background: var(--glass-background);
+
+    border: 1px solid var(--glass-border);
+    padding: 1.5rem;
+    border-radius: 16px;
+    margin-bottom: 2.5rem;
+}
+
+#modal-reassurance {
+    color: var(--text-gray);
+    font-weight: 500;
+}
+
+#modal-status-title {
+    margin-bottom: 1rem;
+    font-size: 1.8rem;
+}
+
+#view-details-btn {
+    width: 100%;
+}
+
+/* ── Responsive móvil ── */
+@media (max-width: 640px) {
+    .container {
+        padding: 1.25rem;
+    }
+
+    header {
+        padding-bottom: 2rem;
+    }
+
+    .logo-img {
+        height: 44px;
+    }
+
+    h1 {
+        font-size: 2rem;
+    }
+
+    .hero {
+        margin-bottom: 2rem;
+    }
+
+    .hero p {
+        font-size: 1rem;
+    }
+
+    .search-container {
+        margin-bottom: 2rem;
+    }
+
+    .search-inner {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    input {
+        padding: 0.85rem 1rem;
+        font-size: 1rem;
+    }
+
+    button {
+        padding: 0.85rem;
+        width: 100%;
+        border-radius: 10px;
+    }
+
+    .tracking-card {
+        padding: 1.25rem;
+        border-radius: 16px;
+    }
+
+    .card-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .meta-info h3 {
+        font-size: 1.1rem;
+    }
+
+    .timeline {
+        padding-left: 1rem;
+        margin-top: 1.5rem;
+    }
+
+    .timeline-item {
+        padding-left: 1.25rem;
+        padding-bottom: 2rem;
+    }
+
+    .modal-content {
+        padding: 2rem 1.5rem;
+        border-radius: 20px;
+    }
+
+    #modal-status-title {
+        font-size: 1.4rem;
+    }
+
+    .main-description {
+        font-size: 1rem;
+    }
+}
+
