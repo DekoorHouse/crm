@@ -2003,6 +2003,12 @@ Reglas:
 - Si AÚN faltan datos, pídele en una lista breve SOLO los que faltan (nunca repitas los que ya dio).
 - Si el cliente pregunta "¿qué falta?" o "¿ya está completo?", respóndele de inmediato con lo que falta, o confírmale que ya está todo (y emite /datoscompletos si corresponde).` : '';
 
+        // Comando interno de cancelación (venta y post-venta). Se inyecta SIEMPRE por código
+        // —aunque el prompt esté personalizado en la UI— para que la IA sepa avisar cuando el
+        // cliente decide NO seguir con el pedido; el sistema quita la etiqueta "Pendientes de
+        // revisión IA" si todavía no hay un pedido registrado (ver más abajo).
+        const cancelCommandNote = `\n\n**Cancelación de pedido:** Si el cliente te dice claramente que YA NO quiere el pedido, que lo CANCELA o que NO podrá continuar con él (por ejemplo: "ya no lo quiero", "mejor cancélalo", "ya no voy a poder con el pedido"), respóndele con empatía y escribe al FINAL de tu mensaje el comando /cancelado (el cliente NO lo ve; es una señal para el equipo). NO lo emitas por una simple demora o aplazamiento del pago (por ejemplo "mañana te pago", "dame unos días"): en esos casos NO se cancela. Emítelo UNA sola vez.`;
+
         // Notas dinámicas + tarea: van como el ÚLTIMO turno user de la conversación.
         // La tarea es solo mecánica; el tono y el estilo salen únicamente de las
         // instrucciones configuradas (el "concisa y útil" y el "indica que un agente
@@ -2015,7 +2021,7 @@ Reglas:
         const mediaTaskNote = mediaParts.length > departmentImageParts.length
             ? ' Vienen adjuntos archivos de la conversación (fotos, audios, videos o documentos/PDF, p. ej. comprobantes de pago): analízalos con cuidado cuando sean relevantes para el último mensaje del cliente; si ya los atendiste en un turno anterior, no los vuelvas a comentar.'
             : '';
-        const finalUserText = `${fechaActualNote}${postventaProtocolNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${postventaProtocolNote}${cancelCommandNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
@@ -2112,9 +2118,13 @@ Reglas:
         // Se exige que ANTES se le hubieran pedido los datos (awaitingShippingData) para no fabricar
         // por error si la IA emitiera el comando fuera del flujo de recolección de datos de envío.
         const shippingDataComplete = isPostVenta && contactData.awaitingShippingData === true && /\/datoscompletos/i.test(aiResponse);
+        // La IA emite /cancelado cuando el cliente decide CANCELAR / no continuar con el pedido.
+        // Si aún no hay un pedido registrado, se quita la etiqueta "Pendientes de revisión IA"
+        // (no hay nada que un humano deba registrar). Ver el manejo después del loop.
+        const orderCancelled = /\/cancelado/i.test(aiResponse);
 
-        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo) de los mensajes antes de enviar
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').trim()).filter(m => m.length > 0);
+        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado) de los mensajes antes de enviar
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -2257,6 +2267,19 @@ Reglas:
             updateData.awaitingShippingData = admin.firestore.FieldValue.delete();
         } else if (shippingDataRequested) {
             updateData.awaitingShippingData = true;
+        }
+
+        // Cancelación de pedido antes de registrarlo: quitar la etiqueta "Pendientes de
+        // revisión IA". Que el contacto TENGA esa etiqueta ya significa que su pedido AÚN no
+        // se ha registrado (registrar un pedido en POST /api/orders la quita), así que
+        // "tiene pendientes_ia" == "antes de tener un pedido registrado". Si el pedido ya
+        // estuviera registrado, no habría etiqueta que quitar y esto no corre. updateData ya
+        // bumpea lastMessageTimestamp, así que el cambio se ve en vivo en el CRM.
+        const hadOrWillHavePendienteIa = updateData.status === 'pendientes_ia'
+            || (updateData.status === undefined && contactData.status === 'pendientes_ia');
+        if (orderCancelled && hadOrWillHavePendienteIa) {
+            updateData.status = null;
+            console.log(`[AI] Cliente ${contactId} canceló su pedido (aún sin registrar). Quitando etiqueta Pendientes IA.`);
         }
 
         await contactRef.update(updateData);
