@@ -2042,7 +2042,7 @@ Reglas:
                 if (createdMs && (Date.now() - createdMs) <= 45 * 24 * 60 * 60 * 1000) {
                     const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : '(sin número)';
                     const datos = String(o.datosProducto || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-                    orderInfoNote = `\n\n**Pedido REGISTRADO en el sistema (fuente de verdad):**\n${num} — Producto: ${o.producto || '-'} — TOTAL: ${o.precio != null ? `$${o.precio}` : 'no registrado'} — Estatus: ${o.estatus || '-'}${datos ? ` — Datos: ${datos}` : ''}.\nSi el cliente pregunta el precio o el total de SU pedido, responde con ESTE total; NO lo calcules con promociones generales. Si el cliente quiere algo distinto a lo registrado (otra cantidad u otro modelo), aclara la diferencia antes de dar totales.`;
+                    orderInfoNote = `\n\n**Pedido REGISTRADO en el sistema:**\n${num} — Producto: ${o.producto || '-'} — TOTAL registrado: ${o.precio != null ? `$${o.precio}` : 'no registrado'} — Estatus: ${o.estatus || '-'}${datos ? ` — Datos: ${datos}` : ''}.\nPara el precio/total del pedido usa este ORDEN DE PRIORIDAD: 1) si un humano del equipo acordó en la conversación un total DISTINTO (descuento o ajuste), ese acuerdo MANDA — respétalo y no lo "corrijas" al del sistema; 2) si no hay un acuerdo distinto en el chat, usa el TOTAL registrado de arriba; 3) NUNCA lo calcules con promociones generales. Si hay conflicto y no queda claro cuál aplica, no afirmes ninguno: di que lo confirmas y escribe /equipo en su propio mensaje. Si el cliente quiere algo distinto a lo registrado (otra cantidad u otro modelo), aclara antes de dar totales.`;
                 }
             }
         } catch (e) {
