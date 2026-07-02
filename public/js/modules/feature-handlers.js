@@ -228,6 +228,28 @@ async function handlePedirDatosDgo() {
     }
 }
 
+/**
+ * Envía al cliente el enlace del formulario de datos de envío nacional (post-venta) y marca su
+ * pedido para la sección "Envíos". Respaldo manual por si la IA no emitió /comprobante.
+ */
+async function handleEnviarFormularioEnvio() {
+    if (!state.selectedContactId) return;
+    const ok = await showConfirmModal("¿Enviar al cliente el formulario de datos de envío de su último pedido? (Se marca como comprobante validado y aparecerá en la sección Envíos.)", { icon: 'local_shipping', confirmText: 'Enviar' });
+    if (!ok) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/envio/send-form/${state.selectedContactId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || 'Error al enviar el formulario');
+        showError(`Formulario de envío enviado para pedido ${result.orderNumber || ''}`.trim(), 'success');
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
 // --- START: New Order Logic ---
 /**
  * Maneja el envío del formulario para crear un nuevo pedido.
@@ -3501,6 +3523,7 @@ window.handleMarkAsPurchase = handleMarkAsPurchase;
 window.handleMarkAsRegistration = handleMarkAsRegistration; // Mantener si aún se usa
 window.handleSendViewContent = handleSendViewContent;
 window.handlePedirDatosDgo = handlePedirDatosDgo;
+window.handleEnviarFormularioEnvio = handleEnviarFormularioEnvio;
 window.handleGenerarOxxo = handleGenerarOxxo;
 window.handleSaveOrder = handleSaveOrder;
 window.handleUpdateExistingOrder = handleUpdateExistingOrder;

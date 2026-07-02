@@ -434,6 +434,12 @@ app.get('/sitio/*', (req, res) => {
     res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
 });
 
+// --- Formulario de datos de envío (post-venta, DHL nacional) ---
+// El cliente lo recibe por WhatsApp con su número de pedido precargado (/datos-estafeta/DHxxxx).
+app.get(['/datos-estafeta', '/datos-estafeta/:pedido'], (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'datos-estafeta', 'index.html'));
+});
+
 // --- Repartos MTY (entregas locales por repartidor propio) ---
 // Formulario público para que el cliente mande su dirección.
 app.get(['/mty', '/mty/:pedido'], (req, res) => {

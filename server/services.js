@@ -925,6 +925,64 @@ async function alertAdminHumanNeeded(contactId, contactData, clientRequest) {
     }
 }
 
+// Base pública del sitio para armar enlaces (formulario de datos de envío, etc.). Sin barra final.
+const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://app.dekoormx.com').replace(/\/+$/, '');
+
+/**
+ * Cuando la IA valida un comprobante de pago GENUINO (comando /comprobante) —o el operador lo
+ * dispara manualmente desde el CRM— marca el pedido MÁS RECIENTE del contacto como "comprobante
+ * validado" (campo comprobanteValidadoAt, para que aparezca en la sección "Envíos" del CRM) y le
+ * envía al cliente el enlace del formulario de datos de envío con su número de pedido precargado.
+ * Devuelve el número de pedido (DHxxxx), o null si el contacto no tiene pedido registrado.
+ * Nunca lanza: atrapa y loguea sus errores.
+ */
+async function markComprobanteValidadoAndSendForm(contactId, contactData = {}) {
+    const orderDoc = await getLatestOrderForContact(contactId);
+    if (!orderDoc) {
+        console.warn(`[ENVIOS] ${contactId} validó comprobante pero no tiene pedido registrado; no se envía el formulario.`);
+        return null;
+    }
+    const orderData = orderDoc.data();
+    const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : null;
+    if (!orderNumber) {
+        console.warn(`[ENVIOS] Pedido ${orderDoc.id} sin consecutiveOrderNumber; no se envía el formulario.`);
+        return null;
+    }
+    // Marcar el pedido para la sección Envíos (refresca la fecha si ya estaba marcado).
+    try {
+        await orderDoc.ref.update({ comprobanteValidadoAt: admin.firestore.FieldValue.serverTimestamp() });
+    } catch (e) {
+        console.warn(`[ENVIOS] No se pudo marcar comprobanteValidadoAt en ${orderDoc.id}:`, e.message);
+    }
+    // Enviar al cliente el enlace del formulario (por su canal) y reflejarlo en el chat del CRM.
+    const formUrl = `${APP_BASE_URL}/datos-estafeta/${orderNumber}`;
+    const text = `¡Gracias! 🙌 Ya validamos tu comprobante de pago ✅\n\nAhora llena tus datos de envío en este formulario 👇 (tu número de pedido ya viene cargado):\n${formUrl}\n\nEn cuanto lo completes preparamos tu envío 📦✨`;
+    try {
+        const channel = contactData.channel || 'whatsapp';
+        let sent;
+        if (channel === 'messenger' || channel === 'instagram') {
+            const recipientId = contactData.psid || contactData.igsid || contactId.replace(/^(fb_|ig_)/, '');
+            const r = await sendMessengerMessage(recipientId, { text, channel });
+            sent = { id: r.messages?.[0]?.id || null, textForDb: text };
+        } else {
+            sent = await sendAdvancedWhatsAppMessage(contactId, { text });
+        }
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        await contactRef.collection('messages').add({
+            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: sent.id || null, text: sent.textForDb || text, isAutoReply: true, channel
+        });
+        await contactRef.update({
+            lastMessage: (sent.textForDb || text).substring(0, 100),
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+        console.log(`[ENVIOS] Formulario de envío enviado a ${contactId} para ${orderNumber}.`);
+    } catch (e) {
+        console.warn(`[ENVIOS] No se pudo enviar el formulario a ${contactId}:`, e.message);
+    }
+    return orderNumber;
+}
+
 // Número de Rosario (encargada de generar las guías de envío). Formato internacional 52 + 1 + 10 díg.
 const SHIPPING_NOTIFY_PHONE = process.env.ROSARIO_PHONE || '5216181441382';
 // Plantilla aprobada en Meta para avisar a Rosario (funciona aunque la ventana de 24h esté cerrada).
@@ -2028,6 +2086,15 @@ Reglas:
         // revisión IA" si todavía no hay un pedido registrado (ver más abajo).
         const cancelCommandNote = `\n\n**Cancelación de pedido:** Si el cliente te dice claramente que YA NO quiere el pedido, que lo CANCELA o que NO podrá continuar con él (por ejemplo: "ya no lo quiero", "mejor cancélalo", "ya no voy a poder con el pedido"), respóndele con empatía y escribe al FINAL de tu mensaje el comando /cancelado (el cliente NO lo ve; es una señal para el equipo). NO lo emitas por una simple demora o aplazamiento del pago (por ejemplo "mañana te pago", "dame unos días"): en esos casos NO se cancela. Emítelo UNA sola vez.`;
 
+        // Comando interno de comprobante validado + formulario de envío (solo post-venta). Se
+        // inyecta por código para que funcione con cualquier prompt personalizado. Cuando la IA
+        // valida un comprobante GENUINO emite /comprobante: el sistema marca el pedido para la
+        // sección "Envíos" del CRM y le manda al cliente el enlace del formulario de datos de envío.
+        const comprobanteCommandNote = isPostVenta ? `\n\n**Comprobante de pago y formulario de envío (post-venta):**
+- Cuando el cliente te MANDE su comprobante de pago (imagen o PDF) y verifiques que es GENUINO (el destino y el monto coinciden con lo esperado), agradécele con un mensaje BREVE (ej. "¡Perfecto! Ya validé tu comprobante ✅") y escribe al FINAL el comando /comprobante (el cliente NO lo ve). Emítelo UNA sola vez por pedido. NO le pidas los datos de envío por texto ni le mandes ningún enlace tú: al recibir /comprobante, el SISTEMA le envía automáticamente el formulario de envío.
+- Si el comprobante es sospechoso o NO coincide, usa /sospechoso (NO /comprobante). Si el cliente solo dice que "ya pagó" pero todavía NO ha mandado el comprobante, pídeselo con amabilidad (NO emitas /comprobante).
+- Cuando el cliente te confirme que YA LLENÓ su formulario de envío (por ejemplo: "ya llené el formulario", "listo, ya mandé mis datos"), responde ÚNICAMENTE con /pagado (solo eso, sin ningún otro texto).` : '';
+
         // --- Pedido REGISTRADO en el CRM: fuente de verdad para el TOTAL ---
         // Sin esto la IA contestaba precios con la promoción general (ej. "2 x $1,000")
         // aunque el pedido registrado fuera de otro monto (ej. Corazón 2 pzas = $1,500):
@@ -2061,7 +2128,7 @@ Reglas:
         const mediaTaskNote = mediaParts.length > departmentImageParts.length
             ? ' Vienen adjuntos archivos de la conversación (fotos, audios, videos o documentos/PDF, p. ej. comprobantes de pago): analízalos con cuidado cuando sean relevantes para el último mensaje del cliente; si ya los atendiste en un turno anterior, no los vuelvas a comentar.'
             : '';
-        const finalUserText = `${fechaActualNote}${orderInfoNote}${postventaProtocolNote}${cancelCommandNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${orderInfoNote}${postventaProtocolNote}${cancelCommandNote}${comprobanteCommandNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
@@ -2165,9 +2232,13 @@ Reglas:
         // Si aún no hay un pedido registrado, se quita la etiqueta "Pendientes de revisión IA"
         // (no hay nada que un humano deba registrar). Ver el manejo después del loop.
         const orderCancelled = /\/cancelado/i.test(aiResponse);
+        // La IA emite /comprobante cuando el cliente manda su comprobante de pago y la IA verifica
+        // que es GENUINO. El sistema marca el pedido para la sección "Envíos" y le manda al cliente
+        // el enlace del formulario de datos de envío (ver el manejo después del loop).
+        const comprobanteValidado = /\/comprobante/i.test(aiResponse);
 
-        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado) de los mensajes antes de enviar
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').trim()).filter(m => m.length > 0);
+        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado, /comprobante) de los mensajes antes de enviar
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -2377,6 +2448,13 @@ Reglas:
                 .catch(e => console.warn('[POSTVENTA] markOrderFabricarForContact falló:', e.message));
         }
 
+        // Comprobante validado (/comprobante): marcar el pedido para la sección "Envíos" y mandarle
+        // al cliente el enlace del formulario de datos de envío. Fire-and-forget.
+        if (comprobanteValidado) {
+            markComprobanteValidadoAndSendForm(contactId, contactData)
+                .catch(e => console.warn('[ENVIOS] markComprobanteValidadoAndSendForm falló:', e.message));
+        }
+
         // Híbrido: si el pedido NO se acaba de registrar, etiquetar "en vivo" el estado
         // del pedido (pendiente de foto, etc.) reutilizando el historial ya armado. El
         // scheduler de order_followup leerá esta etiqueta y se ahorrará una clasificación.
@@ -2567,7 +2645,8 @@ module.exports = {
     askGeminiPro,
     getPurchaseEventTrigger,
     sendPurchaseEventOnFabricar,
-    sendApprovedTemplateMessage
+    sendApprovedTemplateMessage,
+    markComprobanteValidadoAndSendForm
 };
 
 /**

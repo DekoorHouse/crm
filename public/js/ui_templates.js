@@ -823,6 +823,19 @@ const QuickRepliesViewTemplate = () => `
 
 
 
+const EnviosViewTemplate = () => `
+    <div class="view-container">
+        <div class="view-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+            <div>
+                <h1>Envíos</h1>
+                <p class="text-sm text-gray-500 mt-1">Pedidos con comprobante de pago validado. La columna "Datos de envío" se llena cuando el cliente completa su formulario.</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="renderEnviosView()"><i class="fas fa-sync-alt mr-2"></i>Actualizar</button>
+        </div>
+        <div id="envios-container" class="mt-4"><p class="text-gray-500">Cargando envíos…</p></div>
+    </div>
+`;
+
 const SettingsViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">
@@ -2246,8 +2259,9 @@ const ContactDetailsSidebarTemplate = (contact) => {
                            <button onclick="handleMarkAsPurchase()" class="btn btn-outline w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
                            <button onclick="handleSendViewContent()" class="btn btn-outline w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto' (Meta)</button>
 
-                           <!-- Grupo: Solicitar envío (entregas locales) -->
+                           <!-- Grupo: Solicitar envío -->
                            <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider pt-3 pb-1">Solicitar envío</p>
+                           <button onclick="handleEnviarFormularioEnvio()" class="btn btn-outline w-full btn-sm"><i class="fas fa-truck-fast mr-2"></i>Formulario de envío (Nacional)</button>
                            <button onclick="handlePedirDatosMty()" class="btn btn-outline w-full btn-sm"><i class="fas fa-map-marker-alt mr-2"></i>MTY</button>
                            <button onclick="handlePedirDatosDgo()" class="btn btn-outline w-full btn-sm"><i class="fas fa-motorcycle mr-2"></i>DGO</button>
 

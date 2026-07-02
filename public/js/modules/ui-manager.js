@@ -75,6 +75,10 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = ClientesViewTemplate();
             loadCrmView(); // Carga conteos + lista de la pestaña activa
             break;
+        case 'envios':
+            mainViewContainer.innerHTML = EnviosViewTemplate();
+            renderEnviosView(); // Carga la tabla de pedidos con comprobante validado
+            break;
         // --- NUEVAS VISTAS ---
         case 'departments':
             mainViewContainer.innerHTML = DepartmentsViewTemplate();
@@ -123,6 +127,53 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
     }
 }
+
+// Sección "Envíos": tabla de pedidos con comprobante validado (número de pedido, monto pagado,
+// datos de envío). Lee GET /api/envios (une pedidos con comprobanteValidadoAt + datos_envio).
+async function renderEnviosView() {
+    const container = document.getElementById('envios-container');
+    if (!container) return;
+    container.innerHTML = '<p class="text-gray-500">Cargando envíos…</p>';
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/envios`);
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
+        const envios = data.envios || [];
+        if (!envios.length) {
+            container.innerHTML = '<p class="text-gray-500">Aún no hay pedidos con comprobante validado. Aparecerán aquí cuando la IA valide un comprobante de pago.</p>';
+            return;
+        }
+        const rows = envios.map(e => {
+            const monto = e.montoPagado != null ? `$${Number(e.montoPagado).toLocaleString('es-MX')}` : '<span class="text-gray-400">—</span>';
+            const datos = e.tieneDatos
+                ? escapeHtml(e.datosEnvio)
+                : '<span style="color:#b45309;font-weight:600;">Pendiente — aún no llena el formulario</span>';
+            return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:top">
+                <td style="padding:12px 16px 12px 0;font-weight:700;white-space:nowrap;color:var(--color-primary)">${escapeHtml(e.orderNumber)}</td>
+                <td style="padding:12px 16px 12px 0;white-space:nowrap;font-weight:600">${monto}</td>
+                <td style="padding:12px 0;white-space:normal;color:var(--color-text-light);max-width:560px">${datos}</td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:0.9rem">
+                <thead>
+                  <tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light)">
+                    <th style="padding:8px 16px 8px 0">Número de pedido</th>
+                    <th style="padding:8px 16px 8px 0">Monto pagado</th>
+                    <th style="padding:8px 0">Datos de envío</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+            <p class="text-xs text-gray-400 mt-3">${envios.length} pedido(s) con comprobante validado.</p>`;
+    } catch (e) {
+        container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los envíos: ${escapeHtml(e.message || String(e))}</p>
+            <button class="btn btn-outline btn-sm mt-2" onclick="renderEnviosView()">Reintentar</button>`;
+    }
+}
+window.renderEnviosView = renderEnviosView;
 
 // Cambia entre las sub-pestañas del hub IA (Entrenamiento · Simulador · Rescate).
 function switchIaTab(tab) {

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#1B4D5C" />
+<meta property="og:title" content="Datos de envío | Dekoor" />
+<meta property="og:description" content="Compártenos tu dirección para enviarte tu pedido." />
+<meta property="og:image" content="https://app.dekoormx.com/sitio/img/og-logo.png" />
+<meta property="og:type" content="website" />
+<title>Datos de envío | Dekoor</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+<style>
+  :root{
+    --teal:#1B4D5C; --teal-dark:#143b47; --cream:#FAF0E6; --cream-field:#F3E9DC;
+    --gold:#C9A24B; --primary:#D4722C; --white:#fff; --ink:#1B4D5C;
+    --ok:#1B8E3C; --err:#c0392b; --muted:#7c8a91;
+    --radius:16px; --radius-lg:22px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Outfit',system-ui,sans-serif;background:var(--teal);color:var(--ink);
+       min-height:100vh;padding:24px 16px 48px;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:520px;margin:0 auto;}
+  .brand{text-align:center;margin-bottom:18px;}
+  .brand img{height:62px;width:auto;filter:brightness(0) invert(1) drop-shadow(0 2px 8px rgba(0,0,0,.3));}
+  .brand p{color:var(--cream);font-size:15px;margin-top:10px;opacity:.95;line-height:1.45;font-weight:500;}
+  .card{background:var(--cream);border-radius:var(--radius-lg);padding:26px 22px;
+        box-shadow:0 12px 40px rgba(0,0,0,.22);}
+  .alert{display:none;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;
+         font-size:14px;margin-bottom:16px;line-height:1.4;}
+  .alert.error{background:#fdecea;color:var(--err);border:1px solid #f5c6cb;}
+  .alert.success{background:#e8f6ec;color:var(--ok);border:1px solid #b7e0c2;}
+  .pedido-badge{display:flex;align-items:center;justify-content:center;gap:9px;background:#fff;
+       border:1.5px solid var(--gold);border-radius:14px;padding:12px;margin-bottom:16px;
+       font-size:15px;font-weight:700;color:var(--teal);}
+  .pedido-badge b{color:var(--primary);font-size:17px;letter-spacing:.3px;}
+  .field{margin-bottom:14px;min-width:0;}
+  .field label{display:block;font-size:13px;font-weight:600;color:var(--teal);margin-bottom:6px;}
+  .field .req{color:var(--primary);}
+  .inputwrap{display:flex;align-items:center;gap:10px;background:var(--cream-field);
+             border:1.5px solid transparent;border-radius:13px;padding:0 14px;transition:border-color .15s;}
+  .inputwrap:focus-within{border-color:var(--gold);background:#fff;}
+  .inputwrap i{color:var(--teal);font-size:15px;width:18px;text-align:center;opacity:.8;}
+  .inputwrap input, .inputwrap select{flex:1;border:none;background:transparent;outline:none;
+             font-family:inherit;font-size:15.5px;color:var(--ink);padding:13px 0;min-width:0;}
+  .inputwrap input::placeholder{color:#a99f90;}
+  .inputwrap select{cursor:pointer;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .hint{font-size:12.5px;margin-top:5px;min-height:14px;color:var(--muted);}
+  .hint.error{color:var(--err);} .hint.ok{color:var(--ok);}
+  .editable-hint{font-size:12px;color:var(--gold);margin-top:5px;font-weight:600;}
+  .btn{width:100%;border:none;border-radius:14px;padding:16px;font-family:inherit;
+       font-size:16px;font-weight:700;cursor:pointer;color:#fff;background:var(--primary);
+       margin-top:8px;display:flex;align-items:center;justify-content:center;gap:9px;
+       transition:transform .08s, opacity .15s;box-shadow:0 6px 18px rgba(212,114,44,.35);}
+  .btn:hover{transform:translateY(-1px);} .btn:active{transform:translateY(0);}
+  .btn:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none;}
+  .footnote{text-align:center;color:var(--cream);font-size:12.5px;margin-top:20px;opacity:.7;}
+  .thanks{display:none;text-align:center;padding:18px 6px;}
+  .thanks.show{display:block;}
+  .thanks .check{width:74px;height:74px;border-radius:50%;background:#e8f6ec;color:var(--ok);
+       display:flex;align-items:center;justify-content:center;font-size:36px;margin:6px auto 16px;}
+  .thanks h2{color:var(--teal);font-size:22px;margin-bottom:8px;}
+  .thanks p{color:#5a6a70;font-size:15px;line-height:1.5;}
+  .warn{background:#fff8e6;border:1px solid #f0dca0;color:#7a5b12;border-radius:12px;
+        padding:11px 13px;font-size:12.5px;line-height:1.45;margin-top:6px;}
+  @media(max-width:380px){ .row2{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor" />
+      <p>¡Ya validamos tu pago! 🎉<br>Compártenos tus datos para enviarte tu pedido.</p>
+    </div>
+
+    <div class="card">
+      <div id="alert" class="alert"></div>
+
+      <div class="pedido-badge" id="pedidoBadge" style="display:none;">
+        <i class="fas fa-box-open"></i> Pedido <b id="pedidoNum">—</b>
+      </div>
+
+      <form id="form" autocomplete="on">
+        <div class="field">
+          <label for="nombre">Nombre completo <span class="req">*</span></label>
+          <div class="inputwrap"><i class="fas fa-user"></i>
+            <input type="text" id="nombre" placeholder="Quién recibe el paquete" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="telefono">Teléfono <span class="req">*</span></label>
+          <div class="inputwrap"><i class="fas fa-phone"></i>
+            <input type="tel" id="telefono" placeholder="6181234567" maxlength="10" inputmode="numeric" pattern="[0-9]{10}" required />
+          </div>
+          <div class="editable-hint"><i class="fas fa-pen"></i> Ya viene tu número; puedes cambiarlo si prefieres otro.</div>
+        </div>
+
+        <div class="field">
+          <label for="calle">Calle <span class="req">*</span></label>
+          <div class="inputwrap"><i class="fas fa-road"></i>
+            <input type="text" id="calle" placeholder="Nombre de la calle" required />
+          </div>
+        </div>
+
+        <div class="row2">
+          <div class="field">
+            <label for="numExterior">No. exterior <span class="req">*</span></label>
+            <div class="inputwrap"><i class="fas fa-house"></i>
+              <input type="text" id="numExterior" placeholder="123" required />
+            </div>
+          </div>
+          <div class="field">
+            <label for="numInterior">No. interior</label>
+            <div class="inputwrap"><i class="fas fa-door-closed"></i>
+              <input type="text" id="numInterior" placeholder="Depto / Int." />
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="entreCalles">Entre calles</label>
+          <div class="inputwrap"><i class="fas fa-code-fork"></i>
+            <input type="text" id="entreCalles" placeholder="Calle 1 y Calle 2" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="cp">Código postal <span class="req">*</span></label>
+          <div class="inputwrap"><i class="fas fa-envelope"></i>
+            <input type="text" id="cp" placeholder="34000" maxlength="5" inputmode="numeric" pattern="[0-9]{5}" required />
+          </div>
+          <div class="hint" id="cpHint"></div>
+        </div>
+
+        <div class="field">
+          <label for="colonia">Colonia <span class="req">*</span></label>
+          <div class="inputwrap"><i class="fas fa-building"></i>
+            <select id="colonia" required>
+              <option value="">Ingresa tu C.P. primero</option>
+            </select>
+          </div>
+          <div class="hint" id="coloniaManualHint" style="display:none;">
+            ¿No aparece tu colonia? <a href="#" id="coloniaManualLink" style="color:var(--primary);font-weight:600;">Escríbela manualmente</a>
+          </div>
+        </div>
+
+        <div class="row2">
+          <div class="field">
+            <label for="ciudad">Municipio / Ciudad <span class="req">*</span></label>
+            <div class="inputwrap"><i class="fas fa-city"></i>
+              <input type="text" id="ciudad" placeholder="Municipio" required />
+            </div>
+          </div>
+          <div class="field">
+            <label for="estado">Estado <span class="req">*</span></label>
+            <div class="inputwrap"><i class="fas fa-map"></i>
+              <input type="text" id="estado" placeholder="Estado" required />
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="referencia">Referencia del domicilio</label>
+          <div class="inputwrap"><i class="fas fa-location-dot"></i>
+            <input type="text" id="referencia" placeholder="Color de casa, fachada, señas..." />
+          </div>
+        </div>
+
+        <div class="warn">
+          <i class="fas fa-triangle-exclamation"></i> Es importante que haya alguien en el domicilio durante el día (la paquetería no tiene hora exacta). Revisa que tus datos estén completos y correctos.
+        </div>
+
+        <button type="submit" class="btn" id="btn">
+          <i class="fas fa-paper-plane"></i> Enviar mis datos
+        </button>
+      </form>
+
+      <div class="thanks" id="thanks">
+        <div class="check"><i class="fas fa-check"></i></div>
+        <h2>¡Gracias!</h2>
+        <p id="thanksMsg">Tus datos de envío quedaron registrados.<br>Solo falta avisarnos por WhatsApp. 👇</p>
+        <a id="waBtn" class="btn" href="#" style="margin-top:18px;background:#25D366;box-shadow:0 6px 18px rgba(37,211,102,.35);text-decoration:none;">
+          <i class="fab fa-whatsapp"></i> Avisar a Dekoor por WhatsApp
+        </a>
+        <p style="font-size:12.5px;color:var(--muted);margin-top:10px;">Te abriremos WhatsApp con un mensaje listo para enviar 📲</p>
+      </div>
+    </div>
+
+    <p class="footnote">Dekoor · Custom Gift Store</p>
+  </div>
+
+<script src="/env-config.js"></script>
+<script>
+(function(){
+  const API = window.API_BASE_URL || '';
+  const $ = id => document.getElementById(id);
+  const form=$('form'), btn=$('btn'), alertEl=$('alert'), thanks=$('thanks');
+  const cpInput=$('cp'), coloniaSel=$('colonia'), cpHint=$('cpHint');
+  // El número de pedido viene en la URL: /datos-estafeta/DHxxxx
+  const pedidoUrl=((window.location.pathname.match(/\/datos-estafeta\/(DH\d+)/i)||[])[1]||'').toUpperCase();
+  let coloniaManual=false;
+  function showAlert(type,msg){
+    alertEl.className='alert '+type;
+    alertEl.innerHTML='<i class="fas fa-'+(type==='success'?'check-circle':'exclamation-circle')+'"></i><span>'+msg+'</span>';
+    alertEl.style.display='flex';
+    if(type==='error') alertEl.scrollIntoView({behavior:'smooth',block:'center'});
+  }
+  function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+  // Mostrar el pedido y precargar nombre/teléfono desde el CRM.
+  if(pedidoUrl){
+    $('pedidoNum').textContent=pedidoUrl;
+    $('pedidoBadge').style.display='flex';
+    fetch(API+'/api/envio/pedido/'+encodeURIComponent(pedidoUrl))
+      .then(r=>r.json())
+      .then(d=>{
+        if(d&&d.success){
+          if(d.telefono && !$('telefono').value) $('telefono').value=d.telefono;
+          if(d.nombreCompleto && !$('nombre').value) $('nombre').value=d.nombreCompleto;
+        }
+      })
+      .catch(()=>{});
+  }
+
+  // CP -> colonias + estado/municipio (SEPOMEX)
+  cpInput.addEventListener('input', async ()=>{
+    if(coloniaManual) return;
+    const cp=cpInput.value.replace(/\D/g,''); cpInput.value=cp;
+    if(cp.length<5){ coloniaSel.innerHTML='<option value="">Ingresa tu C.P. primero</option>'; cpHint.textContent=''; cpHint.className='hint'; return; }
+    cpHint.textContent='Buscando colonias...'; cpHint.className='hint';
+    try{
+      const r=await fetch(API+'/api/codigo-postal/'+cp);
+      const d=await r.json();
+      if(d.success && d.colonias && d.colonias.length){
+        coloniaSel.innerHTML='<option value="">Selecciona tu colonia</option>'+d.colonias.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');
+        const ciudad=d.ciudad||d.municipio||'';
+        if(ciudad) $('ciudad').value=ciudad;
+        if(d.estado) $('estado').value=d.estado;
+        cpHint.textContent=(ciudad?ciudad:'')+(d.estado?(', '+d.estado):'')+' · '+d.colonias.length+' colonias'; cpHint.className='hint ok';
+        $('coloniaManualHint').style.display='block';
+      }else{
+        cpHint.textContent='C.P. no encontrado. Escribe tu colonia y localidad manualmente.'; cpHint.className='hint error';
+        habilitarColoniaManual();
+      }
+    }catch(e){ cpHint.textContent='Error al buscar. Escribe tu colonia manualmente.'; cpHint.className='hint error'; habilitarColoniaManual(); }
+  });
+
+  function habilitarColoniaManual(){
+    coloniaManual=true;
+    const wrap=coloniaSel.parentElement;
+    wrap.innerHTML='<i class="fas fa-building"></i><input type="text" id="colonia" placeholder="Escribe tu colonia" required />';
+    $('coloniaManualHint').style.display='none';
+  }
+  $('coloniaManualLink').addEventListener('click',(e)=>{e.preventDefault();habilitarColoniaManual();});
+
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    alertEl.style.display='none';
+    const coloniaEl=$('colonia');
+    const calle=$('calle').value.trim();
+    const numExt=$('numExterior').value.trim();
+    const payload={
+      numeroPedido: pedidoUrl,
+      nombreCompleto: $('nombre').value.trim(),
+      telefono: $('telefono').value.replace(/\D/g,''),
+      direccion: (calle + (numExt ? ' ' + numExt : '')).trim(),
+      numInterior: $('numInterior').value.trim(),
+      entreCalles: $('entreCalles').value.trim(),
+      codigoPostal: cpInput.value.replace(/\D/g,''),
+      colonia: coloniaEl.value.trim(),
+      ciudad: $('ciudad').value.trim(),
+      estado: $('estado').value.trim(),
+      referencia: $('referencia').value.trim(),
+    };
+    if(!pedidoUrl){ showAlert('error','Falta tu número de pedido en el enlace. Pídenos el enlace de nuevo por WhatsApp.'); return; }
+    if(!payload.nombreCompleto){ showAlert('error','Escribe tu nombre completo.'); return; }
+    if(!/^\d{10}$/.test(payload.telefono)){ showAlert('error','El teléfono debe tener 10 dígitos.'); return; }
+    if(!calle || !numExt){ showAlert('error','Escribe tu calle y número exterior.'); return; }
+    if(!/^\d{5}$/.test(payload.codigoPostal)){ showAlert('error','El código postal debe tener 5 dígitos.'); return; }
+    if(!payload.colonia){ showAlert('error','Selecciona o escribe tu colonia.'); return; }
+    if(!payload.ciudad){ showAlert('error','Escribe tu municipio o ciudad.'); return; }
+    if(!payload.estado){ showAlert('error','Escribe tu estado.'); return; }
+
+    btn.disabled=true; const orig=btn.innerHTML; btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Enviando...';
+    try{
+      const r=await fetch(API+'/api/datos-envio',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const d=await r.json();
+      if(r.ok && d.success){
+        form.style.display='none'; alertEl.style.display='none';
+        // Aviso a WhatsApp de Dekoor: el cliente manda el mensaje (la IA lo detecta y responde /pagado).
+        const waMsg=`¡Hola Dekoor! 👋 Soy ${payload.nombreCompleto}. Ya llené mi formulario de envío 📦✅ para mi pedido ${pedidoUrl} 🐘📍`;
+        const waLink='https://wa.me/526181333519?text='+encodeURIComponent(waMsg);
+        $('waBtn').href=waLink;
+        thanks.classList.add('show');
+        window.scrollTo({top:0,behavior:'smooth'});
+        // Redirección automática a WhatsApp (el botón queda como respaldo).
+        setTimeout(()=>{ window.location.href=waLink; }, 1600);
+      }else{
+        showAlert('error', d.message||'No se pudo guardar. Intenta de nuevo.');
+        btn.disabled=false; btn.innerHTML=orig;
+      }
+    }catch(e){ showAlert('error','Error de conexión. Intenta de nuevo.'); btn.disabled=false; btn.innerHTML=orig; }
+  });
+})();
+</script>
+</body>
+</html>

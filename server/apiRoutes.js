@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
 const { calcularReporte } = require('./inventario/inventarioReporte');
@@ -7876,7 +7876,7 @@ router.delete('/datos-envio/:id', async (req, res) => {
 
 router.post('/datos-envio', async (req, res) => {
     try {
-        const { numeroPedido, nombreCompleto, telefono, direccion, numInterior, colonia, estado, ciudad, codigoPostal, referencia } = req.body;
+        const { numeroPedido, nombreCompleto, telefono, direccion, numInterior, colonia, estado, ciudad, codigoPostal, referencia, entreCalles } = req.body;
 
         if (!numeroPedido || !nombreCompleto || !telefono || !direccion || !colonia || !estado || !ciudad || !codigoPostal) {
             return res.status(400).json({ success: false, message: 'Faltan campos obligatorios.' });
@@ -7900,6 +7900,7 @@ router.post('/datos-envio', async (req, res) => {
             estado,
             ciudad,
             codigoPostal,
+            entreCalles: entreCalles || '',
             referencia: referencia || '',
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
@@ -7912,6 +7913,119 @@ router.post('/datos-envio', async (req, res) => {
     } catch (error) {
         console.error('Error guardando datos de envío:', error);
         res.status(500).json({ success: false, message: 'Error interno del servidor.', error: error.message });
+    }
+});
+
+// =============================================================
+// ENVÍOS: sección del CRM + formulario de datos de envío (post-venta)
+// =============================================================
+
+// Normaliza "DH1045" | "dh1045" | "1045" -> 1045 (entero) o null.
+function parseOrderNumber(raw) {
+    const m = String(raw || '').match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+}
+
+// --- GET /api/envio/pedido/:orderNumber — datos para precargar el formulario (teléfono, nombre) ---
+router.get('/envio/pedido/:orderNumber', async (req, res) => {
+    const num = parseOrderNumber(req.params.orderNumber);
+    if (!num) return res.status(400).json({ success: false, message: 'Número de pedido inválido.' });
+    try {
+        const snap = await db.collection('pedidos').where('consecutiveOrderNumber', '==', num).limit(1).get();
+        if (snap.empty) return res.status(404).json({ success: false, message: 'No encontramos ese número de pedido.' });
+        const p = snap.docs[0].data();
+        const telRaw = (p.telefono || p.contactId || '').toString().replace(/\D/g, '');
+        const telefono = telRaw.length >= 10 ? telRaw.slice(-10) : '';
+        // Nombre: preferir el del contacto de WhatsApp (más limpio que datosProducto).
+        let nombreCompleto = '';
+        try {
+            if (p.contactId) {
+                const c = await db.collection('contacts_whatsapp').doc(p.contactId).get();
+                if (c.exists) nombreCompleto = c.data().name || '';
+            }
+        } catch (_) { /* opcional */ }
+        res.json({ success: true, orderNumber: `DH${num}`, telefono, nombreCompleto });
+    } catch (error) {
+        console.error('[ENVIOS] Error en /envio/pedido:', error.message);
+        res.status(500).json({ success: false, message: 'Error al buscar el pedido.' });
+    }
+});
+
+// --- POST /api/envio/send-form/:contactId — el operador manda manualmente el formulario al cliente ---
+// (respaldo por si la IA no emitió /comprobante). Marca el pedido para Envíos y envía el enlace.
+router.post('/envio/send-form/:contactId', async (req, res) => {
+    const { contactId } = req.params;
+    try {
+        const cDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
+        const contactData = cDoc.exists ? cDoc.data() : {};
+        const orderNumber = await markComprobanteValidadoAndSendForm(contactId, contactData);
+        if (!orderNumber) {
+            return res.status(400).json({ success: false, message: 'El contacto no tiene un pedido registrado para enviarle el formulario.' });
+        }
+        res.json({ success: true, orderNumber });
+    } catch (error) {
+        console.error('[ENVIOS] Error en send-form:', error.message);
+        res.status(500).json({ success: false, message: error.message || 'Error al enviar el formulario.' });
+    }
+});
+
+// --- GET /api/envios — pedidos con comprobante validado (para la sección Envíos del CRM) ---
+// Devuelve por pedido: número, monto pagado (precio) y datos de envío (si el cliente ya llenó el
+// formulario; se unen por numeroPedido con la colección datos_envio).
+router.get('/envios', async (_req, res) => {
+    try {
+        const [pedidosSnap, datosSnap] = await Promise.all([
+            db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(300).get(),
+            db.collection('datos_envio').get(),
+        ]);
+
+        // Mapa numeroPedido (solo dígitos) -> datos de envío MÁS RECIENTES.
+        const norm = (v) => String(v || '').replace(/\D/g, '');
+        const datosByOrder = new Map();
+        datosSnap.docs.forEach(d => {
+            const dd = d.data();
+            const key = norm(dd.numeroPedido);
+            if (!key) return;
+            const prev = datosByOrder.get(key);
+            const prevMs = prev && prev.createdAt && prev.createdAt.toMillis ? prev.createdAt.toMillis() : -1;
+            const curMs = dd.createdAt && dd.createdAt.toMillis ? dd.createdAt.toMillis() : 0;
+            if (!prev || curMs >= prevMs) datosByOrder.set(key, dd);
+        });
+
+        const envios = pedidosSnap.docs.map(doc => {
+            const p = doc.data();
+            const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
+            const orderNumber = num != null ? `DH${num}` : (p.numeroPedido || doc.id);
+            const de = datosByOrder.get(norm(num));
+            let datosEnvio = null;
+            if (de) {
+                const partes = [
+                    de.nombreCompleto,
+                    [de.direccion, de.numInterior ? `Int. ${de.numInterior}` : ''].filter(Boolean).join(' '),
+                    de.colonia,
+                    de.entreCalles ? `Entre: ${de.entreCalles}` : '',
+                    de.referencia ? `Ref: ${de.referencia}` : '',
+                    [de.ciudad, de.estado].filter(Boolean).join(', '),
+                    de.codigoPostal ? `C.P. ${de.codigoPostal}` : '',
+                    de.telefono ? `Tel: ${de.telefono}` : '',
+                ].filter(Boolean);
+                datosEnvio = partes.join(' · ');
+            }
+            return {
+                id: doc.id,
+                orderNumber,
+                montoPagado: (p.precio != null ? p.precio : null),
+                estatus: p.estatus || null,
+                comprobanteValidadoAt: p.comprobanteValidadoAt && p.comprobanteValidadoAt.toDate ? p.comprobanteValidadoAt.toDate().toISOString() : null,
+                datosEnvio,          // string legible o null si el cliente aún no llena el formulario
+                tieneDatos: !!de,
+            };
+        });
+
+        res.json({ success: true, envios });
+    } catch (error) {
+        console.error('[ENVIOS] Error en GET /envios:', error.message);
+        res.status(500).json({ success: false, message: 'Error al cargar los envíos.', error: error.message });
     }
 });
 
