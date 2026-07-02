@@ -5275,6 +5275,31 @@ router.get('/whatsapp-templates', async (req, res) => {
     }
 });
 
+// --- Endpoint DELETE /api/whatsapp-templates/:name (Eliminar plantilla de Meta) ---
+// Con ?id=<hsm_id> Meta borra solo esa plantilla (ese idioma); sin id, borra
+// todas las plantillas con ese nombre en todos los idiomas.
+router.delete('/whatsapp-templates/:name', async (req, res) => {
+    if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN) {
+        return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp Business.' });
+    }
+    const { name } = req.params;
+    if (!name || !/^[a-z0-9_]+$/.test(name)) {
+        return res.status(400).json({ success: false, message: 'Nombre de plantilla inválido.' });
+    }
+    try {
+        const params = { name };
+        if (req.query.id) params.hsm_id = req.query.id;
+        const url = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
+        await axios.delete(url, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }, params });
+        console.log(`[TEMPLATES] Plantilla "${name}"${req.query.id ? ` (hsm_id ${req.query.id})` : ''} eliminada de Meta.`);
+        res.json({ success: true });
+    } catch (error) {
+        const metaErr = error.response?.data?.error;
+        console.error(`[TEMPLATES] Error al eliminar plantilla "${name}":`, error.response ? JSON.stringify(error.response.data) : error.message);
+        res.status(500).json({ success: false, message: metaErr?.message || 'Error al eliminar la plantilla en Meta.' });
+    }
+});
+
 // Sube una imagen de muestra a Meta (resumable upload) y devuelve el `handle`
 // requerido para plantillas con cabecera de IMAGEN. Usa FB_APP_ID + WHATSAPP_TOKEN.
 async function uploadSampleHeaderImage(imageUrl) {

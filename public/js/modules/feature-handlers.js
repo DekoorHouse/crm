@@ -768,6 +768,9 @@ async function renderTemplatesStatus(force) {
                     <td style="padding:10px 16px 10px 0;white-space:nowrap">${escapeHtml(t.language || '—')}</td>
                     <td style="padding:10px 16px 10px 0">${templateStatusBadge(t.status)}${rej}</td>
                     <td style="padding:10px 0;color:var(--color-text-light);max-width:420px;white-space:pre-wrap">${preview}</td>
+                    <td style="padding:10px 0 10px 12px;text-align:right;white-space:nowrap">
+                        <button title="Eliminar plantilla" onclick="deleteWhatsappTemplate('${escapeHtml(t.name || '')}', '${escapeHtml(t.id || '')}', this)" style="border:none;background:transparent;cursor:pointer;color:#991b1b;padding:4px 8px;border-radius:8px;font-size:14px;"><i class="fas fa-trash"></i></button>
+                    </td>
                 </tr>`;
         }).join('');
 
@@ -781,6 +784,7 @@ async function renderTemplatesStatus(force) {
                     <th style="padding:8px 16px 8px 0">Idioma</th>
                     <th style="padding:8px 16px 8px 0">Estatus</th>
                     <th style="padding:8px 0">Contenido</th>
+                    <th style="padding:8px 0"></th>
                   </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -788,6 +792,25 @@ async function renderTemplatesStatus(force) {
             </div>`;
     } catch (e) {
         container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar las plantillas: ${escapeHtml(e.message || String(e))}</p>`;
+    }
+}
+
+// Elimina una plantilla en Meta (pasa el hsm_id para borrar solo ese idioma) y refresca la lista.
+async function deleteWhatsappTemplate(name, id, btn) {
+    const ok = confirm(`¿Eliminar la plantilla "${name}"?\n\nSe borra de Meta y NO se puede deshacer. Si una campaña o recordatorio la usa, dejará de funcionar.`);
+    if (!ok) return;
+    const originalHtml = btn ? btn.innerHTML : '';
+    try {
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+        const qs = id ? `?id=${encodeURIComponent(id)}` : '';
+        const resp = await fetch(`${API_BASE_URL}/api/whatsapp-templates/${encodeURIComponent(name)}${qs}`, { method: 'DELETE' });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.success === false) throw new Error(data.message || ('HTTP ' + resp.status));
+        renderTemplatesStatus(true);
+    } catch (e) {
+        if (window.showError) showError(`No se pudo eliminar la plantilla: ${e.message || e}`);
+        else alert(`No se pudo eliminar la plantilla: ${e.message || e}`);
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; }
     }
 }
 
@@ -3403,6 +3426,7 @@ window.updateTemplatePreview = updateTemplatePreview;
 window.onAiTemplatePhotoChange = onAiTemplatePhotoChange;
 window.handleGenerateTemplateWithAI = handleGenerateTemplateWithAI;
 window.handleCreateWhatsappTemplate = handleCreateWhatsappTemplate;
+window.deleteWhatsappTemplate = deleteWhatsappTemplate;
 // --- Creador de anuncios (Crear Ad) ---
 window.initCreateAdForm = initCreateAdForm;
 window.onAdAccountChange = onAdAccountChange;
