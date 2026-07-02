@@ -409,8 +409,10 @@ async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
             });
             console.log(`[AUTO] Mensaje automático (WhatsApp) enviado a ${contactRef.id}.`);
         }
+        return true; // enviado con éxito
     } catch (error) {
         console.error(`❌ Fallo al enviar mensaje automático a ${contactRef.id}:`, error.message);
+        return false; // el caller decide si necesita un fallback (ej. dejar que la IA responda)
     }
 }
 
@@ -624,8 +626,26 @@ router.post('/', async (req, res) => {
              // --- Remove null/undefined fields before saving ---
             Object.keys(messageData).forEach(key => messageData[key] == null && delete messageData[key]);
 
-            // Save the message to the 'messages' subcollection of the contact
-            await contactRef.collection('messages').add(messageData);
+            // Save the message to the 'messages' subcollection of the contact.
+            // Se usa el wamid como ID del documento con create(): así el guardado es
+            // ATÓMICO frente a reintentos de Meta (el chequeo de duplicados de arriba
+            // tiene una ventana de carrera durante las descargas de multimedia, y un
+            // mensaje duplicado en el historial hace que la IA "vea" al cliente repetir
+            // y vuelva a dar la misma información).
+            const msgDocId = message.id ? String(message.id).replace(/\//g, '_').slice(0, 900) : null;
+            if (msgDocId) {
+                try {
+                    await contactRef.collection('messages').doc(msgDocId).create(messageData);
+                } catch (createErr) {
+                    if (createErr.code === 6 || /already exists/i.test(String(createErr.message))) {
+                        console.log(`[WEBHOOK] Mensaje duplicado detectado al guardar (wamid ${message.id}). Ignorando reintento de Meta.`);
+                        return res.sendStatus(200);
+                    }
+                    throw createErr;
+                }
+            } else {
+                await contactRef.collection('messages').add(messageData);
+            }
             console.log(`[LOG] Mensaje de ${from} guardado en Firestore.`);
 
             // Tracking de plantilla (Fase 2): marcar como "respondida" la tanda mas reciente sin respuesta
@@ -926,8 +946,9 @@ router.post('/', async (req, res) => {
                 if (!snapshot.empty) {
                     const adResponseData = snapshot.docs[0].data();
                     console.log(`[AD] Mensaje encontrado para Ad ID ${adId}: "${adResponseData.message || 'Archivo adjunto'}"`);
-                    await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
-                    adResponseSent = true;
+                    // Solo cuenta como "respondido" si el envío a Meta tuvo éxito: si falla,
+                    // adResponseSent queda false y la IA responde como red de seguridad.
+                    adResponseSent = (await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType })) === true;
                 } else {
                     console.log(`[AD] No se encontró mensaje específico para Ad ID ${adId}.`);
                 }
@@ -940,8 +961,11 @@ router.post('/', async (req, res) => {
 
             // 7. Trigger AI Reply if applicable
             // Lanzamos la IA pero no hacemos un AWAIT de modo que podamos responder el 200 rápido a Meta
-            // MODIFICACIÓN: No disparamos la IA si es un contacto nuevo, para que NO responda al mensaje inicial del Ad
-            if (updatedContactData.botActive && !isNewContact) {
+            // MODIFICACIÓN: No disparamos la IA si es un contacto nuevo, para que NO responda al mensaje inicial del Ad.
+            // Tampoco si este mensaje YA recibió la respuesta enlatada del anuncio (adResponseSent):
+            // antes el contacto existente que escribía desde un anuncio nuevo recibía la respuesta
+            // del anuncio Y 20s después la de la IA al MISMO mensaje (doble respuesta).
+            if (updatedContactData.botActive && !isNewContact && !adResponseSent) {
                 let delay = 20000; // Delay estándar de 20s para conversaciones en curso
                 // Si la IA ya pidió los datos de envío (awaitingShippingData), damos 10 min a que el
                 // cliente termine de mandarlos en partes antes de que la IA le pida lo que falte —
