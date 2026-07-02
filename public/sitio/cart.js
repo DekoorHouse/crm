@@ -35,6 +35,7 @@ const DekoorCart = {
             });
         }
         this.save(cart);
+        if (typeof fbq === 'function') fbq('track', 'AddToCart', { content_name: item.name, content_category: item.collection, value: item.price, currency: 'MXN' });
         return cart;
     },
 

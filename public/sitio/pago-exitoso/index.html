@@ -9,6 +9,16 @@
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-9LPWQEBBGG"></script>
     <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-9LPWQEBBGG');</script>
 
+    <!-- Meta Pixel -->
+    <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    if(localStorage.getItem('cookie_consent')==='rejected')fbq('consent','revoke');
+    fbq('init','1976844023039024');
+    fbq('track','PageView');
+    document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href*="wa.me"]');if(a)fbq('track','Contact');});
+    </script>
+    <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1976844023039024&ev=PageView&noscript=1" alt=""></noscript>
+
     <title>Pago Exitoso | Dekoor</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -127,11 +137,25 @@
         </div>
     </div>
     <script src="/env-config.js"></script>
+    <script src="/sitio/cart.js"></script>
     <script>
     // MP redirige aqui con query params como external_reference, payment_id, status
     const params = new URLSearchParams(window.location.search);
     const externalRef = params.get('external_reference');
     const API = window.API_BASE_URL || '';
+
+    // Registrar la compra (una sola vez por referencia) y vaciar el carrito ya pagado
+    (function() {
+        const key = 'fb_purchase_' + (externalRef || 'na');
+        if (!localStorage.getItem(key)) {
+            let value = 0, items = 0;
+            try { value = DekoorCart.subtotal(); items = DekoorCart.count(); } catch (e) {}
+            if (typeof fbq === 'function') fbq('track', 'Purchase', { value: value || 650, currency: 'MXN', num_items: items || 1 });
+            if (typeof gtag === 'function') gtag('event', 'purchase', { transaction_id: externalRef || undefined, value: value || 650, currency: 'MXN' });
+            localStorage.setItem(key, '1');
+        }
+        try { DekoorCart.clear(); } catch (e) {}
+    })();
 
     const orderInfoEl = document.getElementById('orderInfo');
     const orderNumberEl = document.getElementById('orderNumber');

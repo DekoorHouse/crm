@@ -9,6 +9,17 @@
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-9LPWQEBBGG"></script>
     <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-9LPWQEBBGG');</script>
 
+    <!-- Meta Pixel -->
+    <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    if(localStorage.getItem('cookie_consent')==='rejected')fbq('consent','revoke');
+    fbq('init','1976844023039024');
+    fbq('track','PageView');
+    fbq('track','InitiateCheckout');
+    document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href*="wa.me"]');if(a)fbq('track','Contact');});
+    </script>
+    <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1976844023039024&ev=PageView&noscript=1" alt=""></noscript>
+
     <title>Checkout | Dekoor</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -558,7 +569,7 @@
                         <div class="transfer-row">
                             <span class="transfer-label">Numero de tarjeta</span>
                             <span class="transfer-value">
-                                <span class="transfer-card-number">4152 3143 1457 0670</span>
+                                <span class="transfer-card-number">4152 3145 7069 0670</span>
                                 <button type="button" id="copyCardBtn" class="copy-btn">
                                     <i class="far fa-copy"></i> Copiar
                                 </button>
@@ -708,7 +719,8 @@ document.querySelectorAll('input[name="payment-method"]').forEach(radio => {
 // TRANSFERENCIA BBVA
 // ============================================================
 const CARD_NUMBER = '4152314570690670';
-const CARD_NUMBER_DISPLAY = '4152 3143 1457 0670';
+// Derivado de CARD_NUMBER para que lo mostrado y lo copiado nunca diverjan
+const CARD_NUMBER_DISPLAY = CARD_NUMBER.replace(/(\d{4})(?=\d)/g, '$1 ');
 
 async function createTransferOrder() {
     window.__transferLoading = true;

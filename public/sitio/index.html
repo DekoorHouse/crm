@@ -8,6 +8,16 @@
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-9LPWQEBBGG"></script>
     <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-9LPWQEBBGG');</script>
 
+    <!-- Meta Pixel -->
+    <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    if(localStorage.getItem('cookie_consent')==='rejected')fbq('consent','revoke');
+    fbq('init','1976844023039024');
+    fbq('track','PageView');
+    document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href*="wa.me"]');if(a)fbq('track','Contact');});
+    </script>
+    <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1976844023039024&ev=PageView&noscript=1" alt=""></noscript>
+
     <title>DEKOOR | Regalos Personalizados con Grabado Láser - Envío a Todo México</title>
     <meta name="description" content="Regalos personalizados con grabado láser. Cuadros con foto, lámparas 3D, letreros y más. Personalizamos con tu foto, nombre o mensaje. Envío a todo México.">
     <meta name="keywords" content="regalos personalizados, grabado láser, regalos con nombre, regalos con foto, lámparas 3D, cuadros personalizados, Dekoor, regalos México">
@@ -16,7 +26,11 @@
     <!-- Open Graph -->
     <meta property="og:title" content="DEKOOR - Regalos Personalizados con Grabado Láser">
     <meta property="og:description" content="Creamos piezas únicas personalizadas con tus fotos y mensajes. Envío a todo México.">
-    <meta property="og:image" content="https://app.dekoormx.com/jt-rastreo/logo.png">
+    <meta property="og:image" content="https://app.dekoormx.com/sitio/img/og-logo.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="DEKOOR - Regalos personalizados con grabado láser">
+    <meta property="og:site_name" content="DEKOOR">
     <meta property="og:url" content="https://app.dekoormx.com/sitio/">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="es_MX">
@@ -25,7 +39,7 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="DEKOOR - Regalos Personalizados con Grabado Láser">
     <meta name="twitter:description" content="Creamos piezas únicas personalizadas con tus fotos y mensajes. Envío a todo México.">
-    <meta name="twitter:image" content="https://app.dekoormx.com/jt-rastreo/logo.png">
+    <meta name="twitter:image" content="https://app.dekoormx.com/sitio/img/og-logo.png">
 
     <!-- Favicons -->
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
@@ -56,8 +70,8 @@
         "name": "Dekoor - Regalos Personalizados con Grabado Láser",
         "description": "Tienda de regalos personalizados con grabado láser. Cuadros con foto, lámparas 3D, letreros y más. Envío a todo México.",
         "url": "https://app.dekoormx.com/sitio/",
-        "logo": "https://app.dekoormx.com/jt-rastreo/logo.png",
-        "image": "https://app.dekoormx.com/jt-rastreo/logo.png",
+        "logo": "https://app.dekoormx.com/sitio/img/og-logo.png",
+        "image": "https://app.dekoormx.com/sitio/img/og-logo.png",
         "telephone": "+5216181333519",
         "address": {
             "@type": "PostalAddress",
@@ -145,7 +159,7 @@
         <span class="ticker-sep">★</span>
         <span class="ticker-item"><i class="fas fa-camera"></i> PAGA HASTA QUE VEAS FOTO DE TU PEDIDO TERMINADO</span>
         <span class="ticker-sep">★</span>
-        <span class="ticker-item ticker-highlight"><i class="fas fa-gift"></i> DÍA DE LAS MADRES - ORDENA ANTES DEL 2 DE MAYO</span>
+        <span class="ticker-item ticker-highlight"><i class="fas fa-box-open"></i> RECÍBELO EN 4-10 DÍAS HÁBILES EN TODO MÉXICO</span>
         <span class="ticker-sep">★</span>
         <span class="ticker-item"><i class="fas fa-hand-holding-heart"></i> HECHO A MANO CON GRABADO LÁSER</span>
         <span class="ticker-sep">★</span>
@@ -153,7 +167,7 @@
         <span class="ticker-sep">★</span>
         <span class="ticker-item"><i class="fas fa-camera"></i> PAGA HASTA QUE VEAS FOTO DE TU PEDIDO TERMINADO</span>
         <span class="ticker-sep">★</span>
-        <span class="ticker-item ticker-highlight"><i class="fas fa-gift"></i> DÍA DE LAS MADRES - ORDENA ANTES DEL 2 DE MAYO</span>
+        <span class="ticker-item ticker-highlight"><i class="fas fa-box-open"></i> RECÍBELO EN 4-10 DÍAS HÁBILES EN TODO MÉXICO</span>
         <span class="ticker-sep">★</span>
         <span class="ticker-item"><i class="fas fa-hand-holding-heart"></i> HECHO A MANO CON GRABADO LÁSER</span>
         <span class="ticker-sep">★</span>
@@ -559,12 +573,14 @@
 function acceptCookies() {
     localStorage.setItem('cookie_consent', 'accepted');
     document.getElementById('cookieBanner').style.display = 'none';
+    if (typeof fbq === 'function') fbq('consent', 'grant');
 }
 function rejectCookies() {
     localStorage.setItem('cookie_consent', 'rejected');
     document.getElementById('cookieBanner').style.display = 'none';
     // Disable GA4 if rejected
     window['ga-disable-G-9LPWQEBBGG'] = true;
+    if (typeof fbq === 'function') fbq('consent', 'revoke');
 }
 // If previously rejected, disable GA
 if (localStorage.getItem('cookie_consent') === 'rejected') {
@@ -582,7 +598,6 @@ if (localStorage.getItem('cookie_consent') === 'rejected') {
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 <!-- Leaflet -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-<script src="/env-config.js"></script>
 <script src="/sitio/script.js"></script>
 
 <!-- Mejoras 3D / animadas (capa aditiva) -->
