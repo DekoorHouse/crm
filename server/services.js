@@ -1735,17 +1735,35 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         const downloadedMedia = [];
         let mediaCount = 0;
 
+        // Tipo efectivo de un mensaje. Los mensajes SALIENTES (agente/CRM) se guardan sin
+        // `type`: se infiere del fileType para que el historial muestre explícitamente que
+        // el Asistente envió una imagen/archivo. Sin esto, la foto del pedido terminado que
+        // mandaba el agente aparecía como un opaco "📷 Imagen" y la IA, sin saber que ya se
+        // había enviado, le decía al cliente "le pido la foto al equipo".
+        const effectiveType = (d) => {
+            if (d.type) return d.type;
+            if (d.fileUrl && typeof d.fileType === 'string') {
+                if (d.fileType.startsWith('image/')) return 'image';
+                if (d.fileType.startsWith('video/')) return 'video';
+                if (d.fileType.startsWith('audio/')) return 'audio';
+                if (d.fileType.includes('pdf')) return 'document';
+            }
+            return null;
+        };
+
         // Etiqueta legible de un mensaje. Las imágenes, audios y PDF se marcan como tales
         // (con su caption si lo tienen) para que la IA sepa que hubo un archivo, no texto vacío.
+        const GENERIC_MEDIA_TEXTS = /^(📷 Imagen|🎥 Video|🎵 Audio|📄 Documento|🎤 Mensaje de voz)$/;
         const msgDisplayText = (d) => {
-            const t = (d.text || '').trim();
-            switch (d.type) {
+            let t = (d.text || '').trim();
+            if (GENERIC_MEDIA_TEXTS.test(t)) t = ''; // texto de relleno, no caption real
+            switch (effectiveType(d)) {
                 case 'image': return t ? `[imagen: ${t}]` : '[imagen]';
-                case 'audio': return (t && t !== '🎤 Mensaje de voz' && t !== '🎵 Audio') ? `[audio: ${t}]` : '[audio/nota de voz]';
+                case 'audio': return t ? `[audio: ${t}]` : '[audio/nota de voz]';
                 case 'video': return t ? `[video: ${t}]` : '[video]';
                 case 'document': return t ? `[PDF/documento: ${t}]` : '[PDF/documento]';
                 case 'sticker': return '[sticker]';
-                default: return t;
+                default: return (d.text || '').trim();
             }
         };
 
@@ -1865,13 +1883,14 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (d.from !== contactId) continue;
             const qId = d.context && d.context.id;
             const q = qId ? byWamid[qId] : null;
-            if (q && (q.type === 'image' || q.type === 'document') && q.fileUrl) {
+            const qType = q ? effectiveType(q) : null;
+            if (q && (qType === 'image' || qType === 'document') && q.fileUrl) {
                 if (!downloadedMedia.some(m => m.url === q.fileUrl)) {
-                    const qMime = q.fileType || (q.type === 'image' ? 'image/jpeg' : 'application/pdf');
-                    downloadedMedia.push({ url: q.fileUrl, mimeType: qMime, type: q.type });
-                    console.log(`[AI] Incluyendo ${q.type} citado por el cliente para ${contactId}.`);
+                    const qMime = q.fileType || (qType === 'image' ? 'image/jpeg' : 'application/pdf');
+                    downloadedMedia.push({ url: q.fileUrl, mimeType: qMime, type: qType });
+                    console.log(`[AI] Incluyendo ${qType} citado por el cliente para ${contactId}.`);
                 }
-                quotedMediaNote = `\n\n**Importante:** El cliente está respondiendo/citando ${q.type === 'image' ? 'una imagen' : 'un archivo'} anterior${q.text ? ` ("${q.text}")` : ''} que está incluido entre los archivos adjuntos. Úsalo para entender su mensaje (ej.: "este no?", "ese sí", "el segundo").`;
+                quotedMediaNote = `\n\n**Importante:** El cliente está respondiendo/citando ${qType === 'image' ? 'una imagen' : 'un archivo'} anterior${q.text ? ` ("${q.text}")` : ''} que está incluido entre los archivos adjuntos. Úsalo para entender su mensaje (ej.: "este no?", "ese sí", "el segundo").`;
             }
             break; // solo evaluamos el último mensaje del cliente
         }
