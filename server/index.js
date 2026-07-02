@@ -155,6 +155,119 @@ app.get('/comunicacion-sw.js', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'comunicacion-sw.js'));
 });
 
+// --- SEO SITIO PÚBLICO: páginas de colección con URL propia e indexable ---
+// /sitio/coleccion/ninos/ etc. sirven el template de colección con title, h1,
+// canonical y Open Graph únicos por colección (el catálogo lo pinta el JS del
+// cliente, que detecta la colección desde el path).
+const SITIO_COLECCIONES = {
+    ninos: {
+        h1: 'Lámparas 3D personalizadas para niños',
+        title: 'Lámparas 3D Personalizadas para Niños con Nombre | DEKOOR',
+        desc: 'Lámparas personalizadas para niños: su personaje favorito, su foto y su nombre grabados con láser. Envío gratis a todo México.',
+        visible: 'Lámparas 3D mágicas para los más pequeños del hogar. Personalizadas con su nombre y personaje favorito.',
+        img: 'lamp-ariel.webp'
+    },
+    pareja: {
+        h1: 'Lámparas personalizadas para pareja con foto',
+        title: 'Lámparas Personalizadas para Pareja con Foto | DEKOOR',
+        desc: 'Regalos románticos: lámpara 3D con su foto, nombres y fecha especial grabados con láser. Aniversarios y novios. Envío gratis a todo México.',
+        visible: 'Regalos románticos personalizados con tu foto y mensaje especial. El detalle perfecto para esa persona.',
+        img: 'lamp-pareja.webp'
+    },
+    empresas: {
+        h1: 'Lámparas corporativas con logo grabado con láser',
+        title: 'Lámparas Corporativas con Logo para Empresas | DEKOOR',
+        desc: 'Regalos corporativos y reconocimientos con el logo de tu empresa grabado con láser. Precios de mayoreo desde 10 piezas. Envío a todo México.',
+        visible: 'Reconocimientos, trofeos y regalos corporativos con el logo de tu empresa o equipo favorito.',
+        img: 'lamp-empresas.webp'
+    },
+    familia: {
+        h1: 'Lámparas personalizadas con foto familiar y mascotas',
+        title: 'Lámparas Personalizadas con Foto de Familia y Mascotas | DEKOOR',
+        desc: 'Tu foto familiar o de tu mascota convertida en lámpara 3D grabada con láser. El regalo para mamá, papá y abuelos. Envío gratis a todo México.',
+        visible: 'Inmortaliza los mejores momentos familiares. Fotos de mascotas, hijos, abuelos y toda la familia.',
+        img: 'lamp-mascotas.webp'
+    },
+    memorial: {
+        h1: 'Lámparas memorial con foto de tu ser querido',
+        title: 'Lámparas Memorial Personalizadas con Foto | DEKOOR',
+        desc: 'Un recuerdo luminoso para honrar a tu ser querido: lámpara memorial personalizada con foto y mensaje grabados con láser. Envío a todo México.',
+        visible: 'Un tributo luminoso para honrar la memoria de tus seres queridos. Un recuerdo que siempre brilla.',
+        img: 'lamp-memorial.webp'
+    },
+    religiosas: {
+        h1: 'Lámparas religiosas personalizadas: Virgen y santos',
+        title: 'Lámparas Religiosas: Virgen de Guadalupe y Santos | DEKOOR',
+        desc: 'Virgen de Guadalupe, santos y mensajes de fe grabados con láser, personalizados con tu nombre. Envío gratis a todo México.',
+        visible: 'Lámparas con imágenes religiosas personalizadas. Vírgenes, santos y mensajes de fe grabados con láser.',
+        img: 'lamp-religiosas.webp'
+    },
+    cuadros: {
+        h1: 'Cuadros personalizados con fotos grabadas en madera',
+        title: 'Cuadros Personalizados con Fotos Grabadas en Madera | DEKOOR',
+        desc: 'Cuadros de madera con tus fotos grabadas con láser: collages de corazón y mosaicos para tu pared. Cotización gratis por WhatsApp.',
+        visible: 'Cuadros de madera personalizados con tus fotos grabadas con láser. El regalo que decora y emociona.',
+        img: 'cuadro-multifoto.webp'
+    }
+};
+
+let coleccionSeoTemplate = null;
+function renderColeccionSeo(id) {
+    const seo = SITIO_COLECCIONES[id];
+    if (!coleccionSeoTemplate) {
+        coleccionSeoTemplate = require('fs').readFileSync(
+            path.join(__dirname, '..', 'public', 'sitio', 'coleccion', 'index.html'), 'utf8'
+        );
+    }
+    const url = `https://app.dekoormx.com/sitio/coleccion/${id}/`;
+    const imgUrl = `https://app.dekoormx.com/sitio/img/${seo.img}`;
+    return coleccionSeoTemplate
+        .split('<title>Colección de Regalos Personalizados | Dekoor</title>')
+        .join(`<title>${seo.title}</title>`)
+        .split('content="Explora nuestra colección de regalos personalizados con grabado láser. Lámparas 3D, cuadros con foto, letreros y más. Envío a todo México."')
+        .join(`content="${seo.desc}"`)
+        .split('content="Explora nuestra colección de regalos personalizados con grabado láser."')
+        .join(`content="${seo.desc}"`)
+        .split('content="Colección de Regalos Personalizados | Dekoor"')
+        .join(`content="${seo.title}"`)
+        .split('href="https://app.dekoormx.com/sitio/coleccion/"')
+        .join(`href="${url}"`)
+        .split('<meta property="og:url" content="https://app.dekoormx.com/sitio/coleccion/">')
+        .join(`<meta property="og:url" content="${url}">`)
+        .split('https://app.dekoormx.com/sitio/img/og-logo.png')
+        .join(imgUrl)
+        .split('<meta property="og:image:width" content="1200">')
+        .join('<meta property="og:image:width" content="896">')
+        .split('<meta property="og:image:height" content="630">')
+        .join('<meta property="og:image:height" content="1195">')
+        .split('<h1 id="collectionTitle">Cargando...</h1>')
+        .join(`<h1 id="collectionTitle">${seo.h1}</h1>`)
+        .split('<p id="collectionDesc"></p>')
+        .join(`<p id="collectionDesc">${seo.visible}</p>`)
+        .split('<li id="breadcrumbCurrent" style="color:var(--text-dark);font-weight:600;">Cargando...</li>')
+        .join(`<li id="breadcrumbCurrent" style="color:var(--text-dark);font-weight:600;">${seo.h1}</li>`);
+}
+
+// Redirect 301 de las URLs viejas con query (?id=ninos) a las rutas indexables.
+// Debe ir ANTES de express.static para interceptar el index.html del directorio.
+app.get('/sitio/coleccion/', (req, res, next) => {
+    const id = String(req.query.id || '').toLowerCase();
+    if (id && SITIO_COLECCIONES[id]) return res.redirect(301, `/sitio/coleccion/${id}/`);
+    next();
+});
+
+app.get('/sitio/coleccion/:id', (req, res, next) => {
+    const id = String(req.params.id || '').toLowerCase();
+    if (!SITIO_COLECCIONES[id]) return next();
+    try {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderColeccionSeo(id));
+    } catch (e) {
+        console.error('[SITIO] Error renderizando colección SEO:', e.message);
+        res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'coleccion', 'index.html'));
+    }
+});
+
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
 

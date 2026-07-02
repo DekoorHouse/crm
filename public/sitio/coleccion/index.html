@@ -20,7 +20,6 @@
 
     <title>Colección de Regalos Personalizados | Dekoor</title>
     <meta name="description" content="Explora nuestra colección de regalos personalizados con grabado láser. Lámparas 3D, cuadros con foto, letreros y más. Envío a todo México.">
-    <meta name="keywords" content="colección regalos personalizados, lámparas 3D, cuadros con foto, grabado láser, Dekoor México">
     <link rel="canonical" href="https://app.dekoormx.com/sitio/coleccion/">
 
     <!-- Open Graph -->
@@ -34,6 +33,11 @@
     <meta property="og:url" content="https://app.dekoormx.com/sitio/coleccion/">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="es_MX">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Colección de Regalos Personalizados | Dekoor">
+    <meta name="twitter:image" content="https://app.dekoormx.com/sitio/img/og-logo.png">
 
     <!-- Favicons -->
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
@@ -707,20 +711,29 @@ const COLLECTIONS = {
     }
 };
 
-// Get collection from URL
+// Get collection from URL: primero del path (/sitio/coleccion/ninos/), luego del query (?id=ninos)
 const params = new URLSearchParams(window.location.search);
-const colId = params.get('id') || 'ninos';
+const pathMatch = window.location.pathname.match(/\/coleccion\/([a-z]+)\/?$/);
+const colId = (pathMatch && pathMatch[1] !== 'index' ? pathMatch[1] : null) || params.get('id') || 'ninos';
 const col = COLLECTIONS[colId];
 
 if (!col) {
     window.location.href = '/sitio/#colecciones';
 }
 
-// Set page info
-document.title = `${col.title} | Dekoor`;
+// Set page info. El servidor ya inyecta title/h1/desc con keywords en las rutas
+// /coleccion/<id>/ — solo rellenamos si quedó el placeholder genérico.
+if (document.title.startsWith('Colección de Regalos')) {
+    document.title = `${col.title} | Dekoor`;
+}
 document.getElementById('collectionBadge').textContent = `COLECCIÓN ${col.title.toUpperCase()}`;
-document.getElementById('collectionTitle').textContent = col.title;
-document.getElementById('collectionDesc').textContent = col.desc;
+const titleEl = document.getElementById('collectionTitle');
+if (titleEl.textContent.trim() === 'Cargando...') titleEl.textContent = col.title;
+const descEl = document.getElementById('collectionDesc');
+if (!descEl.textContent.trim()) descEl.textContent = col.desc;
+// Canonical hacia la ruta indexable de esta colección
+const canonicalEl = document.querySelector('link[rel="canonical"]');
+if (canonicalEl) canonicalEl.setAttribute('href', `https://app.dekoormx.com/sitio/coleccion/${colId}/`);
 
 // Inject Product + BreadcrumbList schema
 const SCHEMA_IMG = { ninos: 'lamp-ariel.webp', pareja: 'lamp-pareja.webp', empresas: 'lamp-empresas.webp', familia: 'lamp-mascotas.webp', memorial: 'lamp-memorial.webp', religiosas: 'lamp-religiosas.webp', cuadros: 'cuadro-multifoto.webp', otros: 'lamp-otros.webp' };
@@ -736,7 +749,7 @@ const productSchema = {
         "price": String(DekoorConfig.prices.productUnitPrice),
         "priceCurrency": DekoorConfig.prices.currency,
         "availability": "https://schema.org/InStock",
-        "url": `https://app.dekoormx.com/sitio/coleccion/?id=${colId}`,
+        "url": `https://app.dekoormx.com/sitio/coleccion/${colId}/`,
         "seller": { "@type": "Organization", "name": "Dekoor" },
         "shippingDetails": {
             "@type": "OfferShippingDetails",
@@ -744,12 +757,6 @@ const productSchema = {
             "deliveryTime": { "@type": "ShippingDeliveryTime", "handlingTime": { "@type": "QuantitativeValue", "minValue": 1, "maxValue": 3, "unitCode": "DAY" }, "transitTime": { "@type": "QuantitativeValue", "minValue": 5, "maxValue": 7, "unitCode": "DAY" } },
             "shippingDestination": { "@type": "DefinedRegion", "addressCountry": "MX" }
         }
-    },
-    "aggregateRating": {
-        "@type": "AggregateRating",
-        "ratingValue": "4.9",
-        "reviewCount": "5000",
-        "bestRating": "5"
     }
 };
 const breadcrumbSchema = {
@@ -758,7 +765,7 @@ const breadcrumbSchema = {
     "itemListElement": [
         { "@type": "ListItem", "position": 1, "name": "Inicio", "item": "https://app.dekoormx.com/sitio/" },
         { "@type": "ListItem", "position": 2, "name": "Colecciones", "item": "https://app.dekoormx.com/sitio/#colecciones" },
-        { "@type": "ListItem", "position": 3, "name": col.title, "item": `https://app.dekoormx.com/sitio/coleccion/?id=${colId}` }
+        { "@type": "ListItem", "position": 3, "name": col.title, "item": `https://app.dekoormx.com/sitio/coleccion/${colId}/` }
     ]
 };
 (col.quoteOnly ? [breadcrumbSchema] : [productSchema, breadcrumbSchema]).forEach(schema => {

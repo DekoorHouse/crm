@@ -21,8 +21,6 @@ Disallow: /ads/
 Disallow: /autopost/
 Disallow: /ps/
 Disallow: /wa-group/
-Disallow: /sitio/pago-exitoso/
-Disallow: /sitio/pago-fallido/
 Disallow: /referencias/moderacion.html
 
 Sitemap: https://app.dekoormx.com/sitemap.xml
