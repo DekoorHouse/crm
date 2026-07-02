@@ -2014,6 +2014,24 @@ Reglas:
         // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo) de los mensajes antes de enviar
         aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').trim()).filter(m => m.length > 0);
 
+        // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
+        // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
+        // expanda como respuesta rápida; antes el texto crudo "/ttt /qqq" llegaba al cliente.
+        aiMessages = aiMessages.flatMap(m => {
+            const parts = [];
+            let buffer = [];
+            for (const line of m.split('\n')) {
+                if (/^\/\S+$/.test(line.trim())) {
+                    if (buffer.length) { parts.push(buffer.join('\n').trim()); buffer = []; }
+                    parts.push(line.trim());
+                } else {
+                    buffer.push(line);
+                }
+            }
+            if (buffer.length) parts.push(buffer.join('\n').trim());
+            return parts.filter(p => p.length > 0);
+        });
+
         for (let i = 0; i < aiMessages.length; i++) {
             // Verificar cancelación entre mensajes si hay SPLIT
             if (i > 0) {
