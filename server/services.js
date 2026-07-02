@@ -40,7 +40,7 @@ const META_GRAPH_TOKEN = process.env.META_GRAPH_TOKEN;
 // contacto ya cerró su venta (aiStage === 'postventa') y no hay un prompt
 // personalizado en crm_settings/postventa.instructions. Editable desde
 // Ajustes → Entrenamiento de IA.
-const DEFAULT_POSTVENTA_INSTRUCTIONS = `Eres el asistente de POST-VENTA de DekoorHouse. El cliente YA cerró su pedido; tu trabajo es acompañarlo después de la compra: gestionar el pago (cobro), validar comprobantes, avisar cuando su pedido esté listo y coordinar la entrega o envío.
+const DEFAULT_POSTVENTA_INSTRUCTIONS = `Eres el asistente de POST-VENTA de DekoorHouse. El pedido del cliente YA ESTÁ LISTO: el equipo le envió la foto del trabajo terminado junto con los datos de pago (/cuatro). Tu trabajo es acompañarlo desde ahí: gestionar el pago (cobro), validar comprobantes y coordinar la entrega o envío.
 
 TONO: cálido, cercano y breve, en español de México. Usa emojis con mesura. Si necesitas mandar varios mensajes cortos, sepáralos con [SPLIT].
 
@@ -2144,6 +2144,9 @@ Reglas:
         // de un ATAJO de respuesta rápida (ej. /confirmar → "Ya registramos tu pedido..."); el
         // check inicial solo ve "/confirmar". Por eso es `let` y la decisión se calcula tras el loop.
         let saleClosed = /\/final/i.test(aiResponse) || /ya registramos tu pedido/i.test(aiResponse);
+        // /cuatro (o su frase expandida "ya tenemos tu pedido listo") = el pedido está LISTO
+        // y se mandó la foto + datos de pago: ese es el disparador de la etapa post-venta.
+        let orderReadySent = /\/cuatro/i.test(aiResponse) || /ya tenemos tu pedido listo/i.test(aiResponse);
         // En ETAPA 2, si el cliente quiere otro pedido la IA emite /nuevopedido para
         // regresar a la etapa de venta (etapa 1); el siguiente turno lo atiende ventas.
         const wantsNewOrder = isPostVenta && /\/nuevopedido/i.test(aiResponse);
@@ -2226,6 +2229,7 @@ Reglas:
                     // Si el atajo expandido contiene la frase de cierre de venta, marcar la
                     // transición a post-venta (el check sobre aiResponse solo veía el "/atajo").
                     if (/ya registramos tu pedido/i.test(msgText)) saleClosed = true;
+                    if (/ya tenemos tu pedido listo/i.test(msgText)) orderReadySent = true;
                     console.log(`[AI] Atajo "${shortcutMatch[0]}" expandido a respuesta rápida para ${contactId}.`);
                 } else {
                     // Atajo inexistente: no mandar el "/xxx" crudo al cliente.
@@ -2269,10 +2273,13 @@ Reglas:
             }
         }
 
-        // Decisión de transición DESPUÉS del loop, para que cuente también la frase de cierre que
-        // pudo venir expandida desde un atajo. En etapa 1 con etapa 2 activa → pasa a post-venta
-        // sin apagar el bot. Si la etapa 2 está apagada (kill-switch), /final apaga el bot (viejo).
-        const shouldTransitionToPostVenta = postSaleStageActive && !isPostVenta && saleClosed;
+        // Decisión de transición DESPUÉS del loop, para que cuente también la frase que pudo
+        // venir expandida desde un atajo. El cierre de venta (/final) manda el pedido a
+        // Pendientes IA para que el equipo lo registre, pero YA NO arranca la post-venta:
+        // la etapa 2 (cobro) arranca con /cuatro, cuando el pedido está LISTO y se le mandó
+        // al cliente la foto + los datos de pago. Con el kill-switch de etapa 2 apagado,
+        // /final conserva el comportamiento viejo (apagar el bot).
+        const shouldTransitionToPostVenta = postSaleStageActive && !isPostVenta && orderReadySent;
         const shouldDeactivate = !postSaleStageActive && saleClosed;
 
         const updateData = {
@@ -2281,13 +2288,17 @@ Reglas:
             aiStatus: admin.firestore.FieldValue.delete()
         };
 
-        if (shouldTransitionToPostVenta) {
-            // Cierre de venta con etapa 2 activa: la IA NO se apaga, pasa a post-venta y
-            // sigue atendiendo. Se mantiene el envío a Pendientes IA para que un humano
-            // registre/procese el pedido mientras la IA gestiona cobro y entrega.
-            updateData.aiStage = 'postventa';
+        if (postSaleStageActive && !isPostVenta && saleClosed) {
+            // Venta cerrada: a Pendientes IA para que el equipo registre el pedido. La IA
+            // sigue en etapa de VENTA acompañando al cliente mientras se fabrica su pedido.
             updateData.status = 'pendientes_ia';
-            console.log(`[AI] Venta cerrada para ${contactId}. Pasando a ETAPA 2 (post-venta); la IA sigue activa. Moviendo a Pendientes IA.`);
+            console.log(`[AI] Venta cerrada para ${contactId}. Moviendo a Pendientes IA; la IA sigue en etapa de venta (la post-venta arranca con /cuatro).`);
+        }
+
+        if (shouldTransitionToPostVenta) {
+            // Pedido LISTO (/cuatro): arranca la etapa 2 (cobro/comprobantes/datos de envío).
+            updateData.aiStage = 'postventa';
+            console.log(`[AI] Pedido LISTO (/cuatro) para ${contactId}. Pasando a ETAPA 2 (post-venta); la IA sigue activa.`);
         } else if (wantsNewOrder) {
             // El cliente quiere otro pedido: regresar a ETAPA 1 (venta). El bot sigue
             // activo y el próximo turno lo atiende la IA de ventas (prompt por anuncio/depto).
@@ -2371,7 +2382,7 @@ Reglas:
         // scheduler de order_followup leerá esta etiqueta y se ahorrará una clasificación.
         // Fire-and-forget: nunca debe afectar la respuesta principal. En post-venta el
         // pedido ya está tomado, así que no se etiqueta.
-        if (!shouldTransitionToPostVenta && !shouldDeactivate && !isPostVenta) {
+        if (!saleClosed && !shouldTransitionToPostVenta && !shouldDeactivate && !isPostVenta) {
             tagOrderInProgress(contactId, contactRef, conversationHistory, contactData.name)
                 .catch(e => console.warn('[ORDER_FOLLOWUP] live-tag falló:', e.message));
         }

@@ -1021,11 +1021,11 @@ const AITrainingViewTemplate = () => `
             <!-- Sección: Instrucciones de Post-Venta (Etapa 2) -->
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-2">📦 Instrucciones de Post-Venta (Etapa 2)</h2>
-                <p class="text-sm text-gray-500 mb-3">Cuando se cierra la venta (comando <strong>/final</strong>), la IA <strong>no se apaga</strong>: pasa a esta etapa para acompañar al cliente con el cobro, avisarle cuando su pedido esté listo y coordinar la entrega. Es un prompt global (aplica a todos los productos). Sigue activa hasta que apagues la IA del contacto a mano.</p>
+                <p class="text-sm text-gray-500 mb-3">Cuando el pedido está <strong>LISTO</strong> y se le manda al cliente la foto con los datos de pago (comando <strong>/cuatro</strong> o su frase "Ya tenemos tu pedido listo"), la IA pasa a esta etapa para gestionar el cobro, validar comprobantes y coordinar la entrega. El <strong>/final</strong> solo registra la venta (Pendientes IA); la IA sigue en etapa de venta mientras se fabrica. Es un prompt global (aplica a todos los productos). Sigue activa hasta que apagues la IA del contacto a mano.</p>
                 <p class="text-xs text-gray-500 mb-3 p-2 rounded-lg" style="background:#fff7ed;border:1px solid #fed7aa;">💡 <strong>Nuevo pedido:</strong> si escribes tu propio texto, incluye que cuando el cliente quiera otro pedido la IA debe responder y escribir el comando <strong>/nuevopedido</strong> (regresa el chat a ventas). También puedes regresarlo a mano con el botón ámbar “Post-venta” en la cabecera del chat.</p>
                 <label class="flex items-center gap-2 mb-3 text-sm font-medium text-gray-700 cursor-pointer">
                     <input type="checkbox" id="postventa-enabled-toggle" class="h-4 w-4" ${state.postSaleStageActive !== false ? 'checked' : ''}>
-                    Activar etapa 2 (post-venta) automáticamente tras /final
+                    Activar etapa 2 (post-venta) automáticamente tras /cuatro (pedido listo)
                 </label>
                 <textarea id="ai-postventa-instructions" rows="8" class="w-full p-3 border border-gray-300 rounded-lg text-sm" placeholder="Ej: Eres el asistente de post-venta. El cliente ya cerró su pedido; ayúdale con el pago, avísale cuando esté listo y coordina la entrega...">${state.aiPostventaInstructions || ''}</textarea>
                 <p class="text-xs text-gray-400 mt-2">Si lo dejas vacío, se usa un texto por defecto de post-venta para que la IA nunca deje de responder.</p>

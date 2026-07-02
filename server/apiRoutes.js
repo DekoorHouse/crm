@@ -4492,6 +4492,10 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                 cleanedText = text;
             }
         }
+        // /cuatro = "tu pedido ya está LISTO" (foto + datos de pago): dispara la etapa
+        // post-venta. Desde el CRM la respuesta rápida llega ya EXPANDIDA, así que se
+        // detecta también por su frase distintiva.
+        const isCuatroCommand = !!(text && (text.toLowerCase().includes('/cuatro') || text.toLowerCase().includes('ya tenemos tu pedido listo')));
 
         // --- Lógica para enviar PLANTILLA ---
         if (template) {
@@ -4605,18 +4609,20 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             contactUpdateData.aiStatus = 'cancelled';
         }
 
-        if (isFinalCommand) {
-            // /final cierra la venta. Con la etapa 2 (post-venta) activa, la IA NO se apaga:
-            // el contacto pasa a post-venta y la IA sigue atendiendo (cobro/entrega). Con el
-            // kill-switch apagado se conserva el comportamiento anterior (desactivar bot).
+        if (isFinalCommand || isCuatroCommand) {
             const genDoc = await db.collection('crm_settings').doc('general').get();
             const postSaleStageActive = !genDoc.exists || genDoc.data().postSaleStageActive !== false;
-            if (postSaleStageActive) {
-                contactUpdateData.aiStage = 'postventa';
-            } else {
-                contactUpdateData.botActive = false;
+            if (isFinalCommand) {
+                // /final registra la venta → Pendientes IA. La etapa POST-VENTA ya NO arranca
+                // aquí: arranca con /cuatro (pedido listo). Con el kill-switch de etapa 2
+                // apagado se conserva el comportamiento viejo (desactivar bot).
+                if (!postSaleStageActive) contactUpdateData.botActive = false;
+                contactUpdateData.status = 'pendientes_ia';
             }
-            contactUpdateData.status = 'pendientes_ia';
+            if (isCuatroCommand && postSaleStageActive) {
+                // Pedido LISTO: arranca la etapa post-venta (cobro/comprobantes/datos de envío).
+                contactUpdateData.aiStage = 'postventa';
+            }
         }
 
         await contactRef.update(contactUpdateData);
@@ -4659,6 +4665,8 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
                 cleanedText = text;
             }
         }
+        // /cuatro = pedido LISTO (foto + datos de pago): dispara la etapa post-venta.
+        const isCuatroCommand = !!(text && (text.toLowerCase().includes('/cuatro') || text.toLowerCase().includes('ya tenemos tu pedido listo')));
 
         // Determinar texto para DB (igual que en envío normal)
         let messageToSaveText = cleanedText;
@@ -4693,18 +4701,17 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
             lastMessageTimestamp: messageToSave.timestamp,
         };
 
-        if (isFinalCommand) {
-            // /final cierra la venta. Con la etapa 2 (post-venta) activa, la IA NO se apaga:
-            // el contacto pasa a post-venta y la IA sigue atendiendo (cobro/entrega). Con el
-            // kill-switch apagado se conserva el comportamiento anterior (desactivar bot).
+        if (isFinalCommand || isCuatroCommand) {
             const genDoc = await db.collection('crm_settings').doc('general').get();
             const postSaleStageActive = !genDoc.exists || genDoc.data().postSaleStageActive !== false;
-            if (postSaleStageActive) {
-                contactUpdateData.aiStage = 'postventa';
-            } else {
-                contactUpdateData.botActive = false;
+            if (isFinalCommand) {
+                // /final registra la venta → Pendientes IA. La post-venta arranca con /cuatro.
+                if (!postSaleStageActive) contactUpdateData.botActive = false;
+                contactUpdateData.status = 'pendientes_ia';
             }
-            contactUpdateData.status = 'pendientes_ia';
+            if (isCuatroCommand && postSaleStageActive) {
+                contactUpdateData.aiStage = 'postventa';
+            }
         }
 
         await contactRef.update(contactUpdateData);
