@@ -365,15 +365,15 @@
 <!-- Banner -->
 <div class="ticker-banner">
     <div class="ticker-track">
-        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS A TODO MEXICO</span>
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVÍO GRATIS A TODO MÉXICO</span>
         <span class="ticker-sep">&#9733;</span>
         <span class="ticker-item"><i class="fas fa-credit-card"></i> PAGA CON TARJETA, OXXO O TRANSFERENCIA</span>
         <span class="ticker-sep">&#9733;</span>
-        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS A TODO MEXICO</span>
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVÍO GRATIS A TODO MÉXICO</span>
         <span class="ticker-sep">&#9733;</span>
         <span class="ticker-item"><i class="fas fa-credit-card"></i> PAGA CON TARJETA, OXXO O TRANSFERENCIA</span>
         <span class="ticker-sep">&#9733;</span>
-        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS A TODO MEXICO</span>
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVÍO GRATIS A TODO MÉXICO</span>
         <span class="ticker-sep">&#9733;</span>
         <span class="ticker-item"><i class="fas fa-credit-card"></i> PAGA CON TARJETA, OXXO O TRANSFERENCIA</span>
         <span class="ticker-sep">&#9733;</span>
@@ -389,7 +389,7 @@
         <div class="nav-links">
             <a href="/sitio/" class="nav-link">Inicio</a>
             <a href="/sitio/#colecciones" class="nav-link">Colecciones</a>
-            <a href="/sitio/#como-funciona" class="nav-link">Como Funciona</a>
+            <a href="/sitio/#como-funciona" class="nav-link">Cómo Funciona</a>
             <a href="/referencias/" class="nav-link">Referencias</a>
             <a href="/jt-rastreo/" class="nav-link">Rastreo</a>
             <a href="/sitio/#contacto" class="nav-link">Contacto</a>
@@ -430,7 +430,7 @@
         <div class="cart-summary" id="cartSummary">
             <h2>Resumen del pedido</h2>
             <div id="summaryLines"></div>
-            <div class="summary-shipping"><i class="fas fa-truck"></i> Envio gratis a todo Mexico</div>
+            <div class="summary-shipping"><i class="fas fa-truck"></i> Envío gratis a todo México</div>
             <a href="#" id="checkoutLink" class="checkout-btn" onclick="goToCheckout(event)">
                 <i class="fas fa-lock"></i> Proceder al pago
             </a>
@@ -439,8 +439,8 @@
             </a>
             <div class="summary-trust">
                 <div class="summary-trust-item"><i class="fas fa-lock"></i> Pago 100% seguro con Mercado Pago</div>
-                <div class="summary-trust-item"><i class="fas fa-camera"></i> Paga hasta ver tu pedido terminado</div>
-                <div class="summary-trust-item"><i class="fas fa-shield-alt"></i> Garantia de satisfaccion</div>
+                <div class="summary-trust-item"><i class="fas fa-camera"></i> Te enviamos foto de tu pedido antes de enviarlo</div>
+                <div class="summary-trust-item"><i class="fas fa-shield-alt"></i> Garantía de satisfacción</div>
             </div>
             <div class="summary-methods">
                 <span><i class="far fa-credit-card"></i> Tarjeta</span>
@@ -461,53 +461,53 @@
         <form id="checkoutForm">
             <div class="ck-field">
                 <label for="ckName">Nombre completo *</label>
-                <input type="text" id="ckName" required placeholder="Tu nombre">
+                <input type="text" id="ckName" required placeholder="Tu nombre" autocomplete="name">
             </div>
             <div class="ck-field">
-                <label for="ckPhone">WhatsApp (10 digitos) *</label>
-                <input type="tel" id="ckPhone" required placeholder="618 123 4567" maxlength="15">
+                <label for="ckPhone">WhatsApp (10 dígitos) *</label>
+                <input type="tel" id="ckPhone" required placeholder="618 123 4567" maxlength="15" autocomplete="tel" inputmode="tel">
             </div>
             <div class="ck-field">
                 <label for="ckEmail">Email *</label>
-                <input type="email" id="ckEmail" required placeholder="tu@email.com">
+                <input type="email" id="ckEmail" required placeholder="tu@email.com" autocomplete="email">
             </div>
-            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-map-marker-alt"></i> Direccion de envio</div>
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-map-marker-alt"></i> Dirección de envío</div>
             <div class="ck-field">
-                <label for="ckStreet">Calle y numero *</label>
-                <input type="text" id="ckStreet" required placeholder="Av. Juarez #123">
+                <label for="ckStreet">Calle y número *</label>
+                <input type="text" id="ckStreet" required placeholder="Av. Juárez #123" autocomplete="address-line1">
             </div>
             <div class="ck-field">
                 <label for="ckColonia">Colonia *</label>
-                <input type="text" id="ckColonia" required placeholder="Centro">
+                <input type="text" id="ckColonia" required placeholder="Centro" autocomplete="address-line2">
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div class="ck-field">
                     <label for="ckCity">Ciudad *</label>
-                    <input type="text" id="ckCity" required placeholder="Durango">
+                    <input type="text" id="ckCity" required placeholder="Durango" autocomplete="address-level2">
                 </div>
                 <div class="ck-field">
                     <label for="ckState">Estado *</label>
-                    <input type="text" id="ckState" required placeholder="Durango">
+                    <input type="text" id="ckState" required placeholder="Durango" autocomplete="address-level1">
                 </div>
             </div>
             <div class="ck-field">
-                <label for="ckZip">Codigo postal *</label>
-                <input type="text" id="ckZip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}">
+                <label for="ckZip">Código postal *</label>
+                <input type="text" id="ckZip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}" autocomplete="postal-code" inputmode="numeric">
             </div>
-            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-truck"></i> Metodo de envio</div>
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-truck"></i> Método de envío</div>
             <div class="ck-shipping-options">
                 <label class="ck-shipping selected">
                     <input type="radio" name="shipping" value="jt" checked>
                     <div style="flex:1;">
                         <div style="display:flex;justify-content:space-between;"><span style="font-weight:700;font-size:0.9rem;">J&T Express</span><span style="font-weight:700;font-size:0.9rem;color:#10b981;">Gratis</span></div>
-                        <span style="font-size:0.8rem;color:var(--text-medium);">5-7 dias habiles</span>
+                        <span style="font-size:0.8rem;color:var(--text-medium);">5-7 días hábiles</span>
                     </div>
                 </label>
                 <label class="ck-shipping">
                     <input type="radio" name="shipping" value="dhl">
                     <div style="flex:1;">
                         <div style="display:flex;justify-content:space-between;"><span style="font-weight:700;font-size:0.9rem;">DHL Express</span><span style="font-weight:700;font-size:0.9rem;" data-price="shipping-dhl" data-price-fmt="plus">+$160 MXN</span></div>
-                        <span style="font-size:0.8rem;color:var(--text-medium);">2-3 dias habiles</span>
+                        <span style="font-size:0.8rem;color:var(--text-medium);">2-3 días hábiles</span>
                     </div>
                 </label>
             </div>
@@ -542,7 +542,7 @@ function renderCart() {
         itemsEl.innerHTML = `
             <div class="cart-empty">
                 <i class="fas fa-shopping-cart"></i>
-                <h2>Tu carrito esta vacio</h2>
+                <h2>Tu carrito está vacío</h2>
                 <p>Agrega productos de nuestras colecciones para comenzar</p>
                 <a href="/sitio/#colecciones" class="checkout-btn" style="max-width:280px;margin:0 auto;">
                     <i class="fas fa-gift"></i> Ver colecciones
@@ -564,7 +564,7 @@ function renderCart() {
             </div>
             <div class="cart-item-info">
                 <div class="cart-item-name">${esc(item.name)}</div>
-                <div class="cart-item-collection">Coleccion ${esc(item.collection)}</div>
+                <div class="cart-item-collection">Colección ${esc(item.collection)}</div>
                 <div class="cart-item-pricing">
                     <span class="original">$${item.originalPrice}</span>
                     <span class="current">$${item.price} MXN</span>
@@ -588,7 +588,7 @@ function renderCart() {
             <span>$${subtotal.toLocaleString('en')} MXN</span>
         </div>
         <div class="summary-line">
-            <span>Envio</span>
+            <span>Envío</span>
             <span style="color:#10b981;font-weight:600;">Gratis</span>
         </div>
         <div class="summary-line total">

@@ -121,14 +121,14 @@
                 <i class="fas fa-check"></i>
             </div>
             <h1>Pago Recibido</h1>
-            <p>Tu pago se ha procesado correctamente. En breve nos pondremos en contacto contigo por WhatsApp para coordinar los detalles de tu lampara personalizada.</p>
+            <p>Tu pago se ha procesado correctamente. En breve nos pondremos en contacto contigo por WhatsApp para coordinar los detalles de tu lámpara personalizada.</p>
             <div class="result-order" id="orderInfo" style="display:none;">
-                <div>Tu numero de pedido:</div>
+                <div>Tu número de pedido:</div>
                 <strong id="orderNumber"></strong>
             </div>
             <div class="result-actions">
                 <a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20acabo%20de%20hacer%20mi%20pago%20en%20linea" target="_blank" rel="noopener" class="result-btn primary">
-                    <i class="fab fa-whatsapp"></i> Enviar foto para mi lampara
+                    <i class="fab fa-whatsapp"></i> Enviar foto para mi lámpara
                 </a>
                 <a href="/sitio/" class="result-btn secondary">
                     <i class="fas fa-home"></i> Volver al inicio
@@ -182,7 +182,7 @@
                 orderInfoEl.style.display = '';
                 // Personalizar el link de WhatsApp con el numero de pedido
                 if (waLink) {
-                    const msg = `Hola Dekoor, acabo de pagar mi pedido ${data.orderNumber} y quiero enviarles la foto para mi lampara`;
+                    const msg = `Hola Dekoor, acabo de pagar mi pedido ${data.orderNumber} y quiero enviarles la foto para mi lámpara`;
                     waLink.href = `https://wa.me/5216181333519?text=${encodeURIComponent(msg)}`;
                 }
                 return;

@@ -299,6 +299,14 @@
         .product-card-btn.secondary:hover {
             background: var(--primary-light);
         }
+        .product-card-btn.whatsapp {
+            background: #128C7E;
+            color: var(--white);
+        }
+        .product-card-btn.whatsapp:hover {
+            background: #075E54;
+            transform: translateY(-1px);
+        }
 
         /* Checkout Modal */
         .checkout-overlay {
@@ -547,42 +555,42 @@
         <form id="checkoutForm">
             <div class="checkout-field">
                 <label for="ckName">Nombre completo *</label>
-                <input type="text" id="ckName" required placeholder="Tu nombre">
+                <input type="text" id="ckName" required placeholder="Tu nombre" autocomplete="name">
             </div>
             <div class="checkout-field">
-                <label for="ckPhone">WhatsApp (10 digitos) *</label>
-                <input type="tel" id="ckPhone" required placeholder="618 123 4567" maxlength="15">
+                <label for="ckPhone">WhatsApp (10 dígitos) *</label>
+                <input type="tel" id="ckPhone" required placeholder="618 123 4567" maxlength="15" autocomplete="tel" inputmode="tel">
             </div>
             <div class="checkout-field">
                 <label for="ckEmail">Email *</label>
-                <input type="email" id="ckEmail" required placeholder="tu@email.com">
+                <input type="email" id="ckEmail" required placeholder="tu@email.com" autocomplete="email">
             </div>
 
-            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-map-marker-alt"></i> Direccion de envio</div>
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-map-marker-alt"></i> Dirección de envío</div>
             <div class="checkout-field">
-                <label for="ckStreet">Calle y numero *</label>
-                <input type="text" id="ckStreet" required placeholder="Av. Juarez #123">
+                <label for="ckStreet">Calle y número *</label>
+                <input type="text" id="ckStreet" required placeholder="Av. Juárez #123" autocomplete="address-line1">
             </div>
             <div class="checkout-field">
                 <label for="ckColonia">Colonia *</label>
-                <input type="text" id="ckColonia" required placeholder="Centro">
+                <input type="text" id="ckColonia" required placeholder="Centro" autocomplete="address-line2">
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div class="checkout-field">
                     <label for="ckCity">Ciudad *</label>
-                    <input type="text" id="ckCity" required placeholder="Durango">
+                    <input type="text" id="ckCity" required placeholder="Durango" autocomplete="address-level2">
                 </div>
                 <div class="checkout-field">
                     <label for="ckState">Estado *</label>
-                    <input type="text" id="ckState" required placeholder="Durango">
+                    <input type="text" id="ckState" required placeholder="Durango" autocomplete="address-level1">
                 </div>
             </div>
             <div class="checkout-field">
-                <label for="ckZip">Codigo postal *</label>
-                <input type="text" id="ckZip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}">
+                <label for="ckZip">Código postal *</label>
+                <input type="text" id="ckZip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}" autocomplete="postal-code" inputmode="numeric">
             </div>
 
-            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-truck"></i> Metodo de envio</div>
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-truck"></i> Método de envío</div>
             <div class="checkout-shipping-options">
                 <label class="shipping-option selected">
                     <input type="radio" name="shipping" value="jt" checked>
@@ -591,7 +599,7 @@
                             <span class="shipping-name">J&T Express</span>
                             <span class="shipping-price free">Gratis</span>
                         </div>
-                        <span class="shipping-time">5-7 dias habiles</span>
+                        <span class="shipping-time">5-7 días hábiles</span>
                     </div>
                 </label>
                 <label class="shipping-option">
@@ -601,7 +609,7 @@
                             <span class="shipping-name">DHL Express</span>
                             <span class="shipping-price" data-price="shipping-dhl" data-price-fmt="plus">+$160 MXN</span>
                         </div>
-                        <span class="shipping-time">2-3 dias habiles</span>
+                        <span class="shipping-time">2-3 días hábiles</span>
                     </div>
                 </label>
             </div>
@@ -682,6 +690,14 @@ const COLLECTIONS = {
         productDesc: 'Lámpara LED con imagen religiosa personalizada, nombre y mensaje de fe. 16 colores con control remoto.',
         folder: 'Religiosas'
     },
+    cuadros: {
+        title: 'Cuadros con Foto',
+        desc: 'Cuadros de madera personalizados con tus fotos grabadas con láser. El regalo que decora y emociona. Cotización gratis por WhatsApp según tamaño y diseño.',
+        productName: 'Cuadro Personalizado',
+        productDesc: 'Cuadro de madera con tus fotos grabadas con láser. Tamaños y diseños a tu medida.',
+        folder: 'Cuadros',
+        quoteOnly: true
+    },
     otros: {
         title: 'Otros Regalos',
         desc: 'Cuadros, llaveros, letreros y más regalos personalizados con grabado láser para cualquier ocasión.',
@@ -707,12 +723,13 @@ document.getElementById('collectionTitle').textContent = col.title;
 document.getElementById('collectionDesc').textContent = col.desc;
 
 // Inject Product + BreadcrumbList schema
+const SCHEMA_IMG = { ninos: 'lamp-ariel.webp', pareja: 'lamp-pareja.webp', empresas: 'lamp-empresas.webp', familia: 'lamp-mascotas.webp', memorial: 'lamp-memorial.webp', religiosas: 'lamp-religiosas.webp', cuadros: 'cuadro-multifoto.webp', otros: 'lamp-otros.webp' };
 const productSchema = {
     "@context": "https://schema.org",
     "@type": "Product",
     "name": `${col.productName} - Colección ${col.title}`,
     "description": col.productDesc,
-    "image": `https://app.dekoormx.com/sitio/img/lamp-${colId === 'ninos' ? 'ariel' : colId === 'otros' ? 'otros' : colId}.webp`,
+    "image": `https://app.dekoormx.com/sitio/img/${SCHEMA_IMG[colId] || 'lamp-otros.webp'}`,
     "brand": { "@type": "Brand", "name": "Dekoor" },
     "offers": {
         "@type": "Offer",
@@ -744,23 +761,65 @@ const breadcrumbSchema = {
         { "@type": "ListItem", "position": 3, "name": col.title, "item": `https://app.dekoormx.com/sitio/coleccion/?id=${colId}` }
     ]
 };
-[productSchema, breadcrumbSchema].forEach(schema => {
+(col.quoteOnly ? [breadcrumbSchema] : [productSchema, breadcrumbSchema]).forEach(schema => {
     const el = document.createElement('script');
     el.type = 'application/ld+json';
     el.textContent = JSON.stringify(schema);
     document.head.appendChild(el);
 });
 
-// Fotos estáticas por colección
+// Catálogo por colección: cada producto con nombre propio y copy de beneficio.
+// file = archivo dentro de img/col/<colId>/; src = ruta absoluta (para fotos que viven en img/)
 const PHOTOS = {
-    ninos: ["05362bc1-cbd9-4544-9942-a8e4dca17e0f.webp","064355fb-6395-4117-b23b-37437d4df249.webp","476210b4-377e-4bfd-a2ca-5482a7d18e66.webp","844daad1-9e38-4c93-88d7-1d4ec7cb02e7.webp","b6fec1a0-b953-4766-80a4-5aefa79e9cc0.webp","ecf5f6d6-b1ac-4802-9dd7-63ecf62e9492.webp"],
-    pareja: ["34b30e1c-d3e8-40d2-8630-d018fa69ac3b.webp","c10bc838-f275-4556-bf5f-9dba0748ebaa.webp"],
-    empresas: ["3f53f9ad-2ba8-49d1-9e50-fa29b435b24e.jpg","77ea673d-9f5b-488c-b683-61485a96ce5a.jpg","e19f9060-fabc-467d-a1c7-f3e8df6f0a33.webp","unnamed (5).webp"],
-    familia: ["460b38b0-4d38-4127-b508-bbb03e55660b.webp","559ea191-b2b9-41ce-8af3-cfde8c193065.webp","75626782-dc3b-4e3d-ba26-9bad0ad5e49d.webp"],
-    memorial: ["9058f734-a4d3-4806-bef6-40e646a1617c.webp"],
-    religiosas: ["25a2cc7b-5b1a-4062-a26e-55a5a895f14c.jpg","69a79735-4829-4261-b957-8f1559f5ff52.jpg","971a9992-1f6a-4de2-96c9-164dd9e87a84.jpg","fa0588e6-158e-4c81-aca5-ab0ad50a43b9.jpg"],
+    ninos: [
+        { file: "05362bc1-cbd9-4544-9942-a8e4dca17e0f.webp", name: "Princesa del Mar", desc: "Su sirena favorita vela sus sueños, con su nombre brillando bajo el mar" },
+        { file: "064355fb-6395-4117-b23b-37437d4df249.webp", name: "Antihéroe Favorito", desc: "El personaje que lo hace sentir invencible ahora cuida su noche" },
+        { file: "476210b4-377e-4bfd-a2ca-5482a7d18e66.webp", name: "Mundo Gamer", desc: "Sus personajes favoritos con su nombre, la luz que presume a sus amigos" },
+        { file: "844daad1-9e38-4c93-88d7-1d4ec7cb02e7.webp", name: "Pequeña Campeona", desc: "Su rutina en la viga con su nombre, una medalla que brilla cada noche" },
+        { file: "b6fec1a0-b953-4766-80a4-5aefa79e9cc0.webp", name: "Futuro Crack", desc: "Su ídolo y su nombre en el escudo, para soñar con el gol cada noche" },
+        { file: "ecf5f6d6-b1ac-4802-9dd7-63ecf62e9492.webp", name: "Dulce Fresita", desc: "Su personaje más tierno con su nombre, dulces sueños garantizados" },
+        { src: "/sitio/img/lamp-nino.webp", name: "Pequeño Astronauta", desc: "Su propio planeta con su nombre, para dormir soñando con estrellas" },
+        { src: "/sitio/img/lamp-baby.webp", name: "Sueños de Bebé", desc: "Su primera foto entre lunas y estrellas, un recuerdo que ilumina" }
+    ],
+    pareja: [
+        { file: "34b30e1c-d3e8-40d2-8630-d018fa69ac3b.webp", name: "Nosotros Dos", desc: "Su foto favorita juntos, la luz que cuenta su historia cada noche" },
+        { file: "c10bc838-f275-4556-bf5f-9dba0748ebaa.webp", name: "Amor Infinito", desc: "Nombres, fechas y un infinito: su historia convertida en luz" },
+        { src: "/sitio/img/lamp-couple.webp", name: "Juntos Hasta los Huesos", desc: "Su foto más divertida hecha luz, un amor que ni el tiempo asusta" }
+    ],
+    empresas: [
+        { file: "e19f9060-fabc-467d-a1c7-f3e8df6f0a33.webp", name: "Firma de Luz", desc: "El logo de tu despacho iluminado, presencia que impone respeto" },
+        { file: "unnamed (5).webp", name: "Marca Encendida", desc: "Tu logo brillando en recepción, la imagen que genera confianza" },
+        { file: "3f53f9ad-2ba8-49d1-9e50-fa29b435b24e.jpg", name: "Prestigio Médico", desc: "Tu especialidad hecha luz, el toque profesional de tu consultorio" },
+        { file: "77ea673d-9f5b-488c-b683-61485a96ce5a.jpg", name: "Orgullo de Ruta", desc: "Tu flota y tu nombre iluminados, la empresa que construiste brillando" }
+    ],
+    familia: [
+        { file: "460b38b0-4d38-4127-b508-bbb03e55660b.webp", name: "Huellas de Luz", desc: "Sus perritos iluminando la sala, homenaje a los más fieles de casa" },
+        { file: "559ea191-b2b9-41ce-8af3-cfde8c193065.webp", name: "Mi Primer Héroe", desc: "Papá y su niño con la frase que lo dice todo, un regalo que ilumina" },
+        { file: "75626782-dc3b-4e3d-ba26-9bad0ad5e49d.webp", name: "Mi Pequeña Estrella", desc: "Su carita y su nombre velando el cuarto, la compañía de cada noche" },
+        { src: "/sitio/img/lamp-family.webp", name: "Siempre Te Amaremos", desc: "Toda la familia en una placa de luz, dedicatoria eterna para papá" },
+        { src: "/sitio/img/lamp-familia2.webp", name: "Nuestro Apellido", desc: "El retrato familiar con su apellido, la luz que une su hogar" }
+    ],
+    memorial: [
+        { file: "9058f734-a4d3-4806-bef6-40e646a1617c.webp", name: "Siempre Conmigo", desc: "Su foto con luz cálida, un recuerdo encendido que lo mantiene cerca" }
+    ],
+    religiosas: [
+        { file: "25a2cc7b-5b1a-4062-a26e-55a5a895f14c.jpg", name: "Paz de Asís", desc: "San Francisco y sus aves con tu nombre, paz que acompaña tu hogar" },
+        { file: "69a79735-4829-4261-b957-8f1559f5ff52.jpg", name: "Sagrado Corazón", desc: "En vos confío: la promesa que ilumina tu hogar con luz cálida" },
+        { file: "971a9992-1f6a-4de2-96c9-164dd9e87a84.jpg", name: "Manto de Guadalupe", desc: "La Morenita con tu nombre, protección que se enciende al anochecer" },
+        { file: "fa0588e6-158e-4c81-aca5-ab0ad50a43b9.jpg", name: "Luz del Calvario", desc: "Cristo en luz dorada para el rincón de fe y oración de tu hogar" }
+    ],
+    cuadros: [
+        { src: "/sitio/img/cuadro2.webp", name: "Nuestra Historia", desc: "Sus fotos formando un corazón con la fecha en que empezó todo" },
+        { src: "/sitio/img/cuadro-multifoto.webp", name: "Corazón de Recuerdos", desc: "Cada foto un momento juntos, un corazón que decora su pared" },
+        { src: "/sitio/img/cuadros-pared.webp", name: "Muro de Momentos", desc: "Sus recuerdos en mosaicos que convierten la pared en su historia" }
+    ],
     otros: []
 };
+
+function waLinkFor(name) {
+    const msg = `Hola Dekoor, me encanta el modelo "${name}" de la colección ${col.title} y quiero uno con mi foto. ¿Me ayudan?`;
+    return `https://wa.me/${WA}?text=${encodeURIComponent(msg)}`;
+}
 
 function loadProducts() {
     const grid = document.getElementById('productsGrid');
@@ -778,31 +837,44 @@ function loadProducts() {
         return;
     }
 
-    grid.innerHTML = photos.map(filename => {
-        const url = `/sitio/img/col/${colId}/${encodeURIComponent(filename)}`;
-        const waMsg = encodeURIComponent(`Hola Dekoor, me interesa este producto de la colección ${col.title}`);
+    grid.innerHTML = photos.map(p => {
+        const url = p.src || `/sitio/img/col/${colId}/${encodeURIComponent(p.file)}`;
+        const pricing = col.quoteOnly
+            ? `<div class="product-card-pricing">
+                    <div class="price-row"><span class="price-current" style="font-size:1.05rem;">Precio según tamaño</span></div>
+                    <div class="price-shipping"><i class="fab fa-whatsapp"></i> Cotización gratis en minutos</div>
+               </div>`
+            : `<div class="product-card-pricing">
+                    <div class="price-row">
+                        <span class="price-original">${originalStr()}</span>
+                        <span class="price-current">${priceStr()} <small>MXN</small></span>
+                    </div>
+                    <div class="price-shipping"><i class="fas fa-truck"></i> Envío gratis</div>
+               </div>`;
+        const buttons = col.quoteOnly
+            ? `<a href="${waLinkFor(p.name)}" target="_blank" rel="noopener" class="product-card-btn whatsapp" style="width:100%;justify-content:center;">
+                    <i class="fab fa-whatsapp"></i> Cotizar por WhatsApp
+               </a>`
+            : `<a href="${waLinkFor(p.name)}" target="_blank" rel="noopener" class="product-card-btn whatsapp" style="width:100%;justify-content:center;">
+                    <i class="fab fa-whatsapp"></i> Lo quiero con mi foto
+               </a>
+               <button onclick="addToCart('${url}', '${p.name}')" class="product-card-btn" style="width:100%;justify-content:center;">
+                    <i class="fas fa-cart-plus"></i> Agregar al carrito
+               </button>
+               <button onclick="openCheckout('${url}', '${p.name}')" class="product-card-btn secondary" style="width:100%;justify-content:center;">
+                    <i class="fas fa-credit-card"></i> Pagar en línea
+               </button>`;
         return `
             <div class="product-card">
                 <div class="product-card-img">
-                    <img src="${url}" alt="${col.productName} - ${col.title}" loading="lazy">
+                    <img src="${url}" alt="${p.name} - ${col.productName} colección ${col.title}" loading="lazy">
                 </div>
                 <div class="product-card-body">
-                    <div class="product-card-name">${col.productName}</div>
-                    <div class="product-card-desc">${col.productDesc}</div>
-                    <div class="product-card-pricing">
-                        <div class="price-row">
-                            <span class="price-original">${originalStr()}</span>
-                            <span class="price-current">${priceStr()} <small>MXN</small></span>
-                        </div>
-                        <div class="price-shipping"><i class="fas fa-truck"></i> Envío gratis</div>
-                    </div>
+                    <div class="product-card-name">${p.name}</div>
+                    <div class="product-card-desc">${p.desc}</div>
+                    ${pricing}
                     <div class="product-card-buttons">
-                        <button onclick="addToCart('${url}', '${col.productName}')" class="product-card-btn" style="width:100%;justify-content:center;">
-                            <i class="fas fa-cart-plus"></i> Agregar al carrito
-                        </button>
-                        <button onclick="openCheckout('${url}', '${col.productName}')" class="product-card-btn secondary" style="width:100%;justify-content:center;">
-                            <i class="fas fa-credit-card"></i> Pagar en linea
-                        </button>
+                        ${buttons}
                     </div>
                 </div>
             </div>`;
@@ -902,7 +974,7 @@ mobileMenu.querySelector('.mobile-menu-close').addEventListener('click', functio
 </script>
 
 <!-- Cookie Banner (LFPDPPP) -->
-<div id="cookieBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;background:#1B4D5C;color:#fff;padding:1rem 1.5rem;z-index:9999;font-size:0.9rem;box-shadow:0 -4px 20px rgba(0,0,0,0.15);">
+<div id="cookieBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;background:#1B4D5C;color:#fff;padding:1rem 1.5rem;z-index:95;font-size:0.9rem;box-shadow:0 -4px 20px rgba(0,0,0,0.15);">
     <div style="max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
         <p style="margin:0;flex:1;min-width:200px;">Usamos cookies para mejorar tu experiencia. Al continuar, aceptas nuestra <a href="/privacidad/" style="color:#D4722C;text-decoration:underline;">Política de Privacidad</a>.</p>
         <div style="display:flex;gap:0.75rem;">
@@ -912,7 +984,17 @@ mobileMenu.querySelector('.mobile-menu-close').addEventListener('click', functio
     </div>
 </div>
 <script>
-if(!localStorage.getItem('cookie_consent'))document.getElementById('cookieBanner').style.display='block';
+// Mientras el banner de cookies esté visible, subir el FAB de WhatsApp para que no quede tapado
+function ajustaFabCookies(){
+    var b=document.getElementById('cookieBanner'),f=document.querySelector('.whatsapp-fab');
+    if(!b||!f)return;
+    f.style.bottom=(b.style.display==='block')?(b.offsetHeight+16)+'px':'';
+}
+if(!localStorage.getItem('cookie_consent')){
+    document.getElementById('cookieBanner').style.display='block';
+    ajustaFabCookies();
+    document.querySelectorAll('#cookieBanner button').forEach(function(btn){btn.addEventListener('click',ajustaFabCookies);});
+}
 if(localStorage.getItem('cookie_consent')==='rejected')window['ga-disable-G-9LPWQEBBGG']=true;
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
