@@ -1415,6 +1415,12 @@ body {
     transform: translateY(0);
 }
 
+/* Sin JS (html sin .js-ready) nadie agregará .visible: mostrar todo */
+html:not(.js-ready) .fade-section {
+    opacity: 1;
+    transform: none;
+}
+
 /* ============================================================
    HERO CTAs
    ============================================================ */
@@ -1882,12 +1888,10 @@ body {
 
     .hero-inner { grid-template-columns: 1fr; }
 
-    .hero-visual {
-        order: -1;
-    }
-
+    /* En móvil el texto va primero: quien llega de un ad debe ver el titular
+       y los CTAs sin hacer scroll; la foto queda justo debajo */
     .carousel {
-        max-width: 320px;
+        max-width: 280px;
         margin: 0 auto;
     }
 

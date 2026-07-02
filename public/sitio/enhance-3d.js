@@ -63,6 +63,10 @@
       state.on = false; state.rx = 0; state.ry = 0; rect = null;
       el.classList.remove('is-tilting');
       schedule();
+      // Limpiar el transform inline al terminar, para no pisar el :hover del CSS base
+      setTimeout(function () {
+        if (!state.on) el.style.transform = '';
+      }, 350);
     });
   }
 
@@ -81,6 +85,9 @@
      2) PARTÍCULAS / BOKEH EN EL HERO
      ---------------------------------------------------------- */
   function initParticles() {
+    // Solo en desktop con mouse: en móvil el canvas a 60fps gasta CPU/batería sin aportar
+    if (window.matchMedia && !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+
     var hero = document.querySelector('.hero');
     if (!hero) return;
 
@@ -117,7 +124,10 @@
       }
     }
 
+    var running = false;
+
     function frame() {
+      if (!running) return;
       ctx.clearRect(0, 0, W, H);
       for (var i = 0; i < dots.length; i++) {
         var d = dots[i];
@@ -135,9 +145,26 @@
       requestAnimationFrame(frame);
     }
 
+    function setRunning(on) {
+      if (on && !running) { running = true; requestAnimationFrame(frame); }
+      else if (!on) { running = false; }
+    }
+
     build();
     requestAnimationFrame(function () { canvas.classList.add('on'); });
-    frame();
+
+    // Pausar el loop cuando el hero no está en pantalla o la pestaña está oculta
+    var heroVisible = true;
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        heroVisible = entries.some(function (e) { return e.isIntersecting; });
+        setRunning(heroVisible && !document.hidden);
+      }).observe(hero);
+    }
+    document.addEventListener('visibilitychange', function () {
+      setRunning(heroVisible && !document.hidden);
+    });
+    setRunning(true);
 
     var rt;
     window.addEventListener('resize', function () {

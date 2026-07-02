@@ -712,6 +712,39 @@ function parseCSV(text) {
     });
 }
 
+// Referencias aprobadas para el carrusel del home del sitio público.
+// Evita que la landing cargue el SDK completo de Firebase solo para esto.
+let referenciasHomeCache = { data: null, timestamp: 0 };
+router.get('/referencias/home', async (req, res) => {
+    try {
+        // Cache en memoria 10 min
+        if (referenciasHomeCache.data && Date.now() - referenciasHomeCache.timestamp < 10 * 60 * 1000) {
+            return res.json(referenciasHomeCache.data);
+        }
+        const snap = await db.collection('referencias')
+            .where('aprobado', '==', true)
+            .orderBy('fecha', 'desc')
+            .limit(30)
+            .get();
+        const refs = snap.docs.map(doc => {
+            const r = doc.data();
+            return {
+                nombre: r.nombre || '',
+                ciudad: r.ciudad || '',
+                rating: Number(r.rating) || 5,
+                texto: r.texto || '',
+                foto: r.foto || '',
+                fotos: Array.isArray(r.fotos) ? r.fotos : []
+            };
+        });
+        referenciasHomeCache = { data: refs, timestamp: Date.now() };
+        res.json(refs);
+    } catch (error) {
+        console.error('[REFERENCIAS HOME] Error:', error.message);
+        res.status(500).json({ error: 'Error cargando referencias' });
+    }
+});
+
 router.get('/referencias/mapa', async (req, res) => {
     try {
         // Cache en memoria 2h
@@ -6421,13 +6454,23 @@ router.post('/orders', async (req, res) => {
         }
 
         // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
-        await contactRef.update({
+        const contactUpdate = {
             lastOrderNumber: newOrderNumber,
             lastOrderDate: nuevoPedido.createdAt,
             purchaseStatus: 'registered',
             purchaseValue: totalValue,
             purchaseDate: admin.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        // Registrar un pedido resuelve la revisión pendiente: quitar la etiqueta
+        // "Pendientes de revisión IA" si el contacto la tenía.
+        try {
+            const contactSnap = await contactRef.get();
+            if (contactSnap.exists && contactSnap.data().status === 'pendientes_ia') {
+                contactUpdate.status = null;
+                console.log(`[ORDERS] Contacto ${contactId}: etiqueta pendientes_ia quitada al registrar el pedido DH${newOrderNumber}.`);
+            }
+        } catch (_) { /* si la lectura falla, el update principal continúa igual */ }
+        await contactRef.update(contactUpdate);
 
         // Métrica de rescate: si este contacto fue contactado por el seguimiento de IA
         // recientemente, contabilizar el pedido como recuperación (fire-and-forget).

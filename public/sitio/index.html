@@ -50,16 +50,16 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
     <!-- Preload critical resources -->
-    <link rel="preload" href="/sitio/style.css" as="style">
-    <link rel="preload" href="/sitio/img/carousel/1.webp" as="image">
+    <link rel="preload" href="/sitio/img/carousel/1.webp" as="image" fetchpriority="high">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" as="style">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" as="style">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
     <link rel="stylesheet" href="/sitio/style.css">
     <link rel="stylesheet" href="/sitio/enhance-3d.css">
+    <!-- Marca temprana de JS activo: el CSS solo oculta .fade-section si el JS va a poder revelarlas -->
+    <script>document.documentElement.className += ' js-ready';</script>
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -262,7 +262,7 @@
 <!-- ========== HERO ========== -->
 <section class="hero" id="inicio">
     <div class="hero-inner">
-        <div class="hero-text fade-section">
+        <div class="hero-text">
             <h1>LÁMPARAS PERSONALIZADAS<br>QUE CUENTAN TU HISTORIA</h1>
             <p class="hero-subtitle">Lámparas personalizadas con foto, nombre o frase. Elige un modelo, mándanos tu idea y te mostramos cómo quedaría antes de pagar.</p>
             <div class="hero-ctas">
@@ -280,13 +280,13 @@
                 <div class="trust-item"><i class="fas fa-camera"></i> Por WhatsApp, pagas al ver tu pedido</div>
             </div>
         </div>
-        <div class="hero-visual fade-section">
+        <div class="hero-visual">
             <div class="carousel" id="heroCarousel">
                 <div class="carousel-track">
-                    <img src="/sitio/img/carousel/1.webp" alt="Lámpara 3D personalizada con foto de pareja grabada con láser - Dekoor" class="carousel-slide active" width="600" height="600">
-                    <img src="/sitio/img/carousel/2.webp" alt="Lámpara 3D personalizada con foto de mascota grabada con láser - Dekoor" class="carousel-slide" width="600" height="600" loading="lazy">
-                    <img src="/sitio/img/carousel/3.webp" alt="Lámpara 3D personalizada para niños con personaje favorito - Dekoor" class="carousel-slide" width="600" height="600" loading="lazy">
-                    <img src="/sitio/img/carousel/4.webp" alt="Lámpara 3D memorial personalizada con foto de ser querido - Dekoor" class="carousel-slide" width="600" height="600" loading="lazy">
+                    <img src="/sitio/img/carousel/1.webp" alt="Lámpara 3D personalizada con foto de pareja grabada con láser - Dekoor" class="carousel-slide active" width="600" height="800" fetchpriority="high">
+                    <img src="/sitio/img/carousel/2.webp" alt="Lámpara 3D personalizada con foto de mascota grabada con láser - Dekoor" class="carousel-slide" width="600" height="800" loading="lazy">
+                    <img src="/sitio/img/carousel/3.webp" alt="Lámpara 3D personalizada para niños con personaje favorito - Dekoor" class="carousel-slide" width="600" height="800" loading="lazy">
+                    <img src="/sitio/img/carousel/4.webp" alt="Lámpara 3D memorial personalizada con foto de ser querido - Dekoor" class="carousel-slide" width="600" height="800" loading="lazy">
                 </div>
                 <div class="carousel-dots">
                     <button class="carousel-dot active" data-index="0" aria-label="Imagen 1"></button>
@@ -367,7 +367,7 @@
             </a>
             <a href="/sitio/coleccion/religiosas/" class="collection-card-v2" aria-label="Ver modelos de la colección Religiosas">
                 <div class="collection-img-v2">
-                    <img src="/sitio/img/col/religiosas/69a79735-4829-4261-b957-8f1559f5ff52.jpg" alt="Colección de lámparas 3D religiosas con vírgenes y santos grabados con láser" loading="lazy" width="400" height="400">
+                    <img src="/sitio/img/col/religiosas/69a79735-4829-4261-b957-8f1559f5ff52.webp" alt="Colección de lámparas 3D religiosas con vírgenes y santos grabados con láser" loading="lazy" width="400" height="400">
                 </div>
                 <div class="collection-card-info">
                     <div class="collection-name">Religiosas</div>
@@ -663,20 +663,16 @@ if (localStorage.getItem('cookie_consent') === 'rejected') {
 }
 </script>
 
-<!-- Config & Cart -->
-<script src="/env-config.js"></script>
-<script src="/sitio/config.js"></script>
-<script src="/sitio/cart.js"></script>
-
-<!-- Firebase -->
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-<!-- Leaflet -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-<script src="/sitio/script.js"></script>
+<!-- Config & Cart. Todos con defer: no bloquean el primer render del hero.
+     Firebase y Leaflet ya no se cargan aquí: los testimonios usan el endpoint
+     /api/referencias/home y Leaflet se inyecta solo cuando el mapa entra al viewport. -->
+<script src="/env-config.js" defer></script>
+<script src="/sitio/config.js" defer></script>
+<script src="/sitio/cart.js" defer></script>
+<script src="/sitio/script.js" defer></script>
 
 <!-- Mejoras 3D / animadas (capa aditiva) -->
-<script src="/sitio/enhance-3d.js"></script>
+<script src="/sitio/enhance-3d.js" defer></script>
 
 <!-- Service Worker Registration -->
 <script>

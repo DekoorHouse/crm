@@ -48,7 +48,7 @@
     <link rel="preload" href="/sitio/style.css" as="style">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="/sitio/style.css">
     <style>
@@ -399,7 +399,7 @@
             padding: 10px 14px;
             border: 2px solid var(--border);
             border-radius: var(--radius);
-            font-size: 0.95rem;
+            font-size: 1rem; /* mínimo 16px: evita el zoom forzado de iOS al enfocar */
             font-family: inherit;
             transition: border-color 0.2s;
             box-sizing: border-box;
@@ -534,7 +534,7 @@
         <div style="max-width:500px;margin:0 auto 1.5rem;">
             <div style="position:relative;">
                 <input type="search" id="productSearch" placeholder="Buscar productos..." aria-label="Buscar productos"
-                    style="width:100%;padding:12px 14px 12px 42px;border:2px solid var(--border);border-radius:9999px;font-size:0.95rem;font-family:inherit;outline:none;transition:border-color 0.2s;background:var(--white);"
+                    style="width:100%;padding:12px 14px 12px 42px;border:2px solid var(--border);border-radius:9999px;font-size:1rem;font-family:inherit;outline:none;transition:border-color 0.2s;background:var(--white);"
                     onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
                 <i class="fas fa-search" style="position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--text-medium);"></i>
             </div>
@@ -796,8 +796,8 @@ const PHOTOS = {
     empresas: [
         { file: "e19f9060-fabc-467d-a1c7-f3e8df6f0a33.webp", name: "Firma de Luz", desc: "El logo de tu despacho iluminado, presencia que impone respeto" },
         { file: "unnamed (5).webp", name: "Marca Encendida", desc: "Tu logo brillando en recepción, la imagen que genera confianza" },
-        { file: "3f53f9ad-2ba8-49d1-9e50-fa29b435b24e.jpg", name: "Prestigio Médico", desc: "Tu especialidad hecha luz, el toque profesional de tu consultorio" },
-        { file: "77ea673d-9f5b-488c-b683-61485a96ce5a.jpg", name: "Orgullo de Ruta", desc: "Tu flota y tu nombre iluminados, la empresa que construiste brillando" }
+        { file: "3f53f9ad-2ba8-49d1-9e50-fa29b435b24e.webp", name: "Prestigio Médico", desc: "Tu especialidad hecha luz, el toque profesional de tu consultorio" },
+        { file: "77ea673d-9f5b-488c-b683-61485a96ce5a.webp", name: "Orgullo de Ruta", desc: "Tu flota y tu nombre iluminados, la empresa que construiste brillando" }
     ],
     familia: [
         { file: "460b38b0-4d38-4127-b508-bbb03e55660b.webp", name: "Huellas de Luz", desc: "Sus perritos iluminando la sala, homenaje a los más fieles de casa" },
@@ -810,10 +810,10 @@ const PHOTOS = {
         { file: "9058f734-a4d3-4806-bef6-40e646a1617c.webp", name: "Siempre Conmigo", desc: "Su foto con luz cálida, un recuerdo encendido que lo mantiene cerca" }
     ],
     religiosas: [
-        { file: "25a2cc7b-5b1a-4062-a26e-55a5a895f14c.jpg", name: "Paz de Asís", desc: "San Francisco y sus aves con tu nombre, paz que acompaña tu hogar" },
-        { file: "69a79735-4829-4261-b957-8f1559f5ff52.jpg", name: "Sagrado Corazón", desc: "En vos confío: la promesa que ilumina tu hogar con luz cálida" },
-        { file: "971a9992-1f6a-4de2-96c9-164dd9e87a84.jpg", name: "Manto de Guadalupe", desc: "La Morenita con tu nombre, protección que se enciende al anochecer" },
-        { file: "fa0588e6-158e-4c81-aca5-ab0ad50a43b9.jpg", name: "Luz del Calvario", desc: "Cristo en luz dorada para el rincón de fe y oración de tu hogar" }
+        { file: "25a2cc7b-5b1a-4062-a26e-55a5a895f14c.webp", name: "Paz de Asís", desc: "San Francisco y sus aves con tu nombre, paz que acompaña tu hogar" },
+        { file: "69a79735-4829-4261-b957-8f1559f5ff52.webp", name: "Sagrado Corazón", desc: "En vos confío: la promesa que ilumina tu hogar con luz cálida" },
+        { file: "971a9992-1f6a-4de2-96c9-164dd9e87a84.webp", name: "Manto de Guadalupe", desc: "La Morenita con tu nombre, protección que se enciende al anochecer" },
+        { file: "fa0588e6-158e-4c81-aca5-ab0ad50a43b9.webp", name: "Luz del Calvario", desc: "Cristo en luz dorada para el rincón de fe y oración de tu hogar" }
     ],
     cuadros: [
         { src: "/sitio/img/cuadro2.webp", name: "Nuestra Historia", desc: "Sus fotos formando un corazón con la fecha en que empezó todo" },

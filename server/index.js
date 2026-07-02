@@ -269,7 +269,18 @@ app.get('/sitio/coleccion/:id', (req, res, next) => {
 });
 
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Caché HTTP: sin esto cada visita revalida cada recurso contra Render (default max-age=0).
+// Imágenes/fuentes 7 días (los reemplazos de fotos usan nombres nuevos o toleran 7d),
+// CSS/JS 1 hora (el sitio además se actualiza vía CACHE_NAME del service worker).
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+    setHeaders: (res, filePath) => {
+        if (/\.(webp|jpe?g|png|gif|svg|ico|woff2?|ttf)$/i.test(filePath)) {
+            res.setHeader('Cache-Control', 'public, max-age=604800');
+        } else if (/\.(css|js)$/i.test(filePath)) {
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+        }
+    }
+}));
 
 // --- NUEVA APP NEXT.JS ---
 const nextjsDir = path.join(__dirname, '..', 'public', 'nextjs');

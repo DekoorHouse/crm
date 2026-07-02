@@ -2,17 +2,6 @@
    DEKOOR - Sitio Web Principal - Script
    ============================================================ */
 
-// --- Firebase Init ---
-const firebaseConfig = {
-    apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
-    authDomain: "pedidos-con-gemini.firebaseapp.com",
-    projectId: "pedidos-con-gemini",
-    storageBucket: "pedidos-con-gemini.firebasestorage.app",
-    messagingSenderId: "300825194175",
-    appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
 const API_BASE_URL = window.API_BASE_URL || '';
 
 // Las fotos viven en un bucket con acceso uniforme (UBLA): las URLs públicas
@@ -142,7 +131,8 @@ function closeLightbox() {
 }
 
 // ============================================================
-// TESTIMONIALS CAROUSEL (Firebase) - Loop infinito + fotos
+// TESTIMONIALS CAROUSEL - Loop infinito + fotos
+// (via /api/referencias/home; ya no carga el SDK de Firebase)
 // ============================================================
 let tcIndex = 0;
 let tcTotal = 0;
@@ -152,21 +142,16 @@ function loadTestimonials() {
     const track = document.getElementById('testimonialsTrack');
     if (!track) return;
 
-    db.collection('referencias')
-        .where('aprobado', '==', true)
-        .orderBy('fecha', 'desc')
-        .limit(30)
-        .get()
-        .then(snapshot => {
-            if (snapshot.empty) {
+    fetch(API_BASE_URL + '/api/referencias/home')
+        .then(res => res.ok ? res.json() : [])
+        .then(refs => {
+            // Solo mostrar referencias con foto en el home
+            const approved = (refs || []).filter(ref => (ref.fotos && ref.fotos.length > 0) || ref.foto);
+
+            if (!approved.length) {
                 track.innerHTML = '<p style="text-align:center;color:var(--text-medium);padding:2rem;">Próximamente nuevas referencias.</p>';
                 return;
             }
-
-            // Solo mostrar referencias con foto en el home
-            const approved = snapshot.docs
-                .map(doc => doc.data())
-                .filter(ref => (ref.fotos && ref.fotos.length > 0) || ref.foto);
 
             let html = '';
             approved.forEach(ref => {
@@ -274,8 +259,38 @@ document.getElementById('tcNext')?.addEventListener('click', () => { stopTcAutop
 window.addEventListener('resize', () => { sizeCards(); tcIndex = 0; slideTc(0); });
 
 // ============================================================
-// MAP (Leaflet)
+// MAP (Leaflet) — se carga bajo demanda cuando el mapa se acerca
+// al viewport, para no pagar ~57KB gzip + tiles en la carga inicial
 // ============================================================
+function lazyLoadMapa() {
+    const mapEl = document.getElementById('deliveryMap');
+    if (!mapEl) return;
+    let started = false;
+    function start() {
+        if (started) return;
+        started = true;
+        const css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(css);
+        const js = document.createElement('script');
+        js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        js.onload = loadMapa;
+        document.head.appendChild(js);
+    }
+    if ('IntersectionObserver' in window) {
+        const io = new IntersectionObserver((entries) => {
+            if (entries.some(e => e.isIntersecting)) {
+                io.disconnect();
+                start();
+            }
+        }, { rootMargin: '400px' });
+        io.observe(mapEl);
+    } else {
+        start();
+    }
+}
+
 function loadMapa() {
     const mapEl = document.getElementById('deliveryMap');
     if (!mapEl) return;
@@ -501,5 +516,5 @@ function tiempoRelativo(isoStr) {
 // ============================================================
 initCarousel();
 loadTestimonials();
-loadMapa();
+lazyLoadMapa();
 loadPedidosRecientes();
