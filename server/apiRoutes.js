@@ -6467,6 +6467,9 @@ router.post('/orders', async (req, res) => {
             const contactSnap = await contactRef.get();
             if (contactSnap.exists && contactSnap.data().status === 'pendientes_ia') {
                 contactUpdate.status = null;
+                // Igual que PUT /contacts/:id/status: bump para que el listener del frontend
+                // (filtra por lastMessageTimestamp > carga de la app) vea el cambio en vivo.
+                contactUpdate.lastMessageTimestamp = admin.firestore.FieldValue.serverTimestamp();
                 console.log(`[ORDERS] Contacto ${contactId}: etiqueta pendientes_ia quitada al registrar el pedido DH${newOrderNumber}.`);
             }
         } catch (_) { /* si la lectura falla, el update principal continúa igual */ }

@@ -2489,10 +2489,14 @@ const NewOrderItemRowTemplate = (index, isFirst = false) => {
 const NewOrderModalTemplate = () => `
     <div id="new-order-modal" class="modal-overlay">
         <div class="modal-content" id="modalContentNuevoPedido">
-            <button onclick="closeNewOrderModal()" class="modal-close-btn" title="Cerrar">&times;</button>
             <div id="nuevoPedidoContainer">
                  <h2 id="modalTitle"><i class="fas fa-pencil-alt"></i> Registrar Nuevo Pedido</h2>
                  <form id="formularioNuevoPedido">
+                     <div class="form-actions-top">
+                          <div id="mensajeErrorPedido"></div>
+                          <button type="submit" id="btnGuardarPedido" class="icon-action-btn icon-action-btn-primary" title="Guardar pedido"><i class="fas fa-save"></i></button>
+                          <button type="button" onclick="closeNewOrderModal()" class="icon-action-btn" title="Cancelar"><i class="fas fa-times"></i></button>
+                     </div>
                      <div class="form-grid">
                          <div class="form-item">
                              <label for="pedidoTelefono">Teléfono (*):</label>
@@ -2510,6 +2514,11 @@ const NewOrderModalTemplate = () => `
                                 <i class="fas fa-cog"></i> Editar productos
                              </button>
                          </div>
+
+                        <div class="form-item form-item-full">
+                               <label for="pedidoComentarios">Comentarios Adicionales:</label>
+                               <textarea id="pedidoComentarios" placeholder="Añade cualquier otra nota relevante sobre el pedido..."></textarea>
+                        </div>
 
                           <div class="form-item form-item-full">
                                <label for="pedidoFotoFile">Fotos del Pedido (Clic derecho o Ctrl+C para copiar):</label>
@@ -2552,11 +2561,6 @@ const NewOrderModalTemplate = () => `
                             <textarea id="pedidoDatosPromocion" placeholder="Describe la promoción aplicada, si existe..."></textarea>
                         </div>
 
-                        <div class="form-item form-item-full">
-                               <label for="pedidoComentarios">Comentarios Adicionales:</label>
-                               <textarea id="pedidoComentarios" placeholder="Añade cualquier otra nota relevante sobre el pedido..."></textarea>
-                        </div>
-
                         <!-- Tracking de campaña (opcional) -->
                         <div class="form-item form-item-full" style="background:#f8f9fa;padding:14px;border-radius:10px;border:1px solid #e2e8f0;">
                             <div style="display:flex;align-items:center;gap:8px;">
@@ -2579,11 +2583,6 @@ const NewOrderModalTemplate = () => `
                                 </div>
                             </div>
                         </div>
-                     </div>
-                     <div id="mensajeErrorPedido"></div>
-                     <div class="form-actions">
-                          <button type="button" onclick="closeNewOrderModal()"><i class="fas fa-times"></i> Cancelar</button>
-                          <button type="submit" id="btnGuardarPedido"><i class="fas fa-save"></i> Guardar Pedido</button>
                      </div>
                  </form>
             </div>

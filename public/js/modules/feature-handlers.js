@@ -336,7 +336,8 @@ async function handleSaveOrder(event) {
 
     // --- 2. Deshabilitar formulario y mostrar estado de carga ---
     saveButton.disabled = true;
-    saveButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Guardando...';
+    saveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    saveButton.title = 'Guardando…';
     errorMessageEl.textContent = ''; // Limpiar errores previos
 
     try {
@@ -360,7 +361,8 @@ async function handleSaveOrder(event) {
             return await Promise.all(uploadPromises);
         }
 
-        saveButton.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i> Subiendo fotos...';
+        saveButton.innerHTML = '<i class="fas fa-cloud-upload-alt"></i>';
+        saveButton.title = 'Subiendo fotos…';
         const finalOrderPhotoUrls = await uploadPhotos(orderPhotosManager, 'pedidos');
         const finalPromoPhotoUrls = await uploadPhotos(promoPhotosManager, 'promociones');
 
@@ -368,7 +370,8 @@ async function handleSaveOrder(event) {
         orderData.fotoPromocionUrls = finalPromoPhotoUrls;
 
         // --- 4. Enviar datos al backend para crear el pedido ---
-        saveButton.innerHTML = '<i class="fas fa-database mr-2"></i> Creando registro...';
+        saveButton.innerHTML = '<i class="fas fa-database"></i>';
+        saveButton.title = 'Creando registro…';
         const response = await fetch(`${API_BASE_URL}/api/orders`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -396,7 +399,8 @@ async function handleSaveOrder(event) {
         errorMessageEl.textContent = error.message;
     } finally {
         saveButton.disabled = false;
-        saveButton.innerHTML = '<i class="fas fa-save mr-2"></i> Guardar Pedido';
+        saveButton.innerHTML = '<i class="fas fa-save"></i>';
+        saveButton.title = 'Guardar pedido';
     }
 }
 // --- END: New Order Logic ---
