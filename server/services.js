@@ -1808,14 +1808,20 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 
             // Marcador de salto de tiempo: sin esto el modelo trata mensajes de hace meses
             // como si fueran de hace un momento (ej. responder a "está lloviendo" de enero).
+            // En pausas GRANDES (>=30 días) el marcador además instruye qué hacer: decir
+            // solo "(7 meses después)" no bastó — la IA reutilizaba nombres de noviembre
+            // como si fueran de ayer ("Ya anoté los nombres de...").
             const msgMs = (d.timestamp && typeof d.timestamp.toMillis === 'function') ? d.timestamp.toMillis() : null;
             let gapNote = '';
             if (msgMs && prevMsgMs && (msgMs - prevMsgMs) >= 6 * 60 * 60 * 1000) {
                 const hours = Math.round((msgMs - prevMsgMs) / (60 * 60 * 1000));
                 const days = Math.round(hours / 24);
-                gapNote = days >= 60 ? `(${Math.round(days / 30)} meses después) `
-                    : hours >= 48 ? `(${days} días después) `
-                    : `(${hours} horas después) `;
+                if (days >= 30) {
+                    const lapso = days >= 60 ? `${Math.round(days / 30)} meses` : `${days} días`;
+                    gapNote = `(⚠️ pasaron ${lapso} sin conversación: todo lo anterior a esta marca es ANTIGUO. Nombres, fechas, cantidades y datos de arriba pueden ya no ser válidos — confírmalos con el cliente antes de usarlos, y los precios/promociones son SIEMPRE los actuales, no los de arriba) `;
+                } else {
+                    gapNote = hours >= 48 ? `(${days} días después) ` : `(${hours} horas después) `;
+                }
             }
             if (msgMs) prevMsgMs = msgMs;
 
