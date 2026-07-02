@@ -1,5 +1,5 @@
 /**
- * Mini-server local para probar el sitio /sitio/ y /datos-envio/ sin Firebase.
+ * Mini-server local para probar el sitio /sitio/ sin Firebase.
  * Mockea los endpoints que el frontend usa. Persiste ordenes de transferencia
  * en memoria para probar el flujo end-to-end (checkout -> form pre-llenado).
  * Uso: node scripts/test-sitio-local.js
@@ -95,38 +95,6 @@ app.post('/api/pagos/transferencia', (req, res) => {
     });
 });
 
-// GET /api/jt-guias/verificar-pedido/:orderNumber (MOCK)
-app.get('/api/jt-guias/verificar-pedido/:orderNumber', (req, res) => {
-    const { orderNumber } = req.params;
-    if (!/^DH\d+$/i.test(orderNumber)) {
-        return res.status(400).json({
-            success: false,
-            code: 'FORMATO_INVALIDO',
-            message: 'El numero de pedido debe comenzar con DH seguido de numeros (ej: DH1042).'
-        });
-    }
-
-    const pedido = mockOrders.get(orderNumber.toUpperCase());
-    if (!pedido) {
-        return res.status(404).json({
-            success: false,
-            code: 'PEDIDO_NO_ENCONTRADO',
-            message: `No encontramos el pedido ${orderNumber}. (En local: primero crea uno via checkout con transferencia.)`
-        });
-    }
-
-    const telefonoLimpio = String(pedido.telefono || '').replace(/\D/g, '').slice(-10);
-    const telefonoMasked = telefonoLimpio.length >= 4 ? `******${telefonoLimpio.slice(-4)}` : '****';
-
-    res.json({
-        success: true,
-        orderNumber: orderNumber.toUpperCase(),
-        telefonoMasked,
-        telefonoCompleto: telefonoLimpio,
-        envioPrefill: pedido.envioPrefill || null
-    });
-});
-
 // POST /api/carritos-abandonados (MOCK)
 app.post('/api/carritos-abandonados', (req, res) => {
     const body = req.body || {};
@@ -167,11 +135,6 @@ app.post('/api/mercadopago/checkout', (_req, res) => {
     });
 });
 
-// Serve datos-envio/index.html for /datos-envio/DH#### (like en produccion con Firebase hosting rewrite)
-app.get(/^\/datos-envio\/DH\d+\/?$/i, (_req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'datos-envio', 'index.html'));
-});
-
 // Static files
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
@@ -179,5 +142,4 @@ const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`\n  ✅ Mock server corriendo en http://localhost:${PORT}\n`);
     console.log(`  1) Checkout: http://localhost:${PORT}/sitio/checkout/?name=Christian&phone=6182297167&email=test@test.com&shipping=dhl&product=Lampara+3D&collection=Pareja&subtotal=650&qty=1&street=Juan+Lira+519&colonia=Juan+Lira+Bracho&city=Durango&state=Durango&zip=34188`);
-    console.log(`  2) Despues de crear orden: http://localhost:${PORT}/datos-envio/DH9001 (o el numero que muestre el console log)\n`);
 });

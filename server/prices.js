@@ -10,8 +10,8 @@
 const PRICES = {
     productUnitPrice: 650,        // MXN por lampara (precio de venta)
     productOriginalPrice: 780,    // MXN precio original (tachado, muestra descuento)
-    shippingJtCost: 0,            // MXN - J&T Express (gratis)
-    shippingDhlCost: 160,         // MXN - DHL Express
+    shippingJtCost: 0,            // MXN - envío estándar (gratis)
+    shippingDhlCost: 0,           // MXN - DHL (envío gratis, tarifa única)
     currency: 'MXN',
     maxQty: 50                    // limite anti-abuso
 };

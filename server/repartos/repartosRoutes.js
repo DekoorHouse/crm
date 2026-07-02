@@ -429,8 +429,7 @@ router.put('/admin/entrega/:id', requireAdmin, async (req, res) => {
 });
 
 // --- CRM: enviar al cliente el enlace del formulario MTY (botón del chat) ----
-// Mismo patrón que /api/jt-guias/pedir-datos, pero manda el enlace /mty/DHxxxx
-// (entrega local) en vez de la guía nacional J&T.
+// Manda el enlace /mty/DHxxxx (entrega local en Monterrey) al chat del cliente.
 router.post('/pedir-datos/:contactId', async (req, res) => {
     try {
         const { contactId } = req.params;

@@ -12,7 +12,7 @@
         productUnitPrice: 650,
         productOriginalPrice: 780,
         shippingJtCost: 0,
-        shippingDhlCost: 160,
+        shippingDhlCost: 0,
         currency: 'MXN',
         maxQty: 50
     };

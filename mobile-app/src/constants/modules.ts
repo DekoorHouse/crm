@@ -68,24 +68,6 @@ export const MODULES: AppModule[] = [
     color: "#795548",
     category: "operaciones",
   },
-  {
-    id: "guias",
-    name: "Guias",
-    description: "Guías de paquetería",
-    icon: "file-text",
-    url: `${BASE_URL}/guias/`,
-    color: "#607D8B",
-    category: "operaciones",
-  },
-  {
-    id: "rastreo",
-    name: "Rastreo",
-    description: "Rastreo J&T",
-    icon: "map-pin",
-    url: `${BASE_URL}/jt-rastreo/`,
-    color: "#00BCD4",
-    category: "operaciones",
-  },
 
   // --- Equipo ---
   {

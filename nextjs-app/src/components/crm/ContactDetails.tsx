@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { Contact } from "@/lib/api/contacts";
-import { markAsPurchase, fetchContactOrders, pedirDatosEnvio, pedirDatosMty, pedirDatosDgo } from "@/lib/api/contacts";
+import { markAsPurchase, fetchContactOrders, pedirDatosMty, pedirDatosDgo } from "@/lib/api/contacts";
 import StatusPicker from "@/components/pedidos/StatusPicker";
 import { db } from "@/lib/firebase/config";
 import { collection, query, orderBy, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
@@ -30,7 +30,6 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [statusPicker, setStatusPicker] = useState<{ orderId: string; currentStatus: string; rect: DOMRect } | null>(null);
-  const [showConfirmDatos, setShowConfirmDatos] = useState(false);
   const [showConfirmMty, setShowConfirmMty] = useState(false);
   const [showConfirmDgo, setShowConfirmDgo] = useState(false);
   const unsubNotes = useRef<(() => void) | null>(null);
@@ -70,16 +69,6 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
       await markAsPurchase(contact.id, parseFloat(value));
       toast.success("Compra registrada y evento enviado a Meta");
     } catch (err) { toast.error(err instanceof Error ? err.message : "Error"); }
-  }
-
-  async function handlePedirDatos() {
-    setShowConfirmDatos(false);
-    const promise = pedirDatosEnvio(contact.id);
-    toast.promise(promise, {
-      loading: "Enviando solicitud de datos...",
-      success: (data) => `Solicitud enviada para pedido ${data.orderNumber}`,
-      error: (err) => err instanceof Error ? err.message : "Error",
-    });
   }
 
   async function handlePedirDatosMty() {
@@ -231,12 +220,6 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>shopping_cart</span>
           Registrar Compra (Meta)
         </button>
-        <button onClick={() => setShowConfirmDatos(true)}
-          disabled={orders.length === 0}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold bg-secondary-container text-on-secondary-container hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
-          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>local_shipping</span>
-          Pedir Datos de Envío (Nacional)
-        </button>
         <button onClick={() => setShowConfirmMty(true)}
           disabled={orders.length === 0}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold bg-secondary-container text-on-secondary-container hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
@@ -269,37 +252,6 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
           }}
           onClose={() => setStatusPicker(null)}
         />
-      )}
-
-      {/* Confirm modal — Pedir Datos de Envío */}
-      {showConfirmDatos && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40" onClick={() => setShowConfirmDatos(false)}>
-          <div className="bg-surface-container-lowest rounded-2xl shadow-2xl border border-outline-variant/15 w-80 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="px-5 pt-5 pb-3">
-              <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center mx-auto mb-3">
-                <span className="material-symbols-outlined text-on-secondary-container" style={{ fontSize: 22 }}>local_shipping</span>
-              </div>
-              <h4 className="text-sm font-bold text-on-surface text-center">Pedir datos de envio</h4>
-              <p className="text-xs text-on-surface-variant text-center mt-1.5 leading-relaxed">
-                Se enviara al cliente la solicitud de datos de envio para su ultimo pedido.
-              </p>
-            </div>
-            <div className="flex gap-2 px-5 pb-5 pt-2">
-              <button
-                onClick={() => setShowConfirmDatos(false)}
-                className="flex-1 py-2 rounded-xl text-xs font-bold bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handlePedirDatos}
-                className="flex-1 py-2 rounded-xl text-xs font-bold bg-primary text-on-primary hover:opacity-90 transition-all shadow-sm"
-              >
-                Enviar
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Confirm modal — Pedir Datos de Envío (MTY) */}

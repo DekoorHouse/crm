@@ -95,7 +95,7 @@ router.post('/', async (req, res) => {
                 `Referencia: ${reference}`,
                 `Cliente: ${customerName}`,
                 `Email: ${customerEmail || 'N/A'}`,
-                `Envio: ${isDHL ? 'DHL Express' : 'J&T Express'}`,
+                `Envio: DHL Express`,
                 `Direccion: ${addressStr}`
             ].join('\n'),
             fotoUrls: imageUrl ? [imageUrl] : [],
@@ -107,8 +107,7 @@ router.post('/', async (req, res) => {
             pagoTransferencia: true,
             transferenciaReferencia: reference,
             transferenciaExternalRef: externalReference,
-            // Datos para pre-llenar el formulario de guia J&T (el cliente
-            // ya los ingreso en el carrito, solo necesita confirmarlos).
+            // Datos de envío del checkout (metadata del pedido).
             envioPrefill: {
                 nombreCompleto: customerName,
                 telefono: phone,
@@ -138,7 +137,7 @@ router.post('/', async (req, res) => {
             qty,
             subtotal,
             shippingCost,
-            shippingMethod: isDHL ? 'DHL Express' : 'J&T Express',
+            shippingMethod: 'DHL Express',
             total,
             address: addr,
             imageUrl: imageUrl || null,

@@ -167,17 +167,6 @@ export async function markAsPurchase(contactId: string, value: number): Promise<
   if (!data.success) throw new Error(data.message || "Error");
 }
 
-export async function pedirDatosEnvio(contactId: string): Promise<{ orderNumber: string }> {
-  const res = await fetch(`/api/jt-guias/pedir-datos/${contactId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ shortcut: "Datos J&T" }),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.message || "Error al enviar solicitud de datos");
-  return { orderNumber: data.orderNumber };
-}
-
 export async function pedirDatosMty(contactId: string): Promise<{ orderNumber: string }> {
   const res = await fetch(`/api/repartos-mty/pedir-datos/${contactId}`, {
     method: "POST",

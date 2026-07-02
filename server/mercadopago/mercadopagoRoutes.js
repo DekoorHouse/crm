@@ -139,7 +139,7 @@ router.post('/checkout', async (req, res) => {
             metadata: {
                 collection: collection || '',
                 image_url: imageUrl || '',
-                shipping_method: isDHL ? 'DHL Express' : 'J&T Express',
+                shipping_method: 'DHL Express',
                 source: 'sitio_web',
                 customer_phone: phone,
                 customer_name: customerName,
@@ -190,7 +190,7 @@ router.post('/checkout', async (req, res) => {
             qty,
             subtotal,
             shippingCost,
-            shippingMethod: isDHL ? 'DHL Express' : 'J&T Express',
+            shippingMethod: 'DHL Express',
             total,
             address: address || null,
             status: 'pending',
@@ -753,7 +753,7 @@ router.post('/webhook', async (req, res) => {
             pagoMercadoPago: true,
             mpPaymentId: paymentId,
             mpExternalReference: externalReference,
-            // Datos para pre-llenar el formulario de guia J&T
+            // Datos de envío del checkout (metadata del pedido)
             envioPrefill: {
                 nombreCompleto: mpData.customerName || '',
                 telefono: mpData.customerPhone || '',

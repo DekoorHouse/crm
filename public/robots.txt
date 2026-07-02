@@ -2,7 +2,6 @@ User-agent: *
 Allow: /sitio/
 Allow: /sitio/coleccion/
 Allow: /referencias/
-Allow: /jt-rastreo/
 Allow: /privacidad/
 Allow: /terminos/
 Disallow: /admon/

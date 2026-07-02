@@ -2246,18 +2246,13 @@ const ContactDetailsSidebarTemplate = (contact) => {
                            <button onclick="handleMarkAsPurchase()" class="btn btn-outline w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
                            <button onclick="handleSendViewContent()" class="btn btn-outline w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto' (Meta)</button>
 
-                           <!-- Grupo: Solicitar envío -->
+                           <!-- Grupo: Solicitar envío (entregas locales) -->
                            <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider pt-3 pb-1">Solicitar envío</p>
-                           <button onclick="handlePedirDatosEnvio()" class="btn btn-outline w-full btn-sm"><i class="fas fa-truck mr-2"></i>Nacional</button>
                            <button onclick="handlePedirDatosMty()" class="btn btn-outline w-full btn-sm"><i class="fas fa-map-marker-alt mr-2"></i>MTY</button>
                            <button onclick="handlePedirDatosDgo()" class="btn btn-outline w-full btn-sm"><i class="fas fa-motorcycle mr-2"></i>DGO</button>
 
                            <!-- Pago (neutro, no destructivo) -->
                            <button onclick="handleGenerarOxxo()" class="btn btn-outline w-full btn-sm"><i class="fas fa-store mr-2"></i>Generar Pago OXXO</button>
-
-                           <!-- Destructiva (discreta, al fondo tras divisor) -->
-                           <div class="border-t border-gray-100 my-3"></div>
-                           <button onclick="handleCancelarGuiaEnvio()" class="btn btn-outline w-full btn-sm" style="color: var(--color-danger);"><i class="fas fa-ban mr-2"></i>Cancelar Guía de Envío</button>
                         </div>
                     </div>
                 </div>

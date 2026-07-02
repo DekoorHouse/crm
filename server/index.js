@@ -10,7 +10,6 @@ const mockupsRouter = require('./mockups/mockupsRoutes');
 const mercadopagoRouter = require('./mercadopago/mercadopagoRoutes');
 const transferenciasRouter = require('./transferencias/transferenciasRoutes');
 const carritosRouter = require('./carritos/carritosRoutes');
-const jtGuiasRouter = require('./jt/jtRoutes');
 const leadsRouter = require('./leads/leadReactivationRoutes');
 const repartosMtyRouter = require('./repartos/repartosRoutes');
 const repartosDgoRouter = require('./repartos/dgoRoutes');
@@ -59,7 +58,6 @@ app.use('/api/mockups', mockupsRouter);
 app.use('/api/mercadopago', mercadopagoRouter);
 app.use('/api/pagos/transferencia', transferenciasRouter);
 app.use('/api/carritos-abandonados', carritosRouter);
-app.use('/api/jt-guias', jtGuiasRouter);
 app.use('/api/leads', leadsRouter);
 app.use('/api/order-followup', orderFollowupRouter);
 app.use('/api/reminders', scheduledReminderRouter);
@@ -359,10 +357,6 @@ app.get('/envios', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'envios', 'index.html'));
 });
 
-app.get('/guias', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'guias', 'index.html'));
-});
-
 app.get('/referencias', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'referencias', 'index.html'));
 });
@@ -417,7 +411,6 @@ app.get('/sitemap.xml', (req, res) => {
         { loc: '/sitio/', changefreq: 'weekly', priority: '1.0' },
         { loc: '/sitio/coleccion/', changefreq: 'weekly', priority: '0.9' },
         { loc: '/referencias/', changefreq: 'weekly', priority: '0.8' },
-        { loc: '/jt-rastreo/', changefreq: 'monthly', priority: '0.6' },
         { loc: '/privacidad/', changefreq: 'yearly', priority: '0.3' },
         { loc: '/terminos/', changefreq: 'yearly', priority: '0.3' },
     ];
@@ -439,11 +432,6 @@ app.get('/sitemap.xml', (req, res) => {
 // --- PÁGINA 404 para rutas del sitio público ---
 app.get('/sitio/*', (req, res) => {
     res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
-});
-
-// --- Rutas dinámicas de /datos-envio/:pedido ---
-app.get('/datos-envio/:pedido', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'datos-envio', 'index.html'));
 });
 
 // --- Repartos MTY (entregas locales por repartidor propio) ---

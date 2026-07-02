@@ -135,20 +135,6 @@
       ]
     },
     {
-      "collectionGroup": "guias_jt",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "orderNumber",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
       "collectionGroup": "messages",
       "queryScope": "COLLECTION_GROUP",
       "fields": [

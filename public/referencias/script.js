@@ -421,7 +421,7 @@ function updateStats(refs) {
             "@type": "LocalBusiness",
             "name": "Dekoor - Regalos Personalizados",
             "url": "https://app.dekoormx.com/sitio/",
-            "image": "https://app.dekoormx.com/jt-rastreo/logo.png",
+            "image": "https://app.dekoormx.com/referencias/logo.png",
             "address": { "@type": "PostalAddress", "addressLocality": "Durango", "addressRegion": "Durango", "addressCountry": "MX" },
             "aggregateRating": {
                 "@type": "AggregateRating",

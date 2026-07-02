@@ -186,27 +186,6 @@ async function handleSendViewContent() {
 }
 
 /**
- * Envía la respuesta rápida "Pedir Datos de Envío" al cliente (J&T).
- */
-async function handlePedirDatosEnvio() {
-    if (!state.selectedContactId) return;
-    const ok = await showConfirmModal("¿Enviar al cliente la solicitud de datos de envío para su último pedido?", { icon: 'local_shipping', confirmText: 'Enviar' });
-    if (!ok) return;
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/jt-guias/pedir-datos/${state.selectedContactId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ shortcut: "Datos J&T" })
-        });
-        const result = await response.json();
-        if (!response.ok || !result.success) throw new Error(result.message || 'Error al enviar solicitud');
-        showError(`Solicitud enviada para pedido ${result.orderNumber || ''}`.trim(), 'success');
-    } catch (error) {
-        showError(error.message);
-    }
-}
-
-/**
  * Envía al cliente el enlace del formulario de entrega local en Monterrey (MTY).
  */
 async function handlePedirDatosMty() {
@@ -244,27 +223,6 @@ async function handlePedirDatosDgo() {
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.message || 'Error al enviar solicitud');
         showError(result.orderNumber ? `Enlace DGO enviado para pedido ${result.orderNumber}` : 'Enlace DGO enviado al cliente ✓', 'success');
-    } catch (error) {
-        showError(error.message);
-    }
-}
-
-/**
- * Cancela la guía J&T activa del último pedido del contacto seleccionado.
- */
-async function handleCancelarGuiaEnvio() {
-    if (!state.selectedContactId) return;
-    const ok = await showConfirmModal("¿Confirmas que quieres cancelar la guía de envío del último pedido de este contacto?", { icon: 'cancel', confirmText: 'Cancelar guía' });
-    if (!ok) return;
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/jt-guias/cancelar-por-contacto/${state.selectedContactId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-        const result = await response.json();
-        if (!response.ok || !result.success) throw new Error(result.message || 'Error al cancelar la guía');
-        showError(result.message || 'Guía cancelada.', 'success');
     } catch (error) {
         showError(error.message);
     }
@@ -3542,9 +3500,7 @@ window.handleDeleteContact = handleDeleteContact;
 window.handleMarkAsPurchase = handleMarkAsPurchase;
 window.handleMarkAsRegistration = handleMarkAsRegistration; // Mantener si aún se usa
 window.handleSendViewContent = handleSendViewContent;
-window.handlePedirDatosEnvio = handlePedirDatosEnvio;
 window.handlePedirDatosDgo = handlePedirDatosDgo;
-window.handleCancelarGuiaEnvio = handleCancelarGuiaEnvio;
 window.handleGenerarOxxo = handleGenerarOxxo;
 window.handleSaveOrder = handleSaveOrder;
 window.handleUpdateExistingOrder = handleUpdateExistingOrder;
