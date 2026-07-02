@@ -2028,6 +2028,27 @@ Reglas:
         // revisión IA" si todavía no hay un pedido registrado (ver más abajo).
         const cancelCommandNote = `\n\n**Cancelación de pedido:** Si el cliente te dice claramente que YA NO quiere el pedido, que lo CANCELA o que NO podrá continuar con él (por ejemplo: "ya no lo quiero", "mejor cancélalo", "ya no voy a poder con el pedido"), respóndele con empatía y escribe al FINAL de tu mensaje el comando /cancelado (el cliente NO lo ve; es una señal para el equipo). NO lo emitas por una simple demora o aplazamiento del pago (por ejemplo "mañana te pago", "dame unos días"): en esos casos NO se cancela. Emítelo UNA sola vez.`;
 
+        // --- Pedido REGISTRADO en el CRM: fuente de verdad para el TOTAL ---
+        // Sin esto la IA contestaba precios con la promoción general (ej. "2 x $1,000")
+        // aunque el pedido registrado fuera de otro monto (ej. Corazón 2 pzas = $1,500):
+        // la IA nunca veía los pedidos del CRM, solo el texto del chat.
+        let orderInfoNote = '';
+        try {
+            const lastOrderDoc = await getLatestOrderForContact(contactId);
+            if (lastOrderDoc) {
+                const o = lastOrderDoc.data();
+                const createdMs = o.createdAt && o.createdAt.toMillis ? o.createdAt.toMillis() : 0;
+                // Solo pedidos recientes: uno viejo ya no aplica a la conversación actual.
+                if (createdMs && (Date.now() - createdMs) <= 45 * 24 * 60 * 60 * 1000) {
+                    const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : '(sin número)';
+                    const datos = String(o.datosProducto || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+                    orderInfoNote = `\n\n**Pedido REGISTRADO en el sistema (fuente de verdad):**\n${num} — Producto: ${o.producto || '-'} — TOTAL: ${o.precio != null ? `$${o.precio}` : 'no registrado'} — Estatus: ${o.estatus || '-'}${datos ? ` — Datos: ${datos}` : ''}.\nSi el cliente pregunta el precio o el total de SU pedido, responde con ESTE total; NO lo calcules con promociones generales. Si el cliente quiere algo distinto a lo registrado (otra cantidad u otro modelo), aclara la diferencia antes de dar totales.`;
+                }
+            }
+        } catch (e) {
+            console.warn('[AI] No se pudo leer el pedido registrado para', contactId, e.message);
+        }
+
         // Notas dinámicas + tarea: van como el ÚLTIMO turno user de la conversación.
         // La tarea es solo mecánica; el tono y el estilo salen únicamente de las
         // instrucciones configuradas (el "concisa y útil" y el "indica que un agente
@@ -2040,7 +2061,7 @@ Reglas:
         const mediaTaskNote = mediaParts.length > departmentImageParts.length
             ? ' Vienen adjuntos archivos de la conversación (fotos, audios, videos o documentos/PDF, p. ej. comprobantes de pago): analízalos con cuidado cuando sean relevantes para el último mensaje del cliente; si ya los atendiste en un turno anterior, no los vuelvas a comentar.'
             : '';
-        const finalUserText = `${fechaActualNote}${postventaProtocolNote}${cancelCommandNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${orderInfoNote}${postventaProtocolNote}${cancelCommandNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
