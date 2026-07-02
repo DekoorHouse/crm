@@ -821,7 +821,7 @@ function simpleHash(str) {
  * Construye el texto estático del sistema (instrucciones + conocimiento + respuestas rápidas).
  * Este es el contenido que se cachea.
  */
-async function buildStaticContext(botInstructions) {
+async function buildStaticContext(botInstructions, isPostVenta = false) {
     const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
     const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
 
@@ -831,8 +831,12 @@ async function buildStaticContext(botInstructions) {
         .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
         .join('\n');
 
+    // La regla de cierre SOLO aplica en etapa de venta: en post-venta el pedido ya cerró
+    // y esta regla hacía que el modelo repitiera "Ya registramos tu pedido" en cada mensaje.
+    const closingRule = isPostVenta ? '' : `\n\n**Regla Especial de Cierre de Pedido:** Cuando el usuario haya proporcionado todos los datos necesarios y el pedido esté listo para ser procesado por un humano, debes responder ÚNICAMENTE incluyendo la frase exacta "Ya registramos tu pedido" seguido de cualquier instrucción adicional de despedida. Esta frase es un comando interno para el sistema.`;
+
     // Instrucciones van en systemInstruction, no en contents
-    const systemText = `${botInstructions}\n\n**Regla Especial de Cierre de Pedido:** Cuando el usuario haya proporcionado todos los datos necesarios y el pedido esté listo para ser procesado por un humano, debes responder ÚNICAMENTE incluyendo la frase exacta "Ya registramos tu pedido" seguido de cualquier instrucción adicional de despedida. Esta frase es un comando interno para el sistema.\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.`;
+    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.`;
 
     // Material de referencia va en contents (como contexto, no como instrucciones)
     const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo:** Si una de estas respuestas aplica perfectamente, puedes enviarla respondiendo ÚNICAMENTE con su atajo (ejemplo: responde exactamente "/ttt" y nada más); el sistema lo reemplazará automáticamente por su contenido completo, incluida cualquier imagen. También puedes escribir el contenido directamente si lo prefieres. NUNCA combines un atajo con más texto en el mismo mensaje.\n${quickReplies || 'No hay respuestas rápidas.'}`;
@@ -901,6 +905,23 @@ async function alertAdminSuspiciousReceipt(contactId, contactData, comprobante) 
         console.log(`[AI] Alerta de comprobante sospechoso enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
     } catch (e) {
         console.warn('[AI] No se pudo alertar al admin del comprobante sospechoso:', e.message);
+    }
+}
+
+/**
+ * Avisa al admin que la IA necesita apoyo humano en un chat (comando interno /equipo).
+ * Caso típico: el cliente pide una foto/video de su pedido que la IA no tiene y no puede
+ * generar. Fire-and-forget: cualquier error solo se loguea.
+ */
+async function alertAdminHumanNeeded(contactId, contactData, clientRequest) {
+    try {
+        const name = (contactData && contactData.name) || contactId;
+        const request = String(clientRequest || '').trim().slice(0, 300);
+        const text = `🙋 *La IA pide apoyo humano*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nEl cliente pidió algo que la IA no puede hacer (ej. foto/video de su pedido)${request ? `:\n_"${request}"_` : '.'}\n\nAl cliente ya se le dijo que el equipo se lo manda por el chat. Entra a atenderlo.`;
+        await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
+        console.log(`[AI] Alerta de apoyo humano (/equipo) enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
+    } catch (e) {
+        console.warn('[AI] No se pudo alertar al admin del apoyo humano:', e.message);
     }
 }
 
@@ -1147,10 +1168,10 @@ async function markOrderFabricarForContact(contactId, contactData, addressText) 
  * @param {Array<{inlineData: {data: string, mimeType: string}}>} departmentImageParts - Imágenes estáticas a cachear como parte del contexto
  * @param {string} imagesHashInput - String determinista con identificadores de las imágenes (para el hash del caché)
  */
-async function getOrCreateCache(botInstructions, departmentImageParts = [], imagesHashInput = '') {
+async function getOrCreateCache(botInstructions, departmentImageParts = [], imagesHashInput = '', isPostVenta = false) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
 
-    const { systemText, referenceText } = await buildStaticContext(botInstructions);
+    const { systemText, referenceText } = await buildStaticContext(botInstructions, isPostVenta);
     const currentHash = simpleHash(systemText + referenceText + '|imgs:' + imagesHashInput);
     const now = Date.now();
 
@@ -1349,8 +1370,11 @@ async function generateGeminiResponse(prompt, imageParts = [], systemInstruction
             throw e;
         }
     }
-    let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
-    if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
+    let generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!generatedText) {
+        const blockReason = result.promptFeedback?.blockReason;
+        throw new Error(`No se recibió una respuesta válida de la IA${blockReason ? ` (bloqueada por: ${blockReason})` : ''}.`);
+    }
     if (generatedText.startsWith('Asistente:')) {
         generatedText = generatedText.substring('Asistente:'.length).trim();
     }
@@ -1408,8 +1432,11 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
         result = await geminiResponse.json();
         break;
     }
-    let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
-    if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA (cached).');
+    let generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!generatedText) {
+        const blockReason = result.promptFeedback?.blockReason;
+        throw new Error(`No se recibió una respuesta válida de la IA (cached)${blockReason ? ` — bloqueada por: ${blockReason}` : ''}.`);
+    }
     if (generatedText.startsWith('Asistente:')) {
         generatedText = generatedText.substring('Asistente:'.length).trim();
     }
@@ -1910,7 +1937,7 @@ Reglas:
             // El caché guarda SOLO texto (instrucciones + conocimiento + respuestas rápidas).
             // La multimedia (del cliente y de referencia del departamento) va en mediaParts,
             // ya redimensionada/acotada por buildSafeGeminiMediaPart.
-            const cacheName = await getOrCreateCache(botInstructions, [], '');
+            const cacheName = await getOrCreateCache(botInstructions, [], '', isPostVenta);
             if (cacheName) {
                 console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (${historyTurns.length} turnos + ${mediaParts.length} archivo(s) multimedia, ${departmentImageParts.length} de referencia del depto)`);
                 aiResult = await generateGeminiResponseWithCache(cacheName, dynamicContents, mediaParts);
@@ -1923,7 +1950,7 @@ Reglas:
             // systemInstruction. Se manda la MISMA conversación y la MISMA multimedia (antes el
             // fallback iba solo texto y le pedía al cliente re-describir archivos ya enviados).
             console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché.`);
-            const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions);
+            const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions, isPostVenta);
             const fallbackContents = [
                 { role: 'user', parts: [{ text: fallbackRef }] },
                 ...historyTurns,
@@ -1975,14 +2002,17 @@ Reglas:
         // En ETAPA 2, si la IA detecta un comprobante sospechoso emite /sospechoso: se reenvía
         // la imagen al admin para verificación; al cliente solo se le dice que estamos validando.
         const suspiciousReceipt = isPostVenta && /\/sospechoso/i.test(aiResponse);
+        // La IA emite /equipo cuando el cliente pide algo que ella no puede hacer (ej. foto o
+        // video de su pedido): se avisa al admin para que un humano lo mande por el chat.
+        const humanHelpNeeded = /\/equipo/i.test(aiResponse);
         // En ETAPA 2, si el cliente ya mandó TODOS sus datos de envío la IA emite /datoscompletos:
         // el pedido pasa a "Fabricar" y se avisa a Rosario para que genere la guía (ver más abajo).
         // Se exige que ANTES se le hubieran pedido los datos (awaitingShippingData) para no fabricar
         // por error si la IA emitiera el comando fuera del flujo de recolección de datos de envío.
         const shippingDataComplete = isPostVenta && contactData.awaitingShippingData === true && /\/datoscompletos/i.test(aiResponse);
 
-        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos) de los mensajes antes de enviar
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').trim()).filter(m => m.length > 0);
+        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo) de los mensajes antes de enviar
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').trim()).filter(m => m.length > 0);
 
         for (let i = 0; i < aiMessages.length; i++) {
             // Verificar cancelación entre mensajes si hay SPLIT
@@ -2126,6 +2156,13 @@ Reglas:
             }
             alertAdminSuspiciousReceipt(contactId, contactData, comprobante)
                 .catch(e => console.warn('[AI] alertAdminSuspiciousReceipt falló:', e.message));
+        }
+
+        // Apoyo humano solicitado (/equipo): avisar al admin con lo que pidió el cliente
+        // (ej. foto/video del pedido que la IA no tiene). Fire-and-forget.
+        if (humanHelpNeeded) {
+            alertAdminHumanNeeded(contactId, contactData, messageText)
+                .catch(e => console.warn('[AI] alertAdminHumanNeeded falló:', e.message));
         }
 
         // Datos de envío completos (/datoscompletos): pasar el pedido a "Fabricar" y avisar a Rosario
