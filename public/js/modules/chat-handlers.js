@@ -2418,11 +2418,15 @@ async function handleSendTemplate(templateObject) {
 
 // --- START: Conversation Preview Logic ---
 
-async function openConversationPreview(event, contactId) {
-    event.stopPropagation(); // Evita que se seleccione el chat al hacer clic en el ojo
+async function openConversationPreview(event, contactId, fallbackContact) {
+    if (event && typeof event.stopPropagation === 'function') event.stopPropagation(); // Evita que se seleccione el chat al hacer clic en el ojo
 
-    const contact = state.contacts.find(c => c.id === contactId);
-    if (!contact) return;
+    // El contacto puede no estar en state.contacts (p. ej. abierto desde Rescate IA, cuya
+    // lista es independiente y paginada). Usamos un contacto sintético para el header; los
+    // mensajes se cargan por REST usando solo el contactId (waId), así que no hace falta más.
+    const contact = (Array.isArray(state.contacts) && state.contacts.find(c => c.id === contactId))
+        || fallbackContact
+        || { id: contactId, name: contactId };
 
     // Resetear el estado de la previsualización
     previewState = {
@@ -2439,6 +2443,18 @@ async function openConversationPreview(event, contactId) {
 
     const messagesContainer = document.getElementById('preview-messages-container');
     messagesContainer.addEventListener('scroll', handlePreviewScroll);
+
+    // Cerrar con ESC. Usamos capture + stopImmediatePropagation para ganarle al listener
+    // global de Escape (que cierra los product pickers) y guardamos el handler en window
+    // para removerlo al cerrar (sin fugas). Se re-crea en cada apertura.
+    if (window.previewEscHandler) document.removeEventListener('keydown', window.previewEscHandler, true);
+    window.previewEscHandler = (e) => {
+        if (e.key === 'Escape') {
+            e.stopImmediatePropagation();
+            closeConversationPreviewModal();
+        }
+    };
+    document.addEventListener('keydown', window.previewEscHandler, true);
 
     await loadMorePreviewMessages();
 }

@@ -3367,6 +3367,11 @@ function closeConversationPreviewModal() {
         modalContainer.innerHTML = ''; // Limpia el contenido
     }
     document.body.classList.remove('modal-open'); // Permite scroll en el body
+    // Remover el listener de ESC (registrado en openConversationPreview) para evitar fugas.
+    if (window.previewEscHandler) {
+        document.removeEventListener('keydown', window.previewEscHandler, true);
+        window.previewEscHandler = null;
+    }
 }
 // --- END: Conversation Preview Modal ---
 

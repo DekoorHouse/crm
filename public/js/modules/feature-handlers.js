@@ -3898,6 +3898,19 @@ function renderRescateTable() {
 }
 
 function openRescateChat(waId) {
+    // Abrir la conversación en un MODAL de solo lectura, SIN cambiar de vista.
+    // Rescate se alimenta de window._rescate (independiente de state.contacts, que está
+    // paginado), así que armamos un contacto sintético con el nombre de la fila para que
+    // el modal SIEMPRE abra, aunque ese contacto no esté cargado en memoria.
+    if (typeof openConversationPreview === 'function') {
+        const inMem = Array.isArray(state.contacts) ? state.contacts.find(c => c.id === waId) : null;
+        const row = (window._rescate && Array.isArray(window._rescate.sends))
+            ? window._rescate.sends.find(s => s.waId === waId) : null;
+        const contact = inMem || { id: waId, name: (row && row.name) || waId };
+        openConversationPreview({ stopPropagation() {} }, waId, contact);
+        return;
+    }
+    // Fallback defensivo (si por alguna razón no existe el modal): navegar a Chats.
     if (typeof navigateTo === 'function') navigateTo('chats');
     setTimeout(() => {
         if (typeof handleSelectContact === 'function') handleSelectContact(waId);
