@@ -22,6 +22,7 @@ const { startLeadReactivationScheduler } = require('./leads/leadReactivationSche
 const { startOrderFollowupScheduler } = require('./leads/orderFollowupScheduler');
 const { startScheduledReminderScheduler } = require('./leads/scheduledReminderScheduler');
 const { startScheduledMessagesScheduler } = require('./scheduledMessages/scheduledMessagesScheduler');
+const { startShippingDigestScheduler } = require('./shipping/shippingDigestScheduler');
 const orderFollowupRouter = require('./leads/orderFollowupRoutes');
 const scheduledReminderRouter = require('./leads/scheduledReminderRoutes');
 const path = require('path');
@@ -374,6 +375,8 @@ const server = app.listen(PORT, () => {
   startInventarioScheduler();
   // Iniciar scheduler de mensajes programados (envío diferido desde el chat)
   startScheduledMessagesScheduler();
+  // Iniciar scheduler del resumen diario de pedidos listos para guía (1:30 pm MX)
+  startShippingDigestScheduler();
   // Conectar bridge TCP a MeerK40t
   laserBridge.connect();
 });

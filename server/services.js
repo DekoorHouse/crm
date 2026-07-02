@@ -1071,16 +1071,38 @@ async function sendApprovedTemplateMessage(waId, templateName, params = [], { so
 }
 
 /**
- * Avisa por WhatsApp a Rosario que un pedido ya mandó sus datos de envío completos para que genere
- * la guía. Intenta primero con la PLANTILLA aprobada (`SHIPPING_READY_TEMPLATE`), que llega aunque
- * la ventana de 24h esté cerrada; si la plantilla no está aprobada/configurada, cae a envío libre
- * (que solo llega si Rosario tiene ventana de 24h abierta con el número del negocio).
+ * Registra que un pedido ya tiene sus datos de envío completos para que Rosario genere la guía.
+ * Ya NO manda un mensaje por pedido: encola el número en `shipping_digest_queue` y el resumen
+ * diario (shippingDigestScheduler, 1:30 pm MX) manda UN solo mensaje con todos los números del
+ * día — Rosario solo ocupa el número de pedido, no el nombre ni los datos de envío.
+ * Si el encolado falla (Firestore caído), cae al aviso inmediato de antes como respaldo.
  */
 async function notifyShippingDataReady(orderNumber, contactData, addressText) {
     const name = (contactData && contactData.name) || 'Cliente';
-    const flatAddress = (addressText || '').replace(/\n+/g, ' · ').trim();
 
-    // 1) Preferir la PLANTILLA aprobada (no depende de la ventana de 24h).
+    // 1) Encolar para el resumen diario de la 1:30 pm.
+    try {
+        const docId = String(orderNumber || '').replace(/[^\w-]/g, '') || `pedido_${Date.now()}`;
+        const ref = db.collection('shipping_digest_queue').doc(docId);
+        const existing = await ref.get();
+        if (existing.exists && !existing.data().sentAt) {
+            console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en la cola del resumen de guías.`);
+            return;
+        }
+        await ref.set({
+            orderNumber: String(orderNumber || ''),
+            clientName: name,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            sentAt: null
+        });
+        console.log(`[POSTVENTA] Pedido ${orderNumber} encolado para el resumen diario de guías (1:30 pm MX).`);
+        return;
+    } catch (queueErr) {
+        console.warn(`[POSTVENTA] No se pudo encolar ${orderNumber} para el resumen (${queueErr.message}). Respaldo: aviso inmediato.`);
+    }
+
+    // 2) Respaldo: aviso inmediato por PLANTILLA (no depende de la ventana de 24h).
+    const flatAddress = (addressText || '').replace(/\n+/g, ' · ').trim();
     try {
         await sendApprovedTemplateMessage(
             SHIPPING_NOTIFY_PHONE,
@@ -1094,11 +1116,8 @@ async function notifyShippingDataReady(orderNumber, contactData, addressText) {
         console.warn(`[POSTVENTA] No se pudo enviar la plantilla a Rosario (${tplErr.message}). Fallback a texto libre (requiere ventana 24h).`);
     }
 
-    // 2) Fallback: envío libre (solo llega dentro de la ventana de 24h).
-    let text = `📦 *Pedido listo para guía*\n\n*${orderNumber}* — ${name}\nYa mandó sus datos de envío completos. Por favor genera su guía. 🙌`;
-    if (addressText && addressText.trim()) {
-        text += `\n\n*Datos que envió el cliente:*\n${addressText.trim()}`;
-    }
+    // 3) Último respaldo: envío libre (solo llega dentro de la ventana de 24h).
+    const text = `📦 *Pedido listo para guía*\n\n*${orderNumber}* — ${name}\nYa mandó sus datos de envío completos. Por favor genera su guía. 🙌`;
     await sendAdvancedWhatsAppMessage(SHIPPING_NOTIFY_PHONE, { text });
     console.log(`[POSTVENTA] Aviso a Rosario (${SHIPPING_NOTIFY_PHONE}) enviado por TEXTO LIBRE para ${orderNumber}.`);
 }
@@ -1452,6 +1471,28 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
 // Cola de temporizadores para esperar a que el usuario termine de escribir varios mensajes
 const pendingAiRequests = new Map();
 
+// Candado por contacto mientras processAutoReplyAI está generando/enviando: evita que
+// dos generaciones corran a la vez (la segunda no vería lo que la primera aún no guarda
+// y el cliente recibiría dos respuestas encimadas). Guarda el timestamp de inicio; si
+// una generación se cuelga, el candado caduca solo (AI_GENERATION_LOCK_MS).
+const aiGenerationInFlight = new Map();
+const AI_GENERATION_LOCK_MS = 3 * 60 * 1000;
+
+/**
+ * Cancela el temporizador de IA pendiente de un contacto (si existe) SIN procesar la
+ * respuesta. Usar cuando un humano interviene en el chat: su mensaje ya atendió al
+ * cliente y la IA no debe responder encima.
+ */
+function cancelPendingAiTimer(contactId) {
+    if (pendingAiRequests.has(contactId)) {
+        clearTimeout(pendingAiRequests.get(contactId));
+        pendingAiRequests.delete(contactId);
+        console.log(`[AI] Temporizador de IA cancelado para ${contactId} (intervino un humano).`);
+        return true;
+    }
+    return false;
+}
+
 async function triggerAutoReplyAI(message, contactRef, contactData, delay = 20000) {
     const contactId = contactRef.id;
 
@@ -1573,8 +1614,32 @@ async function buildSafeGeminiMediaPart(buffer, mimeType, type) {
     }
 }
 
-// Lógica principal movida a otra función
+// Wrapper con candado: si ya hay una generación en curso para el contacto, NO arranca
+// otra en paralelo — reprograma el intento para dentro de 8s (con el historial ya fresco,
+// que incluirá lo que la primera generación haya respondido). El candado caduca solo
+// (AI_GENERATION_LOCK_MS) por si una generación queda colgada.
 async function processAutoReplyAI(contactId, message, contactRef, passedContactData) {
+    const inFlight = aiGenerationInFlight.get(contactId);
+    if (inFlight && (Date.now() - inFlight.since) < AI_GENERATION_LOCK_MS) {
+        console.log(`[AI] Ya hay una generación en curso para ${contactId}; reintentando en 8s.`);
+        await triggerAutoReplyAI(message, contactRef, passedContactData || {}, 8000);
+        return;
+    }
+    // Token propio por ejecución: si este candado caducó y otra generación lo expropió,
+    // el finally NO debe borrar el candado de la otra (liberación no reentrante).
+    const lockToken = { since: Date.now() };
+    aiGenerationInFlight.set(contactId, lockToken);
+    try {
+        await processAutoReplyAIInner(contactId, message, contactRef, passedContactData);
+    } finally {
+        if (aiGenerationInFlight.get(contactId) === lockToken) {
+            aiGenerationInFlight.delete(contactId);
+        }
+    }
+}
+
+// Lógica principal movida a otra función
+async function processAutoReplyAIInner(contactId, message, contactRef, passedContactData) {
     console.log(`[AI] Iniciando proceso de IA para ${contactId} tras esperar que deje de escribir.`);
     
     // Obtener los datos más frescos del contacto justo ahora
@@ -1734,11 +1799,25 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         //    (tagOrderInProgress, detectAndArmReminder).
         const historyTurns = [];
         const historyLines = [];
+        let prevMsgMs = null;
         for (const doc of [...messagesSnapshot.docs].reverse()) { // cronológico
             const d = doc.data();
             if (d.status === 'scheduled') continue; // programado aún NO enviado: el cliente no lo ha visto
             const isClient = d.from === contactId;
             let text = msgDisplayText(d);
+
+            // Marcador de salto de tiempo: sin esto el modelo trata mensajes de hace meses
+            // como si fueran de hace un momento (ej. responder a "está lloviendo" de enero).
+            const msgMs = (d.timestamp && typeof d.timestamp.toMillis === 'function') ? d.timestamp.toMillis() : null;
+            let gapNote = '';
+            if (msgMs && prevMsgMs && (msgMs - prevMsgMs) >= 6 * 60 * 60 * 1000) {
+                const hours = Math.round((msgMs - prevMsgMs) / (60 * 60 * 1000));
+                const days = Math.round(hours / 24);
+                gapNote = days >= 60 ? `(${Math.round(days / 30)} meses después) `
+                    : hours >= 48 ? `(${days} días después) `
+                    : `(${hours} horas después) `;
+            }
+            if (msgMs) prevMsgMs = msgMs;
 
             // Si el CLIENTE responde/cita otro mensaje (context.id), indicar a cuál, para que
             // la IA entienda referencias como "este no?", "el segundo", "ese sí", etc. Las
@@ -1753,14 +1832,19 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
                 }
             }
             if (!text) continue;
+            // El marcador de tiempo va SOLO a los turnos de Gemini. El transcript plano
+            // (conversationHistory) queda limpio: lo leen los clasificadores de
+            // recordatorios y las palabras "después"/"meses" disparaban su pre-filtro
+            // (una llamada extra a Gemini por turno) en toda conversación multi-día.
+            const turnText = gapNote + text;
 
             historyLines.push(`${isClient ? 'Cliente' : 'Asistente'}: ${text}`);
             const role = isClient ? 'user' : 'model';
             const lastTurn = historyTurns[historyTurns.length - 1];
             if (lastTurn && lastTurn.role === role) {
-                lastTurn.parts[0].text += `\n${text}`;
+                lastTurn.parts[0].text += `\n${turnText}`;
             } else {
-                historyTurns.push({ role, parts: [{ text }] });
+                historyTurns.push({ role, parts: [{ text: turnText }] });
             }
         }
         const conversationHistory = historyLines.join('\n');
@@ -2376,6 +2460,7 @@ module.exports = {
     triggerAutoReplyAI,
     skipAiTimer,
     processAutoReplyAI,
+    cancelPendingAiTimer,
     cancelAiResponse,
     getShippingQuote,
     sendConversionEvent,
@@ -2389,7 +2474,8 @@ module.exports = {
     getPedidoAttribution,
     askGeminiPro,
     getPurchaseEventTrigger,
-    sendPurchaseEventOnFabricar
+    sendPurchaseEventOnFabricar,
+    sendApprovedTemplateMessage
 };
 
 /**

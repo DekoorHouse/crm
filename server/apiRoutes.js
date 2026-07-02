@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const jtService = require('./jt/jtService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
@@ -3897,7 +3897,10 @@ async function activateAiAndAnswerPending(contactRef, snap, extraUpdate = {}) {
         const lastMsg = lastSnap.docs[0].data();
         if (lastMsg.from === contactId) { // entrante = del cliente, sin contestar
             answering = true;
-            const { processAutoReplyAI } = require('./services');
+            const { processAutoReplyAI, cancelPendingAiTimer: cancelTimer } = require('./services');
+            // Si había un temporizador pendiente para este contacto, cancelarlo: aquí se
+            // genera de inmediato y el timer dispararía una SEGUNDA respuesta después.
+            cancelTimer(contactId);
             const message = { id: lastMsg.id, text: lastMsg.text || '' };
             const freshData = { ...snap.data(), ...update };
             // Fire-and-forget: no bloquear la respuesta HTTP con la generación de la IA.
@@ -4412,6 +4415,13 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
+        // Un humano va a responder desde el CRM: cancelar YA el temporizador de la IA,
+        // ANTES del envío a Meta (subir un archivo puede tardar segundos y el timer de
+        // 20s podría vencer en ese lapso, arrancando una generación que respondería
+        // encima del humano). Se repite el chequeo después del envío para la generación
+        // que aun así haya alcanzado a arrancar.
+        cancelPendingAiTimer(contactId);
+
         // --- Detectar canal del contacto ---
         const contactDoc = await contactRef.get();
         const channel = contactDoc.exists ? (contactDoc.data().channel || 'whatsapp') : 'whatsapp';
@@ -4478,11 +4488,22 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                 lastMessageToSave = messageToSave;
             }
 
-            await contactRef.update({
+            // Un humano respondió desde el CRM: cancelar la respuesta pendiente de la IA.
+            // (Segundo cancel; el primero fue al inicio del request, antes del envío.)
+            cancelPendingAiTimer(contactId);
+            const msgrContactUpdate = {
                 lastMessage: sentData.lastTextForDb,
                 lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-                unreadCount: 0
-            });
+                unreadCount: 0,
+                aiNextRun: admin.firestore.FieldValue.delete()
+            };
+            // Releer el contacto (no usar el snapshot del inicio): si una generación
+            // arrancó durante el envío, marcarla cancelada.
+            const freshMsgrDoc = await contactRef.get();
+            if (freshMsgrDoc.exists && freshMsgrDoc.data().aiStatus === 'generating') {
+                msgrContactUpdate.aiStatus = 'cancelled';
+            }
+            await contactRef.update(msgrContactUpdate);
 
             return res.status(200).json({ success: true, message: `Mensaje(s) enviado(s) por ${channelName}.` });
         }
@@ -4595,11 +4616,24 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
         await messageRef.set(messageToSave);
 
+        // Un humano acaba de responder desde el CRM: la IA ya no debe contestar encima.
+        // Segundo cancel (el primero fue al inicio del request): cubre un timer re-armado
+        // por un mensaje del cliente que haya llegado DURANTE el envío a Meta.
+        cancelPendingAiTimer(contactId);
+
         const contactUpdateData = {
             lastMessage: messageToSave.text,
             lastMessageTimestamp: messageToSave.timestamp,
-            unreadCount: 0
+            unreadCount: 0,
+            aiNextRun: admin.firestore.FieldValue.delete()
         };
+        // Releer el contacto AHORA (no usar el snapshot del inicio del request): si una
+        // generación arrancó mientras enviábamos a Meta, aiStatus ya dice 'generating'
+        // y hay que marcarla cancelada para que aborte antes de enviar su respuesta.
+        const freshContactDoc = await contactRef.get();
+        if (freshContactDoc.exists && freshContactDoc.data().aiStatus === 'generating') {
+            contactUpdateData.aiStatus = 'cancelled';
+        }
 
         if (isFinalCommand) {
             // /final cierra la venta. Con la etapa 2 (post-venta) activa, la IA NO se apaga:
@@ -5719,6 +5753,37 @@ router.get('/debug/media-selftest', async (req, res) => {
         res.json(report);
     } catch (e) {
         res.status(500).json({ ok: false, error: e.message });
+    }
+});
+
+// --- Debug del resumen diario de guías: estado de la cola y último envío ---
+router.get('/debug/shipping-digest', async (_req, res) => {
+    try {
+        const settings = await db.collection('crm_settings').doc('shipping_digest').get();
+        const snap = await db.collection('shipping_digest_queue').where('sentAt', '==', null).get();
+        res.json({
+            success: true,
+            settings: settings.exists ? settings.data() : null,
+            pendingCount: snap.size,
+            pending: snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// GET /api/debug/shipping-digest-run?dry=1&force=1 → dispara el barrido manualmente.
+// dry=1 no envía ni marca nada (solo muestra qué saldría); force=1 ignora hora y lastSentDate.
+router.get('/debug/shipping-digest-run', async (req, res) => {
+    try {
+        const { runShippingDigestSweep } = require('./shipping/shippingDigestScheduler');
+        const result = await runShippingDigestSweep({
+            force: req.query.force === '1',
+            dryRun: req.query.dry === '1'
+        });
+        res.json({ success: true, result });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
     }
 });
 
