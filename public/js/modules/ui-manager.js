@@ -151,7 +151,20 @@ async function renderEnviosView() {
             return `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;${style}">${escapeHtml(v)}</td>`;
         };
         const DATA_COLS = 9; // nombre..teléfono
-        const rows = envios.map((e, i) => {
+        // Estado de cada envío + separación: pendientes de guía primero, con guía al final.
+        envios.forEach(e => { e._hasGuia = !!(e.guiaEnvio && e.guiaEnvio.guia); });
+        const pendCount = envios.filter(e => !e._hasGuia).length;
+        const guiaCount = envios.length - pendCount;
+        const filter = window._enviosFilter || 'all';
+        const ordered = envios.slice().sort((a, b) => {
+            if (a._hasGuia !== b._hasGuia) return a._hasGuia ? 1 : -1; // sin guía primero
+            const ad = a.datos ? 0 : 1, bd = b.datos ? 0 : 1;          // con datos antes que sin datos
+            return ad - bd;
+        });
+        const shown = ordered.filter(e => filter === 'all' ? true : (filter === 'guia' ? e._hasGuia : !e._hasGuia));
+        const rows = shown.map((e, dispIdx) => {
+            const gi = window._enviosData.indexOf(e); // índice real en _enviosData para los handlers
+            const numCell = `<td style="padding:10px 14px 10px 0;color:#94a3b8;font-weight:600;white-space:nowrap">${dispIdx + 1}</td>`;
             const montoVal = e.montoPagado != null ? `$${Number(e.montoPagado).toLocaleString('es-MX')}` : '';
             const d = e.datos;
             let dataCells;
@@ -183,11 +196,12 @@ async function renderEnviosView() {
                     <span style="display:flex;gap:10px">${etiqueta}${rastreo}</span>
                   </div>`;
             } else if (e.datos && e.datos.codigoPostal) {
-                actions = `<button onclick="openGuiaModal(${i})" title="Cotizar y crear guía DHL" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-box mr-1"></i>Crear guía</button>`;
+                actions = `<button onclick="openGuiaModal(${gi})" title="Cotizar y crear guía DHL" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-box mr-1"></i>Crear guía</button>`;
             }
             const delBtn = e.manualId ? `<button title="Borrar línea manual" onclick="deleteEnvioManual('${e.manualId}')" style="border:none;background:transparent;cursor:pointer;color:#991b1b;padding:4px 8px;font-size:13px;"><i class="fas fa-trash"></i></button>` : '';
             const accionCell = `<td style="padding:10px 0;text-align:right;white-space:nowrap"><div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">${actions}${delBtn}</div></td>`;
             return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:top">
+                ${numCell}
                 ${pedidoCell}
                 ${cell(montoVal, 'white-space:nowrap;font-weight:600')}
                 ${dataCells}
@@ -201,11 +215,15 @@ async function renderEnviosView() {
               #envios-container .envio-copy:hover{background-color:var(--color-subtle-bg,#f1f5f9);}
               #envios-container .envio-copy[data-copied]{background-color:#dcfce7 !important;color:#166534;}
             </style>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+              ${[['all', 'Todas', envios.length], ['pendiente', 'Pendientes de guía', pendCount], ['guia', 'Con guía', guiaCount]].map(([k, lbl, c]) => `<button onclick="setEnviosFilter('${k}')" style="border:1px solid ${filter === k ? 'var(--color-primary,#ef4444)' : 'var(--color-border,#e5e7eb)'};background:${filter === k ? 'var(--color-primary,#ef4444)' : 'transparent'};color:${filter === k ? '#fff' : 'var(--color-text,#334155)'};border-radius:999px;padding:5px 14px;font-size:.8rem;cursor:pointer;font-weight:600">${lbl} (${c})</button>`).join('')}
+            </div>
             <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo.</p>
             <div style="overflow-x:auto">
               <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
                 <thead>
                   <tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light);white-space:nowrap">
+                    <th style="padding:8px 14px 8px 0">#</th>
                     <th style="padding:8px 14px 8px 0">Pedido</th>
                     <th style="padding:8px 14px 8px 0">Monto pagado</th>
                     <th style="padding:8px 14px 8px 0">Nombre</th>
@@ -220,16 +238,20 @@ async function renderEnviosView() {
                     <th style="padding:8px 0;text-align:right">Guía / Acciones</th>
                   </tr>
                 </thead>
-                <tbody>${rows}</tbody>
+                <tbody>${rows || '<tr><td colspan="13" style="padding:16px 0;color:#94a3b8">No hay envíos en este filtro.</td></tr>'}</tbody>
               </table>
             </div>
-            <p class="text-xs text-gray-400 mt-3">${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''}.</p>`;
+            <p class="text-xs text-gray-400 mt-3">${shown.length} de ${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''} · ${pendCount} pendiente(s) de guía · ${guiaCount} con guía.</p>`;
     } catch (e) {
         container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los envíos: ${escapeHtml(e.message || String(e))}</p>
             <button class="btn btn-outline btn-sm mt-2" onclick="renderEnviosView()">Reintentar</button>`;
     }
 }
 window.renderEnviosView = renderEnviosView;
+
+// Filtro de la tabla de Envíos: 'all' | 'pendiente' (sin guía) | 'guia' (con guía).
+function setEnviosFilter(f) { window._enviosFilter = f; renderEnviosView(); }
+window.setEnviosFilter = setEnviosFilter;
 
 // Copia el texto de una celda de la tabla de Envíos al portapapeles (clic en la celda).
 // Intenta la API moderna y, si falla, cae al fallback clásico (textarea + execCommand).
