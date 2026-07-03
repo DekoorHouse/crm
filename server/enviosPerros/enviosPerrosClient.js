@@ -63,21 +63,85 @@ async function cotizar({ cpDestino, cpOrigen, peso, largo, ancho, alto } = {}) {
  * (se ajusta tras ver la respuesta real).
  */
 function normalizarRates(data) {
-    const arr = Array.isArray(data) ? data : (Array.isArray(data && data.data) ? data.data : (Array.isArray(data && data.rates) ? data.rates : []));
-    return arr.map((r) => ({
-        paqueteria: r.company || r.name || r.carrier || 'EP',
-        servicio: r.name || r.deliveryType || r.service || '',
-        tipo_servicio: r.deliveryType || r.service_type || '',
-        costo: Number(r.cost != null ? r.cost : (r.total != null ? r.total : (r.amount != null ? r.amount : 0))),
-        dias: r.days || r.estimated_days || r.deliveryDays || null,
-        moneda: r.currency || 'MXN',
-        deliveryType: r.deliveryType || r.service || null,
-        raw: r,
-    })).filter((x) => x.costo > 0);
+    // La respuesta real de EP viene como { message: [ { title, deliveryType:{name,feature,description,company}, available, cost, currency, ... } ] }
+    const arr = Array.isArray(data && data.message) ? data.message
+        : (Array.isArray(data) ? data
+            : (Array.isArray(data && data.data) ? data.data : []));
+    return arr.map((r) => {
+        const dt = r.deliveryType || {};
+        return {
+            paqueteria: dt.company || r.company || 'EP',
+            servicio: r.title || dt.description || dt.name || '',
+            tipo_servicio: dt.name || '',          // código del servicio (deliveryType) para crear la orden
+            costo: Number(r.cost != null ? r.cost : 0),
+            dias: dt.feature || null,
+            moneda: r.currency || 'MXN',
+            deliveryType: dt.name || null,
+            available: r.available !== false,
+            pickup: !!r.pickup,
+            raw: r,
+        };
+    }).filter((x) => x.available && x.costo > 0 && x.costo < 9999); // solo disponibles (cuenta verificada) y con costo real
+}
+
+/**
+ * POST /orders — crea la orden/guía en Envíos Perros con el servicio elegido (deliveryType, ej.
+ * "ESTAFETA_ECONOMICO"). Recibe el mismo `destino` mapeado que usa T1 (codigo_postal, nombre, calle,
+ * numero, colonia, municipio, estado, referencias, telefono, email). Devuelve la respuesta cruda.
+ * OJO: el esquema exacto se afina con la 1ª orden real (los 422 indican qué falta, sin cobrar).
+ */
+async function crearGuia({ destino, deliveryType, paquete = {} } = {}) {
+    if (!deliveryType) throw new Error('EP crearGuia: falta deliveryType (código del servicio).');
+    if (!destino || !destino.codigo_postal) throw new Error('EP crearGuia: falta destino.codigo_postal.');
+    const p = {
+        largo: paquete.largo != null ? paquete.largo : DEF.largo,
+        ancho: paquete.ancho != null ? paquete.ancho : DEF.ancho,
+        alto: paquete.alto != null ? paquete.alto : DEF.alto,
+        peso: paquete.peso != null ? paquete.peso : DEF.peso,
+        valor: paquete.valor != null ? paquete.valor : DEF.valor,
+    };
+    const body = {
+        depth: Number(p.largo), width: Number(p.ancho), height: Number(p.alto), weight: Number(p.peso),
+        deliveryType,
+        type: 'package',
+        // Carta porte (SAT) — valores genéricos configurables por env.
+        claveProdServ: process.env.EP_CLAVE_PROD_SERV || '01010101',
+        descripcion_producto: paquete.descripcion || 'Lampara decorativa',
+        clave_unidad: process.env.EP_CLAVE_UNIDAD || 'H87',
+        nombre_unidad: process.env.EP_NOMBRE_UNIDAD || 'Pieza',
+        valor_mercancia: Number(p.valor),
+        // Remitente (Dekoor)
+        company_origin: ORIGEN.company, name_origin: ORIGEN.name, email_origin: ORIGEN.email,
+        street_origin: ORIGEN.street, outdoor_number_origin: ORIGEN.outdoor_number, interior_number_origin: '',
+        neighborhood_origin: ORIGEN.neighborhood, zip_code_origin: ORIGEN.zip_code, city_origin: ORIGEN.city,
+        state_origin: ORIGEN.state, references_origin: ORIGEN.references, phone_origin: ORIGEN.phone,
+        rfc_origin: process.env.EP_RFC_ORIGIN || 'XAXX010101000', save_origin: false,
+        // Destinatario (cliente)
+        company_dest: destino.nombre || '', name_dest: destino.nombre || '',
+        street_dest: destino.calle || 'Domicilio', outdoor_number_dest: destino.numero || 'SN', interior_number_dest: '',
+        neighborhood_dest: destino.colonia || '', zip_code_dest: String(destino.codigo_postal).replace(/\D/g, ''),
+        city_dest: destino.municipio || '', state_dest: destino.estado || '',
+        references_dest: destino.referencias || '', phone_dest: String(destino.telefono || '').replace(/\D/g, ''),
+        email_dest: destino.email || '', rfc_dest: 'XAXX010101000', save_dest: false,
+        ocurre: false,
+    };
+    const r = await axios.post(`${EP_API_BASE}/orders`, body, { headers: _headers(), timeout: 30000 });
+    return r.data;
+}
+
+// Extrae número de guía / rastreo y URL de etiqueta de la respuesta de /orders (tolerante al formato).
+function extractGuia(data) {
+    const d = (data && data.data) ? data.data : (data || {});
+    const guia = d.guide || d.waybill || d.tracking || d.trackingNumber || d.numero_guia || d.guia || (d.order && d.order.guide) || null;
+    const label = d.label || d.label_url || d.pdf || d.url || d.etiqueta || (d.order && d.order.label) || null;
+    const orderId = d.id || d.order_id || (d.order && d.order.id) || null;
+    return { guia: guia ? String(guia) : null, label: label || null, orderId: orderId || null };
 }
 
 module.exports = {
     cotizar,
+    crearGuia,
     normalizarRates,
+    extractGuia,
     _config: { EP_API_BASE, DEF, ORIGEN, hasKey: !!EP_API_KEY },
 };

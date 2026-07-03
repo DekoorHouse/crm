@@ -189,7 +189,7 @@ async function renderEnviosView() {
             let actions = '';
             if (e.guiaEnvio && e.guiaEnvio.guia) {
                 const g = e.guiaEnvio;
-                const etiqueta = g.pdfPath ? `<a href="${API_BASE_URL}/api/envios/etiqueta?path=${encodeURIComponent(g.pdfPath)}" target="_blank" rel="noopener" style="${linkStyle}">🏷️ Etiqueta</a>` : '';
+                const etiqueta = g.pdfPath ? `<a href="${API_BASE_URL}/api/envios/etiqueta?path=${encodeURIComponent(g.pdfPath)}" target="_blank" rel="noopener" style="${linkStyle}">🏷️ Etiqueta</a>` : (g.labelUrl ? `<a href="${g.labelUrl}" target="_blank" rel="noopener" style="${linkStyle}">🏷️ Etiqueta</a>` : '');
                 const rastreo = g.tracking ? `<a href="${g.tracking}" target="_blank" rel="noopener" style="${linkStyle}">📍 Rastrear</a>` : '';
                 actions = `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
                     <span class="envio-copy" onclick="copyEnvioCell(this)" title="Clic para copiar la guía" style="font-weight:700;color:#166534;cursor:pointer;white-space:nowrap">✓ ${escapeHtml(g.guia)}</span>
@@ -394,11 +394,12 @@ async function _cotizarEnModal() {
         if (!list.length) { if (cont) cont.innerHTML = '<p style="color:#b45309">No hubo servicios para este C.P.</p>'; return; }
         const rowsHtml = list.map(s => {
             const costo = s.costo != null ? `$${Number(s.costo).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : '—';
-            // Se manda tipo_servicio (el codigo que espera T1), no el nombre servicio.
-            const payload = encodeURIComponent(JSON.stringify({ tipoServicio: s.tipo_servicio, servicioNombre: s.servicio, mensajeria: s.paqueteria, costo: s.costo }));
+            // Se manda tipo_servicio (el codigo que espera el proveedor) + proveedor (t1|ep).
+            const payload = encodeURIComponent(JSON.stringify({ proveedor: s.proveedor, tipoServicio: s.tipo_servicio, servicioNombre: s.servicio, mensajeria: s.paqueteria, costo: s.costo }));
+            const diasTxt = s.dias == null || s.dias === '' ? '' : (typeof s.dias === 'number' ? ` · ${s.dias} día(s)` : ` · ${escapeHtml(String(s.dias))}`);
             return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--color-border,#e5e7eb);border-radius:10px;margin-bottom:8px">
                 <div><div style="font-weight:600">${escapeHtml(s.paqueteria || '')} · ${escapeHtml(s.servicio || '')}</div>
-                  <div style="font-size:.78rem;color:#64748b">${escapeHtml(s.tipo_servicio || '')}${s.dias ? ` · ${s.dias} día(s)` : ''}</div></div>
+                  <div style="font-size:.78rem;color:#64748b">${escapeHtml(s.tipo_servicio || '')}${diasTxt}</div></div>
                 <div style="text-align:right;white-space:nowrap"><div style="font-weight:700">${costo}</div>
                   <button onclick="crearGuiaDesdeModal('${payload}')" style="margin-top:4px;background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:.78rem;cursor:pointer">Crear guía</button></div>
               </div>`;
@@ -426,7 +427,7 @@ async function crearGuiaDesdeModal(payloadEnc) {
     try {
         const r = await fetch(`${API_BASE_URL}/api/envios/crear-guia`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderNumber: e.orderNumber, docId: e.id, manualId: e.manualId || null, tipoServicio: opt.tipoServicio, mensajeria: opt.mensajeria, costo: opt.costo, datos: e.datos }),
+            body: JSON.stringify({ orderNumber: e.orderNumber, docId: e.id, manualId: e.manualId || null, proveedor: opt.proveedor, tipoServicio: opt.tipoServicio, mensajeria: opt.mensajeria, costo: opt.costo, datos: e.datos }),
         });
         const j = await r.json();
         // Caso crítico: la guía SÍ se creó/cobró en T1 pero no se pudo guardar en el CRM -> mostrar el número para anotarlo.
@@ -441,7 +442,7 @@ async function crearGuiaDesdeModal(payloadEnc) {
             return;
         }
         if (!r.ok || !j.success) throw new Error(j.message || (j.detail ? JSON.stringify(j.detail) : ('HTTP ' + r.status)));
-        const etiqueta = j.pdfPath ? `<a href="${API_BASE_URL}/api/envios/etiqueta?path=${encodeURIComponent(j.pdfPath)}" target="_blank" rel="noopener" style="${btnStyle}">🏷️ Descargar etiqueta</a>` : '';
+        const etiqueta = j.pdfPath ? `<a href="${API_BASE_URL}/api/envios/etiqueta?path=${encodeURIComponent(j.pdfPath)}" target="_blank" rel="noopener" style="${btnStyle}">🏷️ Descargar etiqueta</a>` : (j.labelUrl ? `<a href="${j.labelUrl}" target="_blank" rel="noopener" style="${btnStyle}">🏷️ Etiqueta</a>` : '');
         const rastreo = j.tracking ? `<a href="${j.tracking}" target="_blank" rel="noopener" style="${btnStyle};background:#334155">📍 Rastrear</a>` : '';
         const titulo = j.already ? 'Este pedido ya tenía guía' : '¡Guía creada!';
         if (box) box.innerHTML = `<div style="text-align:center;padding:6px 0">

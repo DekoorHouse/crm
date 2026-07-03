@@ -7882,7 +7882,7 @@ router.get('/envios', async (_req, res) => {
         // Mapa numeroPedido (solo dígitos) -> datos de envío MÁS RECIENTES.
         const norm = (v) => String(v || '').replace(/\D/g, '');
         // Serializa la guía DHL guardada en el doc (sin el serverTimestamp) para el frontend.
-        const serGuia = (g) => (g && g.guia) ? { guia: g.guia, numOrden: g.numOrden || null, mensajeria: g.mensajeria || null, tipoServicio: g.tipoServicio || null, costo: (g.costo != null ? g.costo : null), pdfPath: g.pdfPath || null, tracking: g.tracking || null } : null;
+        const serGuia = (g) => (g && g.guia) ? { proveedor: g.proveedor || 't1', guia: g.guia, numOrden: g.numOrden || null, mensajeria: g.mensajeria || null, tipoServicio: g.tipoServicio || null, costo: (g.costo != null ? g.costo : null), pdfPath: g.pdfPath || null, labelUrl: g.labelUrl || null, tracking: g.tracking || null } : null;
         const datosByOrder = new Map();
         datosSnap.docs.forEach(d => {
             const dd = d.data();
@@ -8034,21 +8034,31 @@ router.post('/envios/cotizar', async (req, res) => {
         const b = req.body || {};
         const dest = String(b.cp || '').replace(/\D/g, '');
         if (!/^\d{5}$/.test(dest)) return res.status(400).json({ success: false, message: 'C.P. destino inválido (5 dígitos).' });
-        const q = await t1.cotizar({ cpDestino: dest, peso: b.peso, largo: b.largo, ancho: b.ancho, alto: b.alto, valorPaquete: b.valorPaquete });
-        const result = Array.isArray(q.result) ? q.result : [];
         const servicios = [];
-        result.forEach((r) => {
-            const svc = (r.cotizacion && r.cotizacion.servicios) || {};
-            Object.keys(svc).forEach((k) => {
-                const s = svc[k] || {};
-                servicios.push({ paqueteria: r.clave, clave: k, servicio: s.servicio, tipo_servicio: s.tipo_servicio, costo: s.costo_total, dias: s.dias_entrega, moneda: s.moneda || 'MXN' });
+        // T1 (DHL, FedEx…)
+        try {
+            const q = await t1.cotizar({ cpDestino: dest, peso: b.peso, largo: b.largo, ancho: b.ancho, alto: b.alto, valorPaquete: b.valorPaquete });
+            const result = Array.isArray(q.result) ? q.result : [];
+            result.forEach((r) => {
+                const svc = (r.cotizacion && r.cotizacion.servicios) || {};
+                Object.keys(svc).forEach((k) => {
+                    const s = svc[k] || {};
+                    servicios.push({ proveedor: 't1', paqueteria: r.clave, clave: k, servicio: s.servicio, tipo_servicio: s.tipo_servicio, costo: s.costo_total, dias: s.dias_entrega, moneda: s.moneda || 'MXN' });
+                });
             });
-        });
+        } catch (e) { console.warn('[COTIZAR] T1 falló:', (e.response && e.response.status) || '', e.message); }
+        // Envíos Perros (Estafeta, J&T, FedEx…)
+        try {
+            const epData = await ep.cotizar({ cpDestino: dest, peso: b.peso, largo: b.largo, ancho: b.ancho, alto: b.alto });
+            ep.normalizarRates(epData).forEach((r) => {
+                servicios.push({ proveedor: 'ep', paqueteria: r.paqueteria, clave: r.deliveryType, servicio: r.servicio, tipo_servicio: r.tipo_servicio, costo: r.costo, dias: r.dias, moneda: r.moneda });
+            });
+        } catch (e) { console.warn('[COTIZAR] Envíos Perros falló:', (e.response && e.response.status) || '', e.message); }
         servicios.sort((a, b2) => (a.costo || 0) - (b2.costo || 0));
         res.json({ success: true, cp: dest, servicios });
     } catch (e) {
-        console.error('[T1] cotizar:', e.response && e.response.status, (e.response && e.response.data) || e.message);
-        res.status(502).json({ success: false, message: 'No se pudo cotizar en T1.', detail: (e.response && e.response.data) || e.message });
+        console.error('[COTIZAR]', e.message);
+        res.status(502).json({ success: false, message: 'No se pudo cotizar.', detail: e.message });
     }
 });
 
@@ -8074,47 +8084,60 @@ router.post('/envios/crear-guia', async (req, res) => {
             }
         }
 
-        // Crear la guía en T1 (DESCUENTA SALDO).
-        const r = await t1.crearGuia({ destino, pedido: b.orderNumber, tipoServicio: b.tipoServicio, mensajeria: b.mensajeria });
-        const det = r && r.detail;
-        if (!r || r.success === false || !det || !det.guia) {
-            return res.status(502).json({ success: false, message: (r && r.message) || 'T1 no devolvió número de guía.', detail: r });
+        // Crear la guía en el proveedor elegido (DESCUENTA SALDO). proveedor: 't1' (DHL/FedEx) | 'ep' (Envíos Perros).
+        const proveedor = b.proveedor === 'ep' ? 'ep' : 't1';
+        let guia = null, numOrden = null, pickUp = null, pdfBase64 = null, tracking = null, labelUrl = null, mensajeria = b.mensajeria || null;
+        if (proveedor === 'ep') {
+            const data = await ep.crearGuia({ destino, deliveryType: b.tipoServicio });
+            const info = ep.extractGuia(data);
+            if (!info.guia) {
+                return res.status(502).json({ success: false, message: 'Envíos Perros no devolvió número de guía.', detail: data });
+            }
+            guia = info.guia; numOrden = info.orderId || null; labelUrl = info.label || null;
+            mensajeria = b.mensajeria || 'ENVIOSPERROS'; // rastreo: por número de guía en el sitio de la paquetería
+        } else {
+            const r = await t1.crearGuia({ destino, pedido: b.orderNumber, tipoServicio: b.tipoServicio, mensajeria: b.mensajeria });
+            const det = r && r.detail;
+            if (!r || r.success === false || !det || !det.guia) {
+                return res.status(502).json({ success: false, message: (r && r.message) || 'T1 no devolvió número de guía.', detail: r });
+            }
+            guia = det.guia; numOrden = det.num_orden || null; pickUp = det.pick_up || null; pdfBase64 = det.file || null;
+            tracking = `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${encodeURIComponent(det.guia)}`;
+            mensajeria = b.mensajeria || t1._config.T1_MENSAJERIA;
         }
 
-        // Guardar el PDF de la etiqueta en el bucket (best-effort; la guía es lo prioritario y no se pierde si el PDF falla).
+        // Guardar el PDF de la etiqueta en el bucket (T1 lo trae en base64). Best-effort; la guía es lo prioritario.
         let pdfPath = null;
         try {
-            if (det.file) {
-                const buf = Buffer.from(det.file, 'base64');
-                pdfPath = `etiquetas/${String(b.orderNumber || 'guia').replace(/[^\w-]/g, '')}-${det.guia}.pdf`;
+            if (pdfBase64) {
+                const buf = Buffer.from(pdfBase64, 'base64');
+                pdfPath = `etiquetas/${String(b.orderNumber || 'guia').replace(/[^\w-]/g, '')}-${guia}.pdf`;
                 await bucket.file(pdfPath).save(buf, { contentType: 'application/pdf', resumable: false });
             }
-        } catch (e2) { pdfPath = null; console.warn('[T1] No se pudo guardar el PDF de la etiqueta:', e2.message); }
+        } catch (e2) { pdfPath = null; console.warn('[GUIA] No se pudo guardar el PDF de la etiqueta:', e2.message); }
 
-        const tracking = `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${encodeURIComponent(det.guia)}`;
         const guiaEnvio = {
-            guia: det.guia, numOrden: det.num_orden || null, pickUp: det.pick_up || null,
-            mensajeria: b.mensajeria || t1._config.T1_MENSAJERIA,
-            tipoServicio: b.tipoServicio || t1._config.T1_TIPO_SERVICIO,
+            proveedor, guia, numOrden, pickUp,
+            mensajeria, tipoServicio: b.tipoServicio || null,
             costo: (b.costo != null ? Number(b.costo) : null),
-            pdfPath, tracking,
+            pdfPath, labelUrl: labelUrl || null, tracking: tracking || null,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        // Persistir la guía. CRÍTICO: si falla, la guía YA se cobró en T1 -> devolverla igual para no perderla.
+        // Persistir la guía. CRÍTICO: si falla, la guía YA se creó/cobró -> devolverla igual para no perderla.
         if (docRef) {
             try {
                 await docRef.set({ guiaEnvio }, { merge: true });
             } catch (e3) {
-                console.error('[T1] CRÍTICO: guía creada/cobrada en T1 pero NO persistida:', det.guia, e3.message);
-                return res.status(500).json({ success: false, persistError: true, guia: det.guia, numOrden: det.num_orden || null, tracking, pdfPath, message: 'La guía se creó y cobró en T1, pero no se pudo guardar en el CRM. Anota el número de guía.' });
+                console.error('[GUIA] CRÍTICO: guía creada/cobrada pero NO persistida:', guia, e3.message);
+                return res.status(500).json({ success: false, persistError: true, guia, numOrden, tracking, pdfPath, labelUrl, message: 'La guía se creó y cobró, pero no se pudo guardar en el CRM. Anota el número de guía.' });
             }
         }
 
-        res.json({ success: true, guia: det.guia, numOrden: det.num_orden || null, pickUp: det.pick_up || null, pdfPath, tracking });
+        res.json({ success: true, proveedor, guia, numOrden, pickUp, pdfPath, labelUrl: labelUrl || null, tracking: tracking || null });
     } catch (e) {
-        console.error('[T1] crear-guia:', e.response && e.response.status, (e.response && e.response.data) || e.message);
-        res.status(502).json({ success: false, message: 'No se pudo crear la guía en T1.', detail: (e.response && e.response.data) || e.message });
+        console.error('[GUIA] crear-guia:', e.response && e.response.status, (e.response && e.response.data) || e.message);
+        res.status(502).json({ success: false, message: 'No se pudo crear la guía.', detail: (e.response && e.response.data) || e.message });
     }
 });
 
