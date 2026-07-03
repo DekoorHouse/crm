@@ -128,8 +128,8 @@ function navigateTo(viewName, force = false) {
     }
 }
 
-// Sección "Envíos": tabla de pedidos con comprobante validado (número de pedido, monto pagado,
-// datos de envío). Lee GET /api/envios (une pedidos con comprobanteValidadoAt + datos_envio).
+// Sección "Envíos": tabla de pedidos con comprobante validado. Cada dato de envío va en su propia
+// columna y se copia al hacer clic en la celda. Lee GET /api/envios.
 async function renderEnviosView() {
     const container = document.getElementById('envios-container');
     if (!container) return;
@@ -143,25 +143,59 @@ async function renderEnviosView() {
             container.innerHTML = '<p class="text-gray-500">Aún no hay pedidos con comprobante validado. Aparecerán aquí cuando la IA valide un comprobante de pago.</p>';
             return;
         }
+        // Celda copiable: al hacer clic copia su valor. Vacío -> "—" no copiable.
+        const cell = (val, style = '') => {
+            const v = (val == null ? '' : String(val)).trim();
+            if (!v) return `<td style="padding:10px 14px 10px 0;color:#cbd5e1">—</td>`;
+            return `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;${style}">${escapeHtml(v)}</td>`;
+        };
+        const DATA_COLS = 9; // nombre..teléfono
         const rows = envios.map(e => {
-            const monto = e.montoPagado != null ? `$${Number(e.montoPagado).toLocaleString('es-MX')}` : '<span class="text-gray-400">—</span>';
-            const datos = e.tieneDatos
-                ? escapeHtml(e.datosEnvio)
-                : '<span style="color:#b45309;font-weight:600;">Pendiente — aún no llena el formulario</span>';
+            const montoVal = e.montoPagado != null ? `$${Number(e.montoPagado).toLocaleString('es-MX')}` : '';
+            const d = e.datos;
+            let dataCells;
+            if (d) {
+                dataCells =
+                    cell(d.nombre, 'white-space:nowrap;font-weight:600') +
+                    cell(d.direccion) +
+                    cell(d.colonia, 'white-space:nowrap') +
+                    cell(d.entreCalles) +
+                    cell(d.referencia) +
+                    cell(d.ciudad, 'white-space:nowrap') +
+                    cell(d.estado, 'white-space:nowrap') +
+                    cell(d.codigoPostal, 'white-space:nowrap') +
+                    cell(d.telefono, 'white-space:nowrap');
+            } else {
+                dataCells = `<td colspan="${DATA_COLS}" style="padding:10px 0;color:#b45309;font-weight:600">Pendiente — aún no llena el formulario</td>`;
+            }
             return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:top">
-                <td style="padding:12px 16px 12px 0;font-weight:700;white-space:nowrap;color:var(--color-primary)">${escapeHtml(e.orderNumber)}</td>
-                <td style="padding:12px 16px 12px 0;white-space:nowrap;font-weight:600">${monto}</td>
-                <td style="padding:12px 0;white-space:normal;color:var(--color-text-light);max-width:560px">${datos}</td>
+                ${cell(e.orderNumber, 'white-space:nowrap;font-weight:700;color:var(--color-primary)')}
+                ${cell(montoVal, 'white-space:nowrap;font-weight:600')}
+                ${dataCells}
             </tr>`;
         }).join('');
         container.innerHTML = `
+            <style>
+              #envios-container .envio-copy{transition:background-color .12s;border-radius:6px;}
+              #envios-container .envio-copy:hover{background-color:var(--color-subtle-bg,#f1f5f9);}
+              #envios-container .envio-copy[data-copied]{background-color:#dcfce7 !important;color:#166534;}
+            </style>
+            <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo.</p>
             <div style="overflow-x:auto">
-              <table style="width:100%;border-collapse:collapse;font-size:0.9rem">
+              <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
                 <thead>
-                  <tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light)">
-                    <th style="padding:8px 16px 8px 0">Número de pedido</th>
-                    <th style="padding:8px 16px 8px 0">Monto pagado</th>
-                    <th style="padding:8px 0">Datos de envío</th>
+                  <tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light);white-space:nowrap">
+                    <th style="padding:8px 14px 8px 0">Pedido</th>
+                    <th style="padding:8px 14px 8px 0">Monto pagado</th>
+                    <th style="padding:8px 14px 8px 0">Nombre</th>
+                    <th style="padding:8px 14px 8px 0">Dirección</th>
+                    <th style="padding:8px 14px 8px 0">Colonia</th>
+                    <th style="padding:8px 14px 8px 0">Entre calles</th>
+                    <th style="padding:8px 14px 8px 0">Referencia</th>
+                    <th style="padding:8px 14px 8px 0">Municipio</th>
+                    <th style="padding:8px 14px 8px 0">Estado</th>
+                    <th style="padding:8px 14px 8px 0">C.P.</th>
+                    <th style="padding:8px 0">Teléfono</th>
                   </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -174,6 +208,34 @@ async function renderEnviosView() {
     }
 }
 window.renderEnviosView = renderEnviosView;
+
+// Copia el texto de una celda de la tabla de Envíos al portapapeles (clic en la celda).
+// Intenta la API moderna y, si falla, cae al fallback clásico (textarea + execCommand).
+async function copyEnvioCell(el) {
+    const text = (el.textContent || '').trim();
+    if (!text) return;
+    let ok = false;
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            ok = true;
+        }
+    } catch (_) { ok = false; }
+    if (!ok) {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.top = '0'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.focus(); ta.select();
+            ok = document.execCommand('copy');
+            ta.remove();
+        } catch (_) { ok = false; }
+    }
+    if (ok) {
+        el.setAttribute('data-copied', '1');
+        setTimeout(() => el.removeAttribute('data-copied'), 750);
+    }
+}
+window.copyEnvioCell = copyEnvioCell;
 
 // Cambia entre las sub-pestañas del hub IA (Entrenamiento · Simulador · Rescate).
 function switchIaTab(tab) {

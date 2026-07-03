@@ -970,7 +970,7 @@ document.addEventListener('DOMContentLoaded', () => {
             precioTotal = (Number(pedido.precio) || 0) * qty;
             productoNombre = pedido.producto
                 ? (qty > 1 ? `${pedido.producto} ×${qty}` : pedido.producto)
-                : '<em>N/A</em>';
+                : null; // sin producto: se pinta <em>N/A</em> aparte (ver celda de producto)
         }
         const precioFormateado = formatCurrency(precioTotal);
         const datosProductoTexto = pedido.datosProducto || '-';
@@ -1020,13 +1020,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const textoSpan = document.createElement('span');
             textoSpan.className = 'datos-text';
-            textoSpan.innerHTML = texto;
+            // textContent (no innerHTML): datosProducto puede venir VERBATIM del cliente
+            // (pedidos registrados por la IA) — con innerHTML sería XSS almacenado.
+            textoSpan.textContent = texto;
             container.appendChild(textoSpan);
             td.appendChild(container);
             return td;
         };
 
-        tr.appendChild(createTd(consecutiveOrderNumber !== 'N/A' ? `DH${consecutiveOrderNumber}` : 'N/A'));
+        // Red de seguridad: pedidos registrados automáticamente por la IA. Mientras nadie
+        // los revise (aiReviewStatus === 'pending') la fila queda resaltada y el badge 🤖
+        // es un botón para marcarlos como revisados; ya aprobados, queda el badge informativo.
+        const numeroTd = createTd(consecutiveOrderNumber !== 'N/A' ? `DH${consecutiveOrderNumber}` : 'N/A');
+        if (pedido.registeredByAI === true) {
+            if (pedido.aiReviewStatus === 'pending') {
+                tr.classList.add('ai-pending-review');
+                const aiBtn = document.createElement('button');
+                aiBtn.className = 'ai-order-badge ai-order-badge--pending';
+                aiBtn.innerHTML = '🤖 Revisar';
+                aiBtn.title = `Pedido registrado automáticamente por la IA${pedido.aiConfidence != null ? ` (confianza ${pedido.aiConfidence}%)` : ''}. Verifica los datos y da clic para marcarlo como revisado. Si algo está mal, edítalo con el lápiz.`;
+                aiBtn.dataset.action = 'approve-ai-order';
+                aiBtn.dataset.orderId = pedido.id;
+                numeroTd.appendChild(aiBtn);
+            } else {
+                const aiTag = document.createElement('span');
+                aiTag.className = 'ai-order-badge';
+                aiTag.textContent = '🤖';
+                aiTag.title = 'Pedido registrado por la IA (ya revisado).';
+                numeroTd.appendChild(aiTag);
+            }
+        }
+        tr.appendChild(numeroTd);
         tr.appendChild(createTd(fechaFormateada));
         tr.appendChild(createTd(vendedor, true));
 
@@ -1113,7 +1137,13 @@ document.addEventListener('DOMContentLoaded', () => {
         comentariosTd.title = 'Doble clic para ver el comentario completo';
         tr.appendChild(comentariosTd);
 
-        tr.appendChild(createTd(productoNombre, true));
+        // textContent (no innerHTML): items[].producto puede venir del cliente vía pedidos
+        // registrados por la IA (ej. el "personaje" de la lámpara infantil) — XSS si se inyecta.
+        if (productoNombre === null) {
+            tr.appendChild(createTd('<em>N/A</em>', true));
+        } else {
+            tr.appendChild(createTd(productoNombre));
+        }
         tr.appendChild(createDatosCell(orderPhotoUrls, datosProductoTexto, consecutiveOrderNumber, 'Pedido'));
         tr.appendChild(createDatosCell(promoPhotoUrls, datosPromocionTexto, consecutiveOrderNumber, 'Promo'));
         tr.appendChild(createTd(precioFormateado));
@@ -1661,6 +1691,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Red de seguridad IA: marcar un pedido registrado por la IA como revisado por un humano.
+    // Escribe directo a Firestore (mismo patrón que los checkboxes de verificación).
+    async function marcarPedidoIARevisado(pedidoId, badgeEl) {
+        if (!auth.currentUser || !pedidoId) return;
+        if (!confirm('¿Ya verificaste que este pedido registrado por la IA es correcto?\n\n(Si algo está mal, cancela y edítalo primero con el lápiz.)')) return;
+        const pedidoRef = doc(db, "pedidos", pedidoId);
+        try {
+            await updateDoc(pedidoRef, {
+                aiReviewStatus: 'approved',
+                aiReviewedAt: serverTimestamp(),
+                aiReviewedBy: auth.currentUser.email || auth.currentUser.uid
+            });
+            const cached = pedidosDataMap.get(pedidoId);
+            if (cached) cached.aiReviewStatus = 'approved';
+            const tr = cuerpoTablaPedidos.querySelector(`tr[data-id="${pedidoId}"]`);
+            if (tr) tr.classList.remove('ai-pending-review');
+            if (badgeEl) {
+                const aiTag = document.createElement('span');
+                aiTag.className = 'ai-order-badge';
+                aiTag.textContent = '🤖';
+                aiTag.title = 'Pedido registrado por la IA (ya revisado).';
+                badgeEl.replaceWith(aiTag);
+            }
+            showCopyToast("Pedido de IA marcado como revisado ✓", "success");
+        } catch (error) {
+            console.error("Error al marcar el pedido de IA como revisado: ", error);
+            showCopyToast("Error al guardar el cambio", "error");
+        }
+    }
+
     async function handleFormSubmit(e) {
         e.preventDefault();
         if(mensajeErrorPedido) mensajeErrorPedido.textContent = '';
@@ -1825,7 +1885,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (lastIndex < text.length) fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
                 if(node.parentNode) node.parentNode.replaceChild(fragment, node);
             }
-        } else if (node.nodeType === Node.ELEMENT_NODE && !/^(script|style|mark)$/i.test(node.tagName)) {
+        } else if (node.nodeType === Node.ELEMENT_NODE && !/^(script|style|mark)$/i.test(node.tagName)
+            && !(node.classList && node.classList.contains('ai-order-badge'))) {
+            // .ai-order-badge se excluye: su texto ("🤖 Revisar") no es contenido del pedido
             Array.from(node.childNodes).forEach(child => highlightTextInNode(child, regex, matches, cell));
         }
     }
@@ -2535,6 +2597,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     e.stopPropagation();
                     const pedido = pedidosDataMap.get(orderId);
                     if (pedido) abrirModalOxxo(orderId, pedido);
+                } else if (action === 'approve-ai-order') {
+                    e.stopPropagation();
+                    marcarPedidoIARevisado(orderId, actionEl);
                 }
                 return;
             }
@@ -2633,7 +2698,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     const currentRow = currentMatch.element.closest('tr');
                     if (currentRow && currentRow.cells[0]) {
                         const pedidoId = currentRow.dataset.id;
-                        const orderNumberText = currentRow.cells[0].textContent;
+                        // Del mapa, no de textContent: la celda puede traer el badge "🤖 Revisar"
+                        const pedidoData = pedidosDataMap.get(pedidoId);
+                        const orderNumberText = pedidoData && pedidoData.consecutiveOrderNumber
+                            ? `DH${pedidoData.consecutiveOrderNumber}`
+                            : (currentRow.cells[0].firstChild?.nodeValue || '').trim();
 
                         if (pedidoId) {
                             const nuevoEstatus = "Foto enviada";

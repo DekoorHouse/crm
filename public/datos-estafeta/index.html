@@ -222,8 +222,9 @@
       .then(r=>r.json())
       .then(d=>{
         if(d&&d.success){
+          // Solo precargamos el teléfono. El nombre lo escribe el cliente (el del chat no siempre
+          // es el nombre real de quien recibe).
           if(d.telefono && !$('telefono').value) $('telefono').value=d.telefono;
-          if(d.nombreCompleto && !$('nombre').value) $('nombre').value=d.nombreCompleto;
         }
       })
       .catch(()=>{});

@@ -2708,7 +2708,7 @@ const OrderHistoryItemTemplate = (order) => {
                 <span class="order-date">${orderDate}${precioDisplay ? ` · <strong>${precioDisplay}</strong>` : ''}</span>
             </div>
             <div class="order-history-row">
-                <span class="order-product" title="${productoTitle}">${productoDisplay}</span>
+                <span class="order-product" title="${escapeHtml(productoTitle)}">${escapeHtml(productoDisplay)}</span>
             </div>
             <div class="order-history-row">
                 <select

@@ -5896,6 +5896,58 @@ router.get('/debug/shipping-digest-run', async (req, res) => {
     }
 });
 
+// GET /api/debug/ai-order-extract?contactId=521... → DRY-RUN del extractor de pedidos de la IA:
+// reconstruye el transcript del contacto y muestra qué pedido registraría, SIN crear nada.
+// Sirve para probar el registro automático (orders/aiOrderRegistration.js) contra chats reales.
+router.get('/debug/ai-order-extract', async (req, res) => {
+    try {
+        const contactId = String(req.query.contactId || '').trim();
+        if (!contactId) return res.status(400).json({ success: false, message: 'Falta ?contactId=' });
+
+        const { getAiOrderConfig, extractOrderFromChat } = require('./orders/aiOrderRegistration');
+        const cfg = await getAiOrderConfig();
+
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactSnap = await contactRef.get();
+        if (!contactSnap.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        const contactData = contactSnap.data();
+
+        // Transcript igual que el de los clasificadores (más antiguo arriba, sangría en multilínea)
+        const msgsSnap = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(60).get();
+        const lines = msgsSnap.docs.reverse().map(d => {
+            const m = d.data();
+            let body = (m.text || '').trim();
+            if (!body && m.type && m.type !== 'text') body = `[${m.type}]`;
+            if (!body) return null;
+            const who = m.from === contactId ? 'Cliente' : 'Asistente';
+            return `${who}: ${body.replace(/\r?\n/g, '\n    ')}`;
+        }).filter(Boolean);
+        const conversationText = lines.join('\n');
+
+        const extraction = await extractOrderFromChat({
+            conversationText,
+            name: contactData.name || contactId,
+            catalogText: cfg.catalogText
+        });
+        const computedTotal = extraction ? extraction.items.reduce((s, it) => s + it.precio * it.cantidad, 0) : null;
+
+        res.json({
+            success: true,
+            dryRun: true,
+            config: { enabled: cfg.enabled, minConfidence: cfg.minConfidence },
+            registraria: !!(extraction && extraction.listo && extraction.items.length > 0
+                && !extraction.items.some(it => !(it.precio > 0) || it.precio > 20000)
+                && extraction.total > 0 && Math.abs(computedTotal - extraction.total) <= 1
+                && extraction.confianza >= cfg.minConfidence),
+            computedTotal,
+            extraction,
+            transcriptPreview: conversationText.slice(-1500)
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // --- Endpoint POST /api/storage/generate-signed-url (Generar URL firmada para subida a GCS) ---
 router.post('/storage/generate-signed-url', async (req, res) => {
     const { fileName, contentType, pathPrefix } = req.body;
@@ -7810,27 +7862,25 @@ router.get('/envios', async (_req, res) => {
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
             const orderNumber = num != null ? `DH${num}` : (p.numeroPedido || doc.id);
             const de = datosByOrder.get(norm(num));
-            let datosEnvio = null;
-            if (de) {
-                const partes = [
-                    de.nombreCompleto,
-                    [de.direccion, de.numInterior ? `Int. ${de.numInterior}` : ''].filter(Boolean).join(' '),
-                    de.colonia,
-                    de.entreCalles ? `Entre: ${de.entreCalles}` : '',
-                    de.referencia ? `Ref: ${de.referencia}` : '',
-                    [de.ciudad, de.estado].filter(Boolean).join(', '),
-                    de.codigoPostal ? `C.P. ${de.codigoPostal}` : '',
-                    de.telefono ? `Tel: ${de.telefono}` : '',
-                ].filter(Boolean);
-                datosEnvio = partes.join(' · ');
-            }
+            // Datos de envío desglosados (cada campo va en su propia columna en el CRM).
+            const datos = de ? {
+                nombre: de.nombreCompleto || '',
+                direccion: [de.direccion, de.numInterior ? `Int. ${de.numInterior}` : ''].filter(Boolean).join(' '),
+                colonia: de.colonia || '',
+                entreCalles: de.entreCalles || '',
+                referencia: de.referencia || '',
+                ciudad: de.ciudad || '',
+                estado: de.estado || '',
+                codigoPostal: de.codigoPostal || '',
+                telefono: de.telefono || '',
+            } : null;
             return {
                 id: doc.id,
                 orderNumber,
                 montoPagado: (p.precio != null ? p.precio : null),
                 estatus: p.estatus || null,
                 comprobanteValidadoAt: p.comprobanteValidadoAt && p.comprobanteValidadoAt.toDate ? p.comprobanteValidadoAt.toDate().toISOString() : null,
-                datosEnvio,          // string legible o null si el cliente aún no llena el formulario
+                datos,               // objeto con cada campo, o null si el cliente aún no llena el formulario
                 tieneDatos: !!de,
             };
         });

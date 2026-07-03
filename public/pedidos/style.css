@@ -1460,3 +1460,32 @@ body.dark-mode #scrollToTopBtn:hover {
 @media (max-width: 600px) {
     .pedido-campana-grid { grid-template-columns: 1fr; }
 }
+
+/* --- Red de seguridad: pedidos registrados automáticamente por la IA --- */
+/* Fila pendiente de revisión humana: resaltado morado suave */
+tr.ai-pending-review td { background-color: rgba(139, 92, 246, 0.10); }
+body.dark-mode tr.ai-pending-review td { background-color: rgba(139, 92, 246, 0.16); }
+
+.ai-order-badge {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 0.78rem;
+    vertical-align: middle;
+    border: none;
+    background: none;
+    padding: 0;
+}
+/* Pendiente: botón clickeable para marcar como revisado */
+button.ai-order-badge--pending {
+    cursor: pointer;
+    background: #8b5cf6;
+    color: #fff;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.72rem;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(139, 92, 246, 0.4);
+    transition: background 0.15s ease, transform 0.1s ease;
+}
+button.ai-order-badge--pending:hover { background: #7c3aed; transform: scale(1.05); }

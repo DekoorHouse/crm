@@ -1937,7 +1937,10 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // (una llamada extra a Gemini por turno) en toda conversación multi-día.
             const turnText = gapNote + text;
 
-            historyLines.push(`${isClient ? 'Cliente' : 'Asistente'}: ${text}`);
+            // Sangría en las líneas de continuación: un mensaje multilínea del cliente no puede
+            // "fabricar" renglones que empiecen con "Asistente:" en el transcript plano (inyección
+            // de prompt hacia los clasificadores/extractores que leen conversationHistory).
+            historyLines.push(`${isClient ? 'Cliente' : 'Asistente'}: ${text.replace(/\r?\n/g, '\n    ')}`);
             const role = isClient ? 'user' : 'model';
             const lastTurn = historyTurns[historyTurns.length - 1];
             if (lastTurn && lastTurn.role === role) {
@@ -2442,8 +2445,15 @@ Reglas:
         // y se avisa al admin. Fire-and-forget: nunca debe tumbar la respuesta al cliente.
         // require perezoso para evitar ciclo de módulos (aiOrderRegistration requiere services).
         if (registerOrderCmd) {
+            // Anexar la respuesta del TURNO ACTUAL al transcript: conversationHistory se arma
+            // ANTES de generar, así que sin esto el extractor no vería un resumen/cierre emitido
+            // en este mismo turno (y las confirmaciones por nota de voz perderían su contexto).
+            const currentTurnText = aiMessages
+                .map(m => `Asistente: ${m.replace(/\r?\n/g, '\n    ')}`)
+                .join('\n');
+            const fullTranscript = currentTurnText ? `${conversationHistory}\n${currentTurnText}` : conversationHistory;
             require('./orders/aiOrderRegistration')
-                .registerOrderFromAI({ contactId, contactData, conversationText: conversationHistory })
+                .registerOrderFromAI({ contactId, contactData, conversationText: fullTranscript })
                 .catch(e => console.warn('[AI_ORDER] registro automático falló:', e.message));
         }
 
