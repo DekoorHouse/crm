@@ -8013,6 +8013,14 @@ router.get('/debug/t1-test', async (req, res) => {
         const token = await t1Client.getToken();
         out.token_ok = !!token;
         out.token_len = token ? token.length : 0;
+        // Decodificar claims del JWT (a nombre de qué cuenta está el token) — diagnóstico.
+        try {
+            const payload = JSON.parse(Buffer.from(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+            const picked = {};
+            ['preferred_username', 'email', 'name', 'given_name', 'family_name', 'sub', 'azp'].forEach((k) => { if (payload[k] != null) picked[k] = payload[k]; });
+            Object.keys(payload).forEach((k) => { if (/comerci|shop|store|tienda/i.test(k)) picked[k] = payload[k]; });
+            out.token_claims = picked;
+        } catch (e2) { out.token_claims_error = e2.message; }
     } catch (e) {
         out.token_ok = false;
         out.token_error = e.response ? { status: e.response.status, data: e.response.data } : e.message;
