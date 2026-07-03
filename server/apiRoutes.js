@@ -8200,6 +8200,22 @@ router.get('/debug/t1-test', async (req, res) => {
     res.json(out);
 });
 
+// --- GET /api/debug/ep-test — prueba de conexión con Envíos Perros (cotización). TEMPORAL. ---
+const ep = require('./enviosPerros/enviosPerrosClient');
+router.get('/debug/ep-test', async (req, res) => {
+    if ((req.query.key || '') !== 't1diag_9f3k2xQ7') return res.status(403).json({ error: 'forbidden' });
+    const cp = String(req.query.cp || '06700').replace(/\D/g, '') || '06700';
+    const out = { config: ep._config, cp };
+    try {
+        const data = await ep.cotizar({ cpDestino: cp });
+        out.rates = ep.normalizarRates(data);
+        out.raw = JSON.stringify(data).slice(0, 3000);
+    } catch (e) {
+        out.error = e.response ? { status: e.response.status, data: e.response.data } : e.message;
+    }
+    res.json(out);
+});
+
 // --- Background Removal (server-side AI) ---
 let removeBackgroundFn = null;
 
