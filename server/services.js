@@ -2065,23 +2065,34 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
         }
 
-        // Cobertura Estafeta: cuando la IA revisa la cobertura de un C.P. (antes de registrar el
-        // pedido), consultar la herramienta de frecuencia de Estafeta (origen Durango 34188) para
-        // saber si hay entrega a domicilio y si NO hay costo de reexpedición. No requiere credenciales.
-        let estafetaCoverageNote = '';
+        // Cobertura/cotización T1: cuando la IA revisa cobertura de un C.P. (labor de venta), cotizar
+        // en T1 (DHL/FedEx, precios reales) para saber si hay envío y a qué costo. Reemplaza el scraping
+        // de Estafeta. El envío al cliente es GRATIS; los montos son referencia interna de costo.
+        let coberturaNote = '';
         if (postalCodeMatch) {
             try {
-                const { checkFrecuencia } = require('./estafeta/estafetaFrecuencia');
-                const est = await checkFrecuencia(postalCodeMatch[1]);
-                if (est && est.found) {
-                    const domicilio = est.ocurreForzoso === 'No';
-                    const reexped = est.reexpedicion === 'Sí';
-                    console.log(`[AI] Cobertura Estafeta CP ${postalCodeMatch[1]}: domicilio=${domicilio} reexpedicion=${est.reexpedicion}${est.reexpedicionCosto ? ` (${est.reexpedicionCosto})` : ''} frecuencia=${est.frecuencia}`);
-                    estafetaCoverageNote = `\n\n**Cobertura Estafeta para el C.P. ${postalCodeMatch[1]} (envío desde Durango, datos reales de Estafeta):** frecuencia de entrega ${est.frecuencia}${est.estado ? ` — ${est.estado}` : ''}. Entrega a DOMICILIO: ${domicilio ? 'SÍ' : 'NO — en esta zona Estafeta solo entrega en su SUCURSAL (ocurre forzoso); el cliente tendría que RECOGER ahí'}.${reexped ? ` ⚠️ Esta zona tiene COSTO DE REEXPEDICIÓN${est.reexpedicionCosto ? ` de ${est.reexpedicionCosto}` : ''} (población lejana/de difícil acceso).` : ' Sin costo de reexpedición.'}
-Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección para su pedido. Si hay entrega a domicilio y SIN costo de reexpedición, puedes confirmarle que sí llegamos a su domicilio con normalidad. Si NO hay entrega a domicilio (ocurre forzoso) o SÍ hay costo de reexpedición, NO le prometas envío gratis a domicilio: avísale con amabilidad la condición de su zona y escribe /equipo (en su propio renglón) para que un humano lo confirme antes de registrar el pedido. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
+                const t1 = require('./t1/t1Client');
+                const q = await t1.cotizar({ cpDestino: postalCodeMatch[1] });
+                const result = Array.isArray(q && q.result) ? q.result : [];
+                const ops = [];
+                result.forEach((r) => {
+                    const svc = (r.cotizacion && r.cotizacion.servicios) || {};
+                    Object.keys(svc).forEach((k) => {
+                        const s = svc[k] || {};
+                        if (s.costo_total != null) ops.push({ paq: r.clave, serv: s.servicio, dias: s.dias_entrega, costo: Number(s.costo_total) });
+                    });
+                });
+                ops.sort((a, b) => a.costo - b.costo);
+                if (ops.length) {
+                    const top = ops.slice(0, 4).map(o => `${o.paq} ${o.serv} $${o.costo.toFixed(2)}${o.dias ? ` (~${o.dias}d)` : ''}`).join(' · ');
+                    console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops, más barata ${ops[0].paq} $${ops[0].costo}`);
+                    coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real de paqueterías vía T1, desde Durango):** SÍ hay cobertura a domicilio. Opciones (referencia interna de costo, NO para el cliente): ${top}. El envío al cliente es GRATIS (nosotros pagamos la guía) — NO le cobres envío ni le menciones estos montos; úsalos solo para saber que sí llegamos y a qué costo. Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
+                } else {
+                    console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: sin tarifas (posible zona sin cobertura o CP inválido)`);
+                    coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]}:** ninguna paquetería (DHL/FedEx) devolvió tarifa para ese C.P. — posible zona sin cobertura o C.P. inválido. Si el cliente pregunta por envío a esa zona, avísale con amabilidad que lo confirmarás y escribe /equipo (en su propio renglón) antes de prometer la entrega. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
                 }
             } catch (e) {
-                console.warn('[AI] Chequeo de cobertura Estafeta falló:', e.message);
+                console.warn('[AI] Cotización de cobertura T1 falló:', e.message);
             }
         }
 
@@ -2170,7 +2181,7 @@ Reglas:
         const mediaTaskNote = mediaParts.length > departmentImageParts.length
             ? ' Vienen adjuntos archivos de la conversación (fotos, audios, videos o documentos/PDF, p. ej. comprobantes de pago): analízalos con cuidado cuando sean relevantes para el último mensaje del cliente; si ya los atendiste en un turno anterior, no los vuelvas a comentar.'
             : '';
-        const finalUserText = `${fechaActualNote}${orderInfoNote}${repeatBuyerNote}${postventaProtocolNote}${cancelCommandNote}${comprobanteCommandNote}${shippingInfo}${estafetaCoverageNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${orderInfoNote}${repeatBuyerNote}${postventaProtocolNote}${cancelCommandNote}${comprobanteCommandNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
