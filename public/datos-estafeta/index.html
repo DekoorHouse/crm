@@ -15,6 +15,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <style>
   :root{
     --teal:#1B4D5C; --teal-dark:#143b47; --cream:#FAF0E6; --cream-field:#F3E9DC;
@@ -54,6 +55,28 @@
   .hint{font-size:12.5px;margin-top:5px;min-height:14px;color:var(--muted);}
   .hint.error{color:var(--err);} .hint.ok{color:var(--ok);}
   .editable-hint{font-size:12px;color:var(--gold);margin-top:5px;font-weight:600;}
+  /* --- Buscador de sugerencias (Google Places) --- */
+  .searchwrap{position:relative;}
+  .resultados{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;
+              border:1px solid #e5dcc9;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.18);
+              z-index:1200;max-height:240px;overflow-y:auto;display:none;}
+  .resultados.show{display:block;}
+  .resultados .item{padding:11px 14px;cursor:pointer;border-bottom:1px solid #f3ece0;
+                    font-size:13.5px;line-height:1.35;}
+  .resultados .item:last-child{border-bottom:none;}
+  .resultados .item:active,.resultados .item:hover{background:#faf3e6;}
+  .resultados .empty{padding:11px 14px;color:var(--muted);font-size:13px;}
+  /* --- Mapa --- */
+  .mapsection{background:#fff;border:1.5px solid var(--gold);border-radius:16px;padding:14px;margin-bottom:14px;}
+  .mapsection h3{font-size:13px;font-weight:700;color:var(--teal);margin-bottom:4px;display:flex;align-items:center;gap:7px;}
+  .mapsection .sub{font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.4;}
+  #map{height:230px;border-radius:12px;z-index:0;}
+  #coords{font-size:12.5px;margin-top:8px;font-weight:600;}
+  #coords.set{color:var(--ok);} #coords.unset{color:var(--primary);}
+  .btn-ubicar{width:100%;margin-top:10px;border:1.5px solid var(--teal);background:#fff;color:var(--teal);
+              border-radius:12px;padding:11px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;
+              display:flex;align-items:center;justify-content:center;gap:8px;}
+  .btn-ubicar:active{background:#f0f7f9;}
   .btn{width:100%;border:none;border-radius:14px;padding:16px;font-family:inherit;
        font-size:16px;font-weight:700;cursor:pointer;color:#fff;background:var(--primary);
        margin-top:8px;display:flex;align-items:center;justify-content:center;gap:9px;
@@ -100,6 +123,18 @@
             <input type="tel" id="telefono" placeholder="6181234567" maxlength="10" inputmode="numeric" pattern="[0-9]{10}" required />
           </div>
           <div class="editable-hint"><i class="fas fa-pen"></i> Ya viene tu número; puedes cambiarlo si prefieres otro.</div>
+        </div>
+
+        <!-- Buscador de sugerencias: rellena calle/colonia/CP y marca el mapa -->
+        <div class="field">
+          <label for="buscar">Busca tu dirección <span style="color:var(--muted);font-weight:500;">(sugerencias)</span></label>
+          <div class="searchwrap">
+            <div class="inputwrap"><i class="fas fa-magnifying-glass"></i>
+              <input type="text" id="buscar" placeholder="Empieza a escribir tu calle y número…" autocomplete="off" />
+            </div>
+            <div id="resultados" class="resultados"></div>
+          </div>
+          <div class="hint">Elige una sugerencia para autocompletar y verificar tu dirección, o escríbela tú mismo abajo.</div>
         </div>
 
         <div class="field">
@@ -166,6 +201,15 @@
           </div>
         </div>
 
+        <!-- Mapa: el pin se detecta solo desde tu dirección; puedes ajustarlo -->
+        <div class="mapsection">
+          <h3><i class="fas fa-map-location-dot" style="color:var(--primary)"></i> Verifica el punto en el mapa</h3>
+          <p class="sub">Detectamos el punto desde tu dirección. Revisa que esté bien y, si hace falta, <b>toca el mapa</b> o <b>arrastra el pin</b> al lugar exacto.</p>
+          <div id="map"></div>
+          <div id="coords" class="unset">Sin ubicación todavía — escribe tu dirección, búscala arriba, o toca el mapa.</div>
+          <button type="button" id="btnUbicar" class="btn-ubicar"><i class="fas fa-location-crosshairs"></i> Ubicar mi dirección en el mapa</button>
+        </div>
+
         <div class="field">
           <label for="referencia">Referencia del domicilio</label>
           <div class="inputwrap"><i class="fas fa-location-dot"></i>
@@ -197,15 +241,22 @@
   </div>
 
 <script src="/env-config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>window.gmapsReady = new Promise(function (r) { window.__gmapsReady = r; });</script>
+<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDqizDSGdFFplpeUYxRMoFlfVejIhHcJ7E&libraries=places&language=es&region=MX&loading=async&callback=__gmapsReady"></script>
 <script>
 (function(){
   const API = window.API_BASE_URL || '';
   const $ = id => document.getElementById(id);
   const form=$('form'), btn=$('btn'), alertEl=$('alert'), thanks=$('thanks');
-  const cpInput=$('cp'), coloniaSel=$('colonia'), cpHint=$('cpHint');
+  const cpInput=$('cp'), cpHint=$('cpHint');
   // El número de pedido viene en la URL: /datos-estafeta/DHxxxx
   const pedidoUrl=((window.location.pathname.match(/\/datos-estafeta\/(DH\d+)/i)||[])[1]||'').toUpperCase();
+  const MX = { lat: 23.6345, lng: -102.5528 }; // centro de México (vista inicial del mapa)
   let coloniaManual=false;
+  let picked=null, marker=null, geocoder=null, geoTimer=null;
+  let placesLib=null, suggestToken=null, predsActuales=[], pinManual=false;
+
   function showAlert(type,msg){
     alertEl.className='alert '+type;
     alertEl.innerHTML='<i class="fas fa-'+(type==='success'?'check-circle':'exclamation-circle')+'"></i><span>'+msg+'</span>';
@@ -213,8 +264,10 @@
     if(type==='error') alertEl.scrollIntoView({behavior:'smooth',block:'center'});
   }
   function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+  function val(id){ const el=$(id); return el?el.value.trim():''; }
+  function norm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim(); }
 
-  // Mostrar el pedido y precargar nombre/teléfono desde el CRM.
+  // Mostrar el pedido y precargar teléfono desde el CRM.
   if(pedidoUrl){
     $('pedidoNum').textContent=pedidoUrl;
     $('pedidoBadge').style.display='flex';
@@ -230,17 +283,54 @@
       .catch(()=>{});
   }
 
-  // CP -> colonias + estado/municipio (SEPOMEX)
-  cpInput.addEventListener('input', async ()=>{
-    if(coloniaManual) return;
-    const cp=cpInput.value.replace(/\D/g,''); cpInput.value=cp;
-    if(cp.length<5){ coloniaSel.innerHTML='<option value="">Ingresa tu C.P. primero</option>'; cpHint.textContent=''; cpHint.className='hint'; return; }
+  // ---------- Mapa (Leaflet / OpenStreetMap) ----------
+  const map = L.map('map').setView([MX.lat, MX.lng], 5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
+  setTimeout(()=>map.invalidateSize(), 300);
+  map.on('click', e => { pinManual=true; setPunto(e.latlng.lat, e.latlng.lng, 'pin movido a mano'); });
+
+  function setPunto(lat, lng, nota){
+    picked = { lat, lng };
+    if(marker) marker.setLatLng([lat,lng]);
+    else{
+      marker = L.marker([lat,lng], { draggable:true }).addTo(map);
+      marker.on('dragend', ()=>{ const p=marker.getLatLng(); pinManual=true; picked={lat:p.lat,lng:p.lng}; pintarCoords('pin ajustado a mano'); });
+    }
+    pintarCoords(nota);
+  }
+  function pintarCoords(nota){
+    const c=$('coords');
+    if(picked){ c.className='set'; c.innerHTML='<i class="fas fa-circle-check"></i> Ubicación lista'+(nota?' · '+esc(nota):''); }
+    else{ c.className='unset'; c.textContent='Sin ubicación todavía — escribe tu dirección o búscala arriba.'; }
+  }
+
+  // ---------- SEPOMEX: CP -> colonias + estado/municipio ----------
+  // Refactor: lo usa tanto el CP escrito a mano como una sugerencia de Google.
+  // preferColonia (opcional): colonia que devolvió Google; se deja seleccionada si coincide.
+  async function cargarColonias(cp, preferColonia){
+    if(coloniaManual) return; // si el cliente ya está escribiendo su colonia a mano, no la pisamos
+    cp=String(cp||'').replace(/\D/g,'');
+    if(cp.length<5){
+      const sel=$('colonia');
+      if(sel && sel.tagName==='SELECT') sel.innerHTML='<option value="">Ingresa tu C.P. primero</option>';
+      cpHint.textContent=''; cpHint.className='hint'; return;
+    }
     cpHint.textContent='Buscando colonias...'; cpHint.className='hint';
     try{
       const r=await fetch(API+'/api/codigo-postal/'+cp);
       const d=await r.json();
       if(d.success && d.colonias && d.colonias.length){
-        coloniaSel.innerHTML='<option value="">Selecciona tu colonia</option>'+d.colonias.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');
+        const sel=$('colonia');
+        if(sel && sel.tagName==='SELECT'){
+          const match = preferColonia ? d.colonias.find(c=>norm(c)===norm(preferColonia)) : null;
+          let opts='<option value="">Selecciona tu colonia</option>';
+          // Si Google sugirió una colonia que SEPOMEX no lista para este CP, la conservamos arriba (seleccionada).
+          if(preferColonia && !match){
+            opts+='<option value="'+esc(preferColonia)+'" selected>'+esc(preferColonia)+' (sugerida)</option>';
+          }
+          opts+=d.colonias.map(c=>'<option value="'+esc(c)+'"'+(match&&c===match?' selected':'')+'>'+esc(c)+'</option>').join('');
+          sel.innerHTML=opts;
+        }
         const ciudad=d.ciudad||d.municipio||'';
         if(ciudad) $('ciudad').value=ciudad;
         if(d.estado) $('estado').value=d.estado;
@@ -248,19 +338,147 @@
         $('coloniaManualHint').style.display='block';
       }else{
         cpHint.textContent='C.P. no encontrado. Escribe tu colonia y localidad manualmente.'; cpHint.className='hint error';
-        habilitarColoniaManual();
+        habilitarColoniaManual(preferColonia);
       }
-    }catch(e){ cpHint.textContent='Error al buscar. Escribe tu colonia manualmente.'; cpHint.className='hint error'; habilitarColoniaManual(); }
+    }catch(e){ cpHint.textContent='Error al buscar. Escribe tu colonia manualmente.'; cpHint.className='hint error'; habilitarColoniaManual(preferColonia); }
+  }
+
+  cpInput.addEventListener('input', ()=>{
+    cpInput.value=cpInput.value.replace(/\D/g,'');
+    cargarColonias(cpInput.value);
   });
 
-  function habilitarColoniaManual(){
+  function habilitarColoniaManual(initial){
     coloniaManual=true;
-    const wrap=coloniaSel.parentElement;
+    const sel=$('colonia'); const wrap=sel.parentElement;
     wrap.innerHTML='<i class="fas fa-building"></i><input type="text" id="colonia" placeholder="Escribe tu colonia" required />';
+    if(initial) $('colonia').value=initial;
     $('coloniaManualHint').style.display='none';
+    $('colonia').addEventListener('change', onDireccionChange);
   }
   $('coloniaManualLink').addEventListener('click',(e)=>{e.preventDefault();habilitarColoniaManual();});
 
+  // ---------- Google: sugerencias (Places) + geocodificar texto ----------
+  if(window.gmapsReady) window.gmapsReady.then(initGoogle);
+  async function initGoogle(){
+    try{
+      placesLib = await google.maps.importLibrary('places');
+      const geoLib = await google.maps.importLibrary('geocoding');
+      geocoder = new geoLib.Geocoder();
+      nuevaSesion();
+    }catch(e){ console.error('No se pudo cargar Google Maps', e); }
+  }
+  function nuevaSesion(){ if(placesLib) suggestToken = new placesLib.AutocompleteSessionToken(); }
+
+  const inputBuscar=$('buscar'), boxResultados=$('resultados');
+  let buscarTimer=null;
+  inputBuscar.addEventListener('input', ()=>{
+    clearTimeout(buscarTimer);
+    const q=inputBuscar.value.trim();
+    if(q.length<3){ ocultarResultados(); return; }
+    buscarTimer=setTimeout(()=>buscar(q), 300);
+  });
+  inputBuscar.addEventListener('keydown', e=>{ if(e.key==='Escape') ocultarResultados(); if(e.key==='Enter'){ e.preventDefault(); clearTimeout(buscarTimer); buscar(inputBuscar.value.trim()); } });
+  document.addEventListener('click', e=>{ if(!e.target.closest('.searchwrap')) ocultarResultados(); });
+
+  async function buscar(q){
+    if(!q || q.length<3) return;
+    if(!placesLib){ boxResultados.innerHTML='<div class="empty">Cargando buscador…</div>'; boxResultados.classList.add('show'); return; }
+    boxResultados.innerHTML='<div class="empty">Buscando…</div>'; boxResultados.classList.add('show');
+    try{
+      const { suggestions } = await placesLib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input:q, sessionToken:suggestToken, includedRegionCodes:['mx'], language:'es', region:'mx'
+      });
+      predsActuales=(suggestions||[]).map(s=>s.placePrediction).filter(Boolean);
+      if(predsActuales.length){
+        boxResultados.innerHTML=predsActuales.map((p,i)=>
+          '<div class="item" data-i="'+i+'"><b>'+esc(p.mainText?p.mainText.text:p.text.text)+'</b> '
+          +'<span style="color:#7c8a91">'+esc(p.secondaryText?p.secondaryText.text:'')+'</span></div>').join('');
+        boxResultados.querySelectorAll('.item').forEach(el=>el.addEventListener('click', ()=>elegirResultado(predsActuales[+el.dataset.i])));
+      } else boxResultados.innerHTML='<div class="empty">Sin coincidencias. Escribe tu dirección abajo.</div>';
+    }catch(e){ boxResultados.innerHTML='<div class="empty">Buscador no disponible. Escribe tu dirección abajo.</div>'; }
+  }
+
+  function comp(components, type){
+    const c=(components||[]).find(x=>(x.types||[]).includes(type));
+    return c ? (c.longText || c.long_name || c.shortText || '') : '';
+  }
+
+  async function elegirResultado(pred){
+    try{
+      const place = pred.toPlace();
+      await place.fetchFields({ fields:['location','formattedAddress','addressComponents'] });
+      const lat=place.location.lat(), lng=place.location.lng();
+      const ac=place.addressComponents||[];
+      const calle=comp(ac,'route'), numExt=comp(ac,'street_number');
+      const colonia=comp(ac,'sublocality_level_1')||comp(ac,'neighborhood')||comp(ac,'sublocality');
+      const cp=comp(ac,'postal_code');
+      const ciudad=comp(ac,'locality')||comp(ac,'administrative_area_level_2');
+      const estado=comp(ac,'administrative_area_level_1');
+      if(calle) $('calle').value=calle;
+      if(numExt) $('numExterior').value=numExt;
+      if(ciudad) $('ciudad').value=ciudad;
+      if(estado) $('estado').value=estado;
+      const cpClean = cp ? cp.replace(/\D/g,'').slice(0,5) : '';
+      if(cpClean){
+        cpInput.value=cpClean;
+        // SEPOMEX es la fuente autoritativa para CP↔colonia↔estado; deja la colonia de Google seleccionada si coincide.
+        await cargarColonias(cpClean, colonia);
+      } else if(colonia){
+        // Google no trajo CP: al menos deja la colonia sugerida en el campo.
+        const sel=$('colonia');
+        if(sel && sel.tagName==='SELECT') sel.innerHTML='<option value="'+esc(colonia)+'" selected>'+esc(colonia)+'</option>';
+        else if(sel) sel.value=colonia;
+      }
+      pinManual=false;
+      map.setView([lat,lng], 17);
+      setPunto(lat,lng,'desde tu búsqueda');
+    }catch(e){ console.error(e); }
+    nuevaSesion();
+    ocultarResultados();
+    inputBuscar.value='';
+  }
+  function ocultarResultados(){ boxResultados.classList.remove('show'); boxResultados.innerHTML=''; }
+
+  // Geocodifica lo que el cliente escribió en los campos (nacional).
+  function direccionTexto(){
+    const calle=val('calle'), numExt=val('numExterior'), colonia=val('colonia'), cp=val('cp'), ciudad=val('ciudad'), estado=val('estado');
+    if(!calle) return '';
+    return [ [calle,numExt].filter(Boolean).join(' '), colonia, cp, [ciudad,estado].filter(Boolean).join(', '), 'México' ].filter(Boolean).join(', ');
+  }
+  async function geocodificar(auto){
+    const dir=direccionTexto();
+    if(!dir){ if(!auto) showAlert('error','Escribe al menos tu calle y colonia (o C.P.) para ubicarte en el mapa.'); return; }
+    if(!geocoder){ if(!auto) showAlert('error','El mapa aún está cargando, intenta en un momento.'); return; }
+    const c=$('coords'); c.className='unset'; c.innerHTML='<i class="fas fa-spinner fa-spin"></i> Buscando tu dirección en el mapa…';
+    try{
+      // Si el geocodificador no responde (red lenta o falla), a los 8s soltamos al
+      // cliente para que marque el punto a mano.
+      const timeout = new Promise((_, rej)=>setTimeout(()=>rej(new Error('timeout')), 8000));
+      const { results } = await Promise.race([
+        geocoder.geocode({ address:dir, componentRestrictions:{ country:'mx' } }),
+        timeout,
+      ]);
+      if(results && results.length){
+        const loc=results[0].geometry.location;
+        pinManual=false;
+        map.setView([loc.lat(), loc.lng()], 16);
+        setPunto(loc.lat(), loc.lng(), 'detectada desde tu dirección');
+      } else { pintarCoords(); if(!auto) showAlert('error','No encontramos esa dirección. Toca el mapa para marcar tu ubicación.'); }
+    }catch(e){ pintarCoords(); if(!auto) showAlert('error','No pudimos ubicar la dirección. Toca el mapa para marcar tu ubicación.'); }
+  }
+  $('btnUbicar').addEventListener('click', ()=>geocodificar(false));
+
+  // Auto-detección del pin al salir de calle/numExt/colonia/CP, si el cliente no lo movió a mano.
+  function onDireccionChange(){
+    clearTimeout(geoTimer);
+    if(pinManual) return;
+    if(!val('calle') || (!val('colonia') && !val('cp'))) return;
+    geoTimer=setTimeout(()=>geocodificar(true), 500);
+  }
+  ['calle','numExterior','cp','colonia'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('change', onDireccionChange); });
+
+  // ---------- Enviar ----------
   form.addEventListener('submit', async (e)=>{
     e.preventDefault();
     alertEl.style.display='none';
@@ -279,6 +497,8 @@
       ciudad: $('ciudad').value.trim(),
       estado: $('estado').value.trim(),
       referencia: $('referencia').value.trim(),
+      lat: picked ? picked.lat : null,
+      lng: picked ? picked.lng : null,
     };
     if(!pedidoUrl){ showAlert('error','Falta tu número de pedido en el enlace. Pídenos el enlace de nuevo por WhatsApp.'); return; }
     if(!payload.nombreCompleto){ showAlert('error','Escribe tu nombre completo.'); return; }

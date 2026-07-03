@@ -7760,7 +7760,7 @@ router.delete('/datos-envio/:id', async (req, res) => {
 
 router.post('/datos-envio', async (req, res) => {
     try {
-        const { numeroPedido, nombreCompleto, telefono, direccion, numInterior, colonia, estado, ciudad, codigoPostal, referencia, entreCalles } = req.body;
+        const { numeroPedido, nombreCompleto, telefono, direccion, numInterior, colonia, estado, ciudad, codigoPostal, referencia, entreCalles, lat, lng } = req.body;
 
         if (!numeroPedido || !nombreCompleto || !telefono || !direccion || !colonia || !estado || !ciudad || !codigoPostal) {
             return res.status(400).json({ success: false, message: 'Faltan campos obligatorios.' });
@@ -7774,6 +7774,11 @@ router.post('/datos-envio', async (req, res) => {
             return res.status(400).json({ success: false, message: 'El código postal debe tener 5 dígitos.' });
         }
 
+        // Coordenadas del pin que el cliente verificó en el mapa (opcionales; DHL crea la guía
+        // con la dirección/CP, no con el pin, pero las guardamos para poder cotejar la ubicación).
+        const toCoord = (v) => (v === null || v === undefined || v === '' || !isFinite(Number(v))) ? null : Number(v);
+        const latNum = toCoord(lat), lngNum = toCoord(lng);
+
         await db.collection('datos_envio').add({
             numeroPedido,
             nombreCompleto,
@@ -7786,6 +7791,8 @@ router.post('/datos-envio', async (req, res) => {
             codigoPostal,
             entreCalles: entreCalles || '',
             referencia: referencia || '',
+            lat: latNum,
+            lng: lngNum,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
@@ -7901,6 +7908,8 @@ router.get('/envios', async (_req, res) => {
                 estado: de.estado || '',
                 codigoPostal: de.codigoPostal || '',
                 telefono: de.telefono || '',
+                lat: (de.lat != null ? de.lat : null),
+                lng: (de.lng != null ? de.lng : null),
             } : null;
             return {
                 id: doc.id,
