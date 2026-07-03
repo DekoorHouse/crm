@@ -2129,7 +2129,7 @@ Reglas:
                 if (createdMs && (Date.now() - createdMs) <= 45 * 24 * 60 * 60 * 1000) {
                     const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : '(sin número)';
                     const datos = String(o.datosProducto || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-                    orderInfoNote = `\n\n**Pedido REGISTRADO en el sistema:**\n${num} — Producto: ${o.producto || '-'} — TOTAL registrado: ${o.precio != null ? `$${o.precio}` : 'no registrado'} — Estatus: ${o.estatus || '-'}${datos ? ` — Datos: ${datos}` : ''}.\nPara el precio/total del pedido usa este ORDEN DE PRIORIDAD: 1) si un humano del equipo acordó en la conversación un total DISTINTO (descuento o ajuste), ese acuerdo MANDA — respétalo y no lo "corrijas" al del sistema; 2) si no hay un acuerdo distinto en el chat, usa el TOTAL registrado de arriba; 3) NUNCA lo calcules con promociones generales. Si hay conflicto y no queda claro cuál aplica, no afirmes ninguno: di que lo confirmas y escribe /equipo en su propio mensaje. Si el cliente quiere algo distinto a lo registrado (otra cantidad u otro modelo), aclara antes de dar totales.`;
+                    orderInfoNote = `\n\n**Pedido REGISTRADO en el sistema:**\n${num} — Producto: ${o.producto || '-'} — TOTAL registrado: ${o.precio != null ? `$${o.precio}` : 'no registrado'} — Estatus: ${o.estatus || '-'}${datos ? ` — Datos: ${datos}` : ''}.\nPara el precio/total del pedido usa este ORDEN DE PRIORIDAD: 1) si un humano del equipo acordó en la conversación un total DISTINTO (descuento o ajuste), ese acuerdo MANDA — respétalo y no lo "corrijas" al del sistema; 2) si no hay un acuerdo distinto en el chat, usa el TOTAL registrado de arriba; 3) NUNCA lo calcules con promociones generales. Si hay conflicto y no queda claro cuál aplica, no afirmes ninguno: di que lo confirmas y escribe /equipo en su propio mensaje. Si el cliente quiere algo distinto a lo registrado (otra cantidad u otro modelo), aclara antes de dar totales. El estatus del pedido es SOLO informativo: NUNCA anuncies por tu cuenta que el pedido "ya está listo" ni inicies el cobro — eso lo hace el equipo humano cuando manda la foto del trabajo terminado.`;
                 }
             }
         } catch (e) {
@@ -2240,9 +2240,11 @@ Reglas:
         // de un ATAJO de respuesta rápida (ej. /confirmar → "Ya registramos tu pedido..."); el
         // check inicial solo ve "/confirmar". Por eso es `let` y la decisión se calcula tras el loop.
         let saleClosed = /\/final/i.test(aiResponse) || /ya registramos tu pedido/i.test(aiResponse);
-        // /cuatro (o su frase expandida "ya tenemos tu pedido listo") = el pedido está LISTO
-        // y se mandó la foto + datos de pago: ese es el disparador de la etapa post-venta.
-        let orderReadySent = /\/cuatro/i.test(aiResponse) || /ya tenemos tu pedido listo/i.test(aiResponse);
+        // /cuatro (pedido LISTO → post-venta) es EXCLUSIVO del equipo humano: solo ellos
+        // saben cuándo el pedido físico está terminado. La transición a post-venta vive
+        // únicamente en los envíos manuales (apiRoutes). Si la IA lo emitiera, se descarta
+        // (caso real 5213323939511: la IA alucinó "ya quedó lista tu lámpara", se mandó el
+        // /cuatro sola con los datos de pago y se auto-transicionó a post-venta).
         // En ETAPA 2, si el cliente quiere otro pedido la IA emite /nuevopedido para
         // regresar a la etapa de venta (etapa 1); el siguiente turno lo atiende ventas.
         const wantsNewOrder = isPostVenta && /\/nuevopedido/i.test(aiResponse);
@@ -2271,8 +2273,11 @@ Reglas:
         // (orders/aiOrderRegistration.js). Si algo falla, cae al flujo manual (pendientes_ia).
         const registerOrderCmd = !isPostVenta && /\/registrar\b/i.test(aiResponse);
 
-        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado, /comprobante, /registrar) de los mensajes antes de enviar
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').trim()).filter(m => m.length > 0);
+        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado, /comprobante, /registrar) de los mensajes antes de enviar.
+        // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
+        // (anuncia pedido LISTO + datos de pago); la IA no puede saber si el pedido físico
+        // ya está terminado, así que jamás debe enviarlo ni expandirlo.
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/cuatro\b/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -2334,7 +2339,6 @@ Reglas:
                     // Si el atajo expandido contiene la frase de cierre de venta, marcar la
                     // transición a post-venta (el check sobre aiResponse solo veía el "/atajo").
                     if (/ya registramos tu pedido/i.test(msgText)) saleClosed = true;
-                    if (/ya tenemos tu pedido listo/i.test(msgText)) orderReadySent = true;
                     console.log(`[AI] Atajo "${shortcutMatch[0]}" expandido a respuesta rápida para ${contactId}.`);
                 } else if (shortcutMatch[1].toLowerCase() === 'pagado') {
                     // /pagado es parte del flujo de Envíos (el cliente confirmó que llenó el formulario).
@@ -2386,11 +2390,10 @@ Reglas:
 
         // Decisión de transición DESPUÉS del loop, para que cuente también la frase que pudo
         // venir expandida desde un atajo. El cierre de venta (/final) manda el pedido a
-        // Pendientes IA para que el equipo lo registre, pero YA NO arranca la post-venta:
-        // la etapa 2 (cobro) arranca con /cuatro, cuando el pedido está LISTO y se le mandó
-        // al cliente la foto + los datos de pago. Con el kill-switch de etapa 2 apagado,
-        // /final conserva el comportamiento viejo (apagar el bot).
-        const shouldTransitionToPostVenta = postSaleStageActive && !isPostVenta && orderReadySent;
+        // Pendientes IA para que el equipo lo registre, pero NO arranca la post-venta:
+        // la etapa 2 (cobro) arranca ÚNICAMENTE cuando el EQUIPO manda /cuatro desde el CRM
+        // (detección en apiRoutes); la IA no puede transicionar por sí misma. Con el
+        // kill-switch de etapa 2 apagado, /final conserva el comportamiento viejo (bot off).
         const shouldDeactivate = !postSaleStageActive && saleClosed;
 
         const updateData = {
@@ -2406,11 +2409,7 @@ Reglas:
             console.log(`[AI] Venta cerrada para ${contactId}. Moviendo a Pendientes IA; la IA sigue en etapa de venta (la post-venta arranca con /cuatro).`);
         }
 
-        if (shouldTransitionToPostVenta) {
-            // Pedido LISTO (/cuatro): arranca la etapa 2 (cobro/comprobantes/datos de envío).
-            updateData.aiStage = 'postventa';
-            console.log(`[AI] Pedido LISTO (/cuatro) para ${contactId}. Pasando a ETAPA 2 (post-venta); la IA sigue activa.`);
-        } else if (wantsNewOrder) {
+        if (wantsNewOrder) {
             // El cliente quiere otro pedido: regresar a ETAPA 1 (venta). El bot sigue
             // activo y el próximo turno lo atiende la IA de ventas (prompt por anuncio/depto).
             updateData.aiStage = 'venta';
@@ -2519,7 +2518,7 @@ Reglas:
         // scheduler de order_followup leerá esta etiqueta y se ahorrará una clasificación.
         // Fire-and-forget: nunca debe afectar la respuesta principal. En post-venta el
         // pedido ya está tomado, así que no se etiqueta.
-        if (!saleClosed && !shouldTransitionToPostVenta && !shouldDeactivate && !isPostVenta && !registerOrderCmd) {
+        if (!saleClosed && !shouldDeactivate && !isPostVenta && !registerOrderCmd) {
             tagOrderInProgress(contactId, contactRef, conversationHistory, contactData.name)
                 .catch(e => console.warn('[ORDER_FOLLOWUP] live-tag falló:', e.message));
         }
