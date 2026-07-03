@@ -8001,6 +8001,48 @@ router.get('/estafeta/frecuencia/:cp', async (req, res) => {
     res.json({ success: true, ...r });
 });
 
+// --- GET /api/debug/t1-test — prueba de conexión con T1 Envíos (auth + saldo + cotización) ---
+// TEMPORAL / diagnóstico. Protegido con ?key=. NO expone token/credenciales y NO crea guías.
+const t1Client = require('./t1/t1Client');
+router.get('/debug/t1-test', async (req, res) => {
+    if ((req.query.key || '') !== 't1diag_9f3k2xQ7') return res.status(403).json({ error: 'forbidden' });
+    const cp = String(req.query.cp || '06700').replace(/\D/g, '') || '06700';
+    const out = { config: t1Client._config };
+    // 1) Token
+    try {
+        const token = await t1Client.getToken();
+        out.token_ok = !!token;
+        out.token_len = token ? token.length : 0;
+    } catch (e) {
+        out.token_ok = false;
+        out.token_error = e.response ? { status: e.response.status, data: e.response.data } : e.message;
+        return res.status(200).json(out);
+    }
+    // 2) Saldo
+    try {
+        out.saldo = await t1Client.consultarSaldo();
+    } catch (e) {
+        out.saldo_error = e.response ? { status: e.response.status, data: e.response.data } : e.message;
+    }
+    // 3) Cotización (descubre tipo_servicio DHL + costo)
+    try {
+        const q = await t1Client.cotizar({ cpDestino: cp, valorPaquete: 750 });
+        const result = Array.isArray(q.result) ? q.result : (Array.isArray(q.data) ? q.data : []);
+        const servicios = [];
+        result.forEach((r) => {
+            const svc = (r.cotizacion && r.cotizacion.servicios) ? r.cotizacion.servicios : {};
+            Object.keys(svc).forEach((k) => {
+                const s = svc[k] || {};
+                servicios.push({ paqueteria: r.comercio || r.clave, clave: k, servicio: s.servicio, tipo_servicio: s.tipo_servicio, costo_total: s.costo_total, dias_entrega: s.dias_entrega });
+            });
+        });
+        out.cotizacion = { cp_destino: cp, servicios, raw: JSON.stringify(q).slice(0, 2500) };
+    } catch (e) {
+        out.cotizacion_error = e.response ? { status: e.response.status, data: e.response.data } : e.message;
+    }
+    res.json(out);
+});
+
 // --- Background Removal (server-side AI) ---
 let removeBackgroundFn = null;
 
