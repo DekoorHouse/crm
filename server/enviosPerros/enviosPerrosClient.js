@@ -50,8 +50,8 @@ async function cotizar({ cpDestino, cpOrigen, peso, largo, ancho, alto } = {}) {
         width: Number(ancho != null ? ancho : DEF.ancho),
         height: Number(alto != null ? alto : DEF.alto),
         weight: Number(peso != null ? peso : DEF.peso),
-        origin: String(cpOrigen || ORIGEN.zip_code).replace(/\D/g, ''),
-        destination: String(cpDestino || '').replace(/\D/g, ''),
+        origin: { codePostal: String(cpOrigen || ORIGEN.zip_code).replace(/\D/g, '') },
+        destination: { codePostal: String(cpDestino || '').replace(/\D/g, '') },
     };
     const r = await axios.post(`${EP_API_BASE}/shipping/rates`, body, { headers: _headers(), timeout: 25000 });
     return r.data;
