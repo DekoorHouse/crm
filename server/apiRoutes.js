@@ -7961,63 +7961,19 @@ router.delete('/envios/manual/:id', async (req, res) => {
     }
 });
 
-// =============================================================
-// ESTAFETA — Frecuencia de entregas (chequeo de cobertura por CP)
-// =============================================================
-// Origen SIEMPRE 34188 (Durango). Su "plaza" en Estafeta es DGO. Consulta la herramienta pública
-// de frecuencia y devuelve, para el CP destino: frecuencia, Ocurre Forzoso y Costos de Reexpedición.
-const ESTAFETA_ORIGIN_SQUARE = process.env.ESTAFETA_ORIGIN_SQUARE || 'DGO';
-const ESTAFETA_ORIGIN_CP = process.env.ESTAFETA_ORIGIN_CP || '34188';
-const ESTAFETA_FREQ_BASE = 'https://frecuenciaentregasitecorecms.azurewebsites.net/FreqDelivery/getFreqDeliverySquare';
-
-// Parser del HTML que devuelve la herramienta de frecuencia de Estafeta.
-function parseEstafetaFrecuencia(html) {
-    let h = String(html || '');
-    const ents = { '&#243;': 'ó', '&#225;': 'á', '&#233;': 'é', '&#237;': 'í', '&#250;': 'ú', '&#209;': 'Ñ', '&#241;': 'ñ', '&aacute;': 'á', '&eacute;': 'é', '&iacute;': 'í', '&oacute;': 'ó', '&uacute;': 'ú', '&ntilde;': 'ñ' };
-    for (const [k, v] of Object.entries(ents)) h = h.split(k).join(v);
-    const plain = h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    const siNo = (lbl) => {
-        const m = plain.match(new RegExp(lbl + '\\s*:?\\s*(S[ií]|No)\\b', 'i'));
-        return m ? (/^s/i.test(m[1]) ? 'Sí' : 'No') : null;
-    };
-    const grab = (re) => { const m = plain.match(re); return m ? m[1].trim() : null; };
-    const destinoCP = grab(/C[oó]digo Postal:\s*(\d{4,5})/i);
-    const estado = grab(/C[oó]digo Postal:\s*\d{4,5}\s+Estado\s+([A-ZÁÉÍÓÚÑ .]+?)\s+Delegaci/i);
-    const delegacion = grab(/Delegaci[oó]n:\s*([A-ZÁÉÍÓÚÑ .]+?)\s+Plaza/i);
-    const plaza = grab(/Plaza\s*1\s*:\s*([A-ZÁÉÍÓÚÑ .]+?)\s+Colonia/i);
-    const frecuencia = grab(/Modalidad de entrega\s+Frecuencia\s+([A-Za-zÁÉÍÓÚñ ]+?)\s+Ocurre/i);
-    const ocurreForzoso = siNo('Ocurre Forzoso');
-    const reexpedicion = siNo('Costos de Reexpedici[oó]n');
-    const found = !!(destinoCP && frecuencia && ocurreForzoso && reexpedicion);
-    return { found, destinoCP, estado, delegacion, plaza, frecuencia, ocurreForzoso, reexpedicion };
-}
-
 // --- GET /api/estafeta/frecuencia/:cp — chequeo de cobertura del CP destino desde 34188 ---
+// Lógica compartida con la IA en server/estafeta/estafetaFrecuencia.js.
+const { checkFrecuencia: checkEstafetaFrecuencia } = require('./estafeta/estafetaFrecuencia');
 router.get('/estafeta/frecuencia/:cp', async (req, res) => {
     const cp = String(req.params.cp || '').replace(/\D/g, '');
     if (!/^\d{5}$/.test(cp)) {
         return res.status(400).json({ success: false, message: 'El código postal debe tener 5 dígitos.' });
     }
-    try {
-        const r = await axios.get(ESTAFETA_FREQ_BASE, {
-            params: { square: ESTAFETA_ORIGIN_SQUARE, destinationZipCode: cp },
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 9000,
-            responseType: 'text',
-        });
-        const parsed = parseEstafetaFrecuencia(r.data);
-        if (!parsed.found) {
-            // CP no encontrado por Estafeta o formato inesperado.
-            return res.json({ success: true, found: false, origenCP: ESTAFETA_ORIGIN_CP, destinoCP: cp });
-        }
-        // "ok" = cumple los criterios que pide el negocio: sin reexpedición y sin ocurre forzoso.
-        const ok = parsed.reexpedicion === 'No' && parsed.ocurreForzoso === 'No';
-        res.json({ success: true, found: true, origenCP: ESTAFETA_ORIGIN_CP, ok, ...parsed });
-    } catch (error) {
-        console.error('[ESTAFETA] Error consultando frecuencia para CP', cp, ':', error.message);
-        // Degradar con gracia: el llamador no debe romperse si Estafeta no responde.
-        res.status(502).json({ success: false, message: 'No se pudo consultar Estafeta en este momento.' });
+    const r = await checkEstafetaFrecuencia(cp);
+    if (r === null) {
+        return res.status(502).json({ success: false, message: 'No se pudo consultar Estafeta en este momento.' });
     }
+    res.json({ success: true, ...r });
 });
 
 // --- Background Removal (server-side AI) ---
