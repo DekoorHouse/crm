@@ -1014,6 +1014,10 @@ router.get('/orders/list', async (req, res) => {
                 createdAt: data.createdAt ? { _seconds: data.createdAt._seconds, _nanoseconds: data.createdAt._nanoseconds } : null,
                 vendedor: data.vendedor || '',
                 contactId: data.contactId || null,
+                // Red de seguridad de pedidos registrados por la IA (orders/aiOrderRegistration.js)
+                registeredByAI: data.registeredByAI === true,
+                aiReviewStatus: data.aiReviewStatus || null,
+                aiConfidence: data.aiConfidence != null ? data.aiConfidence : null,
             };
         });
 
@@ -6277,7 +6281,9 @@ router.put('/orders/:orderId', async (req, res) => {
 
 // --- Endpoint POST /api/orders (Crear nuevo pedido) ---
 router.post('/orders', async (req, res) => {
-    // Extraer datos del cuerpo de la solicitud
+    // Toda la mecánica de creación (contador consecutivo, atribución, corona del contacto,
+    // Purchase a Meta, cliente recurrente) vive en orders/createOrderCore.js, COMPARTIDA con
+    // el registro automático por IA (orders/aiOrderRegistration.js). Cambios de flujo: allá.
     const {
         contactId, // ID del contacto de WhatsApp asociado
         producto,
@@ -6293,227 +6299,28 @@ router.post('/orders', async (req, res) => {
         plantilla_origen // Opcional: nombre de la plantilla de la campaña
     } = req.body;
 
-    // Normalizar items: si viene el array, úsalo; si no, construir uno desde los campos legacy
-    let normalizedItems;
-    if (Array.isArray(items) && items.length > 0) {
-        normalizedItems = items
-            .filter(it => it && it.producto)
-            .map(it => ({
-                producto: String(it.producto),
-                cantidad: Math.max(1, parseInt(it.cantidad, 10) || 1),
-                precio: Number(it.precio) || 0,
-                datosProducto: it.datosProducto || ''
-            }));
-    } else if (producto) {
-        normalizedItems = [{
-            producto: String(producto),
-            cantidad: 1,
-            precio: Number(precio) || 0,
-            datosProducto: datosProducto || ''
-        }];
-    } else {
-        normalizedItems = [];
-    }
-
-    // Validaciones básicas
-    if (!contactId || normalizedItems.length === 0 || !telefono) {
-        return res.status(400).json({ success: false, message: 'Faltan datos obligatorios: contactId, producto(s) y teléfono.' });
-    }
-
     try {
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        // Referencia al contador de pedidos en Firestore
-        const orderCounterRef = db.collection('counters').doc('orders');
-
-        // --- Generar número de pedido consecutivo usando una transacción ---
-        const newOrderNumber = await db.runTransaction(async (transaction) => {
-            const counterDoc = await transaction.get(orderCounterRef);
-            let currentCounter = counterDoc.exists ? counterDoc.data().lastOrderNumber || 0 : 0;
-            // Asegurar que el contador empiece en 1001 si es menor
-            const nextOrderNumber = (currentCounter < 1000) ? 1001 : currentCounter + 1;
-            transaction.set(orderCounterRef, { lastOrderNumber: nextOrderNumber }, { merge: true });
-            return nextOrderNumber;
+        const { createOrder } = require('./orders/createOrderCore');
+        const { orderNumber, itemCount } = await createOrder({
+            contactId, telefono, items, producto, precio, datosProducto,
+            datosPromocion, comentarios, fotoUrls, fotoPromocionUrls,
+            campana_id, plantilla_origen
         });
-
-        // Calcular totales y datos "principales" (para backward compat con queries y reportes)
-        const totalValue = normalizedItems.reduce((sum, it) => sum + (it.precio || 0) * it.cantidad, 0);
-        const mainProducto = normalizedItems[0].producto;
-        const mainDatosProducto = normalizedItems.map(it => {
-            const qtyTxt = it.cantidad > 1 ? ` ×${it.cantidad}` : '';
-            const base = `${it.producto}${qtyTxt}${it.precio ? ` ($${it.precio})` : ''}`;
-            return it.datosProducto ? `${base}: ${it.datosProducto}` : base;
-        }).join('\n');
-
-        // Crear objeto del nuevo pedido con items embebidos
-        const nuevoPedido = {
-            contactId,
-            producto: mainProducto, // Primer producto para backward compat (queries where producto==)
-            items: normalizedItems, // Lista completa de productos
-            telefono,
-            precio: totalValue, // Suma total para mostrar el valor real del pedido
-            datosProducto: normalizedItems.length > 1 ? mainDatosProducto : normalizedItems[0].datosProducto,
-            datosPromocion: datosPromocion || '',
-            comentarios: comentarios || '',
-            fotoUrls: fotoUrls || [],
-            fotoPromocionUrls: fotoPromocionUrls || [],
-            consecutiveOrderNumber: newOrderNumber,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            estatus: 'Sin estatus',
-            telefonoVerificado: false,
-            estatusVerificado: false,
-            // Tracking de campañas (opcional): si vienen, persisten; si no, quedan null
-            campana_id: (typeof campana_id === 'string' && campana_id.trim()) ? campana_id.trim() : null,
-            plantilla_origen: (typeof plantilla_origen === 'string' && plantilla_origen.trim()) ? plantilla_origen.trim() : null
-        };
-
-        // Hacer públicas las fotos para que se vean en la lista de pedidos
-        const allUrls = [...(fotoUrls || []), ...(fotoPromocionUrls || [])];
-        for (const url of allUrls) {
-            if (url && url.includes(bucket.name)) {
-                try {
-                    const filePath = new URL(url).pathname.split(`/${bucket.name}/`)[1];
-                    if (filePath) {
-                        await bucket.file(decodeURIComponent(filePath)).makePublic();
-                    }
-                } catch (e) {
-                    console.error('Error al hacer pública la foto de GCS:', e);
-                }
-            }
-        }
-
-        // Añadir el nuevo pedido a la colección 'pedidos'
-        const newOrderRef = await db.collection('pedidos').add(nuevoPedido);
-
-        // --- Atribución del pedido al ad más reciente del contacto antes de su creación ---
-        // Se usa para el dashboard de rentabilidad: agrupa por ad y por leadDate (no por createdAt)
-        try {
-            const attribution = await getPedidoAttribution(contactId, new Date());
-            await newOrderRef.update({
-                attributedAdId: attribution.attributedAdId,
-                leadDate: attribution.leadDate,
-                leadSource: attribution.leadSource
-            });
-        } catch (attrErr) {
-            console.error(`[ATTRIBUTION] No se pudo escribir atribución para pedido ${newOrderRef.id}:`, attrErr.message);
-        }
-
-        // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
-        const contactUpdate = {
-            lastOrderNumber: newOrderNumber,
-            lastOrderDate: nuevoPedido.createdAt,
-            purchaseStatus: 'registered',
-            purchaseValue: totalValue,
-            purchaseDate: admin.firestore.FieldValue.serverTimestamp()
-        };
-        // Registrar un pedido resuelve la revisión pendiente: quitar la etiqueta
-        // "Pendientes de revisión IA" si el contacto la tenía.
-        try {
-            const contactSnap = await contactRef.get();
-            if (contactSnap.exists && contactSnap.data().status === 'pendientes_ia') {
-                contactUpdate.status = null;
-                // Igual que PUT /contacts/:id/status: bump para que el listener del frontend
-                // (filtra por lastMessageTimestamp > carga de la app) vea el cambio en vivo.
-                contactUpdate.lastMessageTimestamp = admin.firestore.FieldValue.serverTimestamp();
-                console.log(`[ORDERS] Contacto ${contactId}: etiqueta pendientes_ia quitada al registrar el pedido DH${newOrderNumber}.`);
-            }
-        } catch (_) { /* si la lectura falla, el update principal continúa igual */ }
-        await contactRef.update(contactUpdate);
-
-        // Métrica de rescate: si este contacto fue contactado por el seguimiento de IA
-        // recientemente, contabilizar el pedido como recuperación (fire-and-forget).
-        try {
-            require('./leads/orderFollowupMetrics')
-                .markOrderFollowupConverted(contactId, { orderNumber: `DH${newOrderNumber}`, value: totalValue })
-                .catch(() => {});
-        } catch (_) {}
-
-        // Evento Purchase a Meta — SOLO si el ajuste (Ajustes > Herramientas) está en "registro".
-        // Por defecto el ajuste es "fabricar", así que normalmente esto NO se envía aquí; el Purchase
-        // se manda al pasar a "Fabricar" vía sendPurchaseEventOnFabricar(). El flag metaPurchaseSentAt
-        // evita duplicados si después cambia el estatus.
-        try {
-            if ((await getPurchaseEventTrigger()) === 'registration' && contactRef) {
-                const contactSnap = await contactRef.get();
-                const cData = contactSnap.exists ? contactSnap.data() : null;
-                if (cData?.wa_id) {
-                    const eventInfo = { wa_id: cData.wa_id, profile: { name: cData.name } };
-                    const customData = { value: totalValue, currency: 'MXN' };
-                    console.log(`[META EVENT] Enviando Purchase por registro de pedido DH${newOrderNumber}, contacto ${contactId}`);
-                    await sendConversionEvent('Purchase', eventInfo, cData.adReferral || {}, customData);
-                    await newOrderRef.update({ metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp() });
-                    console.log(`[META EVENT] ✅ Evento Purchase enviado por registro, pedido DH${newOrderNumber}, valor $${totalValue}`);
-                } else {
-                    console.warn(`[META EVENT] Contacto ${contactId} sin wa_id. No se envió Purchase por registro.`);
-                }
-            }
-        } catch (metaError) {
-            console.error('[META EVENT] Error al enviar Purchase por registro:', metaError.message);
-            if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
-            // No fallar el registro del pedido por un error en Meta
-        }
-
-        // --- Detección automática de cliente recurrente ---
-        // Buscar si este teléfono ya tiene otros pedidos PAGADOS anteriores
-        const phone = contactId || telefono;
-        if (phone) {
-            try {
-                const previousOrders = await db.collection('pedidos')
-                    .where('contactId', '==', phone)
-                    .get();
-
-                // Filtrar solo pedidos pagados (Pagado o Fabricar)
-                const paidDocs = previousOrders.docs.filter(doc => {
-                    const est = doc.data().estatus;
-                    return est === 'Pagado' || est === 'Fabricar';
-                });
-
-                // Si tiene 2+ pedidos PAGADOS, es recurrente
-                if (paidDocs.length >= 2) {
-                    let totalSpent = 0;
-                    const products = [];
-                    let lastOrderDate = null;
-
-                    paidDocs.forEach(doc => {
-                        const d = doc.data();
-                        totalSpent += d.precio || 0;
-                        if (d.producto && !products.includes(d.producto)) products.push(d.producto);
-                        const oDate = d.createdAt ? d.createdAt.toDate() : null;
-                        if (oDate && (!lastOrderDate || oDate > lastOrderDate)) lastOrderDate = oDate;
-                    });
-
-                    // Obtener nombre
-                    const contactData = (await contactRef.get()).data();
-                    const name = contactData?.name || 'Sin nombre';
-
-                    // Guardar/actualizar en recurring_customers
-                    await db.collection('recurring_customers').doc(phone).set({
-                        name,
-                        orderCount: paidDocs.length,
-                        totalSpent,
-                        products,
-                        lastOrderDate,
-                        detectedAt: admin.firestore.FieldValue.serverTimestamp()
-                    }, { merge: true });
-
-                    console.log(`[RECURRENTE] Cliente ${name} (${phone}) detectado con ${paidDocs.length} pedidos pagados, total: $${totalSpent}`);
-                }
-            } catch (recErr) {
-                console.error('Error al detectar recurrente:', recErr);
-                // No bloquear la creación del pedido por este error
-            }
-        }
 
         // Devolver éxito y el número de pedido generado
         res.status(201).json({
             success: true,
-            message: normalizedItems.length > 1
-                ? `Pedido con ${normalizedItems.length} productos registrado con éxito.`
+            message: itemCount > 1
+                ? `Pedido con ${itemCount} productos registrado con éxito.`
                 : 'Pedido registrado con éxito.',
-            orderNumber: `DH${newOrderNumber}`,
-            itemCount: normalizedItems.length
+            orderNumber: `DH${orderNumber}`,
+            itemCount
         });
 
     } catch (error) {
+        if (error.statusCode === 400) {
+            return res.status(400).json({ success: false, message: error.message });
+        }
         console.error('Error al registrar el nuevo pedido:', error);
         res.status(500).json({ success: false, message: 'Error del servidor al registrar el pedido.' });
     }
@@ -7934,7 +7741,13 @@ router.get('/envio/pedido/:orderNumber', async (req, res) => {
         const snap = await db.collection('pedidos').where('consecutiveOrderNumber', '==', num).limit(1).get();
         if (snap.empty) return res.status(404).json({ success: false, message: 'No encontramos ese número de pedido.' });
         const p = snap.docs[0].data();
-        const telRaw = (p.telefono || p.contactId || '').toString().replace(/\D/g, '');
+        // Teléfono: preferir el campo `telefono` del pedido. Solo caer al contactId si es un
+        // wa_id (WhatsApp); para Messenger/Instagram el contactId es "fb_/ig_"+PSID (NO es teléfono).
+        let telRaw = (p.telefono || '').toString().replace(/\D/g, '');
+        if (telRaw.length < 10) {
+            const cid = (p.contactId || '').toString();
+            if (cid && !/^(fb_|ig_)/i.test(cid)) telRaw = cid.replace(/\D/g, '');
+        }
         const telefono = telRaw.length >= 10 ? telRaw.slice(-10) : '';
         // Nombre: preferir el del contacto de WhatsApp (más limpio que datosProducto).
         let nombreCompleto = '';

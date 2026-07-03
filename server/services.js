@@ -833,7 +833,24 @@ async function buildStaticContext(botInstructions, isPostVenta = false) {
 
     // La regla de cierre SOLO aplica en etapa de venta: en post-venta el pedido ya cerró
     // y esta regla hacía que el modelo repitiera "Ya registramos tu pedido" en cada mensaje.
-    const closingRule = isPostVenta ? '' : `\n\n**Regla Especial de Cierre de Pedido:** Cuando el usuario haya proporcionado todos los datos necesarios y el pedido esté listo para ser procesado por un humano, debes responder ÚNICAMENTE incluyendo la frase exacta "Ya registramos tu pedido" seguido de cualquier instrucción adicional de despedida. Esta frase es un comando interno para el sistema.`;
+    // Con el registro automático por IA activo (crm_settings/ai_order_registration), la regla
+    // se REEMPLAZA por el protocolo de validación + /registrar (ver orders/aiOrderRegistration.js):
+    // la IA valida el resumen con el cliente y, al confirmar, el sistema registra el pedido solo.
+    // El texto entra al hash del Context Cache, así que encender/apagar el flag renueva el caché.
+    let closingRule = '';
+    if (!isPostVenta) {
+        let aiOrderCfg = null;
+        try {
+            const aiOrderReg = require('./orders/aiOrderRegistration');
+            aiOrderCfg = await aiOrderReg.getAiOrderConfig();
+            if (aiOrderCfg.enabled) closingRule = aiOrderReg.buildRegistrationRule(aiOrderCfg);
+        } catch (e) {
+            console.warn('[AI_ORDER] No se pudo leer la config del registro automático; se usa la regla de cierre clásica:', e.message);
+        }
+        if (!closingRule) {
+            closingRule = `\n\n**Regla Especial de Cierre de Pedido:** Cuando el usuario haya proporcionado todos los datos necesarios y el pedido esté listo para ser procesado por un humano, debes responder ÚNICAMENTE incluyendo la frase exacta "Ya registramos tu pedido" seguido de cualquier instrucción adicional de despedida. Esta frase es un comando interno para el sistema.`;
+        }
+    }
 
     // Instrucciones van en systemInstruction, no en contents
     const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.`;
@@ -2091,7 +2108,7 @@ Reglas:
         // valida un comprobante GENUINO emite /comprobante: el sistema marca el pedido para la
         // sección "Envíos" del CRM y le manda al cliente el enlace del formulario de datos de envío.
         const comprobanteCommandNote = isPostVenta ? `\n\n**Comprobante de pago y formulario de envío (post-venta):**
-- Cuando el cliente te MANDE su comprobante de pago (imagen o PDF) y verifiques que es GENUINO (el destino y el monto coinciden con lo esperado), agradécele con un mensaje BREVE (ej. "¡Perfecto! Ya validé tu comprobante ✅") y escribe al FINAL el comando /comprobante (el cliente NO lo ve). Emítelo UNA sola vez por pedido. NO le pidas los datos de envío por texto ni le mandes ningún enlace tú: al recibir /comprobante, el SISTEMA le envía automáticamente el formulario de envío.
+- Cuando el cliente te MANDE su comprobante de pago (imagen o PDF) y verifiques que es GENUINO (el destino y el monto coinciden con lo esperado), responde ÚNICAMENTE con el comando /comprobante (SOLO eso, sin ningún otro texto ni saludo). NO escribas tú la confirmación, NO le pidas los datos de envío por texto y NO le mandes ningún enlace: al recibir /comprobante, el SISTEMA le manda automáticamente el mensaje de confirmación ("ya validamos tu pago") junto con el formulario de envío. Emítelo UNA sola vez por pedido.
 - Si el comprobante es sospechoso o NO coincide, usa /sospechoso (NO /comprobante). Si el cliente solo dice que "ya pagó" pero todavía NO ha mandado el comprobante, pídeselo con amabilidad (NO emitas /comprobante).
 - Cuando el cliente te confirme que YA LLENÓ su formulario de envío (por ejemplo: "ya llené el formulario", "listo, ya mandé mis datos"), responde ÚNICAMENTE con /pagado (solo eso, sin ningún otro texto).` : '';
 
@@ -2234,11 +2251,16 @@ Reglas:
         const orderCancelled = /\/cancelado/i.test(aiResponse);
         // La IA emite /comprobante cuando el cliente manda su comprobante de pago y la IA verifica
         // que es GENUINO. El sistema marca el pedido para la sección "Envíos" y le manda al cliente
-        // el enlace del formulario de datos de envío (ver el manejo después del loop).
-        const comprobanteValidado = /\/comprobante/i.test(aiResponse);
+        // el enlace del formulario de datos de envío (ver el manejo después del loop). Si en el mismo
+        // turno también salió /sospechoso, MANDA la sospecha (no validamos): son excluyentes.
+        const comprobanteValidado = !suspiciousReceipt && /\/comprobante/i.test(aiResponse);
+        // En ETAPA 1, la IA emite /registrar cuando el cliente CONFIRMÓ el resumen de su pedido:
+        // el sistema extrae los datos de la conversación y registra el pedido en el CRM
+        // (orders/aiOrderRegistration.js). Si algo falla, cae al flujo manual (pendientes_ia).
+        const registerOrderCmd = !isPostVenta && /\/registrar\b/i.test(aiResponse);
 
-        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado, /comprobante) de los mensajes antes de enviar
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').trim()).filter(m => m.length > 0);
+        // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado, /comprobante, /registrar) de los mensajes antes de enviar
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -2302,6 +2324,12 @@ Reglas:
                     if (/ya registramos tu pedido/i.test(msgText)) saleClosed = true;
                     if (/ya tenemos tu pedido listo/i.test(msgText)) orderReadySent = true;
                     console.log(`[AI] Atajo "${shortcutMatch[0]}" expandido a respuesta rápida para ${contactId}.`);
+                } else if (shortcutMatch[1].toLowerCase() === 'pagado') {
+                    // /pagado es parte del flujo de Envíos (el cliente confirmó que llenó el formulario).
+                    // Si por algún motivo NO existe la respuesta rápida "pagado", mandamos un texto por
+                    // defecto para no dejar al cliente sin respuesta (evita el silencio total).
+                    msgText = 'Llenaste correctamente el formulario ✅ Ahora preparamos tu envío y en cuanto tenga tu guía te la comparto para que rastrees tu paquete 📦😊';
+                    console.warn(`[AI] Atajo "pagado" sin respuesta rápida configurada; usando texto por defecto para ${contactId}.`);
                 } else {
                     // Atajo inexistente: no mandar el "/xxx" crudo al cliente.
                     console.warn(`[AI] La IA usó un atajo desconocido "${shortcutMatch[0]}" para ${contactId}; se omite.`);
@@ -2407,6 +2435,18 @@ Reglas:
         await contactRef.update(updateData);
         console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas enviadas: ${aiMessages.length})`);
 
+        // Registro automático del pedido (/registrar): el extractor lee la conversación (incluye
+        // el resumen que el cliente confirmó) y crea el pedido en el CRM con el mismo núcleo que
+        // el modal. Si tiene éxito, createOrder quita solo la etiqueta pendientes_ia que acaba de
+        // poner el cierre; si falla, el contacto queda en Pendientes IA (flujo manual de siempre)
+        // y se avisa al admin. Fire-and-forget: nunca debe tumbar la respuesta al cliente.
+        // require perezoso para evitar ciclo de módulos (aiOrderRegistration requiere services).
+        if (registerOrderCmd) {
+            require('./orders/aiOrderRegistration')
+                .registerOrderFromAI({ contactId, contactData, conversationText: conversationHistory })
+                .catch(e => console.warn('[AI_ORDER] registro automático falló:', e.message));
+        }
+
         // Comprobante sospechoso: reenviar al admin la última imagen/PDF que mandó el cliente
         // (el comprobante) para verificación manual. Fire-and-forget. Al cliente ya se le dijo
         // que estamos validando su pago (lo escribió la IA).
@@ -2460,7 +2500,7 @@ Reglas:
         // scheduler de order_followup leerá esta etiqueta y se ahorrará una clasificación.
         // Fire-and-forget: nunca debe afectar la respuesta principal. En post-venta el
         // pedido ya está tomado, así que no se etiqueta.
-        if (!saleClosed && !shouldTransitionToPostVenta && !shouldDeactivate && !isPostVenta) {
+        if (!saleClosed && !shouldTransitionToPostVenta && !shouldDeactivate && !isPostVenta && !registerOrderCmd) {
             tagOrderInProgress(contactId, contactRef, conversationHistory, contactData.name)
                 .catch(e => console.warn('[ORDER_FOLLOWUP] live-tag falló:', e.message));
         }
