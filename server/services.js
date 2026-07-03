@@ -2136,6 +2136,15 @@ Reglas:
             console.warn('[AI] No se pudo leer el pedido registrado para', contactId, e.message);
         }
 
+        // Cliente RECURRENTE en etapa de venta: ya le hemos enviado antes (purchaseStatus
+        // 'completed' se pone cuando su pedido anterior pasó a Fabricar tras pagar). En una
+        // segunda compra NO se vuelve a checar cobertura de entrada: se pregunta si va a la
+        // misma dirección, y solo si es OTRA se pide el CP (pedido del dueño, 02-jul-2026).
+        let repeatBuyerNote = '';
+        if (!isPostVenta && contactData.purchaseStatus === 'completed') {
+            repeatBuyerNote = `\n\n**Cliente RECURRENTE (ya le hemos enviado pedidos antes):**\nNO le pidas código postal ni cheques cobertura de entrada. Pregúntale si su nuevo pedido va a la MISMA dirección de la vez pasada. Si dice que SÍ: la cobertura ya está comprobada (cuenta como cumplido el requisito de CP) — continúa el cierre normal sin pedir CP. Solo si dice que es OTRA dirección, pide el código postal de 5 dígitos y checa cobertura como siempre.`;
+        }
+
         // Notas dinámicas + tarea: van como el ÚLTIMO turno user de la conversación.
         // La tarea es solo mecánica; el tono y el estilo salen únicamente de las
         // instrucciones configuradas (el "concisa y útil" y el "indica que un agente
@@ -2148,7 +2157,7 @@ Reglas:
         const mediaTaskNote = mediaParts.length > departmentImageParts.length
             ? ' Vienen adjuntos archivos de la conversación (fotos, audios, videos o documentos/PDF, p. ej. comprobantes de pago): analízalos con cuidado cuando sean relevantes para el último mensaje del cliente; si ya los atendiste en un turno anterior, no los vuelvas a comentar.'
             : '';
-        const finalUserText = `${fechaActualNote}${orderInfoNote}${postventaProtocolNote}${cancelCommandNote}${comprobanteCommandNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${orderInfoNote}${repeatBuyerNote}${postventaProtocolNote}${cancelCommandNote}${comprobanteCommandNote}${shippingInfo}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
