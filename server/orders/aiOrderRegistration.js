@@ -70,7 +70,7 @@ async function getAiOrderConfig() {
  */
 function buildRegistrationRule(cfg) {
     return `\n\n**Regla Especial de Cierre y Registro de Pedido:**
-Catálogo y datos requeridos por producto:
+Catálogo y datos requeridos por producto (los precios aquí son de referencia: si tus instrucciones o el anuncio manejan un precio o promoción DISTINTOS, el de tus instrucciones MANDA):
 ${cfg.catalogText}
 
 Protocolo OBLIGATORIO para cerrar un pedido:
