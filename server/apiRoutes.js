@@ -7855,7 +7855,9 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
     try {
         const cDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
         const contactData = cDoc.exists ? cDoc.data() : {};
-        const orderNumber = await markComprobanteValidadoAndSendForm(contactId, contactData);
+        // force=true: el agente pidió reenviar el formulario a propósito (aunque ya se haya
+        // enviado antes). La IA no fuerza — así no reenvía el formulario en cada turno.
+        const orderNumber = await markComprobanteValidadoAndSendForm(contactId, contactData, { force: true });
         if (!orderNumber) {
             return res.status(400).json({ success: false, message: 'El contacto no tiene un pedido registrado para enviarle el formulario.' });
         }

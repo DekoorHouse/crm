@@ -953,7 +953,7 @@ const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://app.dekoormx.com').re
  * Devuelve el número de pedido (DHxxxx), o null si el contacto no tiene pedido registrado.
  * Nunca lanza: atrapa y loguea sus errores.
  */
-async function markComprobanteValidadoAndSendForm(contactId, contactData = {}) {
+async function markComprobanteValidadoAndSendForm(contactId, contactData = {}, { force = false } = {}) {
     const orderDoc = await getLatestOrderForContact(contactId);
     if (!orderDoc) {
         console.warn(`[ENVIOS] ${contactId} validó comprobante pero no tiene pedido registrado; no se envía el formulario.`);
@@ -965,15 +965,29 @@ async function markComprobanteValidadoAndSendForm(contactId, contactData = {}) {
         console.warn(`[ENVIOS] Pedido ${orderDoc.id} sin consecutiveOrderNumber; no se envía el formulario.`);
         return null;
     }
-    // Marcar el pedido para la sección Envíos (refresca la fecha si ya estaba marcado).
-    try {
-        await orderDoc.ref.update({ comprobanteValidadoAt: admin.firestore.FieldValue.serverTimestamp() });
-    } catch (e) {
-        console.warn(`[ENVIOS] No se pudo marcar comprobanteValidadoAt en ${orderDoc.id}:`, e.message);
+    // Idempotencia: si el formulario YA se envió para este pedido (comprobanteValidadoAt existe)
+    // y NO es un reenvío deliberado del agente, NO reenvíes el bloque completo del formulario. La
+    // IA re-emite /comprobante en turnos siguientes porque el comprobante sigue en su ventana de
+    // contexto (24h), lo que reenviaba el formulario 3-4 veces (caso real fb_27538335665785398 /
+    // DH13041). En ese caso mandamos un recordatorio CORTO en vez del bloque completo (y sin
+    // re-marcar el pedido), para no saturar pero tampoco dejar al cliente sin respuesta. El botón
+    // "Formulario de envío" del CRM pasa force=true y sí reenvía el formulario completo.
+    const alreadySent = !force && !!orderData.comprobanteValidadoAt;
+    if (!alreadySent) {
+        // Marcar el pedido para la sección Envíos (refresca la fecha si ya estaba marcado).
+        try {
+            await orderDoc.ref.update({ comprobanteValidadoAt: admin.firestore.FieldValue.serverTimestamp() });
+        } catch (e) {
+            console.warn(`[ENVIOS] No se pudo marcar comprobanteValidadoAt en ${orderDoc.id}:`, e.message);
+        }
+    } else {
+        console.log(`[ENVIOS] Formulario ya enviado antes para ${orderNumber} (${contactId}); se manda solo un recordatorio corto.`);
     }
     // Enviar al cliente el enlace del formulario (por su canal) y reflejarlo en el chat del CRM.
     const formUrl = `${APP_BASE_URL}/datos-estafeta/${orderNumber}`;
-    const text = `¡Gracias! 🙌 Ya validamos tu comprobante de pago ✅\n\nAhora llena tus datos de envío en este formulario 👇 (tu número de pedido ya viene cargado):\n${formUrl}\n\nEn cuanto lo completes preparamos tu envío 📦✨`;
+    const text = alreadySent
+        ? `Quedamos al pendiente de tus datos de envío en el formulario que te compartimos 👆✨ (si no te llegó, avísame y te lo reenvío).`
+        : `¡Gracias! 🙌 Ya validamos tu comprobante de pago ✅\n\nAhora llena tus datos de envío en este formulario 👇 (tu número de pedido ya viene cargado):\n${formUrl}\n\nEn cuanto lo completes preparamos tu envío 📦✨`;
     try {
         const channel = contactData.channel || 'whatsapp';
         let sent;
@@ -2136,6 +2150,7 @@ Reglas:
         // sección "Envíos" del CRM y le manda al cliente el enlace del formulario de datos de envío.
         const comprobanteCommandNote = isPostVenta ? `\n\n**Comprobante de pago y formulario de envío (post-venta):**
 - Cuando el cliente te MANDE su comprobante de pago (imagen o PDF) y verifiques que es GENUINO (el destino y el monto coinciden con lo esperado), responde ÚNICAMENTE con el comando /comprobante (SOLO eso, sin ningún otro texto ni saludo). NO escribas tú la confirmación, NO le pidas los datos de envío por texto y NO le mandes ningún enlace: al recibir /comprobante, el SISTEMA le manda automáticamente el mensaje de confirmación ("ya validamos tu pago") junto con el formulario de envío. Emítelo UNA sola vez por pedido.
+- MUY IMPORTANTE: si YA validaste el comprobante antes en esta conversación (ya se le envió el formulario de envío, aunque el comprobante siga viéndose en el chat), NO vuelvas a emitir /comprobante. En los turnos siguientes responde NORMALMENTE a lo que el cliente diga (dudas, datos, etc.); reenviar el formulario en cada turno lo satura.
 - Si el comprobante es sospechoso o NO coincide, usa /sospechoso (NO /comprobante). Si el cliente solo dice que "ya pagó" pero todavía NO ha mandado el comprobante, pídeselo con amabilidad (NO emitas /comprobante).
 - Cuando el cliente te confirme que YA LLENÓ su formulario de envío (por ejemplo: "ya llené el formulario", "listo, ya mandé mis datos"), responde ÚNICAMENTE con /pagado (solo eso, sin ningún otro texto).` : '';
 
