@@ -171,7 +171,7 @@ async function renderEnviosView() {
             if (d) {
                 dataCells =
                     cell(d.nombre, 'white-space:nowrap;font-weight:600') +
-                    cell(d.direccion) +
+                    cell([d.direccion, d.numInterior ? `Int. ${d.numInterior}` : ''].filter(Boolean).join(' ')) +
                     cell(d.colonia, 'white-space:nowrap') +
                     cell(d.entreCalles) +
                     cell(d.referencia) +
@@ -198,8 +198,10 @@ async function renderEnviosView() {
             } else if (e.datos && e.datos.codigoPostal) {
                 actions = `<button onclick="openGuiaModal(${gi})" title="Cotizar y crear guía DHL" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-box mr-1"></i>Crear guía</button>`;
             }
+            const editBtn = `<button title="Editar datos de esta fila" onclick="openEnvioEditModal(${gi})" style="border:none;background:transparent;cursor:pointer;color:#334155;padding:4px 8px;font-size:13px;"><i class="fas fa-pen"></i></button>`;
+            const chatBtn = e.contactId ? `<button title="Abrir la conversación en Chats" onclick="handleSelectContactFromPipeline('${escapeHtml(e.contactId)}')" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:13px;"><i class="fas fa-comments"></i></button>` : '';
             const delBtn = e.manualId ? `<button title="Borrar línea manual" onclick="deleteEnvioManual('${e.manualId}')" style="border:none;background:transparent;cursor:pointer;color:#991b1b;padding:4px 8px;font-size:13px;"><i class="fas fa-trash"></i></button>` : '';
-            const accionCell = `<td style="padding:10px 0;text-align:right;white-space:nowrap"><div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">${actions}${delBtn}</div></td>`;
+            const accionCell = `<td style="padding:10px 0;text-align:right;white-space:nowrap"><div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">${actions}${editBtn}${chatBtn}${delBtn}</div></td>`;
             return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:top">
                 ${numCell}
                 ${pedidoCell}
@@ -337,6 +339,108 @@ async function deleteEnvioManual(id) {
     }
 }
 window.deleteEnvioManual = deleteEnvioManual;
+
+// ===================== Editar una fila de Envíos =====================
+// Regular (viene de un pedido) -> upsert en datos_envio (PUT /api/envios/datos/:pedido).
+// Manual (envios_manuales)     -> PUT /api/envios/manual/:id.
+function _envioEditModalEl() {
+    let m = document.getElementById('envio-edit-modal');
+    if (!m) {
+        m = document.createElement('div');
+        m.id = 'envio-edit-modal';
+        m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:9999;';
+        m.innerHTML = '<div id="envio-edit-box" style="background:var(--color-surface,#fff);color:var(--color-text,#111);max-width:560px;width:94%;max-height:90vh;overflow:auto;border-radius:14px;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.35)"></div>';
+        m.addEventListener('click', (ev) => { if (ev.target === m) closeEnvioEditModal(); });
+        document.body.appendChild(m);
+    }
+    return m;
+}
+function closeEnvioEditModal() { const m = document.getElementById('envio-edit-modal'); if (m) m.style.display = 'none'; }
+window.closeEnvioEditModal = closeEnvioEditModal;
+
+let _envioEditActual = null; // objeto de _enviosData en edición (no el índice, para no desincronizar).
+
+// Abre el modal de edición para la fila en el índice i de _enviosData.
+function openEnvioEditModal(i) {
+    const e = (window._enviosData || [])[i];
+    if (!e) return;
+    _envioEditActual = e;
+    const d = e.datos || {};
+    const isManual = !!e.manualId;
+    const m = _envioEditModalEl();
+    const inputStyle = 'width:100%;padding:8px 10px;border:1px solid var(--color-border,#e5e7eb);border-radius:8px;font-size:.85rem;background:var(--color-bg,#fff);color:var(--color-text,#111)';
+    const f = (id, label, value, attrs = '') => `
+        <div style="min-width:0">
+          <label style="display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light,#64748b);margin-bottom:3px">${label}</label>
+          <input id="ee-${id}" value="${escapeHtml(value == null ? '' : String(value))}" ${attrs} style="${inputStyle}" />
+        </div>`;
+    const montoField = isManual ? `<div style="margin-bottom:10px">${f('monto', 'Monto pagado', (e.montoPagado != null ? e.montoPagado : ''), 'inputmode="decimal"')}</div>` : '';
+    m.querySelector('#envio-edit-box').innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <h3 style="margin:0;font-size:1.05rem;font-weight:700">Editar envío — ${escapeHtml(e.orderNumber)}</h3>
+          <button onclick="closeEnvioEditModal()" style="border:none;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:#64748b">&times;</button>
+        </div>
+        <p style="font-size:.75rem;color:var(--color-text-light,#64748b);margin:0 0 12px">${isManual ? 'Línea manual.' : 'Se actualizan los datos de envío del pedido.'}${!e.datos ? ' <b>Aún sin datos:</b> se crearán al guardar.' : ''}</p>
+        <div id="ee-error" style="color:#991b1b;font-size:.8rem;margin-bottom:8px"></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${f('nombre', 'Nombre', d.nombre)}
+          ${f('telefono', 'Teléfono', d.telefono, 'inputmode="numeric" maxlength="10"')}
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+            ${f('direccion', 'Calle y número', d.direccion)}
+            ${f('numInterior', 'No. interior', d.numInterior)}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            ${f('colonia', 'Colonia', d.colonia)}
+            ${f('cp', 'C.P.', d.codigoPostal, 'inputmode="numeric" maxlength="5"')}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            ${f('ciudad', 'Municipio / Ciudad', d.ciudad)}
+            ${f('estado', 'Estado', d.estado)}
+          </div>
+          ${f('entrecalles', 'Entre calles', d.entreCalles)}
+          ${f('referencia', 'Referencia', d.referencia)}
+        </div>
+        ${montoField ? `<div style="margin-top:10px">${montoField}</div>` : ''}
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+          <button onclick="closeEnvioEditModal()" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;border-radius:8px;padding:8px 16px;cursor:pointer">Cancelar</button>
+          <button id="ee-save" onclick="saveEnvioEdit()" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-weight:600;cursor:pointer">Guardar cambios</button>
+        </div>`;
+    m.style.display = 'flex';
+}
+window.openEnvioEditModal = openEnvioEditModal;
+
+// Guarda los cambios de la fila en edición y refresca la tabla.
+async function saveEnvioEdit() {
+    const e = _envioEditActual;
+    if (!e) return;
+    const g = id => (document.getElementById('ee-' + id)?.value || '').trim();
+    const errEl = document.getElementById('ee-error');
+    if (errEl) errEl.textContent = '';
+    const payload = {
+        nombreCompleto: g('nombre'), nombre: g('nombre'),
+        telefono: g('telefono'), direccion: g('direccion'), numInterior: g('numInterior'),
+        colonia: g('colonia'), entreCalles: g('entrecalles'), referencia: g('referencia'),
+        ciudad: g('ciudad'), estado: g('estado'), codigoPostal: g('cp'),
+    };
+    if (e.manualId) payload.montoPagado = g('monto');
+    const url = e.manualId
+        ? `${API_BASE_URL}/api/envios/manual/${encodeURIComponent(e.manualId)}`
+        : `${API_BASE_URL}/api/envios/datos/${encodeURIComponent(e.orderNumber)}`;
+    const btn = document.getElementById('ee-save');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Guardando…'; }
+    try {
+        const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
+        closeEnvioEditModal();
+        renderEnviosView();
+    } catch (err) {
+        if (errEl) errEl.textContent = 'No se pudo guardar: ' + (err.message || err);
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    }
+}
+window.saveEnvioEdit = saveEnvioEdit;
 
 // ===================== Guías DHL (T1 Envíos) desde el CRM =====================
 // Modal reutilizable (se crea una sola vez y se muestra/oculta).

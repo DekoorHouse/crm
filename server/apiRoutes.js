@@ -7902,7 +7902,8 @@ router.get('/envios', async (_req, res) => {
             // Datos de envío desglosados (cada campo va en su propia columna en el CRM).
             const datos = de ? {
                 nombre: de.nombreCompleto || '',
-                direccion: [de.direccion, de.numInterior ? `Int. ${de.numInterior}` : ''].filter(Boolean).join(' '),
+                direccion: de.direccion || '',        // cruda (calle + nº ext); la "Int." se fusiona solo al mostrar
+                numInterior: de.numInterior || '',
                 colonia: de.colonia || '',
                 entreCalles: de.entreCalles || '',
                 referencia: de.referencia || '',
@@ -7922,6 +7923,7 @@ router.get('/envios', async (_req, res) => {
                 datos,               // objeto con cada campo, o null si el cliente aún no llena el formulario
                 tieneDatos: !!de,
                 manualId: null,      // no es una línea manual
+                contactId: p.contactId || null, // para abrir la conversación en Chats
                 guiaEnvio: serGuia(p.guiaEnvio),
             };
         });
@@ -7932,7 +7934,7 @@ router.get('/envios', async (_req, res) => {
             const campos = [m.nombre, m.direccion, m.colonia, m.entreCalles, m.referencia, m.ciudad, m.estado, m.codigoPostal, m.telefono];
             const tieneDatos = campos.some(v => (v || '').toString().trim());
             const datos = tieneDatos ? {
-                nombre: m.nombre || '', direccion: m.direccion || '', colonia: m.colonia || '',
+                nombre: m.nombre || '', direccion: m.direccion || '', numInterior: m.numInterior || '', colonia: m.colonia || '',
                 entreCalles: m.entreCalles || '', referencia: m.referencia || '', ciudad: m.ciudad || '',
                 estado: m.estado || '', codigoPostal: m.codigoPostal || '', telefono: m.telefono || '',
             } : null;
@@ -8001,6 +8003,85 @@ router.delete('/envios/manual/:id', async (req, res) => {
     }
 });
 
+// --- PUT /api/envios/manual/:id — editar una línea manual ---
+router.put('/envios/manual/:id', async (req, res) => {
+    try {
+        const b = req.body || {};
+        const str = (v) => (v == null ? '' : String(v).trim());
+        const montoRaw = str(b.montoPagado).replace(/[^\d.]/g, '');
+        const upd = {
+            montoPagado: montoRaw ? Number(montoRaw) : null,
+            nombre: str(b.nombre || b.nombreCompleto),
+            direccion: str(b.direccion),
+            numInterior: str(b.numInterior),
+            colonia: str(b.colonia),
+            entreCalles: str(b.entreCalles),
+            referencia: str(b.referencia),
+            ciudad: str(b.ciudad),
+            estado: str(b.estado),
+            codigoPostal: str(b.codigoPostal),
+            telefono: str(b.telefono).replace(/\D/g, ''),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        await db.collection('envios_manuales').doc(req.params.id).update(upd);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[ENVIOS] Error en PUT /envios/manual:', error.message);
+        res.status(500).json({ success: false, message: 'Error al editar la línea.' });
+    }
+});
+
+// --- PUT /api/envios/datos/:orderNumber — editar (o crear) los datos de envío de un pedido ---
+// Sirve para corregir una fila ya llena, o para capturar a mano un pedido aún pendiente.
+// Actualiza el datos_envio MÁS RECIENTE del pedido; si no existe, crea uno nuevo.
+router.put('/envios/datos/:orderNumber', async (req, res) => {
+    try {
+        const num = parseOrderNumber(req.params.orderNumber);
+        if (!num) return res.status(400).json({ success: false, message: 'Número de pedido inválido.' });
+        const b = req.body || {};
+        const str = (v) => (v == null ? '' : String(v)).trim();
+        const toCoord = (v) => (v === null || v === undefined || v === '' || !isFinite(Number(v))) ? null : Number(v);
+        const fields = {
+            nombreCompleto: str(b.nombreCompleto || b.nombre),
+            telefono: str(b.telefono).replace(/\D/g, ''),
+            direccion: str(b.direccion),
+            numInterior: str(b.numInterior),
+            colonia: str(b.colonia),
+            entreCalles: str(b.entreCalles),
+            referencia: str(b.referencia),
+            ciudad: str(b.ciudad),
+            estado: str(b.estado),
+            codigoPostal: str(b.codigoPostal).replace(/\D/g, ''),
+        };
+        if (b.lat !== undefined) fields.lat = toCoord(b.lat);
+        if (b.lng !== undefined) fields.lng = toCoord(b.lng);
+
+        const orderTag = 'DH' + num;
+        const snap = await db.collection('datos_envio').where('numeroPedido', '==', orderTag).get();
+        if (!snap.empty) {
+            // Elegir el doc más reciente (sin índice compuesto: se ordena en memoria).
+            let target = snap.docs[0], bestMs = -1;
+            snap.docs.forEach(doc => {
+                const ca = doc.data().createdAt;
+                const ms = ca && ca.toMillis ? ca.toMillis() : 0;
+                if (ms >= bestMs) { bestMs = ms; target = doc; }
+            });
+            fields.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+            await target.ref.update(fields);
+            return res.json({ success: true, updated: true });
+        }
+        // No había datos: crear uno (permite capturar a mano un pedido pendiente).
+        fields.numeroPedido = orderTag;
+        fields.createdAt = admin.firestore.FieldValue.serverTimestamp();
+        fields.source = 'crm-edit';
+        await db.collection('datos_envio').add(fields);
+        res.json({ success: true, created: true });
+    } catch (error) {
+        console.error('[ENVIOS] Error en PUT /envios/datos:', error.message);
+        res.status(500).json({ success: false, message: 'Error al guardar los datos de envío.' });
+    }
+});
+
 // ============================ Guías DHL vía T1 Envíos ============================
 // Cliente de T1 (auth Keycloak + cotizar/crearGuia). Ver server/t1/t1Client.js.
 const t1 = require('./t1/t1Client');
@@ -8013,7 +8094,8 @@ function _mapDestinoT1(datos = {}) {
     const apellidos = sp.join(' ') || '.';
     const calleFull = String(datos.direccion || '').trim();
     const numMatch = calleFull.match(/(\d+[A-Za-z]?)\s*$/);
-    const referencias = [datos.entreCalles, datos.referencia].filter(Boolean).join(' · ').slice(0, 180);
+    // `direccion` es la calle + nº exterior; el nº interior va aparte y lo sumamos a referencias.
+    const referencias = [datos.numInterior ? ('Int. ' + datos.numInterior) : '', datos.entreCalles, datos.referencia].filter(Boolean).join(' · ').slice(0, 180);
     return {
         codigo_postal: String(datos.codigoPostal || '').replace(/\D/g, ''),
         nombre, apellidos,
