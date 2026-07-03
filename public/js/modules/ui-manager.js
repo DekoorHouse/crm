@@ -130,6 +130,19 @@ function navigateTo(viewName, force = false) {
 
 // Sección "Envíos": tabla de pedidos con comprobante validado. Cada dato de envío va en su propia
 // columna y se copia al hacer clic en la celda. Lee GET /api/envios.
+// Estatus de pedido (mismos valores que en Pedidos). Cambiar a "Fabricar" dispara el evento Meta.
+const ENVIO_STATUS_OPTIONS = ['Sin estatus', 'Foto enviada', 'Esperando pago', 'Pagado', 'Diseñado', 'Fabricar', 'Corregir', 'Corregido', 'Mns Amenazador', 'Cancelado'];
+// Insignia de paquetería con color aproximado de su marca.
+function courierBadge(paq) {
+    const p = String(paq || '').toUpperCase();
+    let bg = '#64748b', fg = '#fff', label = paq || '—';
+    if (p.includes('DHL')) { bg = '#FFCC00'; fg = '#D40511'; label = 'DHL'; }
+    else if (p.includes('FEDEX')) { bg = '#4D148C'; label = 'FedEx'; }
+    else if (p.includes('ESTAFETA')) { bg = '#EE1C25'; label = 'Estafeta'; }
+    else if (p.includes('EXPRESS')) { bg = '#0ea5e9'; label = paq; }
+    return `<span style="display:inline-block;background:${bg};color:${fg};font-size:10px;font-weight:800;letter-spacing:.3px;padding:2px 7px;border-radius:5px;white-space:nowrap">${escapeHtml(label)}</span>`;
+}
+
 async function renderEnviosView() {
     const container = document.getElementById('envios-container');
     if (!container) return;
@@ -166,6 +179,10 @@ async function renderEnviosView() {
             const gi = window._enviosData.indexOf(e); // índice real en _enviosData para los handlers
             const numCell = `<td style="padding:10px 14px 10px 0;color:#94a3b8;font-weight:600;white-space:nowrap">${dispIdx + 1}</td>`;
             const montoVal = e.montoPagado != null ? `$${Number(e.montoPagado).toLocaleString('es-MX')}` : '';
+            // Estatus editable (solo pedidos reales; las líneas manuales no tienen estatus).
+            const statusCell = e.manualId
+                ? `<td style="padding:10px 14px 10px 0;color:#cbd5e1">—</td>`
+                : `<td style="padding:8px 14px 8px 0"><select onchange="changeEnvioStatus('${e.id}', this.value, this)" style="font-size:12px;padding:4px 6px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);max-width:150px">${ENVIO_STATUS_OPTIONS.map(o => `<option${(e.estatus || 'Sin estatus') === o ? ' selected' : ''}>${o}</option>`).join('')}</select></td>`;
             const d = e.datos;
             let dataCells;
             if (d) {
@@ -192,7 +209,7 @@ async function renderEnviosView() {
                 const etiqueta = g.pdfPath ? `<a href="${API_BASE_URL}/api/envios/etiqueta?path=${encodeURIComponent(g.pdfPath)}" target="_blank" rel="noopener" style="${linkStyle}">🏷️ Etiqueta</a>` : (g.labelUrl ? `<a href="${g.labelUrl}" target="_blank" rel="noopener" style="${linkStyle}">🏷️ Etiqueta</a>` : '');
                 const rastreo = g.tracking ? `<a href="${g.tracking}" target="_blank" rel="noopener" style="${linkStyle}">📍 Rastrear</a>` : '';
                 actions = `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
-                    <span class="envio-copy" onclick="copyEnvioCell(this)" title="Clic para copiar la guía" style="font-weight:700;color:#166534;cursor:pointer;white-space:nowrap">✓ ${escapeHtml(g.guia)}</span>
+                    <span style="display:flex;gap:6px;align-items:center">${courierBadge(g.mensajeria)}<span class="envio-copy" onclick="copyEnvioCell(this)" title="Clic para copiar la guía" style="font-weight:700;color:#166534;cursor:pointer;white-space:nowrap">✓ ${escapeHtml(g.guia)}</span></span>
                     <span style="display:flex;gap:10px">${etiqueta}${rastreo}</span>
                   </div>`;
             } else if (e.datos && e.datos.codigoPostal) {
@@ -200,12 +217,15 @@ async function renderEnviosView() {
             }
             const editBtn = `<button title="Editar datos de esta fila" onclick="openEnvioEditModal(${gi})" style="border:none;background:transparent;cursor:pointer;color:#334155;padding:4px 8px;font-size:13px;"><i class="fas fa-pen"></i></button>`;
             const chatBtn = e.contactId ? `<button title="Abrir la conversación en Chats" onclick="handleSelectContactFromPipeline('${escapeHtml(e.contactId)}')" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:13px;"><i class="fas fa-comments"></i></button>` : '';
+            // Pedidos reales: "quitar de Envíos" (oculta, no borra). Manuales: borrar de verdad.
+            const hideBtn = !e.manualId ? `<button title="Quitar de Envíos (no borra el pedido)" onclick="ocultarEnvio('${e.id}')" style="border:none;background:transparent;cursor:pointer;color:#94a3b8;padding:4px 8px;font-size:13px;"><i class="fas fa-eye-slash"></i></button>` : '';
             const delBtn = e.manualId ? `<button title="Borrar línea manual" onclick="deleteEnvioManual('${e.manualId}')" style="border:none;background:transparent;cursor:pointer;color:#991b1b;padding:4px 8px;font-size:13px;"><i class="fas fa-trash"></i></button>` : '';
-            const accionCell = `<td style="padding:10px 0;text-align:right;white-space:nowrap"><div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">${actions}${editBtn}${chatBtn}${delBtn}</div></td>`;
+            const accionCell = `<td style="padding:10px 0;text-align:right;white-space:nowrap"><div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">${actions}${editBtn}${chatBtn}${hideBtn}${delBtn}</div></td>`;
             return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:top">
                 ${numCell}
                 ${pedidoCell}
                 ${cell(montoVal, 'white-space:nowrap;font-weight:600')}
+                ${statusCell}
                 ${dataCells}
                 ${accionCell}
             </tr>`;
@@ -220,6 +240,11 @@ async function renderEnviosView() {
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
               ${[['all', 'Todas', envios.length], ['pendiente', 'Pendientes de guía', pendCount], ['guia', 'Con guía', guiaCount]].map(([k, lbl, c]) => `<button onclick="setEnviosFilter('${k}')" style="border:1px solid ${filter === k ? 'var(--color-primary,#ef4444)' : 'var(--color-border,#e5e7eb)'};background:${filter === k ? 'var(--color-primary,#ef4444)' : 'transparent'};color:${filter === k ? '#fff' : 'var(--color-text,#334155)'};border-radius:999px;padding:5px 14px;font-size:.8rem;cursor:pointer;font-weight:600">${lbl} (${c})</button>`).join('')}
             </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:.8rem">
+              <span style="color:var(--color-text-light,#64748b)"><i class="fas fa-wallet mr-1"></i>Saldo:</span>
+              <a href="https://shipping.t1.com" target="_blank" rel="noopener" style="text-decoration:none;color:var(--color-primary,#ef4444);font-weight:600">T1 · DHL/FedEx ↗</a>
+              <a href="https://app.enviosperros.com/wallet" target="_blank" rel="noopener" style="text-decoration:none;color:var(--color-primary,#ef4444);font-weight:600">Envíos Perros · Estafeta ↗</a>
+            </div>
             <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo.</p>
             <div style="overflow-x:auto">
               <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
@@ -228,6 +253,7 @@ async function renderEnviosView() {
                     <th style="padding:8px 14px 8px 0">#</th>
                     <th style="padding:8px 14px 8px 0">Pedido</th>
                     <th style="padding:8px 14px 8px 0">Monto pagado</th>
+                    <th style="padding:8px 14px 8px 0">Estatus</th>
                     <th style="padding:8px 14px 8px 0">Nombre</th>
                     <th style="padding:8px 14px 8px 0">Dirección</th>
                     <th style="padding:8px 14px 8px 0">Colonia</th>
@@ -240,7 +266,7 @@ async function renderEnviosView() {
                     <th style="padding:8px 0;text-align:right">Guía / Acciones</th>
                   </tr>
                 </thead>
-                <tbody>${rows || '<tr><td colspan="13" style="padding:16px 0;color:#94a3b8">No hay envíos en este filtro.</td></tr>'}</tbody>
+                <tbody>${rows || '<tr><td colspan="14" style="padding:16px 0;color:#94a3b8">No hay envíos en este filtro.</td></tr>'}</tbody>
               </table>
             </div>
             <p class="text-xs text-gray-400 mt-3">${shown.length} de ${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''} · ${pendCount} pendiente(s) de guía · ${guiaCount} con guía.</p>`;
@@ -254,6 +280,39 @@ window.renderEnviosView = renderEnviosView;
 // Filtro de la tabla de Envíos: 'all' | 'pendiente' (sin guía) | 'guia' (con guía).
 function setEnviosFilter(f) { window._enviosFilter = f; renderEnviosView(); }
 window.setEnviosFilter = setEnviosFilter;
+
+// Cambia el estatus del pedido desde Envíos. Reusa el endpoint que YA dispara el evento Meta al pasar a "Fabricar".
+async function changeEnvioStatus(orderId, newStatus, sel) {
+    if (!orderId || !newStatus) return;
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/orders/${encodeURIComponent(orderId)}/change-status`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newStatus })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
+        if (sel) { const c = sel.style.borderColor; sel.style.borderColor = '#16a34a'; setTimeout(() => { sel.style.borderColor = c || 'var(--color-border,#e5e7eb)'; }, 800); }
+    } catch (e) {
+        if (window.showError) showError('No se pudo cambiar el estatus: ' + (e.message || e)); else alert('No se pudo cambiar el estatus: ' + (e.message || e));
+        renderEnviosView(); // revertir el select al valor real del servidor
+    }
+}
+window.changeEnvioStatus = changeEnvioStatus;
+
+// Quita un pedido de la tabla de Envíos (oculta, NO borra el pedido).
+async function ocultarEnvio(docId) {
+    if (!docId || !confirm('¿Quitar este pedido de la tabla de Envíos?\n\nEl pedido NO se borra; solo desaparece de aquí.')) return;
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/envios/ocultar`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docId })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
+        renderEnviosView();
+    } catch (e) {
+        if (window.showError) showError('No se pudo ocultar: ' + (e.message || e)); else alert('No se pudo ocultar: ' + (e.message || e));
+    }
+}
+window.ocultarEnvio = ocultarEnvio;
 
 // Copia el texto de una celda de la tabla de Envíos al portapapeles (clic en la celda).
 // Intenta la API moderna y, si falla, cae al fallback clásico (textarea + execCommand).
@@ -502,7 +561,7 @@ async function _cotizarEnModal() {
             const payload = encodeURIComponent(JSON.stringify({ proveedor: s.proveedor, tipoServicio: s.tipo_servicio, servicioNombre: s.servicio, mensajeria: s.paqueteria, costo: s.costo }));
             const diasTxt = s.dias == null || s.dias === '' ? '' : (typeof s.dias === 'number' ? ` · ${s.dias} día(s)` : ` · ${escapeHtml(String(s.dias))}`);
             return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--color-border,#e5e7eb);border-radius:10px;margin-bottom:8px">
-                <div><div style="font-weight:600">${escapeHtml(s.paqueteria || '')} · ${escapeHtml(s.servicio || '')}</div>
+                <div><div style="font-weight:600;display:flex;align-items:center;gap:6px">${courierBadge(s.paqueteria)}<span>${escapeHtml(s.servicio || '')}</span></div>
                   <div style="font-size:.78rem;color:#64748b">${escapeHtml(s.tipo_servicio || '')}${diasTxt}</div></div>
                 <div style="text-align:right;white-space:nowrap"><div style="font-weight:700">${costo}</div>
                   <button onclick="crearGuiaDesdeModal('${payload}')" style="margin-top:4px;background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:.78rem;cursor:pointer">Crear guía</button></div>

@@ -7896,6 +7896,7 @@ router.get('/envios', async (_req, res) => {
 
         const envios = pedidosSnap.docs.map(doc => {
             const p = doc.data();
+            if (p.ocultoDeEnvios) return null; // el operador lo quitó de Envíos (el pedido sigue intacto)
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
             const orderNumber = num != null ? `DH${num}` : (p.numeroPedido || doc.id);
             const de = datosByOrder.get(norm(num));
@@ -7926,7 +7927,7 @@ router.get('/envios', async (_req, res) => {
                 contactId: p.contactId || null, // para abrir la conversación en Chats
                 guiaEnvio: serGuia(p.guiaEnvio),
             };
-        });
+        }).filter(Boolean);
 
         // Líneas agregadas manualmente por el operador (colección envios_manuales).
         const manuales = manualSnap.docs.map(doc => {
@@ -8079,6 +8080,22 @@ router.put('/envios/datos/:orderNumber', async (req, res) => {
     } catch (error) {
         console.error('[ENVIOS] Error en PUT /envios/datos:', error.message);
         res.status(500).json({ success: false, message: 'Error al guardar los datos de envío.' });
+    }
+});
+
+// --- POST /api/envios/ocultar — quita un PEDIDO de la tabla de Envíos (no lo borra; flag ocultoDeEnvios). ---
+router.post('/envios/ocultar', async (req, res) => {
+    try {
+        const docId = String((req.body && req.body.docId) || '').trim();
+        if (!docId) return res.status(400).json({ success: false, message: 'Falta docId.' });
+        const ref = db.collection('pedidos').doc(docId);
+        const snap = await ref.get();
+        if (!snap.exists) return res.status(404).json({ success: false, message: 'El pedido no existe.' });
+        await ref.set({ ocultoDeEnvios: true }, { merge: true });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[ENVIOS] Error en POST /envios/ocultar:', error.message);
+        res.status(500).json({ success: false, message: 'No se pudo ocultar el pedido.' });
     }
 });
 
