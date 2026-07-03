@@ -7872,6 +7872,8 @@ router.get('/envios', async (_req, res) => {
 
         // Mapa numeroPedido (solo dígitos) -> datos de envío MÁS RECIENTES.
         const norm = (v) => String(v || '').replace(/\D/g, '');
+        // Serializa la guía DHL guardada en el doc (sin el serverTimestamp) para el frontend.
+        const serGuia = (g) => (g && g.guia) ? { guia: g.guia, numOrden: g.numOrden || null, mensajeria: g.mensajeria || null, tipoServicio: g.tipoServicio || null, costo: (g.costo != null ? g.costo : null), pdfPath: g.pdfPath || null, tracking: g.tracking || null } : null;
         const datosByOrder = new Map();
         datosSnap.docs.forEach(d => {
             const dd = d.data();
@@ -7909,6 +7911,7 @@ router.get('/envios', async (_req, res) => {
                 datos,               // objeto con cada campo, o null si el cliente aún no llena el formulario
                 tieneDatos: !!de,
                 manualId: null,      // no es una línea manual
+                guiaEnvio: serGuia(p.guiaEnvio),
             };
         });
 
@@ -7931,6 +7934,7 @@ router.get('/envios', async (_req, res) => {
                 datos,
                 tieneDatos,
                 manualId: doc.id,    // permite borrarla desde el CRM
+                guiaEnvio: serGuia(m.guiaEnvio),
             };
         });
 
@@ -7983,6 +7987,121 @@ router.delete('/envios/manual/:id', async (req, res) => {
     } catch (error) {
         console.error('[ENVIOS] Error en DELETE /envios/manual:', error.message);
         res.status(500).json({ success: false, message: 'Error al borrar la línea.' });
+    }
+});
+
+// ============================ Guías DHL vía T1 Envíos ============================
+// Cliente de T1 (auth Keycloak + cotizar/crearGuia). Ver server/t1/t1Client.js.
+const t1 = require('./t1/t1Client');
+
+// Mapea el objeto de datos de envío del CRM (display) al datos_destino que pide T1.
+function _mapDestinoT1(datos = {}) {
+    const nombreCompleto = String(datos.nombre || '').trim();
+    const sp = nombreCompleto.split(/\s+/).filter(Boolean);
+    const nombre = sp.shift() || nombreCompleto || 'Cliente';
+    const apellidos = sp.join(' ') || '.';
+    const calleFull = String(datos.direccion || '').trim();
+    const numMatch = calleFull.match(/(\d+[A-Za-z]?)\s*$/);
+    const referencias = [datos.entreCalles, datos.referencia].filter(Boolean).join(' · ').slice(0, 180);
+    return {
+        codigo_postal: String(datos.codigoPostal || '').replace(/\D/g, ''),
+        nombre, apellidos,
+        email: datos.email || '',
+        calle: calleFull || 'Domicilio',
+        numero: numMatch ? numMatch[1] : 'SN',
+        colonia: datos.colonia || '',
+        telefono: String(datos.telefono || '').replace(/\D/g, ''),
+        estado: datos.estado || '',
+        municipio: datos.ciudad || '',
+        referencias,
+    };
+}
+
+// --- POST /api/envios/cotizar — cotiza DHL (y demás) para un CP destino. GRATIS. ---
+router.post('/envios/cotizar', async (req, res) => {
+    try {
+        const b = req.body || {};
+        const dest = String(b.cp || '').replace(/\D/g, '');
+        if (!/^\d{5}$/.test(dest)) return res.status(400).json({ success: false, message: 'C.P. destino inválido (5 dígitos).' });
+        const q = await t1.cotizar({ cpDestino: dest, peso: b.peso, largo: b.largo, ancho: b.ancho, alto: b.alto, valorPaquete: b.valorPaquete });
+        const result = Array.isArray(q.result) ? q.result : [];
+        const servicios = [];
+        result.forEach((r) => {
+            const svc = (r.cotizacion && r.cotizacion.servicios) || {};
+            Object.keys(svc).forEach((k) => {
+                const s = svc[k] || {};
+                servicios.push({ paqueteria: r.clave, clave: k, servicio: s.servicio, tipo_servicio: s.tipo_servicio, costo: s.costo_total, dias: s.dias_entrega, moneda: s.moneda || 'MXN' });
+            });
+        });
+        servicios.sort((a, b2) => (a.costo || 0) - (b2.costo || 0));
+        res.json({ success: true, cp: dest, servicios });
+    } catch (e) {
+        console.error('[T1] cotizar:', e.response && e.response.status, (e.response && e.response.data) || e.message);
+        res.status(502).json({ success: false, message: 'No se pudo cotizar en T1.', detail: (e.response && e.response.data) || e.message });
+    }
+});
+
+// --- POST /api/envios/crear-guia — crea la guía DHL (DESCUENTA SALDO). Guarda PDF + guía en el pedido. ---
+router.post('/envios/crear-guia', async (req, res) => {
+    try {
+        const b = req.body || {};
+        if (!b.datos || !b.datos.codigoPostal) return res.status(400).json({ success: false, message: 'Faltan datos de envío (C.P.).' });
+        const destino = _mapDestinoT1(b.datos);
+        if (!/^\d{5}$/.test(destino.codigo_postal)) return res.status(400).json({ success: false, message: 'C.P. destino inválido.' });
+
+        const r = await t1.crearGuia({ destino, pedido: b.orderNumber, tipoServicio: b.tipoServicio, mensajeria: b.mensajeria });
+        const det = r && r.detail;
+        if (!r || r.success === false || !det || !det.guia) {
+            return res.status(502).json({ success: false, message: (r && r.message) || 'T1 no devolvió número de guía.', detail: r });
+        }
+
+        // Guardar el PDF de la etiqueta en el bucket.
+        let pdfPath = null;
+        try {
+            if (det.file) {
+                const buf = Buffer.from(det.file, 'base64');
+                pdfPath = `etiquetas/${String(b.orderNumber || 'guia').replace(/[^\w-]/g, '')}-${det.guia}.pdf`;
+                await bucket.file(pdfPath).save(buf, { contentType: 'application/pdf', resumable: false });
+            }
+        } catch (e2) { console.warn('[T1] No se pudo guardar el PDF de la etiqueta:', e2.message); }
+
+        const tracking = `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${encodeURIComponent(det.guia)}`;
+        const guiaEnvio = {
+            guia: det.guia, numOrden: det.num_orden || null, pickUp: det.pick_up || null,
+            mensajeria: b.mensajeria || t1._config.T1_MENSAJERIA,
+            tipoServicio: b.tipoServicio || t1._config.T1_TIPO_SERVICIO,
+            costo: (b.costo != null ? Number(b.costo) : null),
+            pdfPath, tracking,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        // Persistir la guía en el documento correspondiente (pedido o línea manual).
+        try {
+            if (b.manualId) await db.collection('envios_manuales').doc(b.manualId).set({ guiaEnvio }, { merge: true });
+            else if (b.docId) await db.collection('pedidos').doc(b.docId).set({ guiaEnvio }, { merge: true });
+        } catch (e3) { console.warn('[T1] No se pudo persistir guiaEnvio:', e3.message); }
+
+        res.json({ success: true, guia: det.guia, numOrden: det.num_orden || null, pickUp: det.pick_up || null, pdfPath, tracking });
+    } catch (e) {
+        console.error('[T1] crear-guia:', e.response && e.response.status, (e.response && e.response.data) || e.message);
+        res.status(502).json({ success: false, message: 'No se pudo crear la guía en T1.', detail: (e.response && e.response.data) || e.message });
+    }
+});
+
+// --- GET /api/envios/etiqueta?path=etiquetas/... — sirve el PDF de la etiqueta desde el bucket. ---
+router.get('/envios/etiqueta', async (req, res) => {
+    try {
+        const p = String(req.query.path || '');
+        if (!/^etiquetas\/[\w.\-]+\.pdf$/.test(p)) return res.status(400).send('Ruta inválida.');
+        const file = bucket.file(p);
+        const [exists] = await file.exists();
+        if (!exists) return res.status(404).send('Etiqueta no encontrada.');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${p.split('/').pop()}"`);
+        file.createReadStream().on('error', () => res.status(500).end()).pipe(res);
+    } catch (e) {
+        console.error('[T1] etiqueta:', e.message);
+        res.status(500).send('Error al obtener la etiqueta.');
     }
 });
 

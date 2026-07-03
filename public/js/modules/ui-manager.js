@@ -139,6 +139,7 @@ async function renderEnviosView() {
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
         const envios = data.envios || [];
+        window._enviosData = envios; // para los handlers de cotizar/crear guía
         if (!envios.length) {
             container.innerHTML = '<p class="text-gray-500">Aún no hay pedidos con comprobante validado. Aparecerán aquí cuando la IA valide un comprobante de pago.</p>';
             return;
@@ -150,7 +151,7 @@ async function renderEnviosView() {
             return `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;${style}">${escapeHtml(v)}</td>`;
         };
         const DATA_COLS = 9; // nombre..teléfono
-        const rows = envios.map(e => {
+        const rows = envios.map((e, i) => {
             const montoVal = e.montoPagado != null ? `$${Number(e.montoPagado).toLocaleString('es-MX')}` : '';
             const d = e.datos;
             let dataCells;
@@ -170,9 +171,22 @@ async function renderEnviosView() {
             }
             // Celda del pedido: copiable; si es manual añade una etiqueta (no copiable con el clic principal).
             const pedidoCell = `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;white-space:nowrap;font-weight:700;color:var(--color-primary)">${escapeHtml(e.orderNumber)}</td>`;
-            const accionCell = e.manualId
-                ? `<td style="padding:10px 0;text-align:right;white-space:nowrap"><button title="Borrar línea manual" onclick="deleteEnvioManual('${e.manualId}')" style="border:none;background:transparent;cursor:pointer;color:#991b1b;padding:4px 8px;font-size:13px;"><i class="fas fa-trash"></i></button></td>`
-                : `<td></td>`;
+            // Acciones: si ya hay guía, mostrarla (guía + etiqueta + rastreo); si hay datos, botón para crear guía.
+            const linkStyle = 'font-size:12px;text-decoration:none;color:var(--color-primary,#ef4444);white-space:nowrap';
+            let actions = '';
+            if (e.guiaEnvio && e.guiaEnvio.guia) {
+                const g = e.guiaEnvio;
+                const etiqueta = g.pdfPath ? `<a href="${API_BASE_URL}/api/envios/etiqueta?path=${encodeURIComponent(g.pdfPath)}" target="_blank" rel="noopener" style="${linkStyle}">🏷️ Etiqueta</a>` : '';
+                const rastreo = g.tracking ? `<a href="${g.tracking}" target="_blank" rel="noopener" style="${linkStyle}">📍 Rastrear</a>` : '';
+                actions = `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+                    <span class="envio-copy" onclick="copyEnvioCell(this)" title="Clic para copiar la guía" style="font-weight:700;color:#166534;cursor:pointer;white-space:nowrap">✓ ${escapeHtml(g.guia)}</span>
+                    <span style="display:flex;gap:10px">${etiqueta}${rastreo}</span>
+                  </div>`;
+            } else if (e.datos && e.datos.codigoPostal) {
+                actions = `<button onclick="openGuiaModal(${i})" title="Cotizar y crear guía DHL" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-box mr-1"></i>Crear guía</button>`;
+            }
+            const delBtn = e.manualId ? `<button title="Borrar línea manual" onclick="deleteEnvioManual('${e.manualId}')" style="border:none;background:transparent;cursor:pointer;color:#991b1b;padding:4px 8px;font-size:13px;"><i class="fas fa-trash"></i></button>` : '';
+            const accionCell = `<td style="padding:10px 0;text-align:right;white-space:nowrap"><div style="display:flex;gap:8px;align-items:center;justify-content:flex-end">${actions}${delBtn}</div></td>`;
             return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:top">
                 ${pedidoCell}
                 ${cell(montoVal, 'white-space:nowrap;font-weight:600')}
@@ -203,7 +217,7 @@ async function renderEnviosView() {
                     <th style="padding:8px 14px 8px 0">Estado</th>
                     <th style="padding:8px 14px 8px 0">C.P.</th>
                     <th style="padding:8px 14px 8px 0">Teléfono</th>
-                    <th style="padding:8px 0"></th>
+                    <th style="padding:8px 0;text-align:right">Guía / Acciones</th>
                   </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -301,6 +315,98 @@ async function deleteEnvioManual(id) {
     }
 }
 window.deleteEnvioManual = deleteEnvioManual;
+
+// ===================== Guías DHL (T1 Envíos) desde el CRM =====================
+// Modal reutilizable (se crea una sola vez y se muestra/oculta).
+function _guiaModalEl() {
+    let m = document.getElementById('guia-modal');
+    if (!m) {
+        m = document.createElement('div');
+        m.id = 'guia-modal';
+        m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:9999;';
+        m.innerHTML = '<div id="guia-modal-box" style="background:var(--color-surface,#fff);color:var(--color-text,#111);max-width:520px;width:92%;max-height:88vh;overflow:auto;border-radius:14px;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.35)"></div>';
+        m.addEventListener('click', (ev) => { if (ev.target === m) closeGuiaModal(); });
+        document.body.appendChild(m);
+    }
+    return m;
+}
+function closeGuiaModal() { const m = document.getElementById('guia-modal'); if (m) m.style.display = 'none'; }
+window.closeGuiaModal = closeGuiaModal;
+
+// Abre el modal, cotiza DHL para el C.P. del pedido y lista las opciones para crear la guía.
+async function openGuiaModal(i) {
+    const e = (window._enviosData || [])[i];
+    if (!e || !e.datos) return;
+    const d = e.datos;
+    const m = _guiaModalEl();
+    const box = m.querySelector('#guia-modal-box');
+    const resumen = `${escapeHtml(d.nombre || '')} · ${escapeHtml(d.ciudad || '')}, ${escapeHtml(d.estado || '')} · C.P. ${escapeHtml(d.codigoPostal || '')}`;
+    box.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <h3 style="margin:0;font-size:1.05rem;font-weight:700">Guía DHL — Pedido ${escapeHtml(e.orderNumber)}</h3>
+          <button onclick="closeGuiaModal()" style="border:none;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:#64748b">&times;</button>
+        </div>
+        <p style="font-size:.8rem;color:var(--color-text-light,#64748b);margin:0 0 12px">${resumen}</p>
+        <div id="guia-cotiz"><i class="fas fa-spinner fa-spin mr-2"></i>Cotizando…</div>`;
+    m.style.display = 'flex';
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/envios/cotizar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cp: d.codigoPostal }) });
+        const j = await r.json();
+        if (!r.ok || !j.success) throw new Error(j.message || ('HTTP ' + r.status));
+        const dhl = (j.servicios || []).filter(s => (s.paqueteria || '').toUpperCase() === 'DHL');
+        const list = dhl.length ? dhl : (j.servicios || []);
+        const cont = document.getElementById('guia-cotiz');
+        if (!list.length) { if (cont) cont.innerHTML = '<p style="color:#b45309">No hubo servicios para este C.P.</p>'; return; }
+        const rowsHtml = list.map(s => {
+            const costo = s.costo != null ? `$${Number(s.costo).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : '—';
+            const payload = encodeURIComponent(JSON.stringify({ tipoServicio: s.servicio, mensajeria: s.paqueteria, costo: s.costo }));
+            return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--color-border,#e5e7eb);border-radius:10px;margin-bottom:8px">
+                <div><div style="font-weight:600">${escapeHtml(s.paqueteria || '')} · ${escapeHtml(s.servicio || '')}</div>
+                  <div style="font-size:.78rem;color:#64748b">${escapeHtml(s.tipo_servicio || '')}${s.dias ? ` · ${s.dias} día(s)` : ''}</div></div>
+                <div style="text-align:right;white-space:nowrap"><div style="font-weight:700">${costo}</div>
+                  <button onclick="crearGuiaDesdeModal(${i},'${payload}')" style="margin-top:4px;background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:.78rem;cursor:pointer">Crear guía</button></div>
+              </div>`;
+        }).join('');
+        if (cont) cont.innerHTML = rowsHtml + `<p style="font-size:.72rem;color:#94a3b8;margin:6px 0 0"><i class="fas fa-circle-info mr-1"></i>Crear la guía descuenta el costo de tu saldo T1.</p>`;
+    } catch (err) {
+        const cont = document.getElementById('guia-cotiz'); if (cont) cont.innerHTML = `<p style="color:#991b1b">No se pudo cotizar: ${escapeHtml(err.message || String(err))}</p>`;
+    }
+}
+window.openGuiaModal = openGuiaModal;
+
+// Crea la guía (previa confirmación del costo) y muestra el resultado (nº de rastreo + etiqueta + rastreo).
+async function crearGuiaDesdeModal(i, payloadEnc) {
+    const e = (window._enviosData || [])[i];
+    if (!e) return;
+    let opt = {};
+    try { opt = JSON.parse(decodeURIComponent(payloadEnc)); } catch (_) { }
+    const costoTxt = opt.costo != null ? `$${Number(opt.costo).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : 'su costo';
+    if (!confirm(`¿Crear guía ${opt.mensajeria} ${opt.tipoServicio} para el pedido ${e.orderNumber}?\n\nEsto descontará ${costoTxt} de tu saldo T1.`)) return;
+    const box = document.getElementById('guia-cotiz');
+    if (box) box.innerHTML = '<p style="text-align:center"><i class="fas fa-spinner fa-spin mr-2"></i>Creando guía… (no cierres esta ventana)</p>';
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/envios/crear-guia`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderNumber: e.orderNumber, docId: e.id, manualId: e.manualId || null, tipoServicio: opt.tipoServicio, mensajeria: opt.mensajeria, costo: opt.costo, datos: e.datos }),
+        });
+        const j = await r.json();
+        if (!r.ok || !j.success) throw new Error(j.message || (j.detail ? JSON.stringify(j.detail) : ('HTTP ' + r.status)));
+        const btnStyle = 'text-decoration:none;background:var(--color-primary,#ef4444);color:#fff;border-radius:8px;padding:8px 14px;font-size:.85rem';
+        const etiqueta = j.pdfPath ? `<a href="${API_BASE_URL}/api/envios/etiqueta?path=${encodeURIComponent(j.pdfPath)}" target="_blank" rel="noopener" style="${btnStyle}">🏷️ Descargar etiqueta</a>` : '';
+        const rastreo = j.tracking ? `<a href="${j.tracking}" target="_blank" rel="noopener" style="${btnStyle};background:#334155">📍 Rastrear</a>` : '';
+        if (box) box.innerHTML = `<div style="text-align:center;padding:6px 0">
+            <div style="font-size:2rem">✅</div>
+            <p style="font-weight:700;margin:4px 0">¡Guía creada!</p>
+            <p style="margin:2px 0">N° de rastreo: <b>${escapeHtml(j.guia)}</b></p>
+            <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap">${etiqueta}${rastreo}</div>
+            <button onclick="closeGuiaModal(); renderEnviosView();" style="margin-top:16px;background:transparent;border:1px solid var(--color-border,#e5e7eb);border-radius:8px;padding:7px 16px;cursor:pointer">Cerrar</button>
+          </div>`;
+    } catch (err) {
+        if (box) box.innerHTML = `<p style="color:#991b1b">No se pudo crear la guía: ${escapeHtml(err.message || String(err))}</p>
+            <div style="text-align:center;margin-top:10px"><button onclick="openGuiaModal(${i})" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;border-radius:8px;padding:6px 14px;cursor:pointer">Reintentar</button></div>`;
+    }
+}
+window.crearGuiaDesdeModal = crearGuiaDesdeModal;
 
 // Cambia entre las sub-pestañas del hub IA (Entrenamiento · Simulador · Rescate).
 function switchIaTab(tab) {
