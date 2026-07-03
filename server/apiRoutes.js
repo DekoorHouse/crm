@@ -7894,10 +7894,12 @@ router.get('/envios', async (_req, res) => {
             if (!prev || curMs >= prevMs) datosByOrder.set(key, dd);
         });
 
+        const pedidosByNum = new Map(); // nº de pedido (dígitos) -> { id, estatus } para enlazar líneas manuales a su pedido
         const envios = pedidosSnap.docs.map(doc => {
             const p = doc.data();
-            if (p.ocultoDeEnvios) return null; // el operador lo quitó de Envíos (el pedido sigue intacto)
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
+            if (num != null) pedidosByNum.set(String(num), { id: doc.id, estatus: p.estatus || null });
+            if (p.ocultoDeEnvios) return null; // el operador lo quitó de Envíos (el pedido sigue intacto)
             const orderNumber = num != null ? `DH${num}` : (p.numeroPedido || doc.id);
             const de = datosByOrder.get(norm(num));
             // Datos de envío desglosados (cada campo va en su propia columna en el CRM).
@@ -7925,6 +7927,7 @@ router.get('/envios', async (_req, res) => {
                 tieneDatos: !!de,
                 manualId: null,      // no es una línea manual
                 contactId: p.contactId || null, // para abrir la conversación en Chats
+                orderDocId: doc.id,  // id del pedido para cambiar su estatus
                 guiaEnvio: serGuia(p.guiaEnvio),
             };
         }).filter(Boolean);
@@ -7950,6 +7953,21 @@ router.get('/envios', async (_req, res) => {
                 manualId: doc.id,    // permite borrarla desde el CRM
                 guiaEnvio: serGuia(m.guiaEnvio),
             };
+        });
+
+        // Enlazar cada línea manual a su pedido real (por número) para mostrar/editar su estatus.
+        const missingNums = [...new Set(manuales.map(m => norm(m.orderNumber)).filter(n => n && !pedidosByNum.has(n)))];
+        for (let i = 0; i < missingNums.length; i += 10) {
+            const chunk = missingNums.slice(i, i + 10).map(Number).filter(n => !Number.isNaN(n));
+            if (!chunk.length) continue;
+            try {
+                const snap = await db.collection('pedidos').where('consecutiveOrderNumber', 'in', chunk).get();
+                snap.docs.forEach(d => { const dd = d.data(); if (dd.consecutiveOrderNumber != null) pedidosByNum.set(String(dd.consecutiveOrderNumber), { id: d.id, estatus: dd.estatus || null }); });
+            } catch (e) { console.warn('[ENVIOS] resolver manual->pedido:', e.message); }
+        }
+        manuales.forEach(m => {
+            const ped = pedidosByNum.get(norm(m.orderNumber));
+            if (ped) { m.orderDocId = ped.id; m.estatus = ped.estatus; }
         });
 
         // Manuales primero (recién agregadas), luego los pedidos con comprobante validado.

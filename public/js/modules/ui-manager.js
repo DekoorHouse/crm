@@ -179,10 +179,11 @@ async function renderEnviosView() {
             const gi = window._enviosData.indexOf(e); // índice real en _enviosData para los handlers
             const numCell = `<td style="padding:10px 14px 10px 0;color:#94a3b8;font-weight:600;white-space:nowrap">${dispIdx + 1}</td>`;
             const montoVal = e.montoPagado != null ? `$${Number(e.montoPagado).toLocaleString('es-MX')}` : '';
-            // Estatus editable (solo pedidos reales; las líneas manuales no tienen estatus).
-            const statusCell = e.manualId
-                ? `<td style="padding:10px 14px 10px 0;color:#cbd5e1">—</td>`
-                : `<td style="padding:8px 14px 8px 0"><select onchange="changeEnvioStatus('${e.id}', this.value, this)" style="font-size:12px;padding:4px 6px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);max-width:150px">${ENVIO_STATUS_OPTIONS.map(o => `<option${(e.estatus || 'Sin estatus') === o ? ' selected' : ''}>${o}</option>`).join('')}</select></td>`;
+            // Estatus editable: pedidos reales y líneas manuales enlazadas a su pedido (por número).
+            const statusDocId = e.orderDocId || (!e.manualId ? e.id : null);
+            const statusCell = statusDocId
+                ? `<td style="padding:8px 14px 8px 0"><select onchange="changeEnvioStatus('${statusDocId}', this.value, this)" style="font-size:12px;padding:4px 6px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);max-width:150px">${ENVIO_STATUS_OPTIONS.map(o => `<option${(e.estatus || 'Sin estatus') === o ? ' selected' : ''}>${o}</option>`).join('')}</select></td>`
+                : `<td style="padding:10px 14px 10px 0;color:#cbd5e1" title="Esta línea manual no coincide con ningún pedido registrado">—</td>`;
             const d = e.datos;
             let dataCells;
             if (d) {
