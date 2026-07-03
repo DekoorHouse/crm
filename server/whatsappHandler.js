@@ -175,6 +175,10 @@ async function downloadAndUploadMedia(mediaId, from) {
  * @param {string} contactId The contact's ID (phone number).
  * @returns {Promise<boolean>} True if messages were processed, false otherwise.
  */
+// Una cola más vieja que esto ya no es relevante: el cliente pudo pagar por otro lado,
+// comprar de nuevo o cambiar de intención. Se marca 'expired' en vez de enviarse tarde.
+const QUEUED_MESSAGE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
+
 async function sendQueuedMessages(contactId) {
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     const queuedMessagesQuery = contactRef.collection('messages')
@@ -194,6 +198,14 @@ async function sendQueuedMessages(contactId) {
 
         for (const doc of snapshot.docs) {
             const queuedMessage = doc.data();
+
+            // No disparar colas vencidas (contexto perdido). Marcar 'expired' y seguir.
+            const qTs = queuedMessage.timestamp && queuedMessage.timestamp.toMillis ? queuedMessage.timestamp.toMillis() : 0;
+            if (qTs && (Date.now() - qTs) > QUEUED_MESSAGE_MAX_AGE_MS) {
+                console.warn(`[QUEUE] Mensaje en cola vencido (~${Math.round((Date.now() - qTs) / 86400000)} días) omitido para ${contactId}: ${doc.id}`);
+                batch.update(doc.ref, { status: 'expired' });
+                continue;
+            }
 
             if (!queuedMessage.text && !queuedMessage.fileUrl) {
                 console.warn(`[QUEUE] Omitiendo mensaje en cola vacío: ${doc.id}`);
@@ -235,7 +247,10 @@ async function sendQueuedMessages(contactId) {
 
         await batch.commit();
         console.log(`[QUEUE] Cola de mensajes para ${contactId} procesada.`);
-        return true; // Indicates queue processing happened
+        // Solo detener el flujo si REALMENTE se envió algo. Si la cola solo tenía mensajes
+        // vencidos o fallidos, devolver false para que el webhook siga al flujo normal
+        // (anuncio/IA) en vez de dejar al cliente sin respuesta.
+        return !!lastMessageText;
 
     } catch (error) {
         console.error(`[QUEUE] Error crítico al procesar la cola de mensajes para ${contactId}:`, error);
@@ -866,6 +881,12 @@ router.post('/', async (req, res) => {
             // --- Automation Logic ---
 
             // 1. Send Queued Messages (if user replied)
+            // Los mensajes MUY viejos en cola ya no se envían (vencen a los 7 días dentro de
+            // sendQueuedMessages): un agente pudo dejar en cola un recordatorio de pago que, si
+            // el cliente vuelve semanas después con una consulta nueva, ya no aplica (caso real
+            // 522214381255: volvió por un anuncio nuevo pidiendo informes y le llegó la info de
+            // pago de su pedido de junio). Si la cola solo tenía mensajes vencidos, sendQueuedMessages
+            // devuelve false y el flujo sigue al anuncio/IA para atender la consulta nueva.
             const queuedSent = await sendQueuedMessages(from);
             if (queuedSent) {
                 console.log(`[LOGIC] Mensajes en cola enviados para ${from}. El flujo de respuestas automáticas se detiene aquí.`);
