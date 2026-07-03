@@ -29,9 +29,17 @@ function parseEstafetaFrecuencia(html) {
     const plaza = grab(/Plaza\s*1\s*:\s*([A-ZÁÉÍÓÚÑ .]+?)\s+Colonia/i);
     const frecuencia = grab(/Modalidad de entrega\s+Frecuencia\s+([A-Za-zÁÉÍÓÚñ ]+?)\s+Ocurre/i);
     const ocurreForzoso = siNo('Ocurre Forzoso');
-    const reexpedicion = siNo('Costos de Reexpedici[oó]n');
+    // Costos de Reexpedición: Estafeta lo muestra como "No" (sin costo) o como un MONTO ("$174.00")
+    // cuando SÍ hay costo. Normalizamos a reexpedicion = 'No'|'Sí' y guardamos el monto aparte.
+    let reexpedicion = null, reexpedicionCosto = null;
+    const rm = plain.match(/Costos de Reexpedici[oó]n\s*:?\s*(No|\$\s*[\d,]+(?:\.\d+)?)/i);
+    if (rm) {
+        const v = rm[1].trim();
+        if (/^no$/i.test(v)) { reexpedicion = 'No'; }
+        else { reexpedicion = 'Sí'; reexpedicionCosto = v.replace(/\s+/g, ''); }
+    }
     const found = !!(destinoCP && frecuencia && ocurreForzoso && reexpedicion);
-    return { found, destinoCP, estado, delegacion, plaza, frecuencia, ocurreForzoso, reexpedicion };
+    return { found, destinoCP, estado, delegacion, plaza, frecuencia, ocurreForzoso, reexpedicion, reexpedicionCosto };
 }
 
 /**
