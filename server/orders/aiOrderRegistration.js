@@ -26,9 +26,21 @@ const { parseClassifierJson } = require('../leads/orderFollowupLogic');
 // Número del admin que revisa lo que registra la IA (mismo que /equipo y /sospechoso).
 const ADMIN_VERIFY_PHONE = process.env.ADMIN_VERIFY_PHONE || '5216182297167';
 
-// Ventana anti-duplicados: si la IA ya registró un pedido de este contacto hace menos
-// de este tiempo, un segundo /registrar se ignora (el modelo a veces repite el comando).
-const DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
+// Candado "en vuelo" anti-carrera: bloquea SOLO dos /registrar procesándose al mismo
+// tiempo (generaciones solapadas) y se LIBERA al terminar. Un /registrar que llegue
+// mientras otro corre espera y reintenta una vez (para entonces el primero terminó y
+// el segundo se vuelve ACTUALIZACIÓN del mismo pedido — nunca se descarta en silencio:
+// era la falla de la ventana fija, que se tragaba correcciones confirmadas en <2 min).
+// Si un proceso murió sin liberar, el candado caduca solo a los 3 min.
+const IN_FLIGHT_STALE_MS = 3 * 60 * 1000;
+const IN_FLIGHT_RETRY_DELAY_MS = 95 * 1000;
+
+// Si el último pedido NO cancelado del contacto tiene menos de esto, un nuevo /registrar
+// se trata como CAMBIO de ese pedido (actualizar/avisar) salvo que el extractor determine
+// que es un pedido ADICIONAL independiente (esAdicional=true). Caso real que motivó esto:
+// DH13056/DH13059 se duplicaron a 33 min porque la clienta cambió los diseños y solo
+// existía el camino de crear.
+const RECENT_ORDER_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const DEFAULT_CONFIG = {
     enabled: false,
@@ -76,14 +88,16 @@ ${cfg.catalogText}
 Protocolo OBLIGATORIO para cerrar un pedido:
 1. Cuando el cliente ya te haya dado TODOS los datos requeridos de su producto, ANTES de cerrar mándale UN mensaje de validación con el resumen del pedido: producto, los datos personalizados EXACTOS (nombres y fecha tal cual los escribió el cliente, sin corregirles la ortografía), cantidad y precio total. Pídele que te confirme si todo está correcto.
 2. Si el cliente corrige algo, actualiza el resumen y vuelve a pedir confirmación.
-3. SOLO cuando el cliente confirme explícitamente que el resumen es correcto, responde con tu mensaje de cierre incluyendo la frase exacta "Ya registramos tu pedido" y, en una línea aparte al final, el comando /registrar (el cliente NO lo ve; es interno del sistema). Emítelo UNA sola vez por pedido: si ya lo emitiste y el cliente solo sigue platicando, NO lo repitas.
+3. SOLO cuando el cliente confirme explícitamente que el resumen es correcto, responde con tu mensaje de cierre incluyendo la frase exacta "Ya registramos tu pedido" y, en una línea aparte al final, el comando /registrar (el cliente NO lo ve; es interno del sistema). Emítelo UNA sola vez por pedido: si ya lo emitiste y el cliente solo sigue platicando, NO lo repitas. EXCEPCIÓN: si el cliente CAMBIA su pedido ya registrado (otro diseño, nombres, cantidad), vuelve a validar el resumen actualizado y, cuando lo confirme, emite /registrar de nuevo — el sistema ACTUALIZA el pedido existente, no crea otro.
 4. NUNCA emitas /registrar si falta algún dato requerido, si el cliente aún no confirma el resumen, o si el precio no quedó claro.
 5. Peticiones ESPECIALES (algo fuera del catálogo que SÍ se puede hacer según tus instrucciones): inclúyelas textualmente en el resumen de validación como parte de los detalles del producto, para que queden registradas. Si no estás segura de que se pueda, NO lo prometas: escribe /equipo en su propio mensaje para que un humano lo revise.
 6. Si un humano del equipo acordó en la conversación un precio DISTINTO al del catálogo (descuento o ajuste), ese precio acordado MANDA sobre el catálogo: valida y registra con el precio acordado.`;
 }
 
 // Se construye con el catálogo vigente para que el extractor conozca precios y datos requeridos.
-function buildExtractorSystemInstruction(catalogText) {
+// existingOrderNote (opcional): contexto del pedido YA registrado, para que el extractor decida
+// si la conversación lo CAMBIA (devolver el pedido completo actualizado) o es uno ADICIONAL.
+function buildExtractorSystemInstruction(catalogText, existingOrderNote = '') {
     return `Eres un extractor de pedidos para DekoorHouse, una tienda mexicana de lámparas personalizadas.
 Analizas una conversación de WhatsApp entre el "Cliente" y el "Asistente" (la tienda). El Asistente ya
 mandó un RESUMEN del pedido y el cliente lo CONFIRMÓ. Tu trabajo es convertir ese pedido confirmado en
@@ -91,7 +105,7 @@ datos estructurados para registrarlo en el CRM.
 
 Catálogo de referencia (precios de lista y datos requeridos):
 ${catalogText}
-
+${existingOrderNote}
 Responde ÚNICAMENTE con un JSON válido (sin texto antes ni después, sin markdown) con esta forma exacta:
 {
   "listo": boolean,        // true SOLO si el cliente confirmó un pedido con todos los datos requeridos
@@ -103,6 +117,7 @@ Responde ÚNICAMENTE con un JSON válido (sin texto antes ni después, sin markd
       "datosProducto": string  // los datos de personalización EXACTOS como los escribió el cliente. Formato: "Nombres: X y Y | Fecha: DD-MM-AAAA" (corazones) o "Nombre: X | Personaje: nube" (infantil). Agrega "| Especial: ..." si el cliente pidió algo especial que el Asistente aceptó.
     }
   ],
+  "esAdicional": boolean,  // SOLO aplica si arriba se te mostró un "PEDIDO YA REGISTRADO": true si lo que el cliente confirmó ahora es un pedido NUEVO/ADICIONAL independiente de aquel; false si es un CAMBIO/corrección de aquel pedido. Sin pedido previo mostrado: false.
   "total": number,         // TOTAL del pedido en pesos, tal como quedó acordado/confirmado en la conversación. Debe cuadrar con la suma de precio×cantidad de los items.
   "confianza": number,     // 0-100: qué tan seguro estás de que items refleja EXACTAMENTE lo confirmado
   "faltante": string       // si listo=false: qué falta o por qué no se puede registrar; "" si listo=true
@@ -120,20 +135,27 @@ Reglas:
 
 /**
  * Extrae el pedido confirmado de la conversación (Gemini, salida JSON).
- * @returns {Promise<{listo:boolean, items:Array, confianza:number, faltante:string}|null>}
+ * existingOrder (opcional): { num, datosProducto, precio } del pedido ya registrado, para
+ * que el extractor distinga CAMBIO (devuelve el pedido completo actualizado) de ADICIONAL.
+ * @returns {Promise<{listo:boolean, items:Array, esAdicional:boolean, total:number, confianza:number, faltante:string}|null>}
  *          null si la IA falla o el JSON no se pudo interpretar.
  */
-async function extractOrderFromChat({ conversationText, name, catalogText }) {
+async function extractOrderFromChat({ conversationText, name, catalogText, existingOrder = null }) {
     if (!conversationText || !conversationText.trim()) return null;
 
     // require perezoso para evitar ciclo de módulos services <-> aiOrderRegistration
     const { generateGeminiResponse } = require('../services');
 
+    const existingOrderNote = existingOrder ? `
+PEDIDO YA REGISTRADO en el sistema para este cliente: ${existingOrder.num} — ${String(existingOrder.datosProducto || '').replace(/\s+/g, ' ').slice(0, 300)} — Total registrado: $${existingOrder.precio}.
+Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelve el pedido COMPLETO como debe quedar al final (todos sus items, esAdicional=false). Si el cliente pidió OTRO pedido independiente además de aquel, devuelve SOLO los productos nuevos (esAdicional=true).
+` : '';
+
     const prompt = `Cliente: ${name || 'desconocido'}\n\nConversación (más antiguo arriba):\n${conversationText}\n\nDevuelve solo el JSON.`;
 
     let res;
     try {
-        res = await generateGeminiResponse(prompt, [], buildExtractorSystemInstruction(catalogText));
+        res = await generateGeminiResponse(prompt, [], buildExtractorSystemInstruction(catalogText, existingOrderNote));
     } catch (e) {
         console.warn('[AI_ORDER] Extracción falló:', e.message);
         return null;
@@ -171,10 +193,28 @@ async function extractOrderFromChat({ conversationText, name, catalogText }) {
                     datosProducto: clean(it.datosProducto, 500)
                 }))
             : [],
+        esAdicional: parsed.esAdicional === true,
         total: Number(parsed.total) || 0,
         confianza: Math.max(0, Math.min(100, Number(parsed.confianza) || 0)),
         faltante: typeof parsed.faltante === 'string' ? parsed.faltante.trim().slice(0, 300) : ''
     };
+}
+
+/**
+ * Último pedido NO cancelado del contacto dentro de RECENT_ORDER_WINDOW_MS, o null.
+ * Query por contactId sin orderBy (no requiere índice compuesto); se ordena en memoria.
+ */
+async function findRecentOrderForContact(contactId) {
+    const snap = await db.collection('pedidos').where('contactId', '==', contactId).get();
+    let best = null, bestMs = 0;
+    snap.forEach(doc => {
+        const d = doc.data();
+        if (d.estatus === 'Cancelado') return; // un pedido cancelado no bloquea uno nuevo
+        const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
+        if (ms > bestMs) { bestMs = ms; best = doc; }
+    });
+    if (!best || (Date.now() - bestMs) > RECENT_ORDER_WINDOW_MS) return null;
+    return { ref: best.ref, id: best.id, data: best.data() };
 }
 
 // Aviso al admin (WhatsApp) — nunca lanza.
@@ -201,28 +241,46 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
     }
 
     const name = contactData.name || contactId;
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
+    // Candado en vuelo (check-and-set atómico) ANTES de extraer/crear: registerOrderFromAI es
+    // fire-and-forget y la extracción tarda segundos; sin esto, dos /registrar solapados crean
+    // DOS pedidos. Un segundo /registrar mientras el primero corre NO se descarta: espera a que
+    // el primero libere y reintenta una vez (típico: el cliente corrigió algo enseguida y esa
+    // corrección se vuelve ACTUALIZACIÓN del pedido recién creado).
+    const claimInFlight = () => db.runTransaction(async (tx) => {
+        const snap = await tx.get(contactRef);
+        const data = snap.exists ? snap.data() : {};
+        const ms = data.aiOrderRegInFlightAt && data.aiOrderRegInFlightAt.toMillis ? data.aiOrderRegInFlightAt.toMillis() : 0;
+        if (ms && (Date.now() - ms) < IN_FLIGHT_STALE_MS) return false;
+        tx.update(contactRef, { aiOrderRegInFlightAt: admin.firestore.FieldValue.serverTimestamp() });
+        return true;
+    });
+    let claimed = false;
     try {
-        // Anti-duplicados (check-and-set ATÓMICO): reclamar la ventana ANTES de extraer/crear.
-        // registerOrderFromAI es fire-and-forget y la extracción tarda segundos: con un simple
-        // read-then-act dos /registrar cercanos pasaban ambos el check y creaban DOS pedidos.
-        // El flag se escribe aquí (no después de crear el pedido). Si la extracción luego falla,
-        // bloquear el auto-reintento por 10 min también es correcto: el fallback avisa al humano.
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        const claimed = await db.runTransaction(async (tx) => {
-            const snap = await tx.get(contactRef);
-            const data = snap.exists ? snap.data() : {};
-            const lastAiMs = data.aiOrderRegisteredAt && data.aiOrderRegisteredAt.toMillis ? data.aiOrderRegisteredAt.toMillis() : 0;
-            if (lastAiMs && (Date.now() - lastAiMs) < DUPLICATE_WINDOW_MS) return false;
-            tx.update(contactRef, { aiOrderRegisteredAt: admin.firestore.FieldValue.serverTimestamp() });
-            return true;
-        });
+        claimed = await claimInFlight();
         if (!claimed) {
-            console.warn(`[AI_ORDER] /registrar duplicado de ${contactId} (ya hay un registro IA en curso o reciente). Ignorado.`);
-            return null;
+            console.warn(`[AI_ORDER] /registrar de ${contactId} con otro registro en vuelo; se reintenta en ${Math.round(IN_FLIGHT_RETRY_DELAY_MS / 1000)}s.`);
+            await new Promise(r => setTimeout(r, IN_FLIGHT_RETRY_DELAY_MS));
+            claimed = await claimInFlight();
+            if (!claimed) {
+                await alertAdmin(`⚠️ *La IA no pudo procesar un /registrar de ${name} (${contactId})*: otro registro seguía en curso. Revisa su chat y su pedido en el CRM por si quedó algo sin aplicar.`);
+                return null;
+            }
         }
 
-        const extraction = await extractOrderFromChat({ conversationText, name, catalogText: cfg.catalogText });
+        const extraction = await extractOrderFromChat({
+            conversationText,
+            name,
+            catalogText: cfg.catalogText,
+            // Contexto del pedido ya registrado (si hay uno reciente): el extractor decide si la
+            // conversación lo CAMBIA (devuelve el pedido completo actualizado) o es uno ADICIONAL.
+            existingOrder: await findRecentOrderForContact(contactId).then(rec => rec ? {
+                num: rec.data.consecutiveOrderNumber != null ? `DH${rec.data.consecutiveOrderNumber}` : rec.id,
+                datosProducto: rec.data.datosProducto || rec.data.producto || '',
+                precio: rec.data.precio
+            } : null).catch(() => null)
+        });
 
         if (!extraction) throw new Error('el extractor no devolvió un JSON válido');
         if (!extraction.listo) throw new Error(`el extractor no lo ve listo: ${extraction.faltante || 'sin motivo'}`);
@@ -236,6 +294,64 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             throw new Error(`el total no cuadra: los items suman $${computedTotal} pero el total acordado es $${extraction.total || 'desconocido'}`);
         }
         if (extraction.confianza < cfg.minConfidence) throw new Error(`confianza ${extraction.confianza}% < mínimo ${cfg.minConfidence}%`);
+
+        const itemsTxt = extraction.items
+            .map(it => `• ${it.producto}${it.cantidad > 1 ? ` ×${it.cantidad}` : ''} ($${it.precio}${it.cantidad > 1 ? ' c/u' : ''})${it.datosProducto ? `\n   ${it.datosProducto}` : ''}`)
+            .join('\n');
+
+        // ¿Hay un pedido RECIENTE y el extractor dice que esto NO es un pedido adicional?
+        // Entonces es un CAMBIO a ese pedido (el cliente corrigió diseño/nombres/cantidad):
+        //  - Si lo registró la IA, sigue pendiente de revisión y sin avanzar de estatus,
+        //    se ACTUALIZA ese mismo DH (nada de duplicados).
+        //  - Si lo registró un humano, ya fue aprobado/editado o ya avanzó (Pagado, Fabricar...),
+        //    NO se toca ni se crea nada: se avisa al admin para que decida. (Tradeoff consciente:
+        //    el cliente ya recibió la frase de cierre, pero un cambio a un pedido "bloqueado" es
+        //    justo lo que un humano debe mirar; el contacto además queda en pendientes_ia.)
+        // Si esAdicional=true, es un pedido NUEVO legítimo y sigue al camino de crear.
+        const recent = extraction.esAdicional ? null : await findRecentOrderForContact(contactId);
+        if (recent) {
+            const r = recent.data;
+            const rNum = r.consecutiveOrderNumber != null ? `DH${r.consecutiveOrderNumber}` : recent.id;
+            const editable = r.registeredByAI === true && r.aiReviewStatus === 'pending' && (r.estatus || 'Sin estatus') === 'Sin estatus';
+            if (!editable) {
+                console.warn(`[AI_ORDER] ${contactId} confirmó un cambio pero ${rNum} ya no es editable (${r.vendedor || 'manual'}, ${r.estatus}, review: ${r.aiReviewStatus || '-'}). Se avisa al admin.`);
+                await alertAdmin(`⚠️ *El cliente cambió/confirmó un pedido, pero ya existe ${rNum} reciente* (${r.estatus || 'Sin estatus'}${r.registeredByAI ? ', registrado por IA' : ', registrado manual'}${r.aiReviewStatus === 'approved' ? ', ya revisado' : ''}).\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nLo que el cliente confirmó ahora:\n${itemsTxt}\nTotal: $${extraction.total}\n\nRevisa el chat y edita/registra tú desde el CRM. La IA no creó ni modificó nada.`);
+                return null;
+            }
+
+            // Actualizar el pedido IA pendiente con la última versión confirmada.
+            const { computeOrderMainFields } = require('./createOrderCore');
+            const { totalValue, mainProducto, mainDatosProducto } = computeOrderMainFields(extraction.items);
+            // Comentario sin acumular: se reemplaza la línea de actualización anterior (si la hay).
+            const comentarioBase = (r.comentarios || '').split('\n').filter(l => !/^Actualizado por la IA:/.test(l.trim())).join('\n').trim();
+            await recent.ref.update({
+                items: extraction.items,
+                producto: mainProducto,
+                precio: totalValue,
+                datosProducto: extraction.items.length > 1 ? mainDatosProducto : extraction.items[0].datosProducto,
+                aiConfidence: extraction.confianza,
+                aiUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                comentarios: `${comentarioBase}\nActualizado por la IA: el cliente cambió su pedido (confianza ${extraction.confianza}%).`.trim()
+            });
+            // Igual que al crear: el cierre acaba de poner pendientes_ia; un cambio APLICADO ya no
+            // necesita registro manual — sin esto el contacto se queda en la cola y alguien
+            // registraría un DH duplicado a mano.
+            const contactUpdate = { purchaseValue: totalValue };
+            try {
+                const cSnap = await contactRef.get();
+                if (cSnap.exists && cSnap.data().status === 'pendientes_ia') {
+                    contactUpdate.status = null;
+                    contactUpdate.lastMessageTimestamp = admin.firestore.FieldValue.serverTimestamp();
+                }
+            } catch (_) {}
+            await contactRef.update(contactUpdate).catch(() => {});
+            const oldDatos = String(r.datosProducto || '').replace(/\s+/g, ' ').slice(0, 200);
+            const metaNote = (r.metaPurchaseSentAt && r.precio !== totalValue)
+                ? `\n\n⚠️ Ojo: el evento Purchase a Meta ya se había enviado con $${r.precio}; el nuevo total ($${totalValue}) ya no se reporta a Meta.` : '';
+            await alertAdmin(`🤖 *Pedido ACTUALIZADO por la IA (el cliente lo cambió)*\n\n*${rNum}* — Total: $${totalValue} (antes $${r.precio})\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nAntes: ${oldDatos || '-'}\n\nVersión nueva:\n${itemsTxt}${metaNote}\n\n_Confianza: ${extraction.confianza}%._ Sigue pendiente de tu revisión en el CRM → Pedidos.`);
+            console.log(`[AI_ORDER] ✏️ Pedido ${rNum} ACTUALIZADO para ${contactId} (cambio del cliente, confianza ${extraction.confianza}%).`);
+            return rNum;
+        }
 
         // require perezoso (mismo motivo que arriba)
         const { createOrder } = require('./createOrderCore');
@@ -252,9 +368,6 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             }
         });
 
-        const itemsTxt = extraction.items
-            .map(it => `• ${it.producto}${it.cantidad > 1 ? ` ×${it.cantidad}` : ''} ($${it.precio}${it.cantidad > 1 ? ' c/u' : ''})${it.datosProducto ? `\n   ${it.datosProducto}` : ''}`)
-            .join('\n');
         await alertAdmin(`🤖 *Pedido registrado por la IA*\n\n*DH${orderNumber}* — Total: $${totalValue}\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\n${itemsTxt}\n\n_Confianza: ${extraction.confianza}%._ Revísalo en el CRM → Pedidos (fila resaltada 🤖). Si algo está mal, edítalo ahí mismo.`);
 
         console.log(`[AI_ORDER] ✅ Pedido DH${orderNumber} registrado automáticamente para ${contactId} (confianza ${extraction.confianza}%).`);
@@ -272,6 +385,12 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
         }
         await alertAdmin(`⚠️ *La IA cerró una venta pero NO pudo registrar el pedido*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Motivo:* ${e.message}\n\nEl contacto quedó en *Pendientes IA*: registra el pedido manualmente desde el CRM (antes checa en Pedidos que no exista ya un DH reciente de este cliente).`);
         return null;
+    } finally {
+        // Liberar el candado en vuelo pase lo que pase (si el proceso muriera antes de esto,
+        // el candado caduca solo por IN_FLIGHT_STALE_MS).
+        if (claimed) {
+            await contactRef.update({ aiOrderRegInFlightAt: admin.firestore.FieldValue.delete() }).catch(() => {});
+        }
     }
 }
 

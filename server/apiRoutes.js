@@ -5924,10 +5924,32 @@ router.get('/debug/ai-order-extract', async (req, res) => {
         }).filter(Boolean);
         const conversationText = lines.join('\n');
 
+        // Igual que el flujo real: pasar el pedido reciente como contexto para que el
+        // extractor decida CAMBIO vs ADICIONAL (esAdicional).
+        let existingOrder = null;
+        try {
+            const oSnap = await db.collection('pedidos').where('contactId', '==', contactId).get();
+            let best = null, bestMs = 0;
+            oSnap.forEach(doc => {
+                const d = doc.data();
+                if (d.estatus === 'Cancelado') return;
+                const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
+                if (ms > bestMs) { bestMs = ms; best = d; }
+            });
+            if (best && (Date.now() - bestMs) <= 24 * 60 * 60 * 1000) {
+                existingOrder = {
+                    num: best.consecutiveOrderNumber != null ? `DH${best.consecutiveOrderNumber}` : '(sin número)',
+                    datosProducto: best.datosProducto || best.producto || '',
+                    precio: best.precio
+                };
+            }
+        } catch (_) {}
+
         const extraction = await extractOrderFromChat({
             conversationText,
             name: contactData.name || contactId,
-            catalogText: cfg.catalogText
+            catalogText: cfg.catalogText,
+            existingOrder
         });
         const computedTotal = extraction ? extraction.items.reduce((s, it) => s + it.precio * it.cantidad, 0) : null;
 
@@ -5935,6 +5957,9 @@ router.get('/debug/ai-order-extract', async (req, res) => {
             success: true,
             dryRun: true,
             config: { enabled: cfg.enabled, minConfidence: cfg.minConfidence },
+            existingOrder,
+            accion: !extraction ? 'nada'
+                : (existingOrder && !extraction.esAdicional ? 'ACTUALIZARÍA ' + existingOrder.num : 'CREARÍA pedido nuevo'),
             registraria: !!(extraction && extraction.listo && extraction.items.length > 0
                 && !extraction.items.some(it => !(it.precio > 0) || it.precio > 20000)
                 && extraction.total > 0 && Math.abs(computedTotal - extraction.total) <= 1

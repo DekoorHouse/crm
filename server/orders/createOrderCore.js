@@ -35,6 +35,22 @@ function normalizeOrderItems({ items, producto, precio, datosProducto }) {
 }
 
 /**
+ * Campos derivados de los items (total y campos "principales" para backward compat).
+ * Compartido entre crear pedido y ACTUALIZAR pedido (registro por IA cuando el cliente
+ * cambia su pedido ya registrado) para que ambos caminos queden idénticos.
+ */
+function computeOrderMainFields(normalizedItems) {
+    const totalValue = normalizedItems.reduce((sum, it) => sum + (it.precio || 0) * it.cantidad, 0);
+    const mainProducto = normalizedItems[0].producto;
+    const mainDatosProducto = normalizedItems.map(it => {
+        const qtyTxt = it.cantidad > 1 ? ` ×${it.cantidad}` : '';
+        const base = `${it.producto}${qtyTxt}${it.precio ? ` ($${it.precio})` : ''}`;
+        return it.datosProducto ? `${base}: ${it.datosProducto}` : base;
+    }).join('\n');
+    return { totalValue, mainProducto, mainDatosProducto };
+}
+
+/**
  * Crea un pedido con TODA la mecánica del CRM (ver cabecera del archivo).
  *
  * @param {object} args
@@ -86,13 +102,7 @@ async function createOrder({
     });
 
     // Calcular totales y datos "principales" (para backward compat con queries y reportes)
-    const totalValue = normalizedItems.reduce((sum, it) => sum + (it.precio || 0) * it.cantidad, 0);
-    const mainProducto = normalizedItems[0].producto;
-    const mainDatosProducto = normalizedItems.map(it => {
-        const qtyTxt = it.cantidad > 1 ? ` ×${it.cantidad}` : '';
-        const base = `${it.producto}${qtyTxt}${it.precio ? ` ($${it.precio})` : ''}`;
-        return it.datosProducto ? `${base}: ${it.datosProducto}` : base;
-    }).join('\n');
+    const { totalValue, mainProducto, mainDatosProducto } = computeOrderMainFields(normalizedItems);
 
     // Crear objeto del nuevo pedido con items embebidos
     const nuevoPedido = {
@@ -264,4 +274,4 @@ async function createOrder({
     return { orderNumber: newOrderNumber, orderRef: newOrderRef, totalValue, itemCount: normalizedItems.length };
 }
 
-module.exports = { createOrder, normalizeOrderItems };
+module.exports = { createOrder, normalizeOrderItems, computeOrderMainFields };
