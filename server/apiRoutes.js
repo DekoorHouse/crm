@@ -8049,13 +8049,28 @@ router.post('/envios/crear-guia', async (req, res) => {
         const destino = _mapDestinoT1(b.datos);
         if (!/^\d{5}$/.test(destino.codigo_postal)) return res.status(400).json({ success: false, message: 'C.P. destino inválido.' });
 
+        // Localizar el doc destino y checar IDEMPOTENCIA (evita doble cobro por doble clic / reintento).
+        const col = b.manualId ? 'envios_manuales' : 'pedidos';
+        const docId = b.manualId || b.docId || null;
+        let docRef = null;
+        if (docId) {
+            docRef = db.collection(col).doc(docId);
+            const snap = await docRef.get();
+            if (!snap.exists) return res.status(404).json({ success: false, message: 'El pedido o la línea no existe.' });
+            const ex = snap.data() && snap.data().guiaEnvio;
+            if (ex && ex.guia) {
+                return res.json({ success: true, already: true, guia: ex.guia, numOrden: ex.numOrden || null, pickUp: ex.pickUp || null, pdfPath: ex.pdfPath || null, tracking: ex.tracking || null });
+            }
+        }
+
+        // Crear la guía en T1 (DESCUENTA SALDO).
         const r = await t1.crearGuia({ destino, pedido: b.orderNumber, tipoServicio: b.tipoServicio, mensajeria: b.mensajeria });
         const det = r && r.detail;
         if (!r || r.success === false || !det || !det.guia) {
             return res.status(502).json({ success: false, message: (r && r.message) || 'T1 no devolvió número de guía.', detail: r });
         }
 
-        // Guardar el PDF de la etiqueta en el bucket.
+        // Guardar el PDF de la etiqueta en el bucket (best-effort; la guía es lo prioritario y no se pierde si el PDF falla).
         let pdfPath = null;
         try {
             if (det.file) {
@@ -8063,7 +8078,7 @@ router.post('/envios/crear-guia', async (req, res) => {
                 pdfPath = `etiquetas/${String(b.orderNumber || 'guia').replace(/[^\w-]/g, '')}-${det.guia}.pdf`;
                 await bucket.file(pdfPath).save(buf, { contentType: 'application/pdf', resumable: false });
             }
-        } catch (e2) { console.warn('[T1] No se pudo guardar el PDF de la etiqueta:', e2.message); }
+        } catch (e2) { pdfPath = null; console.warn('[T1] No se pudo guardar el PDF de la etiqueta:', e2.message); }
 
         const tracking = `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${encodeURIComponent(det.guia)}`;
         const guiaEnvio = {
@@ -8075,11 +8090,15 @@ router.post('/envios/crear-guia', async (req, res) => {
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        // Persistir la guía en el documento correspondiente (pedido o línea manual).
-        try {
-            if (b.manualId) await db.collection('envios_manuales').doc(b.manualId).set({ guiaEnvio }, { merge: true });
-            else if (b.docId) await db.collection('pedidos').doc(b.docId).set({ guiaEnvio }, { merge: true });
-        } catch (e3) { console.warn('[T1] No se pudo persistir guiaEnvio:', e3.message); }
+        // Persistir la guía. CRÍTICO: si falla, la guía YA se cobró en T1 -> devolverla igual para no perderla.
+        if (docRef) {
+            try {
+                await docRef.set({ guiaEnvio }, { merge: true });
+            } catch (e3) {
+                console.error('[T1] CRÍTICO: guía creada/cobrada en T1 pero NO persistida:', det.guia, e3.message);
+                return res.status(500).json({ success: false, persistError: true, guia: det.guia, numOrden: det.num_orden || null, tracking, pdfPath, message: 'La guía se creó y cobró en T1, pero no se pudo guardar en el CRM. Anota el número de guía.' });
+            }
+        }
 
         res.json({ success: true, guia: det.guia, numOrden: det.num_orden || null, pickUp: det.pick_up || null, pdfPath, tracking });
     } catch (e) {
@@ -8092,7 +8111,7 @@ router.post('/envios/crear-guia', async (req, res) => {
 router.get('/envios/etiqueta', async (req, res) => {
     try {
         const p = String(req.query.path || '');
-        if (!/^etiquetas\/[\w.\-]+\.pdf$/.test(p)) return res.status(400).send('Ruta inválida.');
+        if (!/^etiquetas\/[\w\-]+\.pdf$/.test(p)) return res.status(400).send('Ruta inválida.');
         const file = bucket.file(p);
         const [exists] = await file.exists();
         if (!exists) return res.status(404).send('Etiqueta no encontrada.');

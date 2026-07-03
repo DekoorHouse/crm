@@ -333,15 +333,19 @@ function _guiaModalEl() {
 function closeGuiaModal() { const m = document.getElementById('guia-modal'); if (m) m.style.display = 'none'; }
 window.closeGuiaModal = closeGuiaModal;
 
-// Abre el modal, cotiza DHL para el C.P. del pedido y lista las opciones para crear la guía.
-async function openGuiaModal(i) {
+// Pedido activo en el modal (se guarda el OBJETO, no el índice, para no desincronizar tras un re-render).
+let _guiaEnvioActual = null;
+let _creandoGuia = false; // guardia anti doble-clic (evita doble cobro).
+
+// Abre el modal para el pedido en el índice i y lanza la cotización.
+function openGuiaModal(i) {
     const e = (window._enviosData || [])[i];
     if (!e || !e.datos) return;
+    _guiaEnvioActual = e;
     const d = e.datos;
     const m = _guiaModalEl();
-    const box = m.querySelector('#guia-modal-box');
     const resumen = `${escapeHtml(d.nombre || '')} · ${escapeHtml(d.ciudad || '')}, ${escapeHtml(d.estado || '')} · C.P. ${escapeHtml(d.codigoPostal || '')}`;
-    box.innerHTML = `
+    m.querySelector('#guia-modal-box').innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <h3 style="margin:0;font-size:1.05rem;font-weight:700">Guía DHL — Pedido ${escapeHtml(e.orderNumber)}</h3>
           <button onclick="closeGuiaModal()" style="border:none;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:#64748b">&times;</button>
@@ -349,61 +353,88 @@ async function openGuiaModal(i) {
         <p style="font-size:.8rem;color:var(--color-text-light,#64748b);margin:0 0 12px">${resumen}</p>
         <div id="guia-cotiz"><i class="fas fa-spinner fa-spin mr-2"></i>Cotizando…</div>`;
     m.style.display = 'flex';
+    _cotizarEnModal();
+}
+window.openGuiaModal = openGuiaModal;
+
+// Cotiza DHL para el pedido activo del modal y pinta las opciones (usa _guiaEnvioActual).
+async function _cotizarEnModal() {
+    const e = _guiaEnvioActual;
+    if (!e) return;
+    const cont = document.getElementById('guia-cotiz');
+    if (cont) cont.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Cotizando…';
     try {
-        const r = await fetch(`${API_BASE_URL}/api/envios/cotizar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cp: d.codigoPostal }) });
+        const r = await fetch(`${API_BASE_URL}/api/envios/cotizar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cp: e.datos.codigoPostal }) });
         const j = await r.json();
         if (!r.ok || !j.success) throw new Error(j.message || ('HTTP ' + r.status));
         const dhl = (j.servicios || []).filter(s => (s.paqueteria || '').toUpperCase() === 'DHL');
         const list = dhl.length ? dhl : (j.servicios || []);
-        const cont = document.getElementById('guia-cotiz');
         if (!list.length) { if (cont) cont.innerHTML = '<p style="color:#b45309">No hubo servicios para este C.P.</p>'; return; }
         const rowsHtml = list.map(s => {
             const costo = s.costo != null ? `$${Number(s.costo).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : '—';
-            const payload = encodeURIComponent(JSON.stringify({ tipoServicio: s.servicio, mensajeria: s.paqueteria, costo: s.costo }));
+            // Se manda tipo_servicio (el codigo que espera T1), no el nombre servicio.
+            const payload = encodeURIComponent(JSON.stringify({ tipoServicio: s.tipo_servicio, servicioNombre: s.servicio, mensajeria: s.paqueteria, costo: s.costo }));
             return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--color-border,#e5e7eb);border-radius:10px;margin-bottom:8px">
                 <div><div style="font-weight:600">${escapeHtml(s.paqueteria || '')} · ${escapeHtml(s.servicio || '')}</div>
                   <div style="font-size:.78rem;color:#64748b">${escapeHtml(s.tipo_servicio || '')}${s.dias ? ` · ${s.dias} día(s)` : ''}</div></div>
                 <div style="text-align:right;white-space:nowrap"><div style="font-weight:700">${costo}</div>
-                  <button onclick="crearGuiaDesdeModal(${i},'${payload}')" style="margin-top:4px;background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:.78rem;cursor:pointer">Crear guía</button></div>
+                  <button onclick="crearGuiaDesdeModal('${payload}')" style="margin-top:4px;background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:.78rem;cursor:pointer">Crear guía</button></div>
               </div>`;
         }).join('');
         if (cont) cont.innerHTML = rowsHtml + `<p style="font-size:.72rem;color:#94a3b8;margin:6px 0 0"><i class="fas fa-circle-info mr-1"></i>Crear la guía descuenta el costo de tu saldo T1.</p>`;
     } catch (err) {
-        const cont = document.getElementById('guia-cotiz'); if (cont) cont.innerHTML = `<p style="color:#991b1b">No se pudo cotizar: ${escapeHtml(err.message || String(err))}</p>`;
+        const c = document.getElementById('guia-cotiz'); if (c) c.innerHTML = `<p style="color:#991b1b">No se pudo cotizar: ${escapeHtml(err.message || String(err))}</p><div style="text-align:center;margin-top:10px"><button onclick="_cotizarEnModal()" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;border-radius:8px;padding:6px 14px;cursor:pointer">Reintentar</button></div>`;
     }
 }
-window.openGuiaModal = openGuiaModal;
+window._cotizarEnModal = _cotizarEnModal;
 
-// Crea la guía (previa confirmación del costo) y muestra el resultado (nº de rastreo + etiqueta + rastreo).
-async function crearGuiaDesdeModal(i, payloadEnc) {
-    const e = (window._enviosData || [])[i];
-    if (!e) return;
+// Crea la guía (previa confirmación del costo). Guardia anti doble-clic; maneja el caso "creada pero no guardada".
+async function crearGuiaDesdeModal(payloadEnc) {
+    const e = _guiaEnvioActual;
+    if (!e || _creandoGuia) return;
     let opt = {};
     try { opt = JSON.parse(decodeURIComponent(payloadEnc)); } catch (_) { }
     const costoTxt = opt.costo != null ? `$${Number(opt.costo).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : 'su costo';
-    if (!confirm(`¿Crear guía ${opt.mensajeria} ${opt.tipoServicio} para el pedido ${e.orderNumber}?\n\nEsto descontará ${costoTxt} de tu saldo T1.`)) return;
+    const nombreServ = opt.servicioNombre || opt.tipoServicio || '';
+    if (!confirm(`¿Crear guía ${opt.mensajeria} ${nombreServ} para el pedido ${e.orderNumber}?\n\nEsto descontará ${costoTxt} de tu saldo T1.`)) return;
+    _creandoGuia = true;
     const box = document.getElementById('guia-cotiz');
     if (box) box.innerHTML = '<p style="text-align:center"><i class="fas fa-spinner fa-spin mr-2"></i>Creando guía… (no cierres esta ventana)</p>';
+    const btnStyle = 'text-decoration:none;background:var(--color-primary,#ef4444);color:#fff;border-radius:8px;padding:8px 14px;font-size:.85rem';
     try {
         const r = await fetch(`${API_BASE_URL}/api/envios/crear-guia`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ orderNumber: e.orderNumber, docId: e.id, manualId: e.manualId || null, tipoServicio: opt.tipoServicio, mensajeria: opt.mensajeria, costo: opt.costo, datos: e.datos }),
         });
         const j = await r.json();
+        // Caso crítico: la guía SÍ se creó/cobró en T1 pero no se pudo guardar en el CRM -> mostrar el número para anotarlo.
+        if (j && j.persistError && j.guia) {
+            if (box) box.innerHTML = `<div style="text-align:center;padding:6px 0">
+                <div style="font-size:1.8rem">⚠️</div>
+                <p style="font-weight:700;margin:4px 0">Guía creada, pero no se guardó en el CRM</p>
+                <p style="margin:2px 0">Anota el N° de rastreo: <b>${escapeHtml(j.guia)}</b></p>
+                <p style="font-size:.78rem;color:#991b1b;margin:6px 0">${escapeHtml(j.message || '')}</p>
+                <button onclick="closeGuiaModal(); renderEnviosView();" style="margin-top:12px;border:1px solid var(--color-border,#e5e7eb);background:transparent;border-radius:8px;padding:7px 16px;cursor:pointer">Cerrar</button>
+              </div>`;
+            return;
+        }
         if (!r.ok || !j.success) throw new Error(j.message || (j.detail ? JSON.stringify(j.detail) : ('HTTP ' + r.status)));
-        const btnStyle = 'text-decoration:none;background:var(--color-primary,#ef4444);color:#fff;border-radius:8px;padding:8px 14px;font-size:.85rem';
         const etiqueta = j.pdfPath ? `<a href="${API_BASE_URL}/api/envios/etiqueta?path=${encodeURIComponent(j.pdfPath)}" target="_blank" rel="noopener" style="${btnStyle}">🏷️ Descargar etiqueta</a>` : '';
         const rastreo = j.tracking ? `<a href="${j.tracking}" target="_blank" rel="noopener" style="${btnStyle};background:#334155">📍 Rastrear</a>` : '';
+        const titulo = j.already ? 'Este pedido ya tenía guía' : '¡Guía creada!';
         if (box) box.innerHTML = `<div style="text-align:center;padding:6px 0">
             <div style="font-size:2rem">✅</div>
-            <p style="font-weight:700;margin:4px 0">¡Guía creada!</p>
+            <p style="font-weight:700;margin:4px 0">${titulo}</p>
             <p style="margin:2px 0">N° de rastreo: <b>${escapeHtml(j.guia)}</b></p>
+            ${j.pdfPath ? '' : '<p style="font-size:.75rem;color:#b45309;margin:4px 0">La etiqueta PDF no quedó disponible; puedes descargarla desde el panel de T1.</p>'}
             <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap">${etiqueta}${rastreo}</div>
             <button onclick="closeGuiaModal(); renderEnviosView();" style="margin-top:16px;background:transparent;border:1px solid var(--color-border,#e5e7eb);border-radius:8px;padding:7px 16px;cursor:pointer">Cerrar</button>
           </div>`;
     } catch (err) {
         if (box) box.innerHTML = `<p style="color:#991b1b">No se pudo crear la guía: ${escapeHtml(err.message || String(err))}</p>
-            <div style="text-align:center;margin-top:10px"><button onclick="openGuiaModal(${i})" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;border-radius:8px;padding:6px 14px;cursor:pointer">Reintentar</button></div>`;
+            <div style="text-align:center;margin-top:10px"><button onclick="_cotizarEnModal()" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;border-radius:8px;padding:6px 14px;cursor:pointer">Volver a cotizar</button></div>`;
+    } finally {
+        _creandoGuia = false;
     }
 }
 window.crearGuiaDesdeModal = crearGuiaDesdeModal;

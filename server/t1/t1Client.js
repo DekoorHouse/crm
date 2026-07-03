@@ -23,7 +23,7 @@ const T1_COMERCIO_ID   = process.env.T1_COMERCIO_ID || '30463';  // clave del co
 
 // Mensajería / paquete por defecto
 const T1_MENSAJERIA    = process.env.T1_MENSAJERIA    || 'DHL';
-const T1_TIPO_SERVICIO = process.env.T1_TIPO_SERVICIO || 'EXPRESS DOMESTIC'; // DHL día siguiente (confirmar en 1ª guía real)
+const T1_TIPO_SERVICIO = process.env.T1_TIPO_SERVICIO || 'Dia Siguiente'; // DHL EXPRESS DOMESTIC (confirmar valor exacto en 1ª guía real)
 const T1_TIPO_PAQUETE  = Number(process.env.T1_TIPO_PAQUETE || 2); // 1=sobre, 2=paquete
 
 // Paquete por defecto (la lámpara): 22×17×5 cm, ~300 g real. Volumétrico ≈ 0.37 kg → DHL
