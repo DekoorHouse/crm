@@ -539,18 +539,23 @@ router.post('/quick-create', asyncHandler(async (req, res) => {
 }));
 
 // ===================== ALERTA DE LÍMITE DE GASTO (spend_cap) =====================
-// GET /api/meta-ads/spend-cap-alert/run?dryRun=1  → reporta sin enviar ni marcar
-// GET /api/meta-ads/spend-cap-alert/run?force=1   → reenvía aunque ya se avisó
-// GET /api/meta-ads/spend-cap-alert/run?test=1    → mensaje de prueba al admin
+// GET /api/meta-ads/spend-cap-alert/run?dryRun=1        → reporta sin enviar ni marcar
+// GET /api/meta-ads/spend-cap-alert/run?force=1         → reenvía aunque ya se avisó
+// GET /api/meta-ads/spend-cap-alert/run?test=1          → mensaje de prueba al admin
+// GET /api/meta-ads/spend-cap-alert/run?accounts=a,b,c  → sondeo diagnóstico (implica dryRun)
 const { runSpendCapAlertSweep, sendSpendCapTestAlert } = require('./spendCapAlertScheduler');
 
 router.get('/spend-cap-alert/run', asyncHandler(async (req, res) => {
     if (req.query.test === '1') {
         return res.json(await sendSpendCapTestAlert());
     }
+    const accountIdsOverride = req.query.accounts
+        ? String(req.query.accounts).split(',').map(s => s.trim()).filter(Boolean)
+        : null;
     const result = await runSpendCapAlertSweep({
         force: req.query.force === '1',
-        dryRun: req.query.dryRun === '1'
+        dryRun: req.query.dryRun === '1',
+        accountIdsOverride
     });
     res.json(result);
 }));

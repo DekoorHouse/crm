@@ -72,9 +72,17 @@ function fmtMoney(amount, currency) {
 }
 
 /**
- * Cuentas a monitorear: KPI accounts > cuenta activa > default.
+ * Cuentas a monitorear, en cascada:
+ * 1. crm_settings/meta_spend_cap_alert.monitorAccountIds (lista propia de la alerta,
+ *    para vigilar cuentas que no están en las KPI sin afectar el costo_publicidad)
+ * 2. Cuentas KPI  3. Cuenta activa  4. DEFAULT_ACCOUNT_ID
  */
 async function getMonitoredAccountIds() {
+    const stateSnap = await db.collection('crm_settings').doc(STATE_DOC).get();
+    const custom = stateSnap.exists ? stateSnap.data().monitorAccountIds : null;
+    if (Array.isArray(custom) && custom.length) {
+        return custom.map(id => String(id).replace('act_', '').trim()).filter(Boolean);
+    }
     const kpiIds = await getKpiAccountIds();
     if (kpiIds.length) return kpiIds;
     const settings = await getActiveAccount();
@@ -136,13 +144,16 @@ async function sendAlert(info) {
  * `dryRun` no envía ni escribe estado, solo reporta qué haría. `force` reenvía
  * el umbral actual aunque ya se haya avisado (para pruebas).
  */
-async function runSpendCapAlertSweep({ force = false, dryRun = false } = {}) {
+async function runSpendCapAlertSweep({ force = false, dryRun = false, accountIdsOverride = null } = {}) {
     if (sweepStartedAt && Date.now() - sweepStartedAt < SWEEP_LOCK_MS) {
         return { skipped: true, reason: 'sweep_en_curso' };
     }
     sweepStartedAt = Date.now();
     try {
-        const accountIds = await getMonitoredAccountIds();
+        // El override es solo diagnóstico (?accounts= en la ruta): fuerza dryRun para
+        // que un sondeo manual jamás envíe alertas ni pise el estado anti-spam.
+        if (accountIdsOverride) dryRun = true;
+        const accountIds = accountIdsOverride || await getMonitoredAccountIds();
         const stateRef = db.collection('crm_settings').doc(STATE_DOC);
         const stateSnap = await stateRef.get();
         const state = (stateSnap.exists && stateSnap.data().accounts) || {};
