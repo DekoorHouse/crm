@@ -7839,9 +7839,10 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 // formulario; se unen por numeroPedido con la colección datos_envio).
 router.get('/envios', async (_req, res) => {
     try {
-        const [pedidosSnap, datosSnap] = await Promise.all([
+        const [pedidosSnap, datosSnap, manualSnap] = await Promise.all([
             db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(300).get(),
             db.collection('datos_envio').get(),
+            db.collection('envios_manuales').orderBy('createdAt', 'desc').limit(300).get(),
         ]);
 
         // Mapa numeroPedido (solo dígitos) -> datos de envío MÁS RECIENTES.
@@ -7882,13 +7883,81 @@ router.get('/envios', async (_req, res) => {
                 comprobanteValidadoAt: p.comprobanteValidadoAt && p.comprobanteValidadoAt.toDate ? p.comprobanteValidadoAt.toDate().toISOString() : null,
                 datos,               // objeto con cada campo, o null si el cliente aún no llena el formulario
                 tieneDatos: !!de,
+                manualId: null,      // no es una línea manual
             };
         });
 
-        res.json({ success: true, envios });
+        // Líneas agregadas manualmente por el operador (colección envios_manuales).
+        const manuales = manualSnap.docs.map(doc => {
+            const m = doc.data();
+            const campos = [m.nombre, m.direccion, m.colonia, m.entreCalles, m.referencia, m.ciudad, m.estado, m.codigoPostal, m.telefono];
+            const tieneDatos = campos.some(v => (v || '').toString().trim());
+            const datos = tieneDatos ? {
+                nombre: m.nombre || '', direccion: m.direccion || '', colonia: m.colonia || '',
+                entreCalles: m.entreCalles || '', referencia: m.referencia || '', ciudad: m.ciudad || '',
+                estado: m.estado || '', codigoPostal: m.codigoPostal || '', telefono: m.telefono || '',
+            } : null;
+            return {
+                id: doc.id,
+                orderNumber: m.orderNumber || doc.id,
+                montoPagado: (m.montoPagado != null && m.montoPagado !== '' ? Number(m.montoPagado) : null),
+                estatus: null,
+                comprobanteValidadoAt: m.createdAt && m.createdAt.toDate ? m.createdAt.toDate().toISOString() : null,
+                datos,
+                tieneDatos,
+                manualId: doc.id,    // permite borrarla desde el CRM
+            };
+        });
+
+        // Manuales primero (recién agregadas), luego los pedidos con comprobante validado.
+        res.json({ success: true, envios: [...manuales, ...envios] });
     } catch (error) {
         console.error('[ENVIOS] Error en GET /envios:', error.message);
         res.status(500).json({ success: false, message: 'Error al cargar los envíos.', error: error.message });
+    }
+});
+
+// --- POST /api/envios/manual — agregar una línea manual (solo el número de pedido es obligatorio) ---
+router.post('/envios/manual', async (req, res) => {
+    try {
+        const b = req.body || {};
+        let orderNumber = String(b.orderNumber || '').trim();
+        if (!orderNumber) return res.status(400).json({ success: false, message: 'El número de pedido es obligatorio.' });
+        if (/^\d+$/.test(orderNumber)) orderNumber = 'DH' + orderNumber; // "12345" -> "DH12345"
+
+        const str = (v) => (v == null ? '' : String(v).trim());
+        const montoRaw = str(b.montoPagado).replace(/[^\d.]/g, '');
+        const doc = {
+            orderNumber,
+            montoPagado: montoRaw ? Number(montoRaw) : null,
+            nombre: str(b.nombre),
+            direccion: str(b.direccion),
+            colonia: str(b.colonia),
+            entreCalles: str(b.entreCalles),
+            referencia: str(b.referencia),
+            ciudad: str(b.ciudad),
+            estado: str(b.estado),
+            codigoPostal: str(b.codigoPostal),
+            telefono: str(b.telefono),
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            source: 'manual',
+        };
+        const ref = await db.collection('envios_manuales').add(doc);
+        res.status(201).json({ success: true, id: ref.id, orderNumber });
+    } catch (error) {
+        console.error('[ENVIOS] Error en POST /envios/manual:', error.message);
+        res.status(500).json({ success: false, message: 'Error al agregar la línea.' });
+    }
+});
+
+// --- DELETE /api/envios/manual/:id — borrar una línea manual ---
+router.delete('/envios/manual/:id', async (req, res) => {
+    try {
+        await db.collection('envios_manuales').doc(req.params.id).delete();
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[ENVIOS] Error en DELETE /envios/manual:', error.message);
+        res.status(500).json({ success: false, message: 'Error al borrar la línea.' });
     }
 });
 

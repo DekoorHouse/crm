@@ -168,12 +168,19 @@ async function renderEnviosView() {
             } else {
                 dataCells = `<td colspan="${DATA_COLS}" style="padding:10px 0;color:#b45309;font-weight:600">Pendiente — aún no llena el formulario</td>`;
             }
+            // Celda del pedido: copiable; si es manual añade una etiqueta (no copiable con el clic principal).
+            const pedidoCell = `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;white-space:nowrap;font-weight:700;color:var(--color-primary)">${escapeHtml(e.orderNumber)}</td>`;
+            const accionCell = e.manualId
+                ? `<td style="padding:10px 0;text-align:right;white-space:nowrap"><button title="Borrar línea manual" onclick="deleteEnvioManual('${e.manualId}')" style="border:none;background:transparent;cursor:pointer;color:#991b1b;padding:4px 8px;font-size:13px;"><i class="fas fa-trash"></i></button></td>`
+                : `<td></td>`;
             return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:top">
-                ${cell(e.orderNumber, 'white-space:nowrap;font-weight:700;color:var(--color-primary)')}
+                ${pedidoCell}
                 ${cell(montoVal, 'white-space:nowrap;font-weight:600')}
                 ${dataCells}
+                ${accionCell}
             </tr>`;
         }).join('');
+        const manualCount = envios.filter(e => e.manualId).length;
         container.innerHTML = `
             <style>
               #envios-container .envio-copy{transition:background-color .12s;border-radius:6px;}
@@ -195,13 +202,14 @@ async function renderEnviosView() {
                     <th style="padding:8px 14px 8px 0">Municipio</th>
                     <th style="padding:8px 14px 8px 0">Estado</th>
                     <th style="padding:8px 14px 8px 0">C.P.</th>
-                    <th style="padding:8px 0">Teléfono</th>
+                    <th style="padding:8px 14px 8px 0">Teléfono</th>
+                    <th style="padding:8px 0"></th>
                   </tr>
                 </thead>
                 <tbody>${rows}</tbody>
               </table>
             </div>
-            <p class="text-xs text-gray-400 mt-3">${envios.length} pedido(s) con comprobante validado.</p>`;
+            <p class="text-xs text-gray-400 mt-3">${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''}.</p>`;
     } catch (e) {
         container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los envíos: ${escapeHtml(e.message || String(e))}</p>
             <button class="btn btn-outline btn-sm mt-2" onclick="renderEnviosView()">Reintentar</button>`;
@@ -236,6 +244,63 @@ async function copyEnvioCell(el) {
     }
 }
 window.copyEnvioCell = copyEnvioCell;
+
+// Muestra/oculta el formulario para agregar una línea manual a Envíos.
+function toggleEnvioManualForm() {
+    const f = document.getElementById('envio-manual-form');
+    if (!f) return;
+    const show = f.style.display === 'none';
+    f.style.display = show ? 'block' : 'none';
+    if (show) { const o = document.getElementById('em-order'); if (o) o.focus(); }
+}
+window.toggleEnvioManualForm = toggleEnvioManualForm;
+
+// Guarda una línea manual (solo el número de pedido es obligatorio) y refresca la tabla.
+async function saveEnvioManual() {
+    const g = id => (document.getElementById(id)?.value || '').trim();
+    const errEl = document.getElementById('em-error');
+    if (errEl) errEl.textContent = '';
+    const orderNumber = g('em-order');
+    if (!orderNumber) { if (errEl) errEl.textContent = 'Escribe el número de pedido.'; const o = document.getElementById('em-order'); if (o) o.focus(); return; }
+    const payload = {
+        orderNumber, montoPagado: g('em-monto'), nombre: g('em-nombre'), direccion: g('em-direccion'),
+        colonia: g('em-colonia'), entreCalles: g('em-entrecalles'), referencia: g('em-referencia'),
+        ciudad: g('em-ciudad'), estado: g('em-estado'), codigoPostal: g('em-cp'), telefono: g('em-telefono'),
+    };
+    const btn = document.getElementById('em-save');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Guardando…'; }
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/envios/manual`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
+        // Limpiar el formulario y ocultarlo.
+        ['em-order','em-monto','em-nombre','em-direccion','em-colonia','em-entrecalles','em-referencia','em-ciudad','em-estado','em-cp','em-telefono'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        const f = document.getElementById('envio-manual-form'); if (f) f.style.display = 'none';
+        renderEnviosView();
+    } catch (e) {
+        if (errEl) errEl.textContent = 'No se pudo guardar: ' + (e.message || e);
+    }
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+}
+window.saveEnvioManual = saveEnvioManual;
+
+// Borra una línea manual de Envíos.
+async function deleteEnvioManual(id) {
+    if (!id || !confirm('¿Borrar esta línea manual de Envíos?')) return;
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/envios/manual/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
+        renderEnviosView();
+    } catch (e) {
+        if (window.showError) showError('No se pudo borrar la línea: ' + (e.message || e));
+        else alert('No se pudo borrar la línea: ' + (e.message || e));
+    }
+}
+window.deleteEnvioManual = deleteEnvioManual;
 
 // Cambia entre las sub-pestañas del hub IA (Entrenamiento · Simulador · Rescate).
 function switchIaTab(tab) {

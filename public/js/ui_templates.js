@@ -828,10 +828,37 @@ const EnviosViewTemplate = () => `
         <div class="view-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
             <div>
                 <h1>Envíos</h1>
-                <p class="text-sm text-gray-500 mt-1">Pedidos con comprobante de pago validado. La columna "Datos de envío" se llena cuando el cliente completa su formulario.</p>
+                <p class="text-sm text-gray-500 mt-1">Pedidos con comprobante de pago validado (y líneas que agregues manualmente). La columna "Datos de envío" se llena cuando el cliente completa su formulario.</p>
             </div>
-            <button class="btn btn-secondary btn-sm" onclick="renderEnviosView()"><i class="fas fa-sync-alt mr-2"></i>Actualizar</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-primary btn-sm" onclick="toggleEnvioManualForm()"><i class="fas fa-plus mr-2"></i>Agregar línea</button>
+                <button class="btn btn-secondary btn-sm" onclick="renderEnviosView()"><i class="fas fa-sync-alt mr-2"></i>Actualizar</button>
+            </div>
         </div>
+
+        <div id="envio-manual-form" class="settings-card mt-3" style="display:none;">
+            <h2 class="text-base font-bold mb-1">Agregar línea manual</h2>
+            <p class="text-xs text-gray-500 mb-3">Solo el <b>número de pedido</b> es obligatorio; lo demás es opcional.</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
+                <div><label class="text-xs font-semibold text-gray-500">Número de pedido *</label><input id="em-order" type="text" placeholder="DH12345" class="!mb-0"></div>
+                <div><label class="text-xs font-semibold text-gray-500">Monto pagado</label><input id="em-monto" type="text" placeholder="750" class="!mb-0"></div>
+                <div><label class="text-xs font-semibold text-gray-500">Nombre</label><input id="em-nombre" type="text" class="!mb-0"></div>
+                <div><label class="text-xs font-semibold text-gray-500">Dirección</label><input id="em-direccion" type="text" class="!mb-0"></div>
+                <div><label class="text-xs font-semibold text-gray-500">Colonia</label><input id="em-colonia" type="text" class="!mb-0"></div>
+                <div><label class="text-xs font-semibold text-gray-500">Entre calles</label><input id="em-entrecalles" type="text" class="!mb-0"></div>
+                <div><label class="text-xs font-semibold text-gray-500">Referencia</label><input id="em-referencia" type="text" class="!mb-0"></div>
+                <div><label class="text-xs font-semibold text-gray-500">Municipio</label><input id="em-ciudad" type="text" class="!mb-0"></div>
+                <div><label class="text-xs font-semibold text-gray-500">Estado</label><input id="em-estado" type="text" class="!mb-0"></div>
+                <div><label class="text-xs font-semibold text-gray-500">C.P.</label><input id="em-cp" type="text" class="!mb-0"></div>
+                <div><label class="text-xs font-semibold text-gray-500">Teléfono</label><input id="em-telefono" type="text" class="!mb-0"></div>
+            </div>
+            <div id="em-error" class="text-sm mt-2" style="color:#dc2626;"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button id="em-save" class="btn btn-primary btn-sm" onclick="saveEnvioManual()"><i class="fas fa-save mr-2"></i>Guardar línea</button>
+                <button class="btn btn-outline btn-sm" onclick="toggleEnvioManualForm()">Cancelar</button>
+            </div>
+        </div>
+
         <div id="envios-container" class="mt-4"><p class="text-gray-500">Cargando envíos…</p></div>
     </div>
 `;
