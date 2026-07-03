@@ -2105,20 +2105,13 @@ Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su 
         // código —aunque el prompt de post-venta esté personalizado en la UI— para que la IA sepa
         // cuándo los datos están completos y avise al equipo con el comando interno /datoscompletos.
         const postventaProtocolNote = isPostVenta ? `\n\n**PROTOCOLO DE DATOS DE ENVÍO (post-venta):**
-Cuando estés recopilando los datos de envío del cliente, los datos COMPLETOS que se necesitan son:
-1) Nombre completo
-2) Calle y número (interior y exterior)
-3) Colonia / Fraccionamiento
-4) Código Postal (C.P.)
-5) Entre calles
-6) Referencia del domicilio
-7) Estado y Municipio
-8) Teléfono
+Los datos de envío se recopilan por un FORMULARIO (un enlace con el número de pedido ya cargado), NO por texto. El sistema le envía ese formulario al cliente automáticamente cuando se valida su pago.
 Reglas:
-- El cliente suele mandar sus datos EN PARTES y en varios mensajes; revisa TODO el historial y arma los datos juntando lo que haya escrito, no solo su último mensaje.
-- Si YA tienes TODOS los datos de la lista, agradécele, confírmale que ya quedaron completos y que enseguida preparamos su pedido y su guía, y escribe al final de tu mensaje el comando /datoscompletos (el cliente NO lo ve; sirve para avisar al equipo que fabrique y genere la guía). Emítelo UNA sola vez por pedido.
-- Si AÚN faltan datos, pídele en una lista breve SOLO los que faltan (nunca repitas los que ya dio).
-- Si el cliente pregunta "¿qué falta?" o "¿ya está completo?", respóndele de inmediato con lo que falta, o confírmale que ya está todo (y emite /datoscompletos si corresponde).` : '';
+- NUNCA pidas los datos de envío por texto ni por partes (no pidas campos sueltos como calle, colonia, CP, etc.).
+- Si el cliente ESCRIBE su dirección o datos por texto, NO los tomes campo por campo:
+   · Si su pago YA está validado (ya se le envió el formulario), agradécele con calidez y pídele que por favor los ponga en el FORMULARIO que le enviamos, porque así su pedido queda cargado correcto y sacamos la guía enseguida. Si dice que no le llegó el enlace o lo perdió, dile que se lo reenviamos y NO tomes los datos por texto.
+   · Si su pago AÚN no está validado, enfócate primero en el pago; dile que en cuanto se valide le llega el formulario para capturar sus datos de envío. NO tomes los datos por texto todavía.
+- EXCEPCIÓN (única forma de tomarlos por texto): SOLO si el cliente dice claramente que NO PUEDE abrir o llenar el formulario (ej. "no me abre el link", "no me deja", "no puedo llenarlo", "desde aquí no puedo"). Entonces recíbelos por texto: 1) Nombre completo, 2) Calle y número (int/ext), 3) Colonia/Fraccionamiento, 4) C.P., 5) Entre calles, 6) Referencia del domicilio, 7) Estado y Municipio, 8) Teléfono. Junta lo que haya escrito en varios mensajes; cuando los tengas TODOS, confírmaselos ordenados y dile que ya quedaron registrados y que preparamos su guía, y al final de tu mensaje escribe el comando /datoscompletos (el cliente NO lo ve). Emítelo UNA sola vez. Si faltan, pídele SOLO los que falten.` : '';
 
         // Comando interno de cancelación (venta y post-venta). Se inyecta SIEMPRE por código
         // —aunque el prompt esté personalizado en la UI— para que la IA sepa avisar cuando el
