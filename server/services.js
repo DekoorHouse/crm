@@ -934,7 +934,7 @@ async function alertAdminHumanNeeded(contactId, contactData, clientRequest) {
     try {
         const name = (contactData && contactData.name) || contactId;
         const request = String(clientRequest || '').trim().slice(0, 300);
-        const text = `🙋 *La IA pide apoyo humano*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nEl cliente pidió algo que la IA no puede hacer (ej. foto/video de su pedido)${request ? `:\n_"${request}"_` : '.'}\n\nAl cliente ya se le dijo que el equipo se lo manda por el chat. Entra a atenderlo.`;
+        const text = `🙋 *La IA pide apoyo humano*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nLa IA necesita que un humano atienda este chat (p. ej. el cliente pide una foto/video del pedido, o dio sus datos de envío por texto y hay que capturarlos)${request ? `:\n_"${request}"_` : '.'}\n\nRevisa la conversación y entra a atenderlo.`;
         await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
         console.log(`[AI] Alerta de apoyo humano (/equipo) enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
     } catch (e) {
@@ -963,6 +963,14 @@ async function markComprobanteValidadoAndSendForm(contactId, contactData = {}, {
     const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : null;
     if (!orderNumber) {
         console.warn(`[ENVIOS] Pedido ${orderDoc.id} sin consecutiveOrderNumber; no se envía el formulario.`);
+        return null;
+    }
+    // Guard de estatus: NO mandar el formulario de un pedido CANCELADO o ya ENTREGADO/DEVUELTO
+    // (defensa por si la IA emite /comprobante contra el pedido equivocado — p. ej. un comprador
+    // recurrente cuyo pedido más reciente aún es uno viejo). El botón manual (force) sí procede.
+    const estatusPedido = String(orderData.estatus || '').toLowerCase();
+    if (!force && /cancel|entregad|devol/.test(estatusPedido)) {
+        console.log(`[ENVIOS] Pedido ${orderNumber} está "${orderData.estatus}"; no se envía el formulario automáticamente.`);
         return null;
     }
     // Idempotencia: si el formulario YA se envió para este pedido (comprobanteValidadoAt existe)
@@ -2126,17 +2134,29 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         });
         const fechaActualNote = `\n\n**Fecha y hora actual en México:** ${nowMx}. Usa SIEMPRE esta fecha como "hoy" para calcular tiempos de entrega cuando el cliente mencione una fecha límite; nunca la inventes.`;
 
-        // Protocolo de recolección de datos de envío (solo post-venta). Se agrega SIEMPRE por
-        // código —aunque el prompt de post-venta esté personalizado en la UI— para que la IA sepa
-        // cuándo los datos están completos y avise al equipo con el comando interno /datoscompletos.
-        const postventaProtocolNote = isPostVenta ? `\n\n**PROTOCOLO DE DATOS DE ENVÍO (post-venta):**
+        // Fase de PAGO activa: post-venta (pedido listo tras /cuatro) O venta con el pedido actual
+        // YA REGISTRADO (purchaseStatus === 'registered'). Un cliente puede pagar por su cuenta
+        // ANTES de que el equipo mande /cuatro (caso real Gloria/5216461170910: pagó en venta y la
+        // IA recolectó los datos por texto porque las notas del formulario solo se inyectaban en
+        // post-venta). SOLO 'registered' (NO 'completed'): 'registered' se re-pone al registrar el
+        // pedido NUEVO (así el pedido más reciente ES el actual), mientras que 'completed' es
+        // permanente y en un comprador recurrente apuntaría al pedido VIEJO (ver revisión). No
+        // implica cobrar antes: /cuatro sigue gateando el cobro PROACTIVO; esto solo maneja un pago
+        // que el cliente ya hizo. El guard de markComprobanteValidadoAndSendForm evita mandar el
+        // formulario de un pedido cancelado/entregado.
+        const paymentPhaseActive = isPostVenta || contactData.purchaseStatus === 'registered';
+
+        // Protocolo de recolección de datos de envío por FORMULARIO. Se agrega SIEMPRE por código
+        // —aunque el prompt esté personalizado en la UI— para que la IA use el formulario y no
+        // recopile los datos por texto.
+        const postventaProtocolNote = paymentPhaseActive ? `\n\n**PROTOCOLO DE DATOS DE ENVÍO:**
 Los datos de envío se recopilan por un FORMULARIO (un enlace con el número de pedido ya cargado), NO por texto. El sistema le envía ese formulario al cliente automáticamente cuando se valida su pago.
 Reglas:
 - NUNCA pidas los datos de envío por texto ni por partes (no pidas campos sueltos como calle, colonia, CP, etc.).
 - Si el cliente ESCRIBE su dirección o datos por texto, NO los tomes campo por campo:
    · Si su pago YA está validado (ya se le envió el formulario), agradécele con calidez y pídele que por favor los ponga en el FORMULARIO que le enviamos, porque así su pedido queda cargado correcto y sacamos la guía enseguida. Si dice que no le llegó el enlace o lo perdió, dile que se lo reenviamos y NO tomes los datos por texto.
    · Si su pago AÚN no está validado, enfócate primero en el pago; dile que en cuanto se valide le llega el formulario para capturar sus datos de envío. NO tomes los datos por texto todavía.
-- EXCEPCIÓN (única forma de tomarlos por texto): SOLO si el cliente dice claramente que NO PUEDE abrir o llenar el formulario (ej. "no me abre el link", "no me deja", "no puedo llenarlo", "desde aquí no puedo"). Entonces recíbelos por texto: 1) Nombre completo, 2) Calle y número (int/ext), 3) Colonia/Fraccionamiento, 4) C.P., 5) Entre calles, 6) Referencia del domicilio, 7) Estado y Municipio, 8) Teléfono. Junta lo que haya escrito en varios mensajes; cuando los tengas TODOS, confírmaselos ordenados y dile que ya quedaron registrados y que preparamos su guía, y al final de tu mensaje escribe el comando /datoscompletos (el cliente NO lo ve). Emítelo UNA sola vez. Si faltan, pídele SOLO los que falten.` : '';
+- EXCEPCIÓN (única forma de tomarlos por texto): SOLO si el cliente dice claramente que NO PUEDE abrir o llenar el formulario (ej. "no me abre el link", "no me deja", "no puedo llenarlo", "desde aquí no puedo"). Entonces recíbelos por texto: 1) Nombre completo, 2) Calle y número (int/ext), 3) Colonia/Fraccionamiento, 4) C.P., 5) Entre calles, 6) Referencia del domicilio, 7) Estado y Municipio, 8) Teléfono. Junta lo que haya escrito en varios mensajes. Si faltan, pídele SOLO los que falten. Cuando los tengas TODOS, confírmaselos ordenados, dile que un compañero del equipo termina de registrar su envío enseguida, y al FINAL de tu mensaje escribe el comando /equipo (el cliente NO lo ve; avisa a un humano para que capture sus datos y genere la guía). Emítelo UNA sola vez.` : '';
 
         // Comando interno de cancelación (venta y post-venta). Se inyecta SIEMPRE por código
         // —aunque el prompt esté personalizado en la UI— para que la IA sepa avisar cuando el
@@ -2144,11 +2164,12 @@ Reglas:
         // revisión IA" si todavía no hay un pedido registrado (ver más abajo).
         const cancelCommandNote = `\n\n**Cancelación de pedido:** Si el cliente te dice claramente que YA NO quiere el pedido, que lo CANCELA o que NO podrá continuar con él (por ejemplo: "ya no lo quiero", "mejor cancélalo", "ya no voy a poder con el pedido"), respóndele con empatía y escribe al FINAL de tu mensaje el comando /cancelado (el cliente NO lo ve; es una señal para el equipo). NO lo emitas por una simple demora o aplazamiento del pago (por ejemplo "mañana te pago", "dame unos días"): en esos casos NO se cancela. Emítelo UNA sola vez.`;
 
-        // Comando interno de comprobante validado + formulario de envío (solo post-venta). Se
-        // inyecta por código para que funcione con cualquier prompt personalizado. Cuando la IA
+        // Comando interno de comprobante validado + formulario de envío. Se inyecta por código para
+        // que funcione con cualquier prompt personalizado, y en fase de pago (post-venta O venta con
+        // pedido ya registrado): un cliente puede pagar antes de que se mande /cuatro. Cuando la IA
         // valida un comprobante GENUINO emite /comprobante: el sistema marca el pedido para la
         // sección "Envíos" del CRM y le manda al cliente el enlace del formulario de datos de envío.
-        const comprobanteCommandNote = isPostVenta ? `\n\n**Comprobante de pago y formulario de envío (post-venta):**
+        const comprobanteCommandNote = paymentPhaseActive ? `\n\n**Comprobante de pago y formulario de envío:**
 - Cuando el cliente te MANDE su comprobante de pago (imagen o PDF) y verifiques que es GENUINO (el destino y el monto coinciden con lo esperado), responde ÚNICAMENTE con el comando /comprobante (SOLO eso, sin ningún otro texto ni saludo). NO escribas tú la confirmación, NO le pidas los datos de envío por texto y NO le mandes ningún enlace: al recibir /comprobante, el SISTEMA le manda automáticamente el mensaje de confirmación ("ya validamos tu pago") junto con el formulario de envío. Emítelo UNA sola vez por pedido.
 - MUY IMPORTANTE: si YA validaste el comprobante antes en esta conversación (ya se le envió el formulario de envío, aunque el comprobante siga viéndose en el chat), NO vuelvas a emitir /comprobante. En los turnos siguientes responde NORMALMENTE a lo que el cliente diga (dudas, datos, etc.); reenviar el formulario en cada turno lo satura.
 - Si el comprobante es sospechoso o NO coincide, usa /sospechoso (NO /comprobante). Si el cliente solo dice que "ya pagó" pero todavía NO ha mandado el comprobante, pídeselo con amabilidad (NO emitas /comprobante).
@@ -2287,9 +2308,10 @@ Reglas:
         // En ETAPA 2, si el cliente quiere otro pedido la IA emite /nuevopedido para
         // regresar a la etapa de venta (etapa 1); el siguiente turno lo atiende ventas.
         const wantsNewOrder = isPostVenta && /\/nuevopedido/i.test(aiResponse);
-        // En ETAPA 2, si la IA detecta un comprobante sospechoso emite /sospechoso: se reenvía
-        // la imagen al admin para verificación; al cliente solo se le dice que estamos validando.
-        const suspiciousReceipt = isPostVenta && /\/sospechoso/i.test(aiResponse);
+        // Si la IA detecta un comprobante sospechoso emite /sospechoso: se reenvía la imagen al
+        // admin para verificación; al cliente solo se le dice que estamos validando. Aplica en
+        // fase de pago (post-venta O venta con pedido registrado), igual que /comprobante.
+        const suspiciousReceipt = paymentPhaseActive && /\/sospechoso/i.test(aiResponse);
         // La IA emite /equipo cuando el cliente pide algo que ella no puede hacer (ej. foto o
         // video de su pedido): se avisa al admin para que un humano lo mande por el chat.
         const humanHelpNeeded = /\/equipo/i.test(aiResponse);
