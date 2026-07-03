@@ -389,8 +389,8 @@ async function _cotizarEnModal() {
         const r = await fetch(`${API_BASE_URL}/api/envios/cotizar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cp: e.datos.codigoPostal }) });
         const j = await r.json();
         if (!r.ok || !j.success) throw new Error(j.message || ('HTTP ' + r.status));
-        const dhl = (j.servicios || []).filter(s => (s.paqueteria || '').toUpperCase() === 'DHL');
-        const list = dhl.length ? dhl : (j.servicios || []);
+        // Todas las paqueterías que devuelve T1 (DHL, FedEx…), ya vienen ordenadas por precio (más barata primero).
+        const list = (j.servicios || []);
         if (!list.length) { if (cont) cont.innerHTML = '<p style="color:#b45309">No hubo servicios para este C.P.</p>'; return; }
         const rowsHtml = list.map(s => {
             const costo = s.costo != null ? `$${Number(s.costo).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : '—';
