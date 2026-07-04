@@ -37,6 +37,7 @@ let state = {
     stagedRemoteFile: null, // Archivo remoto (de QR) preparado para enviar
     activeFilter: 'all', // Filtro de etiqueta activo ('all' o key de la etiqueta)
     unreadOnly: false, // Filtro para mostrar solo chats con mensajes sin leer
+    archivedOnly: false, // Vista "Archivados": muestra solo chats archivados (los archivados se ocultan de las demás vistas)
     purchaseFilter: null, // Filtro por estatus de compra ('registered' = corona gris, 'completed' = corona azul)
     designReviewFilter: false, // Filtro para chats en revisión de diseño
     channelFilter: null, // Filtro por canal: 'whatsapp', 'messenger', 'instagram', o null (todos)

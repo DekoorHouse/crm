@@ -1481,6 +1481,9 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
                      <button type="button" class="preview-icon" onclick="event.stopPropagation(); handleMarkAsUnread(event, '${contact.id}')" title="Marcar como no leído">
                         <i class="fas fa-envelope"></i>
                      </button>
+                     <button type="button" class="preview-icon" onclick="event.stopPropagation(); handleArchiveChat(event, '${contact.id}')" title="${contact.archived ? 'Desarchivar chat' : 'Archivar chat'}">
+                        <i class="fas fa-${contact.archived ? 'inbox' : 'box-archive'}"></i>
+                     </button>
                 </div>
             </div>
             <div class="flex justify-between items-center">

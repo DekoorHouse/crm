@@ -74,6 +74,13 @@ function handleSearchContacts() {
         contactsToRender = contactsToRender.filter(c => c.assignedDepartmentId === state.activeDepartmentFilter);
     }
 
+    // --- Archivados: la vista "Archivados" muestra solo archivados; el resto los oculta. ---
+    if (state.archivedOnly) {
+        contactsToRender = contactsToRender.filter(c => c.archived === true);
+    } else {
+        contactsToRender = contactsToRender.filter(c => !c.archived);
+    }
+
     // --- NUEVO: Filtros de Etiqueta y No Leídos (Reactividad Frontend) ---
     if (state.activeFilter && state.activeFilter !== 'all') {
         contactsToRender = contactsToRender.filter(c => c.status === state.activeFilter);
@@ -1712,9 +1719,51 @@ function toggleUnreadFilter() {
     state.designReviewFilter = false;
     state.activeFilter = 'all';
     state.adIdFilters = [];
+    state.archivedOnly = false;
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
+}
+
+// Alterna la vista "Archivados" (solo chats archivados). Filtra sobre los contactos ya cargados
+// (los archivados se quedan arriba porque archivar sube su lastMessageTimestamp).
+function toggleArchivedFilter() {
+    state.archivedOnly = !state.archivedOnly;
+    if (state.archivedOnly) {
+        state.unreadOnly = false;
+        state.purchaseFilter = null;
+        state.designReviewFilter = false;
+        state.activeFilter = 'all';
+        state.adIdFilters = [];
+    }
+    renderTagFilters();
+    handleSearchContacts();
+}
+
+// Archiva/desarchiva un chat (escribe directo a Firestore como handleMarkAsUnread). Optimista.
+async function handleArchiveChat(event, contactId) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+    }
+    const idx = state.contacts.findIndex(c => c.id === contactId);
+    const wasArchived = idx > -1 ? !!state.contacts[idx].archived : false;
+    try {
+        if (idx > -1) {
+            state.contacts[idx].archived = !wasArchived;
+            state.contacts[idx].lastMessageTimestamp = new Date(); // sube el chat (y refleja el cambio de orden)
+            scheduleContactListRender();
+        }
+        await db.collection('contacts_whatsapp').doc(contactId).update({
+            archived: !wasArchived,
+            lastMessageTimestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (error) {
+        console.error('Error al archivar el chat:', error);
+        showError('No se pudo archivar el chat.');
+        if (idx > -1) { state.contacts[idx].archived = wasArchived; scheduleContactListRender(); }
+    }
 }
 
 function setPurchaseFilter(filter) {

@@ -617,6 +617,15 @@ function listenForContactUpdates() {
                         isAllowed = false;
                     }
                 }
+
+                // Filtro de archivados: vista normal oculta archivados; vista "Archivados" muestra solo archivados.
+                if (isAllowed) {
+                    if (state.archivedOnly) {
+                        if (!updatedContactData.archived) isAllowed = false;
+                    } else if (updatedContactData.archived) {
+                        isAllowed = false;
+                    }
+                }
             }
             // --- FIN NUEVA VALIDACIÓN ---
 

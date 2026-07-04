@@ -687,7 +687,7 @@ function renderTagFilters() {
 
     // Botón "Todos"
     const anyAdFilter = Array.isArray(state.adIdFilters) && state.adIdFilters.length > 0;
-    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter && !state.designReviewFilter && !anyAdFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
+    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter && !state.designReviewFilter && !state.archivedOnly && !anyAdFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
 
     // Estado de pedido (texto explícito — reemplaza las coronas)
     const greyActive = state.purchaseFilter === 'registered' || state.purchaseFilter === 'both';
@@ -704,6 +704,8 @@ function renderTagFilters() {
 
     // "No leídos"
     buttonsHtml += `<button id="filter-unread" class="filter-btn ${state.unreadOnly ? 'active' : ''}" onclick="toggleUnreadFilter()">No leídos</button>`;
+    // "Archivados" (vista de chats archivados)
+    buttonsHtml += `<button id="filter-archived" class="filter-btn ${state.archivedOnly ? 'active' : ''}" onclick="toggleArchivedFilter()"><i class="fas fa-box-archive mr-1"></i>Archivados</button>`;
 
     // "Anuncio" — selector multi-anuncio (dropdown con buscador + casillas). Filtra por anuncio(s)
     // de origen: muestra los chats que tuvieron CUALQUIERA de los anuncios marcados como fuente.
