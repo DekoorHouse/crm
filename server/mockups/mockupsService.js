@@ -244,7 +244,10 @@ function escapeRegExp(str) {
 function buildPromptFromTemplate(promptTemplate, fields = {}) {
     let out = String(promptTemplate || '');
     for (const [k, v] of Object.entries(fields)) {
-        const val = (v === undefined || v === null) ? '' : String(v);
+        let val = (v === undefined || v === null) ? '' : String(v);
+        // Quita separadores sueltos de los bordes (barra "|", comas, &, +) para
+        // que no se graben en la lámpara si vinieron pegados al nombre/fecha.
+        val = val.replace(/^[\s|,&+]+|[\s|,&+]+$/g, '').trim();
         out = out.replace(new RegExp('\\{' + escapeRegExp(k) + '\\}', 'g'), val);
     }
     out = out.replace(/\{[a-zA-Z0-9_]+\}/g, '').replace(/[ \t]{2,}/g, ' ').trim();

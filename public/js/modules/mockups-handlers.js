@@ -49,8 +49,14 @@ function mkParseDatos(text) {
     if (dm) fecha = dm[1];
     let rest = raw.replace(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/, ' ');
     rest = rest.replace(/nombres?\s*:/ig, ' ').replace(/fecha\s*:/ig, ' ').replace(/para\s*:/ig, ' ');
-    const parts = rest.split(/\s+y\s+|\s*&\s*|\s*\+\s*|,|\n|\s+and\s+/i).map(s => s.trim()).filter(Boolean);
-    return { nombre1: parts[0] || '', nombre2: parts[1] || '', fecha: fecha, personalizacion: raw };
+    // Quita separadores sueltos de los bordes (barra "|", comas, &, +) para que
+    // NO terminen grabados en la lámpara (ej: "Sheyla |" -> "Sheyla").
+    const clean = s => s.replace(/^[\s|,&+]+|[\s|,&+]+$/g, '').trim();
+    const parts = rest
+        .split(/\s+y\s+|\s*&\s*|\s*\+\s*|\s*\|\s*|,|\n|\s+and\s+/i)
+        .map(clean)
+        .filter(Boolean);
+    return { nombre1: parts[0] || '', nombre2: parts[1] || '', fecha: clean(fecha), personalizacion: raw };
 }
 
 // ---------- init / tabs ----------
