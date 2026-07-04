@@ -337,6 +337,24 @@ function listenForPendingAiCount() {
     });
 }
 
+let unsubscribeUnreadCountListener = null;
+/**
+ * Listener en tiempo real del conteo de chats NO leídos (unreadCount > 0), excluyendo archivados.
+ * Actualiza el badge del chip "No leídos" automáticamente.
+ */
+function listenForUnreadCount() {
+    if (unsubscribeUnreadCountListener) unsubscribeUnreadCountListener();
+    const query = db.collection('contacts_whatsapp').where('unreadCount', '>', 0);
+    unsubscribeUnreadCountListener = query.onSnapshot(snapshot => {
+        let n = 0;
+        snapshot.forEach(doc => { if (!doc.data().archived) n++; }); // no contar archivados
+        state.unreadTotalCount = n;
+        if (typeof actualizarContadorNoLeidos === 'function') actualizarContadorNoLeidos(n);
+    }, error => {
+        console.error("Error en real-time listener de conteo No leídos:", error);
+    });
+}
+
 
 /**
  * Inicia un listener en tiempo real para el conteo de pedidos registrados HOY.

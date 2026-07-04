@@ -783,8 +783,9 @@ function renderTagFilters() {
     </div>`;
 
     container.innerHTML = buttonsHtml;
-    // Actualizar el contador después de renderizar los filtros
+    // Actualizar los contadores después de renderizar los filtros
     actualizarContadorPendientesIA();
+    actualizarContadorNoLeidos();
 }
 
 function toggleTagDropdown(event) {
@@ -1009,6 +1010,34 @@ async function actualizarContadorPendientesIA(precomputedCount = null) {
     // 3. Actualizar el valor y la visibilidad
     if (totalPendientes > 0) {
         badge.textContent = totalPendientes;
+        badge.classList.remove('hidden');
+        badge.style.display = 'inline-block';
+    } else {
+        badge.classList.add('hidden');
+        badge.style.display = 'none';
+    }
+}
+
+/**
+ * Actualiza el badge del contador de chats No leídos en el chip "No leídos".
+ * Usa el conteo del listener en tiempo real (state.unreadTotalCount) o el valor recibido.
+ */
+function actualizarContadorNoLeidos(precomputedCount = null) {
+    const filterBtn = document.getElementById('filter-unread');
+    if (!filterBtn) return;
+    const total = precomputedCount !== null ? precomputedCount : (state.unreadTotalCount || 0);
+
+    let badge = document.getElementById('unread-counter');
+    if (!badge) {
+        badge = document.createElement('span');
+        badge.id = 'unread-counter';
+        badge.className = 'ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm transition-all duration-300';
+        badge.style.backgroundColor = 'var(--color-info, #378add)';
+        filterBtn.appendChild(badge);
+    }
+
+    if (total > 0) {
+        badge.textContent = total;
         badge.classList.remove('hidden');
         badge.style.display = 'inline-block';
     } else {

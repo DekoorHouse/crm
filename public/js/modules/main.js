@@ -32,6 +32,7 @@ function startApp() {
     listenForDepartments();
     listenForAdRoutingRules();
     listenForPendingAiCount(); // Listener en tiempo real para el conteo de IA
+    listenForUnreadCount(); // Listener en tiempo real para el conteo de No leídos
     listenForDailyOrderCount(); // Listener en tiempo real para el conteo de pedidos de hoy
     // ----------------------------------------------------
 

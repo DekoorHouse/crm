@@ -102,6 +102,7 @@ let state = {
     allUsers: [], // Lista de todos los usuarios del sistema
     activeDepartmentFilter: 'all', // Filtro de departamento activo en la lista de chats
     pendingAiCount: 0, // Conteo global de chats pendientes de IA
+    unreadTotalCount: 0, // Conteo global de chats no leídos (para el badge de "No leídos")
 
     // --- NUEVO: Estado para Entrenamiento de IA ---
     aiKnowledgeBase: [], // Documentos de la base de conocimiento
