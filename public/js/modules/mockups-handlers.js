@@ -10,7 +10,7 @@
 const MK_API = (typeof window !== 'undefined' && window.API_BASE_URL) ? window.API_BASE_URL : '';
 
 // Prompt semilla para plantillas nuevas (clave: evita que la IA re-dibuje la lámpara).
-const MK_SEED_PROMPT = 'Edita esta foto de la lámpara. NO modifiques la lámpara, su forma, base, acrílico, color, iluminación ni el fondo. ÚNICAMENTE reemplaza el texto grabado: el nombre de la izquierda por "{nombre1}", el nombre de la derecha por "{nombre2}", y la fecha por "{fecha}". Conserva exactamente la misma tipografía, tamaño, color amarillo cálido y posición del texto. El resultado debe verse foto-realista e idéntico salvo por el texto.';
+const MK_SEED_PROMPT = 'Edita esta foto de la lámpara. NO modifiques la lámpara, su figura, base, acrílico, color, iluminación ni el fondo. ÚNICAMENTE reemplaza el texto grabado: el primer nombre por "{nombre1}", el segundo nombre por "{nombre2}", y la fecha por "{fecha}". Conserva exactamente la misma tipografía, tamaño, color y posición del texto. El resultado debe verse foto-realista e idéntico salvo por el texto.';
 
 const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null };
 
