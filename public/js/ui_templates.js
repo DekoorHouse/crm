@@ -863,6 +863,63 @@ const EnviosViewTemplate = () => `
     </div>
 `;
 
+// Sección "Mockup": genera un preview de la lámpara con los datos del cliente
+// (cambia SOLO nombres/fecha vía WaveSpeed GPT Image 2) y lo envía por WhatsApp.
+// Los pendientes salen de los pedidos "Sin estatus". Ver mockups-handlers.js.
+const MockupsViewTemplate = () => `
+    <div class="view-container">
+        <style>
+            .mk-tabs-wrap{margin-top:8px}
+            .mk-card{margin-bottom:16px}
+            .mk-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--color-border)}
+            .mk-order-num{font-weight:700;background:var(--color-subtle-bg);padding:2px 8px;border-radius:6px;margin-right:8px}
+            .mk-client{font-weight:600}
+            .mk-phone{color:var(--color-text-light);font-size:.85rem;margin-left:8px}
+            .mk-date{color:var(--color-text-light);font-size:.8rem}
+            .mk-card-body{display:grid;grid-template-columns:1fr 320px;gap:18px}
+            @media (max-width:820px){.mk-card-body{grid-template-columns:1fr}}
+            .mk-inputs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+            .mk-inputs .mk-full{grid-column:1 / -1}
+            .mk-inputs label,.mk-raw label{display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light);margin-bottom:3px;text-transform:uppercase;letter-spacing:.02em}
+            .mk-datos{width:100%;min-height:56px;resize:vertical;font-size:.85rem}
+            .mk-result{border:1px dashed var(--color-border);border-radius:var(--border-radius-md);padding:10px;display:flex;flex-direction:column;gap:10px;min-height:180px;align-items:center;justify-content:center;text-align:center}
+            .mk-result img{max-width:100%;border-radius:8px}
+            .mk-result-empty{color:var(--color-text-light);font-size:.85rem}
+            .mk-spin{width:26px;height:26px;border:3px solid var(--color-border);border-top-color:var(--color-primary);border-radius:50%;animation:mk-rot 1s linear infinite}
+            @keyframes mk-rot{to{transform:rotate(360deg)}}
+            .mk-tpl-card{display:flex;gap:14px;align-items:flex-start}
+            .mk-tpl-thumb{width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--color-border);flex-shrink:0;background:var(--color-subtle-bg)}
+            .mk-chip{display:inline-block;background:var(--color-subtle-bg);border:1px solid var(--color-border);border-radius:999px;padding:1px 8px;font-size:.72rem;margin:2px 3px 0 0}
+            .mk-muted{color:var(--color-text-light);font-size:.85rem}
+        </style>
+        <div class="view-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+            <div>
+                <h1>Mockup</h1>
+                <p class="text-sm text-gray-500 mt-1">Genera un preview de la lámpara con los datos del cliente y envíaselo por WhatsApp para que lo apruebe. Los pendientes salen de los pedidos <b>Sin estatus</b>.</p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-secondary btn-sm" onclick="mkReload()"><i class="fas fa-sync-alt mr-2"></i>Actualizar</button>
+            </div>
+        </div>
+
+        <div class="settings-tabs mk-tabs-wrap">
+            <button class="settings-tab active" data-mktab="pendientes" onclick="mkSwitchTab('pendientes')"><i class="fas fa-clock mr-2"></i>Pendientes</button>
+            <button class="settings-tab" data-mktab="plantillas" onclick="mkSwitchTab('plantillas')"><i class="fas fa-layer-group mr-2"></i>Plantillas</button>
+        </div>
+
+        <div id="mk-pane-pendientes">
+            <div id="mk-pendientes" class="mt-4"><p class="mk-muted">Cargando pendientes…</p></div>
+        </div>
+
+        <div id="mk-pane-plantillas" style="display:none;">
+            <div style="display:flex;justify-content:flex-end;margin:14px 0;">
+                <button class="btn btn-primary btn-sm" onclick="mkNewTemplate()"><i class="fas fa-plus mr-2"></i>Nueva plantilla</button>
+            </div>
+            <div id="mk-plantillas"><p class="mk-muted">Cargando plantillas…</p></div>
+        </div>
+    </div>
+`;
+
 const SettingsViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">

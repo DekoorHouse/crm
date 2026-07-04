@@ -123,6 +123,10 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = SettingsViewTemplate();
             renderAjustesView(); // Dibuja la vista de ajustes generales
             break;
+        case 'mockups':
+            mainViewContainer.innerHTML = MockupsViewTemplate();
+            initializeMockupsHandlers(); // Preview de lámparas (pendientes + plantillas)
+            break;
         default:
             mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
     }
