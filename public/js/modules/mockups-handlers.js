@@ -197,7 +197,8 @@ async function mkGenerate(orderId) {
     if (!templateId) { mkToast('Selecciona una plantilla.', 'error'); return; }
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generando…'; }
-    if (box) box.innerHTML = '<div class="mk-spin"></div><div class="mk-result-empty">Generando preview… (puede tardar hasta ~1 min)</div>';
+    const setBox = (msg) => { if (box) box.innerHTML = `<div class="mk-spin"></div><div class="mk-result-empty">${mkEsc(msg)}</div>`; };
+    setBox('Enviando a la IA…');
 
     try {
         const data = await mkFetchJson('/api/mockups/generate-preview', {
@@ -205,8 +206,15 @@ async function mkGenerate(orderId) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ templateId, provider, fields }),
         });
-        const url = data.image && (data.image.fullUrl || data.image.thumbUrl);
+
+        let url;
+        if (data.image) {
+            url = data.image.fullUrl || data.image.thumbUrl;           // Gemini (síncrono)
+        } else if (data.jobId) {
+            url = await mkPollJob(data.jobId, setBox);                 // WaveSpeed (asíncrono)
+        }
         if (!url) throw new Error('No se recibió la imagen generada.');
+
         mkState.results[orderId] = url;
         const order = mkState.pending.find(o => o.id === orderId) || { id: orderId };
         if (box) box.innerHTML = mkResultHtml(order, url);
@@ -216,6 +224,28 @@ async function mkGenerate(orderId) {
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-wand-magic-sparkles mr-2"></i>Generar preview'; }
     }
+}
+
+// Polling del preview asíncrono (WaveSpeed). Devuelve la URL o lanza error.
+async function mkPollJob(jobId, setBox) {
+    const started = Date.now();
+    const MAX_MS = 4 * 60 * 1000;   // hasta 4 min (GPT Image 2 puede tardar)
+    const INTERVAL = 3000;
+    while (Date.now() - started < MAX_MS) {
+        await new Promise(r => setTimeout(r, INTERVAL));
+        const secs = Math.round((Date.now() - started) / 1000);
+        let st;
+        try {
+            st = await mkFetchJson('/api/mockups/generate-status/' + encodeURIComponent(jobId));
+        } catch (e) {
+            setBox('Generando… (' + secs + 's)');   // un fallo puntual no aborta
+            continue;
+        }
+        if (st.status === 'completed') return st.image && (st.image.fullUrl || st.image.thumbUrl);
+        if (st.status === 'failed') throw new Error(st.error || 'La generación falló.');
+        setBox('Generando… (' + secs + 's)');
+    }
+    throw new Error('La generación tardó demasiado (más de 4 min). Intenta de nuevo.');
 }
 
 async function mkSend(orderId) {

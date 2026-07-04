@@ -150,21 +150,56 @@ router.post('/generate-preview', asyncHandler(async (req, res) => {
     const prompt = svc.buildPromptFromTemplate(tpl.promptTemplate, fields);
     if (!prompt) return res.status(400).json({ success: false, error: 'El prompt quedó vacío.' });
 
-    let result;
+    // Gemini responde en una sola llamada (rápido) -> síncrono.
     if (provider === 'gemini') {
         const ref = await svc.fetchImageAsBase64(tpl.baseImageUrl);
-        result = await svc.generateImage(prompt, aspectRatio, [ref], resolution || '2K');
-    } else {
-        const { generateEdit } = require('./wavespeedClient');
-        result = await generateEdit(prompt, [tpl.baseImageUrl], {
-            aspectRatio,
-            resolution: resolution || '1k',
-            quality: quality || 'high',
-        });
+        const result = await svc.generateImage(prompt, aspectRatio, [ref], resolution || '2K');
+        const saved = await svc.saveToGallery(prompt, aspectRatio, result.images, result.usage, result.cost);
+        return res.json({ success: true, image: saved[0], prompt, cost: result.cost });
     }
 
-    const saved = await svc.saveToGallery(prompt, aspectRatio, result.images, result.usage, result.cost);
-    res.json({ success: true, image: saved[0], prompt, usage: result.usage, cost: result.cost });
+    // WaveSpeed (GPT Image 2) puede tardar >90s -> asíncrono: enviamos la tarea
+    // y devolvemos un jobId; el front consulta /generate-status/:jobId.
+    const wave = require('./wavespeedClient');
+    const { predictionId } = await wave.submitEdit(prompt, [tpl.baseImageUrl], {
+        aspectRatio,
+        resolution: resolution || '1k',
+        quality: quality || 'high',
+    });
+    await db.collection('mockup_jobs').doc(predictionId).set({
+        prompt, aspectRatio, templateId, createdAt: new Date().toISOString(),
+    });
+    res.json({ success: true, jobId: predictionId, prompt });
+}));
+
+// GET /api/mockups/generate-status/:jobId — Avance del preview (WaveSpeed)
+router.get('/generate-status/:jobId', asyncHandler(async (req, res) => {
+    const jobId = req.params.jobId;
+    const wave = require('./wavespeedClient');
+    const r = await wave.fetchResult(jobId);
+
+    if (r.status === 'failed') {
+        return res.json({ success: true, status: 'failed', error: r.error || 'La generación falló.' });
+    }
+    if (r.status !== 'completed' || r.outputs.length === 0) {
+        return res.json({ success: true, status: 'processing' });
+    }
+
+    // Completado: descargar, guardar en galería y limpiar el job.
+    const jobDoc = await db.collection('mockup_jobs').doc(jobId).get();
+    const job = jobDoc.exists ? jobDoc.data() : {};
+    const img = await wave.downloadImage(r.outputs[0]);
+    const cost = wave.costFor(1);
+    const saved = await svc.saveToGallery(
+        job.prompt || 'Preview de lámpara',
+        job.aspectRatio || '1:1',
+        [img],
+        { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        cost
+    );
+    try { await db.collection('mockup_jobs').doc(jobId).delete(); } catch (_) { /* ignore */ }
+
+    res.json({ success: true, status: 'completed', image: saved[0], cost });
 }));
 
 // POST /api/mockups/send — Enviar un preview al cliente por WhatsApp

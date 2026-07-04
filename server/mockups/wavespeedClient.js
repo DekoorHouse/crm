@@ -1,39 +1,33 @@
 // ===================================================================
 // WaveSpeed AI — cliente para edición de imágenes (GPT Image 2 Edit)
 // -------------------------------------------------------------------
-// Se usa para generar el "preview" de una lámpara: se le pasa la foto
-// base (URL pública) + un prompt que cambia SOLO el texto grabado
-// (nombres/fecha). Devuelve el resultado en la MISMA forma que consume
-// mockupsService.saveToGallery() -> { images:[{mimeType,base64}], usage, cost }
-// para reutilizar toda la galería/almacenamiento existentes.
+// Genera el "preview" de una lámpara: foto base (URL pública) + prompt
+// que cambia SOLO el texto grabado (nombres/fecha).
 //
-// Flujo asíncrono de WaveSpeed:
-//   POST  /api/v3/openai/gpt-image-2/edit           -> { data:{ id, urls:{ get } } }
-//   GET   /api/v3/predictions/{id}/result           -> { data:{ status, outputs:[url] } }
+// GPT Image 2 puede tardar >90s, más de lo que aguanta una petición HTTP
+// síncrona en Render. Por eso el cliente expone el flujo en 2 pasos y la
+// espera la hace el FRONTEND (submit -> devuelve jobId; el front consulta
+// el estado cada pocos segundos):
+//   POST /api/v3/openai/gpt-image-2/edit      -> { data:{ id, urls:{ get } } }
+//   GET  /api/v3/predictions/{id}/result      -> { data:{ status, outputs:[url] } }
 // ===================================================================
 const axios = require('axios');
 
 const SUBMIT_URL = 'https://api.wavespeed.ai/api/v3/openai/gpt-image-2/edit';
 const RESULT_URL = (id) => `https://api.wavespeed.ai/api/v3/predictions/${id}/result`;
-
-const POLL_INTERVAL_MS = 2000;   // esperar 2s entre consultas (recomendado por WaveSpeed)
-const MAX_POLL_ATTEMPTS = 45;    // ~90s máximo antes de rendirse
 const REQUEST_TIMEOUT_MS = 30000;
 
-// Precio por imagen: WaveSpeed no reporta uso de tokens para GPT Image 2.
-// Es un estimado configurable para que las estadísticas de la galería no
-// engañen. Ajustar WAVESPEED_COST_PER_IMAGE en Render con el precio real.
+// Precio por imagen: WaveSpeed no reporta tokens para GPT Image 2. Estimado
+// configurable (WAVESPEED_COST_PER_IMAGE en Render) para las stats de galería.
 const COST_PER_IMAGE = parseFloat(process.env.WAVESPEED_COST_PER_IMAGE) || 0.04;
 
 const API_KEY = () => process.env.WAVESPEED_API_KEY;
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Extrae las URLs de salida tolerando las MUCHAS formas posibles de respuesta.
 function extractOutputs(data) {
     if (!data) return [];
     const acc = [];
-    const push = (v) => { if (typeof v === 'string') acc.push(v); else if (v && (v.url || v.image || v.b64_json)) acc.push(v.url || v.image); };
+    const push = (v) => { if (typeof v === 'string') acc.push(v); else if (v && (v.url || v.image)) acc.push(v.url || v.image); };
     if (Array.isArray(data.outputs)) data.outputs.forEach(push);
     else if (typeof data.outputs === 'string') acc.push(data.outputs);
     if (data.outputs && Array.isArray(data.outputs.images)) data.outputs.images.forEach(push);
@@ -50,14 +44,8 @@ function getStatus(data) {
     return String((data && (data.status || data.state || data.task_status)) || '').toLowerCase();
 }
 
-/**
- * Genera una edición de imagen con GPT Image 2 (WaveSpeed).
- * @param {string} prompt   Instrucción de edición.
- * @param {string[]} imageUrls  URLs públicas de las imágenes base (1..n).
- * @param {object} opts     { aspectRatio, resolution, quality }
- * @returns {Promise<{images:{mimeType,base64}[], usage:object, cost:object}>}
- */
-async function generateEdit(prompt, imageUrls, opts = {}) {
+// 1) Enviar la tarea. Devuelve el id de predicción para consultarla luego.
+async function submitEdit(prompt, imageUrls, opts = {}) {
     const apiKey = API_KEY();
     if (!apiKey) throw new Error('WAVESPEED_API_KEY no está configurada.');
     if (!prompt || !prompt.trim()) throw new Error('Se requiere un prompt.');
@@ -67,15 +55,7 @@ async function generateEdit(prompt, imageUrls, opts = {}) {
 
     const { aspectRatio = '1:1', resolution = '1k', quality = 'high' } = opts;
     const headers = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
-
-    // 1) Enviar la tarea
-    const submitBody = {
-        images: imageUrls,
-        prompt,
-        aspect_ratio: aspectRatio,
-        resolution,
-        quality,
-    };
+    const submitBody = { images: imageUrls, prompt, aspect_ratio: aspectRatio, resolution, quality };
 
     let submit;
     try {
@@ -86,64 +66,39 @@ async function generateEdit(prompt, imageUrls, opts = {}) {
     }
 
     const submitData = submit.data?.data || submit.data || {};
-    const taskId = submitData.id;
-    // Algunas respuestas ya traen el resultado (sync); si no, hay que hacer polling.
-    let outputs = extractOutputs(submitData);
-    const getUrl = submitData.urls?.get || (taskId ? RESULT_URL(taskId) : null);
-
-    // 2) Polling hasta completar
-    if (outputs.length === 0) {
-        if (!getUrl) throw new Error('WaveSpeed no devolvió un id de tarea ni resultado.');
-        let attempts = 0;
-        let lastStatus = '(sin respuesta)';
-        let lastRaw = '';
-        while (attempts < MAX_POLL_ATTEMPTS) {
-            await sleep(POLL_INTERVAL_MS);
-            attempts++;
-            let poll;
-            try {
-                poll = await axios.get(getUrl, { headers, timeout: REQUEST_TIMEOUT_MS });
-            } catch (err) {
-                // Un fallo puntual de red no aborta: reintenta en la siguiente vuelta.
-                if (attempts >= MAX_POLL_ATTEMPTS) {
-                    throw new Error(`WaveSpeed poll error: ${err.response ? JSON.stringify(err.response.data) : err.message}`);
-                }
-                continue;
-            }
-            const pd = poll.data?.data || poll.data || {};
-            lastStatus = getStatus(pd) || '(sin status)';
-            lastRaw = JSON.stringify(poll.data).slice(0, 400);
-            if (['completed', 'succeeded', 'success', 'ready', 'done', 'finished'].includes(lastStatus)) {
-                outputs = extractOutputs(pd);
-                if (outputs.length === 0) {
-                    throw new Error(`WaveSpeed completó pero no encontré la imagen. resp: ${lastRaw}`);
-                }
-                break;
-            }
-            if (['failed', 'error', 'canceled', 'cancelled'].includes(lastStatus)) {
-                throw new Error(`WaveSpeed falló (${lastStatus}): ${pd.error || lastRaw}`);
-            }
-            // created / processing / queued / starting -> seguir esperando
-        }
-        if (outputs.length === 0) {
-            throw new Error(`WaveSpeed no completó a tiempo tras ${Math.round(MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000)}s. último status: "${lastStatus}". resp: ${lastRaw}`);
-        }
+    const predictionId = submitData.id;
+    if (!predictionId) {
+        throw new Error('WaveSpeed no devolvió un id de tarea. resp: ' + JSON.stringify(submit.data).slice(0, 300));
     }
-
-    // 3) Descargar la(s) imagen(es) resultante(s) a base64
-    const images = [];
-    for (const url of outputs) {
-        const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: REQUEST_TIMEOUT_MS });
-        const mimeType = resp.headers['content-type'] || 'image/png';
-        images.push({ mimeType, base64: Buffer.from(resp.data).toString('base64') });
-    }
-
-    const imagesCost = COST_PER_IMAGE * images.length;
-    return {
-        images,
-        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-        cost: { perImage: COST_PER_IMAGE, imagesCost, inputTokenCost: 0, total: imagesCost },
-    };
+    // A veces el submit ya trae la imagen (sync); lo pasamos por si acaso.
+    return { predictionId, outputs: extractOutputs(submitData) };
 }
 
-module.exports = { generateEdit };
+// 2) Consultar el estado. status normalizado: 'processing' | 'completed' | 'failed'.
+async function fetchResult(predictionId) {
+    const apiKey = API_KEY();
+    if (!apiKey) throw new Error('WAVESPEED_API_KEY no está configurada.');
+    const headers = { Authorization: `Bearer ${apiKey}` };
+
+    const poll = await axios.get(RESULT_URL(predictionId), { headers, timeout: REQUEST_TIMEOUT_MS });
+    const pd = poll.data?.data || poll.data || {};
+    const raw = getStatus(pd);
+    const status = ['completed', 'succeeded', 'success', 'ready', 'done', 'finished'].includes(raw) ? 'completed'
+        : ['failed', 'error', 'canceled', 'cancelled'].includes(raw) ? 'failed'
+        : 'processing';
+    return { status, rawStatus: raw, outputs: extractOutputs(pd), error: pd.error || '' };
+}
+
+// 3) Descargar una imagen resultante a { mimeType, base64 } para saveToGallery.
+async function downloadImage(url) {
+    const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: REQUEST_TIMEOUT_MS });
+    return { mimeType: resp.headers['content-type'] || 'image/png', base64: Buffer.from(resp.data).toString('base64') };
+}
+
+// Objeto de costo compatible con saveToGallery.
+function costFor(n) {
+    const imagesCost = COST_PER_IMAGE * n;
+    return { perImage: COST_PER_IMAGE, imagesCost, inputTokenCost: 0, total: imagesCost };
+}
+
+module.exports = { submitEdit, fetchResult, downloadImage, costFor, COST_PER_IMAGE };
