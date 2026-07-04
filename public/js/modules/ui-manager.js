@@ -164,16 +164,14 @@ async function renderEnviosView() {
             return `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;${style}">${escapeHtml(v)}</td>`;
         };
         const DATA_COLS = 9; // nombre..teléfono
-        // Estado de cada envío + separación: pendientes de guía primero, con guía al final.
+        // _hasGuia solo para los conteos/filtros. NO se agrupa: orden cronológico ascendente
+        // (los más antiguos arriba, los nuevos ABAJO). Los que faltan datos se quedan en su lugar.
         envios.forEach(e => { e._hasGuia = !!(e.guiaEnvio && e.guiaEnvio.guia); });
         const pendCount = envios.filter(e => !e._hasGuia).length;
         const guiaCount = envios.length - pendCount;
         const filter = window._enviosFilter || 'all';
-        const ordered = envios.slice().sort((a, b) => {
-            if (a._hasGuia !== b._hasGuia) return a._hasGuia ? 1 : -1; // sin guía primero
-            const ad = a.datos ? 0 : 1, bd = b.datos ? 0 : 1;          // con datos antes que sin datos
-            return ad - bd;
-        });
+        const _ts = (e) => (e.comprobanteValidadoAt ? new Date(e.comprobanteValidadoAt).getTime() : 0);
+        const ordered = envios.slice().sort((a, b) => _ts(a) - _ts(b)); // ascendente: nuevos al final
         const shown = ordered.filter(e => filter === 'all' ? true : (filter === 'guia' ? e._hasGuia : !e._hasGuia));
         const rows = shown.map((e, dispIdx) => {
             const gi = window._enviosData.indexOf(e); // índice real en _enviosData para los handlers
