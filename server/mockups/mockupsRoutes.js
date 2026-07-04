@@ -15,6 +15,19 @@ function asyncHandler(fn) {
     };
 }
 
+// Guarda el último preview de un pedido para que persista en la lista (mockup_previews/{orderId}).
+async function savePreview(orderId, image, prompt) {
+    if (!orderId || !image) return;
+    try {
+        await db.collection('mockup_previews').doc(String(orderId)).set({
+            orderId: String(orderId),
+            imageUrl: image.fullUrl || image.thumbUrl || '',
+            prompt: prompt || '',
+            createdAt: new Date().toISOString(),
+        });
+    } catch (e) { console.error('[mockups] savePreview:', e.message); }
+}
+
 // POST /api/mockups/generate — Generar imagen y guardar en galería
 router.post('/generate', asyncHandler(async (req, res) => {
     const { prompt, aspectRatio, resolution, images: refImages } = req.body;
@@ -89,6 +102,14 @@ router.get('/pending', asyncHandler(async (req, res) => {
         docs.forEach(d => { if (d.exists) nameByPhone[d.id] = d.data().name || ''; });
     }
 
+    // Previews ya generados, para que persistan en la lista al recargar.
+    const previewByOrder = {};
+    if (pend.length) {
+        const prefs = pend.map(o => db.collection('mockup_previews').doc(String(o.id)));
+        const pdocs = await db.getAll(...prefs);
+        pdocs.forEach(d => { if (d.exists) previewByOrder[d.id] = d.data().imageUrl || ''; });
+    }
+
     const items = pend.map(o => {
         const phone = String(o.contactId || o.telefono || '');
         let createdAt = null;
@@ -104,6 +125,7 @@ router.get('/pending', asyncHandler(async (req, res) => {
             producto: o.producto || (orderItems[0] && orderItems[0].producto) || '',
             createdAt,
             items: orderItems,
+            previewUrl: previewByOrder[o.id] || null,
         };
     });
     res.json({ success: true, items });
@@ -155,6 +177,7 @@ router.post('/generate-preview', asyncHandler(async (req, res) => {
         const ref = await svc.fetchImageAsBase64(tpl.baseImageUrl);
         const result = await svc.generateImage(prompt, aspectRatio, [ref], resolution || '2K');
         const saved = await svc.saveToGallery(prompt, aspectRatio, result.images, result.usage, result.cost);
+        await savePreview(req.body.orderId, saved[0], prompt);
         return res.json({ success: true, image: saved[0], prompt, cost: result.cost });
     }
 
@@ -167,7 +190,7 @@ router.post('/generate-preview', asyncHandler(async (req, res) => {
         quality: quality || 'high',
     });
     await db.collection('mockup_jobs').doc(predictionId).set({
-        prompt, aspectRatio, templateId, createdAt: new Date().toISOString(),
+        prompt, aspectRatio, templateId, orderId: req.body.orderId || null, createdAt: new Date().toISOString(),
     });
     res.json({ success: true, jobId: predictionId, prompt });
 }));
@@ -198,6 +221,7 @@ router.get('/generate-status/:jobId', asyncHandler(async (req, res) => {
         cost
     );
     try { await db.collection('mockup_jobs').doc(jobId).delete(); } catch (_) { /* ignore */ }
+    await savePreview(job.orderId, saved[0], job.prompt || '');
 
     res.json({ success: true, status: 'completed', image: saved[0], cost });
 }));

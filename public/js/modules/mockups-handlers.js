@@ -131,7 +131,7 @@ function mkRenderPending() {
         const p = mkParseDatos(datos);
         const producto = o.producto || (o.items?.[0]?.producto || '');
         const num = o.consecutiveOrderNumber ? ('DH' + o.consecutiveOrderNumber) : '—';
-        const saved = mkState.results[o.id];
+        const saved = mkState.results[o.id] || o.previewUrl;
         return `
         <div class="settings-card mk-card" data-order="${mkAttr(o.id)}" data-phone="${mkAttr(o.telefono)}" data-client="${mkAttr(o.clientName)}">
             <div class="mk-card-head">
@@ -210,7 +210,7 @@ async function mkGenerate(orderId) {
         const data = await mkFetchJson('/api/mockups/generate-preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ templateId, provider, fields }),
+            body: JSON.stringify({ templateId, provider, fields, orderId }),
         });
 
         let url;
@@ -223,6 +223,7 @@ async function mkGenerate(orderId) {
 
         mkState.results[orderId] = url;
         const order = mkState.pending.find(o => o.id === orderId) || { id: orderId };
+        order.previewUrl = url;
         if (box) box.innerHTML = mkResultHtml(order, url);
     } catch (e) {
         if (box) box.innerHTML = `<div class="mk-result-empty" style="color:#dc2626;">${mkEsc(e.message)}</div>`;
