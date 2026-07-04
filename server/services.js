@@ -868,9 +868,12 @@ async function buildStaticContext(botInstructions, isPostVenta = false) {
 async function findQuickReplyByShortcut(shortcut) {
     if (!shortcut) return null;
     try {
-        const norm = String(shortcut).replace(/^\/+/, '').toLowerCase();
+        // Normaliza: sin "/" inicial, sin espacios extra (colapsa múltiples), minúsculas.
+        // Así "/mas modelos", "mas  modelos", "Mas Modelos" hacen match con el atajo guardado.
+        const normalize = s => String(s || '').replace(/^\/+/, '').trim().replace(/\s+/g, ' ').toLowerCase();
+        const norm = normalize(shortcut);
         const snap = await db.collection('quick_replies').get();
-        const doc = snap.docs.find(d => String(d.data().shortcut || '').replace(/^\/+/, '').toLowerCase() === norm);
+        const doc = snap.docs.find(d => normalize(d.data().shortcut) === norm);
         return doc ? doc.data() : null;
     } catch (e) {
         console.warn('[AI] No se pudo leer quick_replies para expandir atajo:', e.message);
@@ -2347,7 +2350,7 @@ Reglas:
             const parts = [];
             let buffer = [];
             for (const line of m.split('\n')) {
-                if (/^\/\S+$/.test(line.trim())) {
+                if (/^\/.+$/.test(line.trim())) { // atajo solo (permite espacios: "/mas modelos")
                     if (buffer.length) { parts.push(buffer.join('\n').trim()); buffer = []; }
                     parts.push(line.trim());
                 } else {
@@ -2379,7 +2382,7 @@ Reglas:
             // Si la IA respondió SOLO con un atajo de respuesta rápida (ej. "/ttt"), expandirlo
             // a su contenido real (texto + archivo) en vez de mandar el atajo crudo al cliente.
             let qrFileUrl = null, qrFileType = null;
-            const shortcutMatch = msgText.match(/^\/(\S+)$/);
+            const shortcutMatch = msgText.match(/^\/(.+)$/); // permite atajos con espacios ("/mas modelos")
             if (shortcutMatch) {
                 const qr = await findQuickReplyByShortcut(shortcutMatch[1]);
                 if (qr) {
