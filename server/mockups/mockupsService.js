@@ -173,4 +173,95 @@ async function getBatch(id) {
     return { id: doc.id, ...doc.data() };
 }
 
-module.exports = { generateImage, saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch };
+// ===================== PLANTILLAS DE MOCKUP =====================
+// Cada plantilla = un diseño de lámpara con su foto base (URL pública) y un
+// prompt con placeholders {nombre1} {nombre2} {fecha} {personalizacion}.
+const TEMPLATES_COLLECTION = 'mockup_templates';
+
+async function listTemplates() {
+    const snap = await db.collection(TEMPLATES_COLLECTION).orderBy('createdAt', 'desc').get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+async function getTemplate(id) {
+    const doc = await db.collection(TEMPLATES_COLLECTION).doc(id).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() };
+}
+
+async function createTemplate({ nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio }) {
+    const doc = {
+        nombre: (nombre || '').toString().trim() || 'Sin nombre',
+        baseImagePath: baseImagePath || null,
+        baseImageUrl: baseImageUrl || null,
+        promptTemplate: (promptTemplate || '').toString(),
+        productMatch: Array.isArray(productMatch) ? productMatch : [],
+        aspectRatio: aspectRatio || '1:1',
+        createdAt: new Date().toISOString(),
+    };
+    const ref = await db.collection(TEMPLATES_COLLECTION).add(doc);
+    return { id: ref.id, ...doc };
+}
+
+async function updateTemplate(id, patch = {}) {
+    const allowed = {};
+    for (const k of ['nombre', 'baseImagePath', 'baseImageUrl', 'promptTemplate', 'productMatch', 'aspectRatio']) {
+        if (patch[k] !== undefined) allowed[k] = patch[k];
+    }
+    await db.collection(TEMPLATES_COLLECTION).doc(id).set(allowed, { merge: true });
+    return getTemplate(id);
+}
+
+async function deleteTemplate(id) {
+    const tpl = await getTemplate(id);
+    if (tpl?.baseImagePath) {
+        try { await bucket.file(tpl.baseImagePath).delete(); } catch (e) { /* ignore */ }
+    }
+    await db.collection(TEMPLATES_COLLECTION).doc(id).delete();
+}
+
+// Sube la foto base a Storage como webp PÚBLICO (WaveSpeed y WhatsApp la
+// descargan por URL, así que NO puede ser una URL firmada/privada).
+async function uploadTemplateBaseImage(buffer) {
+    const id = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const webp = await sharp(buffer)
+        .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 90 })
+        .toBuffer();
+    const baseImagePath = `${STORAGE_DIR}/templates/${id}_base.webp`;
+    const file = bucket.file(baseImagePath);
+    await file.save(webp, { metadata: { contentType: 'image/webp' }, public: true, resumable: false });
+    const baseImageUrl = `https://storage.googleapis.com/${bucket.name}/${baseImagePath}`;
+    return { baseImagePath, baseImageUrl };
+}
+
+// Reemplaza los placeholders del prompt con los campos del pedido.
+// Los placeholders no provistos se eliminan para no ensuciar la instrucción.
+function escapeRegExp(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildPromptFromTemplate(promptTemplate, fields = {}) {
+    let out = String(promptTemplate || '');
+    for (const [k, v] of Object.entries(fields)) {
+        const val = (v === undefined || v === null) ? '' : String(v);
+        out = out.replace(new RegExp('\\{' + escapeRegExp(k) + '\\}', 'g'), val);
+    }
+    out = out.replace(/\{[a-zA-Z0-9_]+\}/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+    return out;
+}
+
+// Descarga una imagen (URL pública) a { mimeType, base64 } para la ruta Gemini.
+async function fetchImageAsBase64(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`No se pudo descargar la imagen base (${res.status}).`);
+    const mimeType = res.headers.get('content-type') || 'image/webp';
+    const buf = Buffer.from(await res.arrayBuffer());
+    return { mimeType, base64: buf.toString('base64') };
+}
+
+module.exports = {
+    generateImage, saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch,
+    listTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate,
+    uploadTemplateBaseImage, buildPromptFromTemplate, fetchImageAsBase64,
+};
