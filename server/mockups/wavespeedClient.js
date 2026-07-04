@@ -29,19 +29,25 @@ const API_KEY = () => process.env.WAVESPEED_API_KEY;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Extrae las URLs de salida tolerando las distintas formas de respuesta.
+// Extrae las URLs de salida tolerando las MUCHAS formas posibles de respuesta.
 function extractOutputs(data) {
     if (!data) return [];
-    // Forma canónica v3: data.outputs = [url, ...]
-    if (Array.isArray(data.outputs)) return data.outputs.filter(Boolean);
-    // Variante: data.result.images = [{ url }] | [url]
-    const imgs = data.result?.images;
-    if (Array.isArray(imgs)) return imgs.map((i) => (typeof i === 'string' ? i : i?.url)).filter(Boolean);
-    return [];
+    const acc = [];
+    const push = (v) => { if (typeof v === 'string') acc.push(v); else if (v && (v.url || v.image || v.b64_json)) acc.push(v.url || v.image); };
+    if (Array.isArray(data.outputs)) data.outputs.forEach(push);
+    else if (typeof data.outputs === 'string') acc.push(data.outputs);
+    if (data.outputs && Array.isArray(data.outputs.images)) data.outputs.images.forEach(push);
+    if (Array.isArray(data.result?.images)) data.result.images.forEach(push);
+    if (Array.isArray(data.images)) data.images.forEach(push);
+    if (Array.isArray(data.output)) data.output.forEach(push);
+    else if (typeof data.output === 'string') acc.push(data.output);
+    if (data.image && (data.image.url || typeof data.image === 'string')) acc.push(data.image.url || data.image);
+    if (typeof data.url === 'string') acc.push(data.url);
+    return acc.filter(v => typeof v === 'string' && /^https?:\/\//.test(v));
 }
 
 function getStatus(data) {
-    return (data && (data.status || data.state)) || '';
+    return String((data && (data.status || data.state || data.task_status)) || '').toLowerCase();
 }
 
 /**
@@ -89,6 +95,8 @@ async function generateEdit(prompt, imageUrls, opts = {}) {
     if (outputs.length === 0) {
         if (!getUrl) throw new Error('WaveSpeed no devolvió un id de tarea ni resultado.');
         let attempts = 0;
+        let lastStatus = '(sin respuesta)';
+        let lastRaw = '';
         while (attempts < MAX_POLL_ATTEMPTS) {
             await sleep(POLL_INTERVAL_MS);
             attempts++;
@@ -103,18 +111,22 @@ async function generateEdit(prompt, imageUrls, opts = {}) {
                 continue;
             }
             const pd = poll.data?.data || poll.data || {};
-            const status = getStatus(pd).toLowerCase();
-            if (status === 'completed' || status === 'succeeded' || status === 'success') {
+            lastStatus = getStatus(pd) || '(sin status)';
+            lastRaw = JSON.stringify(poll.data).slice(0, 400);
+            if (['completed', 'succeeded', 'success', 'ready', 'done', 'finished'].includes(lastStatus)) {
                 outputs = extractOutputs(pd);
+                if (outputs.length === 0) {
+                    throw new Error(`WaveSpeed completó pero no encontré la imagen. resp: ${lastRaw}`);
+                }
                 break;
             }
-            if (status === 'failed' || status === 'error') {
-                throw new Error(`WaveSpeed falló: ${pd.error || 'error desconocido'}`);
+            if (['failed', 'error', 'canceled', 'cancelled'].includes(lastStatus)) {
+                throw new Error(`WaveSpeed falló (${lastStatus}): ${pd.error || lastRaw}`);
             }
-            // created / processing / queued -> seguir esperando
+            // created / processing / queued / starting -> seguir esperando
         }
         if (outputs.length === 0) {
-            throw new Error('WaveSpeed no completó a tiempo (timeout de generación).');
+            throw new Error(`WaveSpeed no completó a tiempo tras ${Math.round(MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000)}s. último status: "${lastStatus}". resp: ${lastRaw}`);
         }
     }
 
