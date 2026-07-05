@@ -18,6 +18,12 @@ const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, ed
 function mkEsc(s) { const d = document.createElement('div'); d.textContent = (s == null ? '' : String(s)); return d.innerHTML; }
 function mkAttr(s) { return mkEsc(s).replace(/"/g, '&quot;'); }
 
+// Capitaliza la primera letra de cada palabra de un nombre (aunque venga mal escrito):
+// "melissa" -> "Melissa", "JORGE" -> "Jorge", "maria jose" -> "Maria Jose".
+function mkTitleCase(s) {
+    return String(s || '').toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+}
+
 function mkToast(msg, type) {
     if (typeof window.showToast === 'function') { window.showToast(msg, type || 'info'); return; }
     if (type === 'error') { console.error('[mockups]', msg); alert(msg); }
@@ -40,6 +46,14 @@ function mkFmtDate(iso) {
     catch (_) { return ''; }
 }
 
+// Abre el modal de conversación del CRM (chat-handlers.js) para el cliente del pedido.
+function mkOpenChat(orderId) {
+    const o = mkState.pending.find(x => x.id === orderId);
+    if (!o || !o.telefono) return;
+    if (typeof openConversationPreview !== 'function') { mkToast('El chat no está disponible.', 'error'); return; }
+    openConversationPreview({ stopPropagation() {} }, String(o.telefono), { id: String(o.telefono), name: o.clientName || '' });
+}
+
 // Heurística: intenta separar nombre1/nombre2/fecha del texto libre del pedido.
 // Los campos quedan EDITABLES, así que basta con acercar; el operador confirma.
 function mkParseDatos(text) {
@@ -56,7 +70,7 @@ function mkParseDatos(text) {
         .split(/\s+y\s+|\s*&\s*|\s*\+\s*|\s*\|\s*|,|\n|\s+and\s+/i)
         .map(clean)
         .filter(Boolean);
-    return { nombre1: parts[0] || '', nombre2: parts[1] || '', fecha: clean(fecha), personalizacion: raw };
+    return { nombre1: mkTitleCase(parts[0] || ''), nombre2: mkTitleCase(parts[1] || ''), fecha: clean(fecha), personalizacion: raw };
 }
 
 // ---------- init / tabs ----------
@@ -137,7 +151,7 @@ function mkRenderPending() {
         <div class="settings-card mk-card" data-order="${mkAttr(o.id)}" data-phone="${mkAttr(o.telefono)}" data-client="${mkAttr(o.clientName)}">
             <div class="mk-card-head">
                 <div>
-                    <span class="mk-order-num">${mkEsc(num)}</span>
+                    <span class="mk-order-num" style="cursor:pointer;" title="Ver conversación del cliente" onclick="mkOpenChat('${mkAttr(o.id)}')">${mkEsc(num)} <i class="fas fa-comments" style="font-size:.75em;opacity:.6;"></i></span>
                     <span class="mk-client">${mkEsc(o.clientName || 'Sin nombre')}</span>
                     <span class="mk-phone"><i class="fab fa-whatsapp"></i> ${mkEsc(o.telefono || '')}</span>
                 </div>
@@ -193,9 +207,14 @@ async function mkGenerate(orderId) {
     if (!card) return;
     const box = document.getElementById('mk-result-' + orderId);
     const btn = card.querySelector('.mk-gen-btn');
+    // Siempre capitalizar la primera letra de los nombres, aunque el cliente los haya escrito mal.
+    const n1 = mkTitleCase(card.querySelector('.mk-n1').value.trim());
+    const n2 = mkTitleCase(card.querySelector('.mk-n2').value.trim());
+    card.querySelector('.mk-n1').value = n1;   // reflejar la capitalización en el campo
+    card.querySelector('.mk-n2').value = n2;
     const fields = {
-        nombre1: card.querySelector('.mk-n1').value.trim(),
-        nombre2: card.querySelector('.mk-n2').value.trim(),
+        nombre1: n1,
+        nombre2: n2,
         fecha: card.querySelector('.mk-fecha').value.trim(),
         personalizacion: card.querySelector('.mk-datos').value.trim(),
     };

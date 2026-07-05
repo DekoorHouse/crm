@@ -86,12 +86,17 @@ router.get('/batch/:id', asyncHandler(async (req, res) => {
 // Se sobre-trae por fecha y se filtra en código para incluir también los
 // documentos antiguos que NO tienen el campo `estatus` (default = 'Sin estatus').
 router.get('/pending', asyncHandler(async (req, res) => {
-    const limit = Math.min(parseInt(req.query.limit) || 60, 150);
-    const snap = await db.collection('pedidos').orderBy('createdAt', 'desc').limit(limit * 3).get();
+    // TODOS los pedidos "Sin estatus" (sin ventana por fecha, para no perder ninguno).
+    // Nota: orderBy('createdAt') excluiría los docs que no tengan ese campo, así que
+    // filtramos por estatus (índice automático) y ordenamos por fecha en código.
+    const snap = await db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get();
     const pend = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        .filter(o => (o.estatus || 'Sin estatus') === 'Sin estatus')
-        .slice(0, limit);
+        .sort((a, b) => {
+            const ta = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
+            const tb = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
+            return tb - ta;   // más recientes primero; los que no tienen fecha, al final
+        });
 
     // Join del nombre del cliente (contacts_whatsapp/{telefono}.name)
     const phones = [...new Set(pend.map(o => o.contactId || o.telefono).filter(Boolean).map(String))];
