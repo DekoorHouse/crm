@@ -12,6 +12,10 @@ const MK_API = (typeof window !== 'undefined' && window.API_BASE_URL) ? window.A
 // Prompt semilla para plantillas nuevas (clave: evita que la IA re-dibuje la lámpara).
 const MK_SEED_PROMPT = 'Edita esta foto de la lámpara. NO modifiques la lámpara, su figura, base, acrílico, color, iluminación ni el fondo. ÚNICAMENTE reemplaza el texto grabado: el primer nombre por "{nombre1}", el segundo nombre por "{nombre2}", y la fecha por "{fecha}". Conserva exactamente la misma tipografía, tamaño, color y posición del texto. El resultado debe verse foto-realista e idéntico salvo por el texto.';
 
+// Plantilla de aviso para conversaciones cerradas (+24h). 'foto_lista' es solo texto
+// (sin variables ni header de imagen): avisa "tu foto está lista, respóndenos".
+const MK_CLOSED_TEMPLATE = { name: 'foto_lista', language: 'es' };
+
 const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null };
 
 // ---------- utilidades ----------
@@ -293,8 +297,11 @@ async function mkSend(orderId) {
 
         if (!ctx.windowOpen) {
             // Conversación cerrada (+24h): WhatsApp no permite texto/foto libre.
-            mkToast('Conversación cerrada (+24h). Por ahora envía la plantilla manualmente desde el chat; el envío por plantilla queda pendiente.', 'error');
-            setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp', false);
+            // Mandamos la plantilla de aviso 'foto_lista'; la foto se envía cuando el cliente responda.
+            setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Enviando aviso…', true);
+            await mkSendChat(telefono, { template: MK_CLOSED_TEMPLATE });
+            mkToast('Conversación cerrada: envié la plantilla "foto lista" ✅. Cuando el cliente responda, vuelve a darle Enviar para mandarle la foto.', 'success');
+            setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar foto (cuando responda)', false);
             return;
         }
 
