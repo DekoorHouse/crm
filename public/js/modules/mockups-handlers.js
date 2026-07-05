@@ -63,6 +63,7 @@ function mkParseDatos(text) {
 async function initializeMockupsHandlers() {
     mkState.tab = 'pendientes';
     mkState.editing = null;
+    mkBindPaste();
     // Cargar plantillas ANTES que pendientes: la lista de pendientes las necesita
     // (selector de plantilla + mensaje de "crea la primera").
     try { await mkLoadTemplates(); } catch (e) { mkToast(e.message, 'error'); }
@@ -334,12 +335,12 @@ function mkRenderTemplateForm() {
             <div style="display:grid;grid-template-columns:160px 1fr;gap:18px;align-items:start;">
                 <div>
                     <label class="text-xs font-semibold text-gray-500">Foto base</label>
-                    <img id="mk-tpl-preview" class="mk-tpl-thumb" style="width:150px;height:150px;object-fit:cover;display:block;margin:6px 0;" ${t.baseImageUrl ? `src="${mkAttr(t.baseImageUrl)}"` : ''} onerror="this.removeAttribute('src')" alt="">
+                    <img id="mk-tpl-preview" class="mk-tpl-thumb" style="width:150px;height:150px;object-fit:cover;display:block;margin:6px 0;cursor:pointer;" ${t.baseImageUrl ? `src="${mkAttr(t.baseImageUrl)}"` : ''} onerror="this.removeAttribute('src')" onclick="document.getElementById('mk-tpl-file').click()" ondragover="event.preventDefault()" ondrop="mkOnTemplateDrop(event)" title="Clic para subir, o pega con Ctrl+V" alt="">
                     <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;">
                         <i class="fas fa-upload mr-2"></i>Subir foto
                         <input type="file" id="mk-tpl-file" accept="image/*" onchange="mkOnTemplateFile(event)" style="display:none;">
                     </label>
-                    <p class="mk-muted" style="margin-top:4px;">Debe ser pública para que la IA la lea.</p>
+                    <p class="mk-muted" style="margin-top:4px;">Sube, arrastra o pega con <b>Ctrl+V</b>. Debe ser pública.</p>
                 </div>
                 <div>
                     <div style="display:grid;grid-template-columns:1fr 120px;gap:10px;">
@@ -366,11 +367,39 @@ function mkRenderTemplateForm() {
 
 function mkOnTemplateFile(ev) {
     const file = ev.target.files && ev.target.files[0];
-    if (!file) return;
+    if (file) mkUseTemplateFile(file);
+}
+
+// Función compartida: recibe un File/Blob (de subir, arrastrar o pegar) y lo usa como foto base.
+function mkUseTemplateFile(file) {
+    if (!file || !file.type || !file.type.startsWith('image/')) { mkToast('Solo se aceptan imágenes.', 'error'); return; }
     mkState.newFile = file;
     const reader = new FileReader();
     reader.onload = e => { const img = document.getElementById('mk-tpl-preview'); if (img) { img.src = e.target.result; img.style.opacity = 1; } };
     reader.readAsDataURL(file);
+}
+
+function mkOnTemplateDrop(ev) {
+    ev.preventDefault();
+    const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (f) mkUseTemplateFile(f);
+}
+
+// Pegar imagen con Ctrl+V (solo cuando el formulario de plantilla está abierto).
+let mkPasteBound = false;
+function mkBindPaste() {
+    if (mkPasteBound) return;
+    mkPasteBound = true;
+    document.addEventListener('paste', (e) => {
+        if (!document.getElementById('mk-tpl-file')) return; // form de plantilla no abierto
+        const items = (e.clipboardData && e.clipboardData.items) || [];
+        for (const it of items) {
+            if (it.type && it.type.startsWith('image/')) {
+                const blob = it.getAsFile();
+                if (blob) { mkUseTemplateFile(blob); e.preventDefault(); mkToast('Imagen pegada ✓', 'success'); break; }
+            }
+        }
+    });
 }
 
 function mkCancelTemplate() {
