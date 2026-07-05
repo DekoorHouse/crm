@@ -335,7 +335,7 @@ function mkRenderTemplateForm() {
             <div style="display:grid;grid-template-columns:160px 1fr;gap:18px;align-items:start;">
                 <div>
                     <label class="text-xs font-semibold text-gray-500">Foto base</label>
-                    <img id="mk-tpl-preview" class="mk-tpl-thumb" style="width:150px;height:150px;object-fit:cover;display:block;margin:6px 0;cursor:pointer;" ${t.baseImageUrl ? `src="${mkAttr(t.baseImageUrl)}"` : ''} onerror="this.removeAttribute('src')" onclick="document.getElementById('mk-tpl-file').click()" ondragover="event.preventDefault()" ondrop="mkOnTemplateDrop(event)" title="Clic para subir, o pega con Ctrl+V" alt="">
+                    <img id="mk-tpl-preview" class="mk-tpl-thumb" style="width:180px;height:180px;object-fit:cover;display:block;margin:6px 0;cursor:pointer;" ${t.baseImageUrl ? `src="${mkAttr(t.baseImageUrl)}"` : ''} onerror="this.removeAttribute('src')" onclick="document.getElementById('mk-tpl-file').click()" ondragover="event.preventDefault()" ondrop="mkOnTemplateDrop(event)" title="Clic para subir, o pega con Ctrl+V" alt="">
                     <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;">
                         <i class="fas fa-upload mr-2"></i>Subir foto
                         <input type="file" id="mk-tpl-file" accept="image/*" onchange="mkOnTemplateFile(event)" style="display:none;">
@@ -346,7 +346,7 @@ function mkRenderTemplateForm() {
                     <div style="display:grid;grid-template-columns:1fr 120px;gap:10px;">
                         <div><label class="text-xs font-semibold text-gray-500">Nombre de la plantilla</label><input id="mk-tpl-nombre" value="${mkAttr(t.nombre)}" placeholder="Infinito Corazones" class="!mb-0"></div>
                         <div><label class="text-xs font-semibold text-gray-500">Aspecto</label>
-                            <select id="mk-tpl-aspect" class="!mb-0">${ratios.map(r => `<option value="${r}"${r === (t.aspectRatio || '1:1') ? ' selected' : ''}>${r}</option>`).join('')}</select>
+                            <select id="mk-tpl-aspect" class="!mb-0" onchange="mkUpdateAspectPreview()">${ratios.map(r => `<option value="${r}"${r === (t.aspectRatio || '1:1') ? ' selected' : ''}>${r}</option>`).join('')}</select>
                         </div>
                     </div>
                     <div style="margin-top:10px;"><label class="text-xs font-semibold text-gray-500">Prompt (usa {nombre1} {nombre2} {fecha} {personalizacion})</label>
@@ -363,6 +363,24 @@ function mkRenderTemplateForm() {
                 </div>
             </div>
         </div>`;
+    mkUpdateAspectPreview();
+}
+
+// Ajusta la forma de la miniatura de la foto base al aspecto elegido (para previsualizar el encuadre).
+function mkAspectDims(ratio, max) {
+    max = max || 180;
+    const m = String(ratio || '1:1').split(':').map(Number);
+    const w = m[0] || 1, h = m[1] || 1;
+    return (w >= h) ? { w: max, h: Math.round(max * h / w) } : { w: Math.round(max * w / h), h: max };
+}
+
+function mkUpdateAspectPreview() {
+    const sel = document.getElementById('mk-tpl-aspect');
+    const img = document.getElementById('mk-tpl-preview');
+    if (!sel || !img) return;
+    const d = mkAspectDims(sel.value, 180);
+    img.style.width = d.w + 'px';
+    img.style.height = d.h + 'px';
 }
 
 function mkOnTemplateFile(ev) {
