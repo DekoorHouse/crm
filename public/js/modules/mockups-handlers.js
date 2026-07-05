@@ -334,8 +334,11 @@ function mkRenderTemplateForm() {
             <div style="display:grid;grid-template-columns:160px 1fr;gap:18px;align-items:start;">
                 <div>
                     <label class="text-xs font-semibold text-gray-500">Foto base</label>
-                    <img id="mk-tpl-preview" class="mk-tpl-thumb" style="width:150px;height:150px;display:block;margin:6px 0;" src="${mkAttr(t.baseImageUrl || '')}" onerror="this.style.opacity=.3">
-                    <input type="file" id="mk-tpl-file" accept="image/*" onchange="mkOnTemplateFile(event)" style="font-size:.8rem;">
+                    <img id="mk-tpl-preview" class="mk-tpl-thumb" style="width:150px;height:150px;object-fit:cover;display:block;margin:6px 0;" ${t.baseImageUrl ? `src="${mkAttr(t.baseImageUrl)}"` : ''} onerror="this.removeAttribute('src')" alt="">
+                    <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;">
+                        <i class="fas fa-upload mr-2"></i>Subir foto
+                        <input type="file" id="mk-tpl-file" accept="image/*" onchange="mkOnTemplateFile(event)" style="display:none;">
+                    </label>
                     <p class="mk-muted" style="margin-top:4px;">Debe ser pública para que la IA la lea.</p>
                 </div>
                 <div>
