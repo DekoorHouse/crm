@@ -231,6 +231,37 @@ router.get('/generate-status/:jobId', asyncHandler(async (req, res) => {
     res.json({ success: true, status: 'completed', image: saved[0], cost });
 }));
 
+// GET /api/mockups/send-context?telefono=... — datos para armar el envío del preview:
+// textos de /cuatro y /bbb, y si la ventana de 24h de WhatsApp está abierta.
+router.get('/send-context', asyncHandler(async (req, res) => {
+    const telefono = String(req.query.telefono || '').trim();
+    if (!telefono) return res.status(400).json({ success: false, error: 'Falta telefono.' });
+
+    // Textos de las respuestas rápidas /cuatro (pedido listo + pago) y /bbb (tarjeta)
+    const qr = {};
+    try {
+        const qrSnap = await db.collection('quick_replies').where('shortcut', 'in', ['cuatro', 'bbb']).get();
+        qrSnap.forEach(d => { const x = d.data(); qr[String(x.shortcut || '').toLowerCase()] = x.message || ''; });
+    } catch (e) { console.error('[mockups] quick_replies:', e.message); }
+
+    // Ventana de 24h: ¿el último mensaje ENTRANTE (from === telefono) es < 24h?
+    let windowOpen = false;
+    try {
+        const msgs = await db.collection('contacts_whatsapp').doc(telefono).collection('messages')
+            .orderBy('timestamp', 'desc').limit(50).get();
+        for (const d of msgs.docs) {
+            const m = d.data();
+            if (m.from && String(m.from) === telefono) {   // entrante (del cliente)
+                const t = m.timestamp && m.timestamp.toMillis ? m.timestamp.toMillis() : 0;
+                windowOpen = t > 0 && (Date.now() - t) <= 24 * 3600 * 1000;
+                break;
+            }
+        }
+    } catch (e) { console.error('[mockups] window check:', e.message); /* ante la duda: cerrada */ }
+
+    res.json({ success: true, windowOpen, cuatro: qr.cuatro || '', bbb: qr.bbb || '' });
+}));
+
 // POST /api/mockups/send — Enviar un preview al cliente por WhatsApp
 router.post('/send', asyncHandler(async (req, res) => {
     const { telefono, imageUrl, caption } = req.body;

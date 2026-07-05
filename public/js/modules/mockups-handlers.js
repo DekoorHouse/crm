@@ -35,7 +35,7 @@ async function mkFetchJson(url, opts) {
     let data = {};
     try { data = await res.json(); } catch (_) { /* noop */ }
     if (!res.ok || data.success === false) {
-        throw new Error(data.error || ('Error ' + res.status));
+        throw new Error(data.error || data.message || ('Error ' + res.status));
     }
     return data;
 }
@@ -285,19 +285,42 @@ async function mkSend(orderId) {
     if (!imageUrl) { mkToast('Genera el preview primero.', 'error'); return; }
 
     const btn = card.querySelector('.mk-send-btn');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Enviando…'; }
+    const setBtn = (html, disabled) => { if (btn) { btn.disabled = disabled; btn.innerHTML = html; } };
+    setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Enviando…', true);
+
     try {
-        await mkFetchJson('/api/mockups/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ telefono, imageUrl, caption }),
-        });
-        mkToast('Preview enviado por WhatsApp ✅', 'success');
-        if (btn) { btn.innerHTML = '<i class="fas fa-check mr-2"></i>Enviado'; }
+        const ctx = await mkFetchJson('/api/mockups/send-context?telefono=' + encodeURIComponent(telefono));
+
+        if (!ctx.windowOpen) {
+            // Conversación cerrada (+24h): WhatsApp no permite texto/foto libre.
+            mkToast('Conversación cerrada (+24h). Por ahora envía la plantilla manualmente desde el chat; el envío por plantilla queda pendiente.', 'error');
+            setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp', false);
+            return;
+        }
+
+        // Ventana abierta -> secuencia: /cuatro (pago) -> /bbb (tarjeta) -> foto.
+        // Va por el endpoint del chat para que quede registrado y dispare la etapa post-venta.
+        if (ctx.cuatro) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>1/3 info de pago…', true); await mkSendChat(telefono, { text: ctx.cuatro }); }
+        if (ctx.bbb) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>2/3 tarjeta…', true); await mkSendChat(telefono, { text: ctx.bbb }); }
+        setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>3/3 foto…', true);
+        await mkSendChat(telefono, { text: caption, fileUrl: imageUrl, fileType: 'image/webp' });
+
+        mkToast('Enviado al cliente ✅ (pago + tarjeta + foto)', 'success');
+        setBtn('<i class="fas fa-check mr-2"></i>Enviado', true);
     } catch (e) {
         mkToast('Error al enviar: ' + e.message, 'error');
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp'; }
+        setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp', false);
     }
+}
+
+// Envía un mensaje por el mismo endpoint que usa el chat (registra en la conversación
+// y procesa comandos como /cuatro). body: { text } | { text, fileUrl, fileType }.
+function mkSendChat(telefono, body) {
+    return mkFetchJson('/api/contacts/' + encodeURIComponent(telefono) + '/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
 }
 
 // ---------- plantillas (CRUD / UI) ----------
