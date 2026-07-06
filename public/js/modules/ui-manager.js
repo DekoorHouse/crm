@@ -607,7 +607,7 @@ async function crearGuiaDesdeModal(payloadEnc) {
               </div>`;
             return;
         }
-        if (!r.ok || !j.success) throw new Error(j.message || (j.detail ? JSON.stringify(j.detail) : ('HTTP ' + r.status)));
+        if (!r.ok || !j.success) { const _dt = j.detail ? (typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)) : ''; throw new Error((j.message || ('HTTP ' + r.status)) + (_dt ? ' — ' + _dt : '')); }
         const etiqueta = j.pdfPath ? `<a href="${API_BASE_URL}/api/envios/etiqueta?path=${encodeURIComponent(j.pdfPath)}" target="_blank" rel="noopener" style="${btnStyle}">🏷️ Descargar etiqueta</a>` : (j.labelUrl ? `<a href="${j.labelUrl}" target="_blank" rel="noopener" style="${btnStyle}">🏷️ Etiqueta</a>` : '');
         const rastreo = j.tracking ? `<a href="${j.tracking}" target="_blank" rel="noopener" style="${btnStyle};background:#334155">📍 Rastrear</a>` : '';
         const titulo = j.already ? 'Este pedido ya tenía guía' : '¡Guía creada!';
