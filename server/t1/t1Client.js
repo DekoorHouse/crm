@@ -170,6 +170,7 @@ async function crearGuia({ destino, pedido, paquete = {}, mensajeria, tipoServic
             mensajeria: mensajeria || T1_MENSAJERIA,
             tipo_servicio: servicio,
             generar_recoleccion: !!generarRecoleccion,
+            dias_embarque: Number(process.env.T1_DIAS_EMBARQUE || 1), // T1 lo exige: días para embarcar
         },
         datos_origen: { ...DATOS_ORIGEN },
         datos_destino: {
