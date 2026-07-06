@@ -196,11 +196,27 @@ async function crearGuia({ destino, pedido, paquete = {}, mensajeria, tipoServic
     return r.data;
 }
 
+/**
+ * GET /webhook-maestro/query/estado-guia/:num_guia — estado actual de una guía. Devuelve la
+ * respuesta cruda { success, message, detail:{ codigo, descripcion, familia_*, guia, fecha, recibe } }.
+ * Si la guía aún no la recolectan, T1 suele responder sin `descripcion` o con error.
+ */
+async function rastrear(guia) {
+    const g = String(guia || '').trim();
+    if (!g) throw new Error('rastrear: falta el número de guía');
+    const r = await axios.get(`${T1_API_BASE}/webhook-maestro/query/estado-guia/${encodeURIComponent(g)}`, {
+        headers: await _authHeaders(),
+        timeout: 20000,
+    });
+    return r.data;
+}
+
 module.exports = {
     getToken,
     consultarSaldo,
     cotizar,
     crearGuia,
+    rastrear,
     // exportados para pruebas / inspección
     _config: { T1_API_BASE, T1_TOKEN_URL, T1_SHOP_ID, T1_COMERCIO_ID, T1_MENSAJERIA, T1_TIPO_SERVICIO, DEFAULT_PAQUETE, DATOS_ORIGEN },
 };

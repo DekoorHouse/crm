@@ -8266,6 +8266,35 @@ router.post('/envios/crear-guia', async (req, res) => {
     }
 });
 
+// --- GET /api/rastreo/:guia — rastreo PÚBLICO amigable de una guía (para la página del cliente). ---
+router.get('/rastreo/:guia', async (req, res) => {
+    try {
+        const guia = String(req.params.guia || '').replace(/[^\w-]/g, '');
+        if (!guia) return res.status(400).json({ success: false, message: 'Falta el número de guía.' });
+        let data;
+        try {
+            data = await t1.rastrear(guia);
+        } catch (e) {
+            // T1 error (frecuente cuando la guía es reciente y aún no la recolectan) -> "es cuestión de tiempo".
+            return res.json({ success: true, guia, found: false, fase: 'creada', message: 'Tu guía ya fue creada 🎉 La paquetería aún no la recolecta; es cuestión de tiempo para que aparezca la información de rastreo. Vuelve a consultar más tarde.' });
+        }
+        const d = (data && data.detail) || {};
+        const desc = String(d.descripcion || '').trim();
+        if (!desc) {
+            return res.json({ success: true, guia, found: false, fase: 'creada', message: 'Tu guía ya fue creada 🎉 La paquetería aún no la recolecta; es cuestión de tiempo para que aparezca la información de rastreo. Vuelve a consultar más tarde.' });
+        }
+        const dl = desc.toLowerCase();
+        const entregado = /entreg/.test(dl);
+        const enCamino = /tr[aá]nsito|camino|ruta|reparto|distribuci|salida/.test(dl);
+        const recolectado = /recolec|recogid|recibid|acopio/.test(dl);
+        const fase = entregado ? 'entregado' : (enCamino ? 'en_camino' : (recolectado ? 'recolectado' : 'procesando'));
+        return res.json({ success: true, guia, found: true, estado: desc, codigo: d.codigo || null, fecha: d.fecha || null, recibe: d.recibe || null, entregado, fase });
+    } catch (e) {
+        console.error('[RASTREO]', e.message);
+        res.status(502).json({ success: false, message: 'No se pudo consultar el rastreo en este momento. Intenta más tarde.' });
+    }
+});
+
 // --- GET /api/envios/etiqueta?path=etiquetas/... — sirve el PDF de la etiqueta desde el bucket. ---
 router.get('/envios/etiqueta', async (req, res) => {
     try {

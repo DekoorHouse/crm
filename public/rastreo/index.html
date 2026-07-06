@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>Rastrea tu pedido · Dekoor</title>
+    <link rel="icon" href="/favicon.png">
+    <style>
+        :root { --teal:#163C51; --teal2:#1f5069; --accent:#ef4444; --ok:#16a34a; --bg:#f4f6f8; --card:#fff; --text:#1f2937; --muted:#6b7280; --line:#e5e7eb; }
+        * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+        body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--text); }
+        .wrap { max-width:560px; margin:0 auto; padding:22px 16px 60px; }
+        .brand { text-align:center; margin:14px 0 22px; }
+        .brand img { height:48px; }
+        .brand h1 { font-size:1.25rem; margin:12px 0 2px; color:var(--teal); }
+        .brand p { margin:0; color:var(--muted); font-size:.9rem; }
+        .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:0 6px 22px rgba(22,60,81,.06); }
+        label { display:block; font-size:.82rem; color:var(--muted); margin-bottom:6px; font-weight:600; }
+        .row { display:flex; gap:8px; }
+        input { flex:1; padding:13px 14px; border:1px solid var(--line); border-radius:11px; font-size:1rem; outline:none; }
+        input:focus { border-color:var(--teal2); box-shadow:0 0 0 3px rgba(31,80,105,.12); }
+        button { background:var(--teal); color:#fff; border:none; border-radius:11px; padding:0 18px; font-size:.95rem; font-weight:700; cursor:pointer; }
+        button:disabled { opacity:.6; cursor:default; }
+        .result { margin-top:18px; }
+        .hidden { display:none; }
+        .status-head { text-align:center; padding:6px 0 4px; }
+        .status-emoji { font-size:2.6rem; line-height:1; }
+        .status-title { font-size:1.15rem; font-weight:800; margin:8px 0 2px; color:var(--teal); }
+        .status-sub { color:var(--muted); font-size:.9rem; margin:0; }
+        .guia-chip { display:inline-block; margin-top:10px; background:#eef2f5; color:var(--teal); font-weight:700; padding:5px 12px; border-radius:999px; font-size:.85rem; letter-spacing:.5px; }
+        .steps { display:flex; justify-content:space-between; margin:22px 4px 6px; position:relative; }
+        .steps::before { content:''; position:absolute; top:15px; left:8%; right:8%; height:3px; background:var(--line); z-index:0; }
+        .barfill { position:absolute; top:15px; left:8%; height:3px; background:var(--ok); z-index:1; transition:width .4s; }
+        .step { position:relative; z-index:2; text-align:center; width:25%; }
+        .dot { width:32px; height:32px; border-radius:50%; background:#fff; border:3px solid var(--line); display:flex; align-items:center; justify-content:center; margin:0 auto; font-size:14px; }
+        .step.on .dot { border-color:var(--ok); background:var(--ok); color:#fff; }
+        .step.cur .dot { border-color:var(--teal); background:var(--teal); color:#fff; box-shadow:0 0 0 4px rgba(22,60,81,.14); }
+        .step small { display:block; margin-top:6px; font-size:.68rem; color:var(--muted); line-height:1.2; }
+        .step.on small, .step.cur small { color:var(--text); font-weight:600; }
+        .info-box { margin-top:16px; background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:13px 14px; border-radius:12px; font-size:.9rem; text-align:center; }
+        .info-box.wait { background:#eff6ff; border-color:#bfdbfe; color:#1e40af; }
+        .meta { margin-top:14px; font-size:.85rem; color:var(--muted); text-align:center; }
+        .err { margin-top:16px; background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:12px 14px; border-radius:12px; font-size:.9rem; text-align:center; }
+        .foot { text-align:center; color:#9aa4ad; font-size:.78rem; margin-top:26px; }
+        .spin { display:inline-block; width:18px; height:18px; border:3px solid rgba(255,255,255,.5); border-top-color:#fff; border-radius:50%; animation:sp .8s linear infinite; vertical-align:-3px; }
+        @keyframes sp { to { transform:rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="brand">
+            <img src="/img/logo-para-fondo-blanco.png?v=1" alt="Dekoor" onerror="this.style.display='none'">
+            <h1>Rastrea tu pedido</h1>
+            <p>Escribe tu número de guía para ver el estado de tu envío.</p>
+        </div>
+
+        <div class="card">
+            <label for="guia">Número de guía / rastreo</label>
+            <div class="row">
+                <input id="guia" type="text" inputmode="numeric" autocomplete="off" placeholder="Ej. 8617898483">
+                <button id="btn" onclick="rastrear()">Rastrear</button>
+            </div>
+            <div id="result" class="result hidden"></div>
+        </div>
+
+        <p class="foot">Dekoor · Envíos DHL / Estafeta</p>
+    </div>
+
+    <script>
+    const PHASES = ['creada', 'recolectado', 'en_camino', 'entregado'];
+    const STEP_LABELS = ['Guía creada', 'Recolectada', 'En camino', 'Entregada'];
+    const STEP_ICONS = ['📦', '🚚', '🛣️', '✅'];
+    const EMOJI = { creada:'📦', procesando:'📦', recolectado:'🚚', en_camino:'🛣️', entregado:'🎉' };
+
+    function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    function fechaBonita(iso){
+        if(!iso) return '';
+        try {
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleString('es-MX', { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
+        } catch(e){ return ''; }
+    }
+
+    function stepsHtml(fase){
+        // índice de la fase actual (procesando cuenta como paso 1 ya avanzado)
+        let idx = PHASES.indexOf(fase);
+        if (fase === 'procesando') idx = 0;
+        const curIdx = fase === 'entregado' ? 3 : (idx < 0 ? 0 : idx);
+        const fill = ['0%','33%','66%','100%'][curIdx];
+        let html = '<div class="steps"><div class="barfill" style="width:'+fill+'"></div>';
+        for (let i=0;i<4;i++){
+            const cls = i < curIdx ? 'on' : (i === curIdx ? 'cur' : '');
+            const icon = i < curIdx ? '✓' : STEP_ICONS[i];
+            html += '<div class="step '+cls+'"><div class="dot">'+icon+'</div><small>'+STEP_LABELS[i]+'</small></div>';
+        }
+        return html + '</div>';
+    }
+
+    function render(d){
+        const box = document.getElementById('result');
+        box.classList.remove('hidden');
+        if (!d || d.success === false){
+            box.innerHTML = '<div class="err">'+esc((d&&d.message)||'No se pudo consultar el rastreo. Intenta más tarde.')+'</div>';
+            return;
+        }
+        const fase = d.fase || (d.found ? 'procesando' : 'creada');
+        const emoji = EMOJI[fase] || '📦';
+        let html = '<div class="status-head"><div class="status-emoji">'+emoji+'</div>';
+        if (d.found){
+            html += '<p class="status-title">'+esc(d.estado)+'</p>';
+            const f = fechaBonita(d.fecha);
+            html += '<p class="status-sub">'+(f?('Actualizado: '+esc(f)):'')+'</p>';
+        } else {
+            html += '<p class="status-title">Guía creada</p><p class="status-sub">Aún sin movimientos</p>';
+        }
+        html += '<div class="guia-chip">GUÍA '+esc(d.guia)+'</div></div>';
+        html += stepsHtml(fase);
+        if (!d.found){
+            html += '<div class="info-box wait">'+esc(d.message||'Tu guía fue creada. Es cuestión de tiempo para que aparezca el rastreo.')+'</div>';
+        } else if (d.entregado){
+            html += '<div class="info-box">¡Tu pedido fue entregado! '+(d.recibe?('Recibió: '+esc(d.recibe)):'')+' 🎉</div>';
+        }
+        box.innerHTML = html;
+    }
+
+    async function rastrear(){
+        const input = document.getElementById('guia');
+        const btn = document.getElementById('btn');
+        const guia = (input.value||'').trim().replace(/[^\w-]/g,'');
+        const box = document.getElementById('result');
+        if (!guia){ input.focus(); return; }
+        // reflejar en la URL (para compartir)
+        try { history.replaceState(null, '', '/rastreo/'+encodeURIComponent(guia)); } catch(e){}
+        btn.disabled = true; const orig = btn.innerHTML; btn.innerHTML = '<span class="spin"></span>';
+        box.classList.remove('hidden'); box.innerHTML = '<p class="meta">Consultando…</p>';
+        try {
+            const r = await fetch('/api/rastreo/'+encodeURIComponent(guia));
+            const d = await r.json();
+            render(d);
+        } catch(e){
+            box.innerHTML = '<div class="err">No se pudo conectar. Revisa tu internet e intenta de nuevo.</div>';
+        }
+        btn.disabled = false; btn.innerHTML = orig;
+    }
+
+    // Pre-rellenar desde la URL: /rastreo/12345  o  ?guia=12345
+    (function(){
+        let g = '';
+        const m = location.pathname.match(/\/rastreo\/([^\/?#]+)/);
+        if (m) g = decodeURIComponent(m[1]);
+        if (!g){ const p = new URLSearchParams(location.search).get('guia'); if (p) g = p; }
+        if (g){ document.getElementById('guia').value = g.replace(/[^\w-]/g,''); rastrear(); }
+        document.getElementById('guia').addEventListener('keydown', e => { if (e.key === 'Enter') rastrear(); });
+    })();
+    </script>
+</body>
+</html>

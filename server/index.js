@@ -441,6 +441,12 @@ app.get(['/datos-estafeta', '/datos-estafeta/:pedido'], (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'datos-estafeta', 'index.html'));
 });
 
+// --- Página pública de rastreo amigable (el cliente ve el estado de su guía) ---
+// Número de guía en la URL: /rastreo/12345 (o /rastreo y lo escribe). Usa GET /api/rastreo/:guia.
+app.get(['/rastreo', '/rastreo/:guia'], (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'rastreo', 'index.html'));
+});
+
 // --- Repartos MTY (entregas locales por repartidor propio) ---
 // Formulario público para que el cliente mande su dirección.
 app.get(['/mty', '/mty/:pedido'], (req, res) => {
