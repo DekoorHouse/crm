@@ -1171,6 +1171,48 @@ async function sendApprovedTemplateMessage(waId, templateName, params = [], { so
 }
 
 /**
+ * Al crear una guía de envío: avisa al cliente por WhatsApp. Si la ventana de 24h está CERRADA,
+ * abre con la plantilla aprobada `hola_guia` (le pasa la guía por si la plantilla usa {{1}}). Luego
+ * manda la respuesta rápida `/dgui` y, en un mensaje aparte, el número de rastreo. Tolerante a fallos.
+ * OJO WhatsApp: con la ventana cerrada, los mensajes de formato libre (/dgui + nº) solo se entregan
+ * cuando el cliente responde; la plantilla sí llega siempre.
+ */
+async function notifyGuiaToCustomer(contactId, guia) {
+    if (!contactId || !guia) return;
+    try {
+        // Ventana de 24h: abierta si el último mensaje ENTRANTE tiene < 24h.
+        let windowOpen = false;
+        try {
+            const ms = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'desc').limit(50).get();
+            const lastInbound = ms.docs.find(d => d.data().from === contactId);
+            const t = (lastInbound && lastInbound.data().timestamp && lastInbound.data().timestamp.toDate) ? lastInbound.data().timestamp.toDate() : null;
+            windowOpen = !!(t && (Date.now() - t.getTime() < 24 * 60 * 60 * 1000));
+        } catch (e) { console.warn('[GUIA-NOTIF] no se pudo calcular la ventana:', e.message); }
+
+        // Ventana cerrada -> abrir con la plantilla hola_guia (pasa la guía por si la plantilla la usa).
+        if (!windowOpen) {
+            try { await sendApprovedTemplateMessage(contactId, 'hola_guia', [String(guia)], { source: 'guia' }); }
+            catch (e) { console.warn('[GUIA-NOTIF] plantilla hola_guia falló:', e.message); }
+        }
+
+        // Respuesta rápida /dgui (su contenido: texto + archivo si tiene).
+        try {
+            const qr = await findQuickReplyByShortcut('dgui');
+            if (qr) await sendAdvancedWhatsAppMessage(contactId, { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null });
+            else console.warn('[GUIA-NOTIF] no existe la respuesta rápida /dgui');
+        } catch (e) { console.warn('[GUIA-NOTIF] /dgui falló:', e.message); }
+
+        // Número de rastreo en un mensaje aparte.
+        try { await sendAdvancedWhatsAppMessage(contactId, { text: String(guia) }); }
+        catch (e) { console.warn('[GUIA-NOTIF] envío del nº de guía falló:', e.message); }
+
+        console.log(`[GUIA-NOTIF] Aviso de guía ${guia} para ${contactId} (ventana ${windowOpen ? 'abierta' : 'cerrada'}).`);
+    } catch (e) {
+        console.warn('[GUIA-NOTIF] error general:', e.message);
+    }
+}
+
+/**
  * Registra que un pedido ya tiene sus datos de envío completos para que Rosario genere la guía.
  * Ya NO manda un mensaje por pedido: encola el número en `shipping_digest_queue` y el resumen
  * diario (shippingDigestScheduler, 1:30 pm MX) manda UN solo mensaje con todos los números del
@@ -2768,6 +2810,7 @@ module.exports = {
     getPurchaseEventTrigger,
     sendPurchaseEventOnFabricar,
     sendApprovedTemplateMessage,
+    notifyGuiaToCustomer,
     markComprobanteValidadoAndSendForm
 };
 

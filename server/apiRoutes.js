@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
 const { calcularReporte } = require('./inventario/inventarioReporte');
@@ -8191,11 +8191,14 @@ router.post('/envios/crear-guia', async (req, res) => {
         const col = b.manualId ? 'envios_manuales' : 'pedidos';
         const docId = b.manualId || b.docId || null;
         let docRef = null;
+        let contactIdNotif = b.contactId || null; // para avisar al cliente por WhatsApp al crear la guía
         if (docId) {
             docRef = db.collection(col).doc(docId);
             const snap = await docRef.get();
             if (!snap.exists) return res.status(404).json({ success: false, message: 'El pedido o la línea no existe.' });
-            const ex = snap.data() && snap.data().guiaEnvio;
+            const dd = snap.data() || {};
+            if (dd.contactId) contactIdNotif = dd.contactId;
+            const ex = dd.guiaEnvio;
             if (ex && ex.guia) {
                 return res.json({ success: true, already: true, guia: ex.guia, numOrden: ex.numOrden || null, pickUp: ex.pickUp || null, pdfPath: ex.pdfPath || null, tracking: ex.tracking || null });
             }
@@ -8249,6 +8252,11 @@ router.post('/envios/crear-guia', async (req, res) => {
                 console.error('[GUIA] CRÍTICO: guía creada/cobrada pero NO persistida:', guia, e3.message);
                 return res.status(500).json({ success: false, persistError: true, guia, numOrden, tracking, pdfPath, labelUrl, message: 'La guía se creó y cobró, pero no se pudo guardar en el CRM. Anota el número de guía.' });
             }
+        }
+
+        // Avisar al cliente por WhatsApp (fire-and-forget: no bloquea la respuesta ni afecta la guía ya creada).
+        if (contactIdNotif) {
+            notifyGuiaToCustomer(contactIdNotif, guia).catch(e => console.warn('[GUIA] notifyGuiaToCustomer falló:', e.message));
         }
 
         res.json({ success: true, proveedor, guia, numOrden, pickUp, pdfPath, labelUrl: labelUrl || null, tracking: tracking || null });
