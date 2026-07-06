@@ -907,6 +907,30 @@ async function getLastOrderNumberForContact(contactId) {
 }
 
 /**
+ * Devuelve el número de GUÍA (rastreo) más reciente del contacto (de guiaEnvio en sus pedidos),
+ * o null. Se usa para rellenar el atajo /rastreo con el link ya con el número de guía.
+ */
+async function getLastGuiaForContact(contactId) {
+    try {
+        const snap = await db.collection('pedidos').where('telefono', '==', contactId).get();
+        if (snap.empty) return null;
+        let best = null, bestMs = -1;
+        snap.forEach(doc => {
+            const d = doc.data();
+            const g = d.guiaEnvio && d.guiaEnvio.guia;
+            if (!g) return;
+            const ge = d.guiaEnvio.createdAt;
+            const ms = (ge && ge.toMillis) ? ge.toMillis() : (d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0);
+            if (ms >= bestMs) { bestMs = ms; best = String(g); }
+        });
+        return best;
+    } catch (e) {
+        console.warn('[AI] No se pudo obtener la última guía para', contactId, e.message);
+        return null;
+    }
+}
+
+/**
  * Reenvía un comprobante sospechoso al admin por WhatsApp (texto + imagen) para que lo
  * verifique manualmente. Fire-and-forget: cualquier error solo se loguea. OJO: si el admin
  * no tiene ventana de 24h abierta con el número del negocio, el envío libre puede fallar
@@ -1202,9 +1226,18 @@ async function notifyGuiaToCustomer(contactId, guia) {
             else console.warn('[GUIA-NOTIF] no existe la respuesta rápida /dgui');
         } catch (e) { console.warn('[GUIA-NOTIF] /dgui falló:', e.message); }
 
-        // Número de rastreo en un mensaje aparte.
-        try { await sendAdvancedWhatsAppMessage(contactId, { text: String(guia) }); }
-        catch (e) { console.warn('[GUIA-NOTIF] envío del nº de guía falló:', e.message); }
+        // Link de rastreo amigable (respuesta rápida /rastreo, con el nº de guía precargado en el link).
+        try {
+            const link = `${APP_BASE_URL}/rastreo/${encodeURIComponent(String(guia))}`;
+            const qrR = await findQuickReplyByShortcut('rastreo');
+            if (qrR && qrR.message) {
+                let msg = qrR.message.replace(/\{GUIA\}/g, String(guia));
+                if (!/\{GUIA\}/.test(qrR.message) && msg.indexOf('/rastreo/') < 0) msg += `\n${link}`;
+                await sendAdvancedWhatsAppMessage(contactId, { text: msg, fileUrl: qrR.fileUrl || null, fileType: qrR.fileType || null });
+            } else {
+                await sendAdvancedWhatsAppMessage(contactId, { text: `📦 Rastrea tu paquete en tiempo real aquí:\n${link}` });
+            }
+        } catch (e) { console.warn('[GUIA-NOTIF] link de rastreo falló:', e.message); }
 
         console.log(`[GUIA-NOTIF] Aviso de guía ${guia} para ${contactId} (ventana ${windowOpen ? 'abierta' : 'cerrada'}).`);
     } catch (e) {
@@ -2441,6 +2474,13 @@ Reglas:
                         else console.warn(`[AI] /DatosEstafeta: ${contactId} no tiene pedido registrado; se deja el número en blanco.`);
                         // La IA acaba de pedir los datos de envío → esperar a que el cliente los complete.
                         shippingDataRequested = true;
+                    }
+                    // Marcador {GUIA}: insertar el nº de guía (rastreo) más reciente del cliente
+                    // (para el atajo /rastreo, cuyo link lleva el número precargado).
+                    if (msgText.includes('{GUIA}')) {
+                        const g = await getLastGuiaForContact(contactId);
+                        msgText = msgText.replace(/\{GUIA\}/g, g || '');
+                        if (!g) console.warn(`[AI] atajo con {GUIA}: ${contactId} sin guía aún.`);
                     }
                     // Si el atajo expandido contiene la frase de cierre de venta, marcar la
                     // transición a post-venta (el check sobre aiResponse solo veía el "/atajo").
