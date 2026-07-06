@@ -302,12 +302,14 @@ async function mkSend(orderId) {
             return;
         }
 
-        // Ventana abierta -> secuencia: /cuatro (pago) -> /bbb (tarjeta) -> foto.
+        // Ventana abierta -> /cuatro (pago, PUEDE llevar foto) -> /bbb (tarjeta) -> foto del preview.
         // Va por el endpoint del chat para que quede registrado y dispare la etapa post-venta.
-        if (ctx.cuatro) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>1/3 info de pago…', true); await mkSendChat(telefono, { text: ctx.cuatro }); }
-        if (ctx.bbb) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>2/3 tarjeta…', true); await mkSendChat(telefono, { text: ctx.bbb }); }
+        if (ctx.cuatro && (ctx.cuatro.text || ctx.cuatro.fileUrl)) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>1/3 info de pago…', true); await mkSendChat(telefono, mkQrBody(ctx.cuatro)); }
+        if (ctx.bbb && (ctx.bbb.text || ctx.bbb.fileUrl)) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>2/3 tarjeta…', true); await mkSendChat(telefono, mkQrBody(ctx.bbb)); }
         setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>3/3 foto…', true);
-        await mkSendChat(telefono, { fileUrl: imageUrl, fileType: 'image/webp' });   // foto sin caption
+        // WhatsApp no soporta WebP: convertir el preview a JPEG antes de enviarlo.
+        const wa = await mkFetchJson('/api/mockups/wa-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: imageUrl }) });
+        await mkSendChat(telefono, { fileUrl: wa.jpgUrl, fileType: 'image/jpeg' });   // foto sin caption
 
         mkToast('Enviado al cliente ✅ (pago + tarjeta + foto)', 'success');
         setBtn('<i class="fas fa-check mr-2"></i>Enviado', true);
@@ -325,6 +327,14 @@ function mkSendChat(telefono, body) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
+}
+
+// Body para el endpoint del chat a partir de una respuesta rápida (texto y/o imagen).
+function mkQrBody(qr) {
+    const body = {};
+    if (qr.text) body.text = qr.text;
+    if (qr.fileUrl && qr.fileType) { body.fileUrl = qr.fileUrl; body.fileType = qr.fileType; }
+    return body;
 }
 
 // ---------- plantillas (CRUD / UI) ----------

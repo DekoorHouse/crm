@@ -237,11 +237,15 @@ router.get('/send-context', asyncHandler(async (req, res) => {
     const telefono = String(req.query.telefono || '').trim();
     if (!telefono) return res.status(400).json({ success: false, error: 'Falta telefono.' });
 
-    // Textos de las respuestas rápidas /cuatro (pedido listo + pago) y /bbb (tarjeta)
-    const qr = {};
+    // Respuestas rápidas /cuatro (pedido listo + pago; PUEDE llevar foto) y /bbb (tarjeta).
+    // Se devuelven con su media para replicar el envío tal cual lo hace el chat.
+    const qr = { cuatro: null, bbb: null };
     try {
         const qrSnap = await db.collection('quick_replies').where('shortcut', 'in', ['cuatro', 'bbb']).get();
-        qrSnap.forEach(d => { const x = d.data(); qr[String(x.shortcut || '').toLowerCase()] = x.message || ''; });
+        qrSnap.forEach(d => {
+            const x = d.data();
+            qr[String(x.shortcut || '').toLowerCase()] = { text: x.message || '', fileUrl: x.fileUrl || null, fileType: x.fileType || null };
+        });
     } catch (e) { console.error('[mockups] quick_replies:', e.message); }
 
     // Ventana de 24h: ¿el último mensaje ENTRANTE (from === telefono) es < 24h?
@@ -259,7 +263,17 @@ router.get('/send-context', asyncHandler(async (req, res) => {
         }
     } catch (e) { console.error('[mockups] window check:', e.message); /* ante la duda: cerrada */ }
 
-    res.json({ success: true, windowOpen, cuatro: qr.cuatro || '', bbb: qr.bbb || '' });
+    res.json({ success: true, windowOpen, cuatro: qr.cuatro, bbb: qr.bbb });
+}));
+
+// POST /api/mockups/wa-image — Devuelve una versión JPEG pública de una imagen de la
+// galería. WhatsApp NO soporta imágenes WebP (solo JPEG/PNG); la galería guarda WebP,
+// así que se convierte (una sola vez, cacheada) antes de mandar la foto al cliente.
+router.post('/wa-image', asyncHandler(async (req, res) => {
+    const url = String(req.body.url || '');
+    if (!url) return res.status(400).json({ success: false, error: 'Falta url.' });
+    const jpgUrl = await svc.ensureJpeg(url);
+    res.json({ success: true, jpgUrl });
 }));
 
 // POST /api/mockups/send — Enviar un preview al cliente por WhatsApp

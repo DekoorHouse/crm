@@ -263,8 +263,34 @@ async function fetchImageAsBase64(url) {
     return { mimeType, base64: buf.toString('base64') };
 }
 
+// Devuelve una versión JPEG pública de una imagen del bucket (WhatsApp no soporta WebP).
+// Convierte una sola vez y cachea con un path determinista (.wa.jpg) para reusar.
+async function ensureJpeg(url) {
+    const prefix = `https://storage.googleapis.com/${bucket.name}/`;
+    if (typeof url === 'string' && url.startsWith(prefix)) {
+        const srcPath = decodeURIComponent(url.slice(prefix.length).split('?')[0]);
+        if (/\.jpe?g$/i.test(srcPath)) return url; // ya es jpg
+        const jpgPath = srcPath.replace(/\.[a-z0-9]+$/i, '') + '.wa.jpg';
+        const jpgFile = bucket.file(jpgPath);
+        const [exists] = await jpgFile.exists();
+        if (!exists) {
+            const [buf] = await bucket.file(srcPath).download();
+            const jpg = await sharp(buf).jpeg({ quality: 90 }).toBuffer();
+            await jpgFile.save(jpg, { metadata: { contentType: 'image/jpeg' }, public: true, resumable: false });
+        }
+        return prefix + jpgPath;
+    }
+    // URL externa: descargar, convertir y subir con nombre nuevo.
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`No se pudo descargar la imagen (${res.status}).`);
+    const jpg = await sharp(Buffer.from(await res.arrayBuffer())).jpeg({ quality: 90 }).toBuffer();
+    const jpgPath = `${STORAGE_DIR}/wa/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
+    await bucket.file(jpgPath).save(jpg, { metadata: { contentType: 'image/jpeg' }, public: true, resumable: false });
+    return prefix + jpgPath;
+}
+
 module.exports = {
     generateImage, saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch,
     listTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate,
-    uploadTemplateBaseImage, buildPromptFromTemplate, fetchImageAsBase64,
+    uploadTemplateBaseImage, buildPromptFromTemplate, fetchImageAsBase64, ensureJpeg,
 };
