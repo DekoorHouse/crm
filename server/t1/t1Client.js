@@ -165,6 +165,7 @@ async function crearGuia({ destino, pedido, paquete = {}, mensajeria, tipoServic
             ancho: paquete.ancho != null ? Number(paquete.ancho) : DEFAULT_PAQUETE.ancho,
             alto:  paquete.alto  != null ? Number(paquete.alto)  : DEFAULT_PAQUETE.alto,
             seguro: paquete.seguro != null ? !!paquete.seguro : DEFAULT_PAQUETE.seguro,
+            valor_paquete: Number(paquete.valor_paquete != null ? paquete.valor_paquete : DEFAULT_PAQUETE.valor_paquete), // valor declarado
         },
         mensajeria: {
             mensajeria: mensajeria || T1_MENSAJERIA,
