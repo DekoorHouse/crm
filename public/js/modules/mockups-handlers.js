@@ -297,6 +297,7 @@ async function mkSend(orderId) {
             // Mandamos la plantilla de aviso 'foto_lista'; la foto se envía cuando el cliente responda.
             setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Enviando aviso…', true);
             await mkSendChat(telefono, { template: MK_CLOSED_TEMPLATE });
+            await mkAfterSend(orderId, telefono, false);   // IA encendida (la foto va cuando respondan; sin cambiar estatus todavía)
             mkToast('Conversación cerrada: envié la plantilla "foto lista" ✅. Cuando el cliente responda, vuelve a darle Enviar para mandarle la foto.', 'success');
             setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar foto (cuando responda)', false);
             return;
@@ -311,6 +312,7 @@ async function mkSend(orderId) {
         const wa = await mkFetchJson('/api/mockups/wa-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: imageUrl }) });
         await mkSendChat(telefono, { fileUrl: wa.jpgUrl, fileType: 'image/jpeg' });   // foto sin caption
 
+        await mkAfterSend(orderId, telefono, true);   // estatus -> "Foto enviada" + IA encendida
         mkToast('Enviado al cliente ✅ (pago + tarjeta + foto)', 'success');
         setBtn('<i class="fas fa-check mr-2"></i>Enviado', true);
     } catch (e) {
@@ -335,6 +337,22 @@ function mkQrBody(qr) {
     if (qr.text) body.text = qr.text;
     if (qr.fileUrl && qr.fileType) { body.fileUrl = qr.fileUrl; body.fileType = qr.fileType; }
     return body;
+}
+
+// Tras enviar: asegurar la IA encendida (post-venta) para que responda al cliente, y
+// (si se envió la foto) cambiar el estatus del pedido a "Foto enviada". Best-effort:
+// los mensajes ya salieron, así que un fallo aquí no debe romper el flujo.
+async function mkAfterSend(orderId, telefono, photoSent) {
+    try {
+        await mkFetchJson('/api/contacts/' + encodeURIComponent(telefono) + '/activate-postventa', { method: 'POST' });
+    } catch (e) { console.error('[mockups] activar IA:', e.message); }
+    if (photoSent) {
+        try {
+            await db.collection('pedidos').doc(orderId).update({ estatus: 'Foto enviada' });
+            const o = mkState.pending.find(x => x.id === orderId);
+            if (o) o.estatus = 'Foto enviada';
+        } catch (e) { console.error('[mockups] estatus Foto enviada:', e.message); }
+    }
 }
 
 // ---------- plantillas (CRUD / UI) ----------
