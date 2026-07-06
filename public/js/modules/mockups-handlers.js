@@ -194,11 +194,8 @@ function mkRenderPending() {
 }
 
 function mkResultHtml(order, imgUrl) {
-    const first = (order.clientName || '').trim().split(/\s+/)[0] || '';
-    const caption = `¡Hola${first ? ' ' + first : ''}! 😍 Te comparto un preview de cómo quedaría tu lámpara. ¿La aprobamos así?`;
     return `
         <img src="${mkAttr(imgUrl)}" alt="Preview">
-        <input class="mk-caption" style="width:100%" value="${mkAttr(caption)}">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
             <button class="btn btn-primary btn-sm mk-send-btn" onclick="mkSend('${mkAttr(order.id)}')"><i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp</button>
             <a class="btn btn-outline btn-sm" href="${mkAttr(imgUrl)}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt mr-2"></i>Abrir</a>
@@ -284,7 +281,6 @@ async function mkSend(orderId) {
     if (!card) return;
     const telefono = card.dataset.phone;
     const imageUrl = mkState.results[orderId];
-    const caption = (card.querySelector('.mk-caption')?.value || '').trim();
     if (!telefono) { mkToast('Este pedido no tiene teléfono.', 'error'); return; }
     if (!imageUrl) { mkToast('Genera el preview primero.', 'error'); return; }
 
@@ -310,7 +306,7 @@ async function mkSend(orderId) {
         if (ctx.cuatro) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>1/3 info de pago…', true); await mkSendChat(telefono, { text: ctx.cuatro }); }
         if (ctx.bbb) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>2/3 tarjeta…', true); await mkSendChat(telefono, { text: ctx.bbb }); }
         setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>3/3 foto…', true);
-        await mkSendChat(telefono, { text: caption, fileUrl: imageUrl, fileType: 'image/webp' });
+        await mkSendChat(telefono, { fileUrl: imageUrl, fileType: 'image/webp' });   // foto sin caption
 
         mkToast('Enviado al cliente ✅ (pago + tarjeta + foto)', 'success');
         setBtn('<i class="fas fa-check mr-2"></i>Enviado', true);
