@@ -6018,7 +6018,7 @@ router.post('/storage/generate-signed-url', async (req, res) => {
 // porque el bucket bloquea el acceso anónimo. Este endpoint firma una URL de lectura
 // temporal (la firma usa la cuenta de servicio, que sí tiene acceso) y redirige a ella,
 // sin pasar el archivo por Node. Así se ven los medios viejos sin migrar los datos.
-const WA_FILE_ALLOWED_PREFIXES = ['whatsapp_media/', 'messenger_media/', 'referencias/', 'quick_replies/', 'ad_responses/'];
+const WA_FILE_ALLOWED_PREFIXES = ['whatsapp_media/', 'messenger_media/', 'referencias/', 'quick_replies/', 'ad_responses/', 'mockups/'];
 router.get('/wa/file', async (req, res) => {
     try {
         let raw = String(req.query.path || req.query.url || '');
