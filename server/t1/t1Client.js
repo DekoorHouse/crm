@@ -158,6 +158,7 @@ async function crearGuia({ destino, pedido, paquete = {}, mensajeria, tipoServic
         pedido_comercio: String(pedido || ''),
         contenido: {
             descripcion: paquete.descripcion || 'Lámpara decorativa',
+            paquetes: Number(paquete.paquetes != null ? paquete.paquetes : 1), // nº de bultos (T1 lo exige en contenido)
             tipo_paquete: String(paquete.tipo_paquete != null ? paquete.tipo_paquete : T1_TIPO_PAQUETE),
             peso:  paquete.peso  != null ? Number(paquete.peso)  : DEFAULT_PAQUETE.peso,
             largo: paquete.largo != null ? Number(paquete.largo) : DEFAULT_PAQUETE.largo,
