@@ -561,7 +561,7 @@ async function _cotizarEnModal() {
         const rowsHtml = list.map(s => {
             const costo = s.costo != null ? `$${Number(s.costo).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : '—';
             // Se manda tipo_servicio (el codigo que espera el proveedor) + proveedor (t1|ep).
-            const payload = encodeURIComponent(JSON.stringify({ proveedor: s.proveedor, tipoServicio: s.tipo_servicio, servicioNombre: s.servicio, mensajeria: s.paqueteria, costo: s.costo }));
+            const payload = encodeURIComponent(JSON.stringify({ proveedor: s.proveedor, tipoServicio: s.codigoServicio || s.tipo_servicio, servicioNombre: s.servicio, mensajeria: s.paqueteria, costo: s.costo }));
             const diasTxt = s.dias == null || s.dias === '' ? '' : (typeof s.dias === 'number' ? ` · ${s.dias} día(s)` : ` · ${escapeHtml(String(s.dias))}`);
             return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--color-border,#e5e7eb);border-radius:10px;margin-bottom:8px">
                 <div><div style="font-weight:600;display:flex;align-items:center;gap:6px">${courierBadge(s.paqueteria)}<span>${escapeHtml(s.servicio || '')}</span></div>

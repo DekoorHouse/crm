@@ -8160,7 +8160,7 @@ router.post('/envios/cotizar', async (req, res) => {
                 const svc = (r.cotizacion && r.cotizacion.servicios) || {};
                 Object.keys(svc).forEach((k) => {
                     const s = svc[k] || {};
-                    servicios.push({ proveedor: 't1', paqueteria: r.clave, clave: k, servicio: s.servicio, tipo_servicio: s.tipo_servicio, costo: s.costo_total, dias: s.dias_entrega, moneda: s.moneda || 'MXN' });
+                    servicios.push({ proveedor: 't1', paqueteria: r.clave, clave: k, servicio: s.servicio, tipo_servicio: s.tipo_servicio, codigoServicio: s.servicio, costo: s.costo_total, dias: s.dias_entrega, moneda: s.moneda || 'MXN' });
                 });
             });
         } catch (e) { console.warn('[COTIZAR] T1 falló:', (e.response && e.response.status) || '', e.message); }
@@ -8168,7 +8168,7 @@ router.post('/envios/cotizar', async (req, res) => {
         try {
             const epData = await ep.cotizar({ cpDestino: dest, peso: b.peso, largo: b.largo, ancho: b.ancho, alto: b.alto });
             ep.normalizarRates(epData).forEach((r) => {
-                servicios.push({ proveedor: 'ep', paqueteria: r.paqueteria, clave: r.deliveryType, servicio: r.servicio, tipo_servicio: r.tipo_servicio, costo: r.costo, dias: r.dias, moneda: r.moneda });
+                servicios.push({ proveedor: 'ep', paqueteria: r.paqueteria, clave: r.deliveryType, servicio: r.servicio, tipo_servicio: r.tipo_servicio, codigoServicio: r.deliveryType, costo: r.costo, dias: r.dias, moneda: r.moneda });
             });
         } catch (e) { console.warn('[COTIZAR] Envíos Perros falló:', (e.response && e.response.status) || '', e.message); }
         servicios.sort((a, b2) => (a.costo || 0) - (b2.costo || 0));
