@@ -1201,30 +1201,42 @@ async function sendApprovedTemplateMessage(waId, templateName, params = [], { so
  * OJO WhatsApp: con la ventana cerrada, los mensajes de formato libre (/dgui + nº) solo se entregan
  * cuando el cliente responde; la plantilla sí llega siempre.
  */
-async function notifyGuiaToCustomer(contactId, guia) {
-    if (!contactId || !guia) return;
+async function notifyGuiaToCustomer(contactId, guia, opts = {}) {
+    const dry = !!opts.dryRun;
+    const steps = [];
+    const push = (name, ok, detail) => steps.push({ name, ok, detail: detail == null ? null : String(detail) });
+    contactId = contactId != null ? String(contactId) : '';
+    guia = guia != null ? String(guia) : '';
+    if (!contactId || !guia) { push('guard', false, 'contactId o guia vacío'); return { ok: false, windowOpen: false, steps }; }
     try {
         // Ventana de 24h: abierta si el último mensaje ENTRANTE tiene < 24h.
-        let windowOpen = false;
+        let windowOpen = false, lastInboundAt = null, msgCount = 0;
         try {
             const ms = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'desc').limit(50).get();
+            msgCount = ms.size;
             const lastInbound = ms.docs.find(d => d.data().from === contactId);
             const t = (lastInbound && lastInbound.data().timestamp && lastInbound.data().timestamp.toDate) ? lastInbound.data().timestamp.toDate() : null;
+            lastInboundAt = t ? t.toISOString() : null;
             windowOpen = !!(t && (Date.now() - t.getTime() < 24 * 60 * 60 * 1000));
-        } catch (e) { console.warn('[GUIA-NOTIF] no se pudo calcular la ventana:', e.message); }
+            push('window', true, `open=${windowOpen} lastInbound=${lastInboundAt || 'ninguno'} msgs=${msgCount}`);
+        } catch (e) { push('window', false, e.message); }
 
         // Ventana cerrada -> abrir con la plantilla hola_guia (pasa la guía por si la plantilla la usa).
         if (!windowOpen) {
-            try { await sendApprovedTemplateMessage(contactId, 'hola_guia', [String(guia)], { source: 'guia' }); }
-            catch (e) { console.warn('[GUIA-NOTIF] plantilla hola_guia falló:', e.message); }
-        }
+            if (dry) push('hola_guia', true, 'DRY: se enviaría plantilla hola_guia');
+            else {
+                try { await sendApprovedTemplateMessage(contactId, 'hola_guia', [String(guia)], { source: 'guia' }); push('hola_guia', true, 'plantilla enviada'); }
+                catch (e) { push('hola_guia', false, e.message); }
+            }
+        } else push('hola_guia', true, 'omitida (ventana abierta)');
 
         // Respuesta rápida /dgui (su contenido: texto + archivo si tiene).
         try {
             const qr = await findQuickReplyByShortcut('dgui');
-            if (qr) await sendAdvancedWhatsAppMessage(contactId, { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null });
-            else console.warn('[GUIA-NOTIF] no existe la respuesta rápida /dgui');
-        } catch (e) { console.warn('[GUIA-NOTIF] /dgui falló:', e.message); }
+            if (!qr) push('dgui', false, 'no existe la respuesta rápida /dgui');
+            else if (dry) push('dgui', true, `DRY: existe (${qr.fileUrl ? 'con archivo' : 'solo texto'})`);
+            else { await sendAdvancedWhatsAppMessage(contactId, { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null }); push('dgui', true, 'enviada'); }
+        } catch (e) { push('dgui', false, e.message); }
 
         // Link de rastreo amigable (respuesta rápida /rastreo, con el nº de guía precargado en el link).
         try {
@@ -1233,15 +1245,20 @@ async function notifyGuiaToCustomer(contactId, guia) {
             if (qrR && qrR.message) {
                 let msg = qrR.message.replace(/\{GUIA\}/g, String(guia));
                 if (!/\{GUIA\}/.test(qrR.message) && msg.indexOf('/rastreo/') < 0) msg += `\n${link}`;
-                await sendAdvancedWhatsAppMessage(contactId, { text: msg, fileUrl: qrR.fileUrl || null, fileType: qrR.fileType || null });
+                if (dry) push('rastreo', true, `DRY: QR /rastreo -> ${msg.slice(0, 70)}`);
+                else { await sendAdvancedWhatsAppMessage(contactId, { text: msg, fileUrl: qrR.fileUrl || null, fileType: qrR.fileType || null }); push('rastreo', true, 'enviada'); }
             } else {
-                await sendAdvancedWhatsAppMessage(contactId, { text: `📦 Rastrea tu paquete en tiempo real aquí:\n${link}` });
+                if (dry) push('rastreo', true, `DRY: sin QR, link ${link}`);
+                else { await sendAdvancedWhatsAppMessage(contactId, { text: `📦 Rastrea tu paquete en tiempo real aquí:\n${link}` }); push('rastreo', true, 'enviada (fallback link)'); }
             }
-        } catch (e) { console.warn('[GUIA-NOTIF] link de rastreo falló:', e.message); }
+        } catch (e) { push('rastreo', false, e.message); }
 
-        console.log(`[GUIA-NOTIF] Aviso de guía ${guia} para ${contactId} (ventana ${windowOpen ? 'abierta' : 'cerrada'}).`);
+        console.log(`[GUIA-NOTIF] guía ${guia} -> ${contactId} (ventana ${windowOpen ? 'abierta' : 'cerrada'})${dry ? ' [DRY]' : ''}:`, JSON.stringify(steps));
+        return { ok: true, windowOpen, steps };
     } catch (e) {
+        push('fatal', false, e.message);
         console.warn('[GUIA-NOTIF] error general:', e.message);
+        return { ok: false, windowOpen: false, steps };
     }
 }
 

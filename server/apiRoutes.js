@@ -8197,7 +8197,9 @@ router.post('/envios/crear-guia', async (req, res) => {
             const snap = await docRef.get();
             if (!snap.exists) return res.status(404).json({ success: false, message: 'El pedido o la línea no existe.' });
             const dd = snap.data() || {};
-            if (dd.contactId) contactIdNotif = dd.contactId;
+            // Preferir el id de contacto WhatsApp; si el pedido/línea no lo tiene, caer al teléfono
+            // (convención del CRM: contactId || telefono es el id del doc de contacto).
+            contactIdNotif = dd.contactId || dd.telefono || contactIdNotif;
             const ex = dd.guiaEnvio;
             if (ex && ex.guia) {
                 return res.json({ success: true, already: true, guia: ex.guia, numOrden: ex.numOrden || null, pickUp: ex.pickUp || null, pdfPath: ex.pdfPath || null, tracking: ex.tracking || null });
@@ -8263,6 +8265,23 @@ router.post('/envios/crear-guia', async (req, res) => {
     } catch (e) {
         console.error('[GUIA] crear-guia:', e.response && e.response.status, (e.response && e.response.data) || e.message);
         res.status(502).json({ success: false, message: 'No se pudo crear la guía.', detail: (e.response && e.response.data) || e.message });
+    }
+});
+
+// --- GET /api/debug/guia-notif — DIAGNÓSTICO del aviso de guía al cliente (TEMPORAL). ---
+// dry-run por defecto (NO envía nada, solo reporta ventana 24h + existencia de /dgui y /rastreo).
+// ?send=1 ejecuta el envío REAL (manda WhatsApp al cliente). Gated por key.
+router.get('/debug/guia-notif', async (req, res) => {
+    if (req.query.key !== 't1diag_9f3k2xQ7') return res.status(403).json({ success: false, message: 'forbidden' });
+    const contactId = String(req.query.contactId || '').trim();
+    const guia = String(req.query.guia || '').trim();
+    const send = req.query.send === '1';
+    if (!contactId || !guia) return res.status(400).json({ success: false, message: 'contactId y guia son requeridos' });
+    try {
+        const r = await notifyGuiaToCustomer(contactId, guia, { dryRun: !send });
+        res.json({ success: true, mode: send ? 'SEND' : 'DRY', contactId, guia, ...r });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
     }
 });
 
