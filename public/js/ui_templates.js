@@ -878,6 +878,13 @@ const MockupsViewTemplate = () => `
             .mk-date{color:var(--color-text-light);font-size:.8rem}
             .mk-card-body{display:grid;grid-template-columns:1fr 320px;gap:18px}
             @media (max-width:820px){.mk-card-body{grid-template-columns:1fr}}
+            .mk-blocks{margin-top:6px}
+            .mk-block{border-top:1px dashed var(--color-border);padding-top:14px;margin-top:14px}
+            .mk-block:first-child{border-top:none;padding-top:6px;margin-top:6px}
+            .mk-block-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+            .mk-block-x{background:none;border:none;color:var(--color-text-light);cursor:pointer;font-size:.95rem}
+            .mk-block-body{display:grid;grid-template-columns:1fr 320px;gap:18px}
+            @media (max-width:820px){.mk-block-body{grid-template-columns:1fr}}
             .mk-inputs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
             .mk-inputs .mk-full{grid-column:1 / -1}
             .mk-inputs label,.mk-raw label{display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light);margin-bottom:3px;text-transform:uppercase;letter-spacing:.02em}

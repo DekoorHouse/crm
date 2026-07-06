@@ -16,7 +16,9 @@ const MK_SEED_PROMPT = 'Edita esta foto de la lámpara. NO modifiques la lámpar
 // (sin variables ni header de imagen): avisa "tu foto está lista, respóndenos".
 const MK_CLOSED_TEMPLATE = { name: 'foto_lista', language: 'es' };
 
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null };
+// results: URL de preview por blockId (en sesión). paymentSent/noticeSent: dedupe de
+// envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {} };
 
 // ---------- utilidades ----------
 function mkEsc(s) { const d = document.createElement('div'); d.textContent = (s == null ? '' : String(s)); return d.innerHTML; }
@@ -66,7 +68,7 @@ function mkParseDatos(text) {
     const dm = raw.match(/\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\b/);
     if (dm) fecha = dm[1];
     let rest = raw.replace(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/, ' ');
-    rest = rest.replace(/nombres?\s*:/ig, ' ').replace(/fecha\s*:/ig, ' ').replace(/para\s*:/ig, ' ');
+    rest = rest.replace(/nombres?\s*:/ig, ' ').replace(/fecha\s*:/ig, ' ').replace(/para\s*:/ig, ' ').replace(/personajes?\s*:/ig, ' ');
     // Quita separadores sueltos de los bordes (barra "|", comas, &, +) para que
     // NO terminen grabados en la lámpara (ej: "Sheyla |" -> "Sheyla").
     const clean = s => s.replace(/^[\s|,&+]+|[\s|,&+]+$/g, '').trim();
@@ -110,17 +112,47 @@ async function mkLoadTemplates() {
     if (mkState.tab === 'plantillas') mkRenderTemplates();
 }
 
-function mkTemplateOptions(producto) {
+// Plantilla auto-sugerida por el producto del pedido (por productMatch).
+function mkAutoTemplate(producto) {
     const prod = (producto || '').toLowerCase();
-    // Auto-selecciona la plantilla cuya productMatch coincida con el producto del pedido.
-    let selected = null;
     for (const t of mkState.templates) {
-        if ((t.productMatch || []).some(m => m && prod.includes(String(m).toLowerCase()))) { selected = t.id; break; }
+        if ((t.productMatch || []).some(m => m && prod.includes(String(m).toLowerCase()))) return t.id;
     }
-    if (!selected && mkState.templates.length) selected = mkState.templates[0].id;
+    return mkState.templates.length ? mkState.templates[0].id : '';
+}
+
+function mkTemplateOptionsSel(selectedId) {
     return mkState.templates.map(t =>
-        `<option value="${mkAttr(t.id)}"${t.id === selected ? ' selected' : ''}>${mkEsc(t.nombre)}</option>`
+        `<option value="${mkAttr(t.id)}"${t.id === selectedId ? ' selected' : ''}>${mkEsc(t.nombre)}</option>`
     ).join('');
+}
+
+// Los CAMPOS de un bloque salen de los placeholders del prompt de la plantilla
+// ({nombre1}, {fecha}, ...): la nube muestra solo "Nombre", corazones muestra 3.
+function mkFieldLabel(key) {
+    const map = { nombre1: 'Nombre 1', nombre2: 'Nombre 2', nombre: 'Nombre', fecha: 'Fecha' };
+    return map[key] || (key.charAt(0).toUpperCase() + key.slice(1));
+}
+
+function mkTemplateFieldDefs(templateId) {
+    const t = mkState.templates.find(x => x.id === templateId);
+    const prompt = t ? (t.promptTemplate || '') : '';
+    const keys = [];
+    const re = /\{([a-zA-Z0-9_]+)\}/g; let m;
+    while ((m = re.exec(prompt)) !== null) {
+        const k = m[1].toLowerCase();
+        if (k === 'personalizacion') continue;   // texto crudo del pedido, no es campo
+        if (!keys.includes(k)) keys.push(k);
+    }
+    if (!keys.length) keys.push('nombre1');       // respaldo
+    return keys.map(k => ({ key: k, label: mkFieldLabel(k) }));
+}
+
+function mkFieldsHtml(defs, values) {
+    return defs.map(f => {
+        const v = (values && values[f.key] != null) ? values[f.key] : '';
+        return `<div><label>${mkEsc(f.label)}</label><input class="mk-fld" data-key="${mkAttr(f.key)}" value="${mkAttr(v)}"></div>`;
+    }).join('');
 }
 
 // ---------- pendientes ----------
@@ -147,10 +179,14 @@ function mkRenderPending() {
 
     cont.innerHTML = mkState.pending.map(o => {
         const datos = (o.items || []).map(it => it.datosProducto).filter(Boolean).join('\n') || (o.items?.[0]?.producto || '');
-        const p = mkParseDatos(datos);
         const producto = o.producto || (o.items?.[0]?.producto || '');
         const num = o.consecutiveOrderNumber ? ('DH' + o.consecutiveOrderNumber) : '—';
-        const saved = mkState.results[o.id] || o.previewUrl;
+        o._prefill = mkPrefill(mkParseDatos(datos));   // valores sugeridos para el primer bloque
+        // Bloques iniciales: uno por preview guardado, o uno vacío.
+        const saved = Array.isArray(o.previews) ? o.previews : [];
+        const blocks = saved.length
+            ? saved.map(pv => ({ id: pv.blockId || mkNewBlockId(), templateId: pv.templateId, provider: 'wavespeed', values: pv.fields || {}, previewUrl: pv.imageUrl }))
+            : [{ id: mkNewBlockId(), templateId: mkAutoTemplate(producto), provider: 'wavespeed', values: o._prefill, previewUrl: '' }];
         return `
         <div class="settings-card mk-card" data-order="${mkAttr(o.id)}" data-phone="${mkAttr(o.telefono)}" data-client="${mkAttr(o.clientName)}">
             <div class="mk-card-head">
@@ -161,67 +197,111 @@ function mkRenderPending() {
                 </div>
                 <span class="mk-date">${mkEsc(mkFmtDate(o.createdAt))}${producto ? ' · ' + mkEsc(producto) : ''}</span>
             </div>
-            <div class="mk-card-body">
-                <div>
-                    <div class="mk-raw">
-                        <label>Detalles del pedido</label>
-                        <textarea class="mk-datos" readonly>${mkEsc(datos)}</textarea>
-                    </div>
-                    <div class="mk-inputs">
-                        <div><label>Nombre 1</label><input class="mk-n1" value="${mkAttr(p.nombre1)}"></div>
-                        <div><label>Nombre 2</label><input class="mk-n2" value="${mkAttr(p.nombre2)}"></div>
-                        <div><label>Fecha</label><input class="mk-fecha" value="${mkAttr(p.fecha)}"></div>
-                        <div><label>Plantilla</label><select class="mk-tpl">${mkTemplateOptions(producto)}</select></div>
-                        <div class="mk-full"><label>Modelo</label>
-                            <select class="mk-provider">
-                                <option value="wavespeed" selected>GPT Image 2 (WaveSpeed)</option>
-                                <option value="gemini">Nano Banana (Gemini)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div style="margin-top:12px;">
-                        <button class="btn btn-primary btn-sm mk-gen-btn" onclick="mkGenerate('${mkAttr(o.id)}')">
-                            <i class="fas fa-wand-magic-sparkles mr-2"></i>Generar preview
-                        </button>
-                    </div>
-                </div>
-                <div class="mk-result" id="mk-result-${mkAttr(o.id)}">
-                    ${saved ? mkResultHtml(o, saved) : '<div class="mk-result-empty">El preview aparecerá aquí</div>'}
-                </div>
+            <div class="mk-raw">
+                <label>Detalles del pedido</label>
+                <textarea class="mk-datos" readonly>${mkEsc(datos)}</textarea>
             </div>
+            <div class="mk-blocks" id="mk-blocks-${mkAttr(o.id)}">
+                ${blocks.map((b, i) => mkBlockHtml(o, b, i + 1)).join('')}
+            </div>
+            <button class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="mkAddBlock('${mkAttr(o.id)}')"><i class="fas fa-plus mr-2"></i>Otro preview</button>
         </div>`;
     }).join('');
 }
 
-function mkResultHtml(order, imgUrl) {
+// Mapea el texto parseado a los posibles campos (según cómo se llamen en la plantilla).
+function mkPrefill(p) {
+    return { nombre1: p.nombre1, nombre: p.nombre1, nombre2: p.nombre2, fecha: p.fecha };
+}
+
+function mkNewBlockId() {
+    return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+// HTML de un bloque de preview: plantilla + modelo + campos adaptados + generar + resultado.
+function mkBlockHtml(order, block, n) {
+    const producto = order.producto || (order.items?.[0]?.producto || '');
+    const tplId = block.templateId || mkAutoTemplate(producto);
+    const provider = block.provider || 'wavespeed';
+    const preview = block.previewUrl || mkState.results[block.id];
+    return `
+    <div class="mk-block" data-order="${mkAttr(order.id)}" data-block="${mkAttr(block.id)}">
+        <div class="mk-block-head">
+            <span class="mk-muted">Preview ${n}</span>
+            ${n > 1 ? `<button class="mk-block-x" title="Quitar este preview" onclick="mkRemoveBlock('${mkAttr(block.id)}')"><i class="fas fa-times"></i></button>` : ''}
+        </div>
+        <div class="mk-block-body">
+            <div>
+                <div class="mk-inputs">
+                    <div><label>Plantilla</label><select class="mk-tpl" onchange="mkOnBlockTemplateChange('${mkAttr(block.id)}')">${mkTemplateOptionsSel(tplId)}</select></div>
+                    <div><label>Modelo</label><select class="mk-provider">
+                        <option value="wavespeed"${provider === 'wavespeed' ? ' selected' : ''}>GPT Image 2 (WaveSpeed)</option>
+                        <option value="gemini"${provider === 'gemini' ? ' selected' : ''}>Nano Banana (Gemini)</option>
+                    </select></div>
+                </div>
+                <div class="mk-fields mk-inputs" style="margin-top:8px;">${mkFieldsHtml(mkTemplateFieldDefs(tplId), block.values)}</div>
+                <div style="margin-top:12px;">
+                    <button class="btn btn-primary btn-sm mk-gen-btn" onclick="mkGenerate('${mkAttr(order.id)}','${mkAttr(block.id)}')"><i class="fas fa-wand-magic-sparkles mr-2"></i>Generar preview</button>
+                </div>
+            </div>
+            <div class="mk-result" id="mk-result-${mkAttr(block.id)}">
+                ${preview ? mkResultHtml(order.id, block.id, preview) : '<div class="mk-result-empty">El preview aparecerá aquí</div>'}
+            </div>
+        </div>
+    </div>`;
+}
+
+function mkAddBlock(orderId) {
+    const cont = document.getElementById('mk-blocks-' + orderId);
+    const order = mkState.pending.find(o => o.id === orderId);
+    if (!cont || !order) return;
+    const n = cont.querySelectorAll('.mk-block').length + 1;
+    const block = { id: mkNewBlockId(), templateId: mkAutoTemplate(order.producto || ''), provider: 'wavespeed', values: {}, previewUrl: '' };
+    cont.insertAdjacentHTML('beforeend', mkBlockHtml(order, block, n));
+}
+
+function mkRemoveBlock(blockId) {
+    const el = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
+    if (el) el.remove();
+    delete mkState.results[blockId];
+}
+
+// Al cambiar la plantilla de un bloque, re-render de sus campos (conservando lo escrito por clave).
+function mkOnBlockTemplateChange(blockId) {
+    const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
+    if (!block) return;
+    const cur = {};
+    block.querySelectorAll('.mk-fld').forEach(i => { cur[i.dataset.key] = i.value; });
+    block.querySelector('.mk-fields').innerHTML = mkFieldsHtml(mkTemplateFieldDefs(block.querySelector('.mk-tpl').value), cur);
+}
+
+function mkResultHtml(orderId, blockId, imgUrl) {
     return `
         <img src="${mkAttr(imgUrl)}" alt="Preview">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
-            <button class="btn btn-primary btn-sm mk-send-btn" onclick="mkSend('${mkAttr(order.id)}')"><i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp</button>
+            <button class="btn btn-primary btn-sm mk-send-btn" onclick="mkSend('${mkAttr(orderId)}','${mkAttr(blockId)}')"><i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp</button>
             <a class="btn btn-outline btn-sm" href="${mkAttr(imgUrl)}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt mr-2"></i>Abrir</a>
-            <button class="btn btn-secondary btn-sm" onclick="mkGenerate('${mkAttr(order.id)}')"><i class="fas fa-redo mr-2"></i>Regenerar</button>
+            <button class="btn btn-secondary btn-sm" onclick="mkGenerate('${mkAttr(orderId)}','${mkAttr(blockId)}')"><i class="fas fa-redo mr-2"></i>Regenerar</button>
         </div>`;
 }
 
-async function mkGenerate(orderId) {
-    const card = document.querySelector(`.mk-card[data-order="${window.CSS && CSS.escape ? CSS.escape(orderId) : orderId}"]`);
-    if (!card) return;
-    const box = document.getElementById('mk-result-' + orderId);
-    const btn = card.querySelector('.mk-gen-btn');
-    // Siempre capitalizar la primera letra de los nombres, aunque el cliente los haya escrito mal.
-    const n1 = mkTitleCase(card.querySelector('.mk-n1').value.trim());
-    const n2 = mkTitleCase(card.querySelector('.mk-n2').value.trim());
-    card.querySelector('.mk-n1').value = n1;   // reflejar la capitalización en el campo
-    card.querySelector('.mk-n2').value = n2;
-    const fields = {
-        nombre1: n1,
-        nombre2: n2,
-        fecha: card.querySelector('.mk-fecha').value.trim(),
-        personalizacion: card.querySelector('.mk-datos').value.trim(),
-    };
-    const templateId = card.querySelector('.mk-tpl').value;
-    const provider = card.querySelector('.mk-provider').value;
+async function mkGenerate(orderId, blockId) {
+    const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
+    if (!block) return;
+    const box = document.getElementById('mk-result-' + blockId);
+    const btn = block.querySelector('.mk-gen-btn');
+    const templateId = block.querySelector('.mk-tpl').value;
+    const provider = block.querySelector('.mk-provider').value;
     if (!templateId) { mkToast('Selecciona una plantilla.', 'error'); return; }
+
+    // Campos del bloque (capitalizar los que sean nombres, aunque el cliente los escriba mal).
+    const fields = {};
+    block.querySelectorAll('.mk-fld').forEach(i => {
+        let v = i.value.trim();
+        if (/nombre/i.test(i.dataset.key)) { v = mkTitleCase(v); i.value = v; }
+        fields[i.dataset.key] = v;
+    });
+    fields.personalizacion = (block.closest('.mk-card')?.querySelector('.mk-datos')?.value || '').trim();
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generando…'; }
     const setBox = (msg) => { if (box) box.innerHTML = `<div class="mk-spin"></div><div class="mk-result-empty">${mkEsc(msg)}</div>`; };
@@ -231,21 +311,16 @@ async function mkGenerate(orderId) {
         const data = await mkFetchJson('/api/mockups/generate-preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ templateId, provider, fields, orderId }),
+            body: JSON.stringify({ templateId, provider, fields, orderId, blockId }),
         });
 
         let url;
-        if (data.image) {
-            url = data.image.fullUrl || data.image.thumbUrl;           // Gemini (síncrono)
-        } else if (data.jobId) {
-            url = await mkPollJob(data.jobId, setBox);                 // WaveSpeed (asíncrono)
-        }
+        if (data.image) url = data.image.fullUrl || data.image.thumbUrl;   // Gemini (síncrono)
+        else if (data.jobId) url = await mkPollJob(data.jobId, setBox);     // WaveSpeed (asíncrono)
         if (!url) throw new Error('No se recibió la imagen generada.');
 
-        mkState.results[orderId] = url;
-        const order = mkState.pending.find(o => o.id === orderId) || { id: orderId };
-        order.previewUrl = url;
-        if (box) box.innerHTML = mkResultHtml(order, url);
+        mkState.results[blockId] = url;
+        if (box) box.innerHTML = mkResultHtml(orderId, blockId, url);
     } catch (e) {
         if (box) box.innerHTML = `<div class="mk-result-empty" style="color:#dc2626;">${mkEsc(e.message)}</div>`;
         mkToast('Error al generar: ' + e.message, 'error');
@@ -276,16 +351,18 @@ async function mkPollJob(jobId, setBox) {
     throw new Error('La generación tardó demasiado (más de 4 min). Intenta de nuevo.');
 }
 
-async function mkSend(orderId) {
-    const card = document.querySelector(`.mk-card[data-order="${window.CSS && CSS.escape ? CSS.escape(orderId) : orderId}"]`);
-    if (!card) return;
-    const telefono = card.dataset.phone;
-    // Usa el preview generado en esta sesión o el guardado (persistido) del pedido.
-    const imageUrl = mkState.results[orderId] || (mkState.pending.find(o => o.id === orderId) || {}).previewUrl;
+async function mkSend(orderId, blockId) {
+    const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
+    if (!block) return;
+    const card = block.closest('.mk-card');
+    const telefono = card && card.dataset.phone;
+    const order = mkState.pending.find(o => o.id === orderId) || {};
+    // Preview de ESTE bloque: generado en sesión o guardado (persistido).
+    const imageUrl = mkState.results[blockId] || ((order.previews || []).find(p => p.blockId === blockId) || {}).imageUrl;
     if (!telefono) { mkToast('Este pedido no tiene teléfono.', 'error'); return; }
     if (!imageUrl) { mkToast('Genera el preview primero.', 'error'); return; }
 
-    const btn = card.querySelector('.mk-send-btn');
+    const btn = block.querySelector('.mk-send-btn');
     const setBtn = (html, disabled) => { if (btn) { btn.disabled = disabled; btn.innerHTML = html; } };
     setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Enviando…', true);
 
@@ -293,27 +370,31 @@ async function mkSend(orderId) {
         const ctx = await mkFetchJson('/api/mockups/send-context?telefono=' + encodeURIComponent(telefono));
 
         if (!ctx.windowOpen) {
-            // Conversación cerrada (+24h): WhatsApp no permite texto/foto libre.
-            // Mandamos la plantilla de aviso 'foto_lista'; la foto se envía cuando el cliente responda.
-            setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Enviando aviso…', true);
-            await mkSendChat(telefono, { template: MK_CLOSED_TEMPLATE });
-            await mkAfterSend(orderId, telefono, false);   // IA encendida (la foto va cuando respondan; sin cambiar estatus todavía)
-            mkToast('Conversación cerrada: envié la plantilla "foto lista" ✅. Cuando el cliente responda, vuelve a darle Enviar para mandarle la foto.', 'success');
+            // Conversación cerrada (+24h): solo se puede plantilla. Avisar una vez por pedido.
+            if (!mkState.noticeSent[orderId]) {
+                setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Enviando aviso…', true);
+                await mkSendChat(telefono, { template: MK_CLOSED_TEMPLATE });
+                mkState.noticeSent[orderId] = true;
+                await mkAfterSend(orderId, telefono, false);   // IA encendida; estatus sin cambiar
+            }
+            mkToast('Conversación cerrada: se avisó al cliente con la plantilla. Cuando responda, dale Enviar y va la foto.', 'success');
             setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar foto (cuando responda)', false);
             return;
         }
 
-        // Ventana abierta -> /cuatro (pago, PUEDE llevar foto) -> /bbb (tarjeta) -> foto del preview.
-        // Va por el endpoint del chat para que quede registrado y dispare la etapa post-venta.
-        if (ctx.cuatro && (ctx.cuatro.text || ctx.cuatro.fileUrl)) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>1/3 info de pago…', true); await mkSendChat(telefono, mkQrBody(ctx.cuatro)); }
-        if (ctx.bbb && (ctx.bbb.text || ctx.bbb.fileUrl)) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>2/3 tarjeta…', true); await mkSendChat(telefono, mkQrBody(ctx.bbb)); }
-        setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>3/3 foto…', true);
-        // WhatsApp no soporta WebP: convertir el preview a JPEG antes de enviarlo.
+        // /cuatro (pago) + /bbb (tarjeta) SOLO una vez por pedido, aunque mandes varias fotos.
+        if (!mkState.paymentSent[orderId]) {
+            if (ctx.cuatro && (ctx.cuatro.text || ctx.cuatro.fileUrl)) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Info de pago…', true); await mkSendChat(telefono, mkQrBody(ctx.cuatro)); }
+            if (ctx.bbb && (ctx.bbb.text || ctx.bbb.fileUrl)) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Tarjeta…', true); await mkSendChat(telefono, mkQrBody(ctx.bbb)); }
+            mkState.paymentSent[orderId] = true;
+        }
+        // La foto de este bloque (WhatsApp no soporta WebP -> convertir a JPEG).
+        setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Enviando foto…', true);
         const wa = await mkFetchJson('/api/mockups/wa-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: imageUrl }) });
-        await mkSendChat(telefono, { fileUrl: wa.jpgUrl, fileType: 'image/jpeg' });   // foto sin caption
+        await mkSendChat(telefono, { fileUrl: wa.jpgUrl, fileType: 'image/jpeg' });
 
         await mkAfterSend(orderId, telefono, true);   // estatus -> "Foto enviada" + IA encendida
-        mkToast('Enviado al cliente ✅ (pago + tarjeta + foto)', 'success');
+        mkToast('Foto enviada al cliente ✅', 'success');
         setBtn('<i class="fas fa-check mr-2"></i>Enviado', true);
     } catch (e) {
         mkToast('Error al enviar: ' + e.message, 'error');
