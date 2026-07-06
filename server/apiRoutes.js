@@ -8285,6 +8285,20 @@ router.get('/debug/guia-notif', async (req, res) => {
     }
 });
 
+// --- GET /api/debug/qr — leer una respuesta rápida por shortcut (TEMPORAL). ---
+router.get('/debug/qr', async (req, res) => {
+    if (req.query.key !== 't1diag_9f3k2xQ7') return res.status(403).json({ success: false, message: 'forbidden' });
+    const shortcut = String(req.query.shortcut || '').replace(/^\/+/, '').trim();
+    if (!shortcut) return res.status(400).json({ success: false, message: 'shortcut requerido' });
+    try {
+        const snap = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
+        if (snap.empty) return res.json({ success: true, found: false, shortcut });
+        const doc = snap.docs[0];
+        const d = doc.data();
+        res.json({ success: true, found: true, id: doc.id, shortcut: d.shortcut, message: d.message || '', fileUrl: d.fileUrl || null, fileType: d.fileType || null });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
 // --- GET /api/rastreo/:guia — rastreo PÚBLICO amigable de una guía (para la página del cliente). ---
 router.get('/rastreo/:guia', async (req, res) => {
     try {
