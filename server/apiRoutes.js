@@ -8134,7 +8134,7 @@ function _mapDestinoT1(datos = {}) {
     return {
         codigo_postal: String(datos.codigoPostal || '').replace(/\D/g, ''),
         nombre, apellidos,
-        email: datos.email || '',
+        email: datos.email || process.env.T1_DEST_EMAIL || 'dekoorhouse.work@gmail.com', // T1 exige email de destinatario; el formulario no lo pide -> respaldo
         calle: calleFull || 'Domicilio',
         numero: numMatch ? numMatch[1] : 'SN',
         colonia: datos.colonia || '',
