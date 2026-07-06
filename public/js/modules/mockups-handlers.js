@@ -280,7 +280,8 @@ async function mkSend(orderId) {
     const card = document.querySelector(`.mk-card[data-order="${window.CSS && CSS.escape ? CSS.escape(orderId) : orderId}"]`);
     if (!card) return;
     const telefono = card.dataset.phone;
-    const imageUrl = mkState.results[orderId];
+    // Usa el preview generado en esta sesión o el guardado (persistido) del pedido.
+    const imageUrl = mkState.results[orderId] || (mkState.pending.find(o => o.id === orderId) || {}).previewUrl;
     if (!telefono) { mkToast('Este pedido no tiene teléfono.', 'error'); return; }
     if (!imageUrl) { mkToast('Genera el preview primero.', 'error'); return; }
 
