@@ -1213,6 +1213,29 @@ async function sendApprovedTemplateMessage(waId, templateName, params = [], { so
  * OJO WhatsApp: con la ventana cerrada, los mensajes de formato libre (/dgui + nº) solo se entregan
  * cuando el cliente responde; la plantilla sí llega siempre.
  */
+// Refleja en el chat del CRM un mensaje saliente ya enviado. sendAdvancedWhatsAppMessage MANDA el
+// mensaje pero NO lo guarda (devuelve el texto para que el llamador lo guarde); el aviso de guía no lo
+// hacía -> el cliente sí recibía /dgui y /rastreo pero no aparecían en el chat (parecía que no llegó).
+async function _reflectOutgoingGuia(contactId, sent, fallbackText, fileUrl, fileType) {
+    try {
+        const text = (sent && sent.textForDb) || fallbackText || '';
+        const contactRef = db.collection('contacts_whatsapp').doc(String(contactId));
+        await contactRef.collection('messages').add({
+            from: PHONE_NUMBER_ID, status: 'sent',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: (sent && sent.id) || null,
+            text,
+            fileUrl: (sent && sent.fileUrlForDb) || fileUrl || null,
+            fileType: (sent && sent.fileTypeForDb) || fileType || null,
+            source: 'guia',
+        });
+        await contactRef.update({
+            lastMessage: String(text || (fileUrl ? '📎 Archivo' : '')).substring(0, 100),
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    } catch (e) { console.warn('[GUIA-NOTIF] no se reflejó el mensaje en el CRM:', e.message); }
+}
+
 async function notifyGuiaToCustomer(contactId, guia, opts = {}) {
     const dry = !!opts.dryRun;
     const steps = [];
@@ -1252,7 +1275,7 @@ async function notifyGuiaToCustomer(contactId, guia, opts = {}) {
             const qr = await findQuickReplyByShortcut('dgui');
             if (!qr) push('dgui', false, 'no existe la respuesta rápida /dgui');
             else if (dry) push('dgui', true, `DRY: existe (${qr.fileUrl ? 'con archivo' : 'solo texto'})`);
-            else { await sendAdvancedWhatsAppMessage(contactId, { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null }); push('dgui', true, 'enviada'); }
+            else { const s = await sendAdvancedWhatsAppMessage(contactId, { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null }); await _reflectOutgoingGuia(contactId, s, qr.message || '', qr.fileUrl, qr.fileType); push('dgui', true, 'enviada'); }
         } catch (e) { push('dgui', false, e.message); }
 
         // Link de rastreo amigable (respuesta rápida /rastreo). SOLO con la ventana ABIERTA:
@@ -1265,10 +1288,10 @@ async function notifyGuiaToCustomer(contactId, guia, opts = {}) {
                     let msg = qrR.message.replace(/\{GUIA\}/g, String(guia));
                     if (!/\{GUIA\}/.test(qrR.message) && msg.indexOf('/rastreo/') < 0) msg += `\n${link}`;
                     if (dry) push('rastreo', true, `DRY: QR /rastreo -> ${msg.slice(0, 70)}`);
-                    else { await sendAdvancedWhatsAppMessage(contactId, { text: msg, fileUrl: qrR.fileUrl || null, fileType: qrR.fileType || null }); push('rastreo', true, 'enviada'); }
+                    else { const s = await sendAdvancedWhatsAppMessage(contactId, { text: msg, fileUrl: qrR.fileUrl || null, fileType: qrR.fileType || null }); await _reflectOutgoingGuia(contactId, s, msg, qrR.fileUrl, qrR.fileType); push('rastreo', true, 'enviada'); }
                 } else {
                     if (dry) push('rastreo', true, `DRY: sin QR, link ${link}`);
-                    else { await sendAdvancedWhatsAppMessage(contactId, { text: `📦 Rastrea tu paquete en tiempo real aquí:\n${link}` }); push('rastreo', true, 'enviada (fallback link)'); }
+                    else { const fb = `📦 Rastrea tu paquete en tiempo real aquí:\n${link}`; const s = await sendAdvancedWhatsAppMessage(contactId, { text: fb }); await _reflectOutgoingGuia(contactId, s, fb, null, null); push('rastreo', true, 'enviada (fallback link)'); }
                 }
             } catch (e) { push('rastreo', false, e.message); }
         } else push('rastreo', true, 'omitida (guia_lista ya trae el botón de rastreo)');
