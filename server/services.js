@@ -1158,10 +1158,16 @@ async function sendApprovedTemplateMessage(waId, templateName, params = [], { so
     const components = [];
     if (placeholders.length > 0) components.push({ type: 'body', parameters: cleanParams.map(text => ({ type: 'text', text })) });
     // Botón URL dinámico ({{n}} en la URL del botón, p.ej. /rastreo/{{1}}): pasar el valor (nº de guía).
+    let btnReflect = ''; // para reflejar el link del botón en el chat del CRM (el botón real ya va al cliente).
     if (buttonUrlParam != null) {
         const btnComp = (template.components || []).find(c => c.type === 'BUTTONS');
         const idx = btnComp ? (btnComp.buttons || []).findIndex(b => b.type === 'URL' && /\{\{\d+\}\}/.test(b.url || '')) : -1;
-        if (idx >= 0) components.push({ type: 'button', sub_type: 'url', index: String(idx), parameters: [{ type: 'text', text: String(buttonUrlParam) }] });
+        if (idx >= 0) {
+            components.push({ type: 'button', sub_type: 'url', index: String(idx), parameters: [{ type: 'text', text: String(buttonUrlParam) }] });
+            const b = btnComp.buttons[idx];
+            const resolvedUrl = String(b.url || '').replace(/\{\{\d+\}\}/g, String(buttonUrlParam));
+            btnReflect = `\n\n🔗 ${b.text || 'Ver'}: ${resolvedUrl}`;
+        }
     }
     const payload = {
         messaging_product: 'whatsapp',
@@ -1181,6 +1187,7 @@ async function sendApprovedTemplateMessage(waId, templateName, params = [], { so
     // 4) Reflejar el mensaje renderizado en el chat del CRM (para que se vea el envío)
     let renderedText = bodyComp?.text || '';
     cleanParams.forEach((val, i) => { renderedText = renderedText.replace(new RegExp(`\\{\\{${i + 1}\\}\\}`, 'g'), val); });
+    renderedText += btnReflect; // añade "🔗 Rastrear mi pedido: <link>" al reflejo del CRM si el template trae botón URL
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(waId);
         await contactRef.collection('messages').add({
