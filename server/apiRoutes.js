@@ -7741,6 +7741,11 @@ router.get('/buscar-cp', async (req, res) => {
     res.json({ success: true, results });
 });
 
+// --- LISTA DE ESTADOS (SEPOMEX LOCAL) — para el dropdown del formulario de datos ---
+router.get('/estados', (_req, res) => {
+    res.json({ success: true, estados: sepomex.getEstados() });
+});
+
 // --- DATOS PARA ENVÍO ---
 router.get('/datos-envio', async (req, res) => {
     try {

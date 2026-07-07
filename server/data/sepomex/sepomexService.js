@@ -60,4 +60,15 @@ function searchByColonia(estado, colonia) {
     return results;
 }
 
-module.exports = { getByCp, searchByColonia };
+let estadosCache = null;
+/** Lista única de estados (para el dropdown del formulario). Se calcula una vez y se cachea. */
+function getEstados() {
+    if (estadosCache) return estadosCache;
+    const data = loadData();
+    const set = new Set();
+    for (const cp in data) { const e = data[cp] && data[cp].estado; if (e) set.add(e); }
+    estadosCache = Array.from(set).sort((a, b) => a.localeCompare(b, 'es'));
+    return estadosCache;
+}
+
+module.exports = { getByCp, searchByColonia, getEstados };

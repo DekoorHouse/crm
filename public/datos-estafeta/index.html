@@ -135,6 +135,7 @@
             <div id="resultados" class="resultados"></div>
           </div>
           <div class="hint">Elige una sugerencia para autocompletar y verificar tu dirección, o escríbela tú mismo abajo.</div>
+          <button type="button" id="btnUbicacion" class="btn-ubicar" style="margin-top:8px"><i class="fas fa-location-crosshairs"></i> Usar mi ubicación</button>
         </div>
 
         <div class="field">
@@ -172,6 +173,23 @@
             <input type="text" id="cp" placeholder="34000" maxlength="5" inputmode="numeric" pattern="[0-9]{5}" required />
           </div>
           <div class="hint" id="cpHint"></div>
+          <label style="display:flex;align-items:center;gap:7px;margin-top:8px;font-size:13px;color:var(--teal);cursor:pointer;font-weight:600;width:fit-content">
+            <input type="checkbox" id="noSeCP" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer"> No sé mi código postal
+          </label>
+          <div id="buscarCPBlock" style="display:none;margin-top:10px;background:#fff;border:1.5px solid var(--gold);border-radius:12px;padding:13px">
+            <p style="font-size:12.5px;color:var(--muted);margin:0 0 9px;line-height:1.4">Elige tu <b>estado</b> y escribe tu <b>colonia</b>; te buscamos el C.P. 👇</p>
+            <div class="field" style="margin-bottom:10px">
+              <div class="inputwrap"><i class="fas fa-map"></i>
+                <select id="estadoBusqueda"><option value="">Selecciona tu estado…</option></select>
+              </div>
+            </div>
+            <div class="searchwrap">
+              <div class="inputwrap"><i class="fas fa-magnifying-glass"></i>
+                <input type="text" id="buscarColonia" placeholder="Escribe tu colonia…" autocomplete="off" />
+              </div>
+              <div id="resultadosCP" class="resultados"></div>
+            </div>
+          </div>
         </div>
 
         <div class="field">
@@ -196,7 +214,7 @@
           <div class="field">
             <label for="estado">Estado <span class="req">*</span></label>
             <div class="inputwrap"><i class="fas fa-map"></i>
-              <input type="text" id="estado" placeholder="Estado" required />
+              <select id="estado" required><option value="">Selecciona…</option></select>
             </div>
           </div>
         </div>
@@ -267,6 +285,27 @@
   function val(id){ const el=$(id); return el?el.value.trim():''; }
   function norm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim(); }
 
+  // ---------- Estado como lista desplegable (SEPOMEX) ----------
+  function setEstado(value){
+    const sel=$('estado');
+    if(!sel) return;
+    if(sel.tagName!=='SELECT'){ sel.value=value; return; }
+    const nv=norm(value);
+    const opt=Array.from(sel.options).find(o=>o.value&&(norm(o.value)===nv||norm(o.textContent)===nv));
+    if(opt) sel.value=opt.value;
+  }
+  (async()=>{
+    try{
+      const r=await fetch(API+'/api/estados'); const d=await r.json();
+      if(d&&d.success&&Array.isArray(d.estados)&&d.estados.length){
+        const opts=d.estados.map(e=>'<option value="'+esc(e)+'">'+esc(e)+'</option>').join('');
+        const s1=$('estado'), s2=$('estadoBusqueda');
+        if(s1&&s1.tagName==='SELECT') s1.innerHTML='<option value="">Selecciona…</option>'+opts;
+        if(s2) s2.innerHTML='<option value="">Selecciona tu estado…</option>'+opts;
+      }
+    }catch(e){}
+  })();
+
   // Mostrar el pedido y precargar teléfono desde el CRM.
   if(pedidoUrl){
     $('pedidoNum').textContent=pedidoUrl;
@@ -333,7 +372,7 @@
         }
         const ciudad=d.ciudad||d.municipio||'';
         if(ciudad) $('ciudad').value=ciudad;
-        if(d.estado) $('estado').value=d.estado;
+        if(d.estado) setEstado(d.estado);
         cpHint.textContent=(ciudad?ciudad:'')+(d.estado?(', '+d.estado):'')+' · '+d.colonias.length+' colonias'; cpHint.className='hint ok';
         $('coloniaManualHint').style.display='block';
       }else{
@@ -418,7 +457,7 @@
       if(calle) $('calle').value=calle;
       if(numExt) $('numExterior').value=numExt;
       if(ciudad) $('ciudad').value=ciudad;
-      if(estado) $('estado').value=estado;
+      if(estado) setEstado(estado);
       const cpClean = cp ? cp.replace(/\D/g,'').slice(0,5) : '';
       if(cpClean){
         cpInput.value=cpClean;
@@ -477,6 +516,72 @@
     geoTimer=setTimeout(()=>geocodificar(true), 500);
   }
   ['calle','numExterior','cp','colonia'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('change', onDireccionChange); });
+
+  // ---------- "No sé mi C.P.": buscar el C.P. por estado + colonia (búsqueda inversa SEPOMEX) ----------
+  const noSeCP=$('noSeCP'), buscarCPBlock=$('buscarCPBlock'), estadoBusqueda=$('estadoBusqueda'), buscarColonia=$('buscarColonia'), resultadosCP=$('resultadosCP');
+  if(noSeCP) noSeCP.addEventListener('change', ()=>{
+    buscarCPBlock.style.display = noSeCP.checked ? 'block' : 'none';
+    if(noSeCP.checked){ if($('estado').value) estadoBusqueda.value=$('estado').value; buscarColonia.focus(); }
+  });
+  let cpTimer=null;
+  if(buscarColonia) buscarColonia.addEventListener('input', ()=>{
+    clearTimeout(cpTimer);
+    const col=buscarColonia.value.trim(), est=estadoBusqueda.value;
+    if(!est){ resultadosCP.innerHTML='<div class="empty">Elige tu estado primero ☝️</div>'; resultadosCP.classList.add('show'); return; }
+    if(col.length<3){ resultadosCP.classList.remove('show'); return; }
+    cpTimer=setTimeout(()=>buscarCP(est,col), 300);
+  });
+  async function buscarCP(est,col){
+    resultadosCP.innerHTML='<div class="empty">Buscando…</div>'; resultadosCP.classList.add('show');
+    try{
+      const r=await fetch(API+'/api/buscar-cp?estado='+encodeURIComponent(est)+'&colonia='+encodeURIComponent(col));
+      const d=await r.json(); const rs=(d&&d.results)||[];
+      if(!rs.length){ resultadosCP.innerHTML='<div class="empty">Sin coincidencias. Revisa el estado o escribe tu C.P. arriba.</div>'; return; }
+      resultadosCP.innerHTML=rs.slice(0,30).map((x,i)=>'<div class="item" data-i="'+i+'"><b>'+esc(x.colonia)+'</b> <span style="color:#7c8a91">C.P. '+esc(x.codigoPostal)+' · '+esc(x.municipio||x.ciudad||'')+'</span></div>').join('');
+      resultadosCP.querySelectorAll('.item').forEach(el=>el.addEventListener('click', ()=>elegirCP(rs[+el.dataset.i])));
+    }catch(e){ resultadosCP.innerHTML='<div class="empty">No se pudo buscar. Escribe tu C.P. arriba.</div>'; }
+  }
+  async function elegirCP(x){
+    cpInput.value=x.codigoPostal;
+    if(x.municipio||x.ciudad) $('ciudad').value=x.municipio||x.ciudad;
+    setEstado(x.estado);
+    await cargarColonias(x.codigoPostal, x.colonia);
+    resultadosCP.classList.remove('show');
+    if(noSeCP){ noSeCP.checked=false; buscarCPBlock.style.display='none'; }
+    cpHint.scrollIntoView({behavior:'smooth',block:'center'});
+  }
+  document.addEventListener('click', e=>{ if(!e.target.closest('#buscarCPBlock')) resultadosCP.classList.remove('show'); });
+
+  // ---------- "Usar mi ubicación" (geolocalización + reverse geocode con Google) ----------
+  const btnUbicacion=$('btnUbicacion');
+  if(btnUbicacion) btnUbicacion.addEventListener('click', ()=>{
+    if(!navigator.geolocation){ showAlert('error','Tu teléfono no permite compartir ubicación. Escribe tu dirección.'); return; }
+    const orig=btnUbicacion.innerHTML; btnUbicacion.disabled=true; btnUbicacion.innerHTML='<i class="fas fa-spinner fa-spin"></i> Ubicando…';
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const lat=pos.coords.latitude, lng=pos.coords.longitude;
+      pinManual=false; map.setView([lat,lng],17); setPunto(lat,lng,'desde tu ubicación');
+      try{
+        if(geocoder){
+          const { results }=await geocoder.geocode({ location:{ lat, lng } });
+          if(results&&results.length){
+            const ac=results[0].addressComponents||results[0].address_components||[];
+            const calle=comp(ac,'route'), numExt=comp(ac,'street_number');
+            const colonia=comp(ac,'sublocality_level_1')||comp(ac,'neighborhood')||comp(ac,'sublocality');
+            const cp=comp(ac,'postal_code'), ciudad=comp(ac,'locality')||comp(ac,'administrative_area_level_2'), estado=comp(ac,'administrative_area_level_1');
+            if(calle)$('calle').value=calle; if(numExt)$('numExterior').value=numExt;
+            if(ciudad)$('ciudad').value=ciudad; if(estado)setEstado(estado);
+            const cpClean=cp?cp.replace(/\D/g,'').slice(0,5):'';
+            if(cpClean){ cpInput.value=cpClean; await cargarColonias(cpClean, colonia); }
+          }
+        }
+      }catch(e){}
+      btnUbicacion.disabled=false; btnUbicacion.innerHTML=orig;
+      showAlert('success','Tomamos tu ubicación 📍 Revisa que la dirección esté correcta.');
+    }, err=>{
+      btnUbicacion.disabled=false; btnUbicacion.innerHTML=orig;
+      showAlert('error', err.code===1 ? 'No diste permiso de ubicación. Actívalo en tu navegador o escribe tu dirección.' : 'No pudimos tomar tu ubicación. Escribe tu dirección.');
+    }, { enableHighAccuracy:true, timeout:10000, maximumAge:0 });
+  });
 
   // ---------- Enviar ----------
   form.addEventListener('submit', async (e)=>{
