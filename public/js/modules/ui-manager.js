@@ -267,7 +267,7 @@ function _paintEnvios() {
               <a href="https://app.enviosperros.com/wallet" target="_blank" rel="noopener" style="text-decoration:none;color:var(--color-primary,#ef4444);font-weight:600">Envíos Perros · Estafeta ↗</a>
             </div>
             <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo.</p>
-            <div>
+            <div id="envios-scroll" style="overflow:auto">
               <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
                 <thead>
                   <tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light);white-space:nowrap">
@@ -292,8 +292,20 @@ function _paintEnvios() {
               </table>
             </div>
             <p class="text-xs text-gray-400 mt-3">${shown.length} de ${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''} · ${pendCount} pendiente(s) de guía · ${guiaCount} con guía.</p>`;
+    requestAnimationFrame(_ajustarAltoEnvios); // scroll dentro de la tabla: barra horizontal visible + header sticky
 }
 window._paintEnvios = _paintEnvios;
+
+// Da al contenedor de la tabla un alto que llene lo que queda de pantalla, para que el scroll (vertical
+// Y horizontal) viva DENTRO de la tabla: header sticky arriba y barra horizontal visible al fondo de la
+// tabla (no al final de toda la página). Robusto ante zoom/tamaño (mide su posición real en pantalla).
+function _ajustarAltoEnvios() {
+    const el = document.getElementById('envios-scroll');
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    el.style.maxHeight = Math.max(260, Math.round(window.innerHeight - top - 30)) + 'px';
+}
+window.addEventListener('resize', () => { if (document.getElementById('envios-scroll')) _ajustarAltoEnvios(); });
 
 // Filtro de la tabla de Envíos: 'all' | 'pendiente' (sin guía) | 'guia' (con guía).
 function setEnviosFilter(f) { window._enviosFilter = f; _paintEnvios(); }
