@@ -7927,6 +7927,7 @@ router.get('/envios', async (_req, res) => {
                 orderNumber,
                 montoPagado: (p.precio != null ? p.precio : null),
                 estatus: p.estatus || null,
+                comentarioInterno: p.comentarioInterno || '', // nota interna del operador (NO sale en la guía)
                 comprobanteValidadoAt: p.comprobanteValidadoAt && p.comprobanteValidadoAt.toDate ? p.comprobanteValidadoAt.toDate().toISOString() : null,
                 datos,               // objeto con cada campo, o null si el cliente aún no llena el formulario
                 tieneDatos: !!de,
@@ -7952,6 +7953,7 @@ router.get('/envios', async (_req, res) => {
                 orderNumber: m.orderNumber || doc.id,
                 montoPagado: (m.montoPagado != null && m.montoPagado !== '' ? Number(m.montoPagado) : null),
                 estatus: null,
+                comentarioInterno: m.comentarioInterno || '', // nota interna del operador (NO sale en la guía)
                 comprobanteValidadoAt: m.createdAt && m.createdAt.toDate ? m.createdAt.toDate().toISOString() : null,
                 datos,
                 tieneDatos,
@@ -7980,6 +7982,22 @@ router.get('/envios', async (_req, res) => {
     } catch (error) {
         console.error('[ENVIOS] Error en GET /envios:', error.message);
         res.status(500).json({ success: false, message: 'Error al cargar los envíos.', error: error.message });
+    }
+});
+
+// --- POST /api/envios/comentario — guarda una NOTA INTERNA en la línea (pedido o manual). NO sale en la guía. ---
+router.post('/envios/comentario', async (req, res) => {
+    try {
+        const b = req.body || {};
+        const comentario = String(b.comentario || '').slice(0, 1000);
+        const col = b.manualId ? 'envios_manuales' : 'pedidos';
+        const docId = b.manualId || b.docId;
+        if (!docId) return res.status(400).json({ success: false, message: 'docId o manualId requerido.' });
+        await db.collection(col).doc(docId).set({ comentarioInterno: comentario }, { merge: true });
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[ENVIOS] comentario:', e.message);
+        res.status(500).json({ success: false, message: e.message });
     }
 });
 

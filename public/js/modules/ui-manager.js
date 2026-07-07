@@ -198,6 +198,8 @@ function _paintEnvios() {
             const statusCell = statusDocId
                 ? `<td style="padding:8px 14px 8px 0"><select onchange="changeEnvioStatus('${statusDocId}', this.value, this)" style="font-size:12px;padding:4px 6px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);max-width:150px">${ENVIO_STATUS_OPTIONS.map(o => `<option${(e.estatus || 'Sin estatus') === o ? ' selected' : ''}>${o}</option>`).join('')}</select></td>`
                 : `<td style="padding:10px 14px 10px 0;color:#cbd5e1" title="Esta línea manual no coincide con ningún pedido registrado">—</td>`;
+            // Nota interna (NO sale en la guía). Editable; guarda al salir del campo (onblur).
+            const comentarioCell = `<td style="padding:6px 12px 6px 0"><textarea onblur="changeEnvioComentario('${escapeHtml(e.id || '')}','${escapeHtml(e.manualId || '')}',this)" placeholder="Nota interna…" title="Solo para ti — no aparece en la guía" style="width:150px;min-height:34px;max-height:90px;font-size:12px;line-height:1.3;padding:5px 7px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;resize:vertical;background:var(--color-surface,#fff);color:var(--color-text,#334155)">${escapeHtml(e.comentarioInterno || '')}</textarea></td>`;
             const d = e.datos;
             let dataCells;
             if (d) {
@@ -241,6 +243,7 @@ function _paintEnvios() {
                 ${pedidoCell}
                 ${cell(montoVal, 'white-space:nowrap;font-weight:600')}
                 ${statusCell}
+                ${comentarioCell}
                 ${dataCells}
                 ${accionCell}
             </tr>`;
@@ -269,6 +272,7 @@ function _paintEnvios() {
                     <th style="padding:8px 14px 8px 0">Pedido</th>
                     <th style="padding:8px 14px 8px 0">Monto pagado</th>
                     <th style="padding:8px 14px 8px 0">Estatus</th>
+                    <th style="padding:8px 14px 8px 0">Comentario</th>
                     <th style="padding:8px 14px 8px 0">Nombre</th>
                     <th style="padding:8px 14px 8px 0">Dirección</th>
                     <th style="padding:8px 14px 8px 0">Colonia</th>
@@ -281,7 +285,7 @@ function _paintEnvios() {
                     <th style="padding:8px 0;text-align:right">Guía / Acciones</th>
                   </tr>
                 </thead>
-                <tbody>${rows || '<tr><td colspan="14" style="padding:16px 0;color:#94a3b8">No hay envíos en este filtro.</td></tr>'}</tbody>
+                <tbody>${rows || '<tr><td colspan="15" style="padding:16px 0;color:#94a3b8">No hay envíos en este filtro.</td></tr>'}</tbody>
               </table>
             </div>
             <p class="text-xs text-gray-400 mt-3">${shown.length} de ${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''} · ${pendCount} pendiente(s) de guía · ${guiaCount} con guía.</p>`;
@@ -308,6 +312,24 @@ async function changeEnvioStatus(orderId, newStatus, sel) {
     }
 }
 window.changeEnvioStatus = changeEnvioStatus;
+
+// Guarda la NOTA INTERNA de una línea de Envíos (no sale en la guía). Guarda al salir del campo.
+async function changeEnvioComentario(lineId, manualId, el) {
+    const comentario = (el && el.value) || '';
+    try { const e = (window._enviosData || []).find(x => x.id === lineId); if (e) e.comentarioInterno = comentario; } catch (_) {}
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/envios/comentario`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ docId: lineId, manualId: manualId || null, comentario })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
+        if (el) { el.style.borderColor = '#16a34a'; setTimeout(() => { el.style.borderColor = 'var(--color-border,#e5e7eb)'; }, 800); }
+    } catch (e) {
+        if (window.showError) showError('No se pudo guardar la nota: ' + (e.message || e)); else alert('No se pudo guardar la nota: ' + (e.message || e));
+    }
+}
+window.changeEnvioComentario = changeEnvioComentario;
 
 // Quita un pedido de la tabla de Envíos (oculta, NO borra el pedido).
 async function ocultarEnvio(docId) {
