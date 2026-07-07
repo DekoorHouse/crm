@@ -155,12 +155,24 @@ async function renderEnviosView() {
         const res = await fetch(`${API_BASE_URL}/api/envios`);
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
-        const envios = data.envios || [];
-        window._enviosData = envios; // para los handlers de cotizar/crear guía
-        if (!envios.length) {
-            container.innerHTML = '<p class="text-gray-500">Aún no hay pedidos con comprobante validado. Aparecerán aquí cuando la IA valide un comprobante de pago.</p>';
-            return;
-        }
+        window._enviosData = data.envios || []; // para los handlers de cotizar/crear guía
+        _paintEnvios();
+    } catch (e) {
+        container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los envíos: ${escapeHtml(e.message || String(e))}</p>
+            <button class="btn btn-outline btn-sm mt-2" onclick="renderEnviosView()">Reintentar</button>`;
+    }
+}
+window.renderEnviosView = renderEnviosView;
+
+// Pinta la tabla de Envíos desde window._enviosData (SIN volver a consultar) -> refrescos instantáneos.
+function _paintEnvios() {
+    const container = document.getElementById('envios-container');
+    if (!container) return;
+    const envios = window._enviosData || [];
+    if (!envios.length) {
+        container.innerHTML = '<p class="text-gray-500">Aún no hay pedidos con comprobante validado. Aparecerán aquí cuando la IA valide un comprobante de pago.</p>';
+        return;
+    }
         // Celda copiable: al hacer clic copia su valor. Vacío -> "—" no copiable.
         const cell = (val, style = '') => {
             const v = (val == null ? '' : String(val)).trim();
@@ -273,15 +285,11 @@ async function renderEnviosView() {
               </table>
             </div>
             <p class="text-xs text-gray-400 mt-3">${shown.length} de ${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''} · ${pendCount} pendiente(s) de guía · ${guiaCount} con guía.</p>`;
-    } catch (e) {
-        container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los envíos: ${escapeHtml(e.message || String(e))}</p>
-            <button class="btn btn-outline btn-sm mt-2" onclick="renderEnviosView()">Reintentar</button>`;
-    }
 }
-window.renderEnviosView = renderEnviosView;
+window._paintEnvios = _paintEnvios;
 
 // Filtro de la tabla de Envíos: 'all' | 'pendiente' (sin guía) | 'guia' (con guía).
-function setEnviosFilter(f) { window._enviosFilter = f; renderEnviosView(); }
+function setEnviosFilter(f) { window._enviosFilter = f; _paintEnvios(); }
 window.setEnviosFilter = setEnviosFilter;
 
 // Cambia el estatus del pedido desde Envíos. Reusa el endpoint que YA dispara el evento Meta al pasar a "Fabricar".
@@ -608,6 +616,13 @@ async function crearGuiaDesdeModal(payloadEnc) {
             return;
         }
         if (!r.ok || !j.success) { const _dt = j.detail ? (typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)) : ''; throw new Error((j.message || ('HTTP ' + r.status)) + (_dt ? ' — ' + _dt : '')); }
+        // Mover la fila a "Con guía" AL INSTANTE (sin F5): actualizar en memoria y re-pintar la lista de fondo.
+        try {
+            if (e && j.guia) {
+                e.guiaEnvio = { proveedor: j.proveedor || opt.proveedor || 't1', guia: j.guia, mensajeria: opt.mensajeria || (opt.proveedor === 'ep' ? 'ENVIOSPERROS' : 'DHL'), tipoServicio: opt.tipoServicio || null, costo: (opt.costo != null ? Number(opt.costo) : null), pdfPath: j.pdfPath || null, labelUrl: j.labelUrl || null, tracking: j.tracking || null };
+                if (typeof _paintEnvios === 'function') _paintEnvios();
+            }
+        } catch (_) { }
         const etiqueta = j.pdfPath ? `<a href="${API_BASE_URL}/api/envios/etiqueta?path=${encodeURIComponent(j.pdfPath)}" target="_blank" rel="noopener" style="${btnStyle}">🏷️ Descargar etiqueta</a>` : (j.labelUrl ? `<a href="${j.labelUrl}" target="_blank" rel="noopener" style="${btnStyle}">🏷️ Etiqueta</a>` : '');
         const rastreo = j.tracking ? `<a href="${j.tracking}" target="_blank" rel="noopener" style="${btnStyle};background:#334155">📍 Rastrear</a>` : '';
         const titulo = j.already ? 'Este pedido ya tenía guía' : '¡Guía creada!';
