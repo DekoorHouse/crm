@@ -8158,7 +8158,7 @@ function _mapDestinoT1(datos = {}) {
         codigo_postal: String(datos.codigoPostal || '').replace(/\D/g, ''),
         nombre, apellidos,
         email: datos.email || process.env.T1_DEST_EMAIL || 'dekoorhouse.work@gmail.com', // T1 exige email de destinatario; el formulario no lo pide -> respaldo
-        calle: calleFull || 'Domicilio',
+        calle: (numMatch ? calleFull.slice(0, numMatch.index).trim() : calleFull) || 'Domicilio', // sin el nº exterior (va en `numero`) para no duplicarlo
         numero: numMatch ? numMatch[1] : 'SN',
         colonia: datos.colonia || '',
         telefono: String(datos.telefono || '').replace(/\D/g, ''),
@@ -8286,8 +8286,15 @@ router.post('/envios/crear-guia', async (req, res) => {
 
         res.json({ success: true, proveedor, guia, numOrden, pickUp, pdfPath, labelUrl: labelUrl || null, tracking: tracking || null });
     } catch (e) {
-        console.error('[GUIA] crear-guia:', e.response && e.response.status, (e.response && e.response.data) || e.message);
-        res.status(502).json({ success: false, message: 'No se pudo crear la guía.', detail: (e.response && e.response.data) || e.message });
+        const t1body = (e.response && e.response.data) || null;
+        const t1msg = String((t1body && t1body.message) || e.message || '');
+        console.error('[GUIA] crear-guia:', e.response && e.response.status, t1body ? JSON.stringify(t1body) : e.message);
+        // DHL (vía T1) rechaza direcciones que no cuadran con su catálogo (típico: la colonia no coincide con el C.P.).
+        // T1 NO detalla el problema ("Multiple problems found, see Additional Details" sin los detalles) -> guiamos al operador.
+        if (/multiple problems|additional details|colonia|c[oó]?digo postal|\bzip\b|catal/i.test(t1msg)) {
+            return res.status(502).json({ success: false, message: 'DHL no aceptó esta dirección (su catálogo es estricto; casi siempre la colonia no coincide con el C.P.). Elige la opción de Estafeta en el modal para este pedido, o corrige el C.P./colonia.', detail: t1body || e.message });
+        }
+        res.status(502).json({ success: false, message: 'No se pudo crear la guía.', detail: t1body || e.message });
     }
 });
 
