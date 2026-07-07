@@ -201,14 +201,14 @@ function setupChatListEventListeners() {
 // --- LÓGICA DE CHAT EXISTENTE (CON LIGEROS CAMBIOS) ---
 
 // MODIFICADO: Aceptar opciones (como preserveScroll) para pasarlas a renderMessages
-function renderChatWindow(options = {}) { 
-    if (state.activeView !== 'chats') return;
-    
+function renderChatWindow(options = {}) {
+    if (state.activeView !== 'chats' && !state.chatModalOpen) return; // permite pintar en el modal de Envíos
+
     const chatPanelEl = document.getElementById('chat-panel');
     if (!chatPanelEl) return;
 
-    const contact = state.contacts.find(c => c.id === state.selectedContactId); 
-    chatPanelEl.innerHTML = ChatWindowTemplate(contact); 
+    const contact = state.contacts.find(c => c.id === state.selectedContactId);
+    chatPanelEl.innerHTML = ChatWindowTemplate(contact);
 
     const searchInput = document.getElementById('search-contacts-input');
     if (searchInput) {
@@ -383,7 +383,17 @@ function setupDragAndDropForChatArea() {
     });
 }
 
-async function handleSelectContact(contactId) { 
+// Detiene los listeners del chat (mensajes/notas/pedidos) y limpia la selección. Se usa al CERRAR
+// el chat abierto en modal desde Envíos, para no dejar listeners fugados pintando en DOM que ya no existe.
+function stopChatListeners() {
+    try { if (unsubscribeMessagesListener) { unsubscribeMessagesListener(); unsubscribeMessagesListener = null; } } catch (e) {}
+    try { if (unsubscribeNotesListener) { unsubscribeNotesListener(); unsubscribeNotesListener = null; } } catch (e) {}
+    try { if (unsubscribeOrdersListener) { unsubscribeOrdersListener(); unsubscribeOrdersListener = null; } } catch (e) {}
+    state.selectedContactId = null;
+}
+window.stopChatListeners = stopChatListeners;
+
+async function handleSelectContact(contactId) {
     if (state.campaignMode) return;
     
     cancelStagedFile(); 

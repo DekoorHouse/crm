@@ -234,7 +234,7 @@ function _paintEnvios() {
                 actions = `<button onclick="openGuiaModal(${gi})" title="Cotizar y crear guía DHL" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-box mr-1"></i>Crear guía</button>`;
             }
             const editBtn = `<button title="Editar datos de esta fila" onclick="openEnvioEditModal(${gi})" style="border:none;background:transparent;cursor:pointer;color:#334155;padding:4px 8px;font-size:13px;"><i class="fas fa-pen"></i></button>`;
-            const chatBtn = e.contactId ? `<button title="Abrir la conversación en Chats" onclick="handleSelectContactFromPipeline('${escapeHtml(e.contactId)}')" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:13px;"><i class="fas fa-comments"></i></button>` : '';
+            const chatBtn = e.contactId ? `<button title="Ver y responder la conversación (sin salir de Envíos)" onclick="openChatEnviosModal('${escapeHtml(e.contactId)}')" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:13px;"><i class="fas fa-comments"></i></button>` : '';
             // Pedidos reales: "quitar de Envíos" (oculta, no borra). Manuales: borrar de verdad.
             const hideBtn = !e.manualId ? `<button title="Quitar de Envíos (no borra el pedido)" onclick="ocultarEnvio('${e.id}')" style="border:none;background:transparent;cursor:pointer;color:#94a3b8;padding:4px 8px;font-size:13px;"><i class="fas fa-eye-slash"></i></button>` : '';
             const delBtn = e.manualId ? `<button title="Borrar línea manual" onclick="deleteEnvioManual('${e.manualId}')" style="border:none;background:transparent;cursor:pointer;color:#991b1b;padding:4px 8px;font-size:13px;"><i class="fas fa-trash"></i></button>` : '';
@@ -306,6 +306,72 @@ function _ajustarAltoEnvios() {
     el.style.maxHeight = Math.max(260, Math.round(window.innerHeight - top - 30)) + 'px';
 }
 window.addEventListener('resize', () => { if (document.getElementById('envios-scroll')) _ajustarAltoEnvios(); });
+
+// --- Chat en modal (desde Envíos) --------------------------------------------------------------
+// En Envíos NO existe #chat-panel (las vistas se intercambian con innerHTML). Para "ver + responder"
+// sin cambiar de vista, montamos la MISMA plantilla de chat dentro de un modal y reusamos toda la
+// maquinaria real: handleSelectContact -> listeners de Firebase + renderChatWindow + envío. Al cerrar,
+// stopChatListeners() desmonta los listeners para no dejar fugas que pinten en la vista real de Chats.
+function _chatEnviosModalEl() {
+    let m = document.getElementById('chat-envios-modal');
+    if (m) return m;
+    m = document.createElement('div');
+    m.id = 'chat-envios-modal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;z-index:11000;';
+    m.innerHTML = `
+        <div style="position:absolute;top:2vh;left:50%;transform:translateX(-50%);width:min(480px,96vw);height:96vh;background:var(--color-container-bg,#fff);border-radius:16px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45);display:flex;flex-direction:column">
+            <button onclick="closeChatEnviosModal()" title="Cerrar (Esc)"
+                style="position:absolute;top:10px;right:14px;z-index:30;border:none;background:rgba(255,255,255,.92);border-radius:50%;width:34px;height:34px;font-size:22px;line-height:1;cursor:pointer;color:#334155;box-shadow:0 2px 8px rgba(0,0,0,.25)">&times;</button>
+            <div id="chat-envios-slot" style="flex:1;min-height:0;overflow:hidden"></div>
+        </div>`;
+    m.addEventListener('click', e => { if (e.target === m) closeChatEnviosModal(); });
+    document.body.appendChild(m);
+    return m;
+}
+
+async function openChatEnviosModal(contactId) {
+    if (!contactId) return;
+    // Si ya estás en la vista de Chats, no hace falta modal: seleccionar normal.
+    if (state.activeView === 'chats') { handleSelectContactFromPipeline(contactId); return; }
+    const m = _chatEnviosModalEl();
+    const slot = m.querySelector('#chat-envios-slot');
+    slot.innerHTML = ChatViewTemplate();
+    // Mostrar SOLO la conversación: ocultar lista de contactos y panel de detalles; chat a todo lo ancho.
+    const cv = slot.querySelector('#chat-view'); if (cv) { cv.style.height = '100%'; cv.style.width = '100%'; cv.style.display = 'flex'; }
+    const cpanel = slot.querySelector('#contacts-panel'); if (cpanel) cpanel.style.display = 'none';
+    const dpanel = slot.querySelector('#contact-details-panel'); if (dpanel) dpanel.style.display = 'none';
+    const chp = slot.querySelector('#chat-panel'); if (chp) { chp.style.width = '100%'; chp.style.maxWidth = '100%'; chp.style.flex = '1'; }
+    m.style.display = 'block';
+    // Flag para que renderChatWindow (que exige activeView==='chats') pinte dentro del modal en Envíos.
+    state.chatModalOpen = true;
+    // Mismo arranque que la vista real de Chats, pero dentro del modal.
+    try { renderChatWindow(); } catch (e) {}
+    try { if (typeof renderTagFilters === 'function') renderTagFilters(); } catch (e) {}
+    try { if (typeof setupChatListEventListeners === 'function') setupChatListEventListeners(); } catch (e) {}
+    try { await handleSelectContact(contactId); } catch (e) { console.warn('openChatEnviosModal:', e); }
+}
+window.openChatEnviosModal = openChatEnviosModal;
+
+function closeChatEnviosModal() {
+    const m = document.getElementById('chat-envios-modal');
+    state.chatModalOpen = false;
+    // Cortar listeners ANTES de quitar el DOM, para no dejar fugas apuntando al chat real.
+    try { if (typeof stopChatListeners === 'function') stopChatListeners(); } catch (e) {}
+    document.body.classList.remove('chat-open'); // por si se marcó en móvil dentro del modal
+    if (m) {
+        const slot = m.querySelector('#chat-envios-slot');
+        if (slot) slot.innerHTML = '';
+        m.style.display = 'none';
+    }
+}
+window.closeChatEnviosModal = closeChatEnviosModal;
+
+// Cerrar con Esc.
+document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    const m = document.getElementById('chat-envios-modal');
+    if (m && m.style.display !== 'none') closeChatEnviosModal();
+});
 
 // Filtro de la tabla de Envíos: 'all' | 'pendiente' (sin guía) | 'guia' (con guía).
 function setEnviosFilter(f) { window._enviosFilter = f; _paintEnvios(); }
@@ -1208,8 +1274,8 @@ function actualizarContadorNoLeidos(precomputedCount = null) {
 }
 
 // Renderiza la ventana principal de chat (cabecera, mensajes/notas, footer)
-function renderChatWindow(options = {}) { 
-    if (state.activeView !== 'chats') return;
+function renderChatWindow(options = {}) {
+    if (state.activeView !== 'chats' && !state.chatModalOpen) return; // permite pintar en el modal de Envíos
 
     const chatPanelEl = document.getElementById('chat-panel');
     if (!chatPanelEl) return;
@@ -5265,7 +5331,7 @@ function checkAiTimer() {
     }
 
     const contactId = state.selectedContactId;
-    if (!contactId || state.activeView !== 'chats') {
+    if (!contactId || (state.activeView !== 'chats' && !state.chatModalOpen)) {
         const indicator = document.getElementById('ai-typing-indicator');
         if (indicator) indicator.classList.add('hidden');
         return;
