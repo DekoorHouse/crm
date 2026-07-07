@@ -7806,6 +7806,27 @@ router.post('/datos-envio', async (req, res) => {
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
+        // Red de seguridad para Envíos: si el cliente ya llenó el formulario, su pedido DEBE
+        // aparecer en la sección "Envíos". Esa sección solo lista pedidos con comprobanteValidadoAt,
+        // que normalmente lo pone el flujo de /comprobante. Pero si el pedido llegó a pagado por
+        // otra vía (p. ej. se cambió a "Pagado" a mano, sin pasar por el botón de formulario),
+        // el campo queda sin poner y los datos no se ven aunque estén guardados (caso DH12942).
+        // Aquí lo marcamos si falta, uniendo por consecutiveOrderNumber (dígitos de numeroPedido,
+        // sin el prefijo "DH"). No romper el guardado si esto falla: los datos ya se guardaron.
+        try {
+            const numDigits = String(numeroPedido).replace(/\D/g, '');
+            if (numDigits) {
+                const pedSnap = await db.collection('pedidos')
+                    .where('consecutiveOrderNumber', '==', Number(numDigits))
+                    .limit(1).get();
+                if (!pedSnap.empty && !pedSnap.docs[0].data().comprobanteValidadoAt) {
+                    await pedSnap.docs[0].ref.update({ comprobanteValidadoAt: admin.firestore.FieldValue.serverTimestamp() });
+                    console.log(`[ENVIOS] Pedido ${numeroPedido} marcado en Envíos al recibir el formulario (no tenía comprobanteValidadoAt).`);
+                }
+            }
+        } catch (e) {
+            console.warn('[ENVIOS] No se pudo marcar el pedido al recibir el formulario:', e.message);
+        }
 
         res.status(201).json({
             success: true,
