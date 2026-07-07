@@ -8373,13 +8373,21 @@ router.post('/envios/attach-guia', async (req, res) => {
         const dd = snap.data() || {};
         if ((dd.guiaEnvio || {}).guia) return res.json({ success: true, already: true, guia: (dd.guiaEnvio || {}).guia });
         const proveedor = b.proveedor === 'ep' ? 'ep' : 't1';
+        const mensajeria = b.mensajeria || 'DHL';
+        // Link de rastreo según paquetería (para el botón "📍 Rastrear" de la tabla).
+        const gEnc = encodeURIComponent(guia);
+        let tracking = null;
+        if (proveedor !== 'ep') {
+            tracking = /fedex/i.test(mensajeria)
+                ? `https://www.fedex.com/fedextrack/?trknbr=${gEnc}`
+                : `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${gEnc}`;
+        }
         const guiaEnvio = {
-            proveedor, guia,
-            mensajeria: b.mensajeria || 'DHL',
+            proveedor, guia, mensajeria,
             tipoServicio: b.tipoServicio || null,
             costo: (b.costo != null ? Number(b.costo) : null),
             manual: true,
-            tracking: proveedor === 'ep' ? null : `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${encodeURIComponent(guia)}`,
+            tracking,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         };
         await docRef.set({ guiaEnvio }, { merge: true });

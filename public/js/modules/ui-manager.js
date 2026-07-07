@@ -230,8 +230,13 @@ function _paintEnvios() {
                     <span style="display:flex;gap:6px;align-items:center">${courierBadge(g.mensajeria)}<span class="envio-copy" onclick="copyEnvioCell(this)" title="Clic para copiar la guía" style="font-weight:700;color:#166534;cursor:pointer;white-space:nowrap">✓ ${escapeHtml(g.guia)}</span></span>
                     <span style="display:flex;gap:10px">${etiqueta}${rastreo}</span>
                   </div>`;
-            } else if (e.datos && e.datos.codigoPostal) {
-                actions = `<button onclick="openGuiaModal(${gi})" title="Cotizar y crear guía DHL" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-box mr-1"></i>Crear guía</button>`;
+            } else {
+                // Pendiente de guía: crear por API (si hay datos+CP) y/o registrar una guía hecha a mano en T1.
+                const crearBtn = (e.datos && e.datos.codigoPostal)
+                    ? `<button onclick="openGuiaModal(${gi})" title="Cotizar y crear guía DHL/Estafeta (descuenta saldo y avisa al cliente)" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-box mr-1"></i>Crear guía</button>`
+                    : '';
+                const manualBtn = `<button onclick="openEnvioEditModal(${gi}, true)" title="Registrar una guía que hiciste MANUALMENTE en T1 (la pasa a Con guía; no cobra ni notifica)" style="background:transparent;color:#166534;border:1px solid #22c55e;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-clipboard-check mr-1"></i>Guía manual</button>`;
+                actions = `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${crearBtn}${manualBtn}</div>`;
             }
             const editBtn = `<button title="Editar datos de esta fila" onclick="openEnvioEditModal(${gi})" style="border:none;background:transparent;cursor:pointer;color:#334155;padding:4px 8px;font-size:13px;"><i class="fas fa-pen"></i></button>`;
             const chatBtn = e.contactId ? `<button title="Ver y responder la conversación (sin salir de Envíos)" onclick="openChatEnviosModal('${escapeHtml(e.contactId)}')" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:13px;"><i class="fas fa-comments"></i></button>` : '';
@@ -534,12 +539,13 @@ window.closeEnvioEditModal = closeEnvioEditModal;
 let _envioEditActual = null; // objeto de _enviosData en edición (no el índice, para no desincronizar).
 
 // Abre el modal de edición para la fila en el índice i de _enviosData.
-function openEnvioEditModal(i) {
+function openEnvioEditModal(i, focusGuia) {
     const e = (window._enviosData || [])[i];
     if (!e) return;
     _envioEditActual = e;
     const d = e.datos || {};
     const isManual = !!e.manualId;
+    const hasGuia = !!(e.guiaEnvio && e.guiaEnvio.guia);
     const m = _envioEditModalEl();
     const inputStyle = 'width:100%;padding:8px 10px;border:1px solid var(--color-border,#e5e7eb);border-radius:8px;font-size:.85rem;background:var(--color-bg,#fff);color:var(--color-text,#111)';
     const f = (id, label, value, attrs = '') => `
@@ -548,6 +554,24 @@ function openEnvioEditModal(i) {
           <input id="ee-${id}" value="${escapeHtml(value == null ? '' : String(value))}" ${attrs} style="${inputStyle}" />
         </div>`;
     const montoField = isManual ? `<div style="margin-bottom:10px">${f('monto', 'Monto pagado', (e.montoPagado != null ? e.montoPagado : ''), 'inputmode="decimal"')}</div>` : '';
+    // Sección para registrar una guía hecha MANUALMENTE en T1 (no cobra, no notifica; solo pasa a "Con guía").
+    // Solo si la fila aún NO tiene guía. Reusa el endpoint POST /api/envios/attach-guia.
+    const guiaSection = hasGuia ? '' : `
+        <div style="margin:2px 0 4px;padding:12px 14px;border:1px dashed var(--color-primary,#ef4444);border-radius:10px;background:var(--color-subtle-bg,#fef2f2)">
+          <label style="display:block;font-size:.82rem;font-weight:700;color:var(--color-primary,#ef4444);margin-bottom:5px"><i class="fas fa-clipboard-check mr-1"></i>¿Ya hiciste la guía a mano en T1?</label>
+          <p style="font-size:.72rem;color:var(--color-text-light,#64748b);margin:0 0 9px;line-height:1.35">Escribe el número de guía para pasar este pedido a <b>Con guía</b>. No descuenta saldo ni avisa al cliente (para eso usa el botón <b>Crear guía</b>).</p>
+          <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:10px">
+            ${f('guia', 'Número de guía', '', 'placeholder="Ej. 9501234567" autocomplete="off"')}
+            <div style="min-width:0">
+              <label style="display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light,#64748b);margin-bottom:3px">Paquetería</label>
+              <select id="ee-mensajeria" style="${inputStyle}">
+                <option value="DHL">DHL</option>
+                <option value="FedEx">FedEx</option>
+                <option value="Estafeta">Estafeta</option>
+              </select>
+            </div>
+          </div>
+        </div>`;
     m.querySelector('#envio-edit-box').innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
           <h3 style="margin:0;font-size:1.05rem;font-weight:700">Editar envío — ${escapeHtml(e.orderNumber)}</h3>
@@ -555,6 +579,7 @@ function openEnvioEditModal(i) {
         </div>
         <p style="font-size:.75rem;color:var(--color-text-light,#64748b);margin:0 0 12px">${isManual ? 'Línea manual.' : 'Se actualizan los datos de envío del pedido.'}${!e.datos ? ' <b>Aún sin datos:</b> se crearán al guardar.' : ''}</p>
         <div id="ee-error" style="color:#991b1b;font-size:.8rem;margin-bottom:8px"></div>
+        ${guiaSection}
         <div style="display:flex;flex-direction:column;gap:10px">
           ${f('nombre', 'Nombre', d.nombre)}
           ${f('telefono', 'Teléfono', d.telefono, 'inputmode="numeric" maxlength="10"')}
@@ -579,6 +604,8 @@ function openEnvioEditModal(i) {
           <button id="ee-save" onclick="saveEnvioEdit()" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-weight:600;cursor:pointer">Guardar cambios</button>
         </div>`;
     m.style.display = 'flex';
+    // Si se abrió desde el botón "Guía manual", enfocar el campo de la guía.
+    if (focusGuia) { const gEl = document.getElementById('ee-guia'); if (gEl) { try { gEl.focus(); gEl.scrollIntoView({ block: 'center' }); } catch (_) {} } }
 }
 window.openEnvioEditModal = openEnvioEditModal;
 
@@ -596,6 +623,8 @@ async function saveEnvioEdit() {
         ciudad: g('ciudad'), estado: g('estado'), codigoPostal: g('cp'),
     };
     if (e.manualId) payload.montoPagado = g('monto');
+    const guiaManual = g('guia'); // si el operador escribió una guía hecha a mano en T1
+    const hasAnyData = ['nombre', 'telefono', 'direccion', 'numInterior', 'colonia', 'entrecalles', 'referencia', 'ciudad', 'estado', 'cp'].some(id => g(id));
     const url = e.manualId
         ? `${API_BASE_URL}/api/envios/manual/${encodeURIComponent(e.manualId)}`
         : `${API_BASE_URL}/api/envios/datos/${encodeURIComponent(e.orderNumber)}`;
@@ -603,9 +632,23 @@ async function saveEnvioEdit() {
     const orig = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Guardando…'; }
     try {
-        const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
+        // Guardar datos: en edición normal siempre; al SOLO registrar guía (sin datos escritos) se omite
+        // para no crear un registro de datos vacío.
+        if (hasAnyData || !guiaManual) {
+            const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
+        }
+        // Registrar guía hecha MANUALMENTE en T1 -> pasa la fila a "Con guía" (no cobra, no notifica).
+        if (guiaManual) {
+            const mensajeria = document.getElementById('ee-mensajeria')?.value || 'DHL';
+            const proveedor = /estafeta/i.test(mensajeria) ? 'ep' : 't1';
+            const body = e.manualId ? { manualId: e.manualId } : { docId: e.id };
+            body.guia = guiaManual; body.mensajeria = mensajeria; body.proveedor = proveedor;
+            const ar = await fetch(`${API_BASE_URL}/api/envios/attach-guia`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const ad = await ar.json().catch(() => ({}));
+            if (!ar.ok || ad.success === false) throw new Error(ad.message || 'No se pudo registrar la guía');
+        }
         closeEnvioEditModal();
         renderEnviosView();
     } catch (err) {
