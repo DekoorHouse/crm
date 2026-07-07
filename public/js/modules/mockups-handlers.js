@@ -168,6 +168,10 @@ function mkRenderPending() {
     const cont = document.getElementById('mk-pendientes');
     if (!cont) return;
 
+    // Contador de pendientes en la pestaña.
+    const badge = document.getElementById('mk-pending-count');
+    if (badge) { const n = mkState.pending.length; badge.textContent = n; badge.setAttribute('data-n', n); }
+
     if (!mkState.templates.length) {
         cont.innerHTML = '<div class="settings-card"><p class="mk-muted">Aún no tienes plantillas de lámpara. Ve a la pestaña <b>Plantillas</b> y crea la primera (sube la foto base y define el prompt).</p></div>';
         return;

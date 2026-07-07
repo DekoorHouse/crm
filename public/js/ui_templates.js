@@ -885,6 +885,8 @@ const MockupsViewTemplate = () => `
             .mk-block-x{background:none;border:none;color:var(--color-text-light);cursor:pointer;font-size:.95rem}
             .mk-block-body{display:grid;grid-template-columns:1fr 320px;gap:18px}
             @media (max-width:820px){.mk-block-body{grid-template-columns:1fr}}
+            .mk-count{display:inline-block;min-width:20px;padding:0 6px;margin-left:6px;border-radius:999px;background:var(--color-primary);color:#fff;font-size:.72rem;font-weight:700;line-height:18px;text-align:center;vertical-align:middle}
+            .mk-count:empty,.mk-count[data-n="0"]{display:none}
             .mk-inputs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
             .mk-inputs .mk-full{grid-column:1 / -1}
             .mk-inputs label,.mk-raw label{display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light);margin-bottom:3px;text-transform:uppercase;letter-spacing:.02em}
@@ -910,7 +912,7 @@ const MockupsViewTemplate = () => `
         </div>
 
         <div class="settings-tabs mk-tabs-wrap">
-            <button class="settings-tab active" data-mktab="pendientes" onclick="mkSwitchTab('pendientes')"><i class="fas fa-clock mr-2"></i>Pendientes</button>
+            <button class="settings-tab active" data-mktab="pendientes" onclick="mkSwitchTab('pendientes')"><i class="fas fa-clock mr-2"></i>Pendientes <span id="mk-pending-count" class="mk-count"></span></button>
             <button class="settings-tab" data-mktab="plantillas" onclick="mkSwitchTab('plantillas')"><i class="fas fa-layer-group mr-2"></i>Plantillas</button>
         </div>
 
