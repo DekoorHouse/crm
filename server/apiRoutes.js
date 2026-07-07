@@ -7913,7 +7913,7 @@ router.get('/envios', async (_req, res) => {
         // Mapa numeroPedido (solo dígitos) -> datos de envío MÁS RECIENTES.
         const norm = (v) => String(v || '').replace(/\D/g, '');
         // Serializa la guía DHL guardada en el doc (sin el serverTimestamp) para el frontend.
-        const serGuia = (g) => (g && g.guia) ? { proveedor: g.proveedor || 't1', guia: g.guia, numOrden: g.numOrden || null, mensajeria: g.mensajeria || null, tipoServicio: g.tipoServicio || null, costo: (g.costo != null ? g.costo : null), pdfPath: g.pdfPath || null, labelUrl: g.labelUrl || null, tracking: g.tracking || null } : null;
+        const serGuia = (g) => (g && g.guia) ? { proveedor: g.proveedor || 't1', guia: g.guia, numOrden: g.numOrden || null, mensajeria: g.mensajeria || null, tipoServicio: g.tipoServicio || null, costo: (g.costo != null ? g.costo : null), pdfPath: g.pdfPath || null, labelUrl: g.labelUrl || null, tracking: g.tracking || null, manual: g.manual === true } : null;
         const datosByOrder = new Map();
         datosSnap.docs.forEach(d => {
             const dd = d.data();
