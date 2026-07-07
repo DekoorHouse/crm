@@ -62,16 +62,25 @@ function mkOpenChat(orderId) {
 
 // Heurística: intenta separar nombre1/nombre2/fecha del texto libre del pedido.
 // Los campos quedan EDITABLES, así que basta con acercar; el operador confirma.
+// Extrae la fecha: primero por la etiqueta "Fecha:" (soporta mes con letras, rangos,
+// etc., ej. "6/ Nov/2005", "15 octubre 2023"); si no hay etiqueta, cae a una fecha
+// numérica suelta (dd/mm/aaaa).
+function mkExtractFecha(raw) {
+    const labeled = raw.match(/fecha\s*:\s*([^|\n]+)/i);
+    if (labeled) return labeled[1].trim().replace(/[\s|,]+$/, '').trim();
+    const numeric = raw.match(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/);
+    return numeric ? numeric[0] : '';
+}
+
 function mkParseDatos(text) {
     const raw = (text || '').trim();
-    let fecha = '';
-    const dm = raw.match(/\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\b/);
-    if (dm) fecha = dm[1];
-    let rest = raw.replace(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/, ' ');
-    rest = rest.replace(/nombres?\s*:/ig, ' ').replace(/fecha\s*:/ig, ' ').replace(/para\s*:/ig, ' ').replace(/personajes?\s*:/ig, ' ');
-    // Quita separadores sueltos de los bordes (barra "|", comas, &, +) para que
-    // NO terminen grabados en la lámpara (ej: "Sheyla |" -> "Sheyla").
+    const fecha = mkExtractFecha(raw);
+    // Para los NOMBRES: quitar la parte "Fecha: ..." (hasta | o salto) y fechas numéricas sueltas.
     const clean = s => s.replace(/^[\s|,&+]+|[\s|,&+]+$/g, '').trim();
+    const rest = raw
+        .replace(/fecha\s*:\s*[^|\n]*/ig, ' ')
+        .replace(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/g, ' ')
+        .replace(/nombres?\s*:/ig, ' ').replace(/para\s*:/ig, ' ').replace(/personajes?\s*:/ig, ' ');
     const parts = rest
         .split(/\s+y\s+|\s*&\s*|\s*\+\s*|\s*\|\s*|,|\n|\s+and\s+/i)
         .map(clean)
