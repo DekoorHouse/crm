@@ -8268,6 +8268,38 @@ router.post('/envios/crear-guia', async (req, res) => {
     }
 });
 
+// --- POST /api/envios/attach-guia — registra una guía hecha MANUALMENTE (en T1/panel) en el pedido.
+//     NO cobra, NO genera guía, NO notifica al cliente. Solo marca el pedido como "Con guía" para no re-generarla. ---
+router.post('/envios/attach-guia', async (req, res) => {
+    try {
+        const b = req.body || {};
+        const col = b.manualId ? 'envios_manuales' : 'pedidos';
+        const docId = b.manualId || b.docId;
+        const guia = String(b.guia || '').trim();
+        if (!docId || !guia) return res.status(400).json({ success: false, message: 'docId/manualId y guia son requeridos' });
+        const docRef = db.collection(col).doc(docId);
+        const snap = await docRef.get();
+        if (!snap.exists) return res.status(404).json({ success: false, message: 'El pedido o la línea no existe.' });
+        const dd = snap.data() || {};
+        if ((dd.guiaEnvio || {}).guia) return res.json({ success: true, already: true, guia: (dd.guiaEnvio || {}).guia });
+        const proveedor = b.proveedor === 'ep' ? 'ep' : 't1';
+        const guiaEnvio = {
+            proveedor, guia,
+            mensajeria: b.mensajeria || 'DHL',
+            tipoServicio: b.tipoServicio || null,
+            costo: (b.costo != null ? Number(b.costo) : null),
+            manual: true,
+            tracking: proveedor === 'ep' ? null : `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${encodeURIComponent(guia)}`,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        await docRef.set({ guiaEnvio }, { merge: true });
+        res.json({ success: true, guia, docId });
+    } catch (e) {
+        console.error('[GUIA] attach-guia:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // --- GET /api/debug/guia-notif — DIAGNÓSTICO del aviso de guía al cliente (TEMPORAL). ---
 // dry-run por defecto (NO envía nada, solo reporta ventana 24h + existencia de /dgui y /rastreo).
 // ?send=1 ejecuta el envío REAL (manda WhatsApp al cliente). Gated por key.
