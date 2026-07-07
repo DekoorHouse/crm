@@ -251,6 +251,7 @@ function _paintEnvios() {
         const manualCount = envios.filter(e => e.manualId).length;
         container.innerHTML = `
             <style>
+              #envios-container thead th{position:sticky;top:0;z-index:2;background:var(--color-container-bg,#fff);box-shadow:inset 0 -2px 0 var(--color-border);}
               #envios-container .envio-copy{transition:background-color .12s;border-radius:6px;}
               #envios-container .envio-copy:hover{background-color:var(--color-subtle-bg,#f1f5f9);}
               #envios-container .envio-copy[data-copied]{background-color:#dcfce7 !important;color:#166534;}
@@ -264,7 +265,7 @@ function _paintEnvios() {
               <a href="https://app.enviosperros.com/wallet" target="_blank" rel="noopener" style="text-decoration:none;color:var(--color-primary,#ef4444);font-weight:600">Envíos Perros · Estafeta ↗</a>
             </div>
             <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo.</p>
-            <div style="overflow-x:auto">
+            <div>
               <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
                 <thead>
                   <tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light);white-space:nowrap">
