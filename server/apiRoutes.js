@@ -8371,7 +8371,13 @@ router.post('/envios/attach-guia', async (req, res) => {
         const snap = await docRef.get();
         if (!snap.exists) return res.status(404).json({ success: false, message: 'El pedido o la línea no existe.' });
         const dd = snap.data() || {};
-        if ((dd.guiaEnvio || {}).guia) return res.json({ success: true, already: true, guia: (dd.guiaEnvio || {}).guia });
+        const existingGuia = (dd.guiaEnvio || {}).guia;
+        const existingManual = (dd.guiaEnvio || {}).manual === true;
+        // Idempotente: si ya hay guía no la sobreescribas... salvo que se pida overwrite Y la existente sea MANUAL
+        // (para corregir un número mal tecleado; nunca clobbereamos una guía creada por API que ya tiene etiqueta/pdf).
+        if (existingGuia && !(b.overwrite && existingManual)) {
+            return res.json({ success: true, already: true, guia: existingGuia });
+        }
         const proveedor = b.proveedor === 'ep' ? 'ep' : 't1';
         const mensajeria = b.mensajeria || 'DHL';
         // Link de rastreo según paquetería (para el botón "📍 Rastrear" de la tabla).

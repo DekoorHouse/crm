@@ -555,19 +555,21 @@ function openEnvioEditModal(i, focusGuia) {
         </div>`;
     const montoField = isManual ? `<div style="margin-bottom:10px">${f('monto', 'Monto pagado', (e.montoPagado != null ? e.montoPagado : ''), 'inputmode="decimal"')}</div>` : '';
     // Sección para registrar una guía hecha MANUALMENTE en T1 (no cobra, no notifica; solo pasa a "Con guía").
-    // Solo si la fila aún NO tiene guía. Reusa el endpoint POST /api/envios/attach-guia.
-    const guiaSection = hasGuia ? '' : `
+    // Se muestra en filas SIN guía (registrar) o con guía MANUAL (corregir un número mal tecleado). NUNCA sobre
+    // guías creadas por API (tienen etiqueta/pdf que no queremos perder). Reusa POST /api/envios/attach-guia.
+    const isManualGuia = hasGuia && e.guiaEnvio.manual === true;
+    const showGuiaSection = !hasGuia || isManualGuia;
+    const gEnv = e.guiaEnvio || {};
+    const guiaSection = !showGuiaSection ? '' : `
         <div style="margin:2px 0 4px;padding:12px 14px;border:1px dashed var(--color-primary,#ef4444);border-radius:10px;background:var(--color-subtle-bg,#fef2f2)">
-          <label style="display:block;font-size:.82rem;font-weight:700;color:var(--color-primary,#ef4444);margin-bottom:5px"><i class="fas fa-clipboard-check mr-1"></i>¿Ya hiciste la guía a mano en T1?</label>
-          <p style="font-size:.72rem;color:var(--color-text-light,#64748b);margin:0 0 9px;line-height:1.35">Escribe el número de guía para pasar este pedido a <b>Con guía</b>. No descuenta saldo ni avisa al cliente (para eso usa el botón <b>Crear guía</b>).</p>
+          <label style="display:block;font-size:.82rem;font-weight:700;color:var(--color-primary,#ef4444);margin-bottom:5px"><i class="fas fa-clipboard-check mr-1"></i>${isManualGuia ? 'Corregir la guía registrada a mano' : '¿Ya hiciste la guía a mano en T1?'}</label>
+          <p style="font-size:.72rem;color:var(--color-text-light,#64748b);margin:0 0 9px;line-height:1.35">${isManualGuia ? 'Corrige el número si lo tecleaste mal. Se actualiza la guía de este pedido.' : 'Escribe el número de guía para pasar este pedido a <b>Con guía</b>. No descuenta saldo ni avisa al cliente (para eso usa el botón <b>Crear guía</b>).'}</p>
           <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:10px">
-            ${f('guia', 'Número de guía', '', 'placeholder="Ej. 9501234567" autocomplete="off"')}
+            ${f('guia', 'Número de guía', isManualGuia ? gEnv.guia : '', 'placeholder="Ej. 9501234567" autocomplete="off"')}
             <div style="min-width:0">
               <label style="display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light,#64748b);margin-bottom:3px">Paquetería</label>
               <select id="ee-mensajeria" style="${inputStyle}">
-                <option value="DHL">DHL</option>
-                <option value="FedEx">FedEx</option>
-                <option value="Estafeta">Estafeta</option>
+                ${['DHL', 'FedEx', 'Estafeta'].map(mm => `<option${((gEnv.mensajeria || 'DHL').toLowerCase() === mm.toLowerCase()) ? ' selected' : ''}>${mm}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -624,7 +626,9 @@ async function saveEnvioEdit() {
     };
     if (e.manualId) payload.montoPagado = g('monto');
     const guiaManual = g('guia'); // si el operador escribió una guía hecha a mano en T1
-    const hasAnyData = ['nombre', 'telefono', 'direccion', 'numInterior', 'colonia', 'entrecalles', 'referencia', 'ciudad', 'estado', 'cp'].some(id => g(id));
+    // 'monto' solo existe en líneas manuales; se incluye para no omitir el guardado cuando se teclea
+    // SOLO monto + guía (sin datos de dirección) y así perder el monto en silencio.
+    const hasAnyData = ['nombre', 'telefono', 'direccion', 'numInterior', 'colonia', 'entrecalles', 'referencia', 'ciudad', 'estado', 'cp'].some(id => g(id)) || (!!e.manualId && !!g('monto'));
     const url = e.manualId
         ? `${API_BASE_URL}/api/envios/manual/${encodeURIComponent(e.manualId)}`
         : `${API_BASE_URL}/api/envios/datos/${encodeURIComponent(e.orderNumber)}`;
@@ -645,6 +649,7 @@ async function saveEnvioEdit() {
             const proveedor = /estafeta/i.test(mensajeria) ? 'ep' : 't1';
             const body = e.manualId ? { manualId: e.manualId } : { docId: e.id };
             body.guia = guiaManual; body.mensajeria = mensajeria; body.proveedor = proveedor;
+            if (e.guiaEnvio && e.guiaEnvio.guia) body.overwrite = true; // corrigiendo una guía manual ya registrada
             const ar = await fetch(`${API_BASE_URL}/api/envios/attach-guia`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const ad = await ar.json().catch(() => ({}));
             if (!ar.ok || ad.success === false) throw new Error(ad.message || 'No se pudo registrar la guía');
