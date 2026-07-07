@@ -185,6 +185,7 @@ function _paintEnvios() {
         envios.forEach(e => { e._hasGuia = !!(e.guiaEnvio && e.guiaEnvio.guia); });
         const pendCount = envios.filter(e => !e._hasGuia).length;
         const guiaCount = envios.length - pendCount;
+        const cotizables = envios.filter(e => e.datos && e.datos.codigoPostal && !e._hasGuia).length; // pendientes CON datos -> cotizables en lote
         const filter = window._enviosFilter || 'all';
         const _ts = (e) => (e.comprobanteValidadoAt ? new Date(e.comprobanteValidadoAt).getTime() : 0);
         const ordered = envios.slice().sort((a, b) => _ts(a) - _ts(b)); // ascendente: nuevos al final
@@ -256,8 +257,9 @@ function _paintEnvios() {
               #envios-container .envio-copy:hover{background-color:var(--color-subtle-bg,#f1f5f9);}
               #envios-container .envio-copy[data-copied]{background-color:#dcfce7 !important;color:#166534;}
             </style>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
               ${[['all', 'Todas', envios.length], ['pendiente', 'Pendientes de guía', pendCount], ['guia', 'Con guía', guiaCount]].map(([k, lbl, c]) => `<button onclick="setEnviosFilter('${k}')" style="border:1px solid ${filter === k ? 'var(--color-primary,#ef4444)' : 'var(--color-border,#e5e7eb)'};background:${filter === k ? 'var(--color-primary,#ef4444)' : 'transparent'};color:${filter === k ? '#fff' : 'var(--color-text,#334155)'};border-radius:999px;padding:5px 14px;font-size:.8rem;cursor:pointer;font-weight:600">${lbl} (${c})</button>`).join('')}
+              ${cotizables > 0 ? `<button onclick="cotizarPendientesLote()" title="Cotiza TODAS las pendientes con datos, en paralelo, y créalas en lote" style="margin-left:auto;background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:999px;padding:6px 16px;font-size:.82rem;cursor:pointer;font-weight:700;white-space:nowrap"><i class="fas fa-bolt mr-1"></i>Cotizar pendientes (${cotizables})</button>` : ''}
             </div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:.8rem">
               <span style="color:var(--color-text-light,#64748b)"><i class="fas fa-wallet mr-1"></i>Saldo:</span>
@@ -551,6 +553,113 @@ function _guiaModalEl() {
 }
 function closeGuiaModal() { const m = document.getElementById('guia-modal'); if (m) m.style.display = 'none'; }
 window.closeGuiaModal = closeGuiaModal;
+
+// ======================= COTIZACIÓN EN LOTE =======================
+// Cotiza TODAS las pendientes con datos en paralelo, muestra una ventana con todas las cotizaciones,
+// y deja crear cada guía EN SEGUNDO PLANO (sin esperar) para no perder tiempo pedido por pedido.
+function _loteModalEl() {
+    let m = document.getElementById('lote-modal');
+    if (!m) {
+        m = document.createElement('div');
+        m.id = 'lote-modal';
+        m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:9999;';
+        m.innerHTML = '<div id="lote-modal-box" style="background:var(--color-surface,#fff);color:var(--color-text,#111);max-width:900px;width:94%;max-height:88vh;overflow:auto;border-radius:14px;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.35)"></div>';
+        m.addEventListener('click', (ev) => { if (ev.target === m) closeLoteModal(); });
+        document.body.appendChild(m);
+    }
+    return m;
+}
+function closeLoteModal() { const m = document.getElementById('lote-modal'); if (m) m.style.display = 'none'; }
+window.closeLoteModal = closeLoteModal;
+
+async function cotizarPendientesLote() {
+    const pend = (window._enviosData || []).filter(e => e && e.datos && e.datos.codigoPostal && !(e.guiaEnvio && e.guiaEnvio.guia));
+    if (!pend.length) { alert('No hay pedidos pendientes con datos de envío para cotizar.'); return; }
+    const m = _loteModalEl();
+    m.querySelector('#lote-modal-box').innerHTML = `<div style="text-align:center;padding:26px"><i class="fas fa-spinner fa-spin fa-2x" style="color:var(--color-primary,#ef4444)"></i><p style="margin-top:12px">Cotizando ${pend.length} pedido(s) en paralelo…</p></div>`;
+    m.style.display = 'flex';
+    try {
+        const items = pend.map(e => ({ orderNumber: e.orderNumber, docId: e.id, manualId: e.manualId || null, cp: e.datos.codigoPostal }));
+        const r = await fetch(`${API_BASE_URL}/api/envios/cotizar-batch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
+        const j = await r.json();
+        if (!r.ok || !j.success) throw new Error(j.message || ('HTTP ' + r.status));
+        window._loteData = (j.results || []).map(res => {
+            const e = pend.find(x => x.id === res.docId) || pend.find(x => x.orderNumber === res.orderNumber);
+            return { ...res, datos: e ? e.datos : null, cliente: e && e.datos ? (e.datos.nombre || '') : '', status: 'idle' };
+        });
+        _renderLoteModal();
+    } catch (err) {
+        m.querySelector('#lote-modal-box').innerHTML = `<p style="color:#991b1b">No se pudo cotizar el lote: ${escapeHtml(err.message || String(err))}</p><div style="text-align:center;margin-top:12px"><button onclick="closeLoteModal()" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;border-radius:8px;padding:7px 16px;cursor:pointer">Cerrar</button></div>`;
+    }
+}
+window.cotizarPendientesLote = cotizarPendientesLote;
+
+function _renderLoteModal() {
+    const box = document.getElementById('lote-modal-box');
+    if (!box) return;
+    const data = window._loteData || [];
+    const rows = data.map((it, i) => {
+        const cli = escapeHtml((it.cliente || '').slice(0, 26) || it.orderNumber);
+        const pedTd = `<td style="padding:8px 10px 8px 0;font-weight:700;color:var(--color-primary);white-space:nowrap">${escapeHtml(it.orderNumber)}</td>`;
+        if (it.error || !it.servicios || !it.servicios.length) {
+            return `<tr style="border-bottom:1px solid var(--color-border,#e5e7eb)">${pedTd}<td style="padding:8px 10px 8px 0">${cli}</td><td style="padding:8px 10px 8px 0">${escapeHtml(it.cp || '')}</td><td colspan="2" style="padding:8px 0;color:#b45309;font-size:.8rem">⚠️ ${escapeHtml(it.error || 'Sin servicios — revisa el C.P.')}</td></tr>`;
+        }
+        const opts = it.servicios.map((s, si) => `<option value="${si}">${escapeHtml((s.paqueteria || '') + ' · ' + (s.servicio || ''))} — $${Number(s.costo || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</option>`).join('');
+        const sel = `<select id="lote-sel-${i}" style="font-size:12px;padding:4px 6px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;max-width:280px;background:var(--color-surface,#fff);color:var(--color-text,#334155)">${opts}</select>`;
+        const btn = `<button id="lote-btn-${i}" onclick="crearGuiaLote(${i})" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap">Crear guía</button>`;
+        return `<tr style="border-bottom:1px solid var(--color-border,#e5e7eb)">${pedTd}
+            <td style="padding:8px 10px 8px 0;white-space:nowrap">${cli}</td>
+            <td style="padding:8px 10px 8px 0">${escapeHtml(it.cp || '')}</td>
+            <td style="padding:8px 10px 8px 0">${sel}</td>
+            <td style="padding:8px 0;white-space:nowrap;display:flex;gap:8px;align-items:center">${btn}<span id="lote-estado-${i}"></span></td>
+          </tr>`;
+    }).join('');
+    const conError = data.filter(it => it.error || !it.servicios || !it.servicios.length).length;
+    box.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0;font-size:1.1rem;font-weight:700">Cotización en lote — ${data.length} pedido(s)</h3>
+          <button onclick="closeLoteModal(); renderEnviosView();" style="border:none;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:#64748b">&times;</button>
+        </div>
+        <p style="font-size:.8rem;color:var(--color-text-light,#64748b);margin:0 0 12px">Elige la paquetería y dale <b>Crear guía</b>. Cada una se crea en <b>segundo plano</b> — no esperes, pasa a la siguiente. ${conError ? `<span style="color:#b45309">(${conError} sin cotización — revisa el C.P.)</span>` : ''}</p>
+        <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+          <thead><tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light);white-space:nowrap">
+            <th style="padding:6px 10px 6px 0">Pedido</th><th style="padding:6px 10px 6px 0">Cliente</th><th style="padding:6px 10px 6px 0">C.P.</th><th style="padding:6px 10px 6px 0">Paquetería / servicio</th><th style="padding:6px 0">Acción</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div style="text-align:right;margin-top:14px"><button onclick="closeLoteModal(); renderEnviosView();" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;border-radius:8px;padding:7px 16px;cursor:pointer">Cerrar y actualizar</button></div>`;
+}
+
+async function crearGuiaLote(i) {
+    const it = (window._loteData || [])[i];
+    if (!it || it.status === 'creando' || it.status === 'creada') return;
+    const sel = document.getElementById('lote-sel-' + i);
+    const btn = document.getElementById('lote-btn-' + i);
+    const estado = document.getElementById('lote-estado-' + i);
+    const s = (it.servicios || [])[sel ? (parseInt(sel.value, 10) || 0) : 0];
+    if (!s) return;
+    it.status = 'creando';
+    if (btn) { btn.disabled = true; btn.style.opacity = '.5'; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    if (estado) estado.innerHTML = '';
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/envios/crear-guia`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderNumber: it.orderNumber, docId: it.docId, manualId: it.manualId || null, proveedor: s.proveedor, tipoServicio: s.codigoServicio || s.tipo_servicio, mensajeria: s.paqueteria, costo: s.costo, datos: it.datos })
+        });
+        const j = await r.json();
+        if (j && j.persistError && j.guia) { it.status = 'creada'; if (btn) btn.style.display = 'none'; if (estado) estado.innerHTML = `<span style="color:#b45309;font-size:.8rem">⚠️ creada ${escapeHtml(j.guia)} (anótala)</span>`; return; }
+        if (!r.ok || !j.success) throw new Error(j.message || ('HTTP ' + r.status));
+        it.status = 'creada';
+        if (btn) btn.style.display = 'none';
+        if (sel) sel.disabled = true;
+        if (estado) estado.innerHTML = `<span style="color:#166534;font-size:.82rem;font-weight:600">✓ ${escapeHtml(j.guia)}</span>`;
+    } catch (err) {
+        it.status = 'idle';
+        if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.innerHTML = 'Reintentar'; }
+        if (estado) estado.innerHTML = `<span style="color:#991b1b;font-size:.78rem;cursor:help" title="${escapeHtml(err.message || '')}">⚠️ ${escapeHtml((err.message || 'error').slice(0, 44))}…</span>`;
+    }
+}
+window.crearGuiaLote = crearGuiaLote;
 
 // Pedido activo en el modal (se guarda el OBJETO, no el índice, para no desincronizar tras un re-render).
 let _guiaEnvioActual = null;

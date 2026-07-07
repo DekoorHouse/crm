@@ -8168,37 +8168,67 @@ function _mapDestinoT1(datos = {}) {
     };
 }
 
+// Cotiza un C.P. destino en TODAS las paqueterías (T1: DHL/FedEx + Envíos Perros: Estafeta…) y
+// devuelve la lista de servicios ordenada por costo (más barato primero). Reusable: individual y en lote.
+async function _cotizarCP(dest, opts = {}) {
+    const servicios = [];
+    try {
+        const q = await t1.cotizar({ cpDestino: dest, peso: opts.peso, largo: opts.largo, ancho: opts.ancho, alto: opts.alto, valorPaquete: opts.valorPaquete });
+        (Array.isArray(q.result) ? q.result : []).forEach((r) => {
+            const svc = (r.cotizacion && r.cotizacion.servicios) || {};
+            Object.keys(svc).forEach((k) => {
+                const s = svc[k] || {};
+                servicios.push({ proveedor: 't1', paqueteria: r.clave, clave: k, servicio: s.servicio, tipo_servicio: s.tipo_servicio, codigoServicio: s.servicio, costo: s.costo_total, dias: s.dias_entrega, moneda: s.moneda || 'MXN' });
+            });
+        });
+    } catch (e) { console.warn('[COTIZAR] T1 falló:', (e.response && e.response.status) || '', e.message); }
+    try {
+        const epData = await ep.cotizar({ cpDestino: dest, peso: opts.peso, largo: opts.largo, ancho: opts.ancho, alto: opts.alto });
+        ep.normalizarRates(epData).forEach((r) => {
+            servicios.push({ proveedor: 'ep', paqueteria: r.paqueteria, clave: r.deliveryType, servicio: r.servicio, tipo_servicio: r.tipo_servicio, codigoServicio: r.deliveryType, costo: r.costo, dias: r.dias, moneda: r.moneda });
+        });
+    } catch (e) { console.warn('[COTIZAR] Envíos Perros falló:', (e.response && e.response.status) || '', e.message); }
+    servicios.sort((a, b2) => (a.costo || 0) - (b2.costo || 0));
+    return servicios;
+}
+
 // --- POST /api/envios/cotizar — cotiza DHL (y demás) para un CP destino. GRATIS. ---
 router.post('/envios/cotizar', async (req, res) => {
     try {
         const b = req.body || {};
         const dest = String(b.cp || '').replace(/\D/g, '');
         if (!/^\d{5}$/.test(dest)) return res.status(400).json({ success: false, message: 'C.P. destino inválido (5 dígitos).' });
-        const servicios = [];
-        // T1 (DHL, FedEx…)
-        try {
-            const q = await t1.cotizar({ cpDestino: dest, peso: b.peso, largo: b.largo, ancho: b.ancho, alto: b.alto, valorPaquete: b.valorPaquete });
-            const result = Array.isArray(q.result) ? q.result : [];
-            result.forEach((r) => {
-                const svc = (r.cotizacion && r.cotizacion.servicios) || {};
-                Object.keys(svc).forEach((k) => {
-                    const s = svc[k] || {};
-                    servicios.push({ proveedor: 't1', paqueteria: r.clave, clave: k, servicio: s.servicio, tipo_servicio: s.tipo_servicio, codigoServicio: s.servicio, costo: s.costo_total, dias: s.dias_entrega, moneda: s.moneda || 'MXN' });
-                });
-            });
-        } catch (e) { console.warn('[COTIZAR] T1 falló:', (e.response && e.response.status) || '', e.message); }
-        // Envíos Perros (Estafeta, J&T, FedEx…)
-        try {
-            const epData = await ep.cotizar({ cpDestino: dest, peso: b.peso, largo: b.largo, ancho: b.ancho, alto: b.alto });
-            ep.normalizarRates(epData).forEach((r) => {
-                servicios.push({ proveedor: 'ep', paqueteria: r.paqueteria, clave: r.deliveryType, servicio: r.servicio, tipo_servicio: r.tipo_servicio, codigoServicio: r.deliveryType, costo: r.costo, dias: r.dias, moneda: r.moneda });
-            });
-        } catch (e) { console.warn('[COTIZAR] Envíos Perros falló:', (e.response && e.response.status) || '', e.message); }
-        servicios.sort((a, b2) => (a.costo || 0) - (b2.costo || 0));
+        const servicios = await _cotizarCP(dest, { peso: b.peso, largo: b.largo, ancho: b.ancho, alto: b.alto, valorPaquete: b.valorPaquete });
         res.json({ success: true, cp: dest, servicios });
     } catch (e) {
         console.error('[COTIZAR]', e.message);
         res.status(502).json({ success: false, message: 'No se pudo cotizar.', detail: e.message });
+    }
+});
+
+// --- POST /api/envios/cotizar-batch — cotiza VARIOS pedidos en PARALELO (para el flujo de lote). ---
+router.post('/envios/cotizar-batch', async (req, res) => {
+    try {
+        const items = Array.isArray(req.body && req.body.items) ? req.body.items.slice(0, 80) : [];
+        if (!items.length) return res.status(400).json({ success: false, message: 'Sin pedidos para cotizar.' });
+        const results = new Array(items.length);
+        let idx = 0;
+        const worker = async () => {
+            while (idx < items.length) {
+                const i = idx++;
+                const it = items[i] || {};
+                const base = { orderNumber: it.orderNumber, docId: it.docId || null, manualId: it.manualId || null };
+                const cp = String(it.cp || '').replace(/\D/g, '');
+                if (!/^\d{5}$/.test(cp)) { results[i] = { ...base, cp, error: 'C.P. inválido' }; continue; }
+                try { results[i] = { ...base, cp, servicios: await _cotizarCP(cp) }; }
+                catch (e) { results[i] = { ...base, cp, error: e.message }; }
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(6, items.length) }, worker)); // tope de concurrencia 6
+        res.json({ success: true, results });
+    } catch (e) {
+        console.error('[COTIZAR-BATCH]', e.message);
+        res.status(502).json({ success: false, message: 'No se pudo cotizar el lote.', detail: e.message });
     }
 });
 
