@@ -198,7 +198,7 @@ function mkRenderPending() {
         // Bloques iniciales: uno por preview guardado, o uno vacío.
         const saved = Array.isArray(o.previews) ? o.previews : [];
         const blocks = saved.length
-            ? saved.map(pv => ({ id: pv.blockId || mkNewBlockId(), templateId: pv.templateId, provider: 'wavespeed', values: pv.fields || {}, previewUrl: pv.imageUrl }))
+            ? saved.map(pv => ({ id: pv.blockId || mkNewBlockId(), templateId: pv.templateId, provider: 'wavespeed', values: mkMergeValues(o._prefill, pv.fields), previewUrl: pv.imageUrl }))
             : [{ id: mkNewBlockId(), templateId: mkAutoTemplate(producto), provider: 'wavespeed', values: o._prefill, previewUrl: '' }];
         return `
         <div class="settings-card mk-card" data-order="${mkAttr(o.id)}" data-phone="${mkAttr(o.telefono)}" data-client="${mkAttr(o.clientName)}">
@@ -225,6 +225,17 @@ function mkRenderPending() {
 // Mapea el texto parseado a los posibles campos (según cómo se llamen en la plantilla).
 function mkPrefill(p) {
     return { nombre1: p.nombre1, nombre: p.nombre1, nombre2: p.nombre2, fecha: p.fecha };
+}
+
+// Combina el prefill (recalculado del pedido) con los valores guardados: usa el guardado si
+// no está vacío, si no cae al prefill. Así los campos vacíos (ej. una fecha que antes no se
+// parseaba) se llenan solos al recargar, aunque el preview ya estuviera generado.
+function mkMergeValues(prefill, saved) {
+    const out = Object.assign({}, prefill || {});
+    for (const [k, v] of Object.entries(saved || {})) {
+        if (v != null && String(v).trim() !== '') out[k] = v;
+    }
+    return out;
 }
 
 function mkNewBlockId() {
