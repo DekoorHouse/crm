@@ -8303,14 +8303,14 @@ router.post('/envios/attach-guia', async (req, res) => {
 // --- GET /api/debug/pedidos-info?key=...&nums=DH1,DH2 — nombre/contacto de pedidos (TEMPORAL). ---
 router.get('/debug/pedidos-info', async (req, res) => {
     if (req.query.key !== 't1diag_9f3k2xQ7') return res.status(403).json({ success: false, message: 'forbidden' });
-    const nums = String(req.query.nums || '').split(',').map(s => s.trim()).filter(Boolean);
-    if (!nums.length) return res.status(400).json({ success: false, message: 'nums requerido' });
+    const ids = String(req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!ids.length) return res.status(400).json({ success: false, message: 'ids (docId) requerido' });
     try {
         const out = [];
-        for (const num of nums) {
-            const q = await db.collection('pedidos').where('consecutiveOrderNumber', '==', num).limit(1).get();
-            if (q.empty) { out.push({ num, found: false }); continue; }
-            const doc = q.docs[0], dd = doc.data();
+        for (const id of ids) {
+            const doc = await db.collection('pedidos').doc(id).get();
+            if (!doc.exists) { out.push({ id, found: false }); continue; }
+            const dd = doc.data();
             let contactName = null;
             const cid = dd.contactId || dd.telefono;
             if (cid) {
@@ -8319,7 +8319,12 @@ router.get('/debug/pedidos-info', async (req, res) => {
                     if (c.exists) { const cData = c.data(); contactName = cData.name || cData.profileName || cData.pushName || null; }
                 } catch (e) {}
             }
-            out.push({ num, id: doc.id, nombre: dd.nombre || dd.nombreCliente || dd.cliente || (dd.datos || {}).nombre || null, contactName, contactId: dd.contactId || null, telefono: dd.telefono || null });
+            out.push({
+                id, num: dd.consecutiveOrderNumber || dd.orderNumber || null,
+                nombre: dd.nombre || dd.nombreCliente || dd.cliente || dd.contactName || (dd.datos || {}).nombre || null,
+                contactName, contactId: dd.contactId || null, telefono: dd.telefono || null,
+                campos: Object.keys(dd).filter(k => /nom|clien|contact|name/i.test(k)),
+            });
         }
         res.json({ success: true, pedidos: out });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
