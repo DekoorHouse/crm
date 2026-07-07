@@ -5528,7 +5528,12 @@ router.post('/whatsapp-templates/create', async (req, res) => {
             const built = buttons.map(b => {
                 if (!b || !b.text || !b.text.trim()) return null;
                 if (b.type === 'QUICK_REPLY') return { type: 'QUICK_REPLY', text: b.text.trim() };
-                if (b.type === 'URL' && b.url) return { type: 'URL', text: b.text.trim(), url: b.url.trim() };
+                if (b.type === 'URL' && b.url) {
+                    const ub = { type: 'URL', text: b.text.trim(), url: b.url.trim() };
+                    // Botón URL con variable ({{1}}): Meta exige un ejemplo de la URL completa.
+                    if (/\{\{\d+\}\}/.test(b.url) && b.urlExample) ub.example = [String(b.urlExample)];
+                    return ub;
+                }
                 if (b.type === 'PHONE_NUMBER' && b.phone_number) return { type: 'PHONE_NUMBER', text: b.text.trim(), phone_number: b.phone_number.trim() };
                 return null;
             }).filter(Boolean);

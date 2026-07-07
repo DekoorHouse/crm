@@ -1137,7 +1137,7 @@ function sanitizeTemplateParam(text) {
  * el chat del CRM. Lanza si faltan credenciales o la plantilla no está aprobada (para que el
  * llamador pueda hacer fallback a envío libre).
  */
-async function sendApprovedTemplateMessage(waId, templateName, params = [], { source } = {}) {
+async function sendApprovedTemplateMessage(waId, templateName, params = [], { source, buttonUrlParam } = {}) {
     if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
         throw new Error('Faltan credenciales de WhatsApp Business (WHATSAPP_BUSINESS_ACCOUNT_ID/WHATSAPP_TOKEN/PHONE_NUMBER_ID)');
     }
@@ -1155,9 +1155,14 @@ async function sendApprovedTemplateMessage(waId, templateName, params = [], { so
     const placeholders = (bodyComp?.text || '').match(/\{\{\d+\}\}/g) || [];
     const langCode = template.language || 'es_MX';
     const cleanParams = placeholders.map((_, i) => sanitizeTemplateParam(params[i] != null ? params[i] : '') || '—');
-    const components = placeholders.length > 0
-        ? [{ type: 'body', parameters: cleanParams.map(text => ({ type: 'text', text })) }]
-        : [];
+    const components = [];
+    if (placeholders.length > 0) components.push({ type: 'body', parameters: cleanParams.map(text => ({ type: 'text', text })) });
+    // Botón URL dinámico ({{n}} en la URL del botón, p.ej. /rastreo/{{1}}): pasar el valor (nº de guía).
+    if (buttonUrlParam != null) {
+        const btnComp = (template.components || []).find(c => c.type === 'BUTTONS');
+        const idx = btnComp ? (btnComp.buttons || []).findIndex(b => b.type === 'URL' && /\{\{\d+\}\}/.test(b.url || '')) : -1;
+        if (idx >= 0) components.push({ type: 'button', sub_type: 'url', index: String(idx), parameters: [{ type: 'text', text: String(buttonUrlParam) }] });
+    }
     const payload = {
         messaging_product: 'whatsapp',
         to: waId,
@@ -1221,14 +1226,19 @@ async function notifyGuiaToCustomer(contactId, guia, opts = {}) {
             push('window', true, `open=${windowOpen} lastInbound=${lastInboundAt || 'ninguno'} msgs=${msgCount}`);
         } catch (e) { push('window', false, e.message); }
 
-        // Ventana cerrada -> abrir con la plantilla hola_guia (pasa la guía por si la plantilla la usa).
+        // Ventana cerrada -> plantilla `guia_lista` (trae el BOTÓN de rastreo con la guía precargada).
+        // Si aún no está aprobada por Meta, cae a `hola_guia` (solo abre el chat) como respaldo.
         if (!windowOpen) {
-            if (dry) push('hola_guia', true, 'DRY: se enviaría plantilla hola_guia');
+            if (dry) push('guia_lista', true, 'DRY: se enviaría plantilla guia_lista (botón de rastreo)');
             else {
-                try { await sendApprovedTemplateMessage(contactId, 'hola_guia', [String(guia)], { source: 'guia' }); push('hola_guia', true, 'plantilla enviada'); }
-                catch (e) { push('hola_guia', false, e.message); }
+                try { await sendApprovedTemplateMessage(contactId, 'guia_lista', [], { source: 'guia', buttonUrlParam: guia }); push('guia_lista', true, 'plantilla con botón enviada'); }
+                catch (e) {
+                    push('guia_lista', false, e.message);
+                    try { await sendApprovedTemplateMessage(contactId, 'hola_guia', [String(guia)], { source: 'guia' }); push('hola_guia', true, 'respaldo enviado'); }
+                    catch (e2) { push('hola_guia', false, e2.message); }
+                }
             }
-        } else push('hola_guia', true, 'omitida (ventana abierta)');
+        } else push('guia_lista', true, 'omitida (ventana abierta)');
 
         // Respuesta rápida /dgui (su contenido: texto + archivo si tiene).
         try {
@@ -1238,20 +1248,23 @@ async function notifyGuiaToCustomer(contactId, guia, opts = {}) {
             else { await sendAdvancedWhatsAppMessage(contactId, { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null }); push('dgui', true, 'enviada'); }
         } catch (e) { push('dgui', false, e.message); }
 
-        // Link de rastreo amigable (respuesta rápida /rastreo, con el nº de guía precargado en el link).
-        try {
-            const link = `${APP_BASE_URL}/rastreo/${encodeURIComponent(String(guia))}`;
-            const qrR = await findQuickReplyByShortcut('rastreo');
-            if (qrR && qrR.message) {
-                let msg = qrR.message.replace(/\{GUIA\}/g, String(guia));
-                if (!/\{GUIA\}/.test(qrR.message) && msg.indexOf('/rastreo/') < 0) msg += `\n${link}`;
-                if (dry) push('rastreo', true, `DRY: QR /rastreo -> ${msg.slice(0, 70)}`);
-                else { await sendAdvancedWhatsAppMessage(contactId, { text: msg, fileUrl: qrR.fileUrl || null, fileType: qrR.fileType || null }); push('rastreo', true, 'enviada'); }
-            } else {
-                if (dry) push('rastreo', true, `DRY: sin QR, link ${link}`);
-                else { await sendAdvancedWhatsAppMessage(contactId, { text: `📦 Rastrea tu paquete en tiempo real aquí:\n${link}` }); push('rastreo', true, 'enviada (fallback link)'); }
-            }
-        } catch (e) { push('rastreo', false, e.message); }
+        // Link de rastreo amigable (respuesta rápida /rastreo). SOLO con la ventana ABIERTA:
+        // si estaba cerrada, la plantilla `guia_lista` ya trae el botón de rastreo -> no duplicar.
+        if (windowOpen) {
+            try {
+                const link = `${APP_BASE_URL}/rastreo/${encodeURIComponent(String(guia))}`;
+                const qrR = await findQuickReplyByShortcut('rastreo');
+                if (qrR && qrR.message) {
+                    let msg = qrR.message.replace(/\{GUIA\}/g, String(guia));
+                    if (!/\{GUIA\}/.test(qrR.message) && msg.indexOf('/rastreo/') < 0) msg += `\n${link}`;
+                    if (dry) push('rastreo', true, `DRY: QR /rastreo -> ${msg.slice(0, 70)}`);
+                    else { await sendAdvancedWhatsAppMessage(contactId, { text: msg, fileUrl: qrR.fileUrl || null, fileType: qrR.fileType || null }); push('rastreo', true, 'enviada'); }
+                } else {
+                    if (dry) push('rastreo', true, `DRY: sin QR, link ${link}`);
+                    else { await sendAdvancedWhatsAppMessage(contactId, { text: `📦 Rastrea tu paquete en tiempo real aquí:\n${link}` }); push('rastreo', true, 'enviada (fallback link)'); }
+                }
+            } catch (e) { push('rastreo', false, e.message); }
+        } else push('rastreo', true, 'omitida (guia_lista ya trae el botón de rastreo)');
 
         console.log(`[GUIA-NOTIF] guía ${guia} -> ${contactId} (ventana ${windowOpen ? 'abierta' : 'cerrada'})${dry ? ' [DRY]' : ''}:`, JSON.stringify(steps));
         return { ok: true, windowOpen, steps };
