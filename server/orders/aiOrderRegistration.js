@@ -56,6 +56,44 @@ const DEFAULT_CONFIG = {
     ].join('\n')
 };
 
+// --- Normalización de la FECHA dentro de datosProducto -> "DD-Mes-AA" ---
+// Día SIEMPRE 2 dígitos, mes con NOMBRE (mayúscula inicial), año tal cual lo escribió el cliente
+// (2 o 4 dígitos), separado por guiones. Ej: "24 de abril 26" / "24/04/26" -> "24-Abril-26".
+// Si no logra parsear la fecha, la deja igual (nunca la rompe).
+const _MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+function _parseFechaTexto(txt) {
+    if (!txt) return null;
+    const abrev = { ene: 0, feb: 1, mar: 2, abr: 3, may: 4, jun: 5, jul: 6, ago: 7, sep: 8, set: 8, oct: 9, nov: 10, dic: 11 };
+    const limpio = String(txt).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); // sin acentos
+    let dia = null, mesIdx = null, anio = null;
+    const mName = limpio.match(/\b(ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)[a-z]*\b/); // mes por nombre
+    if (mName) {
+        mesIdx = abrev[mName[1]];
+        for (const n of (txt.match(/\d{1,4}/g) || [])) {
+            const v = parseInt(n, 10);
+            if (dia === null && n.length <= 2 && v >= 1 && v <= 31) { dia = v; continue; } // 1er número 1-31 = día
+            if (anio === null && (n.length === 2 || n.length === 4)) anio = n;             // 2/4 dígitos = año
+        }
+    } else {
+        const parts = txt.match(/\d{1,4}/g); // numérico DD-MM(-AAAA), estándar MX
+        if (parts && parts.length >= 2) {
+            dia = parseInt(parts[0], 10);
+            mesIdx = parseInt(parts[1], 10) - 1;
+            if (parts[2]) anio = parts[2];
+        }
+    }
+    if (dia === null || mesIdx === null || mesIdx < 0 || mesIdx > 11 || dia < 1 || dia > 31) return null;
+    const dd = String(dia).padStart(2, '0');
+    return anio ? `${dd}-${_MESES[mesIdx]}-${anio}` : `${dd}-${_MESES[mesIdx]}`;
+}
+function normalizarFechaEnDatos(datos) {
+    if (!datos || typeof datos !== 'string' || !/fecha\s*:/i.test(datos)) return datos;
+    return datos.replace(/(fecha\s*:\s*)([^|]+?)(\s*)(?=\||$)/i, (m, label, valor, trail) => {
+        const norm = _parseFechaTexto(valor.trim());
+        return norm ? (label + norm + trail) : m;
+    });
+}
+
 /**
  * Lee la configuración de crm_settings/ai_order_registration mezclada con los defaults.
  * Nunca lanza: ante cualquier error regresa los defaults (feature apagado).
@@ -190,7 +228,7 @@ Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelv
                     producto: clean(it.producto, 120),
                     cantidad: Math.min(20, Math.max(1, parseInt(it.cantidad, 10) || 1)),
                     precio: Number(it.precio) || 0,
-                    datosProducto: clean(it.datosProducto, 500)
+                    datosProducto: normalizarFechaEnDatos(clean(it.datosProducto, 500))
                 }))
             : [],
         esAdicional: parsed.esAdicional === true,
