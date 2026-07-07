@@ -444,6 +444,7 @@ app.get(['/datos-estafeta', '/datos-estafeta/:pedido'], (req, res) => {
 // --- Página pública de rastreo amigable (el cliente ve el estado de su guía) ---
 // Número de guía en la URL: /rastreo/12345 (o /rastreo y lo escribe). Usa GET /api/rastreo/:guia.
 app.get(['/rastreo', '/rastreo/:guia'], (req, res) => {
+    res.set('Cache-Control', 'no-cache'); // que el cliente reciba siempre la última versión de la página
     res.sendFile(path.join(__dirname, '..', 'public', 'rastreo', 'index.html'));
 });
 

@@ -8371,24 +8371,34 @@ router.get('/rastreo/:guia', async (req, res) => {
     try {
         const guia = String(req.params.guia || '').replace(/[^\w-]/g, '');
         if (!guia) return res.status(400).json({ success: false, message: 'Falta el número de guía.' });
-        let data;
+        // 1) Ubicar la guía (pedidos / envios_manuales) para saber la PAQUETERÍA y el link OFICIAL de rastreo.
+        let mensajeria = null, officialUrl = null;
         try {
-            data = await t1.rastrear(guia);
-        } catch (e) {
-            // T1 error (frecuente cuando la guía es reciente y aún no la recolectan) -> "es cuestión de tiempo".
-            return res.json({ success: true, guia, found: false, fase: 'creada', message: 'Tu guía ya fue creada 🎉 La paquetería aún no la recolecta; es cuestión de tiempo para que aparezca la información de rastreo. Vuelve a consultar más tarde.' });
+            let snap = await db.collection('pedidos').where('guiaEnvio.guia', '==', guia).limit(1).get();
+            if (snap.empty) snap = await db.collection('envios_manuales').where('guiaEnvio.guia', '==', guia).limit(1).get();
+            if (!snap.empty) { const ge = snap.docs[0].data().guiaEnvio || {}; mensajeria = ge.mensajeria || null; officialUrl = ge.tracking || null; }
+        } catch (e) { /* la query por campo anidado puede fallar; seguimos con defaults DHL */ }
+        const isEP = /perros|estafeta/i.test(String(mensajeria || ''));
+        const courier = isEP ? 'Estafeta' : 'DHL';
+        if (!officialUrl) {
+            officialUrl = isEP
+                ? `https://rastreo.estafeta.com/RastreoWebInternet/consultaEnvio.do?dispatchAction=busqueda&idERROR=&noGuias=${encodeURIComponent(guia)}`
+                : `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${encodeURIComponent(guia)}`;
         }
-        const d = (data && data.detail) || {};
+        // 2) Intentar el rastreo de T1 (por si algún día trae datos). NO dependemos de él (hoy viene vacío);
+        //    el estado real vive con la paquetería (DHL bloquea scraping -> pendiente su API oficial).
+        let d = {};
+        try { const data = await t1.rastrear(guia); d = (data && data.detail) || {}; } catch (e) { d = {}; }
         const desc = String(d.descripcion || '').trim();
         if (!desc) {
-            return res.json({ success: true, guia, found: false, fase: 'creada', message: 'Tu guía ya fue creada 🎉 La paquetería aún no la recolecta; es cuestión de tiempo para que aparezca la información de rastreo. Vuelve a consultar más tarde.' });
+            return res.json({ success: true, guia, found: false, courier, officialUrl, message: `El estado en tiempo real lo tiene ${courier}. Consúltalo con el botón de aquí abajo. Si acabas de recibir tu guía, puede tardar unas horas en aparecer.` });
         }
         const dl = desc.toLowerCase();
         const entregado = /entreg/.test(dl);
         const enCamino = /tr[aá]nsito|camino|ruta|reparto|distribuci|salida/.test(dl);
         const recolectado = /recolec|recogid|recibid|acopio/.test(dl);
         const fase = entregado ? 'entregado' : (enCamino ? 'en_camino' : (recolectado ? 'recolectado' : 'procesando'));
-        return res.json({ success: true, guia, found: true, estado: desc, codigo: d.codigo || null, fecha: d.fecha || null, recibe: d.recibe || null, entregado, fase });
+        return res.json({ success: true, guia, found: true, estado: desc, codigo: d.codigo || null, fecha: d.fecha || null, recibe: d.recibe || null, entregado, fase, courier, officialUrl });
     } catch (e) {
         console.error('[RASTREO]', e.message);
         res.status(502).json({ success: false, message: 'No se pudo consultar el rastreo en este momento. Intenta más tarde.' });

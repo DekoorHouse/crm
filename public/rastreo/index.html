@@ -43,6 +43,8 @@
         .meta { margin-top:14px; font-size:.85rem; color:var(--muted); text-align:center; }
         .err { margin-top:16px; background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:12px 14px; border-radius:12px; font-size:.9rem; text-align:center; }
         .foot { text-align:center; color:#9aa4ad; font-size:.78rem; margin-top:26px; }
+        .track-btn { display:inline-block; background:var(--teal); color:#fff; text-decoration:none; padding:14px 24px; border-radius:12px; font-weight:700; font-size:.95rem; box-shadow:0 6px 18px rgba(22,60,81,.18); }
+        .track-btn:active { transform:translateY(1px); }
         .spin { display:inline-block; width:18px; height:18px; border:3px solid rgba(255,255,255,.5); border-top-color:#fff; border-radius:50%; animation:sp .8s linear infinite; vertical-align:-3px; }
         @keyframes sp { to { transform:rotate(360deg); } }
     </style>
@@ -106,23 +108,30 @@
             box.innerHTML = '<div class="err">'+esc((d&&d.message)||'No se pudo consultar el rastreo. Intenta más tarde.')+'</div>';
             return;
         }
-        const fase = d.fase || (d.found ? 'procesando' : 'creada');
-        const emoji = EMOJI[fase] || '📦';
-        let html = '<div class="status-head"><div class="status-emoji">'+emoji+'</div>';
+        const courier = d.courier || 'la paquetería';
+        const officialBtn = d.officialUrl
+            ? '<div style="text-align:center;margin-top:18px"><a class="track-btn" href="'+esc(d.officialUrl)+'" target="_blank" rel="noopener">📍 Ver rastreo oficial en '+esc(courier)+'</a></div>'
+            : '';
+        let html = '';
         if (d.found){
+            const fase = d.fase || 'procesando';
+            const emoji = EMOJI[fase] || '📦';
+            html += '<div class="status-head"><div class="status-emoji">'+emoji+'</div>';
             html += '<p class="status-title">'+esc(d.estado)+'</p>';
             const f = fechaBonita(d.fecha);
             html += '<p class="status-sub">'+(f?('Actualizado: '+esc(f)):'')+'</p>';
+            html += '<div class="guia-chip">GUÍA '+esc(d.guia)+'</div></div>';
+            html += stepsHtml(fase);
+            if (d.entregado){
+                html += '<div class="info-box">¡Tu pedido fue entregado! '+(d.recibe?('Recibió: '+esc(d.recibe)):'')+' 🎉</div>';
+            }
         } else {
-            html += '<p class="status-title">Guía creada</p><p class="status-sub">Aún sin movimientos</p>';
+            html += '<div class="status-head"><div class="status-emoji">📦</div>';
+            html += '<p class="status-title">Tu guía ya está lista</p>';
+            html += '<div class="guia-chip">GUÍA '+esc(d.guia)+'</div></div>';
+            html += '<div class="info-box wait">'+esc(d.message||('Consulta el estado en tiempo real con '+courier+'.'))+'</div>';
         }
-        html += '<div class="guia-chip">GUÍA '+esc(d.guia)+'</div></div>';
-        html += stepsHtml(fase);
-        if (!d.found){
-            html += '<div class="info-box wait">'+esc(d.message||'Tu guía fue creada. Es cuestión de tiempo para que aparezca el rastreo.')+'</div>';
-        } else if (d.entregado){
-            html += '<div class="info-box">¡Tu pedido fue entregado! '+(d.recibe?('Recibió: '+esc(d.recibe)):'')+' 🎉</div>';
-        }
+        html += officialBtn;
         box.innerHTML = html;
     }
 
