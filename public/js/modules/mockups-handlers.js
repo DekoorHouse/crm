@@ -60,6 +60,17 @@ function mkOpenChat(orderId) {
     openConversationPreview({ stopPropagation() {} }, String(o.telefono), { id: String(o.telefono), name: o.clientName || '' });
 }
 
+// Quita un pedido de la lista de mockups (marca no destructiva; NO borra el pedido).
+async function mkHideOrder(orderId) {
+    if (!confirm('¿Quitar este pedido de la lista de Mockups? No se borra el pedido; solo deja de aparecer aquí.')) return;
+    try {
+        await db.collection('pedidos').doc(orderId).update({ mockupHidden: true });
+        mkState.pending = mkState.pending.filter(o => o.id !== orderId);
+        mkRenderPending();
+        mkToast('Pedido quitado de la lista.', 'success');
+    } catch (e) { mkToast('No se pudo quitar: ' + e.message, 'error'); }
+}
+
 // Heurística: intenta separar nombre1/nombre2/fecha del texto libre del pedido.
 // Los campos quedan EDITABLES, así que basta con acercar; el operador confirma.
 // Extrae la fecha: primero por la etiqueta "Fecha:" (soporta mes con letras, rangos,
@@ -213,7 +224,10 @@ function mkRenderPending() {
                     <span class="mk-client">${mkEsc(o.clientName || 'Sin nombre')}</span>
                     <span class="mk-phone"><i class="fab fa-whatsapp"></i> ${mkEsc(o.telefono || '')}</span>
                 </div>
-                <span class="mk-date">${mkEsc(mkFmtDate(o.createdAt))}${producto ? ' · ' + mkEsc(producto) : ''}</span>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <span class="mk-date">${mkEsc(mkFmtDate(o.createdAt))}${producto ? ' · ' + mkEsc(producto) : ''}</span>
+                    <button class="mk-block-x" title="Quitar de la lista (no borra el pedido)" onclick="mkHideOrder('${mkAttr(o.id)}')"><i class="fas fa-eye-slash"></i></button>
+                </div>
             </div>
             <div class="mk-raw">
                 <label>Detalles del pedido</label>

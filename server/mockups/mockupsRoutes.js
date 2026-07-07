@@ -101,6 +101,7 @@ router.get('/pending', asyncHandler(async (req, res) => {
     const snap = await db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get();
     const pend = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
+        .filter(o => o.mockupHidden !== true)   // pedidos ocultados manualmente de la lista de mockups
         .sort((a, b) => {
             const ta = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
             const tb = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
