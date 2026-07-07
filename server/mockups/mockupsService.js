@@ -243,14 +243,21 @@ function escapeRegExp(str) {
 
 function buildPromptFromTemplate(promptTemplate, fields = {}) {
     let out = String(promptTemplate || '');
+    let hasMultiline = false;
     for (const [k, v] of Object.entries(fields)) {
         let val = (v === undefined || v === null) ? '' : String(v);
-        // Quita separadores sueltos de los bordes (barra "|", comas, &, +) para
-        // que no se graben en la lámpara si vinieron pegados al nombre/fecha.
+        // Quita separadores sueltos de los bordes (barra "|", comas, &, +) pero CONSERVA
+        // los saltos de línea internos (ej. dos fechas apiladas que quiere el cliente).
         val = val.replace(/^[\s|,&+]+|[\s|,&+]+$/g, '').trim();
+        if (val.includes('\n')) hasMultiline = true;
         out = out.replace(new RegExp('\\{' + escapeRegExp(k) + '\\}', 'g'), val);
     }
     out = out.replace(/\{[a-zA-Z0-9_]+\}/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+    // Si algún campo trae varios renglones (p. ej. dos fechas), instruir a la IA para que
+    // los grabe apilados (uno debajo del otro), no en una sola línea.
+    if (hasMultiline) {
+        out += '\nIMPORTANTE: algún texto (por ejemplo la fecha) viene en varios renglones; grábalo en líneas separadas, una debajo de la otra, respetando los saltos de línea.';
+    }
     return out;
 }
 

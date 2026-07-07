@@ -160,6 +160,11 @@ function mkTemplateFieldDefs(templateId) {
 function mkFieldsHtml(defs, values) {
     return defs.map(f => {
         const v = (values && values[f.key] != null) ? values[f.key] : '';
+        // La fecha se muestra como área de texto: permite Enter para grabar varias fechas
+        // (una debajo de la otra). El backend detecta los saltos de línea y se lo indica a la IA.
+        if (f.key === 'fecha') {
+            return `<div><label>${mkEsc(f.label)}</label><textarea class="mk-fld" data-key="fecha" rows="2" style="resize:vertical;min-height:38px;" title="Puedes usar Enter para poner varias fechas, una debajo de la otra">${mkEsc(v)}</textarea></div>`;
+        }
         return `<div><label>${mkEsc(f.label)}</label><input class="mk-fld" data-key="${mkAttr(f.key)}" value="${mkAttr(v)}"></div>`;
     }).join('');
 }
