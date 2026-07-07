@@ -155,7 +155,7 @@
           <div class="field">
             <label for="numInterior">No. interior</label>
             <div class="inputwrap"><i class="fas fa-door-closed"></i>
-              <input type="text" id="numInterior" placeholder="Depto / Int." />
+              <input type="text" id="numInterior" placeholder="Depto / Int." maxlength="12" />
             </div>
           </div>
         </div>
@@ -163,7 +163,7 @@
         <div class="field">
           <label for="entreCalles">Entre calles</label>
           <div class="inputwrap"><i class="fas fa-code-fork"></i>
-            <input type="text" id="entreCalles" placeholder="Calle 1 y Calle 2" />
+            <input type="text" id="entreCalles" placeholder="Calle 1 y Calle 2" maxlength="30" />
           </div>
         </div>
 
@@ -229,10 +229,11 @@
         </div>
 
         <div class="field">
-          <label for="referencia">Referencia del domicilio</label>
+          <label for="referencia">Referencia del domicilio <span class="req">*</span></label>
           <div class="inputwrap"><i class="fas fa-location-dot"></i>
-            <input type="text" id="referencia" placeholder="Color de casa, fachada, señas..." />
+            <input type="text" id="referencia" placeholder="Color de casa, fachada, señas..." maxlength="35" required />
           </div>
+          <p class="hint" id="refHint">DHL solo imprime <b>35 caracteres</b> de referencia en la guía (cuenta también No. interior y entre calles). Sé breve para que no se corte. <span id="refCount" style="font-weight:600">0/35</span></p>
         </div>
 
         <div class="warn">
@@ -583,6 +584,24 @@
     }, { enableHighAccuracy:true, timeout:10000, maximumAge:0 });
   });
 
+  // ---------- Contador del límite de 35 chars de DHL/T1 (referencia del destinatario) ----------
+  // El backend combina [Int.X · referencia · entre calles] en UN solo campo que T1 corta a 35.
+  // Mostramos cuánto de esos 35 se usa (contando separadores) para que el cliente vea si algo se cortará.
+  function updateRefHint(){
+    var interior=$('numInterior').value.trim();
+    var ent=$('entreCalles').value.trim();
+    var ref=$('referencia').value.trim();
+    var combinado=[ interior?('Int. '+interior):'', ref, ent ].filter(Boolean).join(' · ');
+    var n=combinado.length;
+    var cnt=$('refCount'), hint=$('refHint');
+    if(cnt) cnt.textContent=n+'/35';
+    if(hint) hint.classList.toggle('error', n>35);
+  }
+  ['referencia','entreCalles','numInterior'].forEach(function(id){
+    var el=$(id); if(el) el.addEventListener('input', updateRefHint);
+  });
+  updateRefHint();
+
   // ---------- Enviar ----------
   form.addEventListener('submit', async (e)=>{
     e.preventDefault();
@@ -613,6 +632,7 @@
     if(!payload.colonia){ showAlert('error','Selecciona o escribe tu colonia.'); return; }
     if(!payload.ciudad){ showAlert('error','Escribe tu municipio o ciudad.'); return; }
     if(!payload.estado){ showAlert('error','Escribe tu estado.'); return; }
+    if(!payload.referencia){ showAlert('error','Escribe una referencia del domicilio (color de casa, fachada o señas) para que el repartidor te encuentre.'); $('referencia').focus(); return; }
 
     btn.disabled=true; const orig=btn.innerHTML; btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Enviando...';
     try{

@@ -8157,8 +8157,12 @@ function _mapDestinoT1(datos = {}) {
     const apellidos = sp.join(' ') || '.';
     const calleFull = String(datos.direccion || '').trim();
     const numMatch = calleFull.match(/(\d+[A-Za-z]?)\s*$/);
-    // `direccion` es la calle + nº exterior; el nº interior va aparte y lo sumamos a referencias.
-    const referencias = [datos.numInterior ? ('Int. ' + datos.numInterior) : '', datos.entreCalles, datos.referencia].filter(Boolean).join(' · ').slice(0, 180);
+    // `direccion` es la calle + nº exterior; el nº interior + entre calles + referencia se combinan aquí.
+    // OJO: T1 limita datos_destino.referencias a 35 caracteres (lo corta ANTES de mandarlo a DHL/Estafeta),
+    // por eso las referencias largas "salían mochas" en la guía. Orden por prioridad —nº interior (corto y
+    // clave), luego la referencia del cliente, luego entre calles— y recorte a 35 para que lo impreso en la
+    // guía coincida con lo que el cliente escribió en el formulario.
+    const referencias = [datos.numInterior ? ('Int. ' + datos.numInterior) : '', datos.referencia, datos.entreCalles].filter(Boolean).join(' · ').slice(0, 35);
     return {
         codigo_postal: String(datos.codigoPostal || '').replace(/\D/g, ''),
         nombre, apellidos,
