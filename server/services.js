@@ -1270,13 +1270,9 @@ async function notifyGuiaToCustomer(contactId, guia, opts = {}) {
             }
         } else push('guia_lista', true, 'omitida (ventana abierta)');
 
-        // Respuesta rápida /dgui (su contenido: texto + archivo si tiene).
-        try {
-            const qr = await findQuickReplyByShortcut('dgui');
-            if (!qr) push('dgui', false, 'no existe la respuesta rápida /dgui');
-            else if (dry) push('dgui', true, `DRY: existe (${qr.fileUrl ? 'con archivo' : 'solo texto'})`);
-            else { const s = await sendAdvancedWhatsAppMessage(contactId, { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null }); await _reflectOutgoingGuia(contactId, s, qr.message || '', qr.fileUrl, qr.fileType); push('dgui', true, 'enviada'); }
-        } catch (e) { push('dgui', false, e.message); }
+        // (El /dgui se quitó a petición: al crear la guía SOLO se manda el mensaje con el LINK —
+        //  la plantilla `guia_lista` con su botón cuando la ventana está cerrada, o el `/rastreo` de
+        //  texto cuando está abierta.)
 
         // Link de rastreo amigable (respuesta rápida /rastreo). SOLO con la ventana ABIERTA:
         // si estaba cerrada, la plantilla `guia_lista` ya trae el botón de rastreo -> no duplicar.
