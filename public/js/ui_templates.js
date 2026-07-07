@@ -896,6 +896,9 @@ const MockupsViewTemplate = () => `
             .mk-result-empty{color:var(--color-text-light);font-size:.85rem}
             .mk-spin{width:26px;height:26px;border:3px solid var(--color-border);border-top-color:var(--color-primary);border-radius:50%;animation:mk-rot 1s linear infinite}
             @keyframes mk-rot{to{transform:rotate(360deg)}}
+            .mk-progress{width:100%;display:flex;flex-direction:column;align-items:center;gap:8px}
+            .mk-progress-bar{width:80%;max-width:200px;height:8px;background:var(--color-border);border-radius:999px;overflow:hidden}
+            .mk-progress-fill{height:100%;background:var(--color-primary);border-radius:999px;transition:width .5s ease}
             .mk-tpl-card{display:flex;gap:14px;align-items:flex-start}
             .mk-tpl-thumb{width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--color-border);flex-shrink:0;background:var(--color-subtle-bg)}
             .mk-chip{display:inline-block;background:var(--color-subtle-bg);border:1px solid var(--color-border);border-radius:999px;padding:1px 8px;font-size:.72rem;margin:2px 3px 0 0}

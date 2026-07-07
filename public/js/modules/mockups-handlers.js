@@ -334,6 +334,7 @@ async function mkGenerate(orderId, blockId) {
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generando…'; }
     const setBox = (msg) => { if (box) box.innerHTML = `<div class="mk-spin"></div><div class="mk-result-empty">${mkEsc(msg)}</div>`; };
+    const setProgress = (pct) => { if (box) box.innerHTML = `<div class="mk-progress"><div class="mk-progress-bar"><div class="mk-progress-fill" style="width:${pct}%"></div></div><div class="mk-result-empty">Generando… ${pct}%</div></div>`; };
     setBox('Enviando a la IA…');
 
     try {
@@ -345,7 +346,7 @@ async function mkGenerate(orderId, blockId) {
 
         let url;
         if (data.image) url = data.image.fullUrl || data.image.thumbUrl;   // Gemini (síncrono)
-        else if (data.jobId) url = await mkPollJob(data.jobId, setBox);     // WaveSpeed (asíncrono)
+        else if (data.jobId) url = await mkPollJob(data.jobId, setProgress); // WaveSpeed (asíncrono)
         if (!url) throw new Error('No se recibió la imagen generada.');
 
         mkState.results[blockId] = url;
@@ -359,23 +360,25 @@ async function mkGenerate(orderId, blockId) {
 }
 
 // Polling del preview asíncrono (WaveSpeed). Devuelve la URL o lanza error.
-async function mkPollJob(jobId, setBox) {
+async function mkPollJob(jobId, setProgress) {
     const started = Date.now();
-    const MAX_MS = 4 * 60 * 1000;   // hasta 4 min (GPT Image 2 puede tardar)
+    const MAX_MS = 4 * 60 * 1000;   // hasta 4 min
+    const EST_MS = 150 * 1000;      // GPT Image 2 tarda ~2.5 min: base para el % estimado
     const INTERVAL = 3000;
+    // Progreso estimado por tiempo (WaveSpeed no da % real); topado en 95% hasta terminar.
+    const tick = () => setProgress(Math.min(95, Math.max(1, Math.round(((Date.now() - started) / EST_MS) * 100))));
     while (Date.now() - started < MAX_MS) {
         await new Promise(r => setTimeout(r, INTERVAL));
-        const secs = Math.round((Date.now() - started) / 1000);
         let st;
         try {
             st = await mkFetchJson('/api/mockups/generate-status/' + encodeURIComponent(jobId));
         } catch (e) {
-            setBox('Generando… (' + secs + 's)');   // un fallo puntual no aborta
+            tick();   // un fallo puntual no aborta
             continue;
         }
         if (st.status === 'completed') return st.image && (st.image.fullUrl || st.image.thumbUrl);
         if (st.status === 'failed') throw new Error(st.error || 'La generación falló.');
-        setBox('Generando… (' + secs + 's)');
+        tick();
     }
     throw new Error('La generación tardó demasiado (más de 4 min). Intenta de nuevo.');
 }
