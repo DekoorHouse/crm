@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 // SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendConversionEvent
 const { db, admin, bucket } = require('./config');
-const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent } = require('./services');
+const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent, transcribeIncomingAudioMessage } = require('./services');
 const { armLeadFollowup } = require('./leads/leadReactivationScheduler');
 const { armOrderFollowup } = require('./leads/orderFollowupScheduler');
 const { markOrderFollowupReplied } = require('./leads/orderFollowupMetrics');
@@ -648,9 +648,11 @@ router.post('/', async (req, res) => {
             // mensaje duplicado en el historial hace que la IA "vea" al cliente repetir
             // y vuelva a dar la misma información).
             const msgDocId = message.id ? String(message.id).replace(/\//g, '_').slice(0, 900) : null;
+            let savedMsgRef = null;
             if (msgDocId) {
                 try {
                     await contactRef.collection('messages').doc(msgDocId).create(messageData);
+                    savedMsgRef = contactRef.collection('messages').doc(msgDocId);
                 } catch (createErr) {
                     if (createErr.code === 6 || /already exists/i.test(String(createErr.message))) {
                         console.log(`[WEBHOOK] Mensaje duplicado detectado al guardar (wamid ${message.id}). Ignorando reintento de Meta.`);
@@ -659,9 +661,16 @@ router.post('/', async (req, res) => {
                     throw createErr;
                 }
             } else {
-                await contactRef.collection('messages').add(messageData);
+                savedMsgRef = await contactRef.collection('messages').add(messageData);
             }
             console.log(`[LOG] Mensaje de ${from} guardado en Firestore.`);
+
+            // Transcripción automática de notas de voz: nota INTERNA para el operador (campo transcription
+            // del mensaje). NO se envía al cliente. Fire-and-forget para no bloquear el webhook.
+            if (savedMsgRef && messageData.fileUrl && messageData.fileType && messageData.fileType.startsWith('audio/')) {
+                transcribeIncomingAudioMessage(savedMsgRef, messageData.fileUrl, messageData.fileType)
+                    .catch(err => console.warn('[TRANSCRIBE] fallo async (wa):', err.message));
+            }
 
             // Tracking de plantilla (Fase 2): marcar como "respondida" la tanda mas reciente sin respuesta
             markTemplateRepliedForContact(from).catch(err => console.error('[template-metrics] reply tracking falló:', err.message));

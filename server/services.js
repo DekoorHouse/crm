@@ -1642,6 +1642,52 @@ async function generateGeminiResponse(prompt, imageParts = [], systemInstruction
     };
 }
 
+// --- Transcripción de notas de voz (audio del cliente) → texto para el operador ---
+// Reusa Gemini (multimodal): descarga el audio, lo manda como parte inline y pide la transcripción.
+// La transcripción es una NOTA INTERNA (campo del mensaje en Firestore); NUNCA se envía al cliente.
+async function transcribeAudio(fileUrl, mimeType) {
+    if (!fileUrl || !/^https?:\/\//.test(fileUrl)) return null;
+    let buffer;
+    try {
+        const response = await fetch(fileUrl, { signal: AbortSignal.timeout(20000) });
+        if (!response.ok) { console.warn(`[TRANSCRIBE] Audio no accesible (HTTP ${response.status}).`); return null; }
+        buffer = Buffer.from(await response.arrayBuffer());
+    } catch (e) {
+        console.warn('[TRANSCRIBE] Error descargando el audio:', e.message);
+        return null;
+    }
+    if (!buffer || !buffer.length) return null;
+    const prepared = await buildSafeGeminiMediaPart(buffer, mimeType || 'audio/ogg', 'audio');
+    if (prepared.skipped || !prepared.part) { console.warn(`[TRANSCRIBE] Audio omitido: ${prepared.skipped || 'sin parte'}.`); return null; }
+    const prompt = 'Transcribe EXACTAMENTE lo que dice esta nota de voz (de un cliente, español de México). '
+        + 'Devuelve SOLO la transcripción literal, sin comentarios, sin comillas ni prefijos. '
+        + 'Si no hay voz o no se entiende nada, responde exactamente: (audio sin voz clara).';
+    const { text } = await generateGeminiResponse(prompt, [prepared.part]);
+    const clean = (text || '').trim();
+    return clean || null;
+}
+
+// Transcribe un mensaje de audio YA guardado y escribe el texto en el propio doc del mensaje
+// (campo `transcription`). Fire-and-forget desde los handlers. Respeta el kill-switch
+// crm_settings/general.audioTranscriptionActive (default: encendido).
+async function transcribeIncomingAudioMessage(messageRef, fileUrl, mimeType) {
+    try {
+        if (!messageRef || !fileUrl) return;
+        const cfg = await db.collection('crm_settings').doc('general').get();
+        if (cfg.exists && cfg.data().audioTranscriptionActive === false) return; // apagado a propósito
+        const text = await transcribeAudio(fileUrl, mimeType);
+        if (text) {
+            await messageRef.update({
+                transcription: text,
+                transcribedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log('[TRANSCRIBE] Nota de voz transcrita y guardada (interna).');
+        }
+    } catch (e) {
+        console.warn('[TRANSCRIBE] No se pudo transcribir la nota de voz:', e.message);
+    }
+}
+
 /**
  * Genera una respuesta de Gemini usando Context Caching.
  * El contenido estático (instrucciones, conocimiento, respuestas rápidas) viene del caché.
@@ -2891,6 +2937,8 @@ module.exports = {
     checkCoverage,
     generateGeminiResponse,
     generateGeminiResponseWithCache,
+    transcribeAudio,
+    transcribeIncomingAudioMessage,
     getOrCreateCache,
     triggerAutoReplyAI,
     skipAiTimer,

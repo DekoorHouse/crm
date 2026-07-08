@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const { db, admin, bucket } = require('./config');
-const { triggerAutoReplyAI, sendMessengerMessage, cancelPendingAiTimer } = require('./services');
+const { triggerAutoReplyAI, sendMessengerMessage, cancelPendingAiTimer, transcribeIncomingAudioMessage } = require('./services');
 
 const router = express.Router();
 
@@ -418,11 +418,18 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
     // el segundo create() falla con ALREADY_EXISTS en lugar de crear un mensaje duplicado.
     // Esto cierra la race condition que la verificación query-then-add de arriba no alcanza a cubrir.
     try {
+        let savedMsgRef = null;
         if (message.mid) {
             const msgDocId = message.mid.replace(/\//g, '_'); // '/' no es válido en IDs de documento de Firestore
             await contactRef.collection('messages').doc(msgDocId).create(messageData);
+            savedMsgRef = contactRef.collection('messages').doc(msgDocId);
         } else {
-            await contactRef.collection('messages').add(messageData);
+            savedMsgRef = await contactRef.collection('messages').add(messageData);
+        }
+        // Transcripción automática de notas de voz: nota INTERNA para el operador; no se envía al cliente.
+        if (savedMsgRef && messageData.fileUrl && messageData.fileType && messageData.fileType.startsWith('audio/')) {
+            transcribeIncomingAudioMessage(savedMsgRef, messageData.fileUrl, messageData.fileType)
+                .catch(err => console.warn('[TRANSCRIBE] fallo async (msgr):', err.message));
         }
     } catch (saveErr) {
         if (saveErr.code === 6 || /already exist/i.test(saveErr.message || '')) { // ALREADY_EXISTS: webhook duplicado

@@ -1714,6 +1714,13 @@ const MessageBubbleTemplate = (message) => {
         } else if (message.fileType.startsWith('audio/')) {
              const audioSrc = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
              contentHTML += `<audio controls preload="metadata" class="chat-audio-player"><source src="${audioSrc}" type="${message.fileType}">Tu navegador no soporta audio.</audio>`;
+             // Transcripción de la nota de voz: NOTA INTERNA — solo la ve el operador en el CRM, no se envía al cliente.
+             if (message.transcription) {
+                 contentHTML += `<div class="audio-transcription" style="margin-top:6px;padding:7px 9px;border-radius:8px;background:var(--color-subtle-bg,#f1f5f9);border:1px dashed var(--color-border,#cbd5e1);max-width:280px">
+                    <div style="font-size:10px;font-weight:700;color:var(--color-text-light,#64748b);margin-bottom:2px;letter-spacing:.02em"><i class="fas fa-headphones mr-1"></i>TRANSCRIPCIÓN · solo tú la ves</div>
+                    <div style="font-size:12.5px;line-height:1.4;color:var(--color-text,#334155);white-space:pre-wrap;word-break:break-word">${escapeHtml(message.transcription)}</div>
+                 </div>`;
+             }
         } else if (message.type === 'document' || message.fileType.startsWith('application/') || message.fileType.startsWith('text/')) {
             const fullDocUrl = resolveMediaUrl(effectiveFileUrl.startsWith('http') ? effectiveFileUrl : `${API_BASE_URL}${effectiveFileUrl}`);
             contentHTML += `<a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link"><i class="fas fa-file-alt document-icon"></i><span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span></a>`;
