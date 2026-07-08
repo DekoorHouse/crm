@@ -423,7 +423,9 @@ window.changeEnvioComentario = changeEnvioComentario;
 
 // Quita un pedido de la tabla de Envíos (oculta, NO borra el pedido).
 async function ocultarEnvio(docId) {
-    if (!docId || !confirm('¿Quitar este pedido de la tabla de Envíos?\n\nEl pedido NO se borra; solo desaparece de aquí.')) return;
+    if (!docId) return;
+    const ok = await showConfirmModal('¿Quitar este pedido de la tabla de Envíos?<br><span style="display:block;margin-top:6px;color:var(--color-text-light,#64748b);font-size:12.5px">El pedido NO se borra; solo desaparece de aquí.</span>', { icon: 'fa-eye-slash', confirmText: 'Quitar' });
+    if (!ok) return;
     try {
         const r = await fetch(`${API_BASE_URL}/api/envios/ocultar`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docId })
@@ -509,7 +511,9 @@ window.saveEnvioManual = saveEnvioManual;
 
 // Borra una línea manual de Envíos.
 async function deleteEnvioManual(id) {
-    if (!id || !confirm('¿Borrar esta línea manual de Envíos?')) return;
+    if (!id) return;
+    const ok = await showConfirmModal('¿Borrar esta línea manual de Envíos?', { icon: 'delete', confirmText: 'Borrar' });
+    if (!ok) return;
     try {
         const r = await fetch(`${API_BASE_URL}/api/envios/manual/${encodeURIComponent(id)}`, { method: 'DELETE' });
         const d = await r.json().catch(() => ({}));
@@ -863,7 +867,8 @@ async function crearGuiaDesdeModal(payloadEnc) {
     try { opt = JSON.parse(decodeURIComponent(payloadEnc)); } catch (_) { }
     const costoTxt = opt.costo != null ? `$${Number(opt.costo).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : 'su costo';
     const nombreServ = opt.servicioNombre || opt.tipoServicio || '';
-    if (!confirm(`¿Crear guía ${opt.mensajeria} ${nombreServ} para el pedido ${e.orderNumber}?\n\nEsto descontará ${costoTxt} de tu saldo T1.`)) return;
+    const okCrearGuia = await showConfirmModal(`¿Crear guía <b>${escapeHtml((opt.mensajeria || '') + ' ' + (nombreServ || '')).trim()}</b> para el pedido ${escapeHtml(String(e.orderNumber))}?<br><span style="display:block;margin-top:6px;color:var(--color-text-light,#64748b);font-size:12.5px">Esto descontará <b>${escapeHtml(costoTxt)}</b> de tu saldo T1.</span>`, { icon: 'fa-box', confirmText: 'Crear guía' });
+    if (!okCrearGuia) return;
     _creandoGuia = true;
     const box = document.getElementById('guia-cotiz');
     if (box) box.innerHTML = '<p style="text-align:center"><i class="fas fa-spinner fa-spin mr-2"></i>Creando guía… (no cierres esta ventana)</p>';
