@@ -1080,6 +1080,42 @@ function renderTagFilters() {
     actualizarContadorNoLeidos();
 }
 
+// Posiciona un menú desplegable de la barra de filtros al abrirlo.
+// En MÓVIL la barra (#tag-filters-container) tiene scroll horizontal
+// (overflow-x:auto + overflow-y:hidden), lo que RECORTA cualquier menú abierto
+// en position:absolute y lo deja invisible. Por eso, en móvil, lo fijamos a la
+// pantalla (position:fixed) para que escape del recorte. En escritorio limpiamos
+// los estilos y manda el CSS (position:absolute).
+function positionFilterDropdown(menu) {
+    if (!menu) return;
+    const wrapper = menu.closest('.tag-dropdown-wrapper');
+    const btn = wrapper ? wrapper.querySelector('.tag-dropdown-toggle') : null;
+    if (!btn || window.innerWidth > 768) {
+        menu.style.position = '';
+        menu.style.top = '';
+        menu.style.left = '';
+        menu.style.right = '';
+        menu.style.maxWidth = '';
+        menu.style.maxHeight = '';
+        return;
+    }
+    const rect = btn.getBoundingClientRect();
+    const gap = 6, margin = 8;
+    menu.style.position = 'fixed';
+    menu.style.right = 'auto';
+    menu.style.maxWidth = (window.innerWidth - margin * 2) + 'px';
+    menu.style.top = (rect.bottom + gap) + 'px';
+    // El selector de anuncios maneja su propio scroll interno (.ad-dropdown-list).
+    if (!menu.classList.contains('ad-dropdown-menu')) {
+        menu.style.maxHeight = (window.innerHeight - rect.bottom - gap - margin) + 'px';
+    }
+    // Alinear el borde derecho del menú con el del botón, sin salirse de pantalla.
+    const menuWidth = menu.offsetWidth || 200;
+    let left = rect.right - menuWidth;
+    left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
+    menu.style.left = left + 'px';
+}
+
 function toggleTagDropdown(event) {
     event.stopPropagation();
     const menu = document.getElementById('tag-dropdown-menu');
@@ -1088,6 +1124,7 @@ function toggleTagDropdown(event) {
 
     // Cerrar al hacer clic fuera
     if (!menu.classList.contains('hidden')) {
+        positionFilterDropdown(menu);
         setTimeout(() => {
             document.addEventListener('click', closeTagDropdownOnOutside, { once: true });
         }, 0);
@@ -1115,6 +1152,7 @@ function toggleDeptDropdown(event) {
     closeTagDropdown(); // cerrar el de etiquetas si estaba abierto
     menu.classList.toggle('hidden');
     if (!menu.classList.contains('hidden')) {
+        positionFilterDropdown(menu);
         setTimeout(() => {
             document.addEventListener('click', closeDeptDropdownOnOutside, { once: true });
         }, 0);
@@ -1147,6 +1185,7 @@ function toggleAdDropdown(event) {
     const willOpen = menu.classList.contains('hidden');
     if (!willOpen) { closeAdDropdown(); return; }
     menu.classList.remove('hidden');
+    positionFilterDropdown(menu);
     adFilterPending = new Set((state.adIdFilters || []).map(String));
     const search = document.getElementById('ad-filter-search');
     if (search) search.value = '';
