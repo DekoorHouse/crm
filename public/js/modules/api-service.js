@@ -137,9 +137,15 @@ async function fetchInitialContacts() {
         if (tag) {
             url += `&tag=${tag}`;
         }
-        
+
         if (state.unreadOnly) {
             url += `&unreadOnly=true`;
+        }
+
+        // Vista "Archivados": consulta Firestore por archived==true (no filtra solo lo ya cargado),
+        // para que muestre TODOS los archivados y persistan al recargar.
+        if (state.archivedOnly) {
+            url += `&archivedOnly=true`;
         }
 
         if (state.purchaseFilter) {
@@ -406,6 +412,10 @@ async function fetchMoreContacts() {
 
         if (state.unreadOnly) {
             url += `&unreadOnly=true`;
+        }
+
+        if (state.archivedOnly) {
+            url += `&archivedOnly=true`;
         }
 
         if (state.purchaseFilter) {

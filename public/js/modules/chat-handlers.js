@@ -1747,7 +1747,10 @@ function toggleArchivedFilter() {
         state.adIdFilters = [];
     }
     renderTagFilters();
-    handleSearchContacts();
+    // Consultar Firestore (archived==true al activar; lista normal al desactivar) en vez de filtrar solo
+    // los contactos ya cargados: así la vista Archivados muestra TODOS los archivados y persiste al recargar.
+    state.contacts = [];
+    fetchInitialContacts();
 }
 
 // Archiva/desarchiva un chat (escribe directo a Firestore como handleMarkAsUnread). Optimista.

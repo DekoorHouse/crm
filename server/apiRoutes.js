@@ -3949,6 +3949,12 @@ router.get('/contacts', async (req, res) => {
             query = query.where('inDesignReview', '==', true);
         }
 
+        // Filtro "Archivados": SOLO chats archivados. Se consulta en Firestore (no en memoria) para que
+        // persistan al recargar, aunque el chat ya no esté en la primera página por recencia.
+        if (req.query.archivedOnly === 'true') {
+            query = query.where('archived', '==', true);
+        }
+
         // Aplicar filtro de canal (whatsapp, messenger, instagram)
         if (req.query.channel) {
             query = query.where('channel', '==', req.query.channel);
