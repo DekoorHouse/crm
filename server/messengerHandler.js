@@ -560,7 +560,9 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
         // Nuevo: si autoCorazon está activo, se manda la quick reply /corazon y se ENCIENDE la IA para
         // que atienda desde el PRÓXIMO mensaje del cliente. Kill-switch:
         // crm_settings/general.autoCorazonOnFirstMessage=false (default: encendido).
-        const autoCorazon = !(generalSettingsDoc.exists && generalSettingsDoc.data().autoCorazonOnFirstMessage === false);
+        // /corazon + IA SOLO para contactos que NO vienen de anuncio (adId). Un contacto de anuncio sin
+        // ad_response configurado cae al fallback de bienvenida genérica/configurada, sin /corazon y sin IA.
+        const autoCorazon = !adId && !(generalSettingsDoc.exists && generalSettingsDoc.data().autoCorazonOnFirstMessage === false);
         if (!adResponseSent) {
             let welcomePayload = null;
             // Preferir /corazon si autoCorazon está activo y la quick reply existe.

@@ -238,6 +238,11 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
         isFinalCommand = true;
         cleanedText = text.replace(/\/final/gi, '').trim();
     }
+    // Defensa en profundidad: nunca dejar que la marca /corazon (hand-off a la IA) llegue al cliente,
+    // sin importar por qué camino se llame a esta función.
+    if (cleanedText && cleanedText.toLowerCase().includes('/corazon')) {
+        cleanedText = cleanedText.replace(/\/corazon/gi, '').trim();
+    }
 
     if (fileUrl && fileType) {
         const type = fileType.startsWith('image/') ? 'image' :

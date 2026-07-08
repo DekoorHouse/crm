@@ -980,7 +980,10 @@ router.post('/', async (req, res) => {
             // contactos de anuncio NO entran aquí: su IA la gobierna la regla del anuncio (enableAi).
             // Kill-switch: crm_settings/general.autoCorazonOnFirstMessage=false lo apaga (default: encendido).
             if (isNewContact && !adResponseSent) {
-                const autoCorazon = !(generalSettingsDoc.exists && generalSettingsDoc.data().autoCorazonOnFirstMessage === false);
+                // /corazon + IA SOLO para contactos que NO vienen de anuncio (los de anuncio los gobierna la
+                // regla del anuncio, enableAi). Un contacto de anuncio sin respuesta configurada cae aquí con
+                // la bienvenida genérica, pero SIN /corazon y SIN pisar el botActive que dejó su regla.
+                const autoCorazon = !fromAd && !(generalSettingsDoc.exists && generalSettingsDoc.data().autoCorazonOnFirstMessage === false);
                 let corazonSent = false;
                 if (autoCorazon) {
                     const qrSnap = await db.collection('quick_replies').where('shortcut', '==', 'corazon').limit(1).get();
@@ -995,7 +998,7 @@ router.post('/', async (req, res) => {
                     await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
                 }
                 const welcomeUpdate = { welcomed: true };
-                if (autoCorazon) { welcomeUpdate.botActive = true; welcomeUpdate.aiStage = 'venta'; } // encender IA
+                if (autoCorazon) { welcomeUpdate.botActive = true; welcomeUpdate.aiStage = 'venta'; } // encender IA (solo no-anuncio)
                 await contactRef.update(welcomeUpdate);
             }
 

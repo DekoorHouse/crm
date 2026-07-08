@@ -4578,7 +4578,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, messagePayload, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
             messageId = response.data.messages[0].id;
 
-            const messageTextForDb = text || (type === 'video' ? '🎥 Video' : type === 'image' ? '📷 Imagen' : type === 'audio' ? '🎵 Audio' : '📄 Documento');
+            const messageTextForDb = cleanedText || (type === 'video' ? '🎥 Video' : type === 'image' ? '📷 Imagen' : type === 'audio' ? '🎵 Audio' : '📄 Documento');
             messageToSave = {
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 id: messageId, text: messageTextForDb, fileUrl: fileUrl, fileType: fileType
@@ -4587,7 +4587,8 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         }
         // --- Lógica para enviar solo TEXTO ---
         else {
-            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, reply_to_wamid });
+            // cleanedText (no `text`): ya viene sin /final y sin /corazon, para que el cliente NO reciba el comando.
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: cleanedText, reply_to_wamid });
             messageId = sentMessageData.id;
             messageToSave = {
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
