@@ -156,6 +156,40 @@ document.addEventListener('DOMContentLoaded', () => {
         userForm.addEventListener('submit', handleSaveUser);
     }
     // ------------------------------------------------------------------
+
+    // --- Bloquear el popup de Chrome "¿Guardar dirección?" (Autofill) y las ofertas de gestores de
+    // contraseñas en TODO el CRM. El navegador detecta los formularios con nombre/dirección/teléfono
+    // (registrar/editar pedido, línea manual de Envíos, etc.) y ofrece guardarlos en la cuenta de Google.
+    // Marcamos cada campo con autocomplete="off" + señales de "no es un formulario" para que no lo haga.
+    // Ligero e idempotente: solo procesa campos NUEVOS. Se excluye el LOGIN para no estorbar al gestor
+    // de contraseñas en el inicio de sesión.
+    (function suppressBrowserAutofill() {
+        const stamp = (el) => {
+            if (!el || el.nodeType !== 1 || el.dataset._acoff) return;
+            const tag = el.tagName;
+            if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') return;
+            const t = (el.getAttribute('type') || '').toLowerCase();
+            if (['checkbox', 'radio', 'range', 'color', 'file', 'submit', 'button', 'hidden', 'password'].includes(t)) return;
+            if (el.closest && el.closest('#login-form, #login-view')) return; // dejar el login al gestor de contraseñas
+            el.setAttribute('autocomplete', 'off');
+            el.setAttribute('data-lpignore', 'true');   // LastPass
+            el.setAttribute('data-1p-ignore', 'true');  // 1Password
+            el.setAttribute('data-form-type', 'other'); // Chrome/Dashlane: "esto no es un formulario de datos"
+            el.dataset._acoff = '1';
+        };
+        const scan = (root) => {
+            if (!root || root.nodeType !== 1) return;
+            if (root.matches && root.matches('input, textarea, select')) stamp(root);
+            const kids = root.querySelectorAll && root.querySelectorAll('input, textarea, select');
+            if (kids) kids.forEach(stamp);
+        };
+        scan(document.body);
+        try {
+            new MutationObserver((muts) => {
+                for (const m of muts) for (const n of m.addedNodes) scan(n);
+            }).observe(document.body, { childList: true, subtree: true });
+        } catch (e) { /* noop */ }
+    })();
 });
 
 /**
