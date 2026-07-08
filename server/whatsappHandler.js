@@ -974,10 +974,29 @@ router.post('/', async (req, res) => {
                     console.log(`[AD] No se encontró mensaje específico para Ad ID ${adId}.`);
                 }
             }
-            // Bienvenida general SOLO para contactos nuevos que no recibieron respuesta de anuncio.
+            // Bienvenida SOLO para contactos nuevos que no recibieron respuesta de anuncio.
+            // Comportamiento: se les manda la quick reply /corazon (bienvenida) y se ENCIENDE la IA, para
+            // que atienda desde el PRÓXIMO mensaje del cliente (el primero ya recibió el /corazon). Los
+            // contactos de anuncio NO entran aquí: su IA la gobierna la regla del anuncio (enableAi).
+            // Kill-switch: crm_settings/general.autoCorazonOnFirstMessage=false lo apaga (default: encendido).
             if (isNewContact && !adResponseSent) {
-                await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
-                await contactRef.update({ welcomed: true }); // Mark as welcomed
+                const autoCorazon = !(generalSettingsDoc.exists && generalSettingsDoc.data().autoCorazonOnFirstMessage === false);
+                let corazonSent = false;
+                if (autoCorazon) {
+                    const qrSnap = await db.collection('quick_replies').where('shortcut', '==', 'corazon').limit(1).get();
+                    if (!qrSnap.empty) {
+                        const qr = qrSnap.docs[0].data();
+                        corazonSent = (await sendAutoMessage(contactRef, { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null })) === true;
+                    } else {
+                        console.warn('[CORAZON] Quick reply "corazon" no existe en Firestore; se usa la bienvenida genérica.');
+                    }
+                }
+                if (!corazonSent) {
+                    await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+                }
+                const welcomeUpdate = { welcomed: true };
+                if (autoCorazon) { welcomeUpdate.botActive = true; welcomeUpdate.aiStage = 'venta'; } // encender IA
+                await contactRef.update(welcomeUpdate);
             }
 
             // 7. Trigger AI Reply if applicable

@@ -4400,6 +4400,13 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         const contactDoc = await contactRef.get();
         const channel = contactDoc.exists ? (contactDoc.data().channel || 'whatsapp') : 'whatsapp';
 
+        // /corazon = bienvenida + hand-off a la IA. La quick reply llega con la marca ' /corazon' que
+        // agrega el frontend; se detecta para ENCENDER la IA (botActive=true) en CUALQUIER canal, y se
+        // limpia del texto visible para que el cliente no vea el comando. Se maneja en ambos branches
+        // (Messenger retorna antes del bloque de comandos de WhatsApp).
+        const isCorazonCommand = !!(text && text.toLowerCase().includes('/corazon'));
+        const corazonCleanText = isCorazonCommand && text ? text.replace(/\/corazon/gi, '').trim() : text;
+
         // === MESSENGER / INSTAGRAM: Lógica de envío via Meta Send API ===
         if (channel === 'messenger' || channel === 'instagram') {
             const channelName = channel === 'instagram' ? 'Instagram' : 'Messenger';
@@ -4407,7 +4414,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
 
             let sentData;
             try {
-                sentData = await sendMessengerMessage(recipientId, { text, fileUrl, fileType, channel });
+                sentData = await sendMessengerMessage(recipientId, { text: corazonCleanText, fileUrl, fileType, channel });
             } catch (sendErr) {
                 const metaErr = sendErr.response?.data?.error || {};
                 const code = metaErr.code;
@@ -4477,6 +4484,9 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             if (freshMsgrDoc.exists && freshMsgrDoc.data().aiStatus === 'generating') {
                 msgrContactUpdate.aiStatus = 'cancelled';
             }
+            // /corazon: encender la IA del contacto (todos los canales). La IA responderá el próximo
+            // mensaje del cliente (aquí el último mensaje es saliente, así que no contesta de inmediato).
+            if (isCorazonCommand) { msgrContactUpdate.botActive = true; console.log(`[CORAZON] IA activada (${channel}) para ${contactId}.`); }
             await contactRef.update(msgrContactUpdate);
 
             return res.status(200).json({ success: true, message: `Mensaje(s) enviado(s) por ${channelName}.` });
@@ -4500,6 +4510,8 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         // post-venta. Desde el CRM la respuesta rápida llega ya EXPANDIDA, así que se
         // detecta también por su frase distintiva.
         const isCuatroCommand = !!(text && (text.toLowerCase().includes('/cuatro') || text.toLowerCase().includes('ya tenemos tu pedido listo')));
+        // /corazon: quitar la marca del texto visible (la activación de IA se aplica en contactUpdateData abajo).
+        if (isCorazonCommand) cleanedText = (cleanedText || '').replace(/\/corazon/gi, '').trim();
 
         // --- Lógica para enviar PLANTILLA ---
         if (template) {
@@ -4628,6 +4640,9 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                 contactUpdateData.aiStage = 'postventa';
             }
         }
+        // /corazon: encender la IA del contacto. No dispara respuesta inmediata (el último mensaje es
+        // saliente); la IA contestará el próximo mensaje del cliente.
+        if (isCorazonCommand) { contactUpdateData.botActive = true; console.log(`[CORAZON] IA activada (whatsapp) para ${contactId}.`); }
 
         await contactRef.update(contactUpdateData);
 
@@ -4671,6 +4686,9 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
         }
         // /cuatro = pedido LISTO (foto + datos de pago): dispara la etapa post-venta.
         const isCuatroCommand = !!(text && (text.toLowerCase().includes('/cuatro') || text.toLowerCase().includes('ya tenemos tu pedido listo')));
+        // /corazon = bienvenida + hand-off a la IA: enciende la IA y se limpia la marca del texto visible.
+        const isCorazonCommand = !!(text && text.toLowerCase().includes('/corazon'));
+        if (isCorazonCommand) cleanedText = (cleanedText || '').replace(/\/corazon/gi, '').trim();
 
         // Determinar texto para DB (igual que en envío normal)
         let messageToSaveText = cleanedText;
@@ -4717,6 +4735,8 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
                 contactUpdateData.aiStage = 'postventa';
             }
         }
+        // /corazon: encender la IA aunque el mensaje quede en cola (se activará al reabrirse la ventana).
+        if (isCorazonCommand) contactUpdateData.botActive = true;
 
         await contactRef.update(contactUpdateData);
 

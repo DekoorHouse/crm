@@ -1905,8 +1905,12 @@ function selectQuickReply(replyId) {
     if (input) {
         let text = reply.message || '';
         // Si el atajo es 'final', añadimos la marca para que el backend desactive el bot e identifique el comando
-        if (reply.shortcut && reply.shortcut.toLowerCase() === 'final') {
+        const _sc = reply.shortcut ? reply.shortcut.toLowerCase() : '';
+        if (_sc === 'final') {
             text += ' /final';
+        } else if (_sc === 'corazon') {
+            // /corazon = bienvenida + hand-off a la IA: marca para que el backend ENCIENDA la IA (botActive).
+            text += ' /corazon';
         }
         input.value = text;
         input.focus();

@@ -556,31 +556,52 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
                 console.log(`[${logPrefix} AD] No hay mensaje específico para Ad ID ${adId}. Se envía bienvenida general.`);
             }
         }
-        // Bienvenida general SOLO si no se envió un mensaje específico de anuncio
+        // Bienvenida general SOLO si no se envió un mensaje específico de anuncio.
+        // Nuevo: si autoCorazon está activo, se manda la quick reply /corazon y se ENCIENDE la IA para
+        // que atienda desde el PRÓXIMO mensaje del cliente. Kill-switch:
+        // crm_settings/general.autoCorazonOnFirstMessage=false (default: encendido).
+        const autoCorazon = !(generalSettingsDoc.exists && generalSettingsDoc.data().autoCorazonOnFirstMessage === false);
         if (!adResponseSent) {
-            let welcomePayload = { text: GENERAL_WELCOME_MESSAGE };
-            // Para Facebook Messenger se puede configurar una respuesta rápida como bienvenida.
-            if (channel === 'messenger') {
-                try {
-                    const cfg = await db.collection('crm_settings').doc('general').get();
-                    const shortcut = cfg.exists ? (cfg.data().messengerWelcomeShortcut || '') : '';
-                    if (shortcut) {
-                        const qrSnap = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
-                        if (!qrSnap.empty) {
-                            const qr = qrSnap.docs[0].data();
-                            welcomePayload = { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null };
-                            console.log(`[${logPrefix}] Bienvenida de FB: usando respuesta rápida '/${shortcut}'.`);
-                        } else {
-                            console.warn(`[${logPrefix}] La respuesta rápida '/${shortcut}' configurada para la bienvenida de FB no existe. Se usa la genérica.`);
+            let welcomePayload = null;
+            // Preferir /corazon si autoCorazon está activo y la quick reply existe.
+            if (autoCorazon) {
+                const corSnap = await db.collection('quick_replies').where('shortcut', '==', 'corazon').limit(1).get();
+                if (!corSnap.empty) {
+                    const cor = corSnap.docs[0].data();
+                    welcomePayload = { text: cor.message || '', fileUrl: cor.fileUrl || null, fileType: cor.fileType || null };
+                    console.log(`[${logPrefix}] [CORAZON] Bienvenida con /corazon + IA para ${contactId}.`);
+                } else {
+                    console.warn(`[${logPrefix}] [CORAZON] Quick reply "corazon" no existe; se usa la bienvenida configurada/genérica.`);
+                }
+            }
+            // Fallback: bienvenida configurable de Messenger (messengerWelcomeShortcut) o genérica.
+            if (!welcomePayload) {
+                welcomePayload = { text: GENERAL_WELCOME_MESSAGE };
+                if (channel === 'messenger') {
+                    try {
+                        const cfg = await db.collection('crm_settings').doc('general').get();
+                        const shortcut = cfg.exists ? (cfg.data().messengerWelcomeShortcut || '') : '';
+                        if (shortcut) {
+                            const qrSnap = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
+                            if (!qrSnap.empty) {
+                                const qr = qrSnap.docs[0].data();
+                                welcomePayload = { text: qr.message || '', fileUrl: qr.fileUrl || null, fileType: qr.fileType || null };
+                                console.log(`[${logPrefix}] Bienvenida de FB: usando respuesta rápida '/${shortcut}'.`);
+                            } else {
+                                console.warn(`[${logPrefix}] La respuesta rápida '/${shortcut}' configurada para la bienvenida de FB no existe. Se usa la genérica.`);
+                            }
                         }
+                    } catch (e) {
+                        console.warn(`[${logPrefix}] No se pudo leer la bienvenida de FB configurada: ${e.message}`);
                     }
-                } catch (e) {
-                    console.warn(`[${logPrefix}] No se pudo leer la bienvenida de FB configurada: ${e.message}`);
                 }
             }
             await sendAutoMessage(contactRef, welcomePayload);
         }
-        await contactRef.update({ welcomed: true });
+        // Encender la IA para contactos nuevos que no vinieron de anuncio (gobernado por autoCorazon).
+        const welcomeUpdate = { welcomed: true };
+        if (autoCorazon && !adResponseSent) { welcomeUpdate.botActive = true; welcomeUpdate.aiStage = 'venta'; }
+        await contactRef.update(welcomeUpdate);
         return;
     }
 
