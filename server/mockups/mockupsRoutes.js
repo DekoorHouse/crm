@@ -311,4 +311,17 @@ router.post('/send', asyncHandler(async (req, res) => {
     res.json({ success: true, messageId: result.id });
 }));
 
+// --- Config de la generación automática (on/off) ---
+router.get('/auto-config', asyncHandler(async (req, res) => {
+    const doc = await db.collection('mockup_config').doc('settings').get();
+    const data = doc.exists ? doc.data() : {};
+    res.json({ success: true, autoGenerate: data.autoGenerate !== false });   // default: encendida
+}));
+
+router.post('/auto-config', asyncHandler(async (req, res) => {
+    const autoGenerate = req.body.autoGenerate !== false;
+    await db.collection('mockup_config').doc('settings').set({ autoGenerate }, { merge: true });
+    res.json({ success: true, autoGenerate });
+}));
+
 module.exports = router;

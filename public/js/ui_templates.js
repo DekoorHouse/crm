@@ -909,7 +909,11 @@ const MockupsViewTemplate = () => `
                 <h1>Mockup</h1>
                 <p class="text-sm text-gray-500 mt-1">Genera un preview de la lámpara con los datos del cliente y envíaselo por WhatsApp para que lo apruebe. Los pendientes salen de los pedidos <b>Sin estatus</b>.</p>
             </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Genera previews solos cada 10 min para pedidos de corazones con solo nombres+fecha. NO envía nada.">
+                    <span class="mk-muted">Auto-generar</span>
+                    <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-auto-toggle" onchange="mkToggleAuto(this.checked)"><span class="slider"></span></label>
+                </span>
                 <button class="btn btn-secondary btn-sm" onclick="mkReload()"><i class="fas fa-sync-alt mr-2"></i>Actualizar</button>
             </div>
         </div>

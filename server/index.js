@@ -23,6 +23,7 @@ const { startScheduledReminderScheduler } = require('./leads/scheduledReminderSc
 const { startScheduledMessagesScheduler } = require('./scheduledMessages/scheduledMessagesScheduler');
 const { startShippingDigestScheduler } = require('./shipping/shippingDigestScheduler');
 const { startSpendCapAlertScheduler } = require('./meta/spendCapAlertScheduler');
+const { startMockupAutoScheduler } = require('./mockups/mockupAutoScheduler');
 const orderFollowupRouter = require('./leads/orderFollowupRoutes');
 const scheduledReminderRouter = require('./leads/scheduledReminderRoutes');
 const path = require('path');
@@ -506,6 +507,8 @@ const server = app.listen(PORT, () => {
   startShippingDigestScheduler();
   // Iniciar scheduler de alerta de límite publicitario Meta Ads (cada 30 min)
   startSpendCapAlertScheduler();
+  // Iniciar scheduler de auto-generación de mockups (cada 10 min; SOLO genera, no envía)
+  startMockupAutoScheduler();
   // Conectar bridge TCP a MeerK40t
   laserBridge.connect();
 });

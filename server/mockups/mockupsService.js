@@ -261,6 +261,30 @@ function buildPromptFromTemplate(promptTemplate, fields = {}) {
     return out;
 }
 
+// Parseo backend de los datos del pedido (espejo de mkParseDatos del frontend): separa
+// nombre1/nombre2 y la fecha (por la etiqueta "Fecha:" o por fecha numérica). Lo usa el
+// scheduler de auto-generación.
+function mkTitleCase(s) {
+    return String(s || '').toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+}
+function extractFecha(raw) {
+    const labeled = raw.match(/fecha\s*:\s*([^|\n]+)/i);
+    if (labeled) return labeled[1].trim().replace(/[\s|,]+$/, '').trim();
+    const numeric = raw.match(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/);
+    return numeric ? numeric[0] : '';
+}
+function parseDatos(text) {
+    const raw = (text || '').trim();
+    const fecha = extractFecha(raw);
+    const clean = s => s.replace(/^[\s|,&+]+|[\s|,&+]+$/g, '').trim();
+    const rest = raw
+        .replace(/fecha\s*:\s*[^|\n]*/ig, ' ')
+        .replace(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/g, ' ')
+        .replace(/nombres?\s*:/ig, ' ').replace(/para\s*:/ig, ' ').replace(/personajes?\s*:/ig, ' ');
+    const parts = rest.split(/\s+y\s+|\s*&\s*|\s*\+\s*|\s*\|\s*|,|\n|\s+and\s+/i).map(clean).filter(Boolean);
+    return { nombre1: mkTitleCase(parts[0] || ''), nombre2: mkTitleCase(parts[1] || ''), fecha: clean(fecha), personalizacion: raw };
+}
+
 // Descarga una imagen (URL pública) a { mimeType, base64 } para la ruta Gemini.
 async function fetchImageAsBase64(url) {
     const res = await fetch(url);
@@ -299,5 +323,5 @@ async function ensureJpeg(url) {
 module.exports = {
     generateImage, saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch,
     listTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate,
-    uploadTemplateBaseImage, buildPromptFromTemplate, fetchImageAsBase64, ensureJpeg,
+    uploadTemplateBaseImage, buildPromptFromTemplate, fetchImageAsBase64, ensureJpeg, parseDatos,
 };

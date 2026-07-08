@@ -104,6 +104,7 @@ async function initializeMockupsHandlers() {
     mkState.tab = 'pendientes';
     mkState.editing = null;
     mkBindPaste();
+    mkLoadAutoConfig();   // estado del toggle de auto-generación
     // Cargar plantillas ANTES que pendientes: la lista de pendientes las necesita
     // (selector de plantilla + mensaje de "crea la primera").
     try { await mkLoadTemplates(); } catch (e) { mkToast(e.message, 'error'); }
@@ -118,6 +119,25 @@ function mkSwitchTab(tab) {
     if (p1) p1.style.display = tab === 'pendientes' ? '' : 'none';
     if (p2) p2.style.display = tab === 'plantillas' ? '' : 'none';
     if (tab === 'plantillas') mkRenderTemplates();
+}
+
+// Toggle de auto-generación (scheduler del backend).
+async function mkLoadAutoConfig() {
+    try {
+        const d = await mkFetchJson('/api/mockups/auto-config');
+        const el = document.getElementById('mk-auto-toggle');
+        if (el) el.checked = d.autoGenerate !== false;
+    } catch (_) { /* noop */ }
+}
+
+async function mkToggleAuto(checked) {
+    try {
+        await mkFetchJson('/api/mockups/auto-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoGenerate: !!checked }) });
+        mkToast(checked ? 'Auto-generación ENCENDIDA ✅' : 'Auto-generación apagada', 'success');
+    } catch (e) {
+        mkToast('No se pudo cambiar: ' + e.message, 'error');
+        const el = document.getElementById('mk-auto-toggle'); if (el) el.checked = !checked;   // revertir
+    }
 }
 
 async function mkReload() {
