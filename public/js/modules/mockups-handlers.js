@@ -423,19 +423,33 @@ async function mkPollJob(jobId, setProgress) {
 async function mkSend(orderId, blockId) {
     const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
     if (!block) return;
+    // Anti DOBLE-ENVÍO: si ya hay un envío en curso para este bloque, no dispares otro (evita que
+    // se dupliquen todos los mensajes cuando la acción se llama dos veces casi al mismo tiempo).
+    mkState.sending = mkState.sending || {};
+    if (mkState.sending[blockId]) return;
+    mkState.sending[blockId] = true;
+
     const card = block.closest('.mk-card');
     const telefono = card && card.dataset.phone;
     const order = mkState.pending.find(o => o.id === orderId) || {};
     // Preview de ESTE bloque: generado en sesión o guardado (persistido).
     const imageUrl = mkState.results[blockId] || ((order.previews || []).find(p => p.blockId === blockId) || {}).imageUrl;
-    if (!telefono) { mkToast('Este pedido no tiene teléfono.', 'error'); return; }
-    if (!imageUrl) { mkToast('Genera el preview primero.', 'error'); return; }
+    if (!telefono) { mkToast('Este pedido no tiene teléfono.', 'error'); delete mkState.sending[blockId]; return; }
+    if (!imageUrl) { mkToast('Genera el preview primero.', 'error'); delete mkState.sending[blockId]; return; }
 
     const btn = block.querySelector('.mk-send-btn');
     const setBtn = (html, disabled) => { if (btn) { btn.disabled = disabled; btn.innerHTML = html; } };
     setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Enviando…', true);
 
     try {
+        // Salvaguarda ANTI-FUGA: no mandar a este cliente el preview de OTRO cliente.
+        const chk = await mkFetchJson('/api/mockups/check-send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ telefono, imageUrl }) });
+        if (chk && chk.ok === false) {
+            mkToast(chk.error || 'La imagen no corresponde a este cliente; no se envió.', 'error');
+            setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp', false);
+            return;
+        }
+
         const ctx = await mkFetchJson('/api/mockups/send-context?telefono=' + encodeURIComponent(telefono));
 
         if (!ctx.windowOpen) {
@@ -451,8 +465,12 @@ async function mkSend(orderId, blockId) {
             return;
         }
 
-        // /cuatro (pago) + /bbb (tarjeta) SOLO una vez por pedido, aunque mandes varias fotos.
-        if (!mkState.paymentSent[orderId]) {
+        // /cuatro (pago) + /bbb (tarjeta) SOLO una vez por pedido. El candado es ATÓMICO en el
+        // servidor (claim-payment marca el pedido); solo el primer claim manda el pago, aunque
+        // recargues la página o mandes varias fotos. Antes vivía en memoria y salía repetido.
+        let paymentClaimed = false;
+        try { const r = await mkFetchJson('/api/mockups/claim-payment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) }); paymentClaimed = !!(r && r.claimed); } catch (_) {}
+        if (paymentClaimed) {
             if (ctx.cuatro && (ctx.cuatro.text || ctx.cuatro.fileUrl)) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Info de pago…', true); await mkSendChat(telefono, mkQrBody(ctx.cuatro)); }
             if (ctx.bbb && (ctx.bbb.text || ctx.bbb.fileUrl)) { setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Tarjeta…', true); await mkSendChat(telefono, mkQrBody(ctx.bbb)); }
             mkState.paymentSent[orderId] = true;
@@ -468,6 +486,8 @@ async function mkSend(orderId, blockId) {
     } catch (e) {
         mkToast('Error al enviar: ' + e.message, 'error');
         setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp', false);
+    } finally {
+        delete mkState.sending[blockId];
     }
 }
 

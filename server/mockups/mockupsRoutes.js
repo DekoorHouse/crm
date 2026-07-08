@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const svc = require('./mockupsService');
-const { db } = require('../config');
+const { db, admin } = require('../config');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -322,6 +322,54 @@ router.post('/auto-config', asyncHandler(async (req, res) => {
     const autoGenerate = req.body.autoGenerate !== false;
     await db.collection('mockup_config').doc('settings').set({ autoGenerate }, { merge: true });
     res.json({ success: true, autoGenerate });
+}));
+
+// POST /api/mockups/claim-payment — reclama (ATÓMICO, en el servidor) el envío ÚNICO del bloque
+// de pago (/cuatro + /bbb) por pedido. Antes el candado vivía en memoria del navegador y se
+// reiniciaba al recargar la página o se "carreaba" al mandar varias fotos rápido, por eso el
+// bloque de pago salía repetido. Solo el PRIMER claim recibe { claimed:true } y manda el pago.
+router.post('/claim-payment', asyncHandler(async (req, res) => {
+    const orderId = String(req.body.orderId || '').trim();
+    if (!orderId) return res.json({ claimed: false });
+    const ref = db.collection('pedidos').doc(orderId);
+    const claimed = await db.runTransaction(async (tx) => {
+        const d = await tx.get(ref);
+        if (!d.exists) return false;
+        if (d.data().mockupPaymentSentAt) return false;   // ya se envió antes
+        tx.update(ref, { mockupPaymentSentAt: admin.firestore.FieldValue.serverTimestamp() });
+        return true;
+    });
+    res.json({ claimed });
+}));
+
+// POST /api/mockups/check-send — salvaguarda ANTI-FUGA: impide mandar el preview de OTRO cliente.
+// Averigua a qué pedido pertenece la imagen (colección mockup_previews) y confirma que el teléfono
+// destino sea el de ESE pedido. Si la imagen es de otro pedido con otro teléfono, bloquea el envío.
+// Si la imagen no se reconoce, NO bloquea (evita frenar envíos válidos por diferencias de formato).
+router.post('/check-send', asyncHandler(async (req, res) => {
+    const telefono = String(req.body.telefono || '').trim();
+    const imageUrl = String(req.body.imageUrl || '').trim();
+    const norm = (u) => String(u || '').replace(/^https?:\/\/[^/]+\//, '').split('?')[0];
+    const target = norm(imageUrl);
+    if (!telefono || !target) return res.json({ ok: true });
+
+    const snap = await db.collection('mockup_previews').get();
+    let ownerId = null;
+    snap.forEach((d) => {
+        if (ownerId) return;
+        const previews = Array.isArray(d.data().previews) ? d.data().previews : [];
+        if (previews.some((pv) => [pv.imageUrl, pv.fullUrl, pv.thumbUrl].some((u) => u && norm(u) === target))) ownerId = d.id;
+    });
+    if (!ownerId) return res.json({ ok: true });   // imagen no reconocida: no bloquear
+
+    const ped = await db.collection('pedidos').doc(String(ownerId)).get();
+    const p = ped.exists ? ped.data() : {};
+    const ownerPhones = [p.contactId, p.telefono].filter(Boolean).map(String);
+    if (ownerPhones.length && !ownerPhones.includes(telefono)) {
+        const num = p.consecutiveOrderNumber ? ('DH' + p.consecutiveOrderNumber) : ownerId;
+        return res.json({ ok: false, error: `⛔ Esta imagen es el preview del pedido ${num} (otro cliente). No se envió para no filtrarle a este cliente la lámpara de otra persona.` });
+    }
+    res.json({ ok: true });
 }));
 
 module.exports = router;
