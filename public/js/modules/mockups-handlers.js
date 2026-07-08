@@ -376,7 +376,7 @@ async function mkGenerate(orderId, blockId) {
 // Polling del preview asíncrono (WaveSpeed). Devuelve la URL o lanza error.
 async function mkPollJob(jobId, setProgress) {
     const started = Date.now();
-    const MAX_MS = 4 * 60 * 1000;   // hasta 4 min
+    const MAX_MS = 6 * 60 * 1000;   // hasta 6 min (GPT Image 2 a veces se satura)
     const EST_MS = 150 * 1000;      // GPT Image 2 tarda ~2.5 min: base para el % estimado
     const INTERVAL = 3000;
     // Progreso estimado por tiempo (WaveSpeed no da % real); topado en 95% hasta terminar.
@@ -394,7 +394,7 @@ async function mkPollJob(jobId, setProgress) {
         if (st.status === 'failed') throw new Error(st.error || 'La generación falló.');
         tick();
     }
-    throw new Error('La generación tardó demasiado (más de 4 min). Intenta de nuevo.');
+    throw new Error('La generación tardó demasiado (más de 6 min). Intenta de nuevo.');
 }
 
 async function mkSend(orderId, blockId) {
