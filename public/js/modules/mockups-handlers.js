@@ -226,6 +226,7 @@ function mkRenderPending() {
         return;
     }
 
+    const mkUsedBlockIds = new Set();   // ids de bloque únicos en TODA la lista (evita colisiones, ej. varios 'auto')
     cont.innerHTML = mkState.pending.map(o => {
         const datos = (o.items || []).map(it => it.datosProducto).filter(Boolean).join('\n') || (o.items?.[0]?.producto || '');
         const producto = o.producto || (o.items?.[0]?.producto || '');
@@ -233,9 +234,11 @@ function mkRenderPending() {
         o._prefill = mkPrefill(mkParseDatos(datos));   // valores sugeridos para el primer bloque
         // Bloques iniciales: uno por preview guardado, o uno vacío.
         const saved = Array.isArray(o.previews) ? o.previews : [];
+        // Garantiza un id ÚNICO por bloque (el scheduler pudo guardar varios como 'auto').
+        const uniqId = (want) => { let id = want || mkNewBlockId(); while (mkUsedBlockIds.has(id)) id = mkNewBlockId(); mkUsedBlockIds.add(id); return id; };
         const blocks = saved.length
-            ? saved.map(pv => ({ id: pv.blockId || mkNewBlockId(), templateId: pv.templateId, provider: 'wavespeed', values: mkMergeValues(o._prefill, pv.fields), previewUrl: pv.imageUrl }))
-            : [{ id: mkNewBlockId(), templateId: mkAutoTemplate(producto), provider: 'wavespeed', values: o._prefill, previewUrl: '' }];
+            ? saved.map(pv => { const id = uniqId(pv.blockId); pv.blockId = id; return { id, templateId: pv.templateId, provider: 'wavespeed', values: mkMergeValues(o._prefill, pv.fields), previewUrl: pv.imageUrl }; })
+            : [{ id: uniqId(), templateId: mkAutoTemplate(producto), provider: 'wavespeed', values: o._prefill, previewUrl: '' }];
         return `
         <div class="settings-card mk-card" data-order="${mkAttr(o.id)}" data-phone="${mkAttr(o.telefono)}" data-client="${mkAttr(o.clientName)}">
             <div class="mk-card-head">

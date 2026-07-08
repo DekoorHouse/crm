@@ -90,9 +90,10 @@ async function generateOne(o, tpl) {
         const img = await wave.downloadImage(outputs[0]);
         const saved = await svc.saveToGallery(prompt, tpl.aspectRatio || '1:1', [img],
             { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, wave.costFor(1));
+        const blockId = 'auto' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
         await db.collection('mockup_previews').doc(String(o.id)).set({
             orderId: String(o.id),
-            previews: [{ blockId: 'auto', imageUrl: saved[0].fullUrl, templateId: tpl.id, fields, createdAt: new Date().toISOString() }],
+            previews: [{ blockId, imageUrl: saved[0].fullUrl, templateId: tpl.id, fields, createdAt: new Date().toISOString() }],
         }, { merge: true });
         console.log('[mockup-auto] ✓ generado DH' + (o.consecutiveOrderNumber || '?'));
         return true;
