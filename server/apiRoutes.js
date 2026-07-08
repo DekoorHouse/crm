@@ -8340,7 +8340,9 @@ router.post('/envios/crear-guia', async (req, res) => {
         }
 
         // Avisar al cliente por WhatsApp (fire-and-forget: no bloquea la respuesta ni afecta la guía ya creada).
-        if (contactIdNotif) {
+        // Se OMITE si el operador marcó "no avisar" (skipNotify) — p.ej. porque alguien del equipo ya le
+        // mandó el mensaje a mano y no queremos duplicarlo.
+        if (contactIdNotif && !b.skipNotify) {
             notifyGuiaToCustomer(contactIdNotif, guia).catch(e => console.warn('[GUIA] notifyGuiaToCustomer falló:', e.message));
         }
 

@@ -232,18 +232,22 @@ function _paintEnvios() {
                   </div>`;
             } else {
                 // Pendiente de guía: crear por API (si hay datos+CP) y/o registrar una guía hecha a mano en T1.
+                const btnBase = 'border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;white-space:nowrap;width:100%;text-align:center;font-weight:600';
                 const crearBtn = (e.datos && e.datos.codigoPostal)
-                    ? `<button onclick="openGuiaModal(${gi})" title="Cotizar y crear guía DHL/Estafeta (descuenta saldo y avisa al cliente)" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-box mr-1"></i>Crear guía</button>`
+                    ? `<button onclick="openGuiaModal(${gi})" title="Cotizar y crear guía DHL/Estafeta (descuenta saldo y avisa al cliente)" style="background:var(--color-primary,#ef4444);color:#fff;border:none;${btnBase}"><i class="fas fa-box mr-1"></i>Crear guía</button>`
                     : '';
-                const manualBtn = `<button onclick="openEnvioEditModal(${gi}, true)" title="Registrar una guía que hiciste MANUALMENTE en T1 (la pasa a Con guía; no cobra ni notifica)" style="background:transparent;color:#166534;border:1px solid #22c55e;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-clipboard-check mr-1"></i>Guía manual</button>`;
-                actions = `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${crearBtn}${manualBtn}</div>`;
+                const manualBtn = `<button onclick="openEnvioEditModal(${gi}, true)" title="Registrar una guía que hiciste MANUALMENTE en T1 (la pasa a Con guía; no cobra ni notifica)" style="background:transparent;color:#166534;border:1px solid #22c55e;${btnBase}"><i class="fas fa-clipboard-check mr-1"></i>Guía manual</button>`;
+                actions = `<div style="display:flex;flex-direction:column;gap:5px;align-items:stretch">${crearBtn}${manualBtn}</div>`;
             }
             const editBtn = `<button title="Editar datos de esta fila" onclick="openEnvioEditModal(${gi})" style="border:none;background:transparent;cursor:pointer;color:#334155;padding:4px 8px;font-size:13px;"><i class="fas fa-pen"></i></button>`;
             const chatBtn = e.contactId ? `<button title="Ver y responder la conversación (sin salir de Envíos)" onclick="openChatEnviosModal('${escapeHtml(e.contactId)}')" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:13px;"><i class="fas fa-comments"></i></button>` : '';
             // Pedidos reales: "quitar de Envíos" (oculta, no borra). Manuales: borrar de verdad.
             const hideBtn = !e.manualId ? `<button title="Quitar de Envíos (no borra el pedido)" onclick="ocultarEnvio('${e.id}')" style="border:none;background:transparent;cursor:pointer;color:#94a3b8;padding:4px 8px;font-size:13px;"><i class="fas fa-eye-slash"></i></button>` : '';
             const delBtn = e.manualId ? `<button title="Borrar línea manual" onclick="deleteEnvioManual('${e.manualId}')" style="border:none;background:transparent;cursor:pointer;color:#991b1b;padding:4px 8px;font-size:13px;"><i class="fas fa-trash"></i></button>` : '';
-            const accionCell = `<td style="padding:10px 0;text-align:right;white-space:nowrap"><div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">${actions}${editBtn}${chatBtn}${hideBtn}${delBtn}</div></td>`;
+            // Columna de acciones ordenada: botón(es) de guía arriba; debajo, una fila con los iconos
+            // (editar · chat · quitar/borrar). min-width para que todas las filas queden alineadas.
+            const iconRow = `<div style="display:flex;gap:1px;align-items:center;justify-content:flex-end;margin-top:1px">${editBtn}${chatBtn}${hideBtn}${delBtn}</div>`;
+            const accionCell = `<td style="padding:10px 0 10px 10px;text-align:right;white-space:nowrap;vertical-align:top"><div style="display:inline-flex;flex-direction:column;gap:6px;align-items:stretch;min-width:122px">${actions}${iconRow}</div></td>`;
             return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:top">
                 ${numCell}
                 ${pedidoCell}
@@ -746,7 +750,11 @@ function _renderLoteModal() {
           <h3 style="margin:0;font-size:1.1rem;font-weight:700">Cotización en lote — ${data.length} pedido(s)</h3>
           <button onclick="closeLoteModal(); renderEnviosView();" style="border:none;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:#64748b">&times;</button>
         </div>
-        <p style="font-size:.8rem;color:var(--color-text-light,#64748b);margin:0 0 12px">Elige la paquetería y dale <b>Crear guía</b>. Cada una se crea en <b>segundo plano</b> — no esperes, pasa a la siguiente. ${conError ? `<span style="color:#b45309">(${conError} sin cotización — revisa el C.P.)</span>` : ''}</p>
+        <p style="font-size:.8rem;color:var(--color-text-light,#64748b);margin:0 0 10px">Elige la paquetería y dale <b>Crear guía</b>. Cada una se crea en <b>segundo plano</b> — no esperes, pasa a la siguiente. ${conError ? `<span style="color:#b45309">(${conError} sin cotización — revisa el C.P.)</span>` : ''}</p>
+        <label style="display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--color-text,#334155);margin:0 0 14px;cursor:pointer;user-select:none;padding:8px 10px;background:var(--color-subtle-bg,#f8fafc);border:1px solid var(--color-border,#e5e7eb);border-radius:8px;width:fit-content">
+          <input type="checkbox" id="lote-skip-notify" style="width:16px;height:16px;cursor:pointer;accent-color:var(--color-primary,#ef4444)">
+          <span>No enviar mensaje a los clientes <span style="color:#94a3b8">(ya se les avisó)</span></span>
+        </label>
         <table style="width:100%;border-collapse:collapse;font-size:.875rem">
           <thead><tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light);white-space:nowrap">
             <th style="padding:6px 10px 6px 0">Pedido</th><th style="padding:6px 10px 6px 0">Cliente</th><th style="padding:6px 10px 6px 0">C.P.</th><th style="padding:6px 10px 6px 0">Paquetería / servicio</th><th style="padding:6px 0">Acción</th>
@@ -770,7 +778,7 @@ async function crearGuiaLote(i) {
     try {
         const r = await fetch(`${API_BASE_URL}/api/envios/crear-guia`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderNumber: it.orderNumber, docId: it.docId, manualId: it.manualId || null, proveedor: s.proveedor, tipoServicio: s.codigoServicio || s.tipo_servicio, mensajeria: s.paqueteria, costo: s.costo, datos: it.datos })
+            body: JSON.stringify({ orderNumber: it.orderNumber, docId: it.docId, manualId: it.manualId || null, proveedor: s.proveedor, tipoServicio: s.codigoServicio || s.tipo_servicio, mensajeria: s.paqueteria, costo: s.costo, datos: it.datos, skipNotify: !!(document.getElementById('lote-skip-notify') || {}).checked })
         });
         const j = await r.json();
         if (j && j.persistError && j.guia) { it.status = 'creada'; if (btn) btn.style.display = 'none'; if (estado) estado.innerHTML = `<span style="color:#b45309;font-size:.8rem">⚠️ creada ${escapeHtml(j.guia)} (anótala)</span>`; return; }
@@ -804,7 +812,11 @@ function openGuiaModal(i) {
           <h3 style="margin:0;font-size:1.05rem;font-weight:700">Guía DHL — Pedido ${escapeHtml(e.orderNumber)}</h3>
           <button onclick="closeGuiaModal()" style="border:none;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:#64748b">&times;</button>
         </div>
-        <p style="font-size:.8rem;color:var(--color-text-light,#64748b);margin:0 0 12px">${resumen}</p>
+        <p style="font-size:.8rem;color:var(--color-text-light,#64748b);margin:0 0 10px">${resumen}</p>
+        <label style="display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--color-text,#334155);margin:0 0 12px;cursor:pointer;user-select:none;padding:8px 10px;background:var(--color-subtle-bg,#f8fafc);border:1px solid var(--color-border,#e5e7eb);border-radius:8px">
+          <input type="checkbox" id="guia-skip-notify" style="width:16px;height:16px;cursor:pointer;accent-color:var(--color-primary,#ef4444)">
+          <span>No enviar mensaje al cliente <span style="color:#94a3b8">(ya se le avisó)</span></span>
+        </label>
         <div id="guia-cotiz"><i class="fas fa-spinner fa-spin mr-2"></i>Cotizando…</div>`;
     m.style.display = 'flex';
     _cotizarEnModal();
@@ -859,7 +871,7 @@ async function crearGuiaDesdeModal(payloadEnc) {
     try {
         const r = await fetch(`${API_BASE_URL}/api/envios/crear-guia`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderNumber: e.orderNumber, docId: e.id, manualId: e.manualId || null, proveedor: opt.proveedor, tipoServicio: opt.tipoServicio, mensajeria: opt.mensajeria, costo: opt.costo, datos: e.datos }),
+            body: JSON.stringify({ orderNumber: e.orderNumber, docId: e.id, manualId: e.manualId || null, proveedor: opt.proveedor, tipoServicio: opt.tipoServicio, mensajeria: opt.mensajeria, costo: opt.costo, datos: e.datos, skipNotify: !!(document.getElementById('guia-skip-notify') || {}).checked }),
         });
         const j = await r.json();
         // Caso crítico: la guía SÍ se creó/cobró en T1 pero no se pudo guardar en el CRM -> mostrar el número para anotarlo.
