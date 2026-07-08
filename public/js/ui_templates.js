@@ -2247,6 +2247,13 @@ const ChatWindowTemplate = (contact) => {
         </button>
     `;
 
+    // --- Botón: archivar / desarchivar el chat (mismo handler que en la lista) ---
+    const archiveButtonHTML = `
+        <button onclick="handleArchiveChat(event, '${contact.id}')" class="p-2 rounded-full hover:bg-gray-200 transition-colors text-gray-500 ml-2" title="${contact.archived ? 'Desarchivar chat' : 'Archivar chat'}">
+            <i class="fas fa-${contact.archived ? 'inbox' : 'box-archive'}"></i>
+        </button>
+    `;
+
     return `
         <div id="drag-drop-overlay-chat" class="drag-overlay hidden">
             <div class="drag-overlay-content">
@@ -2270,6 +2277,7 @@ const ChatWindowTemplate = (contact) => {
                 ${activatePostventaHTML}
                 ${reminderButtonHTML}
                 ${transferButtonHTML}
+                ${archiveButtonHTML}
                 ${clearHistoryButtonHTML}
             </div>
         </header>
