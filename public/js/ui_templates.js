@@ -870,7 +870,10 @@ const MockupsViewTemplate = () => `
     <div class="view-container">
         <style>
             .mk-tabs-wrap{margin-top:8px}
-            .mk-card{margin-bottom:16px}
+            /* Más contraste entre tarjetas de pedido: sombra que las despega del fondo, borde marcado
+               y un acento a la izquierda para diferenciarlas de un vistazo (funciona en claro y oscuro). */
+            .mk-card{margin-bottom:18px;border-color:var(--color-border);border-left:4px solid var(--color-primary);box-shadow:0 1px 2px rgba(15,23,42,.06),0 8px 22px rgba(15,23,42,.08);transition:box-shadow .16s ease,transform .16s ease}
+            .mk-card:hover{box-shadow:0 2px 8px rgba(15,23,42,.12),0 14px 32px rgba(15,23,42,.12);transform:translateY(-1px)}
             .mk-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--color-border)}
             .mk-order-num{font-weight:700;background:var(--color-subtle-bg);padding:2px 8px;border-radius:6px;margin-right:8px}
             .mk-client{font-weight:600}
