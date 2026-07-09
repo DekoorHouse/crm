@@ -1707,6 +1707,7 @@ function setFilter(filter) {
     state.unreadOnly = false;
     state.designReviewFilter = false;
     state.adIdFilters = [];
+    state.archivedOnly = false; // salir de la vista Archivados al elegir cualquier otro filtro
     if (filter === 'all') state.channelFilter = null; // "Todos" = reset total (incluye canal)
     renderTagFilters();
 
@@ -1797,6 +1798,7 @@ function setPurchaseFilter(filter) {
     state.unreadOnly = false;
     state.activeFilter = 'all';
     state.adIdFilters = [];
+    state.archivedOnly = false; // salir de la vista Archivados
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1809,6 +1811,7 @@ function toggleDesignFilter() {
     state.purchaseFilter = null;
     state.activeFilter = 'all';
     state.adIdFilters = [];
+    state.archivedOnly = false; // salir de la vista Archivados
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1819,6 +1822,7 @@ function toggleChannelFilter(channel) {
     // Si ya está activo, desactivar (volver a "todos los canales")
     state.channelFilter = state.channelFilter === channel ? null : channel;
     state.adIdFilters = [];
+    state.archivedOnly = false; // salir de la vista Archivados
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1839,6 +1843,7 @@ function applyAdFilters(ids) {
     state.unreadOnly = false;
     state.designReviewFilter = false;
     state.channelFilter = null;
+    state.archivedOnly = false; // salir de la vista Archivados
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
@@ -1854,6 +1859,7 @@ window.clearAdFilters = clearAdFilters;
 function setDepartmentFilter(deptId) {
     // Si se vuelve a elegir el mismo departamento, regresar a "todos"
     state.activeDepartmentFilter = (state.activeDepartmentFilter === deptId) ? 'all' : (deptId || 'all');
+    state.archivedOnly = false; // salir de la vista Archivados (evita combinar filtros sin índice)
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
