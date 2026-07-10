@@ -207,8 +207,33 @@ function renderChatWindow(options = {}) {
     const chatPanelEl = document.getElementById('chat-panel');
     if (!chatPanelEl) return;
 
+    // Preservar el borrador que el operador está escribiendo (texto, cursor y foco). renderChatWindow
+    // recrea TODO el panel vía innerHTML, y un re-render en vivo (mensaje enviado/entrante, timer, etc.)
+    // mientras escribes borraba el input y quitaba agilidad. Se captura antes y se restaura después.
+    const _prevInput = document.getElementById('message-input');
+    const _draft = _prevInput ? {
+        value: _prevInput.value,
+        start: _prevInput.selectionStart,
+        end: _prevInput.selectionEnd,
+        focused: document.activeElement === _prevInput
+    } : null;
+
     const contact = state.contacts.find(c => c.id === state.selectedContactId);
     chatPanelEl.innerHTML = ChatWindowTemplate(contact);
+
+    // Restaurar el borrador SOLO si había algo escrito (no pisa un input vacío tras enviar).
+    if (_draft && _draft.value) {
+        const _newInput = document.getElementById('message-input');
+        if (_newInput) {
+            _newInput.value = _draft.value;
+            if (_draft.focused) {
+                _newInput.focus();
+                try { _newInput.setSelectionRange(_draft.start, _draft.end); } catch (e) {}
+            }
+            // Reactivar la UI dependiente del contenido (auto-alto, botón enviar, corrector).
+            _newInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    }
 
     const searchInput = document.getElementById('search-contacts-input');
     if (searchInput) {
