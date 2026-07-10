@@ -567,11 +567,13 @@ body.dark-mode #message-input:focus { box-shadow: 0 0 0 2px rgba(122, 162, 247, 
 .message-group.has-reaction { margin-bottom: 14px; }
 
 .message-bubble {
-    position: relative; 
-    padding: 6px 12px; 
-    border-radius: var(--border-radius-md); 
-    box-shadow: 0 1px 1px rgba(0,0,0,0.05); 
-    max-width: 60%; 
+    position: relative;
+    padding: 6px 12px;
+    border-radius: var(--border-radius-md);
+    box-shadow: 0 1px 1px rgba(0,0,0,0.05);
+    max-width: 60%;
+    min-width: 0; /* permite encogerse en pantallas angostas (evita scroll lateral) */
+    overflow-wrap: anywhere; /* rompe URLs/palabras largas (ej. links de rastreo) en lugar de desbordar */
     user-select: text; /* Allow text selection inside the bubble */
 }
 .message-bubble.sent { background-color: var(--color-bubble-sent-bg); color: var(--color-bubble-sent-text); border-bottom-right-radius: 4px; }
@@ -713,7 +715,7 @@ body.dark-mode .date-separator { background-color: #292e42; color: #a9b1d6; }
     height: auto; 
     border-radius: 8px; 
 }
-.chat-audio-player { width: 250px; min-width: 250px; height: 45px; }
+.chat-audio-player { width: 250px; max-width: 100%; min-width: 0; height: 45px; }
 
 .message-bubble.has-image, .message-bubble.has-video { 
     padding: 5px; 
@@ -2704,7 +2706,10 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
     .chat-audio-player { width: 100%; min-width: 0; max-width: 250px; }
 
     /* Messages container: padding compacto + pegar mensajes al bottom cuando hay pocos */
-    #messages-container { padding: 0.5rem 0.75rem !important; display: flex; flex-direction: column; }
+    #messages-container { padding: 0.5rem 0.75rem !important; display: flex; flex-direction: column; overflow-x: hidden; }
+    /* Ningún mensaje/burbuja debe empujar el ancho más allá de la pantalla (evita el scroll lateral). */
+    #chat-panel, #chat-view, #messages-content { max-width: 100%; overflow-x: hidden; }
+    .message-group { max-width: 100%; }
     /* Cuando hay pocos mensajes y no llenan el container, se empujan al bottom */
     #messages-container #messages-content { margin-top: auto; }
 
