@@ -155,6 +155,15 @@ app.get('/comunicacion-sw.js', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'comunicacion-sw.js'));
 });
 
+// --- PWA: Service Worker raíz (sitio público + CRM vanilla instalado). Se sirve SIN caché para que
+// al subir el CACHE_NAME de public/sw.js la actualización llegue de inmediato y la PWA no se quede con
+// JS/HTML viejo (si se cacheara, el SW tardaba en detectar el cambio y seguía sirviendo código stale). ---
+app.get('/sw.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(__dirname, '..', 'public', 'sw.js'));
+});
+
 // --- SEO SITIO PÚBLICO: páginas de colección con URL propia e indexable ---
 // /sitio/coleccion/ninos/ etc. sirven el template de colección con title, h1,
 // canonical y Open Graph únicos por colección (el catálogo lo pinta el JS del
