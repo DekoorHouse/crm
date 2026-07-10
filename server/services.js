@@ -1417,6 +1417,43 @@ async function markOrderFabricarForContact(contactId, contactData, addressText) 
 }
 
 /**
+ * La IA de post-venta detecta (comando interno /corregir) que el cliente, DESPUÉS de recibir la
+ * foto de su pedido terminado, reporta que nos equivocamos en algo (p. ej. faltó una frase, un
+ * nombre mal escrito). Cambia el estatus del pedido más reciente a "Corregir" para que el equipo
+ * lo repare, y avisa al admin. No re-avisa si el pedido ya estaba en Corregir. Nunca lanza.
+ */
+async function markOrderCorregirForContact(contactId, contactData, clientMessage) {
+    try {
+        const orderDoc = await getLatestOrderForContact(contactId);
+        if (!orderDoc) {
+            console.warn(`[POSTVENTA] ${contactId} reportó un error pero no tiene pedido registrado; no se cambia estatus.`);
+            return null;
+        }
+        const orderData = orderDoc.data();
+        const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : `(pedido ${orderDoc.id})`;
+        if (String(orderData.estatus || '').toLowerCase() === 'corregir') {
+            console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Corregir; no se repite el aviso.`);
+            return null;
+        }
+        await orderDoc.ref.update({ estatus: 'Corregir', corregirAt: admin.firestore.FieldValue.serverTimestamp() });
+        console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Corregir por reporte del cliente (${contactId}).`);
+        try {
+            const name = (contactData && contactData.name) || contactId;
+            const req = String(clientMessage || '').trim().slice(0, 300);
+            const text = `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nRevisa la conversación y corrígelo.`;
+            await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
+            console.log(`[POSTVENTA] Alerta de corrección enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
+        } catch (e) {
+            console.warn('[POSTVENTA] No se pudo alertar al admin de la corrección:', e.message);
+        }
+        return orderNumber;
+    } catch (e) {
+        console.warn('[POSTVENTA] markOrderCorregirForContact falló:', e.message);
+        return null;
+    }
+}
+
+/**
  * Crea o renueva el caché de contexto en la API de Gemini.
  * Solo se recrea si el contenido cambió o el TTL ha expirado.
  * @param {string} botInstructions - Instrucciones del bot (personalizadas por dept/ad o generales)
@@ -2518,12 +2555,17 @@ Reglas:
         // el sistema extrae los datos de la conversación y registra el pedido en el CRM
         // (orders/aiOrderRegistration.js). Si algo falla, cae al flujo manual (pendientes_ia).
         const registerOrderCmd = !isPostVenta && /\/registrar\b/i.test(aiResponse);
+        // La IA emite /corregir cuando el cliente, DESPUÉS de recibir la foto de su pedido
+        // terminado, reporta que nos equivocamos en algo (ej. faltó una frase, un nombre mal
+        // escrito). Cambia el pedido a estatus "Corregir" y avisa al equipo. Solo en post-venta
+        // (es cuando ya se le envió la foto del pedido). Ver el manejo después del loop.
+        const needsCorrection = isPostVenta && /\/corregir/i.test(aiResponse);
 
         // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado, /comprobante, /registrar) de los mensajes antes de enviar.
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
         // (anuncia pedido LISTO + datos de pago); la IA no puede saber si el pedido físico
         // ya está terminado, así que jamás debe enviarlo ni expandirlo.
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/cuatro\b/ig, '').trim()).filter(m => m.length > 0);
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -2757,6 +2799,13 @@ Reglas:
             const addressText = addressLines.reverse().join('\n');
             markOrderFabricarForContact(contactId, contactData, addressText)
                 .catch(e => console.warn('[POSTVENTA] markOrderFabricarForContact falló:', e.message));
+        }
+
+        // Reporte de error en el pedido terminado (/corregir): cambiar el pedido a "Corregir" y
+        // avisar al admin. Fire-and-forget: nunca debe tumbar la respuesta al cliente.
+        if (needsCorrection) {
+            markOrderCorregirForContact(contactId, contactData, messageText)
+                .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact falló:', e.message));
         }
 
         // Comprobante validado (/comprobante): marcar el pedido para la sección "Envíos" y mandarle
