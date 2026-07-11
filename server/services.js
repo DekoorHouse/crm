@@ -1417,16 +1417,20 @@ async function markOrderFabricarForContact(contactId, contactData, addressText) 
 }
 
 /**
- * La IA de post-venta detecta (comando interno /corregir) que el cliente, DESPUÉS de recibir la
- * foto de su pedido terminado, reporta que nos equivocamos en algo (p. ej. faltó una frase, un
- * nombre mal escrito). Cambia el estatus del pedido más reciente a "Corregir" para que el equipo
- * lo repare, y avisa al admin. No re-avisa si el pedido ya estaba en Corregir. Nunca lanza.
+ * Pasa el pedido más reciente del contacto a estatus "Corregir" y avisa al admin. Se usa en
+ * post-venta (cuando ya se le envió la foto del pedido terminado), por dos motivos:
+ *  - reason 'error' (comando interno /corregir de la IA): el cliente reporta que nos equivocamos
+ *    en algo (p. ej. faltó una frase, un nombre mal escrito).
+ *  - reason 'video': el cliente PIDE un video de su producto terminado; el equipo lo graba y se lo
+ *    manda desde el mismo tablero de "Corregir".
+ * No re-avisa si el pedido ya estaba en Corregir (idempotente). Fire-and-forget: nunca lanza.
  */
-async function markOrderCorregirForContact(contactId, contactData, clientMessage) {
+async function markOrderCorregirForContact(contactId, contactData, clientMessage, reason = 'error') {
+    const isVideo = reason === 'video';
     try {
         const orderDoc = await getLatestOrderForContact(contactId);
         if (!orderDoc) {
-            console.warn(`[POSTVENTA] ${contactId} reportó un error pero no tiene pedido registrado; no se cambia estatus.`);
+            console.warn(`[POSTVENTA] ${contactId} ${isVideo ? 'pidió un video' : 'reportó un error'} pero no tiene pedido registrado; no se cambia estatus.`);
             return null;
         }
         const orderData = orderDoc.data();
@@ -1436,15 +1440,17 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
             return null;
         }
         await orderDoc.ref.update({ estatus: 'Corregir', corregirAt: admin.firestore.FieldValue.serverTimestamp() });
-        console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Corregir por reporte del cliente (${contactId}).`);
+        console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Corregir (${isVideo ? 'pide video' : 'reporte de error'}) del cliente (${contactId}).`);
         try {
             const name = (contactData && contactData.name) || contactId;
             const req = String(clientMessage || '').trim().slice(0, 300);
-            const text = `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nRevisa la conversación y corrígelo.`;
+            const text = isVideo
+                ? `🎥 *Pedido a CORREGIR — pide VIDEO*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente pide un video de su producto ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nGraba el video del pedido y envíaselo.`
+                : `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nRevisa la conversación y corrígelo.`;
             await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
-            console.log(`[POSTVENTA] Alerta de corrección enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
+            console.log(`[POSTVENTA] Alerta de ${isVideo ? 'video' : 'corrección'} enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
         } catch (e) {
-            console.warn('[POSTVENTA] No se pudo alertar al admin de la corrección:', e.message);
+            console.warn('[POSTVENTA] No se pudo alertar al admin:', e.message);
         }
         return orderNumber;
     } catch (e) {
@@ -3009,7 +3015,8 @@ module.exports = {
     sendPurchaseEventOnFabricar,
     sendApprovedTemplateMessage,
     notifyGuiaToCustomer,
-    markComprobanteValidadoAndSendForm
+    markComprobanteValidadoAndSendForm,
+    markOrderCorregirForContact
 };
 
 /**

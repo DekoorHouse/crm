@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 // SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendConversionEvent
 const { db, admin, bucket } = require('./config');
-const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent, transcribeIncomingAudioMessage } = require('./services');
+const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent, transcribeIncomingAudioMessage, markOrderCorregirForContact } = require('./services');
 const { armLeadFollowup } = require('./leads/leadReactivationScheduler');
 const { armOrderFollowup } = require('./leads/orderFollowupScheduler');
 const { markOrderFollowupReplied } = require('./leads/orderFollowupMetrics');
@@ -933,6 +933,26 @@ router.post('/', async (req, res) => {
             // 5. Handle Away Message (if outside business hours)
             const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
             const awayMessageActive = generalSettingsDoc.exists ? generalSettingsDoc.data().awayMessageActive : true; // Default to active
+
+            // --- Cliente PIDE VIDEO de su producto (post-venta) → pasar el pedido a "Corregir" ---
+            // Si el cliente, ya en post-venta (pedido terminado, /cuatro enviado), pide un video de su
+            // producto, movemos su pedido a "Corregir" (el tablero donde el equipo atiende pendientes de
+            // un pedido ya terminado) y avisamos al admin para que lo grabe y se lo mande. Va aquí en el
+            // webhook —no dentro de la IA— para que funcione AUNQUE un humano lleve el chat (IA apagada).
+            // Idempotente (no re-avisa si ya está en Corregir) y fire-and-forget: no toca el flujo normal.
+            // Se excluyen los mensajes que solo agradecen/confirman un video ya recibido. Kill-switch:
+            // crm_settings/general.videoRequestToCorregirActive = false lo apaga.
+            if (message.type === 'text' && updatedContactData.aiStage === 'postventa') {
+                const videoToCorregirActive = !(generalSettingsDoc.exists && generalSettingsDoc.data().videoRequestToCorregirActive === false);
+                const body = message.text?.body || '';
+                const mentionsVideo = /\b(v[ií]deos?|videito)\b/i.test(body);
+                const alreadyGotVideo = /(gracias por (el |tu )?v[ií]deo|ya (lo )?vi (el )?v[ií]deo|recib[ií] (el |tu )?v[ií]deo)/i.test(body);
+                if (videoToCorregirActive && mentionsVideo && !alreadyGotVideo) {
+                    console.log(`[POSTVENTA] ${from} pide video de su producto → marcando su pedido a "Corregir".`);
+                    markOrderCorregirForContact(from, updatedContactData, body, 'video')
+                        .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact (video) falló:', e.message));
+                }
+            }
 
             if (!AI_ALWAYS_ON && !isWithinBusinessHours() && awayMessageActive) {
                 // Check if an away message was sent recently to avoid spamming
