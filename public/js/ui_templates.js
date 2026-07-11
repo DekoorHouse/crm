@@ -879,6 +879,8 @@ const MockupsViewTemplate = () => `
             .mk-client{font-weight:600}
             .mk-phone{color:var(--color-text-light);font-size:.85rem;margin-left:8px}
             .mk-date{color:var(--color-text-light);font-size:.8rem}
+            .mk-lastmsg{color:var(--color-text-light);white-space:nowrap}
+            .mk-lastmsg i{font-size:.85em;opacity:.7;margin-right:2px}
             .mk-card-body{display:grid;grid-template-columns:1fr 320px;gap:18px}
             @media (max-width:820px){.mk-card-body{grid-template-columns:1fr}}
             .mk-blocks{margin-top:6px}

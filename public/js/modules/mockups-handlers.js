@@ -52,6 +52,20 @@ function mkFmtDate(iso) {
     catch (_) { return ''; }
 }
 
+// Hora del último mensaje del cliente. Si cayó en un día distinto al del pedido, antepone la fecha
+// corta para que no sea ambiguo (p. ej. "9 jul, 7:45 p.m."); si es el mismo día, solo la hora.
+function mkFmtLastMsg(msgIso, orderIso) {
+    if (!msgIso) return '';
+    try {
+        const d = new Date(msgIso);
+        const time = d.toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit', hour12: true });
+        let sameDay = false;
+        if (orderIso) { try { sameDay = d.toDateString() === new Date(orderIso).toDateString(); } catch (_) {} }
+        const datePart = sameDay ? '' : (d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) + ', ');
+        return datePart + time;
+    } catch (_) { return ''; }
+}
+
 // Abre el modal de conversación del CRM (chat-handlers.js) para el cliente del pedido.
 function mkOpenChat(orderId) {
     const o = mkState.pending.find(x => x.id === orderId);
@@ -232,6 +246,8 @@ function mkRenderPending() {
         const datos = (o.items || []).map(it => it.datosProducto).filter(Boolean).join('\n') || (o.items?.[0]?.producto || '');
         const producto = o.producto || (o.items?.[0]?.producto || '');
         const num = o.consecutiveOrderNumber ? ('DH' + o.consecutiveOrderNumber) : '—';
+        const lastMsg = mkFmtLastMsg(o.lastCustomerMsgAt, o.createdAt);
+        const lastMsgHtml = lastMsg ? ` · <span class="mk-lastmsg" title="Hora del último mensaje del cliente"><i class="far fa-clock"></i> ${mkEsc(lastMsg)}</span>` : '';
         o._prefill = mkPrefill(mkParseDatos(datos));   // valores sugeridos para el primer bloque
         // Bloques iniciales: uno por preview guardado, o uno vacío.
         const saved = Array.isArray(o.previews) ? o.previews : [];
@@ -249,7 +265,7 @@ function mkRenderPending() {
                     <span class="mk-phone"><i class="fab fa-whatsapp"></i> ${mkEsc(o.telefono || '')}</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:12px;">
-                    <span class="mk-date">${mkEsc(mkFmtDate(o.createdAt))}${producto ? ' · ' + mkEsc(producto) : ''}</span>
+                    <span class="mk-date">${mkEsc(mkFmtDate(o.createdAt))}${lastMsgHtml}${producto ? ' · ' + mkEsc(producto) : ''}</span>
                     <button class="mk-block-x" title="Quitar de la lista (no borra el pedido)" onclick="mkHideOrder('${mkAttr(o.id)}')"><i class="fas fa-eye-slash"></i></button>
                 </div>
             </div>

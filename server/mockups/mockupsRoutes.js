@@ -117,6 +117,23 @@ router.get('/pending', asyncHandler(async (req, res) => {
         docs.forEach(d => { if (d.exists) nameByPhone[d.id] = d.data().name || ''; });
     }
 
+    // Hora del ÚLTIMO mensaje del CLIENTE (entrante: from === telefono) por contacto. Usa el índice
+    // messages (from ASC, timestamp DESC); si falla, se omite la hora (no rompe la lista).
+    const lastMsgByPhone = {};
+    if (phones.length) {
+        const snaps = await Promise.all(phones.map(p =>
+            db.collection('contacts_whatsapp').doc(p).collection('messages')
+                .where('from', '==', p).orderBy('timestamp', 'desc').limit(1).get()
+                .then(s => ({ p, s })).catch(() => ({ p, s: null }))
+        ));
+        snaps.forEach(({ p, s }) => {
+            if (s && !s.empty) {
+                const t = s.docs[0].data().timestamp;
+                try { lastMsgByPhone[p] = t && t.toDate ? t.toDate().toISOString() : (t || null); } catch (_) { lastMsgByPhone[p] = null; }
+            }
+        });
+    }
+
     // Previews ya generados (uno o varios por pedido), para persistir en la lista al recargar.
     const previewByOrder = {};
     if (pend.length) {
@@ -139,6 +156,7 @@ router.get('/pending', asyncHandler(async (req, res) => {
             clientName: nameByPhone[phone] || '',
             producto: o.producto || (orderItems[0] && orderItems[0].producto) || '',
             createdAt,
+            lastCustomerMsgAt: lastMsgByPhone[phone] || null,
             items: orderItems,
             previews: previewByOrder[o.id] || [],
         };
