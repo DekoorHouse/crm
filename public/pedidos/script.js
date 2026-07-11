@@ -893,6 +893,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 startDate = new Date(now.getFullYear(), now.getMonth(), 1);
                 endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
                 break;
+            case 'mes-pasado-a-fecha':
+                // Desde el primer día del mes pasado hasta el final de hoy (incluye este mes y el anterior).
+                // getMonth()-1 maneja enero correctamente (rueda a diciembre del año previo).
+                startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                endDate = new Date(today);
+                endDate.setDate(today.getDate() + 1);
+                break;
             case 'ultimos-10-dias':
                 startDate = new Date(today);
                 startDate.setDate(today.getDate() - 9);
