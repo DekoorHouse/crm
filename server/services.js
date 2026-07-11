@@ -2817,8 +2817,22 @@ Reglas:
         // Comprobante validado (/comprobante): marcar el pedido para la sección "Envíos" y mandarle
         // al cliente el enlace del formulario de datos de envío. Fire-and-forget.
         if (comprobanteValidado) {
-            markComprobanteValidadoAndSendForm(contactId, contactData)
-                .catch(e => console.warn('[ENVIOS] markComprobanteValidadoAndSendForm falló:', e.message));
+            // SALVAGUARDA anti-validación-falsa: solo validar si el cliente REALMENTE mandó una
+            // imagen/PDF (su comprobante). Evita que la IA marque "pagado" y mande el formulario
+            // cuando el cliente solo DICE que va a pagar / que ya pagó, sin adjuntar la captura
+            // (caso real DH13341: "les mando la transferencia" → la IA lo dio por validado).
+            const clienteMandoComprobante = messagesSnapshot.docs.some(mdoc => {
+                const md = mdoc.data();
+                return md.from === contactId && (md.type === 'image' || md.type === 'document');
+            });
+            if (clienteMandoComprobante) {
+                markComprobanteValidadoAndSendForm(contactId, contactData)
+                    .catch(e => console.warn('[ENVIOS] markComprobanteValidadoAndSendForm falló:', e.message));
+            } else {
+                console.warn(`[ENVIOS] ${contactId} emitió /comprobante SIN imagen/PDF de comprobante del cliente; NO se valida ni se manda formulario (posible validación falsa por texto).`);
+                alertAdminHumanNeeded(contactId, contactData, 'La IA intentó validar un pago SIN comprobante (el cliente no mandó imagen/captura). NO se marcó como pagado; revisa el pago antes de continuar.')
+                    .catch(() => {});
+            }
         }
 
         // Híbrido: si el pedido NO se acaba de registrar, etiquetar "en vivo" el estado
