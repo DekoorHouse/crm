@@ -2358,6 +2358,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (contadorPedidosHoy) contadorPedidosHoy.textContent = '0';
                 if (contadorPedidosFiltrados) contadorPedidosFiltrados.classList.remove('visible');
                 cerrarMenuEstatus();
+                cerrarModalChat(); // cierra el modal de conversación y desuscribe su listener si quedó abierto
             }
 
             loadingOverlay.style.opacity = '0';
@@ -2578,21 +2579,33 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
-    // Solo permite URLs http(s) o rutas de mismo origen (evita javascript:, data:, etc.).
+    // Solo permite URLs http(s) o rutas de mismo origen (evita javascript:, data: y
+    // protocol-relative //host que apuntaría a otro origen).
     function chatSafeUrl(u) {
         const s = String(u || '');
-        return /^(https?:\/\/|\/)/i.test(s) ? s : '';
+        return /^(https?:\/\/|\/(?!\/))/i.test(s) ? s : '';
     }
 
-    // Escapa y aplica formato ligero de WhatsApp (*negrita* _cursiva_ ~tachado~), links y saltos de línea.
+    // Aplica formato ligero de WhatsApp (*negrita* _cursiva_ ~tachado~), links y saltos de línea.
+    // Tokeniza por URL: el formateo se aplica SOLO a los segmentos de texto, nunca dentro de una
+    // URL (así un guion bajo/asterisco dentro del link no lo rompe). Todo se escapa (anti-XSS).
     function chatFormatText(text) {
-        let t = chatEscapeHtml(text);
-        t = t.replace(/(https?:\/\/[^\s<]+)/g, (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
-        t = t.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
-             .replace(/_([^_\n]+)_/g, '<em>$1</em>')
-             .replace(/~([^~\n]+)~/g, '<del>$1</del>');
-        return t.replace(/\n/g, '<br>');
+        const parts = String(text == null ? '' : text).split(/(https?:\/\/[^\s]+)/g);
+        const html = parts.map((part, i) => {
+            if (i % 2 === 1) {
+                const u = chatEscapeHtml(part);
+                return `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`;
+            }
+            return chatEscapeHtml(part)
+                .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+                .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+                .replace(/~([^~\n]+)~/g, '<del>$1</del>');
+        }).join('');
+        return html.replace(/\n/g, '<br>');
     }
+
+    // Placeholders que el webhook guarda en `text` para media sin caption: no mostrarlos como texto.
+    const CHAT_MEDIA_PLACEHOLDERS = new Set(['📷 Imagen', '🎥 Video', '🎵 Audio', '🎤 Mensaje de voz', '📄 Documento', 'Sticker']);
 
     function chatRenderBubble(m, phone) {
         // Entrante: from === teléfono del contacto. Saliente: lo enviamos nosotros.
@@ -2605,13 +2618,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (url && (type === 'image' || type === 'sticker' || ft.startsWith('image/'))) {
             inner += `<a href="${chatEscapeHtml(url)}" target="_blank" rel="noopener noreferrer"><img src="${chatEscapeHtml(url)}" class="chat-msg-image" alt="imagen"></a>`;
-            if (m.text) inner += `<div class="chat-msg-text">${chatFormatText(m.text)}</div>`;
+            if (m.text && !CHAT_MEDIA_PLACEHOLDERS.has(m.text)) inner += `<div class="chat-msg-text">${chatFormatText(m.text)}</div>`;
         } else if (url && (type === 'audio' || ft.startsWith('audio/'))) {
             inner += `<audio controls preload="none" src="${chatEscapeHtml(url)}" class="chat-msg-audio"></audio>`;
             if (m.transcription) inner += `<div class="chat-msg-transcription"><i class="fas fa-headphones"></i>${chatEscapeHtml(m.transcription)}</div>`;
         } else if (url && (type === 'video' || ft.startsWith('video/'))) {
             inner += `<video controls preload="none" src="${chatEscapeHtml(url)}" class="chat-msg-video"></video>`;
-            if (m.text) inner += `<div class="chat-msg-text">${chatFormatText(m.text)}</div>`;
+            if (m.text && !CHAT_MEDIA_PLACEHOLDERS.has(m.text)) inner += `<div class="chat-msg-text">${chatFormatText(m.text)}</div>`;
         } else if (url && (type === 'document' || ft.startsWith('application/') || ft.startsWith('text/'))) {
             const fname = (m.document && m.document.filename) || m.text || 'Ver documento';
             inner += `<a href="${chatEscapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="chat-msg-doc"><i class="fas fa-file-alt"></i>${chatEscapeHtml(fname)}</a>`;
@@ -2644,7 +2657,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const telEl = document.getElementById('chatModalTelefono');
         if (!modal || !body) return;
 
-        chatConvPhone = phone;
+        // El id del documento de contacto en el CRM es contactId (puede diferir de telefono, p. ej.
+        // cuando se editó el teléfono del pedido a mano). Se muestra `phone` en el encabezado, pero
+        // se consulta y se calcula la dirección de los mensajes por contactId. Convención del CRM:
+        // contactId || telefono. La dirección funciona porque message.from === id del subdoc.
+        const contactId = (pedido && pedido.contactId) || phone;
+
+        chatConvPhone = contactId;
         if (nombreEl) nombreEl.textContent = (pedido && pedido.cliente) ? pedido.cliente : 'Conversación';
         if (telEl) telEl.textContent = phone;
         body.innerHTML = '<div class="chat-modal-loading"><i class="fas fa-spinner fa-spin"></i> Cargando conversación…</div>';
@@ -2656,26 +2675,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const msgsQuery = query(
-                collection(db, 'contacts_whatsapp', phone, 'messages'),
+                collection(db, 'contacts_whatsapp', contactId, 'messages'),
                 orderBy('timestamp', 'desc'),
                 firestoreLimit(100)
             );
             chatConvUnsub = onSnapshot(msgsQuery, (snap) => {
-                if (chatConvPhone !== phone) return; // el usuario ya cerró o cambió de chat
+                if (chatConvPhone !== contactId) return; // el usuario ya cerró o cambió de chat
                 if (snap.empty) {
                     body.innerHTML = '<div class="chat-modal-empty"><i class="far fa-comment-dots"></i><p>No hay conversación con este número en el CRM.</p></div>';
                     return;
                 }
                 const docs = snap.docs.map(d => d.data()).reverse(); // cronológico ascendente
                 const nearBottom = (body.scrollHeight - body.scrollTop - body.clientHeight) < 120;
-                body.innerHTML = docs.map(m => chatRenderBubble(m, phone)).join('');
+                body.innerHTML = docs.map(m => chatRenderBubble(m, contactId)).join('');
                 if (body.dataset.first !== 'done' || nearBottom) {
                     body.scrollTop = body.scrollHeight;
                     body.dataset.first = 'done';
                 }
             }, (err) => {
                 console.error('Error al cargar la conversación del CRM:', err);
-                if (chatConvPhone === phone) {
+                if (chatConvPhone === contactId) {
                     body.innerHTML = '<div class="chat-modal-empty"><i class="fas fa-triangle-exclamation"></i><p>No se pudo cargar la conversación.</p></div>';
                 }
             });

@@ -1566,10 +1566,11 @@ button.ai-order-badge--pending:hover { background: #7c3aed; transform: scale(1.0
     display: block; font-size: 0.72rem; font-weight: 700;
     color: var(--color-primary); margin-bottom: 2px;
 }
-.chat-msg-time { font-size: 0.66rem; color: var(--color-text-light); text-align: right; margin-top: 2px; opacity: 0.85; }
+/* color: inherit -> hereda el texto de la burbuja (blanco/oscuro por tema), legible sobre ambos fondos */
+.chat-msg-time { font-size: 0.66rem; color: inherit; text-align: right; margin-top: 2px; opacity: 0.65; }
 .chat-msg-image { max-width: 220px; max-height: 260px; border-radius: 8px; display: block; cursor: pointer; }
 .chat-msg-video { max-width: 240px; border-radius: 8px; display: block; }
-.chat-msg-audio { max-width: 240px; width: 240px; height: 40px; }
+.chat-msg-audio { width: 100%; max-width: 240px; height: 40px; }
 .chat-msg-doc { display: inline-flex; align-items: center; gap: 8px; color: var(--color-primary); }
 .chat-msg-transcription {
     margin-top: 6px; padding: 6px 8px;
