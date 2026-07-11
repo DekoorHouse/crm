@@ -3285,6 +3285,31 @@ function renderTagsDistributionChart(data) {
 
 
 // Renderiza la lista de mensajes en el chat activo
+// Lleva el chat hasta el último mensaje de forma robusta. Al abrir una conversación el scrollHeight
+// todavía NO incluye el alto de imágenes/videos que no han cargado, así que un solo scroll queda
+// "arriba" cuando esa media carga y empuja el contenido. Aquí re-hacemos scroll al fondo tras cada
+// carga de media (con límite de ~1.5s y solo si seguimos cerca del fondo, para no jalar al usuario
+// si subió a leer el historial).
+function scrollMessagesToBottom(container) {
+    if (!container) return;
+    const toBottom = () => { container.scrollTop = container.scrollHeight; };
+    const toBottomIfNear = () => {
+        if ((container.scrollHeight - container.scrollTop - container.clientHeight) < container.clientHeight * 1.5) toBottom();
+    };
+    toBottom();
+    requestAnimationFrame(toBottom);
+    setTimeout(toBottom, 120); // tras el primer layout
+    const deadline = Date.now() + 1500;
+    container.querySelectorAll('img, video').forEach(el => {
+        if (el.complete) return;
+        const onready = () => { if (Date.now() <= deadline) toBottomIfNear(); };
+        el.addEventListener('load', onready, { once: true });
+        el.addEventListener('loadeddata', onready, { once: true });
+        el.addEventListener('error', onready, { once: true });
+    });
+    setTimeout(toBottomIfNear, 500);
+}
+
 function renderMessages(options = {}) {
     const contentContainer = document.getElementById('messages-content');
     if (!contentContainer) return;
@@ -3330,7 +3355,7 @@ function renderMessages(options = {}) {
             // Comportamiento de scroll condicional:
             // Scroll al final solo si ya estaba en el fondo o si es la carga inicial
             if (isAtBottom || isInitialLoad) {
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                scrollMessagesToBottom(messagesContainer);
             }
         }
     }
@@ -3363,7 +3388,7 @@ function appendMessage(message) {
     if (messagesContainer) {
         const isAtBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 150;
         if (isAtBottom) {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            scrollMessagesToBottom(messagesContainer);
         }
     }
 }
