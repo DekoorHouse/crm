@@ -65,6 +65,24 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "channel",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "unreadCount",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "lastMessageTimestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "contacts_whatsapp",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "inDesignReview",
           "order": "ASCENDING"
         },
