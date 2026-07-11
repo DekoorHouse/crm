@@ -62,7 +62,8 @@ function mkOpenChat(orderId) {
 
 // Quita un pedido de la lista de mockups (marca no destructiva; NO borra el pedido).
 async function mkHideOrder(orderId) {
-    if (!confirm('¿Quitar este pedido de la lista de Mockups? No se borra el pedido; solo deja de aparecer aquí.')) return;
+    const ok = await showConfirmModal('¿Quitar este pedido de la lista de Mockups?<br><span style="display:block;margin-top:6px;color:var(--color-text-light,#64748b);font-size:12.5px">El pedido NO se borra; solo deja de aparecer aquí.</span>', { icon: 'fa-eye-slash', confirmText: 'Quitar' });
+    if (!ok) return;
     try {
         await db.collection('pedidos').doc(orderId).update({ mockupHidden: true });
         mkState.pending = mkState.pending.filter(o => o.id !== orderId);
@@ -713,7 +714,8 @@ async function mkSaveTemplate() {
 }
 
 async function mkDeleteTemplate(id) {
-    if (!confirm('¿Eliminar esta plantilla?')) return;
+    const ok = await showConfirmModal('¿Eliminar esta plantilla?', { icon: 'delete', confirmText: 'Eliminar' });
+    if (!ok) return;
     try {
         await mkFetchJson('/api/mockups/templates/' + id, { method: 'DELETE' });
         await mkLoadTemplates();
