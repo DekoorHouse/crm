@@ -2273,9 +2273,11 @@ const ChatWindowTemplate = (contact) => {
         </div>
         <header class="chat-header chat-header-slim flex items-center space-x-2" ${headerStyle}>
             <button id="chat-back-btn" onclick="closeChatOnMobile()" class="md:hidden chat-back-btn-mobile" aria-label="Volver a la lista de chats"><i class="fas fa-arrow-left"></i></button>
-            <div class="flex-shrink-0 chat-header-avatar">${UserIcon(contact)}</div>
-            <div class="flex-grow flex items-center min-w-0" style="gap: 6px;">
+            <div class="flex-shrink-0 chat-header-avatar" onclick="openContactDetails()" title="Ver información del contacto" style="cursor:pointer;">${UserIcon(contact)}</div>
+            <div class="chat-header-title min-w-0">
                 <h2 class="text-base font-semibold cursor-pointer truncate" style="color: var(--color-text);" onclick="openContactDetails()">${contact.name}</h2>
+            </div>
+            <div class="chat-header-badges">
                 ${HeaderTagControlTemplate(contact)}
                 ${postVentaBadge}
                 <span id="order-pending-host" class="flex-shrink-0">${OrderPendingBadge(contact)}</span>

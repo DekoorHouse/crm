@@ -520,6 +520,12 @@ body.dark-mode .chat-header-slim { background-color: #1a1b26; }
 /* Botones de acción del header más compactos (sin que la barra crezca) */
 .chat-header-actions button { padding: 6px !important; }
 .chat-header-actions button i { font-size: 1rem !important; }
+/* Nombre del contacto (se trunca) y grupo de badges (departamento, recordatorio, pedido).
+   En escritorio: nombre a la izquierda, badges justo después, acciones a la derecha
+   (margin-right:auto empuja las acciones al extremo). En móvil los badges bajan a una 2ª fila. */
+.chat-header-title { flex: 0 1 auto; min-width: 0; }
+.chat-header-title h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-header-badges { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-right: auto; }
 /* Control de etiqueta junto al nombre (reemplaza los tres puntos) */
 .header-tag-control { flex-shrink: 0; }
 .header-tag-btn { background: transparent; border: none; cursor: pointer; padding: 4px 6px; border-radius: var(--border-radius-md); font-size: 0.9rem; line-height: 1; transition: background-color 0.15s ease; }
@@ -2651,21 +2657,26 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
     /* Ocultar app-header global cuando se ha entrado a un chat (WhatsApp-style) */
     body.chat-open #app-header { display: none; }
 
-    /* Chat header: compactar para que el nombre no se trunque ni los botones desborden */
-    .chat-header {
+    /* Chat header: fila 1 = avatar + nombre + acciones; los badges (departamento, recordatorio,
+       pedido) bajan a una 2ª fila a ancho completo para que NO se encimen con los iconos. */
+    .chat-header-slim {
         gap: 0.25rem;
         padding: 0.35rem 0.5rem !important;
+        flex-wrap: wrap;
     }
     .chat-header h2 { font-size: 0.92rem; line-height: 1.15; }
     .chat-header h2 i.fa-whatsapp,
     .chat-header h2 i.fa-facebook-messenger { margin-right: 0.25rem; }
-    .chat-header .flex-grow { min-width: 0; }
-    .chat-header .flex-grow h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .chat-header .flex-grow .text-xs { font-size: 0.7rem; }
+    .chat-header-slim .chat-header-title { flex: 1 1 auto; min-width: 0; }
+    .chat-header-slim .chat-header-title h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* Badges a la 2ª fila (order alto + base 100%); margin-left:0 anula el space-x del header. */
+    .chat-header-slim .chat-header-badges { order: 5; flex-basis: 100%; margin: 3px 0 0 !important; flex-wrap: wrap; }
+    .chat-header-slim .chat-header-badges .text-xs { font-size: 0.7rem; }
     .chat-header .flex.items-center.pr-2 { padding-right: 0 !important; gap: 0; }
     .chat-header .flex.items-center.pr-2 > button { padding: 0.25rem !important; margin-left: 0 !important; min-height: 32px; min-width: 32px; }
     .chat-header .flex.items-center.pr-2 > button i { font-size: 0.95rem !important; }
-    .chat-header .chat-header-avatar { display: none; } /* el avatar del header de chat ocupa espacio precioso */
+    /* Avatar del contacto visible en móvil (toque = abrir la info del contacto). */
+    .chat-header-slim .chat-header-avatar { display: flex; align-items: center; }
     /* Status wrapper (Pendientes IA, etc) más compacto */
     #contact-status-wrapper { margin-top: 0.25rem !important; }
     #contact-status-wrapper .status-btn { padding: 2px 8px; font-size: 0.65rem; }
