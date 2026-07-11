@@ -23,7 +23,7 @@
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 
     <link rel="stylesheet" href="/style.css">
-    <link rel="stylesheet" href="/pedidos/style.css?v=2">
+    <link rel="stylesheet" href="/pedidos/style.css?v=3">
 </head>
 <body>
 
@@ -434,11 +434,26 @@
     <button id="closeSearchBtn" title="Cerrar (Esc)">&times;</button>
 </div>
 
+<!-- Modal: conversación del CRM (click en el número de teléfono) -->
+<div id="modalChatConversacion" class="modal-overlay" style="display: none;">
+    <div class="modal-content chat-modal-content" id="modalContentChat">
+        <button id="btnCerrarModalChat" class="modal-close-btn" title="Cerrar (Esc)">&times;</button>
+        <div class="chat-modal-header">
+            <div class="chat-modal-avatar"><i class="fas fa-user"></i></div>
+            <div class="chat-modal-titles">
+                <h3 id="chatModalNombre">Conversación</h3>
+                <span id="chatModalTelefono" class="chat-modal-phone"></span>
+            </div>
+        </div>
+        <div id="chatModalBody" class="chat-modal-body"></div>
+    </div>
+</div>
+
 <!-- SheetJS (XLSX) para exportar pedidos a Excel -->
 <script src="/admon/js/vendor/xlsx.full.min.js"></script>
 
 <!-- Link to external JS file -->
-<script type="module" src="/pedidos/script.js?v=2"></script>
+<script type="module" src="/pedidos/script.js?v=3"></script>
 
 </body>
 </html>

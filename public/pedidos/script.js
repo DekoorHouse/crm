@@ -1079,6 +1079,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const telefonoSpan = document.createElement('span');
         telefonoSpan.textContent = telefonoOriginal;
+        if (telefonoOriginal !== '-') {
+            // Click en el número → abre la conversación del CRM en un modal.
+            telefonoSpan.classList.add('phone-number-clickable');
+            telefonoSpan.dataset.action = 'open-chat';
+            telefonoSpan.dataset.phone = telefonoOriginal;
+            telefonoSpan.title = 'Ver conversación del CRM';
+        }
         if (ordersToHighlight.has(pedido.id)) {
             telefonoSpan.style.color = 'red';
             telefonoSpan.style.fontWeight = 'bold';
@@ -2539,6 +2546,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnCerrarModalComentarioBottom) btnCerrarModalComentarioBottom.addEventListener('click', cerrarModalComentario);
     if (btnCerrarModalConfirmacionRegistro) btnCerrarModalConfirmacionRegistro.addEventListener('click', cerrarModalConfirmacionRegistro);
 
+    // --- Modal de conversación del CRM (click en el teléfono) ---
+    const modalChatConversacion = document.getElementById('modalChatConversacion');
+    const btnCerrarModalChat = document.getElementById('btnCerrarModalChat');
+    if (btnCerrarModalChat) btnCerrarModalChat.addEventListener('click', cerrarModalChat);
+    if (modalChatConversacion) modalChatConversacion.addEventListener('click', (e) => { if (e.target === modalChatConversacion) cerrarModalChat(); });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modalChatConversacion && modalChatConversacion.style.display === 'flex') cerrarModalChat();
+    });
+
     if (btnCopiarNumeroPedidoConfirmacion) {
         btnCopiarNumeroPedidoConfirmacion.addEventListener('click', () => {
             navigator.clipboard.writeText(numeroPedidoConfirmacionSpan.textContent).then(() => {
@@ -2552,6 +2568,133 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
+    // --- Modal de conversación del CRM: lógica ---
+    let chatConvUnsub = null;   // listener de Firestore activo
+    let chatConvPhone = null;   // teléfono/contacto abierto actualmente
+
+    function chatEscapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // Solo permite URLs http(s) o rutas de mismo origen (evita javascript:, data:, etc.).
+    function chatSafeUrl(u) {
+        const s = String(u || '');
+        return /^(https?:\/\/|\/)/i.test(s) ? s : '';
+    }
+
+    // Escapa y aplica formato ligero de WhatsApp (*negrita* _cursiva_ ~tachado~), links y saltos de línea.
+    function chatFormatText(text) {
+        let t = chatEscapeHtml(text);
+        t = t.replace(/(https?:\/\/[^\s<]+)/g, (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
+        t = t.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+             .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+             .replace(/~([^~\n]+)~/g, '<del>$1</del>');
+        return t.replace(/\n/g, '<br>');
+    }
+
+    function chatRenderBubble(m, phone) {
+        // Entrante: from === teléfono del contacto. Saliente: lo enviamos nosotros.
+        const isSent = m.from !== phone;
+        const side = isSent ? 'sent' : 'received';
+        const url = chatSafeUrl(m.fileUrl || m.mediaProxyUrl || '');
+        const ft = m.fileType || '';
+        const type = m.type || '';
+        let inner = '';
+
+        if (url && (type === 'image' || type === 'sticker' || ft.startsWith('image/'))) {
+            inner += `<a href="${chatEscapeHtml(url)}" target="_blank" rel="noopener noreferrer"><img src="${chatEscapeHtml(url)}" class="chat-msg-image" alt="imagen"></a>`;
+            if (m.text) inner += `<div class="chat-msg-text">${chatFormatText(m.text)}</div>`;
+        } else if (url && (type === 'audio' || ft.startsWith('audio/'))) {
+            inner += `<audio controls preload="none" src="${chatEscapeHtml(url)}" class="chat-msg-audio"></audio>`;
+            if (m.transcription) inner += `<div class="chat-msg-transcription"><i class="fas fa-headphones"></i>${chatEscapeHtml(m.transcription)}</div>`;
+        } else if (url && (type === 'video' || ft.startsWith('video/'))) {
+            inner += `<video controls preload="none" src="${chatEscapeHtml(url)}" class="chat-msg-video"></video>`;
+            if (m.text) inner += `<div class="chat-msg-text">${chatFormatText(m.text)}</div>`;
+        } else if (url && (type === 'document' || ft.startsWith('application/') || ft.startsWith('text/'))) {
+            const fname = (m.document && m.document.filename) || m.text || 'Ver documento';
+            inner += `<a href="${chatEscapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="chat-msg-doc"><i class="fas fa-file-alt"></i>${chatEscapeHtml(fname)}</a>`;
+        } else if (type === 'location' && m.location && m.location.latitude != null) {
+            const q = encodeURIComponent(`${m.location.latitude},${m.location.longitude}`);
+            inner += `<a href="https://maps.google.com/?q=${q}" target="_blank" rel="noopener noreferrer" class="chat-msg-doc"><i class="fas fa-map-marker-alt"></i>Ubicación</a>`;
+        } else if (m.text) {
+            inner += `<div class="chat-msg-text">${chatFormatText(m.text)}</div>`;
+        } else {
+            inner += `<div class="chat-msg-text chat-msg-empty">(sin texto)</div>`;
+        }
+
+        let timeStr = '';
+        try {
+            const ts = m.timestamp;
+            const d = ts && typeof ts.toDate === 'function' ? ts.toDate()
+                    : (ts && typeof ts.seconds === 'number' ? new Date(ts.seconds * 1000) : null);
+            if (d) timeStr = d.toLocaleString('es-MX', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        } catch (e) { /* sin hora */ }
+
+        const senderLabel = (isSent && m.senderName) ? `<span class="chat-msg-sender">${chatEscapeHtml(m.senderName)}</span>` : '';
+        return `<div class="chat-bubble-row ${side}"><div class="chat-bubble ${side}">${senderLabel}${inner}<div class="chat-msg-time">${timeStr}</div></div></div>`;
+    }
+
+    function abrirModalChat(phone, pedido) {
+        if (!phone || phone === '-') return;
+        const modal = document.getElementById('modalChatConversacion');
+        const body = document.getElementById('chatModalBody');
+        const nombreEl = document.getElementById('chatModalNombre');
+        const telEl = document.getElementById('chatModalTelefono');
+        if (!modal || !body) return;
+
+        chatConvPhone = phone;
+        if (nombreEl) nombreEl.textContent = (pedido && pedido.cliente) ? pedido.cliente : 'Conversación';
+        if (telEl) telEl.textContent = phone;
+        body.innerHTML = '<div class="chat-modal-loading"><i class="fas fa-spinner fa-spin"></i> Cargando conversación…</div>';
+        delete body.dataset.first;
+        modal.style.display = 'flex';
+        document.body.classList.add('modal-open');
+
+        if (chatConvUnsub) { try { chatConvUnsub(); } catch (e) {} chatConvUnsub = null; }
+
+        try {
+            const msgsQuery = query(
+                collection(db, 'contacts_whatsapp', phone, 'messages'),
+                orderBy('timestamp', 'desc'),
+                firestoreLimit(100)
+            );
+            chatConvUnsub = onSnapshot(msgsQuery, (snap) => {
+                if (chatConvPhone !== phone) return; // el usuario ya cerró o cambió de chat
+                if (snap.empty) {
+                    body.innerHTML = '<div class="chat-modal-empty"><i class="far fa-comment-dots"></i><p>No hay conversación con este número en el CRM.</p></div>';
+                    return;
+                }
+                const docs = snap.docs.map(d => d.data()).reverse(); // cronológico ascendente
+                const nearBottom = (body.scrollHeight - body.scrollTop - body.clientHeight) < 120;
+                body.innerHTML = docs.map(m => chatRenderBubble(m, phone)).join('');
+                if (body.dataset.first !== 'done' || nearBottom) {
+                    body.scrollTop = body.scrollHeight;
+                    body.dataset.first = 'done';
+                }
+            }, (err) => {
+                console.error('Error al cargar la conversación del CRM:', err);
+                if (chatConvPhone === phone) {
+                    body.innerHTML = '<div class="chat-modal-empty"><i class="fas fa-triangle-exclamation"></i><p>No se pudo cargar la conversación.</p></div>';
+                }
+            });
+        } catch (e) {
+            console.error('abrirModalChat:', e);
+            body.innerHTML = '<div class="chat-modal-empty"><i class="fas fa-triangle-exclamation"></i><p>No se pudo cargar la conversación.</p></div>';
+        }
+    }
+
+    function cerrarModalChat() {
+        const modal = document.getElementById('modalChatConversacion');
+        if (chatConvUnsub) { try { chatConvUnsub(); } catch (e) {} chatConvUnsub = null; }
+        chatConvPhone = null;
+        if (modal) modal.style.display = 'none';
+        const body = document.getElementById('chatModalBody');
+        if (body) { body.innerHTML = ''; delete body.dataset.first; }
+        document.body.classList.remove('modal-open');
+    }
+
     // --- Delegated Event Handlers for Orders Table ---
     if (cuerpoTablaPedidos) {
         cuerpoTablaPedidos.addEventListener('dblclick', e => {
@@ -2582,6 +2725,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             actionEl.innerHTML = '<i class="fas fa-copy"></i>';
                         }, 1500);
                     }).catch(err => console.error('Error al copiar el teléfono: ', err));
+                } else if (action === 'open-chat') {
+                    e.stopPropagation();
+                    const pedidoChat = pedidosDataMap.get(orderId);
+                    abrirModalChat(actionEl.dataset.phone, pedidoChat);
                 } else if (action === 'change-status') {
                     e.stopPropagation();
                     mostrarMenuEstatus(e, orderId, actionEl.dataset.status);
