@@ -872,20 +872,36 @@ async function handleDeliveryReceipt(delivery, channel = 'messenger') {
 }
 
 /**
- * Handles read receipts from Messenger.
+ * Handles read receipts from Messenger (evento `read` con watermark) e Instagram
+ * (evento `messaging_seen`, que NO manda watermark sino el `mid` del mensaje leído).
  */
 async function handleReadReceipt(senderId, readEvent, channel = 'messenger') {
-    const watermark = readEvent.watermark;
     const prefix = channel === 'instagram' ? 'ig' : 'fb';
     const contactId = `${prefix}_${senderId}`;
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
     try {
+        // Messenger manda `watermark` (marca de tiempo hasta la que se leyó todo). Instagram
+        // (messaging_seen) NO manda watermark: manda el `mid` del mensaje leído. En ese caso
+        // derivamos el watermark del timestamp de ese mensaje para marcar también los anteriores.
+        let watermarkMs = readEvent.watermark;
+        if (!watermarkMs && readEvent.mid) {
+            const seenSnap = await contactRef.collection('messages').where('id', '==', readEvent.mid).limit(1).get();
+            if (!seenSnap.empty) {
+                const ts = seenSnap.docs[0].data().timestamp;
+                watermarkMs = ts && ts.toMillis ? ts.toMillis() : null;
+            }
+        }
+        if (!watermarkMs) {
+            console.warn(`[${channel.toUpperCase()} STATUS] Read sin watermark ni mid resoluble para ${contactId} (mid=${readEvent.mid || 'n/a'}).`);
+            return;
+        }
+
         // Mark all sent messages before watermark as read
         const messagesQuery = await contactRef.collection('messages')
             .where('from', '==', 'page')
             .where('status', 'in', ['sent', 'delivered'])
-            .where('timestamp', '<=', admin.firestore.Timestamp.fromMillis(watermark))
+            .where('timestamp', '<=', admin.firestore.Timestamp.fromMillis(watermarkMs))
             .limit(20)
             .get();
 
