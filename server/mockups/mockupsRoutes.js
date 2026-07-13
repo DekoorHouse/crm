@@ -202,8 +202,11 @@ router.post('/generate-preview', asyncHandler(async (req, res) => {
     if (!tpl.baseImageUrl) return res.status(400).json({ success: false, error: 'La plantilla no tiene imagen base.' });
 
     const aspectRatio = tpl.aspectRatio || req.body.aspectRatio || '1:1';
-    const prompt = svc.buildPromptFromTemplate(tpl.promptTemplate, fields);
+    let prompt = svc.buildPromptFromTemplate(tpl.promptTemplate, fields);
     if (!prompt) return res.status(400).json({ success: false, error: 'El prompt quedó vacío.' });
+    // Detalles adicionales que el operador escribió: se suman al prompt de la plantilla.
+    const extraPrompt = String(req.body.extraPrompt || '').trim();
+    if (extraPrompt) prompt += '\n\nInstrucciones adicionales del operador (aplícalas además de lo anterior): ' + extraPrompt;
 
     // Gemini responde en una sola llamada (rápido) -> síncrono.
     if (provider === 'gemini') {

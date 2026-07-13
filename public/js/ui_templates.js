@@ -896,6 +896,8 @@ const MockupsViewTemplate = () => `
             .mk-inputs .mk-full{grid-column:1 / -1}
             .mk-inputs label,.mk-raw label{display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light);margin-bottom:3px;text-transform:uppercase;letter-spacing:.02em}
             .mk-datos{width:100%;min-height:56px;resize:vertical;font-size:.85rem}
+            .mk-extra-wrap label{display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light);margin-bottom:3px;text-transform:uppercase;letter-spacing:.02em}
+            .mk-extra{width:100%;min-height:44px;resize:vertical;font-size:.85rem}
             .mk-result{border:1px dashed var(--color-border);border-radius:var(--border-radius-md);padding:10px;display:flex;flex-direction:column;gap:10px;min-height:180px;align-items:center;justify-content:center;text-align:center}
             .mk-result img{max-width:100%;border-radius:8px}
             .mk-result-empty{color:var(--color-text-light);font-size:.85rem}

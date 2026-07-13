@@ -323,6 +323,10 @@ function mkBlockHtml(order, block, n) {
                     </select></div>
                 </div>
                 <div class="mk-fields mk-inputs" style="margin-top:8px;">${mkFieldsHtml(mkTemplateFieldDefs(tplId), block.values)}</div>
+                <div class="mk-extra-wrap" style="margin-top:10px;">
+                    <label>Detalles adicionales (opcional)</label>
+                    <textarea class="mk-extra" rows="2" placeholder="Instrucciones extra para la IA además de la plantilla: ej. agrégale un moño rojo, fondo más oscuro, la letra más grande…">${mkEsc(block.extra || '')}</textarea>
+                </div>
                 <div style="margin-top:12px;">
                     <button class="btn btn-primary btn-sm mk-gen-btn" onclick="mkGenerate('${mkAttr(order.id)}','${mkAttr(block.id)}')"><i class="fas fa-wand-magic-sparkles mr-2"></i>Generar preview</button>
                 </div>
@@ -385,6 +389,8 @@ async function mkGenerate(orderId, blockId) {
         fields[i.dataset.key] = v;
     });
     fields.personalizacion = (block.closest('.mk-card')?.querySelector('.mk-datos')?.value || '').trim();
+    // Detalles adicionales que el operador escribe para sumar al prompt de la plantilla.
+    const extraPrompt = (block.querySelector('.mk-extra')?.value || '').trim();
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generando…'; }
     const setBox = (msg) => { if (box) box.innerHTML = `<div class="mk-spin"></div><div class="mk-result-empty">${mkEsc(msg)}</div>`; };
@@ -395,7 +401,7 @@ async function mkGenerate(orderId, blockId) {
         const data = await mkFetchJson('/api/mockups/generate-preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ templateId, provider, fields, orderId, blockId }),
+            body: JSON.stringify({ templateId, provider, fields, extraPrompt, orderId, blockId }),
         });
 
         let url;
