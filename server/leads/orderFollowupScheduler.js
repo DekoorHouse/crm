@@ -103,6 +103,7 @@ async function armOrderFollowup(waId, name) {
         name: name || (prev && prev.name) || null,
         lastInboundAt: nowTs,
         scheduledSends: sends,
+        nextDueAt: sends[0],        // hora (ms) del próximo envío pendiente; el sweep consulta por esto
         stage: 0,
         status: 'pending',
         classified: false,
@@ -213,8 +214,14 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
 
         let snap;
         try {
+            // Solo los que YA vencieron (nextDueAt <= ahora), ordenados por vencimiento (FIFO).
+            // Antes era .where(status==pending).limit(40) SIN orden: con miles en cola, Firestore
+            // devolvía siempre el mismo puñado y el resto se moría de hambre (nunca se enviaba ni
+            // expiraba). Requiere índice compuesto (status ASC, nextDueAt ASC).
             snap = await db.collection('order_followups')
                 .where('status', '==', 'pending')
+                .where('nextDueAt', '<=', Date.now())
+                .orderBy('nextDueAt', 'asc')
                 .limit(cfg.maxPerSweep)
                 .get();
         } catch (e) {
@@ -324,6 +331,8 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
                 await doc.ref.update({
                     stage: newStage,
                     status: isLast ? 'done' : 'pending',
+                    // Próximo envío pendiente; el sweep solo re-toma el doc cuando esta hora llega.
+                    nextDueAt: isLast ? null : ((followup.scheduledSends || [])[newStage] || null),
                     lastSentAt: new Date(),
                     totalSent: admin.firestore.FieldValue.increment(1),
                     attempts: 0,

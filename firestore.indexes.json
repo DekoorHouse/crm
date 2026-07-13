@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "order_followups",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nextDueAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "contacts_whatsapp",
       "queryScope": "COLLECTION",
       "fields": [

@@ -23,7 +23,7 @@ const DAY_MS = 24 * HOUR_MS;
 
 const DEFAULT_ORDER_CONFIG = {
     enabled: false,                 // OFF por defecto: es envío saliente; se activa explícitamente
-    delaysHours: [8, 16],           // 2 recordatorios, ~cada 8h desde el último mensaje
+    delaysHours: [2, 8],            // 2 recordatorios: ~2h (mientras sigue caliente) y ~8h desde el último mensaje
     businessHours: { start: 8, end: 21 }, // 8am–9pm
     utcOffsetHours: -6,             // México Centro (sin DST desde 2022)
     windowHours: 23.5,              // ventana segura de WhatsApp (margen de 30 min)
@@ -32,7 +32,7 @@ const DEFAULT_ORDER_CONFIG = {
     cooldownHours: 24,              // tras terminar una secuencia, no reiniciar otra tan pronto
     classifyMinMessages: 3,         // no gastar tokens en chats triviales (solo saludo)
     liveTagging: true,              // etiquetar el estado del pedido cuando el bot responde (híbrido)
-    maxPerSweep: 40,
+    maxPerSweep: 100,               // por barrido: solo procesa los VENCIDOS (query por nextDueAt), así no se satura
     // Textos de respaldo si la IA no devuelve mensajes personalizados. {{nombre}} se sustituye.
     messageFallbacks: [
         '¡Hola{{nombre}}! 😊 Quedamos pendientes de unos datos para terminar tu pedido. ¿Te ayudo a dejarlo listo?',
