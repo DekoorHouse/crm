@@ -508,11 +508,20 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
     // reportar la conversión. Antes el referral se usaba solo para la bienvenida y se descartaba.
     const adReferralId = referral && (referral.ad_id || referral.source_id);
     if (adReferralId) {
+        // El referral de Click-to-Messenger/Instagram trae el título del anuncio en
+        // ads_context_data.ad_title (no en headline/body como WhatsApp). Lo normalizamos a
+        // ad_name/headline para que el banner de origen (AdReferralBannerTemplate) muestre el
+        // nombre, y guardamos firstSeenAt para la fecha. Meta no manda source_url en estos canales.
+        const adCtx = referral.ads_context_data || {};
+        const adTitle = adCtx.ad_title || referral.headline || referral.ref || '';
         contactUpdateData.adReferral = {
             ...referral,
             source_id: adReferralId,
             source_type: referral.source_type || 'ad',
             ad_id: adReferralId,
+            ad_name: adTitle,
+            headline: adTitle,
+            firstSeenAt: messageData.timestamp,
             channel
         };
         contactUpdateData.adSourceIds = admin.firestore.FieldValue.arrayUnion(String(adReferralId));
@@ -535,8 +544,30 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
             .catch(err => console.error(`[${logPrefix} META EVENT] Error al enviar LeadSubmitted para ${contactId}:`, err.message));
     }
 
-    // --- Department assignment for new contacts ---
-    if (isNewContact) {
+    // --- Asignación de departamento (paridad con WhatsApp) ---
+    // Si el contacto viene de un anuncio, se enruta por ad_id con las MISMAS reglas que WhatsApp
+    // (colección ad_routing_rules: adIds -> targetDepartmentId). Un contacto EXISTENTE que escribe
+    // desde un anuncio con regla también se re-enruta. Si el anuncio no tiene regla, o el contacto
+    // no viene de anuncio, cae a "General" solo si es nuevo (para no repisar una asignación manual).
+    let assignedByRule = false;
+    if (adReferralId) {
+        try {
+            const ruleSnap = await db.collection('ad_routing_rules')
+                .where('adIds', 'array-contains', String(adReferralId))
+                .limit(1).get();
+            const ruleData = !ruleSnap.empty ? ruleSnap.docs[0].data() : null;
+            if (ruleData && ruleData.targetDepartmentId) {
+                await contactRef.update({ assignedDepartmentId: ruleData.targetDepartmentId });
+                assignedByRule = true;
+                console.log(`[${logPrefix} ROUTING] Contacto ${contactId} asignado a '${ruleData.targetDepartmentId}' por regla de anuncio ${adReferralId} (${ruleData.ruleName || 'sin nombre'}).`);
+            } else {
+                console.log(`[${logPrefix} ROUTING] Anuncio ${adReferralId} sin regla de departamento; se usa General si el contacto es nuevo.`);
+            }
+        } catch (e) {
+            console.error(`[${logPrefix} ROUTING] Error consultando ad_routing_rules para ${adReferralId}:`, e.message);
+        }
+    }
+    if (!assignedByRule && isNewContact) {
         const generalDeptQuery = await db.collection('departments').where('name', '==', 'General').limit(1).get();
         if (!generalDeptQuery.empty) {
             await contactRef.update({ assignedDepartmentId: generalDeptQuery.docs[0].id });
