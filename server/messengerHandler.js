@@ -291,6 +291,14 @@ router.post('/', async (req, res) => {
                     continue;
                 }
 
+                // Handle standalone referral (messaging_referral sin mensaje): un cliente recurrente
+                // que hace clic en un anuncio, o un clic en un link ig.me. El referral de un anuncio al
+                // PRIMER mensaje llega dentro de event.message (abajo); este cubre el caso SIN mensaje.
+                if (event.referral && !event.message) {
+                    await handleReferralEvent(senderId, event.referral, event.timestamp, channel);
+                    continue;
+                }
+
                 // Handle incoming messages
                 if (event.message) {
                     // Anuncios Click-to-Messenger/Instagram: Meta entrega el anuncio de origen en referral
@@ -314,6 +322,107 @@ router.post('/', async (req, res) => {
         }
     }
 });
+
+/**
+ * Normaliza el referral de un anuncio Click-to-Messenger/Instagram al formato que usan el banner de
+ * origen (AdReferralBannerTemplate) y la atribución. El título del anuncio viene en
+ * ads_context_data.ad_title (no en headline/body como WhatsApp). Meta no manda source_url aquí.
+ */
+function buildAdReferralData(referral, channel, firstSeenAt) {
+    const adId = referral.ad_id || referral.source_id;
+    const adCtx = referral.ads_context_data || {};
+    const adTitle = adCtx.ad_title || referral.headline || referral.ref || '';
+    return {
+        ...referral,
+        source_id: adId,
+        source_type: referral.source_type || 'ad',
+        ad_id: adId,
+        ad_name: adTitle,
+        headline: adTitle,
+        firstSeenAt: firstSeenAt || admin.firestore.FieldValue.serverTimestamp(),
+        channel
+    };
+}
+
+/**
+ * Reporta el Lead del anuncio a Meta CAPI (business_messaging). Fire-and-forget: no bloquea el flujo.
+ */
+function reportAdLead(contactId, channel, senderId, contactName, adReferral, logPrefix) {
+    const leadInfo = {
+        channel,
+        psid: channel === 'instagram' ? null : senderId,
+        igsid: channel === 'instagram' ? senderId : null,
+        profile: { name: contactName || null }
+    };
+    sendConversionEvent('LeadSubmitted', leadInfo, adReferral, {})
+        .then(() => console.log(`[${logPrefix} META EVENT] LeadSubmitted enviado para ${contactId} (ad ${adReferral.ad_id}).`))
+        .catch(err => console.error(`[${logPrefix} META EVENT] Error al enviar LeadSubmitted para ${contactId}:`, err.message));
+}
+
+/**
+ * Enruta el contacto a su departamento según ad_routing_rules (adIds -> targetDepartmentId), las
+ * MISMAS reglas que WhatsApp. Devuelve true si se asignó por una regla de anuncio.
+ */
+async function routeContactByAd(contactRef, contactId, adReferralId, logPrefix) {
+    try {
+        const ruleSnap = await db.collection('ad_routing_rules')
+            .where('adIds', 'array-contains', String(adReferralId))
+            .limit(1).get();
+        const ruleData = !ruleSnap.empty ? ruleSnap.docs[0].data() : null;
+        if (ruleData && ruleData.targetDepartmentId) {
+            await contactRef.update({ assignedDepartmentId: ruleData.targetDepartmentId });
+            console.log(`[${logPrefix} ROUTING] Contacto ${contactId} asignado a '${ruleData.targetDepartmentId}' por regla de anuncio ${adReferralId} (${ruleData.ruleName || 'sin nombre'}).`);
+            return true;
+        }
+        console.log(`[${logPrefix} ROUTING] Anuncio ${adReferralId} sin regla de departamento.`);
+    } catch (e) {
+        console.error(`[${logPrefix} ROUTING] Error consultando ad_routing_rules para ${adReferralId}:`, e.message);
+    }
+    return false;
+}
+
+/**
+ * Procesa un messaging_referral "suelto" (event.referral SIN event.message): un cliente que hace
+ * clic en un anuncio o en un link ig.me sin mandar mensaje. Si el contacto YA existe y el referral
+ * trae anuncio (ad_id), actualiza su origen, reporta el Lead y lo re-enruta por departamento (igual
+ * que cuando el referral llega con el primer mensaje). No crea contactos nuevos: si aún no existe, se
+ * ignora (su primer mensaje lo creará, con el referral del anuncio adjunto). Los ig.me sin anuncio
+ * solo guardan el ref para referencia.
+ */
+async function handleReferralEvent(senderId, referral, eventTimestamp, channel = 'messenger') {
+    const prefix = channel === 'instagram' ? 'ig' : 'fb';
+    const logPrefix = channel === 'instagram' ? 'INSTAGRAM' : 'MESSENGER';
+    const contactId = `${prefix}_${senderId}`;
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+
+    const contactDoc = await contactRef.get();
+    if (!contactDoc.exists) {
+        console.log(`[${logPrefix} REFERRAL] messaging_referral de ${contactId} sin conversación previa; se ignora hasta que escriba.`);
+        return;
+    }
+
+    const adReferralId = referral && (referral.ad_id || referral.source_id);
+    const ts = admin.firestore.Timestamp.fromMillis(eventTimestamp || Date.now());
+
+    // Link ig.me sin anuncio: guardar el ref para referencia; no dispara eventos de anuncios.
+    if (!adReferralId) {
+        if (referral && referral.ref) {
+            await contactRef.update({ igmeRef: referral.ref, igmeRefAt: ts });
+            console.log(`[${logPrefix} REFERRAL] ig.me ref='${referral.ref}' guardado para ${contactId}.`);
+        }
+        return;
+    }
+
+    const adReferral = buildAdReferralData(referral, channel, ts);
+    await contactRef.update({
+        adReferral,
+        adSourceIds: admin.firestore.FieldValue.arrayUnion(String(adReferralId))
+    });
+    console.log(`[${logPrefix} REFERRAL] Anuncio ${adReferralId} registrado para ${contactId} (messaging_referral suelto).`);
+
+    reportAdLead(contactId, channel, senderId, contactDoc.data().name, adReferral, logPrefix);
+    await routeContactByAd(contactRef, contactId, adReferralId, logPrefix);
+}
 
 /**
  * Handles an incoming Messenger or Instagram DM message.
@@ -508,64 +617,26 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
     // reportar la conversión. Antes el referral se usaba solo para la bienvenida y se descartaba.
     const adReferralId = referral && (referral.ad_id || referral.source_id);
     if (adReferralId) {
-        // El referral de Click-to-Messenger/Instagram trae el título del anuncio en
-        // ads_context_data.ad_title (no en headline/body como WhatsApp). Lo normalizamos a
-        // ad_name/headline para que el banner de origen (AdReferralBannerTemplate) muestre el
-        // nombre, y guardamos firstSeenAt para la fecha. Meta no manda source_url en estos canales.
-        const adCtx = referral.ads_context_data || {};
-        const adTitle = adCtx.ad_title || referral.headline || referral.ref || '';
-        contactUpdateData.adReferral = {
-            ...referral,
-            source_id: adReferralId,
-            source_type: referral.source_type || 'ad',
-            ad_id: adReferralId,
-            ad_name: adTitle,
-            headline: adTitle,
-            firstSeenAt: messageData.timestamp,
-            channel
-        };
+        // Persistir el anuncio de origen (para el banner, la atribución del Purchase y el enrutamiento).
+        contactUpdateData.adReferral = buildAdReferralData(referral, channel, messageData.timestamp);
         contactUpdateData.adSourceIds = admin.firestore.FieldValue.arrayUnion(String(adReferralId));
     }
 
     await contactRef.set(contactUpdateData, { merge: true });
     console.log(`[${logPrefix}] Contacto ${contactId} actualizado/creado.`);
 
-    // Paridad con WhatsApp: si el contacto viene de un anuncio, reportar el Lead a Meta CAPI
-    // (LeadSubmitted en business_messaging). No bloquea el flujo si falla.
+    // Paridad con WhatsApp: si el contacto viene de un anuncio, reportar el Lead a Meta CAPI.
     if (adReferralId) {
-        const leadInfo = {
-            channel,
-            psid: channel === 'instagram' ? null : senderId,
-            igsid: channel === 'instagram' ? senderId : null,
-            profile: { name: contactUpdateData.name || null }
-        };
-        sendConversionEvent('LeadSubmitted', leadInfo, contactUpdateData.adReferral, {})
-            .then(() => console.log(`[${logPrefix} META EVENT] LeadSubmitted enviado para ${contactId} (ad ${adReferralId}).`))
-            .catch(err => console.error(`[${logPrefix} META EVENT] Error al enviar LeadSubmitted para ${contactId}:`, err.message));
+        reportAdLead(contactId, channel, senderId, contactUpdateData.name, contactUpdateData.adReferral, logPrefix);
     }
 
     // --- Asignación de departamento (paridad con WhatsApp) ---
     // Si el contacto viene de un anuncio, se enruta por ad_id con las MISMAS reglas que WhatsApp
-    // (colección ad_routing_rules: adIds -> targetDepartmentId). Un contacto EXISTENTE que escribe
-    // desde un anuncio con regla también se re-enruta. Si el anuncio no tiene regla, o el contacto
-    // no viene de anuncio, cae a "General" solo si es nuevo (para no repisar una asignación manual).
+    // (ad_routing_rules). Sin regla, o sin anuncio, cae a "General" solo si es nuevo (para no
+    // repisar una asignación manual previa de un contacto existente).
     let assignedByRule = false;
     if (adReferralId) {
-        try {
-            const ruleSnap = await db.collection('ad_routing_rules')
-                .where('adIds', 'array-contains', String(adReferralId))
-                .limit(1).get();
-            const ruleData = !ruleSnap.empty ? ruleSnap.docs[0].data() : null;
-            if (ruleData && ruleData.targetDepartmentId) {
-                await contactRef.update({ assignedDepartmentId: ruleData.targetDepartmentId });
-                assignedByRule = true;
-                console.log(`[${logPrefix} ROUTING] Contacto ${contactId} asignado a '${ruleData.targetDepartmentId}' por regla de anuncio ${adReferralId} (${ruleData.ruleName || 'sin nombre'}).`);
-            } else {
-                console.log(`[${logPrefix} ROUTING] Anuncio ${adReferralId} sin regla de departamento; se usa General si el contacto es nuevo.`);
-            }
-        } catch (e) {
-            console.error(`[${logPrefix} ROUTING] Error consultando ad_routing_rules para ${adReferralId}:`, e.message);
-        }
+        assignedByRule = await routeContactByAd(contactRef, contactId, adReferralId, logPrefix);
     }
     if (!assignedByRule && isNewContact) {
         const generalDeptQuery = await db.collection('departments').where('name', '==', 'General').limit(1).get();
