@@ -66,6 +66,14 @@ function handleSearchContacts() {
     }
     // --- FIN DE LA MODIFICACIÓN ---
 
+    // Durante una BÚSQUEDA activa NO aplicamos los filtros de la UI (archivados, etiqueta,
+    // no leídos, compra, diseño, anuncio, departamento seleccionado): la búsqueda debe encontrar
+    // CUALQUIER contacto que coincida, aunque esté archivado o fuera del filtro actual (ej.
+    // buscar un pedido cuyo contacto está archivado). El filtro de SEGURIDAD por departamento
+    // (arriba, para no-admin) sí se mantiene siempre.
+    const _searchInput = document.getElementById('search-contacts-input');
+    const _isSearching = !!(_searchInput && _searchInput.value.trim());
+    if (!_isSearching) {
     // --- NUEVO: Filtro de Departamento activo (selección en la UI) ---
     // Se aplica en CADA render para que los chats que llegan en tiempo real desde
     // OTRO departamento no se cuelen en la lista mientras hay un filtro activo.
@@ -102,6 +110,7 @@ function handleSearchContacts() {
         const selAds = new Set(state.adIdFilters);
         contactsToRender = contactsToRender.filter(c => Array.isArray(c.adSourceIds) && c.adSourceIds.some(id => selAds.has(id)));
     }
+    } // fin del bloque de filtros de la UI (se salta durante la búsqueda para no ocultar resultados)
     // Siempre ordenar por fecha descendente antes de renderizar
     contactsToRender.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
     // --------------------------------------------------------------------
