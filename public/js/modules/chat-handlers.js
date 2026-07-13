@@ -534,6 +534,13 @@ async function handleSelectContact(contactId) {
                                 // De lo contrario, lo insertamos justo antes del mensaje mayor (antiguo cargado)
                                 state.messages.splice(insertIndex, 0, changedMessage);
                             }
+                        } else {
+                            // El doc YA existe localmente porque el backend guarda el mensaje en Firestore
+                            // con su tempId como ID (doc(tempId)); el mensaje optimista también usa ese
+                            // docId. Este "added" trae la versión del servidor (status 'sent', URL final del
+                            // archivo, etc.): la aplicamos. Sin esto, el relojito 'pending' se quedaba hasta
+                            // el primer "modified" (entregado/leído) o hasta recargar el chat.
+                            state.messages[existingIndex] = changedMessage;
                         }
                     } else if (change.type === "modified") {
                         if (existingIndex > -1) {
@@ -718,6 +725,11 @@ function loadMoreMessages() {
                             } else {
                                 state.messages.splice(insertIndex, 0, changedMessage);
                             }
+                        } else {
+                            // Igual que el listener principal: el doc ya existe localmente (se guardó con el
+                            // tempId como ID). Aplicar la versión del servidor para que el relojito 'pending'
+                            // pase a 'sent' sin esperar al primer "modified".
+                            state.messages[existingIndex] = changedMessage;
                         }
                     } else if (change.type === "modified") {
                         if (existingIndex > -1) {
