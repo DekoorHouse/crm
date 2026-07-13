@@ -1462,6 +1462,32 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
 }
 
 /**
+ * La IA de post-venta detecta (comando interno /cancelado) que el cliente quiere CANCELAR su
+ * pedido por una razón válida (ya no lo necesita, cambió de opinión, una ruptura, etc.). Cambia
+ * el estatus del pedido más reciente a "Cancelado". NO toca pedidos ya terminales (entregado/
+ * devuelto/cancelado) para no afectar un pedido viejo de un cliente recurrente. Nunca lanza.
+ */
+async function markOrderCancelledForContact(contactId) {
+    try {
+        const orderDoc = await getLatestOrderForContact(contactId);
+        if (!orderDoc) return null;
+        const orderData = orderDoc.data();
+        const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : `(pedido ${orderDoc.id})`;
+        const cur = String(orderData.estatus || '').toLowerCase();
+        if (/cancel|entregad|devol/.test(cur)) {
+            console.log(`[POSTVENTA] Pedido ${orderNumber} está "${orderData.estatus}"; no se cancela.`);
+            return null;
+        }
+        await orderDoc.ref.update({ estatus: 'Cancelado', canceladoAt: admin.firestore.FieldValue.serverTimestamp() });
+        console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Cancelado por decisión del cliente (${contactId}).`);
+        return orderNumber;
+    } catch (e) {
+        console.warn('[POSTVENTA] markOrderCancelledForContact falló:', e.message);
+        return null;
+    }
+}
+
+/**
  * Crea o renueva el caché de contexto en la API de Gemini.
  * Solo se recrea si el contenido cambió o el TTL ha expirado.
  * @param {string} botInstructions - Instrucciones del bot (personalizadas por dept/ad o generales)
@@ -2814,6 +2840,13 @@ Reglas:
         if (needsCorrection) {
             markOrderCorregirForContact(contactId, contactData, messageText)
                 .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact falló:', e.message));
+        }
+
+        // Cancelación de un pedido YA REGISTRADO (post-venta): pasar el pedido a "Cancelado".
+        // Si aún no estaba registrado, arriba (updateData) solo se quitó la etiqueta pendientes_ia.
+        if (orderCancelled && !hadOrWillHavePendienteIa) {
+            markOrderCancelledForContact(contactId)
+                .catch(e => console.warn('[POSTVENTA] markOrderCancelledForContact falló:', e.message));
         }
 
         // Comprobante validado (/comprobante): marcar el pedido para la sección "Envíos" y mandarle
