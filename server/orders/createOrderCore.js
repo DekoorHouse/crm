@@ -86,7 +86,7 @@ async function createOrder({
 
     // require perezoso: services.js requiere (indirectamente) este módulo para el registro
     // automático por IA; requerir services arriba del archivo crearía un ciclo de módulos.
-    const { getPedidoAttribution, sendConversionEvent, getPurchaseEventTrigger } = require('../services');
+    const { getPedidoAttribution, sendConversionEvent, messagingContactInfo, getPurchaseEventTrigger } = require('../services');
 
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     const orderCounterRef = db.collection('counters').doc('orders');
@@ -203,15 +203,16 @@ async function createOrder({
         if ((await getPurchaseEventTrigger()) === 'registration' && contactRef) {
             const contactSnap = await contactRef.get();
             const cData = contactSnap.exists ? contactSnap.data() : null;
-            if (cData?.wa_id) {
-                const eventInfo = { wa_id: cData.wa_id, profile: { name: cData.name } };
+            // Multicanal: WhatsApp (wa_id), Messenger (psid) o Instagram (igsid).
+            const eventInfo = cData ? messagingContactInfo(cData) : null;
+            if (eventInfo && (eventInfo.wa_id || eventInfo.psid || eventInfo.igsid)) {
                 const customData = { value: totalValue, currency: 'MXN' };
                 console.log(`[META EVENT] Enviando Purchase por registro de pedido DH${newOrderNumber}, contacto ${contactId}`);
                 await sendConversionEvent('Purchase', eventInfo, cData.adReferral || {}, customData);
                 await newOrderRef.update({ metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp() });
                 console.log(`[META EVENT] ✅ Evento Purchase enviado por registro, pedido DH${newOrderNumber}, valor $${totalValue}`);
             } else {
-                console.warn(`[META EVENT] Contacto ${contactId} sin wa_id. No se envió Purchase por registro.`);
+                console.warn(`[META EVENT] Contacto ${contactId} sin identificador de mensajería. No se envió Purchase por registro.`);
             }
         }
     } catch (metaError) {

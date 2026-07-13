@@ -1086,12 +1086,14 @@ async function sendPurchaseEventOnFabricar(orderId, orderData, oldStatusLower) {
 
         const contactSnap = await db.collection('contacts_whatsapp').doc(orderData.contactId).get();
         const contactData = contactSnap.exists ? contactSnap.data() : null;
-        if (!contactData?.wa_id) {
-            console.warn(`[META EVENT] Contacto ${orderData.contactId} sin wa_id. No se envió Purchase (pedido ${orderId}).`);
+        if (!contactData) return;
+        // Multicanal: WhatsApp (wa_id), Messenger (psid) o Instagram (igsid). sendConversionEvent
+        // arma el user_data correcto por canal y descarta a los contactos sin señal de anuncio.
+        const eventInfo = messagingContactInfo(contactData);
+        if (!eventInfo.wa_id && !eventInfo.psid && !eventInfo.igsid) {
+            console.warn(`[META EVENT] Contacto ${orderData.contactId} sin identificador de mensajería (wa_id/psid/igsid). No se envió Purchase (pedido ${orderId}).`);
             return;
         }
-
-        const eventInfo = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
         const customData = { value: Number(orderData.precio) || 0, currency: 'MXN' };
         console.log(`[META EVENT] Enviando Purchase por cambio a Fabricar, pedido ${orderId}, contacto ${orderData.contactId}`);
         await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
@@ -2899,15 +2901,79 @@ async function tagOrderInProgress(contactId, contactRef, conversationHistory, na
 // === SERVICIOS DE META (API DE CONVERSIONES) =====================
 // =================================================================
 
+// Determina el canal de mensajería y arma el user_data que exige la Conversions API for
+// Business Messaging de Meta. Cada canal usa identificadores DISTINTOS (documentación oficial):
+//   • whatsapp  → ctwa_clid (click id del anuncio Click-to-WhatsApp; viene en el referral)
+//   • messenger → page_id + page_scoped_user_id (PSID)
+//   • instagram → instagram_business_account_id (IG_BUSINESS_ID) + ig_sid (IGSID)
+// Meta atribuye el evento al anuncio por el ctwa_clid (WA) o por el PSID/IGSID (Messenger/IG);
+// nosotros NO mandamos el ad_id, solo lo usamos como señal de que el contacto vino de un anuncio.
+// Devuelve null (y registra el motivo) si el contacto no cumple los requisitos del canal. Para los
+// tres canales exigimos señal de anuncio, así solo se reportan conversiones atribuibles (mismo
+// criterio que ya tenía WhatsApp con el ctwa_clid).
+function resolveMessagingIdentity(contactInfo = {}, referralInfo = {}, eventName = '') {
+    const pageId = FB_PAGE_ID || '110927358587213';
+    const channel = contactInfo.channel
+        || (contactInfo.igsid ? 'instagram' : (contactInfo.psid ? 'messenger' : 'whatsapp'));
+    const cameFromAd = !!(referralInfo && (referralInfo.ad_id || referralInfo.source_id));
+
+    if (channel === 'instagram') {
+        if (!contactInfo.igsid) {
+            console.log(`[META CAPI] Contacto de Instagram sin igsid. Se omite '${eventName}'.`);
+            return null;
+        }
+        if (!IG_BUSINESS_ID) {
+            console.warn(`[META CAPI] Falta IG_BUSINESS_ID (instagram_business_account_id). No se envía '${eventName}' de Instagram.`);
+            return null;
+        }
+        if (!cameFromAd) {
+            console.log(`[META CAPI] Contacto de Instagram ${contactInfo.igsid} sin anuncio de origen (orgánico). Se omite '${eventName}'.`);
+            return null;
+        }
+        return {
+            messagingChannel: 'instagram',
+            userRef: contactInfo.igsid,
+            userData: { instagram_business_account_id: IG_BUSINESS_ID, ig_sid: contactInfo.igsid },
+        };
+    }
+
+    if (channel === 'messenger') {
+        if (!contactInfo.psid) {
+            console.log(`[META CAPI] Contacto de Messenger sin psid. Se omite '${eventName}'.`);
+            return null;
+        }
+        if (!cameFromAd) {
+            console.log(`[META CAPI] Contacto de Messenger ${contactInfo.psid} sin anuncio de origen (orgánico). Se omite '${eventName}'.`);
+            return null;
+        }
+        return {
+            messagingChannel: 'messenger',
+            userRef: contactInfo.psid,
+            userData: { page_id: pageId, page_scoped_user_id: contactInfo.psid },
+        };
+    }
+
+    // WhatsApp (comportamiento idéntico al anterior: exige ctwa_clid del anuncio Click-to-WhatsApp).
+    if (!referralInfo?.ctwa_clid) {
+        console.log(`[META CAPI] Contacto ${contactInfo?.wa_id || 'desconocido'} sin ctwa_clid (orgánico). Se omite evento '${eventName}'.`);
+        return null;
+    }
+    return {
+        messagingChannel: 'whatsapp',
+        userRef: contactInfo.wa_id || 'unknown',
+        userData: { page_id: pageId, ctwa_clid: referralInfo.ctwa_clid },
+    };
+}
+
 async function sendConversionEvent(eventName, contactInfo, referralInfo, customData = {}) {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn(`[META CAPI] Faltan credenciales. PIXEL_ID=${!!META_PIXEL_ID}, TOKEN=${!!META_CAPI_ACCESS_TOKEN}. No se enviará evento '${eventName}'.`);
         return;
     }
-    if (!referralInfo?.ctwa_clid) {
-        console.log(`[META CAPI] Contacto ${contactInfo?.wa_id || 'desconocido'} sin ctwa_clid (orgánico). Se omite evento '${eventName}'.`);
-        return;
-    }
+
+    // Arma user_data + messaging_channel según el canal del contacto (WA/Messenger/IG).
+    const identity = resolveMessagingIdentity(contactInfo, referralInfo, eventName);
+    if (!identity) return; // el motivo ya quedó registrado
 
     const url = `https://graph.facebook.com/v22.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);
@@ -2915,13 +2981,10 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
     const eventData = {
         event_name: eventName,
         event_time: eventTime,
-        event_id: `${eventName}_${contactInfo?.wa_id || 'unknown'}_${eventTime}`,
+        event_id: `${eventName}_${identity.userRef}_${eventTime}`,
         action_source: 'business_messaging',
-        messaging_channel: 'whatsapp',
-        user_data: {
-            page_id: '110927358587213',
-            ctwa_clid: referralInfo.ctwa_clid
-        },
+        messaging_channel: identity.messagingChannel,
+        user_data: identity.userData,
     };
 
     if (customData && Object.keys(customData).length > 0) {
@@ -2932,7 +2995,7 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
     const headers = { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' };
 
     try {
-        console.log(`[META CAPI] Enviando evento '${eventName}' al dataset ${META_PIXEL_ID}. ctwa_clid=${referralInfo.ctwa_clid}`);
+        console.log(`[META CAPI] Enviando '${eventName}' (${identity.messagingChannel}) al dataset ${META_PIXEL_ID}. ref=${identity.userRef}`);
         const response = await axios.post(url, payload, { headers });
         console.log(`[META CAPI] ✅ Evento '${eventName}' enviado. Respuesta:`, JSON.stringify(response.data));
     } catch (error) {
@@ -2940,6 +3003,19 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
             error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw new Error(`Falló el envío del evento '${eventName}' a Meta.`);
     }
+}
+
+// Arma el contactInfo multicanal que espera sendConversionEvent a partir del documento del
+// contacto. WhatsApp usa wa_id; Messenger, psid; Instagram, igsid. El canal se toma de
+// contactData.channel (con fallback a la presencia de igsid/psid; si nada, se asume whatsapp).
+function messagingContactInfo(contactData = {}) {
+    return {
+        wa_id: contactData.wa_id || null,
+        psid: contactData.psid || null,
+        igsid: contactData.igsid || null,
+        channel: contactData.channel || null,
+        profile: { name: contactData.name || null },
+    };
 }
 
 /**
@@ -3016,6 +3092,7 @@ module.exports = {
     cancelAiResponse,
     getShippingQuote,
     sendConversionEvent,
+    messagingContactInfo,
     sendAdvancedWhatsAppMessage,
     sendMessengerMessage,
     messengerMediaSelfTest,

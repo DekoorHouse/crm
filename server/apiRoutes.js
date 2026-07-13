@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer } = require('./services');
+const { sendConversionEvent, messagingContactInfo, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
 const { calcularReporte } = require('./inventario/inventarioReporte');
@@ -6586,22 +6586,19 @@ router.post('/contacts/:contactId/mark-as-purchase', async (req, res) => {
         if (contactData.purchaseStatus === 'completed') {
             return res.status(400).json({ success: false, message: 'Este contacto ya realizó una compra registrada.' });
         }
-        // Asegurar que tenemos el wa_id para el evento de Meta
-        if (!contactData.wa_id) {
-            return res.status(500).json({ success: false, message: "Error interno: El contacto no tiene un ID de WhatsApp guardado para enviar el evento a Meta." });
+        // Multicanal: WhatsApp (wa_id), Messenger (psid) o Instagram (igsid). Asegurar que hay
+        // al menos un identificador de mensajería para poder enviar el evento a Meta.
+        const eventInfo = messagingContactInfo(contactData);
+        if (!eventInfo.wa_id && !eventInfo.psid && !eventInfo.igsid) {
+            return res.status(500).json({ success: false, message: "Error interno: El contacto no tiene un ID de mensajería (WhatsApp/Messenger/Instagram) para enviar el evento a Meta." });
         }
-
-        // Preparar información para el evento de Meta
-        const eventInfo = {
-            wa_id: contactData.wa_id,
-            profile: { name: contactData.name }
-        };
         const customEventData = {
             value: parseFloat(value),
             currency: 'MXN' // Moneda
         };
 
-        // Enviar evento 'Purchase' a la API de Conversiones de Meta
+        // Enviar evento 'Purchase' a la API de Conversiones de Meta. sendConversionEvent arma el
+        // user_data correcto por canal y omite a los contactos sin señal de anuncio (orgánicos).
         await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customEventData);
 
         // Actualizar el estado del contacto en Firestore
@@ -6632,15 +6629,11 @@ router.post('/contacts/:contactId/send-view-content', async (req, res) => {
         }
         const contactData = contactDoc.data();
 
-        if (!contactData.wa_id) {
-            return res.status(500).json({ success: false, message: "Error interno: El contacto no tiene un ID de WhatsApp guardado para enviar el evento a Meta." });
+        // Multicanal: WhatsApp (wa_id), Messenger (psid) o Instagram (igsid).
+        const eventInfo = messagingContactInfo(contactData);
+        if (!eventInfo.wa_id && !eventInfo.psid && !eventInfo.igsid) {
+            return res.status(500).json({ success: false, message: "Error interno: El contacto no tiene un ID de mensajería (WhatsApp/Messenger/Instagram) para enviar el evento a Meta." });
         }
-
-        // Preparar información para el evento
-        const eventInfo = {
-            wa_id: contactData.wa_id,
-            profile: { name: contactData.name }
-        };
 
         // Enviar evento 'ViewContent'
         await sendConversionEvent('ViewContent', eventInfo, contactData.adReferral || {});

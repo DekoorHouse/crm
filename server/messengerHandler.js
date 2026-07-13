@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const { db, admin, bucket } = require('./config');
-const { triggerAutoReplyAI, sendMessengerMessage, cancelPendingAiTimer, transcribeIncomingAudioMessage } = require('./services');
+const { triggerAutoReplyAI, sendMessengerMessage, cancelPendingAiTimer, transcribeIncomingAudioMessage, sendConversionEvent } = require('./services');
 
 const router = express.Router();
 
@@ -502,8 +502,38 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
         }
     }
 
+    // Anuncios Click-to-Messenger/Instagram: persistir el anuncio de origen. La Conversions API
+    // de Meta atribuye el Purchase por el PSID/IGSID, pero necesitamos guardar esta señal para
+    // saber DESPUÉS (al registrar/fabricar el pedido) que el contacto vino de un anuncio y así
+    // reportar la conversión. Antes el referral se usaba solo para la bienvenida y se descartaba.
+    const adReferralId = referral && (referral.ad_id || referral.source_id);
+    if (adReferralId) {
+        contactUpdateData.adReferral = {
+            ...referral,
+            source_id: adReferralId,
+            source_type: referral.source_type || 'ad',
+            ad_id: adReferralId,
+            channel
+        };
+        contactUpdateData.adSourceIds = admin.firestore.FieldValue.arrayUnion(String(adReferralId));
+    }
+
     await contactRef.set(contactUpdateData, { merge: true });
     console.log(`[${logPrefix}] Contacto ${contactId} actualizado/creado.`);
+
+    // Paridad con WhatsApp: si el contacto viene de un anuncio, reportar el Lead a Meta CAPI
+    // (LeadSubmitted en business_messaging). No bloquea el flujo si falla.
+    if (adReferralId) {
+        const leadInfo = {
+            channel,
+            psid: channel === 'instagram' ? null : senderId,
+            igsid: channel === 'instagram' ? senderId : null,
+            profile: { name: contactUpdateData.name || null }
+        };
+        sendConversionEvent('LeadSubmitted', leadInfo, contactUpdateData.adReferral, {})
+            .then(() => console.log(`[${logPrefix} META EVENT] LeadSubmitted enviado para ${contactId} (ad ${adReferralId}).`))
+            .catch(err => console.error(`[${logPrefix} META EVENT] Error al enviar LeadSubmitted para ${contactId}:`, err.message));
+    }
 
     // --- Department assignment for new contacts ---
     if (isNewContact) {
