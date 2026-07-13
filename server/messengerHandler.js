@@ -783,6 +783,11 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
         if (autoCorazon && !adResponseSent) {
             await contactRef.update({ botActive: true, aiStage: 'venta' });
         }
+        // Auto-marcar LEÍDA la bienvenida (RI/anuncio o bienvenida de contacto nuevo): son leads que
+        // aún no requieren atención humana, así no saturan la lista con "1 sin leer". Si el cliente
+        // responde algo después, ese mensaje sí vuelve a marcarla como no leída.
+        await contactRef.update({ unreadCount: 0 })
+            .catch(e => console.warn('[UNREAD] No se pudo marcar leída la bienvenida:', e.message));
         return;
     }
 

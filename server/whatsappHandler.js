@@ -1031,6 +1031,16 @@ router.post('/', async (req, res) => {
                 await contactRef.update(welcomeUpdate);
             }
 
+            // Auto-marcar como LEÍDA la conversación cuando el mensaje entrante solo disparó la
+            // bienvenida automática (RI del anuncio, o bienvenida de contacto nuevo): son leads que
+            // todavía no requieren atención humana, así no saturan la lista con "1 sin leer". Si el
+            // cliente responde algo DESPUÉS, ese mensaje sí vuelve a marcar la conversación como no
+            // leída (ya es un contacto existente, sin bienvenida).
+            if (adResponseSent || isNewContact) {
+                await contactRef.update({ unreadCount: 0 })
+                    .catch(e => console.warn('[UNREAD] No se pudo marcar leída la bienvenida:', e.message));
+            }
+
             // 7. Trigger AI Reply if applicable
             // Lanzamos la IA pero no hacemos un AWAIT de modo que podamos responder el 200 rápido a Meta
             // MODIFICACIÓN: No disparamos la IA si es un contacto nuevo, para que NO responda al mensaje inicial del Ad.
