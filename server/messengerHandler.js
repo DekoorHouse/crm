@@ -382,6 +382,20 @@ async function routeContactByAd(contactRef, contactId, adReferralId, logPrefix) 
 }
 
 /**
+ * Etiqueta legible para un adjunto de Messenger/Instagram según su tipo (para el CRM y el historial),
+ * en vez de un genérico "Mensaje multimedia".
+ */
+function attachmentLabel(attachType, resolvedType) {
+    const labels = {
+        image: '📷 Imagen', video: '🎥 Video', audio: '🎵 Audio', file: '📄 Documento',
+        location: '📍 Ubicación', share: '🔗 Publicación compartida', fallback: 'Mensaje no soportado',
+        story_mention: '📖 Te mencionó en su historia', story_reply: '💬 Respondió a tu historia',
+        template: '📋 Mensaje', like_heart: '❤️'
+    };
+    return labels[attachType] || labels[resolvedType] || (attachType ? `📎 Adjunto (${attachType})` : '📎 Adjunto');
+}
+
+/**
  * Procesa un messaging_referral "suelto" (event.referral SIN event.message): un cliente que hace
  * clic en un anuncio o en un link ig.me sin mandar mensaje. Si el contacto YA existe y el referral
  * trae anuncio (ad_id), actualiza su origen, reporta el Lead y lo re-enruta por departamento (igual
@@ -477,7 +491,8 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
     // Process attachments
     if (message.attachments && message.attachments.length > 0) {
         const attachment = message.attachments[0]; // Process first attachment
-        const attachType = attachment.type; // image, video, audio, file, location, fallback
+        const attachType = attachment.type; // image, video, audio, file, location, fallback, share, story_mention...
+        const attachUrl = attachment.payload?.url;
 
         if (attachType === 'location' && attachment.payload?.coordinates) {
             messageData.location = {
@@ -485,37 +500,40 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
                 longitude: attachment.payload.coordinates.long
             };
             messageData.text = messageData.text || `📍 Ubicación compartida`;
-        } else if (['image', 'video', 'audio', 'file'].includes(attachType) && attachment.payload?.url) {
+        } else if (attachUrl) {
+            // Cualquier adjunto CON URL descargable (imagen, video, audio, archivo, e incluso
+            // shares/reels/historias con media): lo descargamos y mostramos, en vez de dejar un
+            // genérico "Mensaje multimedia".
             try {
                 const { publicUrl, mimeType } = await downloadAndUploadMessengerMedia(
-                    attachment.payload.url, senderId, message.mid
+                    attachUrl, senderId, message.mid
                 );
                 messageData.fileUrl = publicUrl;
                 messageData.fileType = mimeType;
-                // Guardar el tipo con la misma nomenclatura que WhatsApp: la IA depende de
-                // este campo para ADJUNTAR el archivo a Gemini (services.js exige d.type).
-                // Sin él, la IA nunca veía las imágenes/audios/PDF de FB/IG y respondía a ciegas.
-                messageData.type = attachType === 'file' ? 'document' : attachType;
-
-                if (!messageData.text) {
-                    const fallbackTexts = {
-                        image: '📷 Imagen', video: '🎥 Video',
-                        audio: '🎵 Audio', file: '📄 Documento'
-                    };
-                    messageData.text = fallbackTexts[attachType] || 'Archivo adjunto';
-                }
+                // type para que la IA ADJUNTE el archivo a Gemini (services.js exige d.type). Se toma
+                // del attachType y, si no aplica, se infiere del mimeType.
+                messageData.type =
+                    ['image', 'video', 'audio'].includes(attachType) ? attachType
+                    : attachType === 'file' ? 'document'
+                    : mimeType.startsWith('image/') ? 'image'
+                    : mimeType.startsWith('video/') ? 'video'
+                    : mimeType.startsWith('audio/') ? 'audio'
+                    : mimeType.includes('pdf') ? 'document'
+                    : undefined;
+                if (!messageData.text) messageData.text = attachmentLabel(attachType, messageData.type);
             } catch (uploadError) {
-                console.error(`[MESSENGER] Error al descargar media:`, uploadError.message);
-                messageData.text = messageData.text || `Mensaje multimedia (${attachType})`;
+                console.error(`[${logPrefix}] Error al descargar media (${attachType}):`, uploadError.message);
+                messageData.text = messageData.text || attachmentLabel(attachType);
             }
-        } else if (attachType === 'fallback') {
-            messageData.text = messageData.text || 'Mensaje no soportado';
+        } else {
+            // Adjunto SIN URL (sticker, like, share sin media, mención de historia...): etiqueta clara.
+            messageData.text = messageData.text || attachmentLabel(attachType);
         }
     }
 
-    // Fallback text
+    // Fallback final (mensaje sin texto ni adjunto reconocible; raro)
     if (!messageData.text) {
-        messageData.text = 'Mensaje multimedia';
+        messageData.text = 'Mensaje sin texto';
     }
 
     // Remove null/undefined fields
@@ -679,6 +697,27 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
 
     // Welcome message / Ad response for new contacts
     if (isNewContact) {
+        // Instagram/Messenger reenvían webhooks casi simultáneos; dos de ellos pueden ver el contacto
+        // como nuevo y mandar la bienvenida por DUPLICADO (RI + imagen del anuncio). Reclamamos la
+        // bienvenida de forma ATÓMICA con una transacción: solo el primer webhook que marque `welcomed`
+        // la envía; los concurrentes la omiten.
+        let claimedWelcome = false;
+        try {
+            claimedWelcome = await db.runTransaction(async (tx) => {
+                const snap = await tx.get(contactRef);
+                if (snap.exists && snap.data().welcomed) return false;
+                tx.set(contactRef, { welcomed: true }, { merge: true });
+                return true;
+            });
+        } catch (txErr) {
+            console.error(`[${logPrefix}] Error reclamando bienvenida para ${contactId}:`, txErr.message);
+            claimedWelcome = true; // ante un fallo de transacción, no bloquear la bienvenida
+        }
+        if (!claimedWelcome) {
+            console.log(`[${logPrefix}] Bienvenida ya enviada para ${contactId}; se omite (webhook concurrente).`);
+            return;
+        }
+
         let adResponseSent = false;
         // Click-to-Messenger ads: Meta entrega el Ad ID en referral.ad_id (Messenger/Instagram).
         // Se usa la MISMA colección 'ad_responses' que WhatsApp para reutilizar los mensajes configurados.
@@ -740,9 +779,10 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
             await sendAutoMessage(contactRef, welcomePayload);
         }
         // Encender la IA para contactos nuevos que no vinieron de anuncio (gobernado por autoCorazon).
-        const welcomeUpdate = { welcomed: true };
-        if (autoCorazon && !adResponseSent) { welcomeUpdate.botActive = true; welcomeUpdate.aiStage = 'venta'; }
-        await contactRef.update(welcomeUpdate);
+        // `welcomed` ya se marcó atómicamente al reclamar la bienvenida.
+        if (autoCorazon && !adResponseSent) {
+            await contactRef.update({ botActive: true, aiStage: 'venta' });
+        }
         return;
     }
 
