@@ -2479,8 +2479,9 @@ Reglas:
                 if (ge && ge.guia) {
                     let estatusTxt = '';
                     try {
-                        const track = require('./tracking/trackingService');
-                        const st = await track.getTrackingStatus(ge.guia, { provider: ge.proveedor });
+                        // Solo DHL oficial (si hay DHL_API_KEY); si no, devuelve null y caemos al link.
+                        const dhlTrack = require('./dhl/dhlTracking');
+                        const st = await dhlTrack.getTracking(ge.guia);
                         if (st && st.fase) estatusTxt = ` Estatus actual del envío: ${st.fase}${st.descripcion ? ` (${st.descripcion})` : ''}${st.ubicacion ? ` — ${st.ubicacion}` : ''}${st.fecha ? ` [${st.fecha}]` : ''}. Explícaselo en términos simples y cálidos.`;
                     } catch (_) { /* sin estatus: cae al link */ }
                     const link = ge.tracking || `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${ge.guia}`;

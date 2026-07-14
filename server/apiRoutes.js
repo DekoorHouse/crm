@@ -8256,35 +8256,6 @@ router.post('/envios/cotizar', async (req, res) => {
     }
 });
 
-// --- GET /api/rastreo/:guia — estatus de rastreo de una guía (DHL oficial si hay clave, si no T1).
-// Público (lo consume la página de rastreo del cliente y el bot de IA). Solo devuelve estatus.
-router.get('/rastreo/:guia', async (req, res) => {
-    try {
-        const guia = String(req.params.guia || '').replace(/[^0-9A-Za-z]/g, '');
-        if (!guia) return res.status(400).json({ success: false, error: 'Falta la guía.' });
-        const track = require('./tracking/trackingService');
-        const st = await track.getTrackingStatus(guia, { provider: req.query.prov });
-        if (!st) return res.json({ success: true, guia, fase: null, descripcion: 'Aún sin información de rastreo. Vuelve a intentar más tarde.' });
-        res.json({ success: true, ...st });
-    } catch (e) {
-        console.error('[RASTREO] :guia', e.message);
-        res.status(502).json({ success: false, error: 'No se pudo consultar el rastreo.' });
-    }
-});
-
-// --- GET /api/rastreo/pedido/:num — rastrea por número de pedido (DHxxxx): busca su guía y la rastrea.
-router.get('/rastreo/pedido/:num', async (req, res) => {
-    try {
-        const track = require('./tracking/trackingService');
-        const out = await track.getTrackingByOrderNumber(db, req.params.num);
-        if (out.error) return res.json({ success: false, ...out });
-        res.json({ success: true, ...out });
-    } catch (e) {
-        console.error('[RASTREO] pedido', e.message);
-        res.status(502).json({ success: false, error: 'No se pudo consultar el rastreo.' });
-    }
-});
-
 // --- POST /api/envios/cotizar-batch — cotiza VARIOS pedidos en PARALELO (para el flujo de lote). ---
 router.post('/envios/cotizar-batch', async (req, res) => {
     try {
@@ -8535,8 +8506,21 @@ router.get('/rastreo/:guia', async (req, res) => {
                 ? `https://rastreo.estafeta.com/RastreoWebInternet/consultaEnvio.do?dispatchAction=busqueda&idERROR=&noGuias=${encodeURIComponent(guia)}`
                 : `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${encodeURIComponent(guia)}`;
         }
-        // 2) Intentar el rastreo de T1 (por si algún día trae datos). NO dependemos de él (hoy viene vacío);
-        //    el estado real vive con la paquetería (DHL bloquea scraping -> pendiente su API oficial).
+        // 2a) API OFICIAL de DHL (si hay DHL_API_KEY y es guía DHL): estatus real con historial.
+        if (!isEP && process.env.DHL_API_KEY) {
+            try {
+                const dhlTrack = require('./dhl/dhlTracking');
+                const dt = await dhlTrack.getTracking(guia);
+                if (dt && dt.fase) {
+                    const code = dt.entregado ? 'entregado'
+                        : (/reparto|camino|ciudad/i.test(dt.fase) ? 'en_camino' : 'recolectado');
+                    return res.json({ success: true, guia, found: true, estado: dt.descripcion || dt.fase, ubicacion: dt.ubicacion || null,
+                        fecha: dt.fecha || null, entregado: !!dt.entregado, fase: code, courier, officialUrl });
+                }
+            } catch (e) { console.warn('[RASTREO] DHL API falló, sigo con fallback:', e.message); }
+        }
+        // 2b) Intentar el rastreo de T1 (por si algún día trae datos). NO dependemos de él (hoy viene vacío/403);
+        //     el estado real vive con la paquetería (DHL bloquea scraping -> API oficial arriba).
         let d = {};
         try { const data = await t1.rastrear(guia); d = (data && data.detail) || {}; } catch (e) { d = {}; }
         const desc = String(d.descripcion || '').trim();
