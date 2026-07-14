@@ -2467,6 +2467,29 @@ Reglas:
             console.warn('[AI] No se pudo leer el pedido registrado para', contactId, e.message);
         }
 
+        // --- Rastreo del envío: cuando el cliente pregunta "¿dónde va mi pedido?" y su pedido ya
+        // tiene guía DHL, le damos el estatus (API oficial de DHL si hay DHL_API_KEY) y/o el link de
+        // rastreo. Se activa SOLO ante palabras de rastreo para no gastar llamadas en cada mensaje. ---
+        let trackingNote = '';
+        if (/(rastre|d[oó]nde va|d[oó]nde est[aá]|ya (lleg|va)|cu[aá]ndo (me )?(llega|entregan)|mi (pedido|paquete|env[ií]o|orden|gu[ií]a)|n[uú]mero de (rastreo|gu[ií]a)|seguimiento|tracking)/i.test(messageText)) {
+            try {
+                const lastOrderDoc = await getLatestOrderForContact(contactId);
+                const o = lastOrderDoc && lastOrderDoc.data();
+                const ge = o && o.guiaEnvio;
+                if (ge && ge.guia) {
+                    let estatusTxt = '';
+                    try {
+                        const track = require('./tracking/trackingService');
+                        const st = await track.getTrackingStatus(ge.guia, { provider: ge.proveedor });
+                        if (st && st.fase) estatusTxt = ` Estatus actual del envío: ${st.fase}${st.descripcion ? ` (${st.descripcion})` : ''}${st.ubicacion ? ` — ${st.ubicacion}` : ''}${st.fecha ? ` [${st.fecha}]` : ''}. Explícaselo en términos simples y cálidos.`;
+                    } catch (_) { /* sin estatus: cae al link */ }
+                    const link = ge.tracking || `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${ge.guia}`;
+                    const dhNum = o.consecutiveOrderNumber != null ? ` DH${o.consecutiveOrderNumber}` : '';
+                    trackingNote = `\n\n**El cliente pregunta por el RASTREO de su pedido${dhNum}:** su pedido ya se envió por DHL (guía ${ge.guia}).${estatusTxt} Comparte este link para que vea su rastreo en vivo: ${link}${estatusTxt ? '' : ' Si no tienes el estatus exacto, dile con amabilidad que ahí puede seguir su paquete y recuérdale que suele llegar en 3-5 días hábiles desde que se envió.'} NO inventes una ubicación ni una fecha de entrega que no tengas.`;
+                }
+            } catch (e) { console.warn('[AI] Nota de rastreo falló:', e.message); }
+        }
+
         // Cliente RECURRENTE en etapa de venta: ya le hemos enviado antes (purchaseStatus
         // 'completed' se pone cuando su pedido anterior pasó a Fabricar tras pagar). En una
         // segunda compra NO se vuelve a checar cobertura de entrada: se pregunta si va a la
@@ -2488,7 +2511,7 @@ Reglas:
         const mediaTaskNote = mediaParts.length > departmentImageParts.length
             ? ' Vienen adjuntos archivos de la conversación (fotos, audios, videos o documentos/PDF, p. ej. comprobantes de pago): analízalos con cuidado cuando sean relevantes para el último mensaje del cliente; si ya los atendiste en un turno anterior, no los vuelvas a comentar.'
             : '';
-        const finalUserText = `${fechaActualNote}${orderInfoNote}${repeatBuyerNote}${postventaProtocolNote}${cancelCommandNote}${comprobanteCommandNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${orderInfoNote}${trackingNote}${repeatBuyerNote}${postventaProtocolNote}${cancelCommandNote}${comprobanteCommandNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).

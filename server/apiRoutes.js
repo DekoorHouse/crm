@@ -8262,11 +8262,6 @@ router.get('/rastreo/:guia', async (req, res) => {
     try {
         const guia = String(req.params.guia || '').replace(/[^0-9A-Za-z]/g, '');
         if (!guia) return res.status(400).json({ success: false, error: 'Falta la guía.' });
-        // Debug temporal: ver la respuesta CRUDA de T1 (o el error) para afinar el mapeo.
-        if (req.query.debug === 't1diag_9f3k2xQ7') {
-            try { const t1 = require('./t1/t1Client'); const raw = await t1.rastrear(guia); return res.json({ debug: true, source: 't1', raw }); }
-            catch (e) { return res.json({ debug: true, source: 't1', error: e.message, status: e.response && e.response.status, body: e.response && e.response.data }); }
-        }
         const track = require('./tracking/trackingService');
         const st = await track.getTrackingStatus(guia, { provider: req.query.prov });
         if (!st) return res.json({ success: true, guia, fase: null, descripcion: 'Aún sin información de rastreo. Vuelve a intentar más tarde.' });
