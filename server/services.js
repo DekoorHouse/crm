@@ -2367,7 +2367,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     // por defecto) cuesta <= el límite. Arriba de eso es zona extendida/cara y se le cobra el
                     // envío al cliente (el costo real de DHL, redondeado). Configurable con FREE_SHIPPING_MAX_DHL.
                     const UMBRAL_ENVIO_GRATIS = Number(process.env.FREE_SHIPPING_MAX_DHL || 180);
-                    const dhlOps = ops.filter(o => /dhl/i.test(o.paq || '') || /dhl/i.test(o.serv || ''));
+                    // DHL en T1 no viene etiquetado como "DHL": sus servicios son "EXPRESS DOMESTIC" y
+                    // "ECONOMY SELECT DOMESTIC" (FedEx = ...SAVER/OVERNIGHT, Paquetexpress = STD-T). Como
+                    // enviamos por DHL, el umbral y el cobro usan el precio DHL (el más barato de DHL);
+                    // si no hubiera DHL, cae al más barato disponible.
+                    const dhlOps = ops.filter(o => /dhl|domestic/i.test(`${o.paq || ''} ${o.serv || ''}`));
                     const refCosto = dhlOps.length ? dhlOps[0].costo : ops[0].costo;
                     console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops, DHL/ref $${refCosto} vs umbral $${UMBRAL_ENVIO_GRATIS}, más barata ${ops[0].paq} $${ops[0].costo}`);
                     if (refCosto <= UMBRAL_ENVIO_GRATIS) {
