@@ -34,11 +34,25 @@ async function getTracking(guia) {
     const g = String(guia || '').trim();
     if (!g) return null;
 
-    const r = await axios.get(DHL_BASE, {
-        params: { trackingNumber: g, language: 'es' },
-        headers: { 'DHL-API-Key': key, Accept: 'application/json' },
-        timeout: 20000,
-    });
+    // service=express: nuestras guías son DHL Express doméstico (MX vía T1). Es opcional pero
+    // desambigua y hace la respuesta más fiable (confirmado en la doc de la Unified Tracking API).
+    let r;
+    try {
+        r = await axios.get(DHL_BASE, {
+            params: {
+                trackingNumber: g,
+                service: process.env.DHL_TRACK_SERVICE || 'express',
+                language: 'es',
+            },
+            headers: { 'DHL-API-Key': key, Accept: 'application/json' },
+            timeout: 20000,
+        });
+    } catch (e) {
+        // 404 = guía válida aún SIN primer escaneo (recolección): DHL tarda 0-24h en mostrarla.
+        // Cualquier otro error (429 rate limit, red, key inválida) también degrada limpio: null ->
+        // el caller comparte el link oficial de DHL en vez de romperse.
+        return null;
+    }
     const sh = (r.data && Array.isArray(r.data.shipments) && r.data.shipments[0]) || null;
     if (!sh) return null;
 
