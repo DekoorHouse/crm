@@ -40,7 +40,12 @@ const IN_FLIGHT_RETRY_DELAY_MS = 95 * 1000;
 // que es un pedido ADICIONAL independiente (esAdicional=true). Caso real que motivó esto:
 // DH13056/DH13059 se duplicaron a 33 min porque la clienta cambió los diseños y solo
 // existía el camino de crear.
-const RECENT_ORDER_WINDOW_MS = 24 * 60 * 60 * 1000;
+// 7 días (antes 24 h): los pedidos con ANTICIPO (personalización especial / 5+ piezas) tardan
+// días en confirmarse. Al recibir el anticipo, la IA re-emitía /registrar y, si ya habían pasado
+// más de 24 h desde el registro original, se creaba un DUPLICADO (caso real DH13412 → DH13466, a
+// 53 h). El extractor sigue distinguiendo un pedido realmente ADICIONAL (esAdicional) y, si hay
+// conflicto, se avisa al admin en vez de crear a ciegas.
+const RECENT_ORDER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 const DEFAULT_CONFIG = {
     enabled: false,
