@@ -2363,8 +2363,19 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 ops.sort((a, b) => a.costo - b.costo);
                 if (ops.length) {
                     const top = ops.slice(0, 4).map(o => `${o.paq} ${o.serv} $${o.costo.toFixed(2)}${o.dias ? ` (~${o.dias}d)` : ''}`).join(' · ');
-                    console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops, más barata ${ops[0].paq} $${ops[0].costo}`);
-                    coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real de paqueterías vía T1, desde Durango):** SÍ hay cobertura a domicilio. Opciones (referencia interna de costo, NO para el cliente): ${top}. El envío al cliente es GRATIS (nosotros pagamos la guía) — NO le cobres envío ni le menciones estos montos; úsalos solo para saber que sí llegamos y a qué costo. Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
+                    // Umbral de envío gratis: el envío al cliente es GRATIS solo si DHL (nuestra paquetería
+                    // por defecto) cuesta <= el límite. Arriba de eso es zona extendida/cara y se le cobra el
+                    // envío al cliente (el costo real de DHL, redondeado). Configurable con FREE_SHIPPING_MAX_DHL.
+                    const UMBRAL_ENVIO_GRATIS = Number(process.env.FREE_SHIPPING_MAX_DHL || 180);
+                    const dhlOps = ops.filter(o => /dhl/i.test(o.paq || '') || /dhl/i.test(o.serv || ''));
+                    const refCosto = dhlOps.length ? dhlOps[0].costo : ops[0].costo;
+                    console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops, DHL/ref $${refCosto} vs umbral $${UMBRAL_ENVIO_GRATIS}, más barata ${ops[0].paq} $${ops[0].costo}`);
+                    if (refCosto <= UMBRAL_ENVIO_GRATIS) {
+                        coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real de paqueterías vía T1, desde Durango):** SÍ hay cobertura a domicilio y es ZONA NORMAL → el envío al cliente es GRATIS (nosotros pagamos la guía). Opciones (referencia interna de costo, NO para el cliente): ${top}. NO le cobres envío ni le menciones estos montos; úsalos solo para saber que sí llegamos y a qué costo. Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
+                    } else {
+                        const costoCliente = Math.ceil(refCosto / 10) * 10; // redondeo hacia arriba a $10
+                        coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real vía T1, desde Durango):** SÍ llega a domicilio, PERO es ZONA EXTENDIDA (envío CON COSTO): el envío por DHL cuesta $${refCosto.toFixed(2)}, arriba del límite de envío gratis ($${UMBRAL_ENVIO_GRATIS}). PRIORIDAD para este C.P.: aunque en general ofrezcamos envío gratis, para ESTA zona el envío NO es gratis. Explícale con amabilidad al cliente que su código postal es zona extendida de las paqueterías y por eso tiene un costo de envío de $${costoCliente} MXN que se suma al total (el producto conserva su precio normal + $${costoCliente} de envío). Pregúntale si desea continuar así. (Referencia interna de opciones: ${top}.) Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
+                    }
                 } else {
                     console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: sin tarifas (posible zona sin cobertura o CP inválido)`);
                     coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]}:** ninguna paquetería (DHL/FedEx) devolvió tarifa para ese C.P. — posible zona sin cobertura o C.P. inválido. Si el cliente pregunta por envío a esa zona, avísale con amabilidad que lo confirmarás y escribe /equipo (en su propio renglón) antes de prometer la entrega. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
