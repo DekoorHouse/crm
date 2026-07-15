@@ -30,7 +30,7 @@
 const cron = require('node-cron');
 const axios = require('axios');
 const { db, admin } = require('../config');
-const { sendAdvancedWhatsAppMessage } = require('../services');
+const { sendAdvancedWhatsAppMessage, sendMessengerMessage } = require('../services');
 const { classifyDeferral } = require('./scheduledReminderClassifier');
 const {
     normalizeReminderConfig,
@@ -38,6 +38,7 @@ const {
     computeShortSendAtMs,
     sanitizeTemplateParam,
     hasDeferralHint,
+    isWhatsAppContact,
     renderText,
     localHourOf,
     toMillis,
@@ -181,14 +182,23 @@ async function sendReminderTemplate(waId, messageParam, cfg) {
 /**
  * Envío de un recordatorio CORTO: como la ventana de 24h sigue abierta, va como mensaje
  * NORMAL (texto libre) — sin plantilla, sin costo de Meta y sin el "¡Hola! 👋" de la
- * plantilla. sendAdvancedWhatsAppMessage NO persiste en Firestore (devuelve el texto para
- * que lo guarde quien llama), así que aquí lo reflejamos en el chat del CRM.
+ * plantilla. Por eso mismo SÍ sirve en Messenger/Instagram (las plantillas no: son
+ * exclusivas de WhatsApp). sendAdvancedWhatsAppMessage NO persiste en Firestore (devuelve
+ * el texto para que lo guarde quien llama), así que aquí lo reflejamos en el chat del CRM.
  */
-async function sendReminderFreeText(waId, message) {
-    const sent = await sendAdvancedWhatsAppMessage(waId, { text: message });
+async function sendReminderFreeText(contactId, message, contact = null) {
+    const channel = (contact && contact.channel) || 'whatsapp';
+    let sent;
+    if (channel === 'messenger' || channel === 'instagram') {
+        const recipientId = (contact && (contact.psid || contact.igsid)) || contactId.replace(/^(fb_|ig_)/, '');
+        const r = await sendMessengerMessage(recipientId, { text: message, channel });
+        sent = { id: r.messages?.[0]?.id || null, textForDb: message };
+    } else {
+        sent = await sendAdvancedWhatsAppMessage(contactId, { text: message });
+    }
     const renderedText = sent.textForDb || message;
     try {
-        const contactRef = db.collection('contacts_whatsapp').doc(waId);
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         await contactRef.collection('messages').add({
             from: PHONE_NUMBER_ID,
             status: 'sent',
@@ -196,6 +206,7 @@ async function sendReminderFreeText(waId, message) {
             id: sent.id || null,
             text: renderedText,
             isAutoReply: true,
+            channel,
             source: 'scheduled_reminder'
         });
         await contactRef.update({
@@ -320,6 +331,14 @@ async function detectAndArmReminder(contactId, contactRef, conversationHistory, 
     const isShort = cls.horizon === 'short';
     if (isShort && !cfg.shortEnabled) return;
     if (!isShort && !cls.remindAt) return;
+
+    // Un recordatorio a fecha se manda con PLANTILLA, y las plantillas solo existen en
+    // WhatsApp: agendarlo para un contacto de Messenger/Instagram es basura que solo va a
+    // fallar en el sweep. El corto sí procede (texto libre dentro de la ventana de 24h).
+    if (!isShort && !isWhatsAppContact(contactId)) {
+        console.log(`[REMINDER] ${contactId} no es de WhatsApp: no se agenda recordatorio a fecha (requiere plantilla).`);
+        return;
+    }
 
     const nowMs = Date.now();
     const newMs = isShort
@@ -462,7 +481,7 @@ async function runReminderSweep({ dryRun = false } = {}) {
 
             try {
                 const { messageId, renderedText } = asFreeText
-                    ? await sendReminderFreeText(doc.id, messageParam)
+                    ? await sendReminderFreeText(doc.id, messageParam, contact)
                     : await sendReminderTemplate(doc.id, messageParam, cfg);
                 await doc.ref.update({
                     status: 'sent', sentAt: new Date(), messageId,

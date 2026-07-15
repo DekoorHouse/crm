@@ -214,6 +214,13 @@ function hasDeferralHint(text) {
     return DEFERRAL_HINT_RE.test(text);
 }
 
+// ¿El contacto es de WhatsApp? Su id es el wa_id (puros dígitos); Messenger e Instagram
+// usan prefijo 'fb_' / 'ig_'. Importa porque las PLANTILLAS son exclusivas de WhatsApp:
+// un recordatorio a fecha (que necesita plantilla) es imposible para Messenger/Instagram.
+function isWhatsAppContact(contactId) {
+    return /^\d+$/.test(String(contactId || ''));
+}
+
 function normalizeReminderConfig(raw) {
     const merged = { ...DEFAULT_REMINDER_CONFIG, ...(raw || {}) };
     const num = (v, def, min, max) => {
@@ -309,6 +316,7 @@ module.exports = {
     computeShortSendAtMs,
     sanitizeTemplateParam,
     hasDeferralHint,
+    isWhatsAppContact,
     normalizeReminderConfig,
     parseDeferralJson,
     normalizeDeferral
