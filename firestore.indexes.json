@@ -449,6 +449,20 @@
       ]
     },
     {
+      "collectionGroup": "scheduled_reminders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "remindAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "template_batches",
       "queryScope": "COLLECTION",
       "fields": [

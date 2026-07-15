@@ -414,10 +414,21 @@ async function runReminderSweep({ dryRun = false } = {}) {
             return summary;
         }
 
+        const nowMs = Date.now();
+
+        // Solo los que YA vencieron (remindAt <= ahora), del más viejo al más nuevo (FIFO).
+        // Antes esto era where(status==scheduled).limit(40) SIN orden: Firestore devolvía los
+        // primeros 40 por ID de documento y, como casi todos eran a futuro, se iban por 'waiting'
+        // y ocupaban el cupo en cada barrido. Con 277 agendados el sweep quedó BLOQUEADO: los 40
+        // que veía eran todos futuros, así que no hacía nada y 174 recordatorios ya vencidos
+        // nunca se evaluaban (mismo bug que ya se había corregido en order_followup).
+        // Requiere índice compuesto (status ASC, remindAt ASC) — ver firestore.indexes.json.
         let snap;
         try {
             snap = await db.collection('scheduled_reminders')
                 .where('status', '==', 'scheduled')
+                .where('remindAt', '<=', admin.firestore.Timestamp.fromMillis(nowMs))
+                .orderBy('remindAt', 'asc')
                 .limit(cfg.maxPerSweep)
                 .get();
         } catch (e) {
@@ -425,8 +436,6 @@ async function runReminderSweep({ dryRun = false } = {}) {
             return { ...summary, error: e.message };
         }
         if (snap.empty) return summary;
-
-        const nowMs = Date.now();
         for (const doc of snap.docs) {
             const rem = { id: doc.id, ...doc.data() };
             summary.evaluated++;
