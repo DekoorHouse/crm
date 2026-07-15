@@ -235,12 +235,26 @@ async function detectAndArmReminder(contactId, contactRef, conversationHistory, 
     if (!cfg.enabled || !cfg.liveDetect) return;
     if (!hasDeferralHint(conversationHistory)) return;
 
-    // Si ya hay un recordatorio agendado, el operador es dueño de él: no re-armar.
+    // Si el recordatorio agendado lo puso el OPERADOR, él es dueño de él: no re-armar.
+    // Si lo agendó la IA, SÍ lo re-evaluamos: el cliente puede dar una fecha NUEVA más
+    // adelante (ej. estaba para el 16 y hoy dice "sin falta el sábado") y hay que
+    // REPROGRAMARLO; antes se salía aquí y el recordatorio quedaba con la fecha vieja.
     const existing = await db.collection('scheduled_reminders').doc(contactId).get();
-    if (existing.exists && existing.data().status === 'scheduled') return;
+    const prev = existing.exists ? existing.data() : null;
+    const prevScheduled = !!(prev && prev.status === 'scheduled');
+    if (prevScheduled && prev.source === 'operator') return;
 
     const cls = await classifyDeferral({ conversationText: conversationHistory, name, todayISO: todayLocalISO(cfg) });
     if (!cls || !cls.defer || !cls.remindAt) return;
+
+    // Ya había uno de la IA: re-armar SOLO si la fecha cambió. Re-armar resetea createdAt
+    // (del que depende el guard "ya compró" del sweep), así que no lo tocamos de más.
+    if (prevScheduled) {
+        const newMs = computeSendAtMs(cls.remindAt, Date.now(), cfg);
+        const prevMs = prev.remindAt && prev.remindAt.toMillis ? prev.remindAt.toMillis() : 0;
+        if (!newMs || newMs === prevMs) return;
+        console.log(`[REMINDER] Reprogramando ${contactId}: ${new Date(prevMs).toISOString()} → ${new Date(newMs).toISOString()} (el cliente dio una fecha nueva).`);
+    }
 
     const r = await armReminder(contactId, {
         name, remindAt: cls.remindAt, context: cls.context, reason: cls.reason,
