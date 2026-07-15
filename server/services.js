@@ -1005,6 +1005,14 @@ async function markComprobanteValidadoAndSendForm(contactId, contactData = {}, {
         console.log(`[ENVIOS] Pedido ${orderNumber} está "${orderData.estatus}"; no se envía el formulario automáticamente.`);
         return null;
     }
+    // El cliente PAGÓ: si tenía un recordatorio agendado (típicamente el de "deme unos minutos"
+    // o "te pago el 15"), ya no tiene razón de existir. Cancelarlo para no escribirle después
+    // preguntándole por un pago que ya hizo. Fire-and-forget: jamás debe tumbar la validación.
+    // require perezoso para evitar ciclo de módulos (el scheduler requiere services).
+    require('./leads/scheduledReminderScheduler')
+        .cancelReminderForContact(contactId, 'ya_pago')
+        .catch(e => console.warn('[REMINDER] No se pudo cancelar el recordatorio tras el pago:', e.message));
+
     // Idempotencia: si el formulario YA se envió para este pedido (comprobanteValidadoAt existe)
     // y NO es un reenvío deliberado del agente, NO reenvíes el bloque completo del formulario. La
     // IA re-emite /comprobante en turnos siguientes porque el comprobante sigue en su ventana de

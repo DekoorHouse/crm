@@ -31,7 +31,21 @@ const DEFAULT_REMINDER_CONFIG = {
     maxPerSweep: 40,
     liveDetect: true,               // la IA detecta aplazamientos cuando el bot responde
     // Texto de respaldo (parámetro {{2}}) si no hay mensaje personalizado. {{nombre}} va en {{1}}.
-    fallbackMessage: '¿Retomamos tu pedido de DekoorHouse cuando gustes? Aquí seguimos para ayudarte. ✨'
+    fallbackMessage: '¿Retomamos tu pedido de DekoorHouse cuando gustes? Aquí seguimos para ayudarte. ✨',
+
+    // --- Recordatorio CORTO (mismo día, dentro de la ventana de 24h) --------------
+    // Caso: el cliente dice "deme unos minutos", "ahorita te deposito", "en la tarde".
+    // Agendarlo a fecha (el camino de arriba) perdería el momento: mínimo 12h y snapeado
+    // a las 10am. Como la ventana de 24h de WhatsApp sigue ABIERTA, este recordatorio va
+    // como mensaje NORMAL (texto libre), sin plantilla y sin costo de Meta.
+    shortEnabled: true,
+    shortDefaultHours: 3,           // si la IA no estima horas, recordar ~3h después
+    shortMinHours: 1,               // nunca antes de 1h: "unos minutos" no es permiso para acosar
+    shortMaxHours: 20,              // más allá de esto ya es un recordatorio a fecha (plantilla)
+    shortWindowHours: 23,           // ventana segura de WhatsApp (margen contra el cierre a las 24h)
+    shortGraceHours: 12,            // si el sweep se atrasa más de esto, expira (no mandar uno viejo)
+    // Respaldo si la IA no redactó mensaje. Tono: acompañar, NO cobrar.
+    shortFallbackMessage: 'Aquí seguimos por si necesitas algo{{nombre}} 😊 Cualquier duda, con confianza.'
 };
 
 // Convierte Timestamp de Firestore / Date / millis a millis (o null)
@@ -112,6 +126,54 @@ function computeSendAtMs(remindAt, nowMs, cfg) {
     return sendMs;
 }
 
+// Último instante laboral en o ANTES de `ms` (red de seguridad contra el cierre de la ventana).
+function lastBusinessInstantBefore(ms, cfg) {
+    const { start, end } = cfg.businessHours;
+    const h = localHourOf(ms, cfg.utcOffsetHours);
+    if (h > end) return localTimeOnSameDay(ms, end, cfg.utcOffsetHours);
+    if (h >= start) return ms;
+    return localTimeOnSameDay(ms - DAY_MS, end, cfg.utcOffsetHours); // antes del start -> ayer al cierre
+}
+
+/**
+ * Acomoda un recordatorio CORTO al horario laboral, siempre HACIA ADELANTE:
+ *   - de noche (después del cierre) -> mañana a las `start`
+ *   - de madrugada (antes de `start`) -> ese mismo día a las `start`
+ * A diferencia de order_followup (que ante la noche recula al cierre del mismo día para
+ * "alcanzar" a mandarlo antes), aquí NUNCA vamos hacia atrás: el objetivo se calcula desde
+ * AHORA, así que retroceder lo pondría en el pasado y se dispararía al instante.
+ */
+function snapShortIntoBusinessHours(targetMs, cfg) {
+    const { start, end } = cfg.businessHours;
+    const h = localHourOf(targetMs, cfg.utcOffsetHours);
+    if (h >= start && h <= end) return targetMs;
+    if (h > end) return localTimeOnSameDay(targetMs + DAY_MS, start, cfg.utcOffsetHours);
+    return localTimeOnSameDay(targetMs, start, cfg.utcOffsetHours);
+}
+
+/**
+ * Instante de envío (UTC ms) de un recordatorio CORTO, a partir de las horas que estimó la IA.
+ * Garantiza: en horario laboral, nunca antes de `shortMinHours`, y SIEMPRE dentro de la ventana
+ * de 24h de WhatsApp (si no cabe ahí, devuelve null: ese caso es para un recordatorio a fecha).
+ * @param {number} hours  horas desde ahora que estimó la IA
+ * @returns {number|null}
+ */
+function computeShortSendAtMs(hours, nowMs, cfg) {
+    let h = Number(hours);
+    if (!Number.isFinite(h) || h <= 0) h = cfg.shortDefaultHours;
+    h = Math.min(cfg.shortMaxHours, Math.max(cfg.shortMinHours, h));
+
+    let sendMs = snapShortIntoBusinessHours(nowMs + h * HOUR_MS, cfg);
+
+    // La ventana de 24h manda: pasada esa raya ya no se puede texto libre.
+    const windowClose = nowMs + cfg.shortWindowHours * HOUR_MS;
+    if (sendMs > windowClose) sendMs = lastBusinessInstantBefore(windowClose, cfg);
+
+    const earliest = nowMs + cfg.shortMinHours * HOUR_MS;
+    if (!Number.isFinite(sendMs) || sendMs < earliest || sendMs > windowClose) return null;
+    return sendMs;
+}
+
 // Sanitiza el texto que irá en un parámetro de plantilla de Meta:
 // sin saltos de línea/tabs, sin correr >4 espacios, recortado a un largo prudente.
 function sanitizeTemplateParam(text) {
@@ -138,7 +200,13 @@ const DEFERRAL_HINT_RE = new RegExp([
     'navidad', 'reyes', 'quincena', 'd[ií]a de',
     // Pago diferido (post-venta): "te pago el 15", "te deposito la quincena", "junto para el viernes"
     'pag', 'deposit', 'transfer', 'transfier', 'abon', 'junt(o|ar|e|amos)',
-    'el d[ií]a\\s*\\d', 'el\\s+\\d{1,2}\\b'
+    'el d[ií]a\\s*\\d', 'el\\s+\\d{1,2}\\b',
+    // Aplazamiento CORTO (minutos/horas, hoy): "voy deme unos minutos", "ahorita te deposito",
+    // "voy al OXXO y te mando el comprobante". Sin esto, un "deme unos minutos" solo daba
+    // positivo de rebote (porque la conversación mencionaba "pago") y a veces ni eso.
+    'minuto', 'ahorita', 'ahora mismo', 'en un momento', 'un momento', 'tantito',
+    'ensegui', 'en segui', 'permit[ae]', '(deme|dame|denme|d[eé]jame)\\s+(un|uno|unos)',
+    'saliendo de', 'ya voy', 'voy a (hacer|mandar|depositar|pagar|transferir)', 'en la (tarde|noche)'
 ].join('|'), 'i');
 
 function hasDeferralHint(text) {
@@ -162,6 +230,12 @@ function normalizeReminderConfig(raw) {
     let templateName = String(merged.templateName || '').trim() || DEFAULT_REMINDER_CONFIG.templateName;
     let langCode = String(merged.langCode || '').trim() || DEFAULT_REMINDER_CONFIG.langCode;
     let fallbackMessage = String(merged.fallbackMessage || '').trim() || DEFAULT_REMINDER_CONFIG.fallbackMessage;
+    let shortFallbackMessage = String(merged.shortFallbackMessage || '').trim() || DEFAULT_REMINDER_CONFIG.shortFallbackMessage;
+
+    // El corto nunca puede salirse de la ventana de 24h: acotar max <= window.
+    const shortWindowHours = num(merged.shortWindowHours, 23, 1, 23.5);
+    const shortMinHours = num(merged.shortMinHours, 1, 0.25, 12);
+    const shortMaxHours = Math.max(shortMinHours, num(merged.shortMaxHours, 20, 1, shortWindowHours));
 
     return {
         enabled: merged.enabled === true,
@@ -175,7 +249,14 @@ function normalizeReminderConfig(raw) {
         graceDays: num(merged.graceDays, 3, 0, 30),
         maxPerSweep: num(merged.maxPerSweep, 40, 1, 200),
         liveDetect: merged.liveDetect !== false,
-        fallbackMessage
+        fallbackMessage,
+        shortEnabled: merged.shortEnabled !== false,
+        shortDefaultHours: num(merged.shortDefaultHours, 3, shortMinHours, shortMaxHours),
+        shortMinHours,
+        shortMaxHours,
+        shortWindowHours,
+        shortGraceHours: num(merged.shortGraceHours, 12, 1, 24),
+        shortFallbackMessage
     };
 }
 
@@ -190,15 +271,22 @@ function parseDeferralJson(text) {
 }
 
 // Normaliza la salida del clasificador a una forma segura.
-// remindAt debe venir como 'YYYY-MM-DD'; si no matchea, se descarta (defer=false).
+// Dos horizontes: 'date' (otro día -> remindAt 'YYYY-MM-DD', va con plantilla) y 'short'
+// (hoy, en horas -> remindInHours, va con texto libre dentro de la ventana de 24h).
+// Si el dato que corresponde al horizonte no viene bien, se descarta (defer=false).
 function normalizeDeferral(parsed) {
     if (!parsed || typeof parsed !== 'object') return null;
     const remindAt = typeof parsed.remindAt === 'string' && /^\d{4}-\d{2}-\d{2}/.test(parsed.remindAt.trim())
         ? parsed.remindAt.trim().slice(0, 10)
         : '';
-    const defer = parsed.defer === true && !!remindAt;
+    const horizon = parsed.horizon === 'short' ? 'short' : 'date';
+    const hoursRaw = Number(parsed.remindInHours);
+    const remindInHours = Number.isFinite(hoursRaw) && hoursRaw > 0 ? hoursRaw : 0;
+    const defer = parsed.defer === true && (horizon === 'short' ? remindInHours > 0 : !!remindAt);
     return {
         defer,
+        horizon,
+        remindInHours,
         remindAt,
         reason: typeof parsed.reason === 'string' ? parsed.reason.trim().slice(0, 200) : '',
         context: typeof parsed.context === 'string' ? parsed.context.trim().slice(0, 500) : '',
@@ -215,7 +303,10 @@ module.exports = {
     renderText,
     localHourOf,
     localTimeOnSameDay,
+    lastBusinessInstantBefore,
+    snapShortIntoBusinessHours,
     computeSendAtMs,
+    computeShortSendAtMs,
     sanitizeTemplateParam,
     hasDeferralHint,
     normalizeReminderConfig,

@@ -1,15 +1,22 @@
 /**
- * Recordatorios programados a fecha futura — Scheduler + envío.
+ * Recordatorios programados — Scheduler + envío. Dos tipos (campo `kind`):
+ *
+ *   - 'date': el cliente difiere a otro día ("en un mes", "cuando sepa el sexo del bebé",
+ *     "te pago el 15"). Para entonces la ventana de 24h de WhatsApp ya cerró, así que se
+ *     manda con una PLANTILLA APROBADA de Meta (cfg.templateName).
+ *   - 'short': el cliente se fue por unos minutos/horas HOY ("deme unos minutos", "ahorita
+ *     te deposito"). La ventana sigue ABIERTA, así que se manda como mensaje normal (texto
+ *     libre, sin costo de plantilla). El tono es de acompañar, NO de cobrar: la idea es que
+ *     el cliente se acuerde de nosotros. Ver shortEnabled/shortDefaultHours en la config.
  *
  * Flujo:
- *   1) DETECCIÓN (en vivo): cuando el bot responde, si el cliente pidió que lo
- *      contacten más adelante ("en un mes", "cuando sepa el sexo del bebé"), se
- *      agenda un recordatorio en `scheduled_reminders/{waId}` con la fecha objetivo
- *      y el texto personalizado que redactó la IA. El operador puede ajustarlo/cancelarlo.
- *   2) ENVÍO (sweep): un cron revisa los recordatorios cuya fecha ya llegó y, como la
- *      ventana de 24h de WhatsApp está cerrada, los manda con una PLANTILLA APROBADA
- *      de Meta (nombre en cfg.templateName). {{1}}=nombre, {{2}}=texto personalizado.
- *   3) Cuando el cliente responde, el webhook normal reabre la ventana de 24h y el
+ *   1) DETECCIÓN (en vivo): cuando el bot responde, si el cliente pidió tiempo, se agenda
+ *      un recordatorio en `scheduled_reminders/{waId}` con el instante objetivo y el texto
+ *      que redactó la IA. El operador puede ajustarlo/cancelarlo.
+ *   2) ENVÍO (sweep): un cron revisa los recordatorios que ya vencieron y los manda.
+ *   3) Si el cliente PAGA, el recordatorio se cancela solo (cancelReminderForContact, que
+ *      se llama desde la validación del comprobante en services.js).
+ *   4) Cuando el cliente responde, el webhook normal reabre la ventana de 24h y el
  *      bot de venta / un humano retoma.
  *
  * Requiere (igual que carritos abandonados):
@@ -28,6 +35,7 @@ const { classifyDeferral } = require('./scheduledReminderClassifier');
 const {
     normalizeReminderConfig,
     computeSendAtMs,
+    computeShortSendAtMs,
     sanitizeTemplateParam,
     hasDeferralHint,
     renderText,
@@ -170,6 +178,36 @@ async function sendReminderTemplate(waId, messageParam, cfg) {
     return { messageId, renderedText };
 }
 
+/**
+ * Envío de un recordatorio CORTO: como la ventana de 24h sigue abierta, va como mensaje
+ * NORMAL (texto libre) — sin plantilla, sin costo de Meta y sin el "¡Hola! 👋" de la
+ * plantilla. sendAdvancedWhatsAppMessage NO persiste en Firestore (devuelve el texto para
+ * que lo guarde quien llama), así que aquí lo reflejamos en el chat del CRM.
+ */
+async function sendReminderFreeText(waId, message) {
+    const sent = await sendAdvancedWhatsAppMessage(waId, { text: message });
+    const renderedText = sent.textForDb || message;
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(waId);
+        await contactRef.collection('messages').add({
+            from: PHONE_NUMBER_ID,
+            status: 'sent',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: sent.id || null,
+            text: renderedText,
+            isAutoReply: true,
+            source: 'scheduled_reminder'
+        });
+        await contactRef.update({
+            lastMessage: renderedText.substring(0, 100),
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (e) {
+        console.warn('[REMINDER] No se pudo reflejar el recordatorio corto en el CRM:', e.message);
+    }
+    return { messageId: sent.id || null, renderedText };
+}
+
 // --- Historial para el clasificador (paths sin historial prearmado) -----------
 async function fetchRecentMessages(waId, limit) {
     const snap = await db.collection('contacts_whatsapp').doc(waId).collection('messages')
@@ -191,13 +229,21 @@ function buildConvText(messageDocs, contactId) {
 // --- Armado del recordatorio --------------------------------------------------
 /**
  * Crea/actualiza un recordatorio programado. Fuente 'ai' (detección) u 'operator'.
- * remindAt puede ser 'YYYY-MM-DD' o millis; se snapa a la hora de envío y se acota.
+ * Dos tipos (`kind`):
+ *   - 'date' (default): remindAt 'YYYY-MM-DD' o millis; se snapa a la hora de envío y se acota.
+ *     La ventana de 24h ya habrá cerrado, así que se manda con plantilla aprobada.
+ *   - 'short': remindInHours (horas desde ahora, mismo día). Se manda con texto libre porque
+ *     la ventana de 24h sigue abierta; `windowEndsAt` marca hasta cuándo se puede.
  */
-async function armReminder(waId, { name, remindAt, context, reason, message, source, templateName, langCode }) {
+async function armReminder(waId, { name, remindAt, remindInHours, kind, context, reason, message, source, templateName, langCode }) {
     if (!waId) return { ok: false, reason: 'sin_waId' };
     const cfg = await getReminderConfig();
-    const sendMs = computeSendAtMs(remindAt, Date.now(), cfg);
-    if (!sendMs) return { ok: false, reason: 'fecha_invalida' };
+    const isShort = kind === 'short';
+    const nowMs = Date.now();
+    const sendMs = isShort
+        ? computeShortSendAtMs(remindInHours, nowMs, cfg)
+        : computeSendAtMs(remindAt, nowMs, cfg);
+    if (!sendMs) return { ok: false, reason: isShort ? 'horas_invalidas' : 'fecha_invalida' };
 
     const ref = db.collection('scheduled_reminders').doc(waId);
     const prev = await ref.get();
@@ -207,6 +253,9 @@ async function armReminder(waId, { name, remindAt, context, reason, message, sou
         waId,
         name: name || (prev.exists ? prev.data().name : null) || null,
         remindAt: admin.firestore.Timestamp.fromMillis(sendMs),
+        kind: isShort ? 'short' : 'date',
+        // Solo 'short': hasta aquí la ventana de 24h de WhatsApp permite texto libre.
+        windowEndsAt: isShort ? admin.firestore.Timestamp.fromMillis(nowMs + cfg.shortWindowHours * HOUR_MS) : null,
         context: context != null ? String(context).slice(0, 500) : (prev.exists ? prev.data().context : '') || '',
         reason: reason != null ? String(reason).slice(0, 200) : (prev.exists ? prev.data().reason : '') || '',
         message: sanitizeTemplateParam(message || ''),
@@ -221,7 +270,26 @@ async function armReminder(waId, { name, remindAt, context, reason, message, sou
         createdAt: nowTs,
         updatedAt: nowTs
     });
-    return { ok: true, sendMs };
+    return { ok: true, sendMs, kind: isShort ? 'short' : 'date' };
+}
+
+/**
+ * Cancela el recordatorio agendado de un contacto (si tiene uno). Se llama cuando el motivo
+ * del recordatorio desapareció — típicamente porque el cliente YA PAGÓ (ver la validación
+ * del comprobante en services.js). Idempotente: si no hay recordatorio activo, no hace nada.
+ */
+async function cancelReminderForContact(waId, reason = 'ya_pago') {
+    if (!waId) return { ok: false, reason: 'sin_waId' };
+    const ref = db.collection('scheduled_reminders').doc(waId);
+    const snap = await ref.get();
+    if (!snap.exists || snap.data().status !== 'scheduled') return { ok: false, reason: 'sin_recordatorio' };
+    await ref.update({
+        status: 'cancelled',
+        cancelReason: reason,
+        updatedAt: admin.firestore.Timestamp.now()
+    });
+    console.log(`[REMINDER] ✓ Recordatorio de ${waId} cancelado (${reason}).`);
+    return { ok: true };
 }
 
 /**
@@ -245,23 +313,39 @@ async function detectAndArmReminder(contactId, contactRef, conversationHistory, 
     if (prevScheduled && prev.source === 'operator') return;
 
     const cls = await classifyDeferral({ conversationText: conversationHistory, name, todayISO: todayLocalISO(cfg) });
-    if (!cls || !cls.defer || !cls.remindAt) return;
+    if (!cls || !cls.defer) return;
 
-    // Ya había uno de la IA: re-armar SOLO si la fecha cambió. Re-armar resetea createdAt
+    // 'short' = el cliente se fue por unos minutos/horas (hoy): recordatorio dentro de la
+    // ventana de 24h, con texto libre. 'date' = otro día: se agenda con plantilla.
+    const isShort = cls.horizon === 'short';
+    if (isShort && !cfg.shortEnabled) return;
+    if (!isShort && !cls.remindAt) return;
+
+    const nowMs = Date.now();
+    const newMs = isShort
+        ? computeShortSendAtMs(cls.remindInHours, nowMs, cfg)
+        : computeSendAtMs(cls.remindAt, nowMs, cfg);
+    if (!newMs) return;
+
+    // Ya había uno de la IA: re-armar SOLO si de verdad cambió. Re-armar resetea createdAt
     // (del que depende el guard "ya compró" del sweep), así que no lo tocamos de más.
+    // En los cortos el objetivo se recalcula desde AHORA, así que un mensaje nuevo del cliente
+    // legítimamente empuja el recordatorio: el reloj arranca desde la última interacción.
     if (prevScheduled) {
-        const newMs = computeSendAtMs(cls.remindAt, Date.now(), cfg);
-        const prevMs = prev.remindAt && prev.remindAt.toMillis ? prev.remindAt.toMillis() : 0;
-        if (!newMs || newMs === prevMs) return;
-        console.log(`[REMINDER] Reprogramando ${contactId}: ${new Date(prevMs).toISOString()} → ${new Date(newMs).toISOString()} (el cliente dio una fecha nueva).`);
+        const prevKind = prev.kind === 'short' ? 'short' : 'date';
+        const prevMs = toMillis(prev.remindAt) || 0;
+        if (prevKind === (isShort ? 'short' : 'date') && Math.abs(newMs - prevMs) < 5 * 60 * 1000) return;
+        console.log(`[REMINDER] Reprogramando ${contactId}: ${new Date(prevMs).toISOString()} → ${new Date(newMs).toISOString()} (${isShort ? 'corto' : 'fecha'}; el cliente dio un tiempo nuevo).`);
     }
 
     const r = await armReminder(contactId, {
-        name, remindAt: cls.remindAt, context: cls.context, reason: cls.reason,
+        name, remindAt: cls.remindAt, remindInHours: cls.remindInHours,
+        kind: isShort ? 'short' : 'date',
+        context: cls.context, reason: cls.reason,
         message: cls.message, source: 'ai'
     });
     if (r.ok) {
-        console.log(`[REMINDER] ✓ Agendado (IA) para ${contactId} el ${new Date(r.sendMs).toISOString()} (${cls.reason || 's/motivo'})`);
+        console.log(`[REMINDER] ✓ Agendado (IA, ${r.kind}) para ${contactId} el ${new Date(r.sendMs).toISOString()} (${cls.reason || 's/motivo'})`);
     }
 }
 
@@ -286,9 +370,12 @@ async function suggestReminderForContact(waId) {
     if (!cls) {
         return { defer: false, remindDate: defaultDate, message: '', reason: '', context: '' };
     }
+    // El modal del operador agenda por FECHA; un aplazamiento CORTO (de horas) no se representa
+    // ahí, así que no lo proponemos como agendado — la IA ya lo maneja sola por su lado.
+    const isShort = cls.horizon === 'short';
     return {
-        defer: cls.defer,
-        remindDate: cls.remindAt || defaultDate,
+        defer: cls.defer && !isShort,
+        remindDate: (!isShort && cls.remindAt) || defaultDate,
         message: cls.message || '',
         reason: cls.reason || '',
         context: cls.context || ''
@@ -333,8 +420,11 @@ async function runReminderSweep({ dryRun = false } = {}) {
             }
             if (nowMs < remindMs) { summary.waiting++; continue; } // aún no toca
 
+            const isShort = rem.kind === 'short';
+
             // Demasiado tarde (el sweep no corrió a tiempo): expira en vez de mandar viejo.
-            if (nowMs - remindMs > cfg.graceDays * DAY_MS) {
+            // Los cortos caducan mucho antes: un "¿cómo vas?" de hace 2 días no tiene sentido.
+            if (nowMs - remindMs > (isShort ? cfg.shortGraceHours * HOUR_MS : cfg.graceDays * DAY_MS)) {
                 if (!dryRun) await doc.ref.update({ status: 'expired', updatedAt: new Date() }).catch(() => {});
                 summary.expired++;
                 continue;
@@ -357,21 +447,29 @@ async function runReminderSweep({ dryRun = false } = {}) {
                 continue;
             }
 
-            const messageParam = sanitizeTemplateParam(rem.message) || renderText(cfg.fallbackMessage, (contact && contact.name) || rem.name);
+            const fallback = isShort ? cfg.shortFallbackMessage : cfg.fallbackMessage;
+            const messageParam = sanitizeTemplateParam(rem.message) || renderText(fallback, (contact && contact.name) || rem.name);
+
+            // Los cortos van con texto libre mientras la ventana de 24h siga abierta. Si el sweep
+            // se atrasó tanto que ya cerró, caemos a la plantilla en vez de dejarlo sin nada.
+            const windowEndsMs = toMillis(rem.windowEndsAt) || (createdMs + cfg.shortWindowHours * HOUR_MS);
+            const asFreeText = isShort && nowMs < windowEndsMs;
 
             if (dryRun) {
-                summary.wouldSend.push({ waId: doc.id, remindAt: new Date(remindMs).toISOString(), messageParam });
+                summary.wouldSend.push({ waId: doc.id, remindAt: new Date(remindMs).toISOString(), messageParam, via: asFreeText ? 'texto_libre' : 'plantilla' });
                 continue;
             }
 
             try {
-                const { messageId, renderedText } = await sendReminderTemplate(doc.id, messageParam, cfg);
+                const { messageId, renderedText } = asFreeText
+                    ? await sendReminderFreeText(doc.id, messageParam)
+                    : await sendReminderTemplate(doc.id, messageParam, cfg);
                 await doc.ref.update({
                     status: 'sent', sentAt: new Date(), messageId,
                     sentText: renderedText.slice(0, 300), attempts: 0, updatedAt: new Date()
                 });
                 summary.sent++;
-                console.log(`[REMINDER] ✓ Enviado a ${doc.id} (msg: ${messageId})`);
+                console.log(`[REMINDER] ✓ Enviado a ${doc.id} vía ${asFreeText ? 'texto libre' : 'plantilla'} (msg: ${messageId})`);
             } catch (e) {
                 const detail = e.response?.data ? JSON.stringify(e.response.data) : e.message;
                 const attempts = (rem.attempts || 0) + 1;
@@ -404,6 +502,7 @@ module.exports = {
     startScheduledReminderScheduler,
     runReminderSweep,
     armReminder,
+    cancelReminderForContact,
     detectAndArmReminder,
     suggestReminderForContact,
     getReminderConfig,
