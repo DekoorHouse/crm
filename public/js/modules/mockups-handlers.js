@@ -42,7 +42,7 @@ const MK_DESIGN_SEED = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
 // envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
 // refFiles: 2ª referencia subida a mano por bloque (blockId -> File). pruebas: estado del
 // banco de pruebas (pestaña "Pruebas").
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null } };
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null } };
 
 // Cache (promesa) del data-URI de la fuente manuscrita, para embeberla en el SVG al rasterizar.
 let mkFontDataUrlPromise = null;
@@ -747,10 +747,10 @@ function mkRef2Html(blockId, hasDesign) {
                         <button type="button" class="btn btn-outline btn-sm" id="mk-ref-clear-${b}" style="display:none;" onclick="mkClearRef('${b}')"><i class="fas fa-times mr-1"></i>Quitar</button>
                     </div>`;
     const controls = hasDesign
-        ? `<label class="mk-ref2-check"><input type="checkbox" class="mk-usedesign" checked> Usar el diseño de la plantilla</label>${uploadBtns}<small class="mk-muted">Se manda junto a la foto base para que la IA grabe ese diseño. Si subes una imagen, se usa esa.</small>`
-        : `${uploadBtns}<small class="mk-muted">Opcional: sube una imagen para usarla como 2ª referencia (esta plantilla no tiene diseño).</small>`;
+        ? `<label class="mk-ref2-check"><input type="checkbox" class="mk-usedesign" checked> Usar el diseño de la plantilla</label>${uploadBtns}<small class="mk-muted">Se manda junto a la foto base para que la IA grabe ese diseño. Puedes subir, <b>arrastrar</b> o <b>pegar (Ctrl+V)</b> una imagen; si lo haces, se usa esa.</small>`
+        : `${uploadBtns}<small class="mk-muted">Opcional: sube, <b>arrastra</b> o <b>pega (Ctrl+V)</b> una imagen para usarla como 2ª referencia (esta plantilla no tiene diseño).</small>`;
     return `
-        <div class="mk-ref2">
+        <div class="mk-ref2" ondragover="event.preventDefault()" ondrop="mkOnRefDrop(event,'${b}')" onmousedown="mkSetRefPasteTarget('${b}')">
             <label>2ª referencia · diseño a grabar (opcional)</label>
             <div class="mk-ref2-row">
                 <img class="mk-ref-thumb" id="mk-ref-thumb-${b}" alt="" style="display:none;">
@@ -787,16 +787,33 @@ async function mkPreviewDesign(blockId) {
     catch (e) { mkToast('No se pudo generar el diseño: ' + e.message, 'error'); }
 }
 
-function mkOnRefFile(ev, blockId) {
-    const file = ev.target.files && ev.target.files[0];
-    if (!file) return;
-    if (!file.type || !file.type.startsWith('image/')) { mkToast('Solo se aceptan imágenes.', 'error'); return; }
+// Marca la zona de 2ª referencia "activa" para que Ctrl+V pegue ahí (la última en la que
+// hiciste clic, soltaste o arrastraste). '__pruebas__' = la del banco de pruebas.
+function mkSetRefPasteTarget(id) { mkState.refPasteTarget = id; }
+
+// Setter compartido: recibe un File/Blob (de subir, arrastrar o pegar) y lo usa como 2ª
+// referencia del bloque. Devuelve true si se aceptó.
+function mkSetBlockRefFile(blockId, file) {
+    if (!file || !file.type || !file.type.startsWith('image/')) { mkToast('Solo se aceptan imágenes.', 'error'); return false; }
     mkState.refFiles[blockId] = file;
     const reader = new FileReader();
     reader.onload = e => mkSetRefThumb(blockId, e.target.result);
     reader.readAsDataURL(file);
     const clr = document.getElementById('mk-ref-clear-' + blockId);
     if (clr) clr.style.display = '';
+    return true;
+}
+
+function mkOnRefFile(ev, blockId) {
+    const file = ev.target.files && ev.target.files[0];
+    if (file) mkSetBlockRefFile(blockId, file);
+}
+
+function mkOnRefDrop(ev, blockId) {
+    ev.preventDefault();
+    mkSetRefPasteTarget(blockId);
+    const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (f) mkSetBlockRefFile(blockId, f);
 }
 
 function mkClearRef(blockId) {
@@ -835,7 +852,7 @@ function mkRenderPruebas() {
                     </select></div>
                 </div>
                 <div class="mk-fields mk-inputs" id="mk-pr-fields" style="margin-top:8px;">${mkFieldsHtml(mkTemplateFieldDefs(tplId), P.values)}</div>
-                <div class="mk-ref2" style="margin-top:12px;">
+                <div class="mk-ref2" style="margin-top:12px;" ondragover="event.preventDefault()" ondrop="mkPruebasOnDrop(event)" onmousedown="mkSetRefPasteTarget('__pruebas__')">
                     <label>Diseño (2ª referencia)</label>
                     <div class="mk-ref2-row">
                         <img class="mk-ref-thumb" id="mk-pr-design" alt="" style="display:none;">
@@ -845,7 +862,7 @@ function mkRenderPruebas() {
                                 <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-upload mr-1"></i>Subir imagen<input type="file" id="mk-pr-file" accept="image/*" style="display:none;" onchange="mkPruebasOnFile(event)"></label>
                                 <button type="button" class="btn btn-outline btn-sm" id="mk-pr-clear" style="display:none;" onclick="mkPruebasClear()"><i class="fas fa-times mr-1"></i>Quitar</button>
                             </div>
-                            <small class="mk-muted">${tpl && tpl.designSvg ? 'Esta plantilla tiene diseño. Míralo o sube uno propio.' : 'Esta plantilla no tiene diseño; sube una imagen para usarla como 2ª referencia.'}</small>
+                            <small class="mk-muted">${tpl && tpl.designSvg ? 'Esta plantilla tiene diseño. Míralo, o sube/<b>arrastra</b>/<b>pega (Ctrl+V)</b> uno propio.' : 'Sube, <b>arrastra</b> o <b>pega (Ctrl+V)</b> una imagen para usarla como 2ª referencia (esta plantilla no tiene diseño).'}</small>
                         </div>
                     </div>
                 </div>
@@ -896,15 +913,27 @@ async function mkPruebasPreviewDesign() {
     catch (e) { mkToast('No se pudo generar el diseño: ' + e.message, 'error'); }
 }
 
-function mkPruebasOnFile(ev) {
-    const file = ev.target.files && ev.target.files[0];
-    if (!file) return;
-    if (!file.type || !file.type.startsWith('image/')) { mkToast('Solo se aceptan imágenes.', 'error'); return; }
+// Setter compartido de la 2ª referencia de Pruebas (subir/arrastrar/pegar). Devuelve true si se aceptó.
+function mkPruebasSetRefFile(file) {
+    if (!file || !file.type || !file.type.startsWith('image/')) { mkToast('Solo se aceptan imágenes.', 'error'); return false; }
     mkState.pruebas.refFile = file;
     const reader = new FileReader();
     reader.onload = e => { const img = document.getElementById('mk-pr-design'); if (img) { img.src = e.target.result; img.style.display = ''; } };
     reader.readAsDataURL(file);
     const clr = document.getElementById('mk-pr-clear'); if (clr) clr.style.display = '';
+    return true;
+}
+
+function mkPruebasOnFile(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (file) mkPruebasSetRefFile(file);
+}
+
+function mkPruebasOnDrop(ev) {
+    ev.preventDefault();
+    mkSetRefPasteTarget('__pruebas__');
+    const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (f) mkPruebasSetRefFile(f);
 }
 
 function mkPruebasClear() {
@@ -1127,13 +1156,20 @@ function mkBindPaste() {
     if (mkPasteBound) return;
     mkPasteBound = true;
     document.addEventListener('paste', (e) => {
-        if (!document.getElementById('mk-tpl-file')) return; // form de plantilla no abierto
         const items = (e.clipboardData && e.clipboardData.items) || [];
-        for (const it of items) {
-            if (it.type && it.type.startsWith('image/')) {
-                const blob = it.getAsFile();
-                if (blob) { mkUseTemplateFile(blob); e.preventDefault(); mkToast('Imagen pegada ✓', 'success'); break; }
-            }
+        let blob = null;
+        for (const it of items) { if (it.type && it.type.startsWith('image/')) { blob = it.getAsFile(); if (blob) break; } }
+        if (!blob) return;
+        const ok = () => { e.preventDefault(); mkToast('Imagen pegada ✓', 'success'); };
+        // 1) Editor de plantilla abierto -> foto base (comportamiento previo).
+        if (document.getElementById('mk-tpl-file')) { mkUseTemplateFile(blob); ok(); return; }
+        // 2) Pestaña Pruebas -> su 2ª referencia (panel único, sin ambigüedad).
+        if (mkState.tab === 'pruebas' && document.getElementById('mk-pr-design')) { if (mkPruebasSetRefFile(blob)) ok(); return; }
+        // 3) Bloque de preview marcado como destino (última zona de 2ª ref donde clicaste/soltaste).
+        const tgt = mkState.refPasteTarget;
+        if (tgt && tgt !== '__pruebas__') {
+            const sel = '.mk-block[data-block="' + (window.CSS && CSS.escape ? CSS.escape(tgt) : tgt) + '"]';
+            if (document.querySelector(sel)) { if (mkSetBlockRefFile(tgt, blob)) ok(); }
         }
     });
 }
