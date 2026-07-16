@@ -258,7 +258,7 @@ function mkFieldsHtml(defs, values) {
         if (f.key === 'fecha') {
             return `<div><label>${mkEsc(f.label)}</label><textarea class="mk-fld" data-key="fecha" rows="2" style="resize:vertical;min-height:38px;" title="Puedes usar Enter para poner varias fechas, una debajo de la otra">${mkEsc(v)}</textarea></div>`;
         }
-        return `<div><label>${mkEsc(f.label)}</label><input class="mk-fld" data-key="${mkAttr(f.key)}" value="${mkAttr(v)}"></div>`;
+        return `<div><label>${mkEsc(f.label)}</label><input type="text" class="mk-fld" data-key="${mkAttr(f.key)}" value="${mkAttr(v)}"></div>`;
     }).join('');
 }
 
@@ -1031,7 +1031,7 @@ function mkRenderTemplateForm() {
                 </div>
                 <div>
                     <div style="display:grid;grid-template-columns:1fr 120px;gap:10px;">
-                        <div><label class="text-xs font-semibold text-gray-500">Nombre de la plantilla</label><input id="mk-tpl-nombre" value="${mkAttr(t.nombre)}" placeholder="Infinito Corazones" class="!mb-0"></div>
+                        <div><label class="text-xs font-semibold text-gray-500">Nombre de la plantilla</label><input type="text" id="mk-tpl-nombre" value="${mkAttr(t.nombre)}" placeholder="Infinito Corazones" class="!mb-0"></div>
                         <div><label class="text-xs font-semibold text-gray-500">Aspecto</label>
                             <select id="mk-tpl-aspect" class="!mb-0" onchange="mkUpdateAspectPreview()">${ratios.map(r => `<option value="${r}"${r === (t.aspectRatio || '1:1') ? ' selected' : ''}>${r}</option>`).join('')}</select>
                         </div>
@@ -1040,7 +1040,7 @@ function mkRenderTemplateForm() {
                         <textarea id="mk-tpl-prompt" rows="6" class="!mb-0">${mkEsc(t.promptTemplate)}</textarea>
                     </div>
                     <div style="margin-top:10px;"><label class="text-xs font-semibold text-gray-500">Coincide con productos (separados por coma)</label>
-                        <input id="mk-tpl-match" value="${mkAttr((t.productMatch || []).join(', '))}" placeholder="infinito, corazones, lampara 3d" class="!mb-0">
+                        <input type="text" id="mk-tpl-match" value="${mkAttr((t.productMatch || []).join(', '))}" placeholder="infinito, corazones, lampara 3d" class="!mb-0">
                     </div>
                     <div style="margin-top:12px;">
                         <label class="text-xs font-semibold text-gray-500">Diseño de referencia · SVG (opcional) — usa {nombre1} {nombre2} {fecha}</label>
