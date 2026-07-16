@@ -34,6 +34,14 @@ async function savePreview(orderId, image, prompt, meta = {}) {
         const i = previews.findIndex(p => p.blockId === blockId);
         if (i >= 0) previews[i] = entry; else previews.push(entry);
         await ref.set({ orderId: String(orderId), previews }, { merge: true });
+        // El pedido ya tiene mockup -> sale de la cola "falta mockup" de Pendientes de Diseño.
+        try {
+            const pref = db.collection('pedidos').doc(String(orderId));
+            await pref.set({ mockupPreviewAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+            const ped = await pref.get();
+            const cid = ped.exists ? (ped.data().contactId || ped.data().telefono) : null;
+            if (cid) await require('../design/designPending').recomputeForContact(cid);
+        } catch (_) {}
     } catch (e) { console.error('[mockups] savePreview:', e.message); }
 }
 

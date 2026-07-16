@@ -5,12 +5,14 @@
 // denormaliza al contacto para reutilizar la infraestructura de filtros del CRM (igual que
 // inDesignReview). El filtro "Pendientes de Diseño" del CRM consulta where('designPending','==',true).
 //
-// Las 5 condiciones (todas se limpian solas cuando el pedido llega a un estatus "terminado"):
-//   1. mockup_pagado    -> pagó Y ya le mandamos su preview (previewEnviadoAt)
-//   2. datos            -> estatus 'Corregir' con corregirMotivo != 'video' (el cliente reportó un dato mal)
-//   3. video            -> estatus 'Corregir' con corregirMotivo == 'video' (el cliente pide un video)
-//   4. anticipo         -> pagó (comprobante válido / Pagado) pero AÚN no le mandamos su preview
-//   5. segundo_producto -> agregó un producto DESPUÉS de haber pagado (productoAgregadoPostPagoAt)
+// El diseño se hace en DOS etapas, y la lista es la cola de ambas:
+//   - mockup           -> ETAPA 1: pedido 'Sin estatus' que aún NO tiene mockup (no se pudo hacer en la
+//                         sección Mockup). Al generar su preview (mockupPreviewAt) sale de la cola.
+//   - fabricar         -> ETAPA 2: pedido 'Fabricar' (pagó y hay que producir) -> falta el diseño en
+//                         Corel para corte. Aparece aunque ya tenga mockup.
+//   - datos / video    -> estatus 'Corregir' (el cliente reportó un dato mal / pide un video).
+//   - segundo_producto -> agregó un producto DESPUÉS de haber pagado (productoAgregadoPostPagoAt).
+// Se limpian solas al llegar a un estatus "terminado", tener guía/quitarse de Envíos, o marca ✓ Diseñado.
 const { db, admin } = require('../config');
 
 // Estatus "terminado" para diseño: si el pedido está aquí, NO hay pendiente (limpia la bandera).
@@ -23,30 +25,33 @@ const DONE = new Set([
     'cancelado', 'entregado', 'devolución', 'devolucion', 'mns amenazador',
 ]);
 
-const REASONS = ['mockup_pagado', 'datos', 'video', 'anticipo', 'segundo_producto'];
+const REASONS = ['mockup', 'fabricar', 'datos', 'video', 'segundo_producto'];
 
-// Evalúa las 5 condiciones sobre los datos de UN pedido y devuelve la lista de motivos (puede ser []).
+// Evalúa los motivos de "pendiente de diseño" sobre los datos de UN pedido (puede ser []).
 function reasonsForOrderData(d) {
     if (!d) return [];
     // Marcado a mano como "ya diseñado" desde el tablero (botón ✓ Diseñado) -> fuera de pendientes.
     if (d.disenoListoAt) return [];
-    const estatus = String(d.estatus || '').trim().toLowerCase();
+    const estatus = String(d.estatus || 'Sin estatus').trim().toLowerCase();
     if (DONE.has(estatus)) return [];
 
+    // Envío ya gestionado (tiene guía o lo quitaron de Envíos) -> el diseño ya se hizo (no aplica a Corregir).
+    const shipped = (d.guiaEnvio && d.guiaEnvio.guia) || d.ocultoDeEnvios;
     const reasons = [];
+
     if (estatus === 'corregir') {
-        // 2 y 3: en corrección. El motivo lo persiste markOrderCorregirForContact.
+        // Corrección pedida por el cliente (siempre pendiente, aunque ya se hubiera enviado). El motivo
+        // lo persiste markOrderCorregirForContact.
         reasons.push(String(d.corregirMotivo || '').toLowerCase() === 'video' ? 'video' : 'datos');
-    } else if (d.comprobanteValidadoAt && !(d.guiaEnvio && d.guiaEnvio.guia) && !d.ocultoDeEnvios) {
-        // 1 y 4: "pagó" = mandó COMPROBANTE VÁLIDO (comprobanteValidadoAt). OJO: NO usamos el estatus
-        // 'Pagado' como señal de pago porque en este CRM 'Pagado' es un estado donde se ACUMULAN miles
-        // de pedidos ya terminados; usarlo inundaba la lista. Se excluye si el envío ya se gestionó:
-        //   - ya tiene guía de envío (guiaEnvio.guia), o
-        //   - el operador ya lo QUITÓ de la sección Envíos (ocultoDeEnvios) -> ya se resolvió/entregó.
-        // Con comprobante, sin guía, no oculto y sin preview -> anticipo; con preview -> mockup pagado.
-        reasons.push(d.previewEnviadoAt ? 'mockup_pagado' : 'anticipo');
+    } else if (!shipped) {
+        if (estatus === 'fabricar') {
+            // ETAPA 2: pagó y hay que producir -> falta el diseño en Corel para corte (aunque tenga mockup).
+            reasons.push('fabricar');
+        } else if (estatus === 'sin estatus' && !d.mockupHidden && !d.mockupPreviewAt) {
+            // ETAPA 1: aún sin mockup (no se pudo hacer en la sección Mockup) -> falta el mockup.
+            reasons.push('mockup');
+        }
     }
-    // 5: puede coexistir con cualquiera de las anteriores.
     if (d.productoAgregadoPostPagoAt) reasons.push('segundo_producto');
 
     return reasons;

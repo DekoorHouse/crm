@@ -170,10 +170,10 @@ function courierBadge(paq) {
 // motivo(s), estatus editable y "ver chat". Cambiar el estatus a un estado de diseño terminado
 // (Diseñado/Fabricar/Corregido/…) saca el pedido de la lista al refrescar.
 const DP_MOTIVOS = {
-    mockup_pagado: ['Mockup pagado', '#6f42c1', 'fa-image'],
+    mockup: ['Falta mockup', '#6f42c1', 'fa-wand-magic-sparkles'],
+    fabricar: ['Corte', '#0ea5e9', 'fa-scissors'],
     datos: ['Datos', '#fd7e14', 'fa-triangle-exclamation'],
     video: ['Video', '#e83e8c', 'fa-video'],
-    anticipo: ['Anticipo', '#0d9488', 'fa-receipt'],
     segundo_producto: ['+Producto', '#2563eb', 'fa-plus'],
 };
 

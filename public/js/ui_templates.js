@@ -1548,10 +1548,10 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
     // Badges de "Pendiente de Diseño": un chip de color por cada motivo del pedido (los mantiene
     // server/design/designPending.js sobre el contacto). Van en la línea del preview, junto al DH.
     const _dpMap = {
-        mockup_pagado: ['Mockup pagado', '#6f42c1'],
+        mockup: ['Falta mockup', '#6f42c1'],
+        fabricar: ['Corte', '#0ea5e9'],
         datos: ['Datos', '#fd7e14'],
         video: ['Video', '#e83e8c'],
-        anticipo: ['Anticipo', '#0d9488'],
         segundo_producto: ['+Producto', '#2563eb'],
     };
     const designPendBadges = (contact.designPending && Array.isArray(contact.designPendingReasons))

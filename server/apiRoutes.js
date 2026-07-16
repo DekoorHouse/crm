@@ -7956,15 +7956,17 @@ router.get('/design-pending', async (req, res) => {
             const snap = await db.collection('pedidos').orderBy('disenoListoAt', 'desc').limit(300).get();
             snap.forEach(doc => orders.push(mapOrder(doc, [])));
         } else {
-            // Pendientes: Corregir + comprobante validado + 2º producto. NO por estatus 'Pagado'
-            // (ahí se acumulan miles de pedidos ya terminados; el motor usa comprobanteValidadoAt).
+            // Pendientes (2 etapas de diseño): 'Sin estatus' (falta mockup) + 'Fabricar' (falta corte) +
+            // 'Corregir' (datos/video) + 2º producto. El motor (designPending.js) decide el motivo real.
+            // NO se jala por estatus 'Pagado' (ahí se acumulan miles de pedidos ya terminados).
             const byId = new Map();
-            const [s1, s2, s3] = await Promise.all([
+            const [sSin, sFab, sCor, sProd] = await Promise.all([
+                db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get(),
+                db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(1000).get(),
                 db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
-                db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(500).get(),
                 db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
             ]);
-            [s1, s2, s3].forEach(s => s.forEach(d => byId.set(d.id, d)));
+            [sSin, sFab, sCor, sProd].forEach(s => s.forEach(d => byId.set(d.id, d)));
             for (const doc of byId.values()) {
                 const reasons = reasonsForOrderData(doc.data());
                 if (!reasons.length) continue;
