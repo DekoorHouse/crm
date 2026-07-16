@@ -210,6 +210,34 @@ router.post('/upload-image', upload.single('file'), asyncHandler(async (req, res
     res.json({ success: true, url: out.url, path: out.path });
 }));
 
+// --- Diseños del lienzo (banco de pruebas): guardar/cargar composiciones 864×1152 ---
+router.get('/designs', asyncHandler(async (req, res) => {
+    res.json({ success: true, designs: await svc.listDesigns() });
+}));
+
+router.post('/designs', asyncHandler(async (req, res) => {
+    const design = await svc.createDesign({ nombre: req.body.nombre, items: req.body.items });
+    res.json({ success: true, design });
+}));
+
+router.put('/designs/:id', asyncHandler(async (req, res) => {
+    const design = await svc.updateDesign(req.params.id, { nombre: req.body.nombre, items: req.body.items });
+    res.json({ success: true, design });
+}));
+
+router.delete('/designs/:id', asyncHandler(async (req, res) => {
+    await svc.deleteDesign(req.params.id);
+    res.json({ success: true });
+}));
+
+// POST /api/mockups/fetch-image — Imagen de NUESTRO bucket a base64. Rehidrata diseños del
+// lienzo: para rasterizar, los <image> del SVG deben ser data URIs (un href http externo no
+// carga dentro de un SVG usado como imagen).
+router.post('/fetch-image', asyncHandler(async (req, res) => {
+    const out = await svc.fetchOwnImageAsBase64(String(req.body.url || ''));
+    res.json({ success: true, ...out });
+}));
+
 // POST /api/mockups/generate-preview — Generar preview desde plantilla + campos
 router.post('/generate-preview', asyncHandler(async (req, res) => {
     const { templateId, fields = {}, provider = 'wavespeed', resolution, quality } = req.body;

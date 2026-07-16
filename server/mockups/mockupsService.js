@@ -255,6 +255,54 @@ async function uploadPublicImage(buffer, subdir = 'refs') {
     return { path, url };
 }
 
+// ===================== DISEÑOS DEL LIENZO (banco de pruebas) =====================
+// Un "diseño" = los elementos del lienzo 864×1152 (textos/vectores/imágenes) con nombre,
+// para guardarlo y recargarlo. Las imágenes pesadas se suben a Storage desde el front y
+// aquí solo llega su URL, para no acercarse al límite de 1MB por documento.
+const DESIGNS_COLLECTION = 'mockup_designs';
+
+function validateDesign({ nombre, items }) {
+    const n = (nombre || '').toString().trim();
+    if (!n) throw Object.assign(new Error('Ponle nombre al diseño.'), { status: 400 });
+    if (!Array.isArray(items) || !items.length) throw Object.assign(new Error('El diseño no tiene elementos.'), { status: 400 });
+    if (JSON.stringify(items).length > 900000) throw Object.assign(new Error('El diseño es demasiado grande para guardarse (imágenes muy pesadas).'), { status: 400 });
+    return { nombre: n, items };
+}
+
+async function listDesigns() {
+    const snap = await db.collection(DESIGNS_COLLECTION).orderBy('updatedAt', 'desc').get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+async function createDesign(data) {
+    const clean = validateDesign(data);
+    const now = new Date().toISOString();
+    const doc = { ...clean, createdAt: now, updatedAt: now };
+    const ref = await db.collection(DESIGNS_COLLECTION).add(doc);
+    return { id: ref.id, ...doc };
+}
+
+async function updateDesign(id, data) {
+    const clean = validateDesign(data);
+    await db.collection(DESIGNS_COLLECTION).doc(id).set({ ...clean, updatedAt: new Date().toISOString() }, { merge: true });
+    const doc = await db.collection(DESIGNS_COLLECTION).doc(id).get();
+    return { id, ...doc.data() };
+}
+
+async function deleteDesign(id) {
+    await db.collection(DESIGNS_COLLECTION).doc(id).delete();
+}
+
+// Descarga a base64 SOLO imágenes de NUESTRO bucket (rehidratar diseños del lienzo: para
+// rasterizar, los <image> del SVG deben ser data URIs). El prefijo fijo evita SSRF.
+async function fetchOwnImageAsBase64(url) {
+    const prefix = `https://storage.googleapis.com/${bucket.name}/`;
+    if (typeof url !== 'string' || !url.startsWith(prefix)) {
+        throw Object.assign(new Error('URL no permitida.'), { status: 400 });
+    }
+    return fetchImageAsBase64(url);
+}
+
 // Reemplaza los placeholders del prompt con los campos del pedido.
 // Los placeholders no provistos se eliminan para no ensuciar la instrucción.
 function escapeRegExp(str) {
@@ -343,5 +391,6 @@ async function ensureJpeg(url) {
 module.exports = {
     generateImage, saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch,
     listTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate,
+    listDesigns, createDesign, updateDesign, deleteDesign, fetchOwnImageAsBase64,
     uploadTemplateBaseImage, uploadPublicImage, buildPromptFromTemplate, fetchImageAsBase64, ensureJpeg, parseDatos,
 };

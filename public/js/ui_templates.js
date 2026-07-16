@@ -931,6 +931,19 @@ const MockupsViewTemplate = () => `
             .mk-lz-sep{width:1px;height:22px;background:var(--color-border);margin:0 4px}
             #mk-lz-svg{width:324px;height:432px;background:#000;border:1px solid var(--color-border);border-radius:8px;display:block;touch-action:none}
             #mk-lz-svg [data-lz]{cursor:move}
+            /* Panel de capas del lienzo */
+            .mk-lz-layers{width:230px;display:flex;flex-direction:column;gap:4px}
+            #mk-lz-layers-list{display:flex;flex-direction:column;gap:4px;max-height:432px;overflow-y:auto}
+            .mk-lz-layer{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--color-border);border-radius:8px;cursor:pointer;background:var(--color-container-bg)}
+            .mk-lz-layer.active{border-color:var(--color-primary);box-shadow:0 0 0 2px color-mix(in srgb, var(--color-primary) 22%, transparent)}
+            .mk-lz-layer>i{font-size:.78rem;color:var(--color-text-light);width:16px;text-align:center;flex-shrink:0}
+            .mk-lz-layer input[type="text"]{flex:1;min-width:0;margin-bottom:0!important;padding:3px 6px!important;font-size:.82rem!important;border:1px solid transparent!important;background:transparent!important;box-shadow:none!important}
+            .mk-lz-layer input[type="text"]:focus{border-color:var(--color-border)!important;background:var(--color-container-bg)!important}
+            .mk-lz-layer button{background:none;border:none;color:var(--color-text-light);cursor:pointer;padding:2px 3px;font-size:.72rem;flex-shrink:0}
+            .mk-lz-layer button:hover{color:var(--color-primary)}
+            /* Guardar/cargar diseños del lienzo */
+            .mk-lz-save{display:flex;flex-direction:column;gap:6px;margin-top:10px;border-top:1px dashed var(--color-border);padding-top:10px}
+            .mk-lz-save select,.mk-lz-save input[type="text"]{margin-bottom:0!important;padding:7px 10px!important;font-size:.85rem!important}
         </style>
         <div class="view-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
             <div>

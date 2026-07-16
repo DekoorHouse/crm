@@ -42,7 +42,7 @@ const MK_DESIGN_SEED = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
 // envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
 // refFiles: 2ª referencia subida a mano por bloque (blockId -> File). pruebas: estado del
 // banco de pruebas (pestaña "Pruebas").
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, seq: 1 } };
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, seq: 1, designs: [], designId: null } };
 
 // Cache (promesa) del data-URI de la fuente manuscrita, para embeberla en el SVG al rasterizar.
 let mkFontDataUrlPromise = null;
@@ -1062,7 +1062,8 @@ const MK_LZ_PRESETS = {
 };
 
 function mkLzState() {
-    if (!mkState.lienzo) mkState.lienzo = { items: [], sel: null, seq: 1 };
+    if (!mkState.lienzo) mkState.lienzo = { items: [], sel: null, seq: 1, designs: [], designId: null };
+    if (!Array.isArray(mkState.lienzo.designs)) mkState.lienzo.designs = [];
     return mkState.lienzo;
 }
 
@@ -1073,23 +1074,39 @@ function mkLzHtml() {
             <div id="mk-lz-tools"></div>
             <div class="mk-lz-row">
                 <div id="mk-lz-canvas-wrap"></div>
+                <div class="mk-lz-layers">
+                    <label class="mk-lz-label">Capas</label>
+                    <div id="mk-lz-layers-list"></div>
+                </div>
                 <div class="mk-lz-side">
                     <button type="button" class="btn btn-primary btn-sm" onclick="mkLzUseAsRef(this)"><i class="fas fa-file-image mr-1"></i>Convertir a PNG → 2ª referencia</button>
                     <button type="button" class="btn btn-outline btn-sm" onclick="mkLzDownload(this)"><i class="fas fa-download mr-1"></i>Descargar PNG</button>
-                    <small class="mk-muted">Haz clic en un elemento para seleccionarlo, arrástralo para moverlo y usa los <b>cuadritos de las esquinas</b> para escalarlo. Con uno seleccionado puedes editar su texto, fuente, tamaño o escala, o eliminarlo. El PNG sale en 864×1152 con fondo negro.</small>
+                    <small class="mk-muted">Haz clic en un elemento para seleccionarlo, arrástralo para moverlo y usa los <b>cuadritos de las esquinas</b> para escalarlo. En <b>Capas</b> puedes nombrar cada elemento, seleccionarlo y cambiar su orden (▲ al frente).</small>
+                    <div class="mk-lz-save">
+                        <label class="mk-lz-label">Diseños guardados</label>
+                        <select id="mk-lz-designs" onchange="mkLzOnDesignPick(this.value)"><option value="">— nuevo diseño —</option></select>
+                        <input type="text" id="mk-lz-name" placeholder="Nombre del diseño">
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                            <button type="button" class="btn btn-outline btn-sm" onclick="mkLzSaveDesign(this)"><i class="fas fa-save mr-1"></i>Guardar diseño</button>
+                            <button type="button" class="btn btn-outline btn-sm" id="mk-lz-del-design" style="display:none;color:#dc2626;" title="Eliminar el diseño guardado" onclick="mkLzDeleteDesign()"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>`;
 }
 
 // Crea el <svg> una sola vez (los re-render solo cambian su contenido interno, para no
-// perder el pointer capture durante un arrastre) y pinta lienzo + barra de herramientas.
+// perder el pointer capture durante un arrastre) y pinta lienzo + herramientas + capas.
 function mkLzMount() {
     const wrap = document.getElementById('mk-lz-canvas-wrap');
     if (!wrap) return;
     wrap.innerHTML = `<svg id="mk-lz-svg" viewBox="0 0 ${MK_LZ_W} ${MK_LZ_H}" xmlns="http://www.w3.org/2000/svg" onpointerdown="mkLzDown(event)" onpointermove="mkLzMove(event)" onpointerup="mkLzUp(event)" onpointercancel="mkLzUp(event)"></svg>`;
     mkLzRenderCanvas();
     mkLzRenderTools();
+    mkLzRenderLayers();
+    mkLzRenderDesignsSelect();
+    mkLzLoadDesignsList();   // async: rellena el selector de diseños guardados
 }
 
 // Markup de los items (compartido entre el lienzo en vivo y el SVG exportado).
@@ -1097,7 +1114,8 @@ function mkLzItemsMarkup() {
     return mkLzState().items.map(it => {
         if (it.type === 'text') {
             const fam = it.font === 'arial' ? 'Arial, Helvetica, sans-serif' : "'Rows of Sunflowers'";
-            return `<text data-lz="${it.id}" x="${it.x}" y="${it.y}" fill="#ffffff" font-family="${fam}" font-size="${it.size}" text-anchor="middle" dominant-baseline="central">${mkXmlEsc(it.text)}</text>`;
+            const anchor = it.align === 'left' ? 'start' : (it.align === 'right' ? 'end' : 'middle');
+            return `<text data-lz="${it.id}" x="${it.x}" y="${it.y}" fill="#ffffff" font-family="${fam}" font-size="${it.size}" text-anchor="${anchor}" dominant-baseline="central">${mkXmlEsc(it.text)}</text>`;
         }
         if (it.type === 'image') {
             return `<image data-lz="${it.id}" x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" href="${it.href}" preserveAspectRatio="xMidYMid meet"></image>`;
@@ -1155,9 +1173,11 @@ function mkLzRenderTools() {
     if (it) {
         html += `<span class="mk-lz-sep"></span>`;
         if (it.type === 'text') {
+            const alignBtn = (a, icon, title) => `<button type="button" class="btn btn-sm ${(it.align || 'center') === a ? 'btn-primary' : 'btn-outline'}" title="${title}" onclick="mkLzPatchT({align:'${a}'})"><i class="fas ${icon}"></i></button>`;
             html += `<input type="text" value="${mkAttr(it.text)}" placeholder="Texto…" oninput="mkLzPatch({text:this.value})">
                 <select onchange="mkLzPatch({font:this.value})"><option value="sun"${it.font !== 'arial' ? ' selected' : ''}>Rows of Sunflowers</option><option value="arial"${it.font === 'arial' ? ' selected' : ''}>Arial</option></select>
-                <input type="number" value="${it.size}" min="10" max="400" title="Tamaño de letra" oninput="mkLzPatch({size:Math.max(10,+this.value||10)})">`;
+                <input type="number" value="${it.size}" min="10" max="400" title="Tamaño de letra" oninput="mkLzPatch({size:Math.max(10,+this.value||10)})">
+                ${alignBtn('left', 'fa-align-left', 'Alinear a la izquierda (el punto de anclaje es el borde izquierdo)')}${alignBtn('center', 'fa-align-center', 'Centrado')}${alignBtn('right', 'fa-align-right', 'Alinear a la derecha')}`;
         } else if (it.type === 'image') {
             html += `<input type="number" value="${Math.round(it.w)}" min="20" max="${MK_LZ_W}" title="Ancho (px)" oninput="mkLzResizeImage(+this.value)">`;
         } else {
@@ -1179,6 +1199,13 @@ function mkLzPatch(patch) {
     mkLzRenderCanvas();
 }
 
+// Variante para controles con estado visual en la barra (ej. alineación): además de
+// repintar el lienzo, re-renderiza la barra para reflejar el botón activo.
+function mkLzPatchT(patch) {
+    mkLzPatch(patch);
+    mkLzRenderTools();
+}
+
 function mkLzResizeImage(w) {
     const st = mkLzState();
     const it = st.items.find(i => i.id === st.sel);
@@ -1192,9 +1219,9 @@ function mkLzResizeImage(w) {
 function mkLzAddText() {
     const st = mkLzState();
     const id = st.seq++;
-    st.items.push({ id, type: 'text', x: MK_LZ_W / 2, y: MK_LZ_H / 2, text: 'Texto', font: 'sun', size: 120 });
+    st.items.push({ id, type: 'text', name: 'Texto', x: MK_LZ_W / 2, y: MK_LZ_H / 2, text: 'Texto', font: 'sun', size: 120, align: 'center' });
     st.sel = id;
-    mkLzRenderCanvas(); mkLzRenderTools();
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
 }
 
 function mkLzAddPreset(kind) {
@@ -1202,9 +1229,9 @@ function mkLzAddPreset(kind) {
     if (!p) return;
     const st = mkLzState();
     const id = st.seq++;
-    st.items.push({ id, type: 'path', x: p.x, y: p.y, scale: p.scale, strokeWidth: p.strokeWidth, d: p.d });
+    st.items.push({ id, type: 'path', name: kind === 'infinito' ? 'Infinito' : 'Corazón', x: p.x, y: p.y, scale: p.scale, strokeWidth: p.strokeWidth, d: p.d });
     st.sel = id;
-    mkLzRenderCanvas(); mkLzRenderTools();
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
 }
 
 function mkLzOnImport(ev) {
@@ -1255,26 +1282,68 @@ function mkLzAddSvgItem(svgText) {
     root.setAttribute('width', w);    // tamaño intrínseco explícito: requisito para <image>
     root.setAttribute('height', h);
     const href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(root));
-    mkLzPushImage(href, w, h);
+    mkLzPushImage(href, w, h, 'SVG');
 }
 
 // Alta común de un item de imagen (raster o SVG), centrado y a lo sumo 500px de ancho.
-function mkLzPushImage(href, natW, natH) {
+function mkLzPushImage(href, natW, natH, name) {
     const st = mkLzState();
     const w = Math.min(500, Math.round(natW));
     const ar = natH / natW;
     const h = Math.round(w * ar);
     const id = st.seq++;
-    st.items.push({ id, type: 'image', x: Math.round((MK_LZ_W - w) / 2), y: Math.round((MK_LZ_H - h) / 2), w, h, ar, href });
+    st.items.push({ id, type: 'image', name: name || 'Imagen', x: Math.round((MK_LZ_W - w) / 2), y: Math.round((MK_LZ_H - h) / 2), w, h, ar, href });
     st.sel = id;
-    mkLzRenderCanvas(); mkLzRenderTools();
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
 }
 
 function mkLzDelete() {
     const st = mkLzState();
     st.items = st.items.filter(i => i.id !== st.sel);
     st.sel = null;
-    mkLzRenderCanvas(); mkLzRenderTools();
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
+}
+
+// ---- panel de capas (como Photoshop: la de más al frente arriba) ----
+function mkLzRenderLayers() {
+    const box = document.getElementById('mk-lz-layers-list');
+    if (!box) return;
+    const st = mkLzState();
+    if (!st.items.length) { box.innerHTML = '<small class="mk-muted">Sin elementos todavía.</small>'; return; }
+    // En SVG el último item del arreglo se pinta AL FRENTE -> se lista invertido (frente arriba).
+    box.innerHTML = [...st.items].reverse().map(it => {
+        const icon = it.type === 'text' ? 'fa-font' : (it.type === 'image' ? 'fa-image' : 'fa-bezier-curve');
+        return `
+        <div class="mk-lz-layer${it.id === st.sel ? ' active' : ''}" onclick="mkLzSelect(${it.id})">
+            <i class="fas ${icon}"></i>
+            <input type="text" value="${mkAttr(it.name || '')}" placeholder="Sin nombre" title="Nombre de la capa" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" oninput="mkLzRename(${it.id}, this.value)">
+            <button type="button" title="Traer al frente" onclick="event.stopPropagation();mkLzReorder(${it.id},1)"><i class="fas fa-chevron-up"></i></button>
+            <button type="button" title="Enviar atrás" onclick="event.stopPropagation();mkLzReorder(${it.id},-1)"><i class="fas fa-chevron-down"></i></button>
+        </div>`;
+    }).join('');
+}
+
+function mkLzSelect(id) {
+    const st = mkLzState();
+    st.sel = id;
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
+}
+
+// Renombrar no repinta nada (el nombre solo vive en el panel; conserva el foco del input).
+function mkLzRename(id, name) {
+    const it = mkLzState().items.find(i => i.id === id);
+    if (it) it.name = name;
+}
+
+// dir 1 = hacia el frente (al final del arreglo), -1 = hacia atrás.
+function mkLzReorder(id, dir) {
+    const st = mkLzState();
+    const i = st.items.findIndex(x => x.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= st.items.length) return;
+    const [it] = st.items.splice(i, 1);
+    st.items.splice(j, 0, it);
+    mkLzRenderCanvas(); mkLzRenderLayers();
 }
 
 // ---- arrastre (pointer events; coordenadas convertidas al viewBox del SVG) ----
@@ -1312,7 +1381,7 @@ function mkLzDown(ev) {
     // 2) Clic sobre un elemento -> seleccionar y empezar a moverlo; al vacío -> deseleccionar.
     const node = ev.target && ev.target.closest ? ev.target.closest('[data-lz]') : null;
     if (!node) {
-        if (st.sel != null) { st.sel = null; mkLzRenderCanvas(); mkLzRenderTools(); }
+        if (st.sel != null) { st.sel = null; mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); }
         return;
     }
     ev.preventDefault();
@@ -1322,7 +1391,7 @@ function mkLzDown(ev) {
     const p = mkLzPoint(ev);
     mkLzDrag = { id, sx: p.x, sy: p.y, ox: it.x, oy: it.y };
     try { document.getElementById('mk-lz-svg').setPointerCapture(ev.pointerId); } catch (_) { /* noop */ }
-    mkLzRenderCanvas(); mkLzRenderTools();
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
 }
 
 function mkLzMove(ev) {
@@ -1403,6 +1472,138 @@ async function mkLzDownload(btn) {
         mkToast('No se pudo exportar: ' + e.message, 'error');
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    }
+}
+
+// ---- diseños guardados (Firestore vía /api/mockups/designs) ----
+// Al GUARDAR, las imágenes pesadas (data URI) se suben a Storage y el doc guarda su URL
+// (límite de 1MB por documento). Al CARGAR se rehidratan a data URI vía /fetch-image,
+// porque un href http externo no se pinta al rasterizar el SVG.
+const MK_LZ_INLINE_MAX = 80000;   // ~60KB binario: umbral para subir la imagen a Storage
+
+async function mkLzSerializeItems() {
+    const st = mkLzState();
+    const items = [];
+    for (const orig of st.items) {
+        const it = { ...orig };
+        delete it.remoteHref; delete it.remoteSrc;
+        if (it.type === 'image' && typeof it.href === 'string' && it.href.startsWith('data:') && it.href.length > MK_LZ_INLINE_MAX) {
+            if (orig.remoteHref && orig.remoteSrc === orig.href) {
+                it.href = orig.remoteHref;   // ya subida antes y sin cambios: reusar
+            } else {
+                const blob = await (await fetch(orig.href)).blob();
+                const url = await mkUploadRefImage(blob, 'design-asset.png');
+                orig.remoteHref = url; orig.remoteSrc = orig.href;
+                it.href = url;
+            }
+        }
+        items.push(it);
+    }
+    return items;
+}
+
+async function mkLzHydrateItems(items) {
+    const out = [];
+    for (const raw of (items || [])) {
+        const it = { ...raw };
+        if (it.type === 'image' && typeof it.href === 'string' && !it.href.startsWith('data:')) {
+            try {
+                const r = await mkFetchJson('/api/mockups/fetch-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: it.href }) });
+                it.remoteHref = it.href;
+                it.href = 'data:' + (r.mimeType || 'image/webp') + ';base64,' + r.base64;
+                it.remoteSrc = it.href;
+            } catch (e) {
+                // Se queda la URL: se VE en el lienzo pero no rasterizaría; avisar.
+                mkToast('Una imagen del diseño no se pudo rehidratar; expórtala de nuevo antes de convertir a PNG.', 'error');
+            }
+        }
+        out.push(it);
+    }
+    return out;
+}
+
+async function mkLzLoadDesignsList() {
+    try {
+        const d = await mkFetchJson('/api/mockups/designs');
+        mkLzState().designs = d.designs || [];
+        mkLzRenderDesignsSelect();
+    } catch (_) { /* sin red o backend viejo: el lienzo sigue funcionando */ }
+}
+
+function mkLzRenderDesignsSelect() {
+    const sel = document.getElementById('mk-lz-designs');
+    if (!sel) return;
+    const st = mkLzState();
+    sel.innerHTML = '<option value="">— nuevo diseño —</option>' + st.designs.map(d =>
+        `<option value="${mkAttr(d.id)}"${d.id === st.designId ? ' selected' : ''}>${mkEsc(d.nombre)}</option>`
+    ).join('');
+    const del = document.getElementById('mk-lz-del-design');
+    if (del) del.style.display = st.designId ? '' : 'none';
+}
+
+async function mkLzOnDesignPick(id) {
+    const st = mkLzState();
+    if (!id) {   // "— nuevo diseño —": desasocia sin tocar el lienzo actual
+        st.designId = null;
+        const name = document.getElementById('mk-lz-name'); if (name) name.value = '';
+        mkLzRenderDesignsSelect();
+        return;
+    }
+    const d = st.designs.find(x => x.id === id);
+    if (!d) return;
+    if (st.items.length && typeof showConfirmModal === 'function') {
+        const ok = await showConfirmModal(`¿Cargar "${mkEsc(d.nombre)}" y reemplazar el lienzo actual?`, { icon: 'fa-folder-open', confirmText: 'Cargar' });
+        if (!ok) { mkLzRenderDesignsSelect(); return; }
+    }
+    st.designId = id;
+    st.sel = null;
+    st.items = await mkLzHydrateItems(d.items);
+    st.seq = st.items.reduce((m, i) => Math.max(m, +i.id || 0), 0) + 1;
+    const name = document.getElementById('mk-lz-name'); if (name) name.value = d.nombre || '';
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); mkLzRenderDesignsSelect();
+    mkToast('Diseño cargado ✓', 'success');
+}
+
+async function mkLzSaveDesign(btn) {
+    const st = mkLzState();
+    const nombre = (document.getElementById('mk-lz-name')?.value || '').trim();
+    if (!nombre) { mkToast('Ponle nombre al diseño.', 'error'); return; }
+    if (!st.items.length) { mkToast('El lienzo está vacío.', 'error'); return; }
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Guardando…'; }
+    try {
+        const items = await mkLzSerializeItems();
+        if (st.designId) {
+            await mkFetchJson('/api/mockups/designs/' + st.designId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre, items }) });
+        } else {
+            const r = await mkFetchJson('/api/mockups/designs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre, items }) });
+            st.designId = r.design && r.design.id;
+        }
+        await mkLzLoadDesignsList();
+        mkToast('Diseño guardado ✅', 'success');
+    } catch (e) {
+        mkToast('No se pudo guardar: ' + e.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    }
+}
+
+async function mkLzDeleteDesign() {
+    const st = mkLzState();
+    if (!st.designId) return;
+    const d = st.designs.find(x => x.id === st.designId);
+    if (typeof showConfirmModal === 'function') {
+        const ok = await showConfirmModal(`¿Eliminar el diseño guardado "${mkEsc(d ? d.nombre : '')}"?<br><span style="font-size:12px;color:var(--color-text-light,#64748b)">El lienzo actual no se toca.</span>`, { icon: 'delete', confirmText: 'Eliminar' });
+        if (!ok) return;
+    }
+    try {
+        await mkFetchJson('/api/mockups/designs/' + st.designId, { method: 'DELETE' });
+        st.designId = null;
+        const name = document.getElementById('mk-lz-name'); if (name) name.value = '';
+        await mkLzLoadDesignsList();
+        mkToast('Diseño eliminado.', 'success');
+    } catch (e) {
+        mkToast('No se pudo eliminar: ' + e.message, 'error');
     }
 }
 
