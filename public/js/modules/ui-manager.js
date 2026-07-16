@@ -259,6 +259,47 @@ async function reopenDesign(orderId, el) {
 }
 window.reopenDesign = reopenDesign;
 
+// --- Navegación del chat con flechas ← → (sin cerrar el modal), desde Pendientes de Diseño ---
+// Abre el chat de un pedido y activa la navegación por teclado sobre la lista visible.
+async function openDesignPendingChat(orderId) {
+    const list = window._designShownOrders || [];
+    const idx = list.findIndex(o => o.id === orderId);
+    const o = idx >= 0 ? list[idx] : null;
+    if (!o || !o.contactId) return;
+    await openChatEnviosModal(String(o.contactId));   // openChatEnviosModal pone _designChatActive=false...
+    window._designChatIndex = idx;
+    window._designChatActive = true;                  // ...y aquí lo reactivamos para navegar.
+}
+window.openDesignPendingChat = openDesignPendingChat;
+
+// Avanza (+1) o retrocede (-1) al siguiente/anterior pedido de la lista, dentro del MISMO modal.
+async function _designChatNavigate(dir) {
+    const list = window._designShownOrders || [];
+    if (!list.length || typeof window._designChatIndex !== 'number') return;
+    const i = window._designChatIndex + dir;
+    if (i < 0 || i > list.length - 1) return;   // sin dar la vuelta: se detiene en los extremos
+    const o = list[i];
+    if (!o || !o.contactId) return;
+    window._designChatIndex = i;
+    try { await handleSelectContact(String(o.contactId)); } catch (e) { console.warn('[diseño] nav chat:', e); }
+}
+
+// ← / → cambian de pedido cuando el modal de chat (abierto desde Pendientes de Diseño) está visible.
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    if (!window._designChatActive) return;
+    const modal = document.getElementById('chat-envios-modal');
+    if (!modal || modal.style.display === 'none') return;
+    // Si el usuario está escribiendo (campo con texto), deja que las flechas muevan el cursor.
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) {
+        const val = ae.value != null ? ae.value : ae.textContent;
+        if (val && String(val).trim()) return;
+    }
+    e.preventDefault();
+    _designChatNavigate(e.key === 'ArrowRight' ? 1 : -1);
+});
+
 // Pinta desde window._designPendingData (sin re-consultar) para filtros instantáneos.
 function _paintDesignPending() {
     const container = document.getElementById('design-pending-container');
@@ -293,6 +334,9 @@ function _paintDesignPending() {
         }).join('') + `</div>`;
     }
 
+    // Lista visible en orden (para navegar el chat con las flechas ← →).
+    window._designShownOrders = shown;
+
     const rows = shown.map((o, i) => {
         const chan = o.channel === 'instagram' ? '<i class="fab fa-instagram" style="color:#e1306c"></i>'
             : o.channel === 'messenger' ? '<i class="fab fa-facebook-messenger" style="color:#0084ff"></i>'
@@ -301,7 +345,7 @@ function _paintDesignPending() {
             ? `<span style="display:inline-block;background:#16a34a22;color:#16a34a;border:1px solid #16a34a66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px"><i class="fas fa-check" style="margin-right:3px"></i>Diseñado</span>`
             : (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('');
         const statusSel = `<select onchange="changeDesignPendingStatus('${o.id}', this.value, this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);width:132px">${ENVIO_STATUS_OPTIONS.map(s => `<option${(o.estatus || 'Sin estatus') === s ? ' selected' : ''}>${s}</option>`).join('')}</select>`;
-        const chatBtn = o.contactId ? `<button onclick="openChatEnviosModal('${escapeHtml(String(o.contactId))}')" title="Ver conversación" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:14px"><i class="fas fa-comments"></i></button>` : '';
+        const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (usa ← → para el siguiente/anterior pedido)" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:14px"><i class="fas fa-comments"></i></button>` : '';
         const actionBtn = tab === 'disenados'
             ? `<button onclick="reopenDesign('${o.id}', this)" title="Regresar a Pendientes" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;cursor:pointer;color:#334155;padding:4px 10px;font-size:12px;border-radius:6px;font-weight:600"><i class="fas fa-rotate-left" style="margin-right:4px"></i>Regresar</button>`
             : `<button onclick="markDesignDone('${o.id}', this)" title="Marcar como diseñado y sacar de la lista" style="border:none;background:#16a34a;color:#fff;cursor:pointer;padding:5px 10px;font-size:12px;border-radius:6px;font-weight:700"><i class="fas fa-check" style="margin-right:4px"></i>Diseñado</button>`;
@@ -580,6 +624,7 @@ function _chatEnviosModalEl() {
 
 async function openChatEnviosModal(contactId) {
     if (!contactId) return;
+    window._designChatActive = false;   // por defecto NO navegar con flechas; openDesignPendingChat lo reactiva.
     // Si ya estás en la vista de Chats, no hace falta modal: seleccionar normal.
     if (state.activeView === 'chats') { handleSelectContactFromPipeline(contactId); return; }
     const m = _chatEnviosModalEl();
@@ -604,6 +649,7 @@ window.openChatEnviosModal = openChatEnviosModal;
 function closeChatEnviosModal() {
     const m = document.getElementById('chat-envios-modal');
     state.chatModalOpen = false;
+    window._designChatActive = false;   // apagar la navegación con flechas al cerrar
     // Cortar listeners ANTES de quitar el DOM, para no dejar fugas apuntando al chat real.
     try { if (typeof stopChatListeners === 'function') stopChatListeners(); } catch (e) {}
     document.body.classList.remove('chat-open'); // por si se marcó en móvil dentro del modal
