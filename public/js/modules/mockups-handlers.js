@@ -1092,7 +1092,7 @@ function mkLzHtml() {
                 <div class="mk-lz-side">
                     <button type="button" class="btn btn-primary btn-sm" onclick="mkLzUseAsRef(this)"><i class="fas fa-file-image mr-1"></i>Convertir a PNG → 2ª referencia</button>
                     <button type="button" class="btn btn-outline btn-sm" onclick="mkLzDownload(this)"><i class="fas fa-download mr-1"></i>Descargar PNG</button>
-                    <small class="mk-muted">Clic = seleccionar (con <b>Shift</b> se agregan más), arrastra para mover y usa los <b>cuadritos de las esquinas</b> para escalar. <b>Ctrl+D</b> duplica y <b>Supr</b> elimina lo seleccionado. En <b>Capas</b> puedes nombrar cada elemento y cambiar su orden (▲ al frente).</small>
+                    <small class="mk-muted">Clic = seleccionar (con <b>Shift</b> se agregan más), arrastra para mover, <b>cuadritos de las esquinas</b> para escalar y <b>rueda del mouse</b> para hacer zoom. <b>Doble clic</b> en un texto para editarlo, <b>Ctrl+D</b> duplica y <b>Supr</b> elimina. Las áreas de <b>Límite</b> (rojo) encogen los textos que las tocan y no salen en el PNG.</small>
                     <div class="mk-lz-save">
                         <label class="mk-lz-label">Diseños guardados</label>
                         <select id="mk-lz-designs" onchange="mkLzOnDesignPick(this.value)"><option value="">— nuevo diseño —</option></select>
@@ -1112,7 +1112,8 @@ function mkLzHtml() {
 function mkLzMount() {
     const wrap = document.getElementById('mk-lz-canvas-wrap');
     if (!wrap) return;
-    wrap.innerHTML = `<svg id="mk-lz-svg" viewBox="0 0 ${MK_LZ_W} ${MK_LZ_H}" xmlns="http://www.w3.org/2000/svg" onpointerdown="mkLzDown(event)" onpointermove="mkLzMove(event)" onpointerup="mkLzUp(event)" onpointercancel="mkLzUp(event)"></svg>`;
+    wrap.innerHTML = `<svg id="mk-lz-svg" viewBox="0 0 ${MK_LZ_W} ${MK_LZ_H}" xmlns="http://www.w3.org/2000/svg" onpointerdown="mkLzDown(event)" onpointermove="mkLzMove(event)" onpointerup="mkLzUp(event)" onpointercancel="mkLzUp(event)" onwheel="mkLzWheel(event)" ondblclick="mkLzDblClick(event)"></svg>`;
+    mkLzApplyView();   // restaura el zoom de la sesión (viewBox)
     mkLzRenderCanvas();
     mkLzRenderTools();
     mkLzRenderLayers();
@@ -1122,8 +1123,13 @@ function mkLzMount() {
 }
 
 // Markup de los items (compartido entre el lienzo en vivo y el SVG exportado).
-function mkLzItemsMarkup() {
+// forExport=true omite las áreas de LÍMITE: son guías de edición, no salen en el PNG.
+function mkLzItemsMarkup(forExport) {
     return mkLzState().items.map(it => {
+        if (it.type === 'limit') {
+            if (forExport) return '';
+            return `<rect data-lz="${it.id}" x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" fill="rgba(220,38,38,0.12)" stroke="#dc2626" stroke-width="2" stroke-dasharray="10 6"></rect>`;
+        }
         if (it.type === 'text') {
             const fam = it.font === 'arial' ? 'Arial, Helvetica, sans-serif' : "'Rows of Sunflowers'";
             const anchor = it.align === 'left' ? 'start' : (it.align === 'right' ? 'end' : 'middle');
@@ -1149,18 +1155,67 @@ function mkLzRenderCanvas() {
     // (con un solo seleccionado, la caja combinada ES su bbox: se ve igual que antes).
     const boxes = mkLzSelBoxes();
     if (boxes.length) {
-        const pad = 6, HS = 24;   // padding del contorno y tamaño del handle (unidades del viewBox)
+        // k re-escala contorno/handles al zoom actual para que se vean SIEMPRE del mismo
+        // tamaño en pantalla (con zoom, el viewBox encoge y 24 unidades serían enormes).
+        const k = ((st.view && st.view.w) || MK_LZ_W) / MK_LZ_W;
+        const pad = 6 * k, HS = 24 * k;
         let g = '';
         if (boxes.length > 1) {
-            g += boxes.map(({ bb }) => `<rect x="${bb.x - 3}" y="${bb.y - 3}" width="${bb.w + 6}" height="${bb.h + 6}" fill="none" stroke="#4f8ff7" stroke-width="2" stroke-dasharray="5 4" opacity="0.55" style="pointer-events:none;"></rect>`).join('');
+            g += boxes.map(({ bb }) => `<rect x="${bb.x - 3 * k}" y="${bb.y - 3 * k}" width="${bb.w + 6 * k}" height="${bb.h + 6 * k}" fill="none" stroke="#4f8ff7" stroke-width="${2 * k}" stroke-dasharray="${5 * k} ${4 * k}" opacity="0.55" style="pointer-events:none;"></rect>`).join('');
         }
         const u = mkLzUnionBBox(boxes);
         const x0 = u.x - pad, y0 = u.y - pad, x1 = u.x + u.w + pad, y1 = u.y + u.h + pad;
-        g += `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="#4f8ff7" stroke-width="3" stroke-dasharray="8 5" style="pointer-events:none;"></rect>`;
+        g += `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="#4f8ff7" stroke-width="${3 * k}" stroke-dasharray="${8 * k} ${5 * k}" style="pointer-events:none;"></rect>`;
         g += [['tl', x0, y0, 'nwse'], ['tr', x1, y0, 'nesw'], ['bl', x0, y1, 'nesw'], ['br', x1, y1, 'nwse']]
-            .map(([k, cx, cy, cur]) => `<rect data-lzh="${k}" x="${cx - HS / 2}" y="${cy - HS / 2}" width="${HS}" height="${HS}" fill="#ffffff" stroke="#4f8ff7" stroke-width="3" style="cursor:${cur}-resize;"></rect>`).join('');
+            .map(([hk, cx, cy, cur]) => `<rect data-lzh="${hk}" x="${cx - HS / 2}" y="${cy - HS / 2}" width="${HS}" height="${HS}" fill="#ffffff" stroke="#4f8ff7" stroke-width="${3 * k}" style="cursor:${cur}-resize;"></rect>`).join('');
         svg.insertAdjacentHTML('beforeend', `<g id="mk-lz-selgfx">${g}</g>`);
     }
+}
+
+// ---- zoom con la rueda (sobre el lienzo): arriba = acercar, abajo = alejar ----
+// Zoom por viewBox anclado al cursor (el punto bajo el mouse no se mueve). Entre 1x
+// (lienzo completo, default) y 8x; el viewBox se mantiene dentro del lienzo.
+function mkLzApplyView() {
+    const svg = document.getElementById('mk-lz-svg');
+    if (!svg) return;
+    const v = mkLzState().view || { x: 0, y: 0, w: MK_LZ_W, h: MK_LZ_H };
+    svg.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`);
+}
+
+function mkLzWheel(ev) {
+    ev.preventDefault();   // que la página no haga scroll mientras haces zoom
+    const st = mkLzState();
+    const v = st.view || { x: 0, y: 0, w: MK_LZ_W, h: MK_LZ_H };
+    const p = mkLzPoint(ev);   // punto bajo el cursor, en coords del lienzo (ancla del zoom)
+    const factor = ev.deltaY < 0 ? 1 / 1.15 : 1.15;
+    const newW = Math.min(MK_LZ_W, Math.max(MK_LZ_W / 8, v.w * factor));
+    const s = newW / v.w;
+    if (s === 1) return;   // ya en el tope
+    // Alto derivado del ancho (proporción fija del lienzo): evita la deriva de punto
+    // flotante que dejaría el viewBox en 1151.999… tras muchos pasos de zoom.
+    const newH = (newW * MK_LZ_H) / MK_LZ_W;
+    let nx = p.x - (p.x - v.x) * s;
+    let ny = p.y - (p.y - v.y) * s;
+    nx = Math.min(Math.max(0, nx), MK_LZ_W - newW);
+    ny = Math.min(Math.max(0, ny), MK_LZ_H - newH);
+    st.view = { x: nx, y: ny, w: newW, h: newH };
+    mkLzApplyView();
+    mkLzRenderCanvas();   // re-escala contorno/handles al nuevo zoom
+}
+
+// Doble clic sobre un TEXTO: lo selecciona y manda el foco al campo de texto de la barra
+// con el contenido seleccionado, listo para reescribirse.
+function mkLzDblClick(ev) {
+    const node = ev.target && ev.target.closest ? ev.target.closest('[data-lz]') : null;
+    if (!node) return;
+    const id = parseInt(node.getAttribute('data-lz'), 10);
+    const it = mkLzState().items.find(i => i.id === id);
+    if (!it || it.type !== 'text') return;
+    ev.preventDefault();
+    mkLzSetSel([id]);
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
+    const inp = document.getElementById('mk-lz-text-inp');
+    if (inp) { inp.focus(); inp.select(); }
 }
 
 // bboxes (en coords del lienzo) de los elementos seleccionados que ya están montados.
@@ -1202,7 +1257,8 @@ function mkLzRenderTools() {
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddText()"><i class="fas fa-font mr-1"></i>Texto</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddPreset('infinito')"><i class="fas fa-infinity mr-1"></i>Infinito</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddPreset('corazon')"><i class="fas fa-heart mr-1"></i>Corazón</button>
-        <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-image mr-1"></i>Importar imagen/SVG<input type="file" accept="image/*,.svg" style="display:none;" onchange="mkLzOnImport(event)"></label>`;
+        <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-image mr-1"></i>Importar imagen/SVG<input type="file" accept="image/*,.svg" style="display:none;" onchange="mkLzOnImport(event)"></label>
+        <button type="button" class="btn btn-outline btn-sm" title="Área de límite: si un texto la toca, su tamaño se reduce solo. No sale en el PNG." onclick="mkLzAddLimit()"><i class="fas fa-vector-square mr-1"></i>Límite</button>`;
     if (ids.length > 1) {
         html += `<span class="mk-lz-sep"></span><span class="mk-muted" style="font-size:.8rem;">${ids.length} seleccionados</span>
             <button type="button" class="btn btn-outline btn-sm" title="Duplicar (Ctrl+D)" onclick="mkLzDuplicate()"><i class="fas fa-clone mr-1"></i>Duplicar</button>
@@ -1211,12 +1267,15 @@ function mkLzRenderTools() {
         html += `<span class="mk-lz-sep"></span>`;
         if (it.type === 'text') {
             const alignBtn = (a, icon, title) => `<button type="button" class="btn btn-sm ${(it.align || 'center') === a ? 'btn-primary' : 'btn-outline'}" title="${title}" onclick="mkLzPatchT({align:'${a}'})"><i class="fas ${icon}"></i></button>`;
-            html += `<input type="text" value="${mkAttr(it.text)}" placeholder="Texto…" oninput="mkLzPatch({text:this.value})">
+            html += `<input type="text" id="mk-lz-text-inp" value="${mkAttr(it.text)}" placeholder="Texto…" oninput="mkLzPatch({text:this.value})">
                 <select onchange="mkLzPatch({font:this.value})"><option value="sun"${it.font !== 'arial' ? ' selected' : ''}>Rows of Sunflowers</option><option value="arial"${it.font === 'arial' ? ' selected' : ''}>Arial</option></select>
-                <input type="number" value="${it.size}" min="10" max="400" title="Tamaño de letra" oninput="mkLzPatch({size:Math.max(10,+this.value||10)})">
+                <input type="number" id="mk-lz-size-inp" value="${it.size}" min="10" max="400" title="Tamaño de letra" oninput="mkLzPatch({size:Math.max(10,+this.value||10),baseSize:Math.max(10,+this.value||10)})">
                 ${alignBtn('left', 'fa-align-left', 'Alinear a la izquierda (el punto de anclaje es el borde izquierdo)')}${alignBtn('center', 'fa-align-center', 'Centrado')}${alignBtn('right', 'fa-align-right', 'Alinear a la derecha')}`;
         } else if (it.type === 'image') {
             html += `<input type="number" value="${Math.round(it.w)}" min="20" max="${MK_LZ_W}" title="Ancho (px)" oninput="mkLzResizeImage(+this.value)">`;
+        } else if (it.type === 'limit') {
+            html += `<input type="number" value="${Math.round(it.w)}" min="20" max="${MK_LZ_W}" title="Ancho del área" oninput="mkLzPatch({w:Math.max(20,+this.value||20)})">
+                <input type="number" value="${Math.round(it.h)}" min="20" max="${MK_LZ_H}" title="Alto del área" oninput="mkLzPatch({h:Math.max(20,+this.value||20)})">`;
         } else {
             html += `<input type="number" value="${it.scale}" min="0.2" max="20" step="0.2" title="Escala" oninput="mkLzPatch({scale:Math.max(0.2,+this.value||1)})">
                 <input type="number" value="${it.strokeWidth}" min="1" max="30" title="Grosor del trazo" oninput="mkLzPatch({strokeWidth:Math.max(1,+this.value||1)})">`;
@@ -1235,6 +1294,7 @@ function mkLzPatch(patch) {
     if (!it) return;
     Object.assign(it, patch);
     mkLzRenderCanvas();
+    mkLzEnforceLimits();   // un texto más largo o un área editada pueden requerir encoger
 }
 
 // Variante para controles con estado visual en la barra (ej. alineación): además de
@@ -1257,9 +1317,60 @@ function mkLzResizeImage(w) {
 function mkLzAddText() {
     const st = mkLzState();
     const id = st.seq++;
-    st.items.push({ id, type: 'text', name: 'Texto', x: MK_LZ_W / 2, y: MK_LZ_H / 2, text: 'Texto', font: 'sun', size: 120, align: 'center' });
-    st.sel = id;
-    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
+    // baseSize = tamaño DESEADO por el usuario; si el texto toca un área de límite, size
+    // baja automáticamente pero baseSize se conserva para crecer de vuelta si cabe.
+    st.items.push({ id, type: 'text', name: 'Texto', x: MK_LZ_W / 2, y: MK_LZ_H / 2, text: 'Texto', font: 'sun', size: 120, baseSize: 120, align: 'center' });
+    mkLzSetSel([id]);
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); mkLzEnforceLimits();
+}
+
+// Área de LÍMITE: guía de edición (rojo punteado). Si un texto la toca, su tamaño se
+// reduce solo hasta dejar de tocarla (mínimo 10). NO se exporta al PNG.
+function mkLzAddLimit() {
+    const st = mkLzState();
+    const id = st.seq++;
+    st.items.push({ id, type: 'limit', name: 'Límite', x: 100, y: 100, w: 300, h: 200 });
+    mkLzSetSel([id]);
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); mkLzEnforceLimits();
+}
+
+// Reduce el tamaño de los TEXTOS que tocan un área de límite: parte del tamaño deseado
+// (baseSize) y baja de 2 en 2 hasta no tocar (o llegar a 10). Si el límite se quita o el
+// texto se acorta, vuelve a crecer hasta baseSize. Mide con getBBox sobre el DOM vivo.
+function mkLzEnforceLimits() {
+    const st = mkLzState();
+    const limits = st.items.filter(i => i.type === 'limit');
+    const texts = st.items.filter(i => i.type === 'text');
+    if (!texts.length) return;
+    const svg = document.getElementById('mk-lz-svg');
+    if (!svg) return;
+    let changed = false;
+    for (const t of texts) {
+        if (t.baseSize == null) t.baseSize = t.size;
+        const node = svg.querySelector(`text[data-lz="${t.id}"]`);
+        if (!node) continue;
+        let size = t.baseSize;
+        node.setAttribute('font-size', size);
+        const hits = () => {
+            if (!limits.length) return false;
+            let b; try { b = node.getBBox(); } catch (_) { return false; }
+            return limits.some(L => !(b.x + b.width < L.x || b.x > L.x + L.w || b.y + b.height < L.y || b.y > L.y + L.h));
+        };
+        let guard = 0;
+        while (size > 10 && hits() && guard++ < 300) {
+            size = Math.max(10, size - 2);
+            node.setAttribute('font-size', size);
+        }
+        if (size !== t.size) { t.size = size; changed = true; }
+        else node.setAttribute('font-size', t.size);   // restaura si solo probamos baseSize
+    }
+    if (changed) {
+        mkLzRenderCanvas();   // re-dibuja con los tamaños finales (y el contorno correcto)
+        const ids = mkLzSelIds();
+        const it = ids.length === 1 ? st.items.find(i => i.id === ids[0]) : null;
+        const inp = document.getElementById('mk-lz-size-inp');
+        if (inp && it && it.type === 'text' && document.activeElement !== inp) inp.value = it.size;
+    }
 }
 
 function mkLzAddPreset(kind) {
@@ -1342,6 +1453,7 @@ function mkLzDelete() {
     st.items = st.items.filter(i => !ids.includes(i.id));
     mkLzSetSel([]);
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
+    mkLzEnforceLimits();   // si se borró un límite, los textos pueden volver a su tamaño
 }
 
 // Duplica TODO lo seleccionado (Ctrl+D o botón): clones desplazados +24,+24 que quedan
@@ -1364,6 +1476,7 @@ function mkLzDuplicate() {
     }
     mkLzSetSel(clones);
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
+    mkLzEnforceLimits();
 }
 
 // Atajos de teclado del lienzo (solo en la pestaña Pruebas, con el lienzo montado y el
@@ -1392,7 +1505,7 @@ function mkLzRenderLayers() {
     // En SVG el último item del arreglo se pinta AL FRENTE -> se lista invertido (frente arriba).
     const selIds = mkLzSelIds();
     box.innerHTML = [...st.items].reverse().map(it => {
-        const icon = it.type === 'text' ? 'fa-font' : (it.type === 'image' ? 'fa-image' : 'fa-bezier-curve');
+        const icon = it.type === 'text' ? 'fa-font' : (it.type === 'image' ? 'fa-image' : (it.type === 'limit' ? 'fa-vector-square' : 'fa-bezier-curve'));
         return `
         <div class="mk-lz-layer${selIds.includes(it.id) ? ' active' : ''}" onclick="mkLzSelect(${it.id}, event)">
             <i class="fas ${icon}"></i>
@@ -1444,7 +1557,7 @@ function mkLzPoint(ev) {
     return { x: p.x, y: p.y };
 }
 
-function mkLzMetric(it) { return it.type === 'text' ? it.size : (it.type === 'image' ? it.w : it.scale); }
+function mkLzMetric(it) { return it.type === 'text' ? it.size : (it.type === 'image' || it.type === 'limit' ? it.w : it.scale); }
 
 function mkLzDown(ev) {
     const st = mkLzState();
@@ -1463,7 +1576,7 @@ function mkLzDown(ev) {
         }[handle.getAttribute('data-lzh')];
         const p = mkLzPoint(ev);
         const d0 = Math.hypot(p.x - anchor.x, p.y - anchor.y) || 1;
-        mkLzDrag = { resize: true, anchor, d0, items: boxes.map(({ it }) => ({ id: it.id, ox: it.x, oy: it.y, m0: mkLzMetric(it) })) };
+        mkLzDrag = { resize: true, anchor, d0, items: boxes.map(({ it }) => ({ id: it.id, ox: it.x, oy: it.y, m0: mkLzMetric(it), ar: it.type === 'limit' ? (it.h / it.w) : undefined })) };
         try { document.getElementById('mk-lz-svg').setPointerCapture(ev.pointerId); } catch (_) { /* noop */ }
         return;
     }
@@ -1506,8 +1619,9 @@ function mkLzMove(ev) {
             const it = st.items.find(i => i.id === d.id);
             if (!it) continue;
             let fEff = f;   // con UN elemento, el tope de su métrica también fija el ancla exacta
-            if (it.type === 'text') { it.size = Math.max(10, Math.round(d.m0 * f)); if (single) fEff = it.size / d.m0; }
+            if (it.type === 'text') { it.size = Math.max(10, Math.round(d.m0 * f)); it.baseSize = it.size; if (single) fEff = it.size / d.m0; }
             else if (it.type === 'image') { it.w = Math.max(20, Math.round(d.m0 * f)); it.h = Math.round(it.w * (it.ar || 1)); if (single) fEff = it.w / d.m0; }
+            else if (it.type === 'limit') { it.w = Math.max(20, Math.round(d.m0 * f)); it.h = Math.max(20, Math.round(d.m0 * f * (d.ar || 1))); if (single) fEff = it.w / d.m0; }
             else { it.scale = Math.max(0.1, +(d.m0 * f).toFixed(2)); if (single) fEff = it.scale / d.m0; }
             it.x = Math.round(mkLzDrag.anchor.x + (d.ox - mkLzDrag.anchor.x) * fEff);
             it.y = Math.round(mkLzDrag.anchor.y + (d.oy - mkLzDrag.anchor.y) * fEff);
@@ -1529,13 +1643,14 @@ function mkLzUp() {
     const wasResize = mkLzDrag.resize;
     mkLzDrag = null;
     mkLzRenderCanvas();
+    mkLzEnforceLimits();   // al soltar: reduce textos que toquen un área de límite
     if (wasResize) mkLzRenderTools();   // sincroniza los inputs numéricos (tamaño/escala/ancho)
 }
 
 // ---- exportar: SVG independiente (fuente embebida) -> canvas 864×1152 -> PNG ----
 async function mkLzRasterize() {
     const fontUrl = await mkFontDataUrl();
-    const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${MK_LZ_W} ${MK_LZ_H}" width="${MK_LZ_W}" height="${MK_LZ_H}"><defs><style>@font-face{font-family:'${MK_DESIGN_FONT_FAMILY}';src:url(${fontUrl}) format('truetype');}</style></defs><rect x="0" y="0" width="${MK_LZ_W}" height="${MK_LZ_H}" fill="#000000"></rect>${mkLzItemsMarkup()}</svg>`;
+    const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${MK_LZ_W} ${MK_LZ_H}" width="${MK_LZ_W}" height="${MK_LZ_H}"><defs><style>@font-face{font-family:'${MK_DESIGN_FONT_FAMILY}';src:url(${fontUrl}) format('truetype');}</style></defs><rect x="0" y="0" width="${MK_LZ_W}" height="${MK_LZ_H}" fill="#000000"></rect>${mkLzItemsMarkup(true)}</svg>`;
     const img = new Image();
     img.decoding = 'async';
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
@@ -1551,7 +1666,7 @@ async function mkLzRasterize() {
 
 // PNG del lienzo como 2ª referencia del banco de pruebas (misma ranura que "Subir imagen").
 async function mkLzUseAsRef(btn) {
-    if (!mkLzState().items.length) { mkToast('El lienzo está vacío: agrega texto o elementos primero.', 'error'); return; }
+    if (!mkLzState().items.some(i => i.type !== 'limit')) { mkToast('El lienzo está vacío: agrega texto o elementos primero (las áreas de límite no se exportan).', 'error'); return; }
     const orig = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Convirtiendo…'; }
     try {
@@ -1566,7 +1681,7 @@ async function mkLzUseAsRef(btn) {
 }
 
 async function mkLzDownload(btn) {
-    if (!mkLzState().items.length) { mkToast('El lienzo está vacío: agrega texto o elementos primero.', 'error'); return; }
+    if (!mkLzState().items.some(i => i.type !== 'limit')) { mkToast('El lienzo está vacío: agrega texto o elementos primero (las áreas de límite no se exportan).', 'error'); return; }
     const orig = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Exportando…'; }
     try {
@@ -1668,6 +1783,7 @@ async function mkLzOnDesignPick(id) {
     st.seq = st.items.reduce((m, i) => Math.max(m, +i.id || 0), 0) + 1;
     const name = document.getElementById('mk-lz-name'); if (name) name.value = d.nombre || '';
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); mkLzRenderDesignsSelect();
+    mkLzEnforceLimits();
     mkToast('Diseño cargado ✓', 'success');
 }
 
