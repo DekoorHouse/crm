@@ -1,7 +1,11 @@
 ' infinito.vbs — Genera la hoja de lampara(s) infinito desde plantilla y exporta SVG para laser.
-' Uso: cscript //nologo infinito.vbs [/label:DH13492-DH13495] "Nombre1" "Nombre2" "Fecha1" ["Nombre3" "Nombre4" "Fecha2"]
+' Uso: cscript //nologo infinito.vbs [/label:DH13492-DH13495] [/file:base-sin-extension] "Nombre1" "Nombre2" "Fecha1" ["Nombre3" "Nombre4" "Fecha2"]
 '   3 argumentos -> plantilla de 1 lampara | 6 argumentos -> plantilla de 2 lamparas
 '   /label: opcional, se antepone al nombre del archivo (trazabilidad, ej. numeros DH)
+'   /file:  opcional, nombre base EXACTO de los archivos de salida (sin extension). Lo usa el
+'           svg-worker para conocer las rutas sin parsear stdout (evita lios de codepage con acentos).
+'   /close: opcional, cierra el documento al terminar (para el worker automatico; sin esto el
+'           doc queda abierto en Corel para revision visual del operador).
 ' Imprime al final: "OK <ruta-svg>" y "CDR <ruta-cdr>"
 '
 ' La hoja es de 350x330 mm con todo alineado arriba-izquierda (ya viene asi en la plantilla).
@@ -13,12 +17,14 @@ Const MAX_W_NOMBRE = 52   ' mm — ancho maximo para caber en el aro del infinit
 Const BASE_FECHA = 25.3   ' pt
 Const MAX_W_FECHA = 55    ' mm
 
-Dim args, nArgs, label
+Dim args, nArgs, label, fileBase
 Set args = WScript.Arguments.Unnamed
 nArgs = args.Count
 label = ""
+fileBase = ""
 On Error Resume Next
 label = WScript.Arguments.Named("label")
+fileBase = WScript.Arguments.Named("file")
 On Error GoTo 0
 If nArgs <> 3 And nArgs <> 6 Then
     WScript.Echo "Uso: cscript //nologo infinito.vbs [/label:DHxxxx] ""Nombre1"" ""Nombre2"" ""Fecha1"" [""Nombre3"" ""Nombre4"" ""Fecha2""]"
@@ -42,11 +48,15 @@ End If
 outDir = shell.ExpandEnvironmentStrings("%USERPROFILE%") & "\Documents\SVG-Corte"
 If Not fso.FolderExists(outDir) Then fso.CreateFolder outDir
 
-stamp = Year(Now) & Pad2(Month(Now)) & Pad2(Day(Now)) & "-" & Pad2(Hour(Now)) & Pad2(Minute(Now)) & Pad2(Second(Now))
-base = "infinito-" & Slug(args(0)) & "-" & Slug(args(1))
-If nArgs = 6 Then base = base & "-" & Slug(args(3)) & "-" & Slug(args(4))
-If label <> "" Then base = Slug(label) & "-" & base
-base = base & "-" & stamp
+If fileBase <> "" Then
+    base = Slug(fileBase)
+Else
+    stamp = Year(Now) & Pad2(Month(Now)) & Pad2(Day(Now)) & "-" & Pad2(Hour(Now)) & Pad2(Minute(Now)) & Pad2(Second(Now))
+    base = "infinito-" & Slug(args(0)) & "-" & Slug(args(1))
+    If nArgs = 6 Then base = base & "-" & Slug(args(3)) & "-" & Slug(args(4))
+    If label <> "" Then base = Slug(label) & "-" & base
+    base = base & "-" & stamp
+End If
 cdrPath = outDir & "\" & base & ".cdr"
 svgPath = outDir & "\" & base & ".svg"
 
@@ -144,8 +154,10 @@ If InStr(raw, "<svg") = 0 Then
 End If
 
 ' El doc queda abierto para revision visual; Dirty=False para que cerrar no pregunte
-' (el .cdr guardado conserva los textos editables; lo abierto ya esta en curvas)
+' (el .cdr guardado conserva los textos editables; lo abierto ya esta en curvas).
+' Con /close (worker automatico) se cierra para no acumular documentos en Corel.
 doc.Dirty = False
+If WScript.Arguments.Named.Exists("close") Then doc.Close
 WScript.Echo "OK " & svgPath
 WScript.Echo "CDR " & cdrPath
 

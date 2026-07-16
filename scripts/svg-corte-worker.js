@@ -80,19 +80,30 @@ async function uploadToDrive(filePath) {
     return data; // { ok, id, name, webViewLink }
 }
 
-// Corre infinito.vbs y devuelve { svg, cdr }.
+// Nombre de archivo seguro: sin acentos ni caracteres raros (los acentos rompen el pipe de
+// stdout de cscript, por eso el worker dicta el nombre con /file en vez de parsear rutas).
+function slugAscii(s) {
+    return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+}
+function stampNow() {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+// Corre infinito.vbs con nombre de salida dictado por el worker y devuelve { svg, cdr }.
 function runCorel(label, fields) {
-    const args = ['//nologo', INFINITO_VBS, '/label:' + label];
+    const base = slugAscii([label, 'infinito', ...fields.map(f => `${f.nombre1}-${f.nombre2}`), stampNow()].join('-'));
+    const svg = path.join(OUT_DIR, base + '.svg');
+    const cdr = path.join(OUT_DIR, base + '.cdr');
+    const args = ['//nologo', INFINITO_VBS, '/label:' + label, '/file:' + base, '/close'];
     for (const f of fields) {
         args.push(f.nombre1, f.nombre2, f.fecha);
     }
     const r = spawnSync('cscript', args, { encoding: 'utf8', timeout: 5 * 60 * 1000, windowsHide: true });
     const out = (r.stdout || '') + (r.stderr || '');
     if (r.status !== 0) throw new Error('infinito.vbs fallo (exit ' + r.status + '): ' + out.trim().slice(0, 300));
-    const svg = (out.match(/^OK (.+)$/m) || [])[1];
-    const cdr = (out.match(/^CDR (.+)$/m) || [])[1];
-    if (!svg || !fs.existsSync(svg.trim())) throw new Error('infinito.vbs no reporto SVG. Salida: ' + out.trim().slice(0, 300));
-    return { svg: svg.trim(), cdr: (cdr || '').trim() };
+    if (!fs.existsSync(svg)) throw new Error('infinito.vbs termino sin crear ' + svg + '. Salida: ' + out.trim().slice(0, 300));
+    return { svg, cdr };
 }
 
 async function getSettings() {
