@@ -1422,23 +1422,31 @@ function mkLzAddLimit() {
 // ---- límite a MANO ALZADA: se activa el modo y se traza directo sobre el lienzo ----
 let mkLzDrawPts = null;   // puntos del trazo en curso (null = no está trazando)
 
+// Modo trazo en el SVG: cursor de cruz + clase que vuelve los objetos "transparentes" al
+// mouse (pointer-events:none) para poder trazar el límite ENCIMA de un objeto sin que este
+// lo capture ni muestre el cursor de mover.
+function mkLzSetDrawMode(on) {
+    const svg = document.getElementById('mk-lz-svg');
+    if (!svg) return;
+    svg.style.cursor = on ? 'crosshair' : '';
+    svg.classList.toggle('mk-lz-drawing', !!on);
+}
+
 function mkLzToggleDrawLimit() {
     const st = mkLzState();
     st.drawing = !st.drawing;
     mkLzDrawPts = null;
     if (st.drawing) mkLzSetSel([]);
-    const svg = document.getElementById('mk-lz-svg');
-    if (svg) svg.style.cursor = st.drawing ? 'crosshair' : '';
+    mkLzSetDrawMode(st.drawing);
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
-    if (st.drawing) mkToast('Traza el área de límite arrastrando sobre el lienzo (Esc cancela).', 'info');
+    if (st.drawing) mkToast('Traza el área de límite arrastrando sobre el lienzo, incluso encima de objetos (Esc cancela).', 'info');
 }
 
 function mkLzCancelDraw() {
     const st = mkLzState();
     st.drawing = false;
     mkLzDrawPts = null;
-    const svg = document.getElementById('mk-lz-svg');
-    if (svg) svg.style.cursor = '';
+    mkLzSetDrawMode(false);
     mkLzRenderCanvas(); mkLzRenderTools();
 }
 
@@ -1458,8 +1466,7 @@ function mkLzFinishDraw() {
     const pts = mkLzDrawPts || [];
     mkLzDrawPts = null;
     st.drawing = false;
-    const svg = document.getElementById('mk-lz-svg');
-    if (svg) svg.style.cursor = '';
+    mkLzSetDrawMode(false);
     const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
     const x0 = Math.min(...xs), y0 = Math.min(...ys);
     const w = Math.max(...xs) - x0, h = Math.max(...ys) - y0;

@@ -931,6 +931,8 @@ const MockupsViewTemplate = () => `
             .mk-lz-sep{width:1px;height:22px;background:var(--color-border);margin:0 4px}
             #mk-lz-svg{width:324px;height:432px;background:#000;border:1px solid var(--color-border);border-radius:8px;display:block;touch-action:none}
             #mk-lz-svg [data-lz]{cursor:move}
+            /* Modo "límite a mano": los objetos no interceptan el mouse (para trazar encima de ellos) y el cursor queda en cruz */
+            #mk-lz-svg.mk-lz-drawing [data-lz]{pointer-events:none;cursor:crosshair}
             /* Panel de capas del lienzo */
             .mk-lz-layers{width:230px;display:flex;flex-direction:column;gap:4px}
             #mk-lz-layers-list{display:flex;flex-direction:column;gap:4px;max-height:432px;overflow-y:auto}
