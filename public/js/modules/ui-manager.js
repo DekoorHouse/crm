@@ -192,16 +192,18 @@ window.DesignPendingViewTemplate = DesignPendingViewTemplate;
 async function renderDesignPendingView() {
     const container = document.getElementById('design-pending-container');
     if (!container) return;
-    container.innerHTML = '<p class="text-gray-500">Cargando pendientes de diseño…</p>';
+    const tab = window._designPendingTab || 'pendientes';
+    container.innerHTML = '<p class="text-gray-500">Cargando…</p>';
     try {
-        const res = await fetch(`${API_BASE_URL}/api/design-pending`);
+        const url = `${API_BASE_URL}/api/design-pending` + (tab === 'disenados' ? '?done=1' : '');
+        const res = await fetch(url);
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
         window._designPendingData = data.orders || [];
         window._designPendingTotal = data.total != null ? data.total : window._designPendingData.length;
         _paintDesignPending();
     } catch (e) {
-        container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los pendientes: ${escapeHtml(e.message || String(e))}</p>
+        container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los datos: ${escapeHtml(e.message || String(e))}</p>
             <button class="btn btn-outline btn-sm mt-2" onclick="renderDesignPendingView()">Reintentar</button>`;
     }
 }
@@ -210,38 +212,84 @@ window.renderDesignPendingView = renderDesignPendingView;
 function setDesignPendingFilter(f) { window._designPendingFilter = f; _paintDesignPending(); }
 window.setDesignPendingFilter = setDesignPendingFilter;
 
+function switchDesignPendingTab(tab) {
+    window._designPendingTab = tab;
+    window._designPendingFilter = 'all';
+    renderDesignPendingView();
+}
+window.switchDesignPendingTab = switchDesignPendingTab;
+
+// Marca un pedido como "ya diseñado" (lo saca de Pendientes y lo pasa a Diseñados).
+async function markDesignDone(orderId, el) {
+    if (el) el.disabled = true;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/done`, { method: 'POST' });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        renderDesignPendingView();
+    } catch (e) { if (el) el.disabled = false; alert('No se pudo marcar como diseñado: ' + (e.message || e)); }
+}
+window.markDesignDone = markDesignDone;
+
+// Regresa un pedido de Diseñados a Pendientes (deshace el "✓ Diseñado").
+async function reopenDesign(orderId, el) {
+    if (el) el.disabled = true;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/reopen`, { method: 'POST' });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        renderDesignPendingView();
+    } catch (e) { if (el) el.disabled = false; alert('No se pudo regresar a pendientes: ' + (e.message || e)); }
+}
+window.reopenDesign = reopenDesign;
+
 // Pinta desde window._designPendingData (sin re-consultar) para filtros instantáneos.
 function _paintDesignPending() {
     const container = document.getElementById('design-pending-container');
     if (!container) return;
+    const tab = window._designPendingTab || 'pendientes';
     const all = window._designPendingData || [];
+
+    // Pestañas: Pendientes / Diseñados.
+    const tabBtn = (key, label) => `<button onclick="switchDesignPendingTab('${key}')" style="border:none;background:none;padding:8px 4px;margin-right:18px;font-size:.95rem;font-weight:700;cursor:pointer;color:${tab === key ? 'var(--color-primary,#ef4444)' : 'var(--color-text-light,#94a3b8)'};border-bottom:3px solid ${tab === key ? 'var(--color-primary,#ef4444)' : 'transparent'}">${label}</button>`;
+    const tabsBar = `<div style="display:flex;align-items:center;border-bottom:1px solid var(--color-border);margin-bottom:14px">${tabBtn('pendientes', 'Pendientes')}${tabBtn('disenados', 'Diseñados ✓')}</div>`;
+
     if (!all.length) {
-        container.innerHTML = '<p class="text-gray-500">🎉 No hay pedidos pendientes de diseño ahora mismo.</p>';
+        container.innerHTML = tabsBar + (tab === 'disenados'
+            ? '<p class="text-gray-500">Aún no marcas pedidos como diseñados. Usa el botón “✓ Diseñado” en Pendientes.</p>'
+            : '<p class="text-gray-500">🎉 No hay pedidos pendientes de diseño ahora mismo.</p>');
         return;
     }
-    const counts = {}; Object.keys(DP_MOTIVOS).forEach(k => counts[k] = 0);
-    all.forEach(o => (o.reasons || []).forEach(r => { if (counts[r] != null) counts[r]++; }));
-    const filter = window._designPendingFilter || 'all';
-    const shown = filter === 'all' ? all : all.filter(o => (o.reasons || []).includes(filter));
 
-    const chipDefs = [['all', 'Todos', all.length]].concat(Object.keys(DP_MOTIVOS).map(k => [k, DP_MOTIVOS[k][0], counts[k]]));
-    const chips = chipDefs.map(([k, lbl, c]) => {
-        const on = filter === k;
-        const col = k === 'all' ? 'var(--color-primary,#ef4444)' : DP_MOTIVOS[k][1];
-        return `<button onclick="setDesignPendingFilter('${k}')" style="border:1px solid ${on ? col : 'var(--color-border,#e5e7eb)'};background:${on ? col : 'transparent'};color:${on ? '#fff' : 'var(--color-text,#334155)'};border-radius:999px;padding:5px 14px;font-size:.8rem;cursor:pointer;font-weight:600;white-space:nowrap">${lbl} (${c})</button>`;
-    }).join('');
+    // Chips por motivo: solo en Pendientes.
+    let chips = '';
+    let shown = all;
+    if (tab === 'pendientes') {
+        const counts = {}; Object.keys(DP_MOTIVOS).forEach(k => counts[k] = 0);
+        all.forEach(o => (o.reasons || []).forEach(r => { if (counts[r] != null) counts[r]++; }));
+        const filter = window._designPendingFilter || 'all';
+        shown = filter === 'all' ? all : all.filter(o => (o.reasons || []).includes(filter));
+        const chipDefs = [['all', 'Todos', all.length]].concat(Object.keys(DP_MOTIVOS).map(k => [k, DP_MOTIVOS[k][0], counts[k]]));
+        chips = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">` + chipDefs.map(([k, lbl, c]) => {
+            const on = filter === k;
+            const col = k === 'all' ? 'var(--color-primary,#ef4444)' : DP_MOTIVOS[k][1];
+            return `<button onclick="setDesignPendingFilter('${k}')" style="border:1px solid ${on ? col : 'var(--color-border,#e5e7eb)'};background:${on ? col : 'transparent'};color:${on ? '#fff' : 'var(--color-text,#334155)'};border-radius:999px;padding:5px 14px;font-size:.8rem;cursor:pointer;font-weight:600;white-space:nowrap">${lbl} (${c})</button>`;
+        }).join('') + `</div>`;
+    }
 
     const rows = shown.map((o, i) => {
-        const badges = (o.reasons || []).map(r => {
-            const m = DP_MOTIVOS[r]; if (!m) return '';
-            return `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>`;
-        }).join('');
         const chan = o.channel === 'instagram' ? '<i class="fab fa-instagram" style="color:#e1306c"></i>'
             : o.channel === 'messenger' ? '<i class="fab fa-facebook-messenger" style="color:#0084ff"></i>'
             : '<i class="fab fa-whatsapp" style="color:#25d366"></i>';
+        const motivoCell = tab === 'disenados'
+            ? `<span style="display:inline-block;background:#16a34a22;color:#16a34a;border:1px solid #16a34a66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px"><i class="fas fa-check" style="margin-right:3px"></i>Diseñado</span>`
+            : (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('');
         const statusSel = `<select onchange="changeDesignPendingStatus('${o.id}', this.value, this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);width:132px">${ENVIO_STATUS_OPTIONS.map(s => `<option${(o.estatus || 'Sin estatus') === s ? ' selected' : ''}>${s}</option>`).join('')}</select>`;
         const chatBtn = o.contactId ? `<button onclick="openChatEnviosModal('${escapeHtml(String(o.contactId))}')" title="Ver conversación" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:14px"><i class="fas fa-comments"></i></button>` : '';
-        const fecha = o.corregirAt || o.comprobanteValidadoAt || o.createdAt;
+        const actionBtn = tab === 'disenados'
+            ? `<button onclick="reopenDesign('${o.id}', this)" title="Regresar a Pendientes" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;cursor:pointer;color:#334155;padding:4px 10px;font-size:12px;border-radius:6px;font-weight:600"><i class="fas fa-rotate-left" style="margin-right:4px"></i>Regresar</button>`
+            : `<button onclick="markDesignDone('${o.id}', this)" title="Marcar como diseñado y sacar de la lista" style="border:none;background:#16a34a;color:#fff;cursor:pointer;padding:5px 10px;font-size:12px;border-radius:6px;font-weight:700"><i class="fas fa-check" style="margin-right:4px"></i>Diseñado</button>`;
+        const fecha = tab === 'disenados' ? o.disenoListoAt : (o.corregirAt || o.comprobanteValidadoAt || o.createdAt);
         const fechaTxt = fecha ? new Date(fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) : '—';
         const prod = escapeHtml(o.producto || '') + (o.itemCount > 1 ? ` <span style="color:#94a3b8">+${o.itemCount - 1}</span>` : '');
         return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:middle">
@@ -249,19 +297,20 @@ function _paintDesignPending() {
             <td style="padding:9px 12px 9px 0;font-weight:700;color:var(--color-primary);white-space:nowrap">${escapeHtml(o.orderNumber)}</td>
             <td style="padding:9px 12px 9px 0;white-space:nowrap">${chan} ${escapeHtml(o.clienteName || '')}</td>
             <td style="padding:9px 12px 9px 0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${prod}</td>
-            <td style="padding:9px 12px 9px 0">${badges}</td>
+            <td style="padding:9px 12px 9px 0">${motivoCell}</td>
             <td style="padding:6px 12px 6px 0;white-space:nowrap">${statusSel}</td>
             <td style="padding:9px 12px 9px 0;color:#94a3b8;white-space:nowrap">${fechaTxt}</td>
-            <td style="padding:9px 0;text-align:right;white-space:nowrap">${chatBtn}</td>
+            <td style="padding:9px 0;text-align:right;white-space:nowrap"><div style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end">${chatBtn}${actionBtn}</div></td>
         </tr>`;
     }).join('');
 
-    const totalNote = (window._designPendingTotal > all.length) ? ` · mostrando ${all.length} de ${window._designPendingTotal}` : '';
-    container.innerHTML = `
+    const totalNote = (window._designPendingTotal > all.length) ? ` · mostrando ${all.length} de ${window._designPendingTotal}` : ` · ${all.length}`;
+    container.innerHTML = tabsBar + `
         <style>
           #design-pending-container thead th{position:sticky;top:0;z-index:2;background:var(--color-container-bg,#fff);box-shadow:inset 0 -2px 0 var(--color-border)}
         </style>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">${chips}<span style="color:#94a3b8;font-size:.8rem">${totalNote}</span></div>
+        ${chips}
+        <div style="color:#94a3b8;font-size:.8rem;margin-bottom:8px">${tab === 'disenados' ? 'Diseñados' : 'Pendientes'}${totalNote}</div>
         <div style="overflow:auto">
           <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
             <thead>
@@ -270,10 +319,10 @@ function _paintDesignPending() {
                 <th style="padding:8px 12px 8px 0">Pedido</th>
                 <th style="padding:8px 12px 8px 0">Cliente</th>
                 <th style="padding:8px 12px 8px 0">Producto</th>
-                <th style="padding:8px 12px 8px 0">Motivo</th>
+                <th style="padding:8px 12px 8px 0">${tab === 'disenados' ? 'Estado' : 'Motivo'}</th>
                 <th style="padding:8px 12px 8px 0">Estatus</th>
-                <th style="padding:8px 12px 8px 0">Desde</th>
-                <th style="padding:8px 0;text-align:right">Chat</th>
+                <th style="padding:8px 12px 8px 0">${tab === 'disenados' ? 'Diseñado' : 'Desde'}</th>
+                <th style="padding:8px 0;text-align:right">Acciones</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>

@@ -7920,7 +7920,7 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 // mockup pagado / datos / video / anticipo / 2º producto). Fuente de verdad: los propios pedidos,
 // evaluados con la MISMA lógica que server/design/designPending.js. Devuelve cada pedido con sus
 // motivos + nombre/canal del cliente. La lista de la sección "Pendientes de Diseño" del CRM la usa.
-router.get('/design-pending', async (_req, res) => {
+router.get('/design-pending', async (req, res) => {
     try {
         const { reasonsForOrderData } = require('./design/designPending');
         const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
@@ -7929,21 +7929,11 @@ router.get('/design-pending', async (_req, res) => {
         // COMPROBANTE validado (anticipo/mockup pagado) + los que marcaron 2º producto tras pagar.
         // OJO: NO se jala por estatus 'Pagado' — en este CRM ahí se acumulan miles de pedidos ya
         // terminados; el motor (designPending.js) usa comprobanteValidadoAt como señal de pago.
-        const byId = new Map();
-        const [s1, s2, s3] = await Promise.all([
-            db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
-            db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(500).get(),
-            db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
-        ]);
-        [s1, s2, s3].forEach(s => s.forEach(d => byId.set(d.id, d)));
-
-        let orders = [];
-        for (const doc of byId.values()) {
+        const doneMode = req.query.done === '1' || req.query.done === 'true';
+        const mapOrder = (doc, reasons) => {
             const p = doc.data();
-            const reasons = reasonsForOrderData(p);
-            if (!reasons.length) continue;
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
-            orders.push({
+            return {
                 id: doc.id,
                 orderNumber: num != null ? `DH${num}` : (p.numeroPedido || doc.id),
                 contactId: p.contactId || p.telefono || null,
@@ -7956,7 +7946,30 @@ router.get('/design-pending', async (_req, res) => {
                 createdAt: tsToMs(p.createdAt),
                 comprobanteValidadoAt: tsToMs(p.comprobanteValidadoAt),
                 corregirAt: tsToMs(p.corregirAt),
-            });
+                disenoListoAt: tsToMs(p.disenoListoAt),
+            };
+        };
+
+        let orders = [];
+        if (doneMode) {
+            // Lista "Diseñados": pedidos marcados a mano como listos (disenoListoAt), recientes arriba.
+            const snap = await db.collection('pedidos').orderBy('disenoListoAt', 'desc').limit(300).get();
+            snap.forEach(doc => orders.push(mapOrder(doc, [])));
+        } else {
+            // Pendientes: Corregir + comprobante validado + 2º producto. NO por estatus 'Pagado'
+            // (ahí se acumulan miles de pedidos ya terminados; el motor usa comprobanteValidadoAt).
+            const byId = new Map();
+            const [s1, s2, s3] = await Promise.all([
+                db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
+                db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(500).get(),
+                db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
+            ]);
+            [s1, s2, s3].forEach(s => s.forEach(d => byId.set(d.id, d)));
+            for (const doc of byId.values()) {
+                const reasons = reasonsForOrderData(doc.data());
+                if (!reasons.length) continue;
+                orders.push(mapOrder(doc, reasons));
+            }
         }
 
         // Nombre + canal del cliente (batch getAll).
@@ -7969,13 +7982,47 @@ router.get('/design-pending', async (_req, res) => {
         }
         orders.forEach(o => { const c = infoById.get(o.contactId) || {}; o.clienteName = c.name || o.contactId; o.channel = c.channel || 'whatsapp'; });
 
-        // Más recientes por su "momento pendiente" arriba.
-        orders.sort((a, b) => (b.corregirAt || b.comprobanteValidadoAt || b.createdAt || 0) - (a.corregirAt || a.comprobanteValidadoAt || a.createdAt || 0));
+        if (doneMode) orders.sort((a, b) => (b.disenoListoAt || 0) - (a.disenoListoAt || 0));
+        else orders.sort((a, b) => (b.corregirAt || b.comprobanteValidadoAt || b.createdAt || 0) - (a.corregirAt || a.comprobanteValidadoAt || a.createdAt || 0));
 
-        const total = orders.length;
-        res.json({ success: true, total, orders: orders.slice(0, 500) });
+        res.json({ success: true, total: orders.length, orders: orders.slice(0, 500) });
     } catch (e) {
         console.error('[design-pending] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/design-pending/:orderId/done — marca un pedido como "ya diseñado": lo saca de Pendientes
+// y lo pasa a Diseñados. NO cambia el estatus real del pedido, solo pone la marca del tablero.
+router.post('/design-pending/:orderId/done', async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const ref = db.collection('pedidos').doc(orderId);
+        const doc = await ref.get();
+        if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        await ref.update({ disenoListoAt: admin.firestore.FieldValue.serverTimestamp() });
+        const d = doc.data();
+        try { await require('./design/designPending').recomputeForContact(d.contactId || d.telefono); } catch (_) {}
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[design-pending/done] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/design-pending/:orderId/reopen — regresa un pedido de Diseñados a Pendientes (quita la marca).
+router.post('/design-pending/:orderId/reopen', async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const ref = db.collection('pedidos').doc(orderId);
+        const doc = await ref.get();
+        if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        await ref.update({ disenoListoAt: admin.firestore.FieldValue.delete() });
+        const d = doc.data();
+        try { await require('./design/designPending').recomputeForContact(d.contactId || d.telefono); } catch (_) {}
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[design-pending/reopen] error:', e.message);
         res.status(500).json({ success: false, message: e.message });
     }
 });

@@ -24,6 +24,8 @@ const REASONS = ['mockup_pagado', 'datos', 'video', 'anticipo', 'segundo_product
 // Evalúa las 5 condiciones sobre los datos de UN pedido y devuelve la lista de motivos (puede ser []).
 function reasonsForOrderData(d) {
     if (!d) return [];
+    // Marcado a mano como "ya diseñado" desde el tablero (botón ✓ Diseñado) -> fuera de pendientes.
+    if (d.disenoListoAt) return [];
     const estatus = String(d.estatus || '').trim().toLowerCase();
     if (DONE.has(estatus)) return [];
 
