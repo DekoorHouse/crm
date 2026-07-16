@@ -89,6 +89,24 @@ For i = 0 To nt - 1
     textos(i).ConvertToCurves
 Next
 
+' Orientacion de produccion: rotar -90 (horario) + reflejar verticalmente (el grabado se
+' hace ESPEJEADO porque el laser graba por la parte de atras), y realinear arriba-izquierda.
+' Esto solo se aplica al SVG; el .cdr ya guardado queda en orientacion natural y editable.
+Dim g, sr2
+Set g = Nothing
+On Error Resume Next
+Set g = doc.ActivePage.Shapes.All.Group
+On Error GoTo 0
+If g Is Nothing Then
+    doc.ActivePage.SelectShapesFromRectangle -10, -10, doc.ActivePage.SizeWidth + 10, doc.ActivePage.SizeHeight + 10, False
+    Set g = corel.ActiveSelection.Group
+End If
+g.Rotate -90
+g.Flip 2 ' cdrFlipVertical
+g.PositionX = 0
+g.PositionY = doc.ActivePage.SizeHeight
+g.Ungroup
+
 ' Exportar SVG (pagina actual). 1345 = cdrSVG en Corel v23; 811 en versiones viejas.
 Dim filterId, exported, exportErr
 exported = False

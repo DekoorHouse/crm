@@ -47,11 +47,16 @@ lampara y se juntan 2 en una hoja); solo va 1 cuando ya no hay mas pedidos que d
 
    Hace: copia la plantilla a `Documents\SVG-Corte\infinito-<nombres>-<fecha>.cdr`, la abre,
    reemplaza los placeholders conservando el centro de cada texto, auto-reduce nombres largos
-   (base 65.2pt, ancho max 52 mm; fechas 25.3pt, max 55 mm), guarda el .cdr (textos editables),
-   convierte textos a curvas y exporta el SVG. Exito = lineas `OK <svg>` y `CDR <cdr>`.
+   (base 65.2pt, ancho max 52 mm; fechas 25.3pt, max 55 mm), guarda el .cdr (textos editables,
+   orientacion natural), convierte textos a curvas, aplica la **orientacion de produccion**
+   (rotar -90 + reflejar verticalmente + realinear arriba-izquierda — el grabado va ESPEJEADO
+   porque el laser graba por la parte de atras; regla dada por el usuario 2026-07-16) y
+   exporta el SVG. Exito = lineas `OK <svg>` y `CDR <cdr>`.
 3. **Verificacion visual** (recomendado): exportar PNG del doc abierto con
-   `doc.Export ruta, CLng(802), CLng(1), Nothing, Nothing` (cdrPNG=802) y mirarlo con Read:
-   nombres centrados en los aros, fecha centrada, nada encimado.
+   `doc.Export ruta, CLng(802), CLng(1), Nothing, Nothing` (cdrPNG=802) y mirarlo con Read.
+   Lo esperado en el SVG/PNG final: diseno VERTICAL pegado arriba-izquierda, textos EN ESPEJO
+   (ilegibles al derecho), globos hacia la derecha, bases a la izquierda; con 2 pedidos el
+   orden de arriba a abajo es nombre4, nombre3, nombre2, nombre1. Nada encimado.
 4. Subir el SVG a Drive y reportar con el link.
 
 ## Subida a Drive (carpeta "SVG Corte", id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`)
@@ -98,6 +103,8 @@ parentId fallara, re-buscar la carpeta: `title = 'SVG Corte' and mimeType = 'app
 - `SelectShapesFromRectangle` vive en **Page** (no en Document); retorna la seleccion en
   `corel.ActiveSelection`.
 - Un ShapeRange NO se indexa en VBS (`sr(i)` truena); iterar `For Each s In page.Shapes`.
+- `ShapeRange.Group` SI regresa el grupo (usar con Set), pero `Shape.Ungroup` NO regresa
+  objeto en v23 — llamarlo como instruccion simple, sin `Set`.
 - **NUNCA recorrer todo el documento de produccion del usuario (799+ shapes) leyendo
   colores/fills**: eso tumbo CorelDRAW una vez (se pierde trabajo no guardado). Leer solo
   region/indices acotados y propiedades baratas (pos/tam/texto).
