@@ -1,6 +1,7 @@
 ' infinito.vbs — Genera la hoja de lampara(s) infinito desde plantilla y exporta SVG para laser.
-' Uso: cscript //nologo infinito.vbs "Nombre1" "Nombre2" "Fecha1" ["Nombre3" "Nombre4" "Fecha2"]
+' Uso: cscript //nologo infinito.vbs [/label:DH13492-DH13495] "Nombre1" "Nombre2" "Fecha1" ["Nombre3" "Nombre4" "Fecha2"]
 '   3 argumentos -> plantilla de 1 lampara | 6 argumentos -> plantilla de 2 lamparas
+'   /label: opcional, se antepone al nombre del archivo (trazabilidad, ej. numeros DH)
 ' Imprime al final: "OK <ruta-svg>" y "CDR <ruta-cdr>"
 '
 ' La hoja es de 350x330 mm con todo alineado arriba-izquierda (ya viene asi en la plantilla).
@@ -12,11 +13,15 @@ Const MAX_W_NOMBRE = 52   ' mm — ancho maximo para caber en el aro del infinit
 Const BASE_FECHA = 25.3   ' pt
 Const MAX_W_FECHA = 55    ' mm
 
-Dim args, nArgs
-Set args = WScript.Arguments
+Dim args, nArgs, label
+Set args = WScript.Arguments.Unnamed
 nArgs = args.Count
+label = ""
+On Error Resume Next
+label = WScript.Arguments.Named("label")
+On Error GoTo 0
 If nArgs <> 3 And nArgs <> 6 Then
-    WScript.Echo "Uso: cscript //nologo infinito.vbs ""Nombre1"" ""Nombre2"" ""Fecha1"" [""Nombre3"" ""Nombre4"" ""Fecha2""]"
+    WScript.Echo "Uso: cscript //nologo infinito.vbs [/label:DHxxxx] ""Nombre1"" ""Nombre2"" ""Fecha1"" [""Nombre3"" ""Nombre4"" ""Fecha2""]"
     WScript.Quit 1
 End If
 
@@ -40,6 +45,7 @@ If Not fso.FolderExists(outDir) Then fso.CreateFolder outDir
 stamp = Year(Now) & Pad2(Month(Now)) & Pad2(Day(Now)) & "-" & Pad2(Hour(Now)) & Pad2(Minute(Now)) & Pad2(Second(Now))
 base = "infinito-" & Slug(args(0)) & "-" & Slug(args(1))
 If nArgs = 6 Then base = base & "-" & Slug(args(3)) & "-" & Slug(args(4))
+If label <> "" Then base = Slug(label) & "-" & base
 base = base & "-" & stamp
 cdrPath = outDir & "\" & base & ".cdr"
 svgPath = outDir & "\" & base & ".svg"
