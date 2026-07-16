@@ -1545,6 +1545,22 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
     const deptDot = deptColor ? `<span class="dept-dot" style="background:${deptColor}" title="${deptName.replace(/"/g,'')}"></span>` : '';
     const itemStyle = `style="${vsStyle}"`;
 
+    // Badges de "Pendiente de Diseño": un chip de color por cada motivo del pedido (los mantiene
+    // server/design/designPending.js sobre el contacto). Van en la línea del preview, junto al DH.
+    const _dpMap = {
+        mockup_pagado: ['Mockup pagado', '#6f42c1'],
+        datos: ['Datos', '#fd7e14'],
+        video: ['Video', '#e83e8c'],
+        anticipo: ['Anticipo', '#0d9488'],
+        segundo_producto: ['+Producto', '#2563eb'],
+    };
+    const designPendBadges = (contact.designPending && Array.isArray(contact.designPendingReasons))
+        ? contact.designPendingReasons.map(r => {
+            const m = _dpMap[r];
+            return m ? `<span class="dp-badge" style="background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66" title="Pendiente de diseño: ${m[0]}">${m[0]}</span>` : '';
+        }).join('')
+        : '';
+
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
             <div class="flex justify-between items-center">
@@ -1569,7 +1585,7 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
             </div>
             <div class="flex justify-between items-center">
                 <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
-                ${orderBadgeHTML}
+                <div class="dp-badges-wrap">${designPendBadges}${orderBadgeHTML}</div>
             </div>
         </div>`;
 

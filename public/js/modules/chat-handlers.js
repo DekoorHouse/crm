@@ -106,6 +106,9 @@ function handleSearchContacts() {
     if (state.designReviewFilter) {
         contactsToRender = contactsToRender.filter(c => c.inDesignReview === true);
     }
+    if (state.designPendingFilter) {
+        contactsToRender = contactsToRender.filter(c => c.designPending === true);
+    }
     if (Array.isArray(state.adIdFilters) && state.adIdFilters.length) {
         const selAds = new Set(state.adIdFilters);
         contactsToRender = contactsToRender.filter(c => Array.isArray(c.adSourceIds) && c.adSourceIds.some(id => selAds.has(id)));
@@ -1752,6 +1755,7 @@ function setFilter(filter) {
     state.purchaseFilter = null;
     state.unreadOnly = false;
     state.designReviewFilter = false;
+    state.designPendingFilter = false;
     state.adIdFilters = [];
     state.archivedOnly = false; // salir de la vista Archivados al elegir cualquier otro filtro
     if (filter === 'all') state.channelFilter = null; // "Todos" = reset total (incluye canal)
@@ -1774,6 +1778,7 @@ function toggleUnreadFilter() {
     state.unreadOnly = !state.unreadOnly;
     state.purchaseFilter = null;
     state.designReviewFilter = false;
+    state.designPendingFilter = false;
     state.activeFilter = 'all';
     state.adIdFilters = [];
     state.archivedOnly = false;
@@ -1790,6 +1795,7 @@ function toggleArchivedFilter() {
         state.unreadOnly = false;
         state.purchaseFilter = null;
         state.designReviewFilter = false;
+    state.designPendingFilter = false;
         state.activeFilter = 'all';
         state.adIdFilters = [];
     }
@@ -1828,6 +1834,7 @@ async function handleArchiveChat(event, contactId) {
 
 function setPurchaseFilter(filter) {
     state.designReviewFilter = false;
+    state.designPendingFilter = false;
     const current = state.purchaseFilter;
     if (!current) {
         state.purchaseFilter = filter;
@@ -1853,6 +1860,7 @@ window.setPurchaseFilter = setPurchaseFilter;
 
 function toggleDesignFilter() {
     state.designReviewFilter = !state.designReviewFilter;
+    state.designPendingFilter = false;
     state.unreadOnly = false;
     state.purchaseFilter = null;
     state.activeFilter = 'all';
@@ -1863,6 +1871,22 @@ function toggleDesignFilter() {
     fetchInitialContacts();
 }
 window.toggleDesignFilter = toggleDesignFilter;
+
+// Filtro "Pendientes de Diseño": chats con un pedido que necesita algo del equipo de diseño
+// (mockup pagado / dato mal / video / anticipo sin preview / 2º producto). Exclusivo como los demás.
+function toggleDesignPendingFilter() {
+    state.designPendingFilter = !state.designPendingFilter;
+    state.designReviewFilter = false;
+    state.unreadOnly = false;
+    state.purchaseFilter = null;
+    state.activeFilter = 'all';
+    state.adIdFilters = [];
+    state.archivedOnly = false; // salir de la vista Archivados
+    renderTagFilters();
+    state.contacts = [];
+    fetchInitialContacts();
+}
+window.toggleDesignPendingFilter = toggleDesignPendingFilter;
 
 function toggleChannelFilter(channel) {
     // Si ya está activo, desactivar (volver a "todos los canales")
@@ -1888,6 +1912,7 @@ function applyAdFilters(ids) {
     state.purchaseFilter = null;
     state.unreadOnly = false;
     state.designReviewFilter = false;
+    state.designPendingFilter = false;
     state.channelFilter = null;
     state.archivedOnly = false; // salir de la vista Archivados
     renderTagFilters();

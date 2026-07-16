@@ -979,7 +979,7 @@ function renderTagFilters() {
 
     // Botón "Todos"
     const anyAdFilter = Array.isArray(state.adIdFilters) && state.adIdFilters.length > 0;
-    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter && !state.designReviewFilter && !state.archivedOnly && !anyAdFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
+    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter && !state.designReviewFilter && !state.designPendingFilter && !state.archivedOnly && !anyAdFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
 
     // Estado de pedido (texto explícito — reemplaza las coronas)
     const greyActive = state.purchaseFilter === 'registered' || state.purchaseFilter === 'both';
@@ -990,6 +990,9 @@ function renderTagFilters() {
 
     // "En diseño" (reemplaza el pincel)
     buttonsHtml += `<button id="filter-design" class="filter-btn ${state.designReviewFilter ? 'active' : ''}" onclick="toggleDesignFilter()" title="En revisión de diseño">En diseño</button>`;
+
+    // "Pendientes de Diseño" (mockup pagado / dato mal / video / anticipo sin preview / 2º producto)
+    buttonsHtml += `<button id="filter-design-pending" class="filter-btn ${state.designPendingFilter ? 'active' : ''}" onclick="toggleDesignPendingFilter()" title="Pedidos con algún pendiente de diseño"><i class="fas fa-palette mr-1"></i>Pend. Diseño</button>`;
 
     // "Pendientes IA" (sin morado)
     buttonsHtml += `<button id="filter-pendientes_ia" class="filter-btn ${state.activeFilter === 'pendientes_ia' ? 'active' : ''}" onclick="setFilter('pendientes_ia')">Pendientes IA</button>`;

@@ -40,6 +40,7 @@ let state = {
     archivedOnly: false, // Vista "Archivados": muestra solo chats archivados (los archivados se ocultan de las demás vistas)
     purchaseFilter: null, // Filtro por estatus de compra ('registered' = corona gris, 'completed' = corona azul)
     designReviewFilter: false, // Filtro para chats en revisión de diseño
+    designPendingFilter: false, // Filtro "Pendientes de Diseño" (5 motivos: mockup pagado / datos / video / anticipo / 2º producto)
     channelFilter: null, // Filtro por canal: 'whatsapp', 'messenger', 'instagram', o null (todos)
     adIdFilters: [], // Filtro por anuncio(s) de origen: array de source_id. Vacío = sin filtro. Muestra chats que tuvieron CUALQUIERA de esos anuncios como fuente en algún momento.
     adsList: [], // Catálogo de anuncios para el selector del filtro [{ id, name, count, configured }]

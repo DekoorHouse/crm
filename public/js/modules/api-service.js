@@ -156,6 +156,10 @@ async function fetchInitialContacts() {
             url += `&designReview=true`;
         }
 
+        if (state.designPendingFilter) {
+            url += `&designPending=true`;
+        }
+
         if (state.channelFilter) {
             url += `&channel=${state.channelFilter}`;
         }
@@ -424,6 +428,10 @@ async function fetchMoreContacts() {
 
         if (state.designReviewFilter) {
             url += `&designReview=true`;
+        }
+
+        if (state.designPendingFilter) {
+            url += `&designPending=true`;
         }
 
         if (state.channelFilter) {
