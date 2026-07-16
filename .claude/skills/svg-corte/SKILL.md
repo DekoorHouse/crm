@@ -39,8 +39,9 @@ lampara y se juntan 2 en una hoja); solo va 1 cuando ya no hay mas pedidos que d
 1. **Datos**: por cada pedido: nombre izquierdo, nombre derecho y fecha (texto libre, se graba
    tal cual: "30-Julio-2025", "Forever", etc.). Si el usuario no dio los datos completos,
    preguntarlos en el chat en un solo mensaje (son texto libre, no usar AskUserQuestion).
-   Nombres de UNA linea; si piden dos renglones (ej. "Lourdes & Pedro") avisar que va en una
-   linea o ajustar a mano despues en el .cdr.
+   **Nombres a 2 renglones**: pasar el token literal `\n` dentro del valor (ej. "Rosa\nMaría")
+   — sale apilado y centrado a 44.8pt como los disenos manuales. La regla de negocio de cuando
+   partir un nombre vive en `server/mockups/nameLayout.js` (misma que usan los mockups).
 2. Ejecutar (3 argumentos = hoja de 1 lampara; 6 = hoja de 2):
 
        cscript //nologo "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\infinito.vbs" "Nombre1" "Nombre2" "Fecha1" ["Nombre3" "Nombre4" "Fecha2"]
@@ -83,12 +84,16 @@ grandes): tools del conector Google Drive via ToolSearch
 `disableConversionToGoogleType` = true, `textContent` = contenido exacto del SVG. Si el
 parentId fallara, re-buscar la carpeta: `title = 'SVG Corte' and mimeType = 'application/vnd.google-apps.folder'`.
 
-## Automatización (worker local)
+## Automatización (worker local) — EN PAUSA desde 2026-07-16
 
 `scripts/svg-corte-worker.js` (repo crm) hace el Modo 2 SOLO: pedidos 'Fabricar' con mockup
-aprobado → hoja de 2 → Corel → Drive → estatus "Diseñado por IA". Corre cada 15 min via el
-Programador de tareas de Windows ("CRM SVG Corte Worker", lanzador svg-corte-worker-hidden.vbs).
-Kill-switch: Firestore `svg_corte_config/settings.autoGenerate = false`. Log en
+aprobado → hoja de 2 → Corel → Drive → estatus "Diseñado por IA". **Fidelidad con el mockup**:
+usa `mockup_previews.previews[].layout` (renglones leidos por vision de la imagen que el
+cliente aprobo) como fuente de verdad de los textos; sin eso, los fields (que ya traen `\n`
+si la regla de renglones decidio 2 lineas). Para reactivar: poner
+`svg_corte_config/settings.autoGenerate = true` y recrear la tarea programada con
+`cmd /c 'schtasks /Create /F /TN "CRM SVG Corte Worker" /SC MINUTE /MO 15 /TR "\"C:\Program Files\nodejs\node.exe\" \"C:\Users\chris\Documents\crm\scripts\svg-corte-worker.js\""'`
+(node DIRECTO: WSH no lanza procesos bajo el Programador). Log en
 `Documents\SVG-Corte\worker.log`. Flags: `--dry` (solo lista), `--force`, `--max N`.
 
 ## Plantillas (`plantillas/`)
