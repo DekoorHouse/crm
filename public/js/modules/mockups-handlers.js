@@ -1092,7 +1092,7 @@ function mkLzHtml() {
                 <div class="mk-lz-side">
                     <button type="button" class="btn btn-primary btn-sm" onclick="mkLzUseAsRef(this)"><i class="fas fa-file-image mr-1"></i>Convertir a PNG → 2ª referencia</button>
                     <button type="button" class="btn btn-outline btn-sm" onclick="mkLzDownload(this)"><i class="fas fa-download mr-1"></i>Descargar PNG</button>
-                    <small class="mk-muted">Clic = seleccionar (con <b>Shift</b> se agregan más), arrastra para mover, <b>cuadritos de las esquinas</b> para escalar y <b>rueda del mouse</b> para hacer zoom. <b>Doble clic</b> en un texto para editarlo, <b>Ctrl+D</b> duplica y <b>Supr</b> elimina. Las áreas de <b>Límite</b> (rojo) encogen los textos que las tocan y no salen en el PNG.</small>
+                    <small class="mk-muted">Clic = seleccionar (con <b>Shift</b> se agregan más), arrastra para mover, <b>cuadritos de las esquinas</b> para escalar y <b>rueda del mouse</b> para hacer zoom. <b>Doble clic</b> en un texto para editarlo, <b>Ctrl+D</b> duplica y <b>Supr</b> elimina. Las áreas de <b>Límite</b> (rojo, rectangulares o trazadas <b>a mano</b>) son contenedores: un texto colocado adentro se encoge solo lo necesario para caber; no salen en el PNG.</small>
                     <div class="mk-lz-save">
                         <label class="mk-lz-label">Diseños guardados</label>
                         <select id="mk-lz-designs" onchange="mkLzOnDesignPick(this.value)"><option value="">— nuevo diseño —</option></select>
@@ -1120,6 +1120,9 @@ function mkLzMount() {
     mkLzRenderDesignsSelect();
     mkLzLoadDesignsList();   // async: rellena el selector de diseños guardados
     mkLzBindKeys();          // Supr = eliminar, Ctrl+D = duplicar (una sola vez por sesión)
+    // Cuando termina de cargar la fuente manuscrita, las medidas de tinta cambian:
+    // re-ajustar los textos dentro de límites con las métricas reales.
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => mkLzEnforceLimits());
 }
 
 // Markup de los items (compartido entre el lienzo en vivo y el SVG exportado).
@@ -1129,6 +1132,11 @@ function mkLzItemsMarkup(forExport) {
         if (it.type === 'limit') {
             if (forExport) return '';
             return `<rect data-lz="${it.id}" x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" fill="rgba(220,38,38,0.12)" stroke="#dc2626" stroke-width="2" stroke-dasharray="10 6"></rect>`;
+        }
+        if (it.type === 'limitPath') {
+            if (forExport) return '';
+            const d = 'M ' + (it.points || []).map(p => p.x + ' ' + p.y).join(' L ') + ' Z';
+            return `<g data-lz="${it.id}" transform="translate(${it.x},${it.y}) scale(${it.scale || 1})"><path d="${d}" fill="rgba(220,38,38,0.12)" stroke="#dc2626" stroke-width="2" stroke-dasharray="10 6"></path></g>`;
         }
         if (it.type === 'text') {
             const fam = it.font === 'arial' ? 'Arial, Helvetica, sans-serif' : "'Rows of Sunflowers'";
@@ -1243,7 +1251,10 @@ function mkLzCanvasBBox(it) {
     if (!node) return null;
     let b;
     try { b = node.getBBox(); } catch (_) { return null; }
-    if (it.type === 'path') return { x: it.x + it.scale * b.x, y: it.y + it.scale * b.y, w: it.scale * b.width, h: it.scale * b.height };
+    if (it.type === 'path' || it.type === 'limitPath') {
+        const s = it.scale || 1;
+        return { x: it.x + s * b.x, y: it.y + s * b.y, w: s * b.width, h: s * b.height };
+    }
     return { x: b.x, y: b.y, w: b.width, h: b.height };
 }
 
@@ -1258,7 +1269,8 @@ function mkLzRenderTools() {
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddPreset('infinito')"><i class="fas fa-infinity mr-1"></i>Infinito</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddPreset('corazon')"><i class="fas fa-heart mr-1"></i>Corazón</button>
         <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-image mr-1"></i>Importar imagen/SVG<input type="file" accept="image/*,.svg" style="display:none;" onchange="mkLzOnImport(event)"></label>
-        <button type="button" class="btn btn-outline btn-sm" title="Área de límite: si un texto la toca, su tamaño se reduce solo. No sale en el PNG." onclick="mkLzAddLimit()"><i class="fas fa-vector-square mr-1"></i>Límite</button>`;
+        <button type="button" class="btn btn-outline btn-sm" title="Área de límite (contenedor): un texto colocado adentro se encoge solo lo necesario para caber dentro de sus bordes. No sale en el PNG." onclick="mkLzAddLimit()"><i class="fas fa-vector-square mr-1"></i>Límite</button>
+        <button type="button" class="btn btn-sm ${st.drawing ? 'btn-primary' : 'btn-outline'}" title="Límite a mano alzada: actívalo y traza el área directamente sobre el lienzo (Esc cancela)." onclick="mkLzToggleDrawLimit()"><i class="fas fa-pencil-alt mr-1"></i>A mano</button>`;
     if (ids.length > 1) {
         html += `<span class="mk-lz-sep"></span><span class="mk-muted" style="font-size:.8rem;">${ids.length} seleccionados</span>
             <button type="button" class="btn btn-outline btn-sm" title="Duplicar (Ctrl+D)" onclick="mkLzDuplicate()"><i class="fas fa-clone mr-1"></i>Duplicar</button>
@@ -1276,6 +1288,8 @@ function mkLzRenderTools() {
         } else if (it.type === 'limit') {
             html += `<input type="number" value="${Math.round(it.w)}" min="20" max="${MK_LZ_W}" title="Ancho del área" oninput="mkLzPatch({w:Math.max(20,+this.value||20)})">
                 <input type="number" value="${Math.round(it.h)}" min="20" max="${MK_LZ_H}" title="Alto del área" oninput="mkLzPatch({h:Math.max(20,+this.value||20)})">`;
+        } else if (it.type === 'limitPath') {
+            html += `<input type="number" value="${it.scale || 1}" min="0.2" max="20" step="0.2" title="Escala del área" oninput="mkLzPatch({scale:Math.max(0.2,+this.value||1)})">`;
         } else {
             html += `<input type="number" value="${it.scale}" min="0.2" max="20" step="0.2" title="Escala" oninput="mkLzPatch({scale:Math.max(0.2,+this.value||1)})">
                 <input type="number" value="${it.strokeWidth}" min="1" max="30" title="Grosor del trazo" oninput="mkLzPatch({strokeWidth:Math.max(1,+this.value||1)})">`;
@@ -1324,8 +1338,8 @@ function mkLzAddText() {
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); mkLzEnforceLimits();
 }
 
-// Área de LÍMITE: guía de edición (rojo punteado). Si un texto la toca, su tamaño se
-// reduce solo hasta dejar de tocarla (mínimo 10). NO se exporta al PNG.
+// Área de LÍMITE (contenedor, rojo punteado): un texto cuyo anclaje cae adentro se encoge
+// solo lo necesario para caber dentro de sus bordes. NO se exporta al PNG.
 function mkLzAddLimit() {
     const st = mkLzState();
     const id = st.seq++;
@@ -1334,35 +1348,154 @@ function mkLzAddLimit() {
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); mkLzEnforceLimits();
 }
 
-// Reduce el tamaño de los TEXTOS que tocan un área de límite: parte del tamaño deseado
-// (baseSize) y baja de 2 en 2 hasta no tocar (o llegar a 10). Si el límite se quita o el
-// texto se acorta, vuelve a crecer hasta baseSize. Mide con getBBox sobre el DOM vivo.
+// ---- límite a MANO ALZADA: se activa el modo y se traza directo sobre el lienzo ----
+let mkLzDrawPts = null;   // puntos del trazo en curso (null = no está trazando)
+
+function mkLzToggleDrawLimit() {
+    const st = mkLzState();
+    st.drawing = !st.drawing;
+    mkLzDrawPts = null;
+    if (st.drawing) mkLzSetSel([]);
+    const svg = document.getElementById('mk-lz-svg');
+    if (svg) svg.style.cursor = st.drawing ? 'crosshair' : '';
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
+    if (st.drawing) mkToast('Traza el área de límite arrastrando sobre el lienzo (Esc cancela).', 'info');
+}
+
+function mkLzCancelDraw() {
+    const st = mkLzState();
+    st.drawing = false;
+    mkLzDrawPts = null;
+    const svg = document.getElementById('mk-lz-svg');
+    if (svg) svg.style.cursor = '';
+    mkLzRenderCanvas(); mkLzRenderTools();
+}
+
+// Vista previa del trazo en curso (path temporal actualizado directo, sin re-render).
+function mkLzDrawPreview() {
+    const svg = document.getElementById('mk-lz-svg');
+    if (!svg || !mkLzDrawPts) return;
+    const d = 'M ' + mkLzDrawPts.map(p => p.x + ' ' + p.y).join(' L ');
+    const node = svg.querySelector('#mk-lz-drawpath');
+    if (node) node.setAttribute('d', d);
+    else svg.insertAdjacentHTML('beforeend', `<path id="mk-lz-drawpath" d="${d}" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="8 5" style="pointer-events:none;"></path>`);
+}
+
+// Cierra el trazo y lo convierte en un área de límite (polígono con origen en su esquina).
+function mkLzFinishDraw() {
+    const st = mkLzState();
+    const pts = mkLzDrawPts || [];
+    mkLzDrawPts = null;
+    st.drawing = false;
+    const svg = document.getElementById('mk-lz-svg');
+    if (svg) svg.style.cursor = '';
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    const x0 = Math.min(...xs), y0 = Math.min(...ys);
+    const w = Math.max(...xs) - x0, h = Math.max(...ys) - y0;
+    if (pts.length >= 3 && w > 30 && h > 30) {
+        const id = st.seq++;
+        st.items.push({ id, type: 'limitPath', name: 'Límite a mano', x: Math.round(x0), y: Math.round(y0), scale: 1, points: pts.map(p => ({ x: Math.round(p.x - x0), y: Math.round(p.y - y0) })) });
+        mkLzSetSel([id]);
+    } else {
+        mkToast('Trazo muy pequeño: arrastra para dibujar el área del límite.', 'error');
+    }
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); mkLzEnforceLimits();
+}
+
+// Caja de TINTA real de un texto a un tamaño dado: lo realmente dibujado, medido con
+// canvas.measureText (actualBoundingBox*). NO incluye el espacio tipográfico reservado
+// para ascendentes/descendentes que el texto no usa (ej. el hueco de la "g" si no hay).
+// Coordenadas alineadas con el <text> del lienzo (anclaje en it.x/it.y, baseline central).
+let mkLzMeasureCtx = null;
+function mkLzInkBBox(it, size) {
+    if (!mkLzMeasureCtx) mkLzMeasureCtx = document.createElement('canvas').getContext('2d');
+    const ctx = mkLzMeasureCtx;
+    ctx.font = `${size}px ${it.font === 'arial' ? 'Arial, Helvetica, sans-serif' : "'Rows of Sunflowers'"}`;
+    ctx.textAlign = it.align === 'left' ? 'left' : (it.align === 'right' ? 'right' : 'center');
+    ctx.textBaseline = 'middle';   // equivalente al dominant-baseline:central del SVG
+    const m = ctx.measureText(it.text || '');
+    const left = m.actualBoundingBoxLeft != null ? m.actualBoundingBoxLeft : m.width / 2;
+    const right = m.actualBoundingBoxRight != null ? m.actualBoundingBoxRight : m.width / 2;
+    const asc = m.actualBoundingBoxAscent != null ? m.actualBoundingBoxAscent : size * 0.5;
+    const desc = m.actualBoundingBoxDescent != null ? m.actualBoundingBoxDescent : size * 0.5;
+    return { x: it.x - left, y: it.y - asc, w: left + right, h: asc + desc };
+}
+
+// Todas las áreas de límite como POLÍGONOS en coords del lienzo (el rect se convierte;
+// el trazo a mano alzada ya lo es, mapeado con su translate+scale).
+function mkLzLimitShapes() {
+    const shapes = [];
+    for (const it of mkLzState().items) {
+        if (it.type === 'limit') {
+            shapes.push([{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y }, { x: it.x + it.w, y: it.y + it.h }, { x: it.x, y: it.y + it.h }]);
+        } else if (it.type === 'limitPath' && Array.isArray(it.points) && it.points.length >= 3) {
+            const s = it.scale || 1;
+            shapes.push(it.points.map(p => ({ x: it.x + s * p.x, y: it.y + s * p.y })));
+        }
+    }
+    return shapes;
+}
+
+// ¿El punto está dentro del polígono? (ray casting par/impar)
+function mkLzPointInPoly(pt, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i], b = poly[j];
+        if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < (b.x - a.x) * (pt.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+}
+
+// Distancias del punto al borde del polígono a lo largo de los 4 ejes (izq/der/arriba/abajo).
+function mkLzAxisExtents(pt, poly) {
+    let L = Infinity, R = Infinity, T = Infinity, B = Infinity;
+    for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length];
+        if ((a.y - pt.y) * (b.y - pt.y) <= 0 && a.y !== b.y) {   // cruza la horizontal y=pt.y
+            const x = a.x + (b.x - a.x) * (pt.y - a.y) / (b.y - a.y);
+            if (x >= pt.x) R = Math.min(R, x - pt.x);
+            if (x <= pt.x) L = Math.min(L, pt.x - x);
+        }
+        if ((a.x - pt.x) * (b.x - pt.x) <= 0 && a.x !== b.x) {   // cruza la vertical x=pt.x
+            const y = a.y + (b.y - a.y) * (pt.x - a.x) / (b.x - a.x);
+            if (y >= pt.y) B = Math.min(B, y - pt.y);
+            if (y <= pt.y) T = Math.min(T, pt.y - y);
+        }
+    }
+    return { L, R, T, B };
+}
+
+// Los límites son CONTENEDORES: un texto cuyo anclaje cae dentro de un área de límite se
+// encoge SOLO lo necesario para caber dentro de sus bordes (con un margencito), midiendo
+// la TINTA real del texto. Si cabe al tamaño deseado (baseSize), se queda tal cual; si el
+// límite se agranda/quita, vuelve a crecer hasta baseSize. Textos fuera: no se tocan.
+const MK_LZ_LIMIT_MARGIN = 6;
 function mkLzEnforceLimits() {
     const st = mkLzState();
-    const limits = st.items.filter(i => i.type === 'limit');
     const texts = st.items.filter(i => i.type === 'text');
     if (!texts.length) return;
-    const svg = document.getElementById('mk-lz-svg');
-    if (!svg) return;
+    const shapes = mkLzLimitShapes();
     let changed = false;
     for (const t of texts) {
         if (t.baseSize == null) t.baseSize = t.size;
-        const node = svg.querySelector(`text[data-lz="${t.id}"]`);
-        if (!node) continue;
         let size = t.baseSize;
-        node.setAttribute('font-size', size);
-        const hits = () => {
-            if (!limits.length) return false;
-            let b; try { b = node.getBBox(); } catch (_) { return false; }
-            return limits.some(L => !(b.x + b.width < L.x || b.x > L.x + L.w || b.y + b.height < L.y || b.y > L.y + L.h));
-        };
-        let guard = 0;
-        while (size > 10 && hits() && guard++ < 300) {
-            size = Math.max(10, size - 2);
-            node.setAttribute('font-size', size);
+        if (shapes.length && (t.text || '').trim()) {
+            const ink = mkLzInkBBox(t, t.baseSize);
+            // Extensión de la tinta hacia cada lado desde el anclaje (escala lineal con el tamaño).
+            const extL = t.x - ink.x, extR = ink.x + ink.w - t.x, extT = t.y - ink.y, extB = ink.y + ink.h - t.y;
+            let f = 1;
+            for (const poly of shapes) {
+                if (!mkLzPointInPoly({ x: t.x, y: t.y }, poly)) continue;
+                const av = mkLzAxisExtents({ x: t.x, y: t.y }, poly);
+                f = Math.min(f,
+                    extL > 0.5 ? Math.max(0, av.L - MK_LZ_LIMIT_MARGIN) / extL : 1,
+                    extR > 0.5 ? Math.max(0, av.R - MK_LZ_LIMIT_MARGIN) / extR : 1,
+                    extT > 0.5 ? Math.max(0, av.T - MK_LZ_LIMIT_MARGIN) / extT : 1,
+                    extB > 0.5 ? Math.max(0, av.B - MK_LZ_LIMIT_MARGIN) / extB : 1);
+            }
+            size = Math.max(10, Math.floor(t.baseSize * f));
         }
         if (size !== t.size) { t.size = size; changed = true; }
-        else node.setAttribute('font-size', t.size);   // restaura si solo probamos baseSize
     }
     if (changed) {
         mkLzRenderCanvas();   // re-dibuja con los tamaños finales (y el contorno correcto)
@@ -1490,6 +1623,7 @@ function mkLzBindKeys() {
         const t = e.target;
         const tag = t && t.tagName ? t.tagName.toLowerCase() : '';
         if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+        if (e.key === 'Escape' && mkLzState().drawing) { e.preventDefault(); mkLzCancelDraw(); return; }
         if (!mkLzSelIds().length) return;
         if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); mkLzDelete(); return; }
         if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); mkLzDuplicate(); }
@@ -1505,7 +1639,7 @@ function mkLzRenderLayers() {
     // En SVG el último item del arreglo se pinta AL FRENTE -> se lista invertido (frente arriba).
     const selIds = mkLzSelIds();
     box.innerHTML = [...st.items].reverse().map(it => {
-        const icon = it.type === 'text' ? 'fa-font' : (it.type === 'image' ? 'fa-image' : (it.type === 'limit' ? 'fa-vector-square' : 'fa-bezier-curve'));
+        const icon = it.type === 'text' ? 'fa-font' : (it.type === 'image' ? 'fa-image' : (it.type === 'limit' ? 'fa-vector-square' : (it.type === 'limitPath' ? 'fa-draw-polygon' : 'fa-bezier-curve')));
         return `
         <div class="mk-lz-layer${selIds.includes(it.id) ? ' active' : ''}" onclick="mkLzSelect(${it.id}, event)">
             <i class="fas ${icon}"></i>
@@ -1561,6 +1695,14 @@ function mkLzMetric(it) { return it.type === 'text' ? it.size : (it.type === 'im
 
 function mkLzDown(ev) {
     const st = mkLzState();
+    // 0) Modo "límite a mano alzada": el arrastre TRAZA el área (no selecciona ni mueve).
+    if (st.drawing) {
+        ev.preventDefault();
+        const p = mkLzPoint(ev);
+        mkLzDrawPts = [{ x: Math.round(p.x), y: Math.round(p.y) }];
+        try { document.getElementById('mk-lz-svg').setPointerCapture(ev.pointerId); } catch (_) { /* noop */ }
+        return;
+    }
     // 1) ¿Agarró un cuadrito de escala? (van primero: los handles no llevan data-lz y
     //    caerían en el "clic al vacío" que deselecciona). Escala TODO lo seleccionado.
     const handle = ev.target && ev.target.closest ? ev.target.closest('[data-lzh]') : null;
@@ -1607,6 +1749,16 @@ function mkLzDown(ev) {
 }
 
 function mkLzMove(ev) {
+    // Trazo a mano alzada en curso: acumular puntos (mínimo 5 unidades entre ellos).
+    if (mkLzDrawPts) {
+        const p = mkLzPoint(ev);
+        const last = mkLzDrawPts[mkLzDrawPts.length - 1];
+        if (Math.hypot(p.x - last.x, p.y - last.y) > 5) {
+            mkLzDrawPts.push({ x: Math.round(p.x), y: Math.round(p.y) });
+            mkLzDrawPreview();
+        }
+        return;
+    }
     if (!mkLzDrag) return;
     const st = mkLzState();
     const p = mkLzPoint(ev);
@@ -1636,14 +1788,16 @@ function mkLzMove(ev) {
         }
     }
     mkLzRenderCanvas();   // el SVG persiste (solo cambia su contenido), el pointer capture no se pierde
+    mkLzEnforceLimits();  // en vivo: al arrastrar un texto dentro de un límite (o mover/escalar el límite)
 }
 
 function mkLzUp() {
+    if (mkLzDrawPts) { mkLzFinishDraw(); return; }   // fin del trazo a mano alzada
     if (!mkLzDrag) return;
     const wasResize = mkLzDrag.resize;
     mkLzDrag = null;
     mkLzRenderCanvas();
-    mkLzEnforceLimits();   // al soltar: reduce textos que toquen un área de límite
+    mkLzEnforceLimits();   // al soltar: ajusta los textos dentro de áreas de límite
     if (wasResize) mkLzRenderTools();   // sincroniza los inputs numéricos (tamaño/escala/ancho)
 }
 
@@ -1666,7 +1820,7 @@ async function mkLzRasterize() {
 
 // PNG del lienzo como 2ª referencia del banco de pruebas (misma ranura que "Subir imagen").
 async function mkLzUseAsRef(btn) {
-    if (!mkLzState().items.some(i => i.type !== 'limit')) { mkToast('El lienzo está vacío: agrega texto o elementos primero (las áreas de límite no se exportan).', 'error'); return; }
+    if (!mkLzState().items.some(i => i.type !== 'limit' && i.type !== 'limitPath')) { mkToast('El lienzo está vacío: agrega texto o elementos primero (las áreas de límite no se exportan).', 'error'); return; }
     const orig = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Convirtiendo…'; }
     try {
@@ -1681,7 +1835,7 @@ async function mkLzUseAsRef(btn) {
 }
 
 async function mkLzDownload(btn) {
-    if (!mkLzState().items.some(i => i.type !== 'limit')) { mkToast('El lienzo está vacío: agrega texto o elementos primero (las áreas de límite no se exportan).', 'error'); return; }
+    if (!mkLzState().items.some(i => i.type !== 'limit' && i.type !== 'limitPath')) { mkToast('El lienzo está vacío: agrega texto o elementos primero (las áreas de límite no se exportan).', 'error'); return; }
     const orig = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Exportando…'; }
     try {
