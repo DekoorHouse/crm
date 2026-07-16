@@ -7967,8 +7967,18 @@ router.get('/design-pending', async (req, res) => {
                 db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
             ]);
             [sSin, sFab, sCor, sProd].forEach(s => s.forEach(d => byId.set(d.id, d)));
+
+            // Para los 'Sin estatus' consultamos mockup_previews (fuente de verdad de "ya tiene mockup",
+            // por si la marca mockupPreviewAt no quedó puesta). Así un pedido con preview NO sale como "falta mockup".
+            const sinIds = sSin.docs.map(d => d.id);
+            const conMockup = new Set();
+            for (let i = 0; i < sinIds.length; i += 300) {
+                const refs = sinIds.slice(i, i + 300).map(id => db.collection('mockup_previews').doc(id));
+                const mdocs = await db.getAll(...refs);
+                mdocs.forEach(md => { if (md.exists && Array.isArray(md.data().previews) && md.data().previews.length) conMockup.add(md.id); });
+            }
             for (const doc of byId.values()) {
-                const reasons = reasonsForOrderData(doc.data());
+                const reasons = reasonsForOrderData(doc.data(), conMockup.has(doc.id));
                 if (!reasons.length) continue;
                 orders.push(mapOrder(doc, reasons));
             }

@@ -28,7 +28,8 @@ const DONE = new Set([
 const REASONS = ['mockup', 'fabricar', 'datos', 'video', 'segundo_producto'];
 
 // Evalúa los motivos de "pendiente de diseño" sobre los datos de UN pedido (puede ser []).
-function reasonsForOrderData(d) {
+// hasMockup (opcional): si el caller ya consultó mockup_previews, lo pasa para no depender de la marca.
+function reasonsForOrderData(d, hasMockup) {
     if (!d) return [];
     // Marcado a mano como "ya diseñado" desde el tablero (botón ✓ Diseñado) -> fuera de pendientes.
     if (d.disenoListoAt) return [];
@@ -47,8 +48,9 @@ function reasonsForOrderData(d) {
         if (estatus === 'fabricar') {
             // ETAPA 2: pagó y hay que producir -> falta el diseño en Corel para corte (aunque tenga mockup).
             reasons.push('fabricar');
-        } else if (estatus === 'sin estatus' && !d.mockupHidden && !d.mockupPreviewAt) {
+        } else if (estatus === 'sin estatus' && !d.mockupHidden && !d.mockupPreviewAt && !hasMockup) {
             // ETAPA 1: aún sin mockup (no se pudo hacer en la sección Mockup) -> falta el mockup.
+            // hasMockup viene de consultar mockup_previews (fuente de verdad, por si falta la marca).
             reasons.push('mockup');
         }
     }
@@ -75,12 +77,28 @@ async function getLatestOrder(contactId) {
     return best;
 }
 
+// ¿El pedido ya tiene al menos un preview de mockup guardado? Fuente de verdad: colección
+// mockup_previews (doc por orderId con previews[]). Se usa por si mockupPreviewAt no quedó puesto.
+async function orderHasMockup(orderId) {
+    try {
+        const doc = await db.collection('mockup_previews').doc(String(orderId)).get();
+        return doc.exists && Array.isArray(doc.data().previews) && doc.data().previews.length > 0;
+    } catch (_) { return false; }
+}
+
 // Recalcula y escribe designPending + designPendingReasons en el contacto. Nunca lanza.
 async function recomputeForContact(contactId) {
     if (!contactId) return null;
     try {
         const orderDoc = await getLatestOrder(contactId);
-        const reasons = orderDoc ? reasonsForOrderData(orderDoc.data()) : [];
+        let reasons = [];
+        if (orderDoc) {
+            const od = orderDoc.data();
+            // Para 'Sin estatus' sin la marca, consultamos mockup_previews (fuente de verdad).
+            const esSin = String(od.estatus || 'Sin estatus').trim().toLowerCase() === 'sin estatus';
+            const hm = (esSin && !od.mockupPreviewAt) ? await orderHasMockup(orderDoc.id) : false;
+            reasons = reasonsForOrderData(od, hm);
+        }
         // El id del doc del contacto = pedido.contactId (o el propio contactId si no hay pedido).
         const cid = (orderDoc && orderDoc.data().contactId) || contactId;
         await db.collection('contacts_whatsapp').doc(String(cid)).set({
@@ -122,4 +140,4 @@ async function markPreviewSent(contactId) {
     }
 }
 
-module.exports = { recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, REASONS, DONE };
+module.exports = { recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, orderHasMockup, REASONS, DONE };
