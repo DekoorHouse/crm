@@ -1,74 +1,103 @@
 ---
 name: svg-corte
 description: >
-  Dibuja un cuadrado en CorelDRAW en la compu del usuario (medida en cm), lo exporta como SVG
-  real desde Corel y lo sube a la carpeta "SVG Corte" de su Google Drive. Usar siempre que el
-  usuario pida un cuadrado para corte, un "SVG de corte", dibujar/exportar algo en CorelDRAW,
-  o subir un SVG a la carpeta SVG Corte — aunque solo diga "hazme un cuadrado de 15" sin
-  mencionar Corel ni Drive.
+  Genera archivos SVG de corte/grabado laser en CorelDRAW y los sube a la carpeta "SVG Corte"
+  de Google Drive. Dos modos: (1) cuadrado simple de N cm; (2) lampara infinito personalizada
+  (dos nombres + fecha por pedido, 1 o 2 pedidos por hoja de 350x330 mm). Usar siempre que el
+  usuario pida un cuadrado de corte, una lampara/plantilla infinito, "archivo para laser",
+  poner nombres y fecha a una lampara, o dibujar/exportar algo en CorelDRAW y subirlo a Drive —
+  aunque solo diga "hazme la de Juan y Maria del 14-Febrero-2026".
 ---
 
-# svg-corte: cuadrado en CorelDRAW → SVG → Drive
+# svg-corte: archivos de corte laser en CorelDRAW → SVG → Drive
 
-Flujo verificado en esta máquina con CorelDRAW 2021 (v23). Son 4 pasos; complétalos todos
-en orden sin pedir confirmación entre pasos. El script clave vive junto a esta skill:
-`draw-square.vbs`.
+Skill verificada en esta maquina con CorelDRAW 2021 (v23). Convenciones del negocio:
+**corte = linea roja, grabado = negro, azul = infinito/corazones/marco** (tercera pasada).
+Las hojas de lamparas son de **350x330 mm** con todo alineado **arriba-izquierda**.
+Scripts junto a esta skill: `draw-square.vbs`, `infinito.vbs`, `upload-drive.js`,
+plantillas en `plantillas/`.
 
-## 1. Preguntar la medida
+## Modo 1: cuadrado simple
 
-- Si el usuario ya dio la medida (p. ej. "/svg-corte 15" o "un cuadrado de 20"), úsala
-  directamente; se asume en **centímetros**.
-- Si no la dio, pregúntala con AskUserQuestion — "¿De qué medida quieres el cuadrado?" —
-  con opciones "5 cm", "10 cm", "15 cm" y "20 cm" (la opción "Other" que agrega el
-  componente le permite teclear cualquier otra medida).
-- Si responde en mm o pulgadas, conviértelo a cm antes de seguir: el script solo recibe cm.
-  Acepta decimales ("12.5").
+1. Medida en **cm** (si no la dieron, preguntar con AskUserQuestion: 5/10/15/20 cm; "Other"
+   permite otra). Acepta decimales. Si responden en mm o pulgadas, convertir a cm.
+2. Ejecutar:
 
-## 2. Dibujar y exportar en CorelDRAW
+       cscript //nologo "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\draw-square.vbs" <medida>
 
-Ejecuta (con la ruta absoluta del .vbs de esta skill):
+   Exito = ultima linea `OK <ruta>`. Crea el SVG en `Documents\SVG-Corte\` con la pagina del
+   tamano exacto del cuadrado; el doc queda abierto en Corel a proposito.
+3. Verificar leyendo el SVG: `width`/`height` = `<N×10>mm`.
+4. Subirlo a Drive (ver "Subida a Drive") y reportar medida + ruta local + link.
 
-    cscript //nologo "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\draw-square.vbs" <medida>
+## Modo 2: lampara infinito (nombres + fecha)
 
-Qué hace: abre CorelDRAW visible (si ya está abierto, Corel reusa la instancia), crea un
-documento nuevo con la página del tamaño EXACTO del cuadrado (así el viewBox del SVG mide
-justo N×N cm, que es lo que esperan los programas de corte), dibuja el cuadrado y exporta.
+Producto: lampara con globos de corazon (corte rojo), simbolo infinito con dos nombres
+grabados (negro) y fecha abajo. **Lo normal son 2 pedidos por hoja** (cada cliente pide 1
+lampara y se juntan 2 en una hoja); solo va 1 cuando ya no hay mas pedidos que disenar.
 
-- Éxito = la última línea impresa es `OK <ruta>`. El SVG queda en
-  `Documents\SVG-Corte\cuadrado-<N>cm-<fecha>.svg`.
-- El documento se queda abierto en Corel a propósito, para que el usuario lo vea. No lo cierres.
-- **Verifica** leyendo el SVG exportado: `width`/`height` deben ser `<N×10>mm`
-  (10 cm → `width="100mm"`) y el `<rect>` debe medir el viewBox completo. Un desfase de
-  décimas en x/y del rect es normal (redondeo del contorno de Corel).
+1. **Datos**: por cada pedido: nombre izquierdo, nombre derecho y fecha (texto libre, se graba
+   tal cual: "30-Julio-2025", "Forever", etc.). Si el usuario no dio los datos completos,
+   preguntarlos en el chat en un solo mensaje (son texto libre, no usar AskUserQuestion).
+   Nombres de UNA linea; si piden dos renglones (ej. "Lourdes & Pedro") avisar que va en una
+   linea o ajustar a mano despues en el .cdr.
+2. Ejecutar (3 argumentos = hoja de 1 lampara; 6 = hoja de 2):
 
-## 3. Subir a Drive (carpeta "SVG Corte")
+       cscript //nologo "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\infinito.vbs" "Nombre1" "Nombre2" "Fecha1" ["Nombre3" "Nombre4" "Fecha2"]
 
-- Carga las tools del conector de Google Drive con ToolSearch:
-  `select:mcp__836b681d-6968-4263-8cf2-2ce2531b12a6__create_file,mcp__836b681d-6968-4263-8cf2-2ce2531b12a6__search_files`
-  (si ese prefijo ya no existe, búscalas por keywords: "drive create_file search_files").
-- La carpeta "SVG Corte" tiene id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`. Si create_file
-  falla con ese parentId (carpeta movida/borrada), re-búscala con search_files:
-  `title = 'SVG Corte' and mimeType = 'application/vnd.google-apps.folder'`.
-- Sube con create_file: `title` = nombre del archivo local, `parentId` = id de la carpeta,
-  `contentMimeType` = `image/svg+xml`, `disableConversionToGoogleType` = true,
-  `textContent` = contenido EXACTO del SVG (léelo del disco; no lo reescribas de memoria).
+   Hace: copia la plantilla a `Documents\SVG-Corte\infinito-<nombres>-<fecha>.cdr`, la abre,
+   reemplaza los placeholders conservando el centro de cada texto, auto-reduce nombres largos
+   (base 65.2pt, ancho max 52 mm; fechas 25.3pt, max 55 mm), guarda el .cdr (textos editables),
+   convierte textos a curvas y exporta el SVG. Exito = lineas `OK <svg>` y `CDR <cdr>`.
+3. **Verificacion visual** (recomendado): exportar PNG del doc abierto con
+   `doc.Export ruta, CLng(802), CLng(1), Nothing, Nothing` (cdrPNG=802) y mirarlo con Read:
+   nombres centrados en los aros, fecha centrada, nada encimado.
+4. Subir el SVG a Drive y reportar con el link.
 
-## 4. Reporte al usuario
+## Subida a Drive (carpeta "SVG Corte", id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`)
 
-Un solo mensaje final con: la medida, la ruta local del SVG y el `viewUrl` que regresa
-create_file como link clickeable de Drive.
+**Via principal** (rapida, sin costo de contexto):
 
-## Problemas conocidos (no re-descubrirlos)
+    node "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\upload-drive.js" "<ruta-del-svg>"
 
-- **"No coinciden los tipos" al exportar**: `Document.Export` vía COM tardío exige los 5
-  argumentos (path, filtro, rango, Nothing, Nothing); no acepta omitir los "opcionales".
-  El script ya lo hace así — no lo "simplifiques".
-- **"Se ha especificado un ID de filtro no válido"**: el filtro SVG es **1345** en Corel v23
-  (los foros viejos dicen 811, que era de versiones anteriores; el script intenta ambos).
-  Si algún día cambia la versión de Corel, volcar el enum `cdrFilter` de la typelib
-  (`HKCR\CorelDRAW.Application\CurVer` → CLSID → TypeLib → CorelDRAW.tlb) y ajustar.
-- **No abre CorelDRAW**: pedir al usuario que lo abra a mano una vez y reintentar. Verificar
-  el ProgID con `Test-Path 'Registry::HKEY_CLASSES_ROOT\CorelDRAW.Application'`.
-- **Si Corel no exporta de plano**: como último recurso genera tú el SVG (un `<rect>` de
-  N cm con `width`/`height` en mm es trivial) para no dejar al usuario sin archivo, y avísale
-  claramente que salió de un fallback y no de CorelDRAW.
+Imprime JSON `{ok:true, id, name, webViewLink}`. Usa la cuenta de servicio del repo
+(`serviceAccountKey.json`). Setup de una sola vez (si da 403/404, pedirselo al usuario):
+1. Habilitar Drive API en el proyecto: https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=300825194175
+2. Compartir la carpeta "SVG Corte" (como Editor) con:
+   `firebase-adminsdk-fbsvc@pedidos-con-gemini.iam.gserviceaccount.com`
+
+**Fallback** (sin setup; usarlo solo con archivos chicos, cuesta muchos tokens con SVGs
+grandes): tools del conector Google Drive via ToolSearch
+(`select:mcp__836b681d-6968-4263-8cf2-2ce2531b12a6__create_file,mcp__836b681d-6968-4263-8cf2-2ce2531b12a6__search_files`);
+`create_file` con `title`, `parentId` = id de arriba, `contentMimeType` = `image/svg+xml`,
+`disableConversionToGoogleType` = true, `textContent` = contenido exacto del SVG. Si el
+parentId fallara, re-buscar la carpeta: `title = 'SVG Corte' and mimeType = 'application/vnd.google-apps.folder'`.
+
+## Plantillas (`plantillas/`)
+
+- `plantilla-infinito-2.cdr`: hoja 350x330 con DOS lamparas y placeholders
+  `NOMBRE1/NOMBRE2/FECHA1` (izquierda) y `NOMBRE3/NOMBRE4/FECHA2` (derecha).
+- `plantilla-infinito-1.cdr`: solo la lampara izquierda (mismo marco azul 324x200).
+- Extraidas del archivo de produccion "Plantillas Corazones.cdr" (2026-07-16), alineadas a la
+  esquina superior izquierda. `infinito.vbs` NUNCA las modifica (trabaja sobre copia).
+- Si el diseno base cambia, re-extraer con el mismo procedimiento: seleccionar la region con
+  `Page.SelectShapesFromRectangle`, copiar, pegar en doc nuevo 350x330, alinear, poner
+  placeholders, `SaveAs`.
+
+## Gotchas de CorelDRAW por COM (no re-descubrirlos)
+
+- Usar **VBScript/cscript**, no PowerShell (PS no convierte los enums de la typelib).
+- `Document.Export` exige los **5 argumentos**: `path, filtro, rango, Nothing, Nothing`.
+  Filtros v23: **cdrSVG=1345** (811 en versiones viejas), **cdrPNG=802**. Unidad mm = 3.
+  Los enums reales salen de `Programs64\TypeLibs\CorelDRAW.tlb`.
+- `SelectShapesFromRectangle` vive en **Page** (no en Document); retorna la seleccion en
+  `corel.ActiveSelection`.
+- Un ShapeRange NO se indexa en VBS (`sr(i)` truena); iterar `For Each s In page.Shapes`.
+- **NUNCA recorrer todo el documento de produccion del usuario (799+ shapes) leyendo
+  colores/fills**: eso tumbo CorelDRAW una vez (se pierde trabajo no guardado). Leer solo
+  region/indices acotados y propiedades baratas (pos/tam/texto).
+- El documento de produccion del usuario ("Plantillas Corazones.cdr") es intocable: no
+  guardarlo, no cerrarlo, no mutarle shapes. Trabajar siempre en copias.
+- Corel reusa la instancia abierta con `CreateObject`; cerrar docs de trabajo sin prompt:
+  `doc.Dirty = False : doc.Close`.
+- Si Corel no esta abierto y algo falla al conectar: pedir al usuario abrirlo y reintentar.
