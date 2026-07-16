@@ -1078,6 +1078,73 @@ function mkLzSetSel(ids) {
     st.sel = st.selIds.length ? st.selIds[st.selIds.length - 1] : null;
 }
 
+// ---- historial del lienzo (Ctrl+Z / Ctrl+Y con el mouse sobre el lienzo) ----
+// Cada operación (agregar, mover, escalar, editar, borrar, reordenar, cargar diseño)
+// guarda un snapshot ANTES de mutar. Los cambios rápidos del mismo control (escribir en
+// el input de texto, p. ej.) se fusionan en un solo paso vía "tag" + ventana de 1s.
+const MK_LZ_HIST_MAX = 60;
+let mkLzUndoStack = [], mkLzRedoStack = [], mkLzHistLastTag = null, mkLzHistLastAt = 0;
+
+// Clon barato de items: los strings (href de imágenes, que pueden pesar MB) se comparten
+// por referencia —son inmutables—; solo se clona la estructura (y points, el único anidado).
+function mkLzCloneItems(items) {
+    return items.map(it => {
+        const c = Object.assign({}, it);
+        if (Array.isArray(it.points)) c.points = it.points.map(p => ({ x: p.x, y: p.y }));
+        return c;
+    });
+}
+
+function mkLzSnapshot() {
+    const st = mkLzState();
+    return { items: mkLzCloneItems(st.items), seq: st.seq, selIds: mkLzSelIds().slice() };
+}
+
+function mkLzHistPushSnap(snap, tag, now) {
+    mkLzHistLastTag = tag || null;
+    mkLzHistLastAt = now || Date.now();
+    mkLzUndoStack.push(snap);
+    if (mkLzUndoStack.length > MK_LZ_HIST_MAX) mkLzUndoStack.shift();
+    mkLzRedoStack.length = 0;   // una acción nueva invalida lo rehacible
+}
+
+// Captura el estado ACTUAL antes de una mutación. tag: operaciones consecutivas con el
+// mismo tag en <1s no crean pasos nuevos (se conserva el estado previo al primer cambio).
+function mkLzHistPush(tag) {
+    const now = Date.now();
+    if (tag && tag === mkLzHistLastTag && now - mkLzHistLastAt < 1000) { mkLzHistLastAt = now; return; }
+    mkLzHistPushSnap(mkLzSnapshot(), tag, now);
+}
+
+function mkLzRestore(snap) {
+    const st = mkLzState();
+    st.items = mkLzCloneItems(snap.items);
+    st.seq = snap.seq;
+    mkLzSetSel((snap.selIds || []).filter(id => st.items.some(i => i.id === id)));
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); mkLzEnforceLimits();
+}
+
+function mkLzUndo() {
+    if (!mkLzUndoStack.length) return;
+    mkLzHistLastTag = null;   // rompe el coalescing: lo que siga crea paso nuevo
+    mkLzRedoStack.push(mkLzSnapshot());
+    mkLzRestore(mkLzUndoStack.pop());
+}
+
+function mkLzRedo() {
+    if (!mkLzRedoStack.length) return;
+    mkLzHistLastTag = null;
+    mkLzUndoStack.push(mkLzSnapshot());
+    mkLzRestore(mkLzRedoStack.pop());
+}
+
+// ¿El mouse está sobre la zona del lienzo? (gate de Ctrl+Z/Ctrl+Y: fuera de ella, los
+// atajos se dejan pasar —p. ej. deshacer texto en el prompt—).
+function mkLzHovering() {
+    const el = document.querySelector('.mk-lz');
+    try { return !!(el && el.matches(':hover')); } catch (_) { return false; }
+}
+
 function mkLzHtml() {
     return `
         <div class="mk-lz">
@@ -1092,7 +1159,7 @@ function mkLzHtml() {
                 <div class="mk-lz-side">
                     <button type="button" class="btn btn-primary btn-sm" onclick="mkLzUseAsRef(this)"><i class="fas fa-file-image mr-1"></i>Convertir a PNG → 2ª referencia</button>
                     <button type="button" class="btn btn-outline btn-sm" onclick="mkLzDownload(this)"><i class="fas fa-download mr-1"></i>Descargar PNG</button>
-                    <small class="mk-muted">Clic = seleccionar (con <b>Shift</b> se agregan más), arrastra para mover, <b>cuadritos de las esquinas</b> para escalar y <b>rueda del mouse</b> para hacer zoom. <b>Doble clic</b> en un texto para editarlo, <b>Ctrl+D</b> duplica y <b>Supr</b> elimina. Las áreas de <b>Límite</b> (rojo, rectangulares o trazadas <b>a mano</b>) son contenedores: un texto colocado adentro se encoge solo lo necesario para caber; no salen en el PNG.</small>
+                    <small class="mk-muted">Clic = seleccionar (con <b>Shift</b> se agregan más), arrastra para mover, <b>cuadritos de las esquinas</b> para escalar y <b>rueda del mouse</b> para hacer zoom. <b>Doble clic</b> en un texto para editarlo, <b>Ctrl+D</b> duplica, <b>Supr</b> elimina y con el mouse sobre el lienzo <b>Ctrl+Z / Ctrl+Y</b> deshace y rehace. Las áreas de <b>Límite</b> (rojo, rectangulares o trazadas <b>a mano</b>) son contenedores: un texto colocado adentro se encoge solo lo necesario para caber; no salen en el PNG.</small>
                     <div class="mk-lz-save">
                         <label class="mk-lz-label">Diseños guardados</label>
                         <select id="mk-lz-designs" onchange="mkLzOnDesignPick(this.value)"><option value="">— nuevo diseño —</option></select>
@@ -1306,6 +1373,7 @@ function mkLzPatch(patch) {
     const st = mkLzState();
     const it = st.items.find(i => i.id === st.sel);
     if (!it) return;
+    mkLzHistPush('patch:' + st.sel);   // teclear seguido en el mismo control = un solo paso
     Object.assign(it, patch);
     mkLzRenderCanvas();
     mkLzEnforceLimits();   // un texto más largo o un área editada pueden requerir encoger
@@ -1322,6 +1390,7 @@ function mkLzResizeImage(w) {
     const st = mkLzState();
     const it = st.items.find(i => i.id === st.sel);
     if (!it || it.type !== 'image') return;
+    mkLzHistPush('imgw:' + st.sel);
     w = Math.max(20, Math.min(MK_LZ_W, w || 20));
     it.w = w;
     it.h = Math.round(w * (it.ar || 1));
@@ -1329,6 +1398,7 @@ function mkLzResizeImage(w) {
 }
 
 function mkLzAddText() {
+    mkLzHistPush();
     const st = mkLzState();
     const id = st.seq++;
     // baseSize = tamaño DESEADO por el usuario; si el texto toca un área de límite, size
@@ -1341,6 +1411,7 @@ function mkLzAddText() {
 // Área de LÍMITE (contenedor, rojo punteado): un texto cuyo anclaje cae adentro se encoge
 // solo lo necesario para caber dentro de sus bordes. NO se exporta al PNG.
 function mkLzAddLimit() {
+    mkLzHistPush();
     const st = mkLzState();
     const id = st.seq++;
     st.items.push({ id, type: 'limit', name: 'Límite', x: 100, y: 100, w: 300, h: 200 });
@@ -1393,6 +1464,7 @@ function mkLzFinishDraw() {
     const x0 = Math.min(...xs), y0 = Math.min(...ys);
     const w = Math.max(...xs) - x0, h = Math.max(...ys) - y0;
     if (pts.length >= 3 && w > 30 && h > 30) {
+        mkLzHistPush();
         const id = st.seq++;
         st.items.push({ id, type: 'limitPath', name: 'Límite a mano', x: Math.round(x0), y: Math.round(y0), scale: 1, points: pts.map(p => ({ x: Math.round(p.x - x0), y: Math.round(p.y - y0) })) });
         mkLzSetSel([id]);
@@ -1509,6 +1581,7 @@ function mkLzEnforceLimits() {
 function mkLzAddPreset(kind) {
     const p = MK_LZ_PRESETS[kind];
     if (!p) return;
+    mkLzHistPush();
     const st = mkLzState();
     const id = st.seq++;
     st.items.push({ id, type: 'path', name: kind === 'infinito' ? 'Infinito' : 'Corazón', x: p.x, y: p.y, scale: p.scale, strokeWidth: p.strokeWidth, d: p.d });
@@ -1569,6 +1642,7 @@ function mkLzAddSvgItem(svgText) {
 
 // Alta común de un item de imagen (raster o SVG), centrado y a lo sumo 500px de ancho.
 function mkLzPushImage(href, natW, natH, name) {
+    mkLzHistPush();
     const st = mkLzState();
     const w = Math.min(500, Math.round(natW));
     const ar = natH / natW;
@@ -1583,6 +1657,7 @@ function mkLzDelete() {
     const st = mkLzState();
     const ids = mkLzSelIds();
     if (!ids.length) return;
+    mkLzHistPush();
     st.items = st.items.filter(i => !ids.includes(i.id));
     mkLzSetSel([]);
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
@@ -1595,6 +1670,7 @@ function mkLzDuplicate() {
     const st = mkLzState();
     const ids = mkLzSelIds();
     if (!ids.length) return;
+    mkLzHistPush();
     const clones = [];
     for (const id of ids) {
         const it = st.items.find(i => i.id === id);
@@ -1624,6 +1700,15 @@ function mkLzBindKeys() {
         const tag = t && t.tagName ? t.tagName.toLowerCase() : '';
         if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
         if (e.key === 'Escape' && mkLzState().drawing) { e.preventDefault(); mkLzCancelDraw(); return; }
+        // Deshacer/rehacer SOLO con el mouse sobre el lienzo (no secuestra el Ctrl+Z de otras partes).
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+            if (mkLzHovering()) { e.preventDefault(); mkLzUndo(); }
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && ((e.key === 'y' || e.key === 'Y') || (e.shiftKey && (e.key === 'z' || e.key === 'Z')))) {
+            if (mkLzHovering()) { e.preventDefault(); mkLzRedo(); }
+            return;
+        }
         if (!mkLzSelIds().length) return;
         if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); mkLzDelete(); return; }
         if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); mkLzDuplicate(); }
@@ -1666,7 +1751,9 @@ function mkLzSelect(id, ev) {
 // Renombrar no repinta nada (el nombre solo vive en el panel; conserva el foco del input).
 function mkLzRename(id, name) {
     const it = mkLzState().items.find(i => i.id === id);
-    if (it) it.name = name;
+    if (!it) return;
+    mkLzHistPush('rename:' + id);
+    it.name = name;
 }
 
 // dir 1 = hacia el frente (al final del arreglo), -1 = hacia atrás.
@@ -1675,6 +1762,7 @@ function mkLzReorder(id, dir) {
     const i = st.items.findIndex(x => x.id === id);
     const j = i + dir;
     if (i < 0 || j < 0 || j >= st.items.length) return;
+    mkLzHistPush();
     const [it] = st.items.splice(i, 1);
     st.items.splice(j, 0, it);
     mkLzRenderCanvas(); mkLzRenderLayers();
@@ -1718,7 +1806,7 @@ function mkLzDown(ev) {
         }[handle.getAttribute('data-lzh')];
         const p = mkLzPoint(ev);
         const d0 = Math.hypot(p.x - anchor.x, p.y - anchor.y) || 1;
-        mkLzDrag = { resize: true, anchor, d0, items: boxes.map(({ it }) => ({ id: it.id, ox: it.x, oy: it.y, m0: mkLzMetric(it), ar: it.type === 'limit' ? (it.h / it.w) : undefined })) };
+        mkLzDrag = { resize: true, anchor, d0, items: boxes.map(({ it }) => ({ id: it.id, ox: it.x, oy: it.y, m0: mkLzMetric(it), ar: it.type === 'limit' ? (it.h / it.w) : undefined })), pre: mkLzSnapshot(), pushed: false };
         try { document.getElementById('mk-lz-svg').setPointerCapture(ev.pointerId); } catch (_) { /* noop */ }
         return;
     }
@@ -1743,7 +1831,7 @@ function mkLzDown(ev) {
     if (!ids.includes(id)) { mkLzSetSel([id]); ids = mkLzSelIds(); }
     else st.sel = id;   // ya estaba en el grupo: pasa a primario sin romper la selección
     const p = mkLzPoint(ev);
-    mkLzDrag = { sx: p.x, sy: p.y, items: ids.map(x => { const it = st.items.find(i => i.id === x); return { id: x, ox: it.x, oy: it.y }; }) };
+    mkLzDrag = { sx: p.x, sy: p.y, items: ids.map(x => { const it = st.items.find(i => i.id === x); return { id: x, ox: it.x, oy: it.y }; }), pre: mkLzSnapshot(), pushed: false };
     try { document.getElementById('mk-lz-svg').setPointerCapture(ev.pointerId); } catch (_) { /* noop */ }
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
 }
@@ -1760,6 +1848,9 @@ function mkLzMove(ev) {
         return;
     }
     if (!mkLzDrag) return;
+    // Primer movimiento REAL del gesto: empuja el estado previo al historial (un solo
+    // paso por arrastre; un clic sin mover no ensucia el historial).
+    if (!mkLzDrag.pushed) { mkLzHistPushSnap(mkLzDrag.pre); mkLzDrag.pushed = true; }
     const st = mkLzState();
     const p = mkLzPoint(ev);
     if (mkLzDrag.resize) {
@@ -1931,6 +2022,7 @@ async function mkLzOnDesignPick(id) {
         const ok = await showConfirmModal(`¿Cargar "${mkEsc(d.nombre)}" y reemplazar el lienzo actual?`, { icon: 'fa-folder-open', confirmText: 'Cargar' });
         if (!ok) { mkLzRenderDesignsSelect(); return; }
     }
+    mkLzHistPush();   // cargar un diseño reemplaza el lienzo: se puede deshacer
     st.designId = id;
     mkLzSetSel([]);
     st.items = await mkLzHydrateItems(d.items);
