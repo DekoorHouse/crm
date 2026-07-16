@@ -2339,17 +2339,14 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             ? `\n\n**Nota:** El cliente envió ${skippedMediaTypes.length} archivo(s) (${skippedMediaTypes.map(esTipoMedia).join(', ')}) que no se pudieron procesar (probablemente muy grandes). Pídele amablemente que te describa por texto su contenido o que lo reenvíe más corto.`
             : '';
 
-        // Detectar código postal y cotizar envío
-        let shippingInfo = '';
+        // Detectar código postal (para el chequeo de cobertura de T1, más abajo).
         const messageText = message.text?.body || message.text || '';
         const postalCodeMatch = messageText.match(/\b(\d{5})\b/);
-        if (postalCodeMatch && SKYDROPX_CLIENT_ID) {
-            console.log(`[AI] Código postal detectado: ${postalCodeMatch[1]}. Cotizando envío...`);
-            const quote = await getShippingQuote(postalCodeMatch[1]);
-            if (quote) {
-                shippingInfo = `\n\n**Cotización de Envío disponible para CP ${postalCodeMatch[1]} (datos reales de paquetería):**\n${quote}\nIMPORTANTE: Solo menciona estas tarifas si el cliente está preguntando sobre envío, costo de envío, paquetería o entrega. Si el número de 5 dígitos es un pedido, monto, teléfono u otro dato que NO es un código postal, ignora esta cotización por completo.`;
-            }
-        }
+        // La cotización de envío corre por T1 (coberturaNote, más abajo). La vieja nota de Skydropx
+        // (shippingInfo) se RETIRÓ: le daba a la IA una SEGUNDA lista de tarifas que chocaba con el
+        // chequeo de cobertura de T1 — p. ej. ofrecerle tarifas de envío al cliente justo cuando la
+        // zona debe declinarse con /lamento. Se deja la variable vacía porque se concatena más abajo.
+        let shippingInfo = '';
 
         // Cobertura/cotización T1: cuando la IA revisa cobertura de un C.P. (labor de venta), cotizar
         // en T1 (DHL/FedEx, precios reales) para saber si hay envío y a qué costo. Reemplaza el scraping
@@ -2371,22 +2368,22 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 ops.sort((a, b) => a.costo - b.costo);
                 if (ops.length) {
                     const top = ops.slice(0, 4).map(o => `${o.paq} ${o.serv} $${o.costo.toFixed(2)}${o.dias ? ` (~${o.dias}d)` : ''}`).join(' · ');
-                    // Umbral de envío gratis: el envío al cliente es GRATIS solo si DHL (nuestra paquetería
-                    // por defecto) cuesta <= el límite. Arriba de eso es zona extendida/cara y se le cobra el
-                    // envío al cliente (el costo real de DHL, redondeado). Configurable con FREE_SHIPPING_MAX_DHL.
-                    const UMBRAL_ENVIO_GRATIS = Number(process.env.FREE_SHIPPING_MAX_DHL || 180);
-                    // DHL en T1 no viene etiquetado como "DHL": sus servicios son "EXPRESS DOMESTIC" y
-                    // "ECONOMY SELECT DOMESTIC" (FedEx = ...SAVER/OVERNIGHT, Paquetexpress = STD-T). Como
-                    // enviamos por DHL, el umbral y el cobro usan el precio DHL (el más barato de DHL);
-                    // si no hubiera DHL, cae al más barato disponible.
+                    // Umbral de envío: SERVIMOS la zona (envío GRATIS, nosotros pagamos la guía) solo si
+                    // existe una paquetería que llegue por <= este monto. Antes se miraba solo DHL y arriba
+                    // del umbral se le COBRABA el envío al cliente; ahora, por decisión del negocio, la zona
+                    // cara se DECLINA con /lamento — pero SOLO si NINGUNA paquetería (DHL/FedEx/Paquetexpress)
+                    // baja del umbral, porque la guía se genera con la más barata (modal de guías del CRM).
+                    const UMBRAL_ENVIO = Number(process.env.MAX_ENVIO_SERVIBLE || 200);
+                    // ops ya viene ordenado ascendente -> ops[0] = la paquetería MÁS BARATA (cualquiera). El
+                    // costo DHL se conserva solo para el log (DHL en T1 = "EXPRESS/ECONOMY ... DOMESTIC").
                     const dhlOps = ops.filter(o => /dhl|domestic/i.test(`${o.paq || ''} ${o.serv || ''}`));
-                    const refCosto = dhlOps.length ? dhlOps[0].costo : ops[0].costo;
-                    console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops, DHL/ref $${refCosto} vs umbral $${UMBRAL_ENVIO_GRATIS}, más barata ${ops[0].paq} $${ops[0].costo}`);
-                    if (refCosto <= UMBRAL_ENVIO_GRATIS) {
-                        coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real de paqueterías vía T1, desde Durango):** SÍ hay cobertura a domicilio y es ZONA NORMAL → el envío al cliente es GRATIS (nosotros pagamos la guía). Opciones (referencia interna de costo, NO para el cliente): ${top}. NO le cobres envío ni le menciones estos montos; úsalos solo para saber que sí llegamos y a qué costo. Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
+                    const dhlCosto = dhlOps.length ? dhlOps[0].costo : null;
+                    const minCosto = ops[0].costo;
+                    console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops, más barata ${ops[0].paq} $${minCosto}${dhlCosto != null ? `, DHL $${dhlCosto}` : ', sin DHL'} vs umbral $${UMBRAL_ENVIO} -> ${minCosto <= UMBRAL_ENVIO ? 'SERVIR' : 'LAMENTO'}`);
+                    if (minCosto <= UMBRAL_ENVIO) {
+                        coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real de paqueterías vía T1, desde Durango):** SÍ hay cobertura a domicilio y el envío al cliente es GRATIS (nosotros pagamos la guía). Opciones (referencia interna de costo, NO para el cliente): ${top}. NO le cobres envío ni le menciones estos montos; úsalos solo para saber que sí llegamos y a qué costo. Sigue el flujo normal de cobertura (responde "/ttt" y luego "/qqq"). Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
                     } else {
-                        const costoCliente = Math.ceil(refCosto / 10) * 10; // redondeo hacia arriba a $10
-                        coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real vía T1, desde Durango):** SÍ llega a domicilio, PERO es ZONA EXTENDIDA (envío CON COSTO): el envío por DHL cuesta $${refCosto.toFixed(2)}, arriba del límite de envío gratis ($${UMBRAL_ENVIO_GRATIS}). PRIORIDAD para este C.P.: aunque en general ofrezcamos envío gratis, para ESTA zona el envío NO es gratis. Explícale con amabilidad al cliente que su código postal es zona extendida de las paqueterías y por eso tiene un costo de envío de $${costoCliente} MXN que se suma al total (el producto conserva su precio normal + $${costoCliente} de envío). Pregúntale si desea continuar así. (Referencia interna de opciones: ${top}.) Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
+                        coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real vía T1, desde Durango):** esta zona NO es viable para nosotros — la paquetería MÁS BARATA (${ops[0].paq}) cuesta $${minCosto.toFixed(2)}, por arriba de nuestro límite de $${UMBRAL_ENVIO}. En este caso NO tomamos el pedido: responde ÚNICAMENTE con "/lamento" (en su propio renglón, sólo eso, sin ningún texto adicional). NO le menciones al cliente el costo del envío ni ningún monto; el mensaje de /lamento ya le explica con amabilidad e invita a dar otro código postal de otra zona. (Referencia interna de opciones: ${top}.) Aplica esto SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
                     }
                 } else {
                     console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: sin tarifas (posible zona sin cobertura o CP inválido)`);
