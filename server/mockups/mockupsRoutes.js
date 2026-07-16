@@ -220,7 +220,10 @@ router.post('/generate-preview', asyncHandler(async (req, res) => {
     if (!tpl.baseImageUrl) return res.status(400).json({ success: false, error: 'La plantilla no tiene imagen base.' });
 
     const aspectRatio = tpl.aspectRatio || req.body.aspectRatio || '1:1';
-    let prompt = svc.buildPromptFromTemplate(tpl.promptTemplate, fields);
+    // Prompt base: el de la plantilla, o un override (el banco de pruebas permite editar el
+    // prompt y probarlo sin guardarlo en la plantilla). Conserva los placeholders {nombre1}…
+    const promptOverride = (typeof req.body.promptTemplate === 'string' && req.body.promptTemplate.trim()) ? req.body.promptTemplate : null;
+    let prompt = svc.buildPromptFromTemplate(promptOverride || tpl.promptTemplate, fields);
     if (!prompt) return res.status(400).json({ success: false, error: 'El prompt quedó vacío.' });
     // Detalles adicionales que el operador escribió: se suman al prompt de la plantilla.
     const extraPrompt = String(req.body.extraPrompt || '').trim();

@@ -42,7 +42,7 @@ const MK_DESIGN_SEED = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
 // envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
 // refFiles: 2ª referencia subida a mano por bloque (blockId -> File). pruebas: estado del
 // banco de pruebas (pestaña "Pruebas").
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null } };
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null, promptEdits: {} } };
 
 // Cache (promesa) del data-URI de la fuente manuscrita, para embeberla en el SVG al rasterizar.
 let mkFontDataUrlPromise = null;
@@ -838,6 +838,8 @@ function mkRenderPruebas() {
     const tplId = (P.templateId && mkGetTemplate(P.templateId)) ? P.templateId : mkState.templates[0].id;
     P.templateId = tplId;
     const tpl = mkGetTemplate(tplId);
+    // Prompt a mostrar: la edición en curso (por plantilla) o el de la plantilla guardado.
+    const promptVal = (tplId in P.promptEdits) ? P.promptEdits[tplId] : (tpl.promptTemplate || '');
     cont.innerHTML = `
     <div class="settings-card">
         <h2 class="text-xl font-bold mb-1">Banco de pruebas</h2>
@@ -864,6 +866,15 @@ function mkRenderPruebas() {
                             </div>
                             <small class="mk-muted">${tpl && tpl.designSvg ? 'Esta plantilla tiene diseño. Míralo, o sube/<b>arrastra</b>/<b>pega (Ctrl+V)</b> uno propio.' : 'Sube, <b>arrastra</b> o <b>pega (Ctrl+V)</b> una imagen para usarla como 2ª referencia (esta plantilla no tiene diseño).'}</small>
                         </div>
+                    </div>
+                </div>
+                <div class="mk-extra-wrap" style="margin-top:12px;">
+                    <label>Prompt (usa {nombre1} {nombre2} {fecha})</label>
+                    <textarea id="mk-pr-prompt" class="mk-extra" rows="5" style="min-height:96px;font-size:.85rem;">${mkEsc(promptVal)}</textarea>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+                        <button type="button" class="btn btn-outline btn-sm" id="mk-pr-saveprompt" onclick="mkPruebasSavePrompt()"><i class="fas fa-save mr-1"></i>Guardar prompt en la plantilla</button>
+                        <button type="button" class="btn btn-outline btn-sm" onclick="mkPruebasResetPrompt()"><i class="fas fa-rotate-left mr-1"></i>Restablecer</button>
+                        <small class="mk-muted">Se usa este prompt al generar; los datos ({nombre1}…) se sustituyen. "Guardar" lo aplica también a Pendientes y auto-generación.</small>
                     </div>
                 </div>
                 <div class="mk-extra-wrap" style="margin-top:10px;">
@@ -897,6 +908,9 @@ function mkPruebasCapture() {
     P.values = v;
     const prov = document.getElementById('mk-pr-provider'); if (prov) P.provider = prov.value;
     const ex = document.getElementById('mk-pr-extra'); if (ex) P.extra = ex.value;
+    // Conserva la edición del prompt (por plantilla) para que sobreviva a los re-render.
+    const tid = document.getElementById('mk-pr-tpl'); const pt = document.getElementById('mk-pr-prompt');
+    if (tid && pt) P.promptEdits[tid.value] = pt.value;
 }
 
 function mkPruebasTplChange() {
@@ -943,6 +957,37 @@ function mkPruebasClear() {
     const inp = document.getElementById('mk-pr-file'); if (inp) inp.value = '';
 }
 
+// Guarda el prompt editado EN LA PLANTILLA (lo aplica también a Pendientes y auto-generación).
+async function mkPruebasSavePrompt() {
+    const tplId = document.getElementById('mk-pr-tpl').value;
+    const prompt = (document.getElementById('mk-pr-prompt')?.value || '').trim();
+    if (!tplId) return;
+    if (!prompt) { mkToast('El prompt no puede estar vacío.', 'error'); return; }
+    const btn = document.getElementById('mk-pr-saveprompt');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Guardando…'; }
+    try {
+        await mkFetchJson('/api/mockups/templates/' + tplId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ promptTemplate: prompt }) });
+        const t = mkGetTemplate(tplId); if (t) t.promptTemplate = prompt;   // refleja en memoria (sin recargar)
+        mkState.pruebas.promptEdits[tplId] = prompt;
+        mkToast('Prompt guardado en la plantilla ✅', 'success');
+    } catch (e) {
+        mkToast('No se pudo guardar: ' + e.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    }
+}
+
+// Descarta la edición y vuelve al prompt guardado en la plantilla.
+function mkPruebasResetPrompt() {
+    const tplId = document.getElementById('mk-pr-tpl').value;
+    const tpl = mkGetTemplate(tplId);
+    delete mkState.pruebas.promptEdits[tplId];
+    const pt = document.getElementById('mk-pr-prompt');
+    if (pt && tpl) pt.value = tpl.promptTemplate || '';
+    mkToast('Prompt restablecido al de la plantilla.', 'info');
+}
+
 function mkPruebasResultHtml(url) {
     return `
         <img src="${mkAttr(url)}" alt="Mockup">
@@ -965,6 +1010,9 @@ async function mkPruebasGenerate() {
     P.values = Object.assign({}, fields);
     const extraPrompt = (document.getElementById('mk-pr-extra')?.value || '').trim();
     P.extra = extraPrompt;
+    // Prompt editado en el banco de pruebas (override; no se guarda salvo con "Guardar prompt").
+    const promptTemplate = (document.getElementById('mk-pr-prompt')?.value || '');
+    P.promptEdits[tplId] = promptTemplate;
 
     const box = document.getElementById('mk-pr-result');
     const btn = document.getElementById('mk-pr-gen');
@@ -983,7 +1031,7 @@ async function mkPruebasGenerate() {
         }
 
         setBox('Enviando a la IA…');
-        const url = await mkRunGeneration({ templateId: tplId, provider, fields, extraPrompt, orderId: null, blockId: 'prueba', secondImageUrl }, setProgress);
+        const url = await mkRunGeneration({ templateId: tplId, provider, fields, extraPrompt, promptTemplate, orderId: null, blockId: 'prueba', secondImageUrl }, setProgress);
         P.resultUrl = url;
         if (box) box.innerHTML = mkPruebasResultHtml(url);
     } catch (e) {
