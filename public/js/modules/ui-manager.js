@@ -136,6 +136,19 @@ function navigateTo(viewName, force = false) {
     }
 }
 
+// ESC cierra SIEMPRE primero la imagen ampliada, por encima de cualquier otro modal (chat de
+// Envíos/Pendientes, etc.). stopImmediatePropagation evita que ese mismo ESC cierre también el modal
+// de atrás. Se registra AQUÍ (temprano en el archivo) para correr antes que los demás handlers de ESC.
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const img = document.getElementById('image-modal');
+    if (img && img.classList.contains('visible')) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        if (typeof closeImageModal === 'function') closeImageModal();
+    }
+});
+
 // Sección "Envíos": tabla de pedidos con comprobante validado. Cada dato de envío va en su propia
 // columna y se copia al hacer clic en la celda. Lee GET /api/envios.
 // Estatus de pedido (mismos valores que en Pedidos). Cambiar a "Fabricar" dispara el evento Meta.

@@ -748,7 +748,7 @@ body.dark-mode .date-separator { background-color: #292e42; color: #a9b1d6; }
 /* Tooltip con la hora/fecha de visto (read receipt) */
 .read-receipt-tooltip { position: fixed; z-index: 1000; background-color: #1f2937; color: #fff; padding: 6px 11px; border-radius: 8px; font-size: 0.78rem; font-weight: 500; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28); white-space: nowrap; pointer-events: none; display: none; }
 body.dark-mode .read-receipt-tooltip { background-color: #374151; }
-.image-modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.75); z-index: 998; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+.image-modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.75); z-index: 12000; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
 .image-modal-backdrop.visible { opacity: 1; pointer-events: all; }
 .image-modal-content { position: relative; transform: scale(0.9); transition: transform 0.3s ease; }
 .image-modal-backdrop.visible .image-modal-content { transform: scale(1); }
@@ -3218,7 +3218,7 @@ body.dark-mode .chat-back-btn-mobile:active {
     .modal-backdrop,
     .modal-overlay,
     .image-modal-backdrop {
-        z-index: 1100 !important;
+        z-index: 12000 !important;
     }
     /* Backdrop del sidebar entre modal y sidebar (no se mezcla) */
     .sidebar-overlay.active {
