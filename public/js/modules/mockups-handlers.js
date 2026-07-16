@@ -42,7 +42,7 @@ const MK_DESIGN_SEED = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
 // envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
 // refFiles: 2ª referencia subida a mano por bloque (blockId -> File). pruebas: estado del
 // banco de pruebas (pestaña "Pruebas").
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, seq: 1, designs: [], designId: null } };
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
 
 // Cache (promesa) del data-URI de la fuente manuscrita, para embeberla en el SVG al rasterizar.
 let mkFontDataUrlPromise = null;
@@ -1062,9 +1062,20 @@ const MK_LZ_PRESETS = {
 };
 
 function mkLzState() {
-    if (!mkState.lienzo) mkState.lienzo = { items: [], sel: null, seq: 1, designs: [], designId: null };
+    if (!mkState.lienzo) mkState.lienzo = { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null };
     if (!Array.isArray(mkState.lienzo.designs)) mkState.lienzo.designs = [];
+    if (!Array.isArray(mkState.lienzo.selIds)) mkState.lienzo.selIds = mkState.lienzo.sel != null ? [mkState.lienzo.sel] : [];
     return mkState.lienzo;
+}
+
+// Selección MÚLTIPLE: selIds = todos los seleccionados; sel = el "primario" (el último,
+// cuyos controles muestra la barra). Toda mutación de selección pasa por mkLzSetSel.
+function mkLzSelIds() { return mkLzState().selIds; }
+
+function mkLzSetSel(ids) {
+    const st = mkLzState();
+    st.selIds = ids || [];
+    st.sel = st.selIds.length ? st.selIds[st.selIds.length - 1] : null;
 }
 
 function mkLzHtml() {
@@ -1081,7 +1092,7 @@ function mkLzHtml() {
                 <div class="mk-lz-side">
                     <button type="button" class="btn btn-primary btn-sm" onclick="mkLzUseAsRef(this)"><i class="fas fa-file-image mr-1"></i>Convertir a PNG → 2ª referencia</button>
                     <button type="button" class="btn btn-outline btn-sm" onclick="mkLzDownload(this)"><i class="fas fa-download mr-1"></i>Descargar PNG</button>
-                    <small class="mk-muted">Haz clic en un elemento para seleccionarlo, arrástralo para moverlo y usa los <b>cuadritos de las esquinas</b> para escalarlo. En <b>Capas</b> puedes nombrar cada elemento, seleccionarlo y cambiar su orden (▲ al frente).</small>
+                    <small class="mk-muted">Clic = seleccionar (con <b>Shift</b> se agregan más), arrastra para mover y usa los <b>cuadritos de las esquinas</b> para escalar. <b>Ctrl+D</b> duplica y <b>Supr</b> elimina lo seleccionado. En <b>Capas</b> puedes nombrar cada elemento y cambiar su orden (▲ al frente).</small>
                     <div class="mk-lz-save">
                         <label class="mk-lz-label">Diseños guardados</label>
                         <select id="mk-lz-designs" onchange="mkLzOnDesignPick(this.value)"><option value="">— nuevo diseño —</option></select>
@@ -1107,6 +1118,7 @@ function mkLzMount() {
     mkLzRenderLayers();
     mkLzRenderDesignsSelect();
     mkLzLoadDesignsList();   // async: rellena el selector de diseños guardados
+    mkLzBindKeys();          // Supr = eliminar, Ctrl+D = duplicar (una sola vez por sesión)
 }
 
 // Markup de los items (compartido entre el lienzo en vivo y el SVG exportado).
@@ -1133,19 +1145,39 @@ function mkLzRenderCanvas() {
     if (!st.items.length) inner += `<text x="${MK_LZ_W / 2}" y="${MK_LZ_H / 2}" fill="#555" font-size="34" text-anchor="middle" style="pointer-events:none;">Lienzo vacío: agrega texto o elementos</text>`;
     inner += mkLzItemsMarkup();
     svg.innerHTML = inner;
-    // Contorno de selección + cuadritos de escala en las esquinas (bbox real del nodo montado).
-    if (st.sel != null) {
-        const it = st.items.find(i => i.id === st.sel);
-        const bb = it && mkLzCanvasBBox(it);
-        if (bb) {
-            const pad = 6, HS = 24;   // padding del contorno y tamaño del handle (unidades del viewBox)
-            const x0 = bb.x - pad, y0 = bb.y - pad, x1 = bb.x + bb.w + pad, y1 = bb.y + bb.h + pad;
-            let g = `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="#4f8ff7" stroke-width="3" stroke-dasharray="8 5" style="pointer-events:none;"></rect>`;
-            g += [['tl', x0, y0, 'nwse'], ['tr', x1, y0, 'nesw'], ['bl', x0, y1, 'nesw'], ['br', x1, y1, 'nwse']]
-                .map(([k, cx, cy, cur]) => `<rect data-lzh="${k}" x="${cx - HS / 2}" y="${cy - HS / 2}" width="${HS}" height="${HS}" fill="#ffffff" stroke="#4f8ff7" stroke-width="3" style="cursor:${cur}-resize;"></rect>`).join('');
-            svg.insertAdjacentHTML('beforeend', `<g id="mk-lz-selgfx">${g}</g>`);
+    // Selección: contorno por elemento + UNA caja combinada con los cuadritos de escala
+    // (con un solo seleccionado, la caja combinada ES su bbox: se ve igual que antes).
+    const boxes = mkLzSelBoxes();
+    if (boxes.length) {
+        const pad = 6, HS = 24;   // padding del contorno y tamaño del handle (unidades del viewBox)
+        let g = '';
+        if (boxes.length > 1) {
+            g += boxes.map(({ bb }) => `<rect x="${bb.x - 3}" y="${bb.y - 3}" width="${bb.w + 6}" height="${bb.h + 6}" fill="none" stroke="#4f8ff7" stroke-width="2" stroke-dasharray="5 4" opacity="0.55" style="pointer-events:none;"></rect>`).join('');
         }
+        const u = mkLzUnionBBox(boxes);
+        const x0 = u.x - pad, y0 = u.y - pad, x1 = u.x + u.w + pad, y1 = u.y + u.h + pad;
+        g += `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="#4f8ff7" stroke-width="3" stroke-dasharray="8 5" style="pointer-events:none;"></rect>`;
+        g += [['tl', x0, y0, 'nwse'], ['tr', x1, y0, 'nesw'], ['bl', x0, y1, 'nesw'], ['br', x1, y1, 'nwse']]
+            .map(([k, cx, cy, cur]) => `<rect data-lzh="${k}" x="${cx - HS / 2}" y="${cy - HS / 2}" width="${HS}" height="${HS}" fill="#ffffff" stroke="#4f8ff7" stroke-width="3" style="cursor:${cur}-resize;"></rect>`).join('');
+        svg.insertAdjacentHTML('beforeend', `<g id="mk-lz-selgfx">${g}</g>`);
     }
+}
+
+// bboxes (en coords del lienzo) de los elementos seleccionados que ya están montados.
+function mkLzSelBoxes() {
+    const st = mkLzState();
+    return mkLzSelIds()
+        .map(id => { const it = st.items.find(i => i.id === id); return it ? { it, bb: mkLzCanvasBBox(it) } : null; })
+        .filter(x => x && x.bb);
+}
+
+function mkLzUnionBBox(boxes) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const { bb } of boxes) {
+        x0 = Math.min(x0, bb.x); y0 = Math.min(y0, bb.y);
+        x1 = Math.max(x1, bb.x + bb.w); y1 = Math.max(y1, bb.y + bb.h);
+    }
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 // Bounding box del item en coordenadas del LIENZO (los <g> de vectores llevan transform,
@@ -1164,13 +1196,18 @@ function mkLzRenderTools() {
     const box = document.getElementById('mk-lz-tools');
     if (!box) return;
     const st = mkLzState();
-    const it = st.items.find(i => i.id === st.sel);
+    const ids = mkLzSelIds();
+    const it = ids.length === 1 ? st.items.find(i => i.id === ids[0]) : null;
     let html = `
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddText()"><i class="fas fa-font mr-1"></i>Texto</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddPreset('infinito')"><i class="fas fa-infinity mr-1"></i>Infinito</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddPreset('corazon')"><i class="fas fa-heart mr-1"></i>Corazón</button>
         <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-image mr-1"></i>Importar imagen/SVG<input type="file" accept="image/*,.svg" style="display:none;" onchange="mkLzOnImport(event)"></label>`;
-    if (it) {
+    if (ids.length > 1) {
+        html += `<span class="mk-lz-sep"></span><span class="mk-muted" style="font-size:.8rem;">${ids.length} seleccionados</span>
+            <button type="button" class="btn btn-outline btn-sm" title="Duplicar (Ctrl+D)" onclick="mkLzDuplicate()"><i class="fas fa-clone mr-1"></i>Duplicar</button>
+            <button type="button" class="btn btn-outline btn-sm" style="color:#dc2626;" title="Eliminar (Supr)" onclick="mkLzDelete()"><i class="fas fa-trash mr-1"></i>Eliminar</button>`;
+    } else if (it) {
         html += `<span class="mk-lz-sep"></span>`;
         if (it.type === 'text') {
             const alignBtn = (a, icon, title) => `<button type="button" class="btn btn-sm ${(it.align || 'center') === a ? 'btn-primary' : 'btn-outline'}" title="${title}" onclick="mkLzPatchT({align:'${a}'})"><i class="fas ${icon}"></i></button>`;
@@ -1184,7 +1221,8 @@ function mkLzRenderTools() {
             html += `<input type="number" value="${it.scale}" min="0.2" max="20" step="0.2" title="Escala" oninput="mkLzPatch({scale:Math.max(0.2,+this.value||1)})">
                 <input type="number" value="${it.strokeWidth}" min="1" max="30" title="Grosor del trazo" oninput="mkLzPatch({strokeWidth:Math.max(1,+this.value||1)})">`;
         }
-        html += `<button type="button" class="btn btn-outline btn-sm" style="color:#dc2626;" onclick="mkLzDelete()"><i class="fas fa-trash mr-1"></i>Eliminar</button>`;
+        html += `<button type="button" class="btn btn-outline btn-sm" title="Duplicar (Ctrl+D)" onclick="mkLzDuplicate()"><i class="fas fa-clone mr-1"></i>Duplicar</button>
+            <button type="button" class="btn btn-outline btn-sm" style="color:#dc2626;" title="Eliminar (Supr)" onclick="mkLzDelete()"><i class="fas fa-trash mr-1"></i>Eliminar</button>`;
     }
     box.innerHTML = html;
 }
@@ -1299,9 +1337,50 @@ function mkLzPushImage(href, natW, natH, name) {
 
 function mkLzDelete() {
     const st = mkLzState();
-    st.items = st.items.filter(i => i.id !== st.sel);
-    st.sel = null;
+    const ids = mkLzSelIds();
+    if (!ids.length) return;
+    st.items = st.items.filter(i => !ids.includes(i.id));
+    mkLzSetSel([]);
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
+}
+
+// Duplica TODO lo seleccionado (Ctrl+D o botón): clones desplazados +24,+24 que quedan
+// como la nueva selección. Se conserva el caché remoteHref (mismo href => no re-subir).
+function mkLzDuplicate() {
+    const st = mkLzState();
+    const ids = mkLzSelIds();
+    if (!ids.length) return;
+    const clones = [];
+    for (const id of ids) {
+        const it = st.items.find(i => i.id === id);
+        if (!it) continue;
+        const c = JSON.parse(JSON.stringify(it));
+        c.id = st.seq++;
+        c.x = (c.x || 0) + 24;
+        c.y = (c.y || 0) + 24;
+        if (c.name) c.name = c.name + ' copia';
+        st.items.push(c);
+        clones.push(c.id);
+    }
+    mkLzSetSel(clones);
+    mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
+}
+
+// Atajos de teclado del lienzo (solo en la pestaña Pruebas, con el lienzo montado y el
+// foco FUERA de inputs: borrar mientras renombras una capa no debe borrar el elemento).
+let mkLzKeysBound = false;
+function mkLzBindKeys() {
+    if (mkLzKeysBound) return;
+    mkLzKeysBound = true;
+    document.addEventListener('keydown', (e) => {
+        if (mkState.tab !== 'pruebas' || !document.getElementById('mk-lz-svg')) return;
+        const t = e.target;
+        const tag = t && t.tagName ? t.tagName.toLowerCase() : '';
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+        if (!mkLzSelIds().length) return;
+        if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); mkLzDelete(); return; }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); mkLzDuplicate(); }
+    });
 }
 
 // ---- panel de capas (como Photoshop: la de más al frente arriba) ----
@@ -1311,10 +1390,11 @@ function mkLzRenderLayers() {
     const st = mkLzState();
     if (!st.items.length) { box.innerHTML = '<small class="mk-muted">Sin elementos todavía.</small>'; return; }
     // En SVG el último item del arreglo se pinta AL FRENTE -> se lista invertido (frente arriba).
+    const selIds = mkLzSelIds();
     box.innerHTML = [...st.items].reverse().map(it => {
         const icon = it.type === 'text' ? 'fa-font' : (it.type === 'image' ? 'fa-image' : 'fa-bezier-curve');
         return `
-        <div class="mk-lz-layer${it.id === st.sel ? ' active' : ''}" onclick="mkLzSelect(${it.id})">
+        <div class="mk-lz-layer${selIds.includes(it.id) ? ' active' : ''}" onclick="mkLzSelect(${it.id}, event)">
             <i class="fas ${icon}"></i>
             <input type="text" value="${mkAttr(it.name || '')}" placeholder="Sin nombre" title="Nombre de la capa" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" oninput="mkLzRename(${it.id}, this.value)">
             <button type="button" title="Traer al frente" onclick="event.stopPropagation();mkLzReorder(${it.id},1)"><i class="fas fa-chevron-up"></i></button>
@@ -1323,9 +1403,16 @@ function mkLzRenderLayers() {
     }).join('');
 }
 
-function mkLzSelect(id) {
-    const st = mkLzState();
-    st.sel = id;
+// Clic en una capa: selecciona solo esa; con Shift, la agrega/quita del grupo.
+function mkLzSelect(id, ev) {
+    if (ev && ev.shiftKey) {
+        const ids = mkLzSelIds().slice();
+        const i = ids.indexOf(id);
+        if (i >= 0) ids.splice(i, 1); else ids.push(id);
+        mkLzSetSel(ids);
+    } else {
+        mkLzSetSel([id]);
+    }
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
 }
 
@@ -1357,39 +1444,51 @@ function mkLzPoint(ev) {
     return { x: p.x, y: p.y };
 }
 
+function mkLzMetric(it) { return it.type === 'text' ? it.size : (it.type === 'image' ? it.w : it.scale); }
+
 function mkLzDown(ev) {
     const st = mkLzState();
     // 1) ¿Agarró un cuadrito de escala? (van primero: los handles no llevan data-lz y
-    //    caerían en el "clic al vacío" que deselecciona)
+    //    caerían en el "clic al vacío" que deselecciona). Escala TODO lo seleccionado.
     const handle = ev.target && ev.target.closest ? ev.target.closest('[data-lzh]') : null;
-    if (handle && st.sel != null) {
-        const it = st.items.find(i => i.id === st.sel);
-        const bb = it && mkLzCanvasBBox(it);
-        if (!it || !bb) return;
+    if (handle && mkLzSelIds().length) {
+        const boxes = mkLzSelBoxes();
+        if (!boxes.length) return;
         ev.preventDefault();
-        // Ancla = la esquina OPUESTA al handle: queda fija mientras se escala.
+        const u = mkLzUnionBBox(boxes);
+        // Ancla = la esquina OPUESTA al handle (de la caja combinada): queda fija al escalar.
         const anchor = {
-            tl: { x: bb.x + bb.w, y: bb.y + bb.h }, tr: { x: bb.x, y: bb.y + bb.h },
-            bl: { x: bb.x + bb.w, y: bb.y }, br: { x: bb.x, y: bb.y },
+            tl: { x: u.x + u.w, y: u.y + u.h }, tr: { x: u.x, y: u.y + u.h },
+            bl: { x: u.x + u.w, y: u.y }, br: { x: u.x, y: u.y },
         }[handle.getAttribute('data-lzh')];
         const p = mkLzPoint(ev);
         const d0 = Math.hypot(p.x - anchor.x, p.y - anchor.y) || 1;
-        mkLzDrag = { resize: true, id: it.id, anchor, d0, ox: it.x, oy: it.y, m0: it.type === 'text' ? it.size : (it.type === 'image' ? it.w : it.scale) };
+        mkLzDrag = { resize: true, anchor, d0, items: boxes.map(({ it }) => ({ id: it.id, ox: it.x, oy: it.y, m0: mkLzMetric(it) })) };
         try { document.getElementById('mk-lz-svg').setPointerCapture(ev.pointerId); } catch (_) { /* noop */ }
         return;
     }
-    // 2) Clic sobre un elemento -> seleccionar y empezar a moverlo; al vacío -> deseleccionar.
+    // 2) Clic sobre un elemento: Shift+clic agrega/quita de la selección; clic normal
+    //    selecciona solo ese y arrastra TODO lo seleccionado. Al vacío -> deseleccionar.
     const node = ev.target && ev.target.closest ? ev.target.closest('[data-lz]') : null;
     if (!node) {
-        if (st.sel != null) { st.sel = null; mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); }
+        if (mkLzSelIds().length) { mkLzSetSel([]); mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers(); }
         return;
     }
     ev.preventDefault();
     const id = parseInt(node.getAttribute('data-lz'), 10);
-    st.sel = id;
-    const it = st.items.find(i => i.id === id);
+    if (ev.shiftKey) {
+        const ids = mkLzSelIds().slice();
+        const i = ids.indexOf(id);
+        if (i >= 0) ids.splice(i, 1); else ids.push(id);
+        mkLzSetSel(ids);
+        mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
+        return;   // shift+clic solo (de)selecciona; no inicia arrastre
+    }
+    let ids = mkLzSelIds();
+    if (!ids.includes(id)) { mkLzSetSel([id]); ids = mkLzSelIds(); }
+    else st.sel = id;   // ya estaba en el grupo: pasa a primario sin romper la selección
     const p = mkLzPoint(ev);
-    mkLzDrag = { id, sx: p.x, sy: p.y, ox: it.x, oy: it.y };
+    mkLzDrag = { sx: p.x, sy: p.y, items: ids.map(x => { const it = st.items.find(i => i.id === x); return { id: x, ox: it.x, oy: it.y }; }) };
     try { document.getElementById('mk-lz-svg').setPointerCapture(ev.pointerId); } catch (_) { /* noop */ }
     mkLzRenderCanvas(); mkLzRenderTools(); mkLzRenderLayers();
 }
@@ -1397,22 +1496,30 @@ function mkLzDown(ev) {
 function mkLzMove(ev) {
     if (!mkLzDrag) return;
     const st = mkLzState();
-    const it = st.items.find(i => i.id === mkLzDrag.id);
-    if (!it) { mkLzDrag = null; return; }
     const p = mkLzPoint(ev);
     if (mkLzDrag.resize) {
         // Factor = distancia al ancla vs. la inicial (escala uniforme desde la esquina opuesta).
         let f = Math.hypot(p.x - mkLzDrag.anchor.x, p.y - mkLzDrag.anchor.y) / mkLzDrag.d0;
         f = Math.max(0.05, Math.min(20, f));
-        let fEff = f;   // factor efectivo tras topes por tipo (mantiene el ancla fija)
-        if (it.type === 'text') { it.size = Math.max(10, Math.round(mkLzDrag.m0 * f)); fEff = it.size / mkLzDrag.m0; }
-        else if (it.type === 'image') { it.w = Math.max(20, Math.round(mkLzDrag.m0 * f)); it.h = Math.round(it.w * (it.ar || 1)); fEff = it.w / mkLzDrag.m0; }
-        else { it.scale = Math.max(0.1, +(mkLzDrag.m0 * f).toFixed(2)); fEff = it.scale / mkLzDrag.m0; }
-        it.x = Math.round(mkLzDrag.anchor.x + (mkLzDrag.ox - mkLzDrag.anchor.x) * fEff);
-        it.y = Math.round(mkLzDrag.anchor.y + (mkLzDrag.oy - mkLzDrag.anchor.y) * fEff);
+        const single = mkLzDrag.items.length === 1;
+        for (const d of mkLzDrag.items) {
+            const it = st.items.find(i => i.id === d.id);
+            if (!it) continue;
+            let fEff = f;   // con UN elemento, el tope de su métrica también fija el ancla exacta
+            if (it.type === 'text') { it.size = Math.max(10, Math.round(d.m0 * f)); if (single) fEff = it.size / d.m0; }
+            else if (it.type === 'image') { it.w = Math.max(20, Math.round(d.m0 * f)); it.h = Math.round(it.w * (it.ar || 1)); if (single) fEff = it.w / d.m0; }
+            else { it.scale = Math.max(0.1, +(d.m0 * f).toFixed(2)); if (single) fEff = it.scale / d.m0; }
+            it.x = Math.round(mkLzDrag.anchor.x + (d.ox - mkLzDrag.anchor.x) * fEff);
+            it.y = Math.round(mkLzDrag.anchor.y + (d.oy - mkLzDrag.anchor.y) * fEff);
+        }
     } else {
-        it.x = Math.round(mkLzDrag.ox + (p.x - mkLzDrag.sx));
-        it.y = Math.round(mkLzDrag.oy + (p.y - mkLzDrag.sy));
+        const dx = p.x - mkLzDrag.sx, dy = p.y - mkLzDrag.sy;
+        for (const d of mkLzDrag.items) {
+            const it = st.items.find(i => i.id === d.id);
+            if (!it) continue;
+            it.x = Math.round(d.ox + dx);
+            it.y = Math.round(d.oy + dy);
+        }
     }
     mkLzRenderCanvas();   // el SVG persiste (solo cambia su contenido), el pointer capture no se pierde
 }
@@ -1556,7 +1663,7 @@ async function mkLzOnDesignPick(id) {
         if (!ok) { mkLzRenderDesignsSelect(); return; }
     }
     st.designId = id;
-    st.sel = null;
+    mkLzSetSel([]);
     st.items = await mkLzHydrateItems(d.items);
     st.seq = st.items.reduce((m, i) => Math.max(m, +i.id || 0), 0) + 1;
     const name = document.getElementById('mk-lz-name'); if (name) name.value = d.nombre || '';
