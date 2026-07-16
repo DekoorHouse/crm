@@ -2920,7 +2920,7 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
 
 14. update_order - Actualizar pedido: { "action":"update_order", "orderId":"DOCUMENT_ID", "props":{ "estatus":"Pagado", "comentarios":"...", "producto":"..." }}
     Campos actualizables: estatus, producto, comentarios, datosProducto, datosPromocion, precio, telefono.
-    Estatus válidos: Sin estatus, Foto enviada, Esperando pago, Pagado, Diseñado, Fabricar, Corregir, Corregido, Mns Amenazador, Cancelado.
+    Estatus válidos: Sin estatus, Foto enviada, Esperando anticipo, Esperando pago, Pagado, Diseñado, Fabricar, Corregir, Corregido, Mns Amenazador, Cancelado.
 
 **Reglas:**
 - "selected" usa el objeto seleccionado. Si no hay selección y el usuario dice "eso", pide que seleccione algo.
@@ -7925,15 +7925,17 @@ router.get('/design-pending', async (_req, res) => {
         const { reasonsForOrderData } = require('./design/designPending');
         const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
 
-        // Candidatos: estatus de diseño-pendiente (Corregir/Pagado) + los que tienen comprobante
-        // validado (el "anticipo" puede estar en cualquier estatus previo al diseño). Se deduplica por id.
+        // Candidatos (se deduplica por id): pedidos en 'Corregir' (datos/video) + los que tienen
+        // COMPROBANTE validado (anticipo/mockup pagado) + los que marcaron 2º producto tras pagar.
+        // OJO: NO se jala por estatus 'Pagado' — en este CRM ahí se acumulan miles de pedidos ya
+        // terminados; el motor (designPending.js) usa comprobanteValidadoAt como señal de pago.
         const byId = new Map();
-        const [s1, s2] = await Promise.all([
-            db.collection('pedidos').where('estatus', 'in', ['Corregir', 'Pagado']).get(),
+        const [s1, s2, s3] = await Promise.all([
+            db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
             db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(500).get(),
+            db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
         ]);
-        s1.forEach(d => byId.set(d.id, d));
-        s2.forEach(d => byId.set(d.id, d));
+        [s1, s2, s3].forEach(s => s.forEach(d => byId.set(d.id, d)));
 
         let orders = [];
         for (const doc of byId.values()) {

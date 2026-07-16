@@ -1,40 +1,55 @@
-// Backfill de la bandera "Pendiente de Diseño" (designPending / designPendingReasons) sobre los
-// contactos, para poblar la vista con los pedidos que YA existen. Recorre todos los pedidos, junta
-// los contactos cuyo pedido tiene algún pendiente y recalcula cada uno con la misma lógica del server
-// (server/design/designPending.js), que evalúa el ÚLTIMO pedido del contacto.
+// Backfill/recalculo de la bandera "Pendiente de Diseño" (designPending / designPendingReasons) en los
+// contactos. Dos fases:
+//   1) LIMPIA todas las banderas actuales (evita positivos falsos de corridas o lógicas anteriores).
+//   2) MARCA de nuevo solo los contactos cuyos pedidos SÍ están pendientes hoy (lógica de
+//      server/design/designPending.js: Corregir + comprobante validado sin guía/preview + 2º producto).
 //
 // Uso (desde la raíz del repo, con serviceAccountKey.json presente):
 //   node scripts/backfill-design-pending.js
-//
-// Nota: para pedidos históricos no hay marca de "preview enviado" (previewEnviadoAt es nuevo), así que
-// los pagados sin preview caen en "anticipo"; se corrige solo cuando avanzan de estatus o se les manda
-// un mockup nuevo. corregirMotivo también es nuevo: los 'Corregir' viejos se muestran como "datos".
 const { db } = require('../server/config');
 const { reasonsForOrderData, recomputeForContact } = require('../server/design/designPending');
 
 (async () => {
-    console.log('[backfill-design-pending] Leyendo pedidos...');
-    const snap = await db.collection('pedidos').get();
+    // --- FASE 1: limpiar banderas actuales en lotes ---
+    console.log('[backfill] Fase 1: limpiando designPending existentes...');
+    let cleared = 0;
+    while (true) {
+        const snap = await db.collection('contacts_whatsapp').where('designPending', '==', true).limit(400).get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.docs.forEach(d => batch.update(d.ref, { designPending: false, designPendingReasons: [] }));
+        await batch.commit();
+        cleared += snap.size;
+        console.log(`  ...limpiados ${cleared}`);
+    }
+    console.log(`[backfill] Fase 1 lista: ${cleared} banderas limpiadas.`);
+
+    // --- FASE 2: marcar los pendientes reales ---
+    console.log('[backfill] Fase 2: escaneando candidatos...');
+    const byId = new Map();
+    const [s1, s2, s3] = await Promise.all([
+        db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
+        db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(500).get(),
+        db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
+    ]);
+    [s1, s2, s3].forEach(s => s.forEach(d => byId.set(d.id, d)));
 
     const contactIds = new Set();
-    let candidatos = 0;
-    snap.forEach(doc => {
+    for (const doc of byId.values()) {
         const d = doc.data();
         if (reasonsForOrderData(d).length > 0) {
-            candidatos++;
             const cid = d.contactId || d.telefono;
             if (cid) contactIds.add(String(cid));
         }
-    });
-    console.log(`[backfill-design-pending] Pedidos: ${snap.size} | con pendiente: ${candidatos} | contactos únicos: ${contactIds.size}`);
-
-    let marcados = 0, limpiados = 0, i = 0;
-    for (const cid of contactIds) {
-        const reasons = await recomputeForContact(cid);
-        if (reasons && reasons.length) marcados++; else limpiados++;
-        if (++i % 50 === 0) console.log(`  ...${i}/${contactIds.size}`);
     }
+    console.log(`[backfill] candidatos: ${byId.size} pedidos | contactos a recalcular: ${contactIds.size}`);
 
-    console.log(`[backfill-design-pending] LISTO. designPending=true: ${marcados} | recalculados a false (su último pedido ya no aplica): ${limpiados}.`);
+    let marcados = 0, i = 0;
+    for (const cid of contactIds) {
+        const r = await recomputeForContact(cid);
+        if (r && r.length) marcados++;
+        if (++i % 25 === 0) console.log(`  ...${i}/${contactIds.size}`);
+    }
+    console.log(`[backfill] LISTO. Contactos con designPending=true al final: ${marcados}.`);
     process.exit(0);
-})().catch(e => { console.error('[backfill-design-pending] FALLÓ:', e); process.exit(1); });
+})().catch(e => { console.error('[backfill] FALLÓ:', e); process.exit(1); });
