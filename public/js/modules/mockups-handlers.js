@@ -1525,29 +1525,25 @@ function mkLzPointInPoly(pt, poly) {
     return inside;
 }
 
-// Distancias del punto al borde del polígono a lo largo de los 4 ejes (izq/der/arriba/abajo).
-function mkLzAxisExtents(pt, poly) {
-    let L = Infinity, R = Infinity, T = Infinity, B = Infinity;
-    for (let i = 0; i < poly.length; i++) {
-        const a = poly[i], b = poly[(i + 1) % poly.length];
-        if ((a.y - pt.y) * (b.y - pt.y) <= 0 && a.y !== b.y) {   // cruza la horizontal y=pt.y
-            const x = a.x + (b.x - a.x) * (pt.y - a.y) / (b.y - a.y);
-            if (x >= pt.x) R = Math.min(R, x - pt.x);
-            if (x <= pt.x) L = Math.min(L, pt.x - x);
-        }
-        if ((a.x - pt.x) * (b.x - pt.x) <= 0 && a.x !== b.x) {   // cruza la vertical x=pt.x
-            const y = a.y + (b.y - a.y) * (pt.x - a.x) / (b.x - a.x);
-            if (y >= pt.y) B = Math.min(B, y - pt.y);
-            if (y <= pt.y) T = Math.min(T, pt.y - y);
-        }
-    }
-    return { L, R, T, B };
+// Puntos del PERÍMETRO de la caja de tinta del texto (a escala f, crecida un margen M):
+// esquinas + varios puntos por lado. Que TODOS caigan dentro del polígono ≈ la caja entera
+// cabe. Funciona con cualquier forma (rectángulo o trazo a mano), no solo con rayos al centro.
+function mkLzTextBoxPts(t, f, M) {
+    const ink = mkLzInkBBox(t, t.baseSize);
+    const extL = t.x - ink.x, extR = ink.x + ink.w - t.x, extT = t.y - ink.y, extB = ink.y + ink.h - t.y;
+    const x0 = t.x - (extL * f + M), x1 = t.x + (extR * f + M);
+    const y0 = t.y - (extT * f + M), y1 = t.y + (extB * f + M);
+    const pts = [];
+    const N = 6;   // muestreo por lado (los lados largos —arriba/abajo— son los que más se salen)
+    for (let i = 0; i <= N; i++) { const x = x0 + (x1 - x0) * i / N; pts.push({ x, y: y0 }, { x, y: y1 }); }
+    for (let i = 1; i < N; i++) { const y = y0 + (y1 - y0) * i / N; pts.push({ x: x0, y }, { x: x1, y }); }
+    return pts;
 }
 
 // Los límites son CONTENEDORES: un texto cuyo anclaje cae dentro de un área de límite se
-// encoge SOLO lo necesario para caber dentro de sus bordes (con un margencito), midiendo
-// la TINTA real del texto. Si cabe al tamaño deseado (baseSize), se queda tal cual; si el
-// límite se agranda/quita, vuelve a crecer hasta baseSize. Textos fuera: no se tocan.
+// encoge SOLO lo necesario para que su caja quepa dentro del contorno (con un margencito),
+// midiendo la TINTA real del texto. Si cabe al tamaño deseado (baseSize), se queda tal cual;
+// si el límite se agranda/quita o el texto sale, vuelve a crecer hasta baseSize.
 const MK_LZ_LIMIT_MARGIN = 6;
 function mkLzEnforceLimits() {
     const st = mkLzState();
@@ -1559,20 +1555,18 @@ function mkLzEnforceLimits() {
         if (t.baseSize == null) t.baseSize = t.size;
         let size = t.baseSize;
         if (shapes.length && (t.text || '').trim()) {
-            const ink = mkLzInkBBox(t, t.baseSize);
-            // Extensión de la tinta hacia cada lado desde el anclaje (escala lineal con el tamaño).
-            const extL = t.x - ink.x, extR = ink.x + ink.w - t.x, extT = t.y - ink.y, extB = ink.y + ink.h - t.y;
-            let f = 1;
-            for (const poly of shapes) {
-                if (!mkLzPointInPoly({ x: t.x, y: t.y }, poly)) continue;
-                const av = mkLzAxisExtents({ x: t.x, y: t.y }, poly);
-                f = Math.min(f,
-                    extL > 0.5 ? Math.max(0, av.L - MK_LZ_LIMIT_MARGIN) / extL : 1,
-                    extR > 0.5 ? Math.max(0, av.R - MK_LZ_LIMIT_MARGIN) / extR : 1,
-                    extT > 0.5 ? Math.max(0, av.T - MK_LZ_LIMIT_MARGIN) / extT : 1,
-                    extB > 0.5 ? Math.max(0, av.B - MK_LZ_LIMIT_MARGIN) / extB : 1);
+            // Solo constriñen los límites que CONTIENEN el anclaje del texto.
+            const inShapes = shapes.filter(poly => mkLzPointInPoly({ x: t.x, y: t.y }, poly));
+            if (inShapes.length) {
+                const fits = (f) => mkLzTextBoxPts(t, f, MK_LZ_LIMIT_MARGIN).every(p => inShapes.every(poly => mkLzPointInPoly(p, poly)));
+                let f = 1;
+                if (!fits(1)) {   // no cabe a tamaño deseado -> mayor f in (0,1] que quepa (bisección)
+                    let lo = 0, hi = 1;
+                    for (let i = 0; i < 22; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+                    f = lo;
+                }
+                size = Math.max(10, Math.floor(t.baseSize * f));
             }
-            size = Math.max(10, Math.floor(t.baseSize * f));
         }
         if (size !== t.size) { t.size = size; changed = true; }
     }
