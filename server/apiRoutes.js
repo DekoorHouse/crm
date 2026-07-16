@@ -7947,6 +7947,7 @@ router.get('/design-pending', async (req, res) => {
                 comprobanteValidadoAt: tsToMs(p.comprobanteValidadoAt),
                 corregirAt: tsToMs(p.corregirAt),
                 disenoListoAt: tsToMs(p.disenoListoAt),
+                comentarioDiseno: p.comentarioDiseno || '',
             };
         };
 
@@ -8000,6 +8001,23 @@ router.get('/design-pending', async (req, res) => {
         res.json({ success: true, total: orders.length, orders: orders.slice(0, 500) });
     } catch (e) {
         console.error('[design-pending] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/design-pending/:orderId/comentario — guarda una nota interna del diseñador en el pedido
+// (campo comentarioDiseno). Solo para el equipo; no toca nada del cliente ni el estatus.
+router.post('/design-pending/:orderId/comentario', async (req, res) => {
+    const { orderId } = req.params;
+    const comentario = String((req.body && req.body.comentario) || '').slice(0, 2000);
+    try {
+        const ref = db.collection('pedidos').doc(orderId);
+        const doc = await ref.get();
+        if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        await ref.update({ comentarioDiseno: comentario });
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[design-pending/comentario] error:', e.message);
         res.status(500).json({ success: false, message: e.message });
     }
 });

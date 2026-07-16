@@ -183,7 +183,7 @@ function DesignPendingViewTemplate() {
             <h1 class="text-2xl font-bold" style="margin:0"><i class="fas fa-palette mr-2" style="color:#6f42c1"></i>Pendientes de Diseño</h1>
             <button onclick="renderDesignPendingView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
         </div>
-        <p class="text-sm text-gray-500 mb-4">Pedidos que necesitan algo del equipo de diseño: mockup pagado, dato mal, video, anticipo (pagó y aún sin preview) o segundo producto tras pagar.</p>
+        <p class="text-sm text-gray-500 mb-4">Cola de diseño (2 etapas): falta el <b>mockup</b> (Sin estatus sin preview) o falta el <b>corte</b> en Corel al fabricar; más correcciones (datos/video) y segundo producto tras pagar.</p>
         <div id="design-pending-container"></div>
     </div>`;
 }
@@ -292,6 +292,7 @@ function _paintDesignPending() {
         const fecha = tab === 'disenados' ? o.disenoListoAt : (o.corregirAt || o.comprobanteValidadoAt || o.createdAt);
         const fechaTxt = fecha ? new Date(fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) : '—';
         const prod = escapeHtml(o.producto || '') + (o.itemCount > 1 ? ` <span style="color:#94a3b8">+${o.itemCount - 1}</span>` : '');
+        const comentarioCell = `<textarea onblur="changeDesignComentario('${o.id}', this)" placeholder="Nota interna…" title="Notas del diseñador (solo para el equipo)" style="width:170px;min-height:34px;max-height:110px;font-size:12px;line-height:1.3;padding:5px 7px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;resize:vertical;background:var(--color-surface,#fff);color:var(--color-text,#334155)">${escapeHtml(o.comentarioDiseno || '')}</textarea>`;
         return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:middle">
             <td style="padding:9px 12px 9px 0;color:#94a3b8;font-weight:600">${i + 1}</td>
             <td style="padding:9px 12px 9px 0;font-weight:700;color:var(--color-primary);white-space:nowrap">${escapeHtml(o.orderNumber)}</td>
@@ -299,6 +300,7 @@ function _paintDesignPending() {
             <td style="padding:9px 12px 9px 0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${prod}</td>
             <td style="padding:9px 12px 9px 0">${motivoCell}</td>
             <td style="padding:6px 12px 6px 0;white-space:nowrap">${statusSel}</td>
+            <td style="padding:6px 12px 6px 0">${comentarioCell}</td>
             <td style="padding:9px 12px 9px 0;color:#94a3b8;white-space:nowrap">${fechaTxt}</td>
             <td style="padding:9px 0;text-align:right;white-space:nowrap"><div style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end">${chatBtn}${actionBtn}</div></td>
         </tr>`;
@@ -321,6 +323,7 @@ function _paintDesignPending() {
                 <th style="padding:8px 12px 8px 0">Producto</th>
                 <th style="padding:8px 12px 8px 0">${tab === 'disenados' ? 'Estado' : 'Motivo'}</th>
                 <th style="padding:8px 12px 8px 0">Estatus</th>
+                <th style="padding:8px 12px 8px 0">Comentarios del diseñador</th>
                 <th style="padding:8px 12px 8px 0">${tab === 'disenados' ? 'Diseñado' : 'Desde'}</th>
                 <th style="padding:8px 0;text-align:right">Acciones</th>
               </tr>
@@ -329,6 +332,27 @@ function _paintDesignPending() {
           </table>
         </div>`;
 }
+
+// Guarda la nota interna del diseñador (onblur). No re-pinta la tabla; solo avisa con un borde verde.
+async function changeDesignComentario(orderId, el) {
+    const comentario = el.value;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/comentario`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comentario }),
+        });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        // Refleja en el cache local para no perder la nota al re-pintar (filtros).
+        const o = (window._designPendingData || []).find(x => x.id === orderId);
+        if (o) o.comentarioDiseno = comentario;
+        el.style.borderColor = '#16a34a';
+        setTimeout(() => { el.style.borderColor = ''; }, 900);
+    } catch (e) {
+        el.style.borderColor = '#dc2626';
+        console.error('[diseño] guardar comentario:', e.message);
+    }
+}
+window.changeDesignComentario = changeDesignComentario;
 
 // Cambia el estatus de un pedido desde el tablero y refresca (puede salir de la lista si pasó a diseño terminado).
 async function changeDesignPendingStatus(orderId, newStatus, el) {
