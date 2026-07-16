@@ -16,7 +16,8 @@ const svc = require('./mockupsService');
 const wave = require('./wavespeedClient');
 
 const CRON_SCHEDULE = process.env.MOCKUP_AUTO_CRON || '*/10 * * * *';   // cada 10 min
-const BATCH = parseInt(process.env.MOCKUP_AUTO_BATCH || '4', 10);       // máx por corrida (costo/tiempo)
+const BATCH = parseInt(process.env.MOCKUP_AUTO_BATCH || '4', 10);       // máx por corrida automática (costo/tiempo)
+const FORCE_BATCH = parseInt(process.env.MOCKUP_AUTO_FORCE_BATCH || '25', 10); // máx en corrida MANUAL ("Generar ahora")
 const ADMIN_PHONE = process.env.ADMIN_ALERT_PHONE || '5216182297167';
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL = 130;   // ~6.5 min de espera server-side por imagen
@@ -103,12 +104,13 @@ async function generateOne(o, tpl) {
     }
 }
 
-async function runOnce() {
+async function runOnce(opts) {
+    const force = !!(opts && opts.force);   // corrida MANUAL ("Generar ahora"): ignora el toggle y usa lote grande
     if (running) return;
     running = true;
     try {
         const cfg = await getConfig();
-        if (cfg.autoGenerate === false) return;   // apagado por el operador
+        if (!force && cfg.autoGenerate === false) return;   // apagado por el operador (el manual sí corre)
 
         const templates = await svc.listTemplates();
         const corazones = templates.find(t => /corazon/i.test(t.nombre) || (t.productMatch || []).some(m => /corazon/i.test(m)));
@@ -124,9 +126,10 @@ async function runOnce() {
             candidates.push(o);
         }
 
+        const cap = force ? FORCE_BATCH : BATCH;
         let done = 0;
         for (const o of candidates) {
-            if (done >= BATCH) break;
+            if (done >= cap) break;
             const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
             if (prev.exists && Array.isArray(prev.data().previews) && prev.data().previews.length) continue;   // ya tiene preview
             const res = await generateOne(o, corazones);

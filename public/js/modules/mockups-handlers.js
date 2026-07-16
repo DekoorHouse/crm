@@ -160,6 +160,24 @@ async function mkReload() {
     try { await mkLoadPending(); } catch (e) { mkToast(e.message, 'error'); }
 }
 
+// "Generar ahora": dispara YA una corrida de auto-generación en el servidor (corazones con
+// nombres+fecha, sin preview). Ideal tras recargar saldo en WaveSpeed. El servidor responde de
+// inmediato y sigue generando en segundo plano; refrescamos la lista de forma escalonada para que
+// los previews vayan apareciendo solos, sin tener que darle a Actualizar a mano.
+async function mkRunAutoNow(btn) {
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Iniciando…'; }
+    try {
+        await mkFetchJson('/api/mockups/auto-run', { method: 'POST' });
+        mkToast('Generación iniciada ⚡ Los previews de corazones irán apareciendo en unos minutos.', 'success');
+        [30000, 75000, 135000].forEach(ms => setTimeout(() => { mkLoadPending().catch(() => {}); }, ms));
+    } catch (e) {
+        mkToast('No se pudo iniciar: ' + e.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    }
+}
+
 // ---------- plantillas (carga) ----------
 async function mkLoadTemplates() {
     const data = await mkFetchJson('/api/mockups/templates');

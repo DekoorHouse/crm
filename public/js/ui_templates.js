@@ -921,6 +921,7 @@ const MockupsViewTemplate = () => `
                     <span class="mk-muted">Auto-generar</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-auto-toggle" onchange="mkToggleAuto(this.checked)"><span class="slider"></span></label>
                 </span>
+                <button class="btn btn-secondary btn-sm" onclick="mkRunAutoNow(this)" title="Genera YA los previews pendientes de corazones (nombres + fecha). Útil justo después de recargar saldo en WaveSpeed."><i class="fas fa-bolt mr-2"></i>Generar ahora</button>
                 <button class="btn btn-secondary btn-sm" onclick="mkReload()"><i class="fas fa-sync-alt mr-2"></i>Actualizar</button>
             </div>
         </div>

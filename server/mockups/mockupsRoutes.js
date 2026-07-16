@@ -345,6 +345,16 @@ router.post('/auto-config', asyncHandler(async (req, res) => {
     res.json({ success: true, autoGenerate });
 }));
 
+// POST /api/mockups/auto-run — dispara YA una corrida de auto-generación (p.ej. tras recargar
+// saldo en WaveSpeed). NO espera a que termine (puede tardar minutos): arranca en segundo plano y
+// responde de inmediato. Fuerza la corrida aunque el toggle de auto-generar esté apagado y usa un
+// lote grande para vaciar de un jalón los pendientes de corazones (nombres+fecha) sin preview.
+router.post('/auto-run', asyncHandler(async (req, res) => {
+    const { runOnce } = require('./mockupAutoScheduler');
+    Promise.resolve(runOnce({ force: true })).catch(e => console.error('[mockup-auto] corrida manual falló:', e.message));
+    res.json({ success: true, started: true });
+}));
+
 // POST /api/mockups/claim-payment — reclama (ATÓMICO, en el servidor) el envío ÚNICO del bloque
 // de pago (/cuatro + /bbb) por pedido. Antes el candado vivía en memoria del navegador y se
 // reiniciaba al recargar la página o se "carreaba" al mandar varias fotos rápido, por eso el
