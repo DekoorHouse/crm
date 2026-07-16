@@ -3,6 +3,18 @@ const multer = require('multer');
 const router = express.Router();
 const svc = require('./mockupsService');
 const { db, admin } = require('../config');
+const { applyNameLayout } = require('./nameLayout');
+
+// Regla de renglones (kill-switch: mockup_config/settings.nameLayoutRule = false).
+// Nombres compuestos quedan con '\n' decidido por NOSOTROS; el prompt le ordena a la IA ese
+// salto de línea, y el diseño de corte (svg-corte-worker) reproduce el MISMO layout.
+async function fieldsConLayout(fields) {
+    try {
+        const cfg = await db.collection('mockup_config').doc('settings').get();
+        if (cfg.exists && cfg.data().nameLayoutRule === false) return fields;
+    } catch (_) {}
+    return applyNameLayout(fields);
+}
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -35,6 +47,9 @@ async function savePreview(orderId, image, prompt, meta = {}) {
         const i = previews.findIndex(p => p.blockId === blockId);
         if (i >= 0) previews[i] = entry; else previews.push(entry);
         await ref.set({ orderId: String(orderId), previews }, { merge: true });
+        // Verificación de layout por visión (fire-and-forget): guarda cómo quedaron los textos
+        // grabados renglón por renglón — la "verdad" que luego reproduce el diseño de corte.
+        svc.verifyAndStoreLayout(String(orderId), blockId);
         // El pedido ya tiene mockup -> sale de la cola "falta mockup" de Pendientes de Diseño.
         try {
             const pref = db.collection('pedidos').doc(String(orderId));
@@ -240,12 +255,16 @@ router.post('/fetch-image', asyncHandler(async (req, res) => {
 
 // POST /api/mockups/generate-preview — Generar preview desde plantilla + campos
 router.post('/generate-preview', asyncHandler(async (req, res) => {
-    const { templateId, fields = {}, provider = 'wavespeed', resolution, quality } = req.body;
+    const { templateId, fields: rawFields = {}, provider = 'wavespeed', resolution, quality } = req.body;
     if (!templateId) return res.status(400).json({ success: false, error: 'Se requiere templateId.' });
 
     const tpl = await svc.getTemplate(templateId);
     if (!tpl) return res.status(404).json({ success: false, error: 'Plantilla no encontrada.' });
     if (!tpl.baseImageUrl) return res.status(400).json({ success: false, error: 'La plantilla no tiene imagen base.' });
+
+    // Nombres compuestos: la regla de renglones decide el salto de línea ANTES de generar
+    // (así el mockup y el diseño de corte comparten exactamente el mismo layout).
+    const fields = await fieldsConLayout(rawFields);
 
     const aspectRatio = tpl.aspectRatio || req.body.aspectRatio || '1:1';
     // Prompt base: el de la plantilla, o un override (el banco de pruebas permite editar el
@@ -322,6 +341,29 @@ router.get('/generate-status/:jobId', asyncHandler(async (req, res) => {
     await savePreview(job.orderId, saved[0], job.prompt || '', { blockId: job.blockId, templateId: job.templateId, fields: job.fields, secondRefUrl: job.secondRefUrl });
 
     res.json({ success: true, status: 'completed', image: saved[0], cost });
+}));
+
+// POST /api/mockups/backfill-layout — verifica por visión los previews SIN `layout` de pedidos
+// vigentes ('Sin estatus' y 'Fabricar'). Para el backlog histórico y como red de seguridad.
+// Body: { limit } — máximo por llamada (default 8) para no exceder tiempos de request.
+router.post('/backfill-layout', asyncHandler(async (req, res) => {
+    const limit = Math.min(30, Math.max(1, parseInt((req.body || {}).limit, 10) || 8));
+    const done = [];
+    for (const est of ['Sin estatus', 'Fabricar']) {
+        if (done.length >= limit) break;
+        const snap = await db.collection('pedidos').where('estatus', '==', est).limit(500).get();
+        for (const d of snap.docs) {
+            if (done.length >= limit) break;
+            const prev = await db.collection('mockup_previews').doc(String(d.id)).get();
+            if (!prev.exists) continue;
+            const previews = Array.isArray(prev.data().previews) ? prev.data().previews : [];
+            const last = previews[previews.length - 1];
+            if (!last || !last.imageUrl || last.layout) continue;   // sin preview o ya verificado
+            const v = await svc.verifyAndStoreLayout(String(d.id), last.blockId);
+            done.push({ DH: d.data().consecutiveOrderNumber, ok: v ? v.ok : null, izq: v ? v.izquierdo : null, der: v ? v.derecho : null });
+        }
+    }
+    res.json({ success: true, procesados: done.length, detalle: done });
 }));
 
 // GET /api/mockups/send-context?telefono=... — datos para armar el envío del preview:

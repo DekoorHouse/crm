@@ -63,11 +63,14 @@ async function alertNoBalance() {
 }
 
 // Genera un preview y lo guarda como preview del pedido. Devuelve true | false | 'no-balance'.
-async function generateOne(o, tpl) {
+async function generateOne(o, tpl, cfg = {}) {
     try {
         const parsed = svc.parseDatos(datosOf(o));
         if (!parsed.nombre1) return false;   // sin nombre, no
-        const fields = { nombre1: parsed.nombre1, nombre2: parsed.nombre2, fecha: parsed.fecha, personalizacion: datosOf(o) };
+        let fields = { nombre1: parsed.nombre1, nombre2: parsed.nombre2, fecha: parsed.fecha, personalizacion: datosOf(o) };
+        // Regla de renglones: nombres compuestos con '\n' decidido por nosotros (el prompt le
+        // ordena el salto a la IA y el diseño de corte reproduce el mismo layout).
+        if (cfg.nameLayoutRule !== false) fields = require('./nameLayout').applyNameLayout(fields);
         const prompt = svc.buildPromptFromTemplate(tpl.promptTemplate, fields);
         if (!prompt) return false;
 
@@ -96,6 +99,8 @@ async function generateOne(o, tpl) {
             orderId: String(o.id),
             previews: [{ blockId, imageUrl: saved[0].fullUrl, templateId: tpl.id, fields, createdAt: new Date().toISOString() }],
         }, { merge: true });
+        // Verificar por visión cómo quedaron los textos (renglones) y guardarlo en el preview.
+        await svc.verifyAndStoreLayout(String(o.id), blockId);
         console.log('[mockup-auto] ✓ generado DH' + (o.consecutiveOrderNumber || '?'));
         return true;
     } catch (e) {
@@ -132,7 +137,7 @@ async function runOnce(opts) {
             if (done >= cap) break;
             const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
             if (prev.exists && Array.isArray(prev.data().previews) && prev.data().previews.length) continue;   // ya tiene preview
-            const res = await generateOne(o, corazones);
+            const res = await generateOne(o, corazones, cfg);
             if (res === 'no-balance') { await alertNoBalance(); break; }
             if (res === true) done++;
         }

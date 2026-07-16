@@ -391,9 +391,88 @@ async function ensureJpeg(url) {
     return prefix + jpgPath;
 }
 
+// ===================== VERIFICACIÓN DE LAYOUT (visión) =====================
+// Lee el mockup GENERADO y reporta cómo quedó cada texto grabado, renglón por renglón.
+// Esa lectura es la "verdad" de lo que el cliente vio/aprobó: el diseño de corte
+// (svg-corte-worker) la usa para reproducir el producto EXACTAMENTE como el mockup —
+// incluido el caso "Rosa María" partido por la IA en dos renglones.
+// Falla suave: sin llave o con error de visión, todo sigue como antes (el operador revisa a ojo).
+// Kill-switch: mockup_config/settings.verifyLayout = false.
+const VISION_MODEL = 'gemini-3-flash-preview';
+const { decideNameLines, sameLines } = require('./nameLayout');
+
+async function verifyMockupLayout(imageUrl, fields = {}) {
+    const apiKey = process.env.GEMINI_API_KEY || API_KEY();
+    if (!apiKey) throw new Error('Sin GEMINI_API_KEY ni GOOGLE_AI_IMAGE_KEY para visión.');
+
+    const img = await fetchImageAsBase64(imageUrl);
+    const resized = await sharp(Buffer.from(img.base64, 'base64'))
+        .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toBuffer();
+
+    const prompt = `Esta imagen es el mockup de una lámpara personalizada con textos grabados (normalmente dos nombres dentro de un símbolo de infinito y una fecha).
+Reporta EXACTAMENTE cómo aparece cada texto grabado, renglón por renglón, tal cual está escrito (respeta acentos y mayúsculas).
+Responde SOLO este JSON, sin explicaciones ni markdown:
+{"nombreIzquierdo":{"renglones":["..."]},"nombreDerecho":{"renglones":["..."]},"fecha":{"renglones":["..."]}}
+Si un texto ocupa dos renglones, pon dos elementos en "renglones" (en orden de arriba a abajo). Si un texto no existe en la imagen, deja su arreglo vacío.`;
+
+    const res = await fetch(`${BASE_URL}/models/${VISION_MODEL}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/webp', data: resized.toString('base64') } }] }],
+        }),
+    });
+    if (!res.ok) throw new Error(`Visión HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json();
+    const text = (((data.candidates || [])[0] || {}).content || { parts: [] }).parts.map(p => p.text || '').join('');
+    const clean = text.replace(/```json|```/g, '').trim();
+    let parsed;
+    try { parsed = JSON.parse(clean); }
+    catch (_) { throw new Error('Visión no regresó JSON: ' + clean.slice(0, 150)); }
+
+    const izquierdo = ((parsed.nombreIzquierdo || {}).renglones || []).map(s => String(s).trim()).filter(Boolean);
+    const derecho = ((parsed.nombreDerecho || {}).renglones || []).map(s => String(s).trim()).filter(Boolean);
+    const fecha = ((parsed.fecha || {}).renglones || []).map(s => String(s).trim()).filter(Boolean);
+
+    // Comparación contra lo pedido (los fields ya traen '\n' si la regla decidió 2 renglones).
+    const okNombre1 = sameLines(decideNameLines(fields.nombre1 || ''), izquierdo);
+    const okNombre2 = sameLines(decideNameLines(fields.nombre2 || ''), derecho);
+    const okFecha = sameLines(String(fields.fecha || '').split('\n').map(s => s.trim()).filter(Boolean), fecha);
+    return { izquierdo, derecho, fecha, okNombre1, okNombre2, okFecha, ok: okNombre1 && okNombre2 && okFecha };
+}
+
+// Verifica el layout de UN preview guardado (por blockId; sin blockId toma el último) y persiste
+// el resultado en el entry como `layout` + `layoutVerifiedAt`. Nunca lanza.
+async function verifyAndStoreLayout(orderId, blockId) {
+    try {
+        if (!orderId) return null;
+        try {
+            const cfg = await db.collection('mockup_config').doc('settings').get();
+            if (cfg.exists && cfg.data().verifyLayout === false) return null;   // kill-switch
+        } catch (_) {}
+        const ref = db.collection('mockup_previews').doc(String(orderId));
+        const doc = await ref.get();
+        if (!doc.exists) return null;
+        const previews = Array.isArray(doc.data().previews) ? doc.data().previews : [];
+        const i = blockId ? previews.findIndex(p => p.blockId === blockId) : previews.length - 1;
+        if (i < 0 || !previews[i] || !previews[i].imageUrl) return null;
+        const v = await verifyMockupLayout(previews[i].imageUrl, previews[i].fields || {});
+        previews[i] = { ...previews[i], layout: v, layoutVerifiedAt: new Date().toISOString() };
+        await ref.set({ orderId: String(orderId), previews }, { merge: true });
+        console.log(`[mockups] layout verificado ${orderId}/${previews[i].blockId}: ok=${v.ok} izq=${JSON.stringify(v.izquierdo)} der=${JSON.stringify(v.derecho)} fecha=${JSON.stringify(v.fecha)}`);
+        return v;
+    } catch (e) {
+        console.warn('[mockups] verifyAndStoreLayout falló para', orderId, ':', e.message);
+        return null;
+    }
+}
+
 module.exports = {
     generateImage, saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch,
     listTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate,
     listDesigns, createDesign, updateDesign, deleteDesign, fetchOwnImageAsBase64,
     uploadTemplateBaseImage, uploadPublicImage, buildPromptFromTemplate, fetchImageAsBase64, ensureJpeg, parseDatos,
+    verifyMockupLayout, verifyAndStoreLayout,
 };

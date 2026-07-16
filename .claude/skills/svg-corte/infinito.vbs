@@ -6,16 +6,21 @@
 '           svg-worker para conocer las rutas sin parsear stdout (evita lios de codepage con acentos).
 '   /close: opcional, cierra el documento al terminar (para el worker automatico; sin esto el
 '           doc queda abierto en Corel para revision visual del operador).
+' NOMBRES A 2 RENGLONES: el token literal \n dentro de un valor lo parte en renglones apilados
+'   y centrados (ej. "Rosa\nMaría"), a 44.8pt como los disenos manuales de produccion. Asi se
+'   reproduce EXACTAMENTE el layout que el cliente aprobo en su mockup.
 ' Imprime al final: "OK <ruta-svg>" y "CDR <ruta-cdr>"
 '
 ' La hoja es de 350x330 mm con todo alineado arriba-izquierda (ya viene asi en la plantilla).
 ' Colores: corte = rojo, grabado = negro (textos), azul = infinito/corazones/marco (igual que produccion).
 Option Explicit
 
-Const BASE_NOMBRE = 65.2  ' pt — tamano estandar de nombres en produccion
-Const MAX_W_NOMBRE = 52   ' mm — ancho maximo para caber en el aro del infinito
-Const BASE_FECHA = 25.3   ' pt
-Const MAX_W_FECHA = 55    ' mm
+Const BASE_NOMBRE = 65.2    ' pt — tamano estandar de nombres en produccion (1 renglon)
+Const BASE_NOMBRE_2L = 44.8 ' pt — nombres a 2 renglones (mismo tamano que produccion manual)
+Const MAX_W_NOMBRE = 52     ' mm — ancho maximo para caber en el aro del infinito
+Const BASE_FECHA = 25.3     ' pt
+Const MAX_W_FECHA = 55      ' mm
+Const ALINEACION_CENTRO = 3 ' cdrCenterAlignment (para textos de varios renglones)
 
 Dim args, nArgs, label, fileBase
 Set args = WScript.Arguments.Unnamed
@@ -77,13 +82,13 @@ Set doc = corel.OpenDocument(cdrPath)
 doc.Unit = 3 ' mm
 
 ' Reemplazar placeholders (conservando el centro de cada texto y auto-ajustando el ancho)
-ReplaceText doc, "NOMBRE1", args(0), BASE_NOMBRE, MAX_W_NOMBRE
-ReplaceText doc, "NOMBRE2", args(1), BASE_NOMBRE, MAX_W_NOMBRE
-ReplaceText doc, "FECHA1", args(2), BASE_FECHA, MAX_W_FECHA
+ReplaceText doc, "NOMBRE1", args(0), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE
+ReplaceText doc, "NOMBRE2", args(1), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE
+ReplaceText doc, "FECHA1", args(2), BASE_FECHA, BASE_FECHA, MAX_W_FECHA
 If nArgs = 6 Then
-    ReplaceText doc, "NOMBRE3", args(3), BASE_NOMBRE, MAX_W_NOMBRE
-    ReplaceText doc, "NOMBRE4", args(4), BASE_NOMBRE, MAX_W_NOMBRE
-    ReplaceText doc, "FECHA2", args(5), BASE_FECHA, MAX_W_FECHA
+    ReplaceText doc, "NOMBRE3", args(3), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE
+    ReplaceText doc, "NOMBRE4", args(4), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE
+    ReplaceText doc, "FECHA2", args(5), BASE_FECHA, BASE_FECHA, MAX_W_FECHA
 End If
 
 ' Guardar el .cdr de trabajo con los textos aun editables (por si quieren retocar a mano)
@@ -161,20 +166,29 @@ If WScript.Arguments.Named.Exists("close") Then doc.Close
 WScript.Echo "OK " & svgPath
 WScript.Echo "CDR " & cdrPath
 
-Sub ReplaceText(doc, ph, valor, baseSize, maxW)
-    Dim s, t, cx, cy, w, found
+Sub ReplaceText(doc, ph, valor, baseSize, base2L, maxW)
+    Dim s, t, cx, cy, w, found, valor2, multilinea, talla
+    ' El token literal \n parte el texto en renglones apilados (vbCr)
+    valor2 = Replace(valor, "\n", vbCr)
+    multilinea = (InStr(valor2, vbCr) > 0)
+    If multilinea Then talla = base2L Else talla = baseSize
     found = False
     For Each s In doc.ActivePage.Shapes
         If s.Type = 6 Then
             t = Trim(Replace(Replace(s.Text.Story.Text, vbCr, ""), vbLf, ""))
             If StrComp(t, ph, vbTextCompare) = 0 Then
                 cx = s.CenterX : cy = s.CenterY
-                s.Text.Story.Text = valor
-                s.Text.Story.Size = baseSize
+                s.Text.Story.Text = valor2
+                s.Text.Story.Size = talla
+                If multilinea Then
+                    On Error Resume Next
+                    s.Text.Story.Alignment = ALINEACION_CENTRO
+                    On Error GoTo 0
+                End If
                 s.CenterX = cx : s.CenterY = cy
                 w = s.SizeWidth
                 If w > maxW Then
-                    s.Text.Story.Size = baseSize * maxW / w
+                    s.Text.Story.Size = talla * maxW / w
                     s.CenterX = cx : s.CenterY = cy
                 End If
                 found = True

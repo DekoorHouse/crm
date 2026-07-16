@@ -96,8 +96,10 @@ function runCorel(label, fields) {
     const svg = path.join(OUT_DIR, base + '.svg');
     const cdr = path.join(OUT_DIR, base + '.cdr');
     const args = ['//nologo', INFINITO_VBS, '/label:' + label, '/file:' + base, '/close'];
+    // Los saltos de línea (nombres a 2 renglones) viajan como token literal \n hacia el .vbs
+    const enc = s => String(s).replace(/\n/g, '\\n');
     for (const f of fields) {
-        args.push(f.nombre1, f.nombre2, f.fecha);
+        args.push(enc(f.nombre1), enc(f.nombre2), enc(f.fecha));
     }
     const r = spawnSync('cscript', args, { encoding: 'utf8', timeout: 5 * 60 * 1000, windowsHide: true });
     const out = (r.stdout || '') + (r.stderr || '');
@@ -126,13 +128,22 @@ async function findCandidates() {
         const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
         const previews = prev.exists ? (prev.data().previews || []) : [];
         if (!previews.length) continue;                                      // sin mockup aprobado -> manual
-        const f = previews[previews.length - 1].fields || {};
-        if (!f.nombre1 || !f.nombre2 || !f.fecha) {                          // datos incompletos -> manual
-            log(`  ~ ${dhOf(o)} tiene mockup pero campos incompletos (n1='${f.nombre1 || ''}' n2='${f.nombre2 || ''}' fecha='${f.fecha || ''}') -> manual`);
+        const last = previews[previews.length - 1];
+        const f = last.fields || {};
+        // Layout verificado por visión (mockupsService.verifyAndStoreLayout): los renglones
+        // EXACTOS que el cliente vio en su mockup. Es la fuente de verdad del diseño; si no
+        // existe, se usan los fields (que ya traen '\n' cuando la regla de renglones decidió).
+        const lay = last.layout || null;
+        const conLineas = (vision, plain) => (vision && vision.length ? vision.join('\n') : String(plain || ''));
+        const nombre1 = lay ? conLineas(lay.izquierdo, f.nombre1) : String(f.nombre1 || '');
+        const nombre2 = lay ? conLineas(lay.derecho, f.nombre2) : String(f.nombre2 || '');
+        const fecha = lay ? conLineas(lay.fecha, f.fecha) : String(f.fecha || '');
+        if (!nombre1 || !nombre2 || !fecha) {                                // datos incompletos -> manual
+            log(`  ~ ${dhOf(o)} tiene mockup pero campos incompletos (n1='${nombre1}' n2='${nombre2}' fecha='${fecha}') -> manual`);
             continue;
         }
         const paidMs = ms(o.comprobanteValidadoAt) || ms(o.confirmedAt) || ms(o.createdAt);
-        out.push({ o, fields: { nombre1: f.nombre1, nombre2: f.nombre2, fecha: f.fecha }, paidMs });
+        out.push({ o, fields: { nombre1, nombre2, fecha }, paidMs, layoutVerificado: !!lay });
     }
     out.sort((a, b) => a.paidMs - b.paidMs);   // más antiguos primero
     return out;
@@ -167,7 +178,8 @@ async function unclaim(entries) {
 
 async function processSheet(entries) {
     const label = entries.map(e => dhOf(e.o)).join('-');
-    log(`> Hoja ${label}: ` + entries.map(e => `${e.fields.nombre1} y ${e.fields.nombre2} (${e.fields.fecha})`).join(' | '));
+    const vis = e => (e.layoutVerificado ? '' : ' [sin visión]');
+    log(`> Hoja ${label}: ` + entries.map(e => `${e.fields.nombre1.replace(/\n/g, '⏎')} y ${e.fields.nombre2.replace(/\n/g, '⏎')} (${e.fields.fecha.replace(/\n/g, '⏎')})${vis(e)}`).join(' | '));
     if (DRY) return;
 
     await claim(entries);
