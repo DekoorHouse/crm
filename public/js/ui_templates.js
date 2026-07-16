@@ -918,6 +918,8 @@ const MockupsViewTemplate = () => `
             .mk-ref2-controls{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
             .mk-ref2-check{display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--color-text)}
             .mk-ref2-btns{display:flex;gap:6px;flex-wrap:wrap}
+            .mk-lz-pickrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 0}
+            .mk-lz-pickrow select{margin-bottom:0!important;padding:5px 8px!important;font-size:.82rem!important;max-width:190px}
             /* Lienzo de diseño (pestaña Pruebas): fuente manuscrita en vivo + layout del editor */
             @font-face{font-family:'Rows of Sunflowers';src:url('/editor/fonts/RowsOfSunflowers.ttf') format('truetype')}
             .mk-lz{margin-top:18px;border-top:1px dashed var(--color-border);padding-top:14px}

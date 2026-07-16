@@ -42,7 +42,7 @@ const MK_DESIGN_SEED = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
 // envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
 // refFiles: 2ª referencia subida a mano por bloque (blockId -> File). pruebas: estado del
 // banco de pruebas (pestaña "Pruebas").
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, lzPickByTemplate: {}, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
 
 // Cache (promesa) del data-URI de la fuente manuscrita, para embeberla en el SVG al rasterizar.
 let mkFontDataUrlPromise = null;
@@ -150,6 +150,7 @@ async function initializeMockupsHandlers() {
     // Cargar plantillas ANTES que pendientes: la lista de pendientes las necesita
     // (selector de plantilla + mensaje de "crea la primera").
     try { await mkLoadTemplates(); } catch (e) { mkToast(e.message, 'error'); }
+    await mkLzFetchDesigns();   // diseños del lienzo: los bloques ofrecen elegirlos como 2ª ref
     try { await mkLoadPending(); } catch (e) { mkToast(e.message, 'error'); }
 }
 
@@ -186,6 +187,7 @@ async function mkToggleAuto(checked) {
 
 async function mkReload() {
     try { await mkLoadTemplates(); } catch (e) { mkToast(e.message, 'error'); }
+    await mkLzFetchDesigns();
     try { await mkLoadPending(); } catch (e) { mkToast(e.message, 'error'); }
 }
 
@@ -370,7 +372,7 @@ function mkBlockHtml(order, block, n) {
                     </select></div>
                 </div>
                 <div class="mk-fields mk-inputs" style="margin-top:8px;">${mkFieldsHtml(mkTemplateFieldDefs(tplId), block.values)}</div>
-                ${mkRef2Html(block.id, !!(mkGetTemplate(tplId) && mkGetTemplate(tplId).designSvg))}
+                ${mkRef2Html(block.id, !!(mkGetTemplate(tplId) && mkGetTemplate(tplId).designSvg), tplId)}
                 <div class="mk-extra-wrap" style="margin-top:10px;">
                     <label>Detalles adicionales (opcional)</label>
                     <textarea class="mk-extra" rows="2" placeholder="Instrucciones extra para la IA además de la plantilla: ej. agrégale un moño rojo, fondo más oscuro, la letra más grande…">${mkEsc(block.extra || '')}</textarea>
@@ -412,7 +414,7 @@ function mkOnBlockTemplateChange(blockId) {
     block.querySelector('.mk-fields').innerHTML = mkFieldsHtml(mkTemplateFieldDefs(tplId), cur);
     const ref2 = block.querySelector('.mk-ref2');
     if (ref2) {
-        ref2.outerHTML = mkRef2Html(blockId, !!(mkGetTemplate(tplId) && mkGetTemplate(tplId).designSvg));
+        ref2.outerHTML = mkRef2Html(blockId, !!(mkGetTemplate(tplId) && mkGetTemplate(tplId).designSvg), tplId);
         mkRestoreRefThumb(blockId);   // conserva la miniatura de una imagen ya subida
     }
 }
@@ -719,12 +721,65 @@ function mkReadFields(scope) {
     return fields;
 }
 
-// Resuelve la 2ª referencia de un bloque: prioriza una imagen subida a mano; si no, el diseño
-// de la plantilla (rasterizado con los campos actuales) cuando está activado. '' si no aplica.
+// Normaliza un nombre de capa a una clave comparable (minúsculas, sin acentos ni símbolos):
+// "Nombre 1" -> "nombre1", "Fecha" -> "fecha".
+function mkNorm(s) { return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, ''); }
+
+// Sustituye {clave} en texto PLANO (el markup del lienzo hace el XML-escape aparte).
+function mkFillPlain(text, fields) {
+    return String(text == null ? '' : text).replace(/\{([a-zA-Z0-9_]+)\}/g, (m, k) => {
+        const v = fields[k.toLowerCase()];
+        return v != null ? String(v) : '';
+    });
+}
+
+// Clona los items de un diseño y rellena sus TEXTOS con los datos del pedido: por placeholders
+// {nombre1}… en el texto, o —si no hay— por el NOMBRE de la capa (una capa "Nombre 1" toma
+// fields.nombre1, "Fecha" -> fields.fecha, etc.). No muta el diseño guardado.
+function mkLzFillItemsWithFields(items, fields) {
+    return (items || []).map(raw => {
+        const it = Object.assign({}, raw);
+        if (Array.isArray(raw.points)) it.points = raw.points.map(p => ({ x: p.x, y: p.y }));
+        if (it.type !== 'text') return it;
+        if (it.baseSize == null) it.baseSize = it.size;
+        let txt = it.text || '';
+        if (/\{[a-zA-Z0-9_]+\}/.test(txt)) {
+            txt = mkFillPlain(txt, fields);
+        } else {
+            const key = mkNorm(it.name);
+            if (key && key !== 'personalizacion' && Object.prototype.hasOwnProperty.call(fields, key)) {
+                txt = fields[key] != null ? String(fields[key]) : '';
+            }
+        }
+        it.text = txt;
+        it.size = it.baseSize;   // parte del tamaño deseado; los límites lo re-ajustan
+        return it;
+    });
+}
+
+// Rasteriza un DISEÑO guardado del lienzo, relleno con los datos del pedido -> {blob, dataUrl}.
+async function mkRasterizeLzDesignBlob(designId, fields) {
+    const d = (mkLzState().designs || []).find(x => x.id === designId);
+    if (!d) throw new Error('El diseño del lienzo no está disponible.');
+    let items = await mkLzHydrateItems(d.items || []);   // imágenes remotas -> data URI
+    items = mkLzFillItemsWithFields(items, fields);       // textos -> datos del pedido
+    mkLzComputeSizes(items);                              // aplica los límites al texto nuevo
+    return await mkLzRasterizeItems(items);
+}
+
+// Resuelve la 2ª referencia de un bloque, por prioridad: (1) imagen subida a mano; (2) un
+// DISEÑO del lienzo elegido en el bloque, rasterizado con los datos del pedido; (3) el diseño
+// SVG de la plantilla. '' si no aplica.
 async function mkResolveSecondRef(block, templateId, fields) {
     const blockId = block.dataset.block;
     const file = mkState.refFiles[blockId];
     if (file) return await mkUploadRefImage(file, 'ref-upload.png');
+    const pick = block.querySelector('.mk-lz-pick');
+    const designId = pick ? pick.value : '';
+    if (designId) {
+        const { blob } = await mkRasterizeLzDesignBlob(designId, fields);
+        return await mkUploadRefImage(blob, 'design-lienzo.png');
+    }
     const tpl = mkGetTemplate(templateId);
     const useDesign = block.querySelector('.mk-usedesign');
     if (tpl && tpl.designSvg && (!useDesign || useDesign.checked)) {
@@ -737,27 +792,63 @@ async function mkResolveSecondRef(block, templateId, fields) {
 // Panel de "2ª referencia" dentro de un bloque de preview. Los controles de "diseño" (casilla
 // + Ver diseño) solo aparecen si la plantilla seleccionada tiene un designSvg; la subida manual
 // está siempre disponible. Se re-renderiza al cambiar de plantilla (mkOnBlockTemplateChange).
-function mkRef2Html(blockId, hasDesign) {
+function mkRef2Html(blockId, hasDesign, tplId) {
     const b = mkAttr(blockId);
-    const uploadLabel = hasDesign ? 'Subir otra' : 'Subir imagen';
+    const designs = mkLzState().designs || [];
+    const pickedId = (mkState.lzPickByTemplate && mkState.lzPickByTemplate[tplId]) || '';
+    const uploadLabel = (hasDesign || designs.length) ? 'Subir otra' : 'Subir imagen';
+    // Selector de DISEÑO DEL LIENZO (diseños guardados): se rellena con los datos del pedido.
+    const lzPick = designs.length ? `
+                    <div class="mk-lz-pickrow">
+                        <span class="mk-muted" style="font-size:.8rem;">Diseño del lienzo:</span>
+                        <select class="mk-lz-pick" onchange="mkOnPickLzDesign('${b}', this.value)">
+                            <option value="">— usar el de la plantilla —</option>
+                            ${designs.map(d => `<option value="${mkAttr(d.id)}"${d.id === pickedId ? ' selected' : ''}>${mkEsc(d.nombre)}</option>`).join('')}
+                        </select>
+                        <button type="button" class="btn btn-outline btn-sm" onclick="mkPreviewLzDesign('${b}')"><i class="fas fa-eye mr-1"></i>Ver</button>
+                    </div>` : '';
     const uploadBtns = `
                     <div class="mk-ref2-btns">
-                        ${hasDesign ? `<button type="button" class="btn btn-outline btn-sm" onclick="mkPreviewDesign('${b}')"><i class="fas fa-eye mr-1"></i>Ver diseño</button>` : ''}
+                        ${hasDesign ? `<button type="button" class="btn btn-outline btn-sm" onclick="mkPreviewDesign('${b}')"><i class="fas fa-eye mr-1"></i>Ver diseño plantilla</button>` : ''}
                         <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-upload mr-1"></i>${uploadLabel}<input type="file" class="mk-ref-file" accept="image/*" style="display:none;" onchange="mkOnRefFile(event,'${b}')"></label>
                         <button type="button" class="btn btn-outline btn-sm" id="mk-ref-clear-${b}" style="display:none;" onclick="mkClearRef('${b}')"><i class="fas fa-times mr-1"></i>Quitar</button>
                     </div>`;
-    const controls = hasDesign
-        ? `<label class="mk-ref2-check"><input type="checkbox" class="mk-usedesign" checked> Usar el diseño de la plantilla</label>${uploadBtns}<small class="mk-muted">Se manda junto a la foto base para que la IA grabe ese diseño. Puedes subir, <b>arrastrar</b> o <b>pegar (Ctrl+V)</b> una imagen; si lo haces, se usa esa.</small>`
-        : `${uploadBtns}<small class="mk-muted">Opcional: sube, <b>arrastra</b> o <b>pega (Ctrl+V)</b> una imagen para usarla como 2ª referencia (esta plantilla no tiene diseño).</small>`;
+    const check = hasDesign ? `<label class="mk-ref2-check"><input type="checkbox" class="mk-usedesign" checked> Usar el diseño de la plantilla</label>` : '';
+    const hint = designs.length
+        ? '<small class="mk-muted">Elige un <b>diseño del lienzo</b> (se rellena con los nombres/fecha del pedido) o sube/<b>arrastra</b>/<b>pega</b> una imagen. Prioridad: imagen subida › diseño del lienzo › diseño de la plantilla.</small>'
+        : (hasDesign
+            ? '<small class="mk-muted">Se manda junto a la foto base para que la IA grabe ese diseño. Puedes subir, <b>arrastrar</b> o <b>pegar (Ctrl+V)</b> una imagen; si lo haces, se usa esa.</small>'
+            : '<small class="mk-muted">Opcional: sube, <b>arrastra</b> o <b>pega (Ctrl+V)</b> una imagen para usarla como 2ª referencia (esta plantilla no tiene diseño).</small>');
     return `
         <div class="mk-ref2" ondragover="event.preventDefault()" ondrop="mkOnRefDrop(event,'${b}')" onmousedown="mkSetRefPasteTarget('${b}')">
             <label>2ª referencia · diseño a grabar (opcional)</label>
             <div class="mk-ref2-row">
                 <img class="mk-ref-thumb" id="mk-ref-thumb-${b}" alt="" style="display:none;">
-                <div class="mk-ref2-controls">${controls}
+                <div class="mk-ref2-controls">${check}${lzPick}${uploadBtns}${hint}
                 </div>
             </div>
         </div>`;
+}
+
+// Elegir un diseño del lienzo en un bloque: recuerda la elección por plantilla y previsualiza.
+function mkOnPickLzDesign(blockId, designId) {
+    const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
+    if (!block) return;
+    const tplSel = block.querySelector('.mk-tpl');
+    if (tplSel) mkState.lzPickByTemplate[tplSel.value] = designId;
+    if (designId) mkPreviewLzDesign(blockId);
+    else if (!mkState.refFiles[blockId]) mkSetRefThumb(blockId, '');
+}
+
+// "Ver": rasteriza el diseño del lienzo elegido con los datos del bloque y lo muestra.
+async function mkPreviewLzDesign(blockId) {
+    const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
+    if (!block) return;
+    const pick = block.querySelector('.mk-lz-pick');
+    const designId = pick ? pick.value : '';
+    if (!designId) { mkToast('Elige un diseño del lienzo primero.', 'error'); return; }
+    try { mkSetRefThumb(blockId, (await mkRasterizeLzDesignBlob(designId, mkReadFields(block))).dataUrl); }
+    catch (e) { mkToast('No se pudo generar el diseño: ' + e.message, 'error'); }
 }
 
 // Restaura la miniatura + botón "Quitar" de una imagen subida a un bloque tras un re-render.
@@ -1194,8 +1285,9 @@ function mkLzMount() {
 
 // Markup de los items (compartido entre el lienzo en vivo y el SVG exportado).
 // forExport=true omite las áreas de LÍMITE: son guías de edición, no salen en el PNG.
-function mkLzItemsMarkup(forExport) {
-    return mkLzState().items.map(it => {
+function mkLzItemsMarkup(forExport) { return mkLzItemsMarkupFrom(mkLzState().items, forExport); }
+function mkLzItemsMarkupFrom(items, forExport) {
+    return items.map(it => {
         if (it.type === 'limit') {
             if (forExport) return '';
             return `<rect data-lz="${it.id}" x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" fill="rgba(220,38,38,0.12)" stroke="#dc2626" stroke-width="2" stroke-dasharray="10 6"></rect>`;
@@ -1502,9 +1594,10 @@ function mkLzInkBBox(it, size) {
 
 // Todas las áreas de límite como POLÍGONOS en coords del lienzo (el rect se convierte;
 // el trazo a mano alzada ya lo es, mapeado con su translate+scale).
-function mkLzLimitShapes() {
+function mkLzLimitShapes() { return mkLzLimitShapesFrom(mkLzState().items); }
+function mkLzLimitShapesFrom(items) {
     const shapes = [];
-    for (const it of mkLzState().items) {
+    for (const it of items) {
         if (it.type === 'limit') {
             shapes.push([{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y }, { x: it.x + it.w, y: it.y + it.h }, { x: it.x, y: it.y + it.h }]);
         } else if (it.type === 'limitPath' && Array.isArray(it.points) && it.points.length >= 3) {
@@ -1545,17 +1638,17 @@ function mkLzTextBoxPts(t, f, M) {
 // midiendo la TINTA real del texto. Si cabe al tamaño deseado (baseSize), se queda tal cual;
 // si el límite se agranda/quita o el texto sale, vuelve a crecer hasta baseSize.
 const MK_LZ_LIMIT_MARGIN = 6;
-function mkLzEnforceLimits() {
-    const st = mkLzState();
-    const texts = st.items.filter(i => i.type === 'text');
-    if (!texts.length) return;
-    const shapes = mkLzLimitShapes();
-    let changed = false;
-    for (const t of texts) {
+
+// PURO: ajusta in-place el .size de los textos de `items` según los límites presentes en
+// `items` (sin tocar el DOM ni el estado global). Sirve para rasterizar un diseño off-screen
+// —p. ej. rellenar un diseño guardado con los datos de un pedido— igual que en el lienzo vivo.
+function mkLzComputeSizes(items) {
+    const shapes = mkLzLimitShapesFrom(items);
+    for (const t of items) {
+        if (t.type !== 'text') continue;
         if (t.baseSize == null) t.baseSize = t.size;
         let size = t.baseSize;
         if (shapes.length && (t.text || '').trim()) {
-            // Solo constriñen los límites que CONTIENEN el anclaje del texto.
             const inShapes = shapes.filter(poly => mkLzPointInPoly({ x: t.x, y: t.y }, poly));
             if (inShapes.length) {
                 const fits = (f) => mkLzTextBoxPts(t, f, MK_LZ_LIMIT_MARGIN).every(p => inShapes.every(poly => mkLzPointInPoly(p, poly)));
@@ -1568,8 +1661,18 @@ function mkLzEnforceLimits() {
                 size = Math.max(10, Math.floor(t.baseSize * f));
             }
         }
-        if (size !== t.size) { t.size = size; changed = true; }
+        t.size = size;
     }
+    return items;
+}
+
+function mkLzEnforceLimits() {
+    const st = mkLzState();
+    const texts = st.items.filter(i => i.type === 'text');
+    if (!texts.length) return;
+    const before = texts.map(t => t.size);
+    mkLzComputeSizes(st.items);
+    const changed = texts.some((t, i) => t.size !== before[i]);
     if (changed) {
         mkLzRenderCanvas();   // re-dibuja con los tamaños finales (y el contorno correcto)
         const ids = mkLzSelIds();
@@ -1894,9 +1997,10 @@ function mkLzUp() {
 }
 
 // ---- exportar: SVG independiente (fuente embebida) -> canvas 864×1152 -> PNG ----
-async function mkLzRasterize() {
+async function mkLzRasterize() { return mkLzRasterizeItems(mkLzState().items); }
+async function mkLzRasterizeItems(items) {
     const fontUrl = await mkFontDataUrl();
-    const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${MK_LZ_W} ${MK_LZ_H}" width="${MK_LZ_W}" height="${MK_LZ_H}"><defs><style>@font-face{font-family:'${MK_DESIGN_FONT_FAMILY}';src:url(${fontUrl}) format('truetype');}</style></defs><rect x="0" y="0" width="${MK_LZ_W}" height="${MK_LZ_H}" fill="#000000"></rect>${mkLzItemsMarkup(true)}</svg>`;
+    const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${MK_LZ_W} ${MK_LZ_H}" width="${MK_LZ_W}" height="${MK_LZ_H}"><defs><style>@font-face{font-family:'${MK_DESIGN_FONT_FAMILY}';src:url(${fontUrl}) format('truetype');}</style></defs><rect x="0" y="0" width="${MK_LZ_W}" height="${MK_LZ_H}" fill="#000000"></rect>${mkLzItemsMarkupFrom(items, true)}</svg>`;
     const img = new Image();
     img.decoding = 'async';
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
@@ -1990,12 +2094,18 @@ async function mkLzHydrateItems(items) {
     return out;
 }
 
-async function mkLzLoadDesignsList() {
+// Solo trae la lista (sin tocar el DOM); la usan Pruebas Y los bloques de Pendientes.
+async function mkLzFetchDesigns() {
     try {
         const d = await mkFetchJson('/api/mockups/designs');
         mkLzState().designs = d.designs || [];
-        mkLzRenderDesignsSelect();
     } catch (_) { /* sin red o backend viejo: el lienzo sigue funcionando */ }
+    return mkLzState().designs;
+}
+
+async function mkLzLoadDesignsList() {
+    await mkLzFetchDesigns();
+    mkLzRenderDesignsSelect();
 }
 
 function mkLzRenderDesignsSelect() {
