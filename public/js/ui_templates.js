@@ -918,6 +918,19 @@ const MockupsViewTemplate = () => `
             .mk-ref2-controls{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
             .mk-ref2-check{display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--color-text)}
             .mk-ref2-btns{display:flex;gap:6px;flex-wrap:wrap}
+            /* Lienzo de diseño (pestaña Pruebas): fuente manuscrita en vivo + layout del editor */
+            @font-face{font-family:'Rows of Sunflowers';src:url('/editor/fonts/RowsOfSunflowers.ttf') format('truetype')}
+            .mk-lz{margin-top:18px;border-top:1px dashed var(--color-border);padding-top:14px}
+            .mk-lz-label{display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light);margin-bottom:4px;text-transform:uppercase;letter-spacing:.02em}
+            .mk-lz-row{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+            .mk-lz-side{display:flex;flex-direction:column;gap:8px;max-width:280px}
+            #mk-lz-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0}
+            #mk-lz-tools input[type="text"]{width:170px;margin-bottom:0;padding:6px 10px}
+            #mk-lz-tools input[type="number"]{width:78px;margin-bottom:0;padding:6px 8px}
+            #mk-lz-tools select{width:auto;margin-bottom:0;padding:6px 8px}
+            .mk-lz-sep{width:1px;height:22px;background:var(--color-border);margin:0 4px}
+            #mk-lz-svg{width:324px;height:432px;background:#000;border:1px solid var(--color-border);border-radius:8px;display:block;touch-action:none}
+            #mk-lz-svg [data-lz]{cursor:move}
         </style>
         <div class="view-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
             <div>
