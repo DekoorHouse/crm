@@ -33,12 +33,13 @@ function reasonsForOrderData(d) {
     if (estatus === 'corregir') {
         // 2 y 3: en corrección. El motivo lo persiste markOrderCorregirForContact.
         reasons.push(String(d.corregirMotivo || '').toLowerCase() === 'video' ? 'video' : 'datos');
-    } else if (d.comprobanteValidadoAt && !(d.guiaEnvio && d.guiaEnvio.guia)) {
+    } else if (d.comprobanteValidadoAt && !(d.guiaEnvio && d.guiaEnvio.guia) && !d.ocultoDeEnvios) {
         // 1 y 4: "pagó" = mandó COMPROBANTE VÁLIDO (comprobanteValidadoAt). OJO: NO usamos el estatus
         // 'Pagado' como señal de pago porque en este CRM 'Pagado' es un estado donde se ACUMULAN miles
-        // de pedidos ya terminados; usarlo inundaba la lista. Si ya tiene guía de envío, el diseño ya
-        // se hizo y se envió -> tampoco es pendiente. Con comprobante, sin guía y sin preview ->
-        // anticipo; si ya le mandamos su preview -> mockup pagado.
+        // de pedidos ya terminados; usarlo inundaba la lista. Se excluye si el envío ya se gestionó:
+        //   - ya tiene guía de envío (guiaEnvio.guia), o
+        //   - el operador ya lo QUITÓ de la sección Envíos (ocultoDeEnvios) -> ya se resolvió/entregó.
+        // Con comprobante, sin guía, no oculto y sin preview -> anticipo; con preview -> mockup pagado.
         reasons.push(d.previewEnviadoAt ? 'mockup_pagado' : 'anticipo');
     }
     // 5: puede coexistir con cualquiera de las anteriores.
