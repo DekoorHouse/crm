@@ -22,6 +22,7 @@ const { db, admin } = require('../config');
 // estaba diseñado, se saca con el botón ✓ Diseñado. El diseño terminado real se marca como 'Diseñado'.
 const DONE = new Set([
     'diseñado', 'disenado', 'corregido',
+    'diseñado por ia', 'disenado por ia',   // diseño generado automáticamente por el svg-worker local
     'cancelado', 'entregado', 'devolución', 'devolucion', 'mns amenazador',
 ]);
 

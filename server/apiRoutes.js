@@ -2920,7 +2920,7 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
 
 14. update_order - Actualizar pedido: { "action":"update_order", "orderId":"DOCUMENT_ID", "props":{ "estatus":"Pagado", "comentarios":"...", "producto":"..." }}
     Campos actualizables: estatus, producto, comentarios, datosProducto, datosPromocion, precio, telefono.
-    Estatus válidos: Sin estatus, Foto enviada, Esperando anticipo, Esperando pago, Pagado, Diseñado, Fabricar, Corregir, Corregido, Mns Amenazador, Cancelado.
+    Estatus válidos: Sin estatus, Foto enviada, Esperando anticipo, Esperando pago, Pagado, Diseñado, Fabricar, Diseñado por IA, Corregir, Corregido, Mns Amenazador, Cancelado.
 
 **Reglas:**
 - "selected" usa el objeto seleccionado. Si no hay selección y el usuario dice "eso", pide que seleccione algo.

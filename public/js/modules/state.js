@@ -21,6 +21,7 @@ let state = {
         { key: "Pagado", label: "Pagado", color: "#28a745" },
         { key: "Diseñado", label: "Diseñado", color: "#6f42c1" },
         { key: "Fabricar", label: "Fabricar", color: "#17a2b8" },
+        { key: "Diseñado por IA", label: "Diseñado por IA", color: "#e83e8c" },
         { key: "Corregir", label: "Corregir", color: "#fd7e14" },
         { key: "Corregido", label: "Corregido", color: "#20c997" },
         { key: "Mns Amenazador", label: "Mns Amenazador", color: "#dc3545" },
