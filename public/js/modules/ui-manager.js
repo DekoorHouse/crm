@@ -178,7 +178,7 @@ const DP_MOTIVOS = {
 };
 
 function DesignPendingViewTemplate() {
-    return `<div class="p-4 md:p-6 h-full overflow-auto">
+    return `<div id="design-pending-view" class="p-4 md:p-6 h-full overflow-auto">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
             <h1 class="text-2xl font-bold" style="margin:0"><i class="fas fa-palette mr-2" style="color:#6f42c1"></i>Pendientes de Diseño</h1>
             <button onclick="renderDesignPendingView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
@@ -189,11 +189,14 @@ function DesignPendingViewTemplate() {
 }
 window.DesignPendingViewTemplate = DesignPendingViewTemplate;
 
-async function renderDesignPendingView() {
+// silent=true: refresca SIN poner "Cargando…" y preservando el scroll (para acciones que no deben saltar).
+async function renderDesignPendingView(silent) {
     const container = document.getElementById('design-pending-container');
     if (!container) return;
+    const sc = document.getElementById('design-pending-view');
+    const scrollTop = (silent && sc) ? sc.scrollTop : 0;
     const tab = window._designPendingTab || 'pendientes';
-    container.innerHTML = '<p class="text-gray-500">Cargando…</p>';
+    if (!silent) container.innerHTML = '<p class="text-gray-500">Cargando…</p>';
     try {
         const url = `${API_BASE_URL}/api/design-pending` + (tab === 'disenados' ? '?done=1' : '');
         const res = await fetch(url);
@@ -202,6 +205,7 @@ async function renderDesignPendingView() {
         window._designPendingData = data.orders || [];
         window._designPendingTotal = data.total != null ? data.total : window._designPendingData.length;
         _paintDesignPending();
+        if (silent && sc) sc.scrollTop = scrollTop;
     } catch (e) {
         container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los datos: ${escapeHtml(e.message || String(e))}</p>
             <button class="btn btn-outline btn-sm mt-2" onclick="renderDesignPendingView()">Reintentar</button>`;
@@ -219,6 +223,18 @@ function switchDesignPendingTab(tab) {
 }
 window.switchDesignPendingTab = switchDesignPendingTab;
 
+// Quita un pedido del cache local y re-pinta preservando el scroll (SIN re-fetch: no parpadea ni salta).
+function _removeDesignRowLocal(orderId) {
+    const sc = document.getElementById('design-pending-view');
+    const scrollTop = sc ? sc.scrollTop : 0;
+    const arr = window._designPendingData || [];
+    const idx = arr.findIndex(x => x.id === orderId);
+    if (idx >= 0) arr.splice(idx, 1);
+    if (typeof window._designPendingTotal === 'number' && window._designPendingTotal > 0) window._designPendingTotal--;
+    _paintDesignPending();
+    if (sc) sc.scrollTop = scrollTop;
+}
+
 // Marca un pedido como "ya diseñado" (lo saca de Pendientes y lo pasa a Diseñados).
 async function markDesignDone(orderId, el) {
     if (el) el.disabled = true;
@@ -226,7 +242,7 @@ async function markDesignDone(orderId, el) {
         const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/done`, { method: 'POST' });
         const d = await res.json();
         if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
-        renderDesignPendingView();
+        _removeDesignRowLocal(orderId);
     } catch (e) { if (el) el.disabled = false; alert('No se pudo marcar como diseñado: ' + (e.message || e)); }
 }
 window.markDesignDone = markDesignDone;
@@ -238,7 +254,7 @@ async function reopenDesign(orderId, el) {
         const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/reopen`, { method: 'POST' });
         const d = await res.json();
         if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
-        renderDesignPendingView();
+        _removeDesignRowLocal(orderId);
     } catch (e) { if (el) el.disabled = false; alert('No se pudo regresar a pendientes: ' + (e.message || e)); }
 }
 window.reopenDesign = reopenDesign;
@@ -363,7 +379,7 @@ async function changeDesignPendingStatus(orderId, newStatus, el) {
         });
         const d = await res.json();
         if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
-        renderDesignPendingView();
+        renderDesignPendingView(true);   // silencioso: sin parpadeo y preservando el scroll
     } catch (e) {
         if (el) el.disabled = false;
         alert('No se pudo cambiar el estatus: ' + (e.message || e));
