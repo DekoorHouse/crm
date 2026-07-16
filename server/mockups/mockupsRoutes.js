@@ -329,6 +329,8 @@ router.post('/send', asyncHandler(async (req, res) => {
         fileUrl: imageUrl,     // debe ser público (las URLs de galería lo son)
         fileType: 'image/webp',
     });
+    // Ya le mandamos su preview: en "Pendientes de Diseño" pasa de "anticipo" a "mockup pagado" (no bloquear).
+    try { await require('../design/designPending').markPreviewSent(phone); } catch (_) {}
     res.json({ success: true, messageId: result.id });
 }));
 
