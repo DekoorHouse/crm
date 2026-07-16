@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
-const { sendConversionEvent, messagingContactInfo, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer } = require('./services');
+const { sendConversionEvent, messagingContactInfo, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer, compressVideoToLimit } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
 const { calcularReporte } = require('./inventario/inventarioReporte');
@@ -3131,68 +3131,35 @@ router.post('/tts', async (req, res) => {
 // --- INICIO: NUEVAS CONSTANTES PARA COMPRESIÓN ---
 const VIDEO_SIZE_LIMIT_MB = 15.5; // Límite seguro de 15.5MB (el de WhatsApp es 16MB)
 const VIDEO_SIZE_LIMIT_BYTES = VIDEO_SIZE_LIMIT_MB * 1024 * 1024;
-const TARGET_BITRATE = '1000k'; // Bitrate objetivo de 1 Mbps para la compresión
 const IMAGE_SIZE_LIMIT_MB = 4.8; // Margen seguro bajo el límite real de WhatsApp (5MB para imágenes)
 const IMAGE_SIZE_LIMIT_BYTES = IMAGE_SIZE_LIMIT_MB * 1024 * 1024;
 // --- FIN: NUEVAS CONSTANTES ---
 
-// --- INICIO: NUEVA FUNCIÓN DE COMPRESIÓN DE VIDEO ---
+// --- INICIO: COMPRESIÓN DE VIDEO ---
 /**
  * Comprime un búfer de video si excede el límite de tamaño de WhatsApp.
+ * Delegado a compressVideoToLimit (services.js): CRF con techo VBV real + reintento con
+ * bitrate exacto según la duración. (La versión anterior mezclaba -b:v con -crf: en
+ * libx264 el CRF gana y el bitrate se ignoraba, así que los videos de cámara de alta
+ * calidad salían > 16 MB y Meta rechazaba la subida.)
  * @param {Buffer} inputBuffer El búfer de video a procesar.
  * @param {string} mimeType El tipo MIME del video.
- * @returns {Promise<Buffer>} Una promesa que se resuelve con el búfer de video (potencialmente comprimido).
+ * @returns {Promise<Buffer>} El búfer de video (potencialmente comprimido).
  */
-function compressVideoIfNeeded(inputBuffer, mimeType) {
-    return new Promise((resolve, reject) => {
-        // Si no es un video o ya está dentro del límite, no hacer nada
-        if (!mimeType.startsWith('video/') || inputBuffer.length <= VIDEO_SIZE_LIMIT_BYTES) {
-            console.log(`[COMPRESSOR] El archivo no es un video o está dentro del límite (${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB). Omitiendo compresión.`);
-            return resolve(inputBuffer);
-        }
-
-        console.log(`[COMPRESSOR] El video excede el límite (${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB > ${VIDEO_SIZE_LIMIT_MB} MB). Iniciando compresión.`);
-
-        const tempInput = tmp.fileSync({ postfix: '.mp4' });
-        const tempOutput = tmp.fileSync({ postfix: '.mp4' });
-
-        fs.writeFile(tempInput.name, inputBuffer, (err) => {
-            if (err) {
-                tempInput.removeCallback();
-                tempOutput.removeCallback();
-                return reject(err);
-            }
-
-            ffmpeg(tempInput.name)
-                .outputOptions([
-                    '-c:v libx264',
-                    `-b:v ${TARGET_BITRATE}`,
-                    '-c:a aac',
-                    '-b:a 128k',
-                    '-preset ultrafast', // Prioriza la velocidad sobre la calidad de compresión
-                    '-crf 28' // Controla la calidad (más alto = menor calidad, menor tamaño)
-                ])
-                .on('end', () => {
-                    console.log('[COMPRESSOR] Procesamiento con FFmpeg finalizado.');
-                    fs.readFile(tempOutput.name, (err, compressedBuffer) => {
-                        tempInput.removeCallback();
-                        tempOutput.removeCallback();
-                        if (err) return reject(err);
-                        console.log(`[COMPRESSOR] Compresión exitosa. Nuevo tamaño: ${(compressedBuffer.length / 1024 / 1024).toFixed(2)} MB.`);
-                        resolve(compressedBuffer);
-                    });
-                })
-                .on('error', (err) => {
-                    console.error('[COMPRESSOR] Error de FFmpeg:', err);
-                    tempInput.removeCallback();
-                    tempOutput.removeCallback();
-                    reject(new Error('No se pudo comprimir el video. ' + err.message));
-                })
-                .save(tempOutput.name);
-        });
-    });
+async function compressVideoIfNeeded(inputBuffer, mimeType) {
+    if (!mimeType.startsWith('video/') || inputBuffer.length <= VIDEO_SIZE_LIMIT_BYTES) {
+        console.log(`[COMPRESSOR] El archivo no es un video o está dentro del límite (${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB). Omitiendo compresión.`);
+        return inputBuffer;
+    }
+    console.log(`[COMPRESSOR] El video excede el límite (${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB > ${VIDEO_SIZE_LIMIT_MB} MB). Iniciando compresión.`);
+    try {
+        return await compressVideoToLimit(inputBuffer, VIDEO_SIZE_LIMIT_BYTES);
+    } catch (err) {
+        console.error('[COMPRESSOR] Error de FFmpeg:', err);
+        throw new Error('No se pudo comprimir el video. ' + err.message);
+    }
 }
-// --- FIN: NUEVA FUNCIÓN ---
+// --- FIN: COMPRESIÓN DE VIDEO ---
 
 // --- INICIO: NUEVA FUNCIÓN PARA CONVERSIÓN DE AUDIO ---
 /**
@@ -3329,8 +3296,8 @@ function parseAdIds(adIdsInput) {
 async function uploadMediaToWhatsApp(mediaUrl, mimeType) {
     try {
         console.log(`[MEDIA UPLOAD] Descargando ${mediaUrl} para procesar y subir...`);
-        // Descargar el archivo como buffer
-        const fileResponse = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+        // Descargar el archivo como buffer (sin límite de tamaño: los videos pueden pesar 50+ MB)
+        const fileResponse = await axios.get(mediaUrl, { responseType: 'arraybuffer', maxContentLength: Infinity, maxBodyLength: Infinity, timeout: 120000 });
         let fileBuffer = fileResponse.data;
         let finalMimeType = mimeType;
         // Extraer nombre de archivo de la URL
@@ -3947,6 +3914,13 @@ router.get('/contacts', async (req, res) => {
         // Aplicar filtro de revisión de diseño
         if (req.query.designReview === 'true') {
             query = query.where('inDesignReview', '==', true);
+        }
+
+        // Filtro "Pendientes de Diseño": pedidos con algún pendiente para el equipo de diseño
+        // (mockup pagado / datos mal / video / anticipo sin preview / 2º producto). La bandera la
+        // mantiene server/design/designPending.js sobre el contacto.
+        if (req.query.designPending === 'true') {
+            query = query.where('designPending', '==', true);
         }
 
         // Filtro "Archivados": SOLO chats archivados. Se consulta en Firestore (no en memoria) para que
@@ -6373,8 +6347,24 @@ router.put('/orders/:orderId', async (req, res) => {
             }
         }
 
+        // --- #5 Pendiente de Diseño: ¿agregaron un producto DESPUÉS de haber pagado? ---
+        // Si el pedido ya estaba pagado (estatus Pagado/Fabricar, o confirmado, o comprobante validado)
+        // y esta edición SUMA items respecto a los que tenía, se marca para que el diseño lo retome.
+        try {
+            const oldItems = Array.isArray(existingData.items) ? existingData.items.length : (existingData.producto ? 1 : 0);
+            const newItems = Array.isArray(updateData.items) ? updateData.items.length : oldItems;
+            const yaPagado = /pagado|fabricar/.test(String(existingData.estatus || '').toLowerCase())
+                || !!existingData.confirmedAt || !!existingData.comprobanteValidadoAt;
+            if (yaPagado && newItems > oldItems && !existingData.productoAgregadoPostPagoAt) {
+                updateData.productoAgregadoPostPagoAt = admin.firestore.FieldValue.serverTimestamp();
+            }
+        } catch (_) {}
+
         // Actualizar el documento del pedido en Firestore con los nuevos datos
         await orderRef.update(updateData);
+
+        // Refrescar la bandera "Pendiente de Diseño" del contacto (no bloquear si falla).
+        try { await require('./design/designPending').recomputeForContact(existingData.contactId || existingData.telefono); } catch (_) {}
 
         // Si esta edición llevó el pedido a "Fabricar", enviar el evento Purchase a Meta (idempotente)
         await sendPurchaseEventOnFabricar(orderId, { ...existingData, ...updateData }, (existingData.estatus || '').toLowerCase());
@@ -6466,6 +6456,10 @@ router.post('/orders/:orderId/change-status', async (req, res) => {
 
         // Actualizar el pedido en Firestore
         await orderRef.update(updatePayload);
+
+        // Recalcular "Pendiente de Diseño" del contacto: al avanzar a Diseñado/Corregido/Fabricar se limpia;
+        // al pasar a Pagado/Corregir puede encenderse. No bloquear el cambio de estatus si falla.
+        try { await require('./design/designPending').recomputeForContact(orderData.contactId || orderData.telefono); } catch (_) {}
 
         // --- Descuento de inventario al confirmar pedido (idempotente) ---
         if (isConfirming && !wasConfirmed) {

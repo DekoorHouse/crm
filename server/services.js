@@ -249,13 +249,33 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
                      fileType.startsWith('video/') ? 'video' :
                      fileType.startsWith('audio/') ? 'audio' : 'document';
 
-        // --- INICIO DE LA CORRECCIÓN ---
         const mediaObject = { link: fileUrl };
+        // WhatsApp rechaza videos > 16 MB: si mandamos el link de un video grande, Meta
+        // lo descarga, lo rechaza y el mensaje NUNCA llega. En ese caso lo comprimimos
+        // aquí y subimos los BYTES (media id). Si algo falla, se intenta por link igual
+        // que antes (sin regresión para videos chicos).
+        if (type === 'video') {
+            try {
+                const size = await getRemoteFileSize(fileUrl);
+                if (size && size > WHATSAPP_VIDEO_LIMIT_BYTES) {
+                    console.log(`[WA VIDEO] Video de ${(size / 1024 / 1024).toFixed(2)} MB > ${WHATSAPP_VIDEO_LIMIT_MB} MB; comprimiendo antes de enviar a ${to}.`);
+                    const objectPath = getBucketObjectPath(fileUrl);
+                    const inputBuffer = objectPath
+                        ? (await bucket.file(objectPath).download())[0]
+                        : Buffer.from((await axios.get(fileUrl, { responseType: 'arraybuffer', maxContentLength: Infinity, maxBodyLength: Infinity, timeout: 120000 })).data);
+                    const mp4 = await compressVideoToLimit(inputBuffer, WHATSAPP_VIDEO_LIMIT_BYTES);
+                    const mediaId = await uploadWhatsAppMediaBytes(mp4, 'video/mp4');
+                    delete mediaObject.link;
+                    mediaObject.id = mediaId;
+                }
+            } catch (compressErr) {
+                console.error(`[WA VIDEO] No se pudo comprimir/subir el video; se intenta por link:`, compressErr.message);
+            }
+        }
         // La API de WhatsApp no permite 'caption' para audios.
         if (type !== 'audio' && cleanedText) {
             mediaObject.caption = cleanedText;
         }
-        // --- FIN DE LA CORRECCIÓN ---
 
         messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
         messageToSaveText = cleanedText || (type === 'image' ? '📷 Imagen' :
@@ -308,8 +328,12 @@ function getBucketObjectPath(fileUrl) {
     if (!fileUrl || !bucket || !bucket.name) return null;
     const marker = `storage.googleapis.com/${bucket.name}/`;
     const idx = fileUrl.indexOf(marker);
-    if (idx < 0) return null;
-    return decodeURIComponent(fileUrl.slice(idx + marker.length).split('?')[0]).replace(/^\/+/, '');
+    if (idx >= 0) return decodeURIComponent(fileUrl.slice(idx + marker.length).split('?')[0]).replace(/^\/+/, '');
+    // URLs estilo Firebase (getDownloadURL del SDK del chat): /v0/b/{bucket}/o/{ruta URL-encodeada}
+    const fbMarker = `firebasestorage.googleapis.com/v0/b/${bucket.name}/o/`;
+    const fbIdx = fileUrl.indexOf(fbMarker);
+    if (fbIdx >= 0) return decodeURIComponent(fileUrl.slice(fbIdx + fbMarker.length).split('?')[0]).replace(/^\/+/, '');
+    return null;
 }
 
 /** Una pasada de ffmpeg a mp4 compatible con Messenger, con bitrate acotado (maxrateK kbps). */
@@ -393,6 +417,105 @@ async function uploadMessengerAttachment(buffer, contentType, attachmentType, ac
         throw new Error('Meta no devolvió attachment_id: ' + JSON.stringify(resp.data));
     }
     return resp.data.attachment_id;
+}
+
+// =================================================================
+// === VIDEO SALIENTE WHATSAPP (límite 16 MB) ======================
+// =================================================================
+// WhatsApp rechaza videos > 16 MB (los documentos sí aceptan hasta 100 MB). Cuando un
+// video excede el límite lo re-encodeamos acotando el bitrate REAL con VBV. Ojo: NO
+// sirve combinar -b:v con -crf en libx264 (el CRF gana y el bitrate se ignora) — así
+// fallaban los videos de cámara de ~20 Mbps: "comprimidos" salían de 20+ MB y Meta
+// los rechazaba, dejando al CRM sin poder enviarlos.
+const WHATSAPP_VIDEO_LIMIT_MB = 15.5; // margen seguro bajo el límite real de 16 MB
+const WHATSAPP_VIDEO_LIMIT_BYTES = WHATSAPP_VIDEO_LIMIT_MB * 1024 * 1024;
+
+/** Una pasada de ffmpeg a mp4. Con `bitrateK` fuerza ABR exacto (para clavar un tamaño
+ *  objetivo); sin él, CRF 28 con techo VBV `maxrateK`. Devuelve la duración (s) del video. */
+function ffmpegSizeCappedMp4(inputPath, outputPath, { maxrateK, bitrateK }) {
+    return new Promise((resolve, reject) => {
+        let durationSec = null;
+        ffmpeg(inputPath)
+            .outputOptions([
+                '-c:v libx264',
+                '-preset ultrafast',     // prioriza velocidad (el envío espera este paso)
+                ...(bitrateK
+                    ? [`-b:v ${bitrateK}k`, `-maxrate ${bitrateK}k`, `-bufsize ${bitrateK * 2}k`]
+                    : ['-crf 28', `-maxrate ${maxrateK}k`, `-bufsize ${maxrateK * 2}k`]),
+                '-pix_fmt yuv420p',      // compatibilidad amplia de reproductores
+                '-movflags +faststart',  // moov atom al frente -> reproducible por streaming
+                '-c:a aac',
+                '-b:a 128k',
+            ])
+            .on('codecData', (data) => {
+                const m = /^(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(data.duration || '');
+                if (m) durationSec = (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]);
+            })
+            .on('end', () => resolve(durationSec))
+            .on('error', (e) => reject(new Error('ffmpeg: ' + e.message)))
+            .save(outputPath);
+    });
+}
+
+/**
+ * Re-encodea un video para que quepa en `limitBytes`. Pasada 1: calidad constante con
+ * techo de 2500 kbps (suficiente para la mayoría). Si sigue grande (videos largos),
+ * pasada 2 con el bitrate exacto calculado con la duración. Error si aun así no cabe.
+ * @returns {Promise<Buffer>} mp4 (H.264 + AAC, faststart) dentro del límite.
+ */
+async function compressVideoToLimit(inputBuffer, limitBytes) {
+    const tempInput = tmp.fileSync({ postfix: '.bin' });
+    const tempOutput = tmp.fileSync({ postfix: '.mp4' });
+    try {
+        await fs.promises.writeFile(tempInput.name, inputBuffer);
+        const durationSec = await ffmpegSizeCappedMp4(tempInput.name, tempOutput.name, { maxrateK: 2500 });
+        let out = await fs.promises.readFile(tempOutput.name);
+        if (out.length > limitBytes) {
+            const totalKbits = (limitBytes / 1024) * 8 * 0.92; // 8% de margen (overhead de contenedor)
+            const bitrateK = durationSec ? Math.max(150, Math.floor(totalKbits / durationSec) - 128) : 700;
+            console.log(`[VIDEO COMPRESS] ${(out.length / 1024 / 1024).toFixed(2)} MB sigue sobre el límite; reintento a ${bitrateK} kbps (duración ${durationSec ? durationSec.toFixed(1) + 's' : 'desconocida'}).`);
+            await ffmpegSizeCappedMp4(tempInput.name, tempOutput.name, { bitrateK });
+            out = await fs.promises.readFile(tempOutput.name);
+        }
+        if (out.length > limitBytes) {
+            throw new Error(`el video comprimido aún pesa ${(out.length / 1024 / 1024).toFixed(2)} MB (límite ${(limitBytes / 1024 / 1024).toFixed(1)} MB)`);
+        }
+        console.log(`[VIDEO COMPRESS] Listo: ${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB -> ${(out.length / 1024 / 1024).toFixed(2)} MB.`);
+        return out;
+    } finally {
+        tempInput.removeCallback();
+        tempOutput.removeCallback();
+    }
+}
+
+/** Sube BYTES a la API de medios de WhatsApp y devuelve el media id. */
+async function uploadWhatsAppMediaBytes(buffer, mimeType, filename = 'media.mp4') {
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('file', buffer, { filename, contentType: mimeType });
+    const resp = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/media`, form, {
+        headers: { ...form.getHeaders(), 'Authorization': `Bearer ${WHATSAPP_TOKEN}` },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+    });
+    if (!resp.data || !resp.data.id) throw new Error('WhatsApp no devolvió media id: ' + JSON.stringify(resp.data));
+    return resp.data.id;
+}
+
+/** Tamaño en bytes de una URL (metadata del bucket o HEAD HTTP). null si no se puede saber. */
+async function getRemoteFileSize(fileUrl) {
+    try {
+        const objectPath = getBucketObjectPath(fileUrl);
+        if (objectPath) {
+            const [meta] = await bucket.file(objectPath).getMetadata();
+            return parseInt(meta.size, 10) || null;
+        }
+        const head = await axios.head(fileUrl, { timeout: 15000 });
+        const len = parseInt(head.headers['content-length'] || '', 10);
+        return Number.isFinite(len) ? len : null;
+    } catch (_) {
+        return null;
+    }
 }
 
 // Entregamos la media por URL de descarga estilo Firebase (token público en la
@@ -1028,6 +1151,8 @@ async function markComprobanteValidadoAndSendForm(contactId, contactData = {}, {
         } catch (e) {
             console.warn(`[ENVIOS] No se pudo marcar comprobanteValidadoAt en ${orderDoc.id}:`, e.message);
         }
+        // Pagó (comprobante válido) → aparece en "Pendientes de Diseño" (anticipo) hasta que le mandemos el preview.
+        try { await require('./design/designPending').recomputeForContact(contactId); } catch (_) {}
     } else {
         console.log(`[ENVIOS] Formulario ya enviado antes para ${orderNumber} (${contactId}); se manda solo un recordatorio corto.`);
     }
@@ -1449,8 +1574,14 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
             console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Corregir; no se repite el aviso.`);
             return null;
         }
-        await orderDoc.ref.update({ estatus: 'Corregir', corregirAt: admin.firestore.FieldValue.serverTimestamp() });
+        await orderDoc.ref.update({
+            estatus: 'Corregir',
+            corregirAt: admin.firestore.FieldValue.serverTimestamp(),
+            corregirMotivo: isVideo ? 'video' : 'datos',   // separa "quiere video" de "dato mal" para Pendientes de Diseño
+        });
         console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Corregir (${isVideo ? 'pide video' : 'reporte de error'}) del cliente (${contactId}).`);
+        // Refrescar la bandera "Pendiente de Diseño" del contacto (no bloquear si falla).
+        try { await require('./design/designPending').recomputeForContact(contactId); } catch (_) {}
         try {
             const name = (contactData && contactData.name) || contactId;
             const req = String(clientMessage || '').trim().slice(0, 300);
@@ -3184,7 +3315,8 @@ module.exports = {
     sendApprovedTemplateMessage,
     notifyGuiaToCustomer,
     markComprobanteValidadoAndSendForm,
-    markOrderCorregirForContact
+    markOrderCorregirForContact,
+    compressVideoToLimit
 };
 
 /**
