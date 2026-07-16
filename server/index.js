@@ -184,10 +184,10 @@ const SITIO_COLECCIONES = {
         img: 'lamp-pareja.webp'
     },
     empresas: {
-        h1: 'Lámparas corporativas con logo grabado con láser',
-        title: 'Lámparas Corporativas con Logo para Empresas | DEKOOR',
-        desc: 'Regalos corporativos y reconocimientos con el logo de tu empresa grabado con láser. Precios de mayoreo desde 10 piezas. Envío a todo México.',
-        visible: 'Reconocimientos, trofeos y regalos corporativos con el logo de tu empresa o equipo favorito.',
+        h1: 'Lámparas para empresas, profesiones y oficios',
+        title: 'Lámparas con Logo para Empresas y Profesiones | DEKOOR',
+        desc: 'Regalos corporativos con logo y lámparas para doctores, maestras, ingenieros y más profesiones, grabados con láser. Mayoreo desde 10 piezas. Envío a todo México.',
+        visible: 'Logos de negocios, reconocimientos y regalos para doctores, maestras, ingenieros, abogados y más profesiones y oficios.',
         img: 'lamp-empresas.webp'
     },
     familia: {
@@ -211,20 +211,6 @@ const SITIO_COLECCIONES = {
         visible: 'Su logro merece brillar: lámparas con foto, nombre, generación y carrera para celebrar la graduación.',
         img: 'og-logo.png'
     },
-    profesiones: {
-        h1: 'Lámparas personalizadas de profesiones y oficios',
-        title: 'Lámparas Personalizadas para Doctores, Maestros y Más | DEKOOR',
-        desc: 'Regalos para profesionistas: lámpara 3D con el símbolo de su profesión u oficio y su nombre grabados con láser. Envío gratis a todo México.',
-        visible: 'Doctores, maestras, ingenieros, abogados... su vocación convertida en luz con su nombre grabado.',
-        img: 'og-logo.png'
-    },
-    deportes: {
-        h1: 'Lámparas personalizadas de deportes y aficiones',
-        title: 'Lámparas Personalizadas de Deportes y Aficiones | DEKOOR',
-        desc: 'Su equipo, su deporte o su pasión favorita en una lámpara 3D con su nombre grabado con láser. Envío gratis a todo México.',
-        visible: 'Su equipo, su deporte o su pasión favorita con su nombre grabado con láser. Para fans de verdad.',
-        img: 'lamp-deportes.webp'
-    },
     memorial: {
         h1: 'Lámparas memorial con foto de tu ser querido',
         title: 'Lámparas Memorial Personalizadas con Foto | DEKOOR',
@@ -240,10 +226,10 @@ const SITIO_COLECCIONES = {
         img: 'lamp-religiosas.webp'
     },
     cuadros: {
-        h1: 'Cuadros personalizados con fotos grabadas en madera',
-        title: 'Cuadros Personalizados con Fotos Grabadas en Madera | DEKOOR',
-        desc: 'Cuadros de madera con tus fotos grabadas con láser: collages de corazón y mosaicos para tu pared. Cotización gratis por WhatsApp.',
-        visible: 'Cuadros de madera personalizados con tus fotos grabadas con láser. El regalo que decora y emociona.',
+        h1: 'Cuadros con foto y más regalos personalizados',
+        title: 'Cuadros con Foto y Más Regalos Personalizados | DEKOOR',
+        desc: 'Cuadros de madera con tus fotos, letreros y más regalos personalizados grabados con láser. Cotización gratis por WhatsApp. Envío a todo México.',
+        visible: 'Cuadros con foto, letreros y más regalos personalizados con grabado láser para cualquier ocasión.',
         img: 'cuadro-multifoto.webp'
     }
 };
