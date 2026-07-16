@@ -191,11 +191,39 @@ const SITIO_COLECCIONES = {
         img: 'lamp-empresas.webp'
     },
     familia: {
-        h1: 'Lámparas personalizadas con foto familiar y mascotas',
-        title: 'Lámparas Personalizadas con Foto de Familia y Mascotas | DEKOOR',
-        desc: 'Tu foto familiar o de tu mascota convertida en lámpara 3D grabada con láser. El regalo para mamá, papá y abuelos. Envío gratis a todo México.',
-        visible: 'Inmortaliza los mejores momentos familiares. Fotos de mascotas, hijos, abuelos y toda la familia.',
+        h1: 'Lámparas personalizadas con foto familiar',
+        title: 'Lámparas Personalizadas con Foto de Familia | DEKOOR',
+        desc: 'Tu foto familiar convertida en lámpara 3D grabada con láser. El regalo para mamá, papá y abuelos. Envío gratis a todo México.',
+        visible: 'Inmortaliza los mejores momentos familiares. Fotos de mamá, papá, abuelos e hijos.',
+        img: 'lamp-familia2.webp'
+    },
+    mascotas: {
+        h1: 'Lámparas personalizadas con foto de tu mascota',
+        title: 'Lámparas Personalizadas con Foto de Mascotas | DEKOOR',
+        desc: 'La foto de tu perro o gato convertida en lámpara 3D grabada con láser. El regalo perfecto para amantes de las mascotas. Envío gratis a todo México.',
+        visible: 'Tu mejor amigo hecho luz. Lámparas con la foto de tu perro, gato o compañero de vida grabada con láser.',
         img: 'lamp-mascotas.webp'
+    },
+    graduacion: {
+        h1: 'Lámparas personalizadas de graduación',
+        title: 'Lámparas Personalizadas de Graduación con Foto | DEKOOR',
+        desc: 'Regalos de graduación personalizados: lámpara 3D con foto, nombre, carrera y generación grabados con láser. Envío gratis a todo México.',
+        visible: 'Su logro merece brillar: lámparas con foto, nombre, generación y carrera para celebrar la graduación.',
+        img: 'og-logo.png'
+    },
+    profesiones: {
+        h1: 'Lámparas personalizadas de profesiones y oficios',
+        title: 'Lámparas Personalizadas para Doctores, Maestros y Más | DEKOOR',
+        desc: 'Regalos para profesionistas: lámpara 3D con el símbolo de su profesión u oficio y su nombre grabados con láser. Envío gratis a todo México.',
+        visible: 'Doctores, maestras, ingenieros, abogados... su vocación convertida en luz con su nombre grabado.',
+        img: 'og-logo.png'
+    },
+    deportes: {
+        h1: 'Lámparas personalizadas de deportes y aficiones',
+        title: 'Lámparas Personalizadas de Deportes y Aficiones | DEKOOR',
+        desc: 'Su equipo, su deporte o su pasión favorita en una lámpara 3D con su nombre grabado con láser. Envío gratis a todo México.',
+        visible: 'Su equipo, su deporte o su pasión favorita con su nombre grabado con láser. Para fans de verdad.',
+        img: 'lamp-deportes.webp'
     },
     memorial: {
         h1: 'Lámparas memorial con foto de tu ser querido',

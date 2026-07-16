@@ -481,7 +481,7 @@
         </a>
         <div class="nav-links">
             <a href="/sitio/" class="nav-link">Inicio</a>
-            <a href="/sitio/#colecciones" class="nav-link active">Colecciones</a>
+            <a href="/sitio/catalogo/" class="nav-link active">Catálogo</a>
 
             <a href="/sitio/#como-funciona" class="nav-link">Cómo Funciona</a>
             <a href="/referencias/" class="nav-link">Referencias</a>
@@ -502,7 +502,7 @@
     <div class="mobile-menu-panel">
         <button class="mobile-menu-close">&times;</button>
         <a href="/sitio/" class="mobile-link"><i class="fas fa-home"></i> Inicio</a>
-        <a href="/sitio/#colecciones" class="mobile-link active"><i class="fas fa-layer-group"></i> Colecciones</a>
+        <a href="/sitio/catalogo/" class="mobile-link active"><i class="fas fa-th-large"></i> Catálogo</a>
         <a href="/referencias/" class="mobile-link"><i class="fas fa-star"></i> Referencias</a>
         <a href="/sitio/#contacto" class="mobile-link"><i class="fas fa-envelope"></i> Contacto</a>
     </div>
@@ -662,10 +662,38 @@ const COLLECTIONS = {
     },
     familia: {
         title: 'Familia',
-        desc: 'Inmortaliza los mejores momentos familiares. Fotos de mascotas, hijos, abuelos y toda la familia.',
+        desc: 'Inmortaliza los mejores momentos familiares. Fotos de mamá, papá, abuelos e hijos.',
         productName: 'Lámpara 3D Familiar',
-        productDesc: 'Lámpara LED con foto familiar, nombre de mascota o retrato grupal. 16 colores con control remoto.',
+        productDesc: 'Lámpara LED con foto familiar o retrato grupal grabado con láser. 16 colores con control remoto.',
         folder: 'Familia'
+    },
+    mascotas: {
+        title: 'Mascotas',
+        desc: 'Tu mejor amigo hecho luz. Lámparas con la foto de tu perro, gato o compañero de vida grabada con láser.',
+        productName: 'Lámpara 3D de Mascota',
+        productDesc: 'Lámpara LED con la foto de tu mascota grabada con láser. 16 colores con control remoto.',
+        folder: 'Mascotas'
+    },
+    graduacion: {
+        title: 'Graduación',
+        desc: 'Su logro merece brillar: lámparas con foto, nombre, generación y carrera para celebrar la graduación.',
+        productName: 'Lámpara 3D de Graduación',
+        productDesc: 'Lámpara LED con foto, nombre y carrera grabados con láser. El recuerdo perfecto de su graduación.',
+        folder: 'Graduacion'
+    },
+    profesiones: {
+        title: 'Profesiones y Oficios',
+        desc: 'Doctores, maestras, ingenieros, abogados... su vocación convertida en luz con su nombre grabado.',
+        productName: 'Lámpara 3D de Profesión',
+        productDesc: 'Lámpara LED con el símbolo de su profesión y su nombre grabados con láser. 16 colores con control.',
+        folder: 'Profesiones'
+    },
+    deportes: {
+        title: 'Deportes y Aficiones',
+        desc: 'Su equipo, su deporte o su pasión favorita con su nombre grabado con láser. Para fans de verdad.',
+        productName: 'Lámpara 3D Deportiva',
+        productDesc: 'Lámpara LED con su equipo, deporte o afición favorita y su nombre grabados con láser.',
+        folder: 'Deportes'
     },
     memorial: {
         title: 'Memorial',
@@ -723,7 +751,7 @@ const canonicalEl = document.querySelector('link[rel="canonical"]');
 if (canonicalEl) canonicalEl.setAttribute('href', `https://app.dekoormx.com/sitio/coleccion/${colId}/`);
 
 // Inject Product + BreadcrumbList schema
-const SCHEMA_IMG = { ninos: 'lamp-ariel.webp', pareja: 'lamp-pareja.webp', empresas: 'lamp-empresas.webp', familia: 'lamp-mascotas.webp', memorial: 'lamp-memorial.webp', religiosas: 'lamp-religiosas.webp', cuadros: 'cuadro-multifoto.webp', otros: 'lamp-otros.webp' };
+const SCHEMA_IMG = { ninos: 'lamp-ariel.webp', pareja: 'lamp-pareja.webp', empresas: 'lamp-empresas.webp', familia: 'lamp-familia2.webp', mascotas: 'lamp-mascotas.webp', graduacion: 'og-logo.png', profesiones: 'og-logo.png', deportes: 'lamp-deportes.webp', memorial: 'lamp-memorial.webp', religiosas: 'lamp-religiosas.webp', cuadros: 'cuadro-multifoto.webp', otros: 'lamp-otros.webp' };
 const productSchema = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -769,8 +797,6 @@ const PHOTOS = {
         { file: "05362bc1-cbd9-4544-9942-a8e4dca17e0f.webp", name: "Princesa del Mar", desc: "Su sirena favorita vela sus sueños, con su nombre brillando bajo el mar" },
         { file: "064355fb-6395-4117-b23b-37437d4df249.webp", name: "Antihéroe Favorito", desc: "El personaje que lo hace sentir invencible ahora cuida su noche" },
         { file: "476210b4-377e-4bfd-a2ca-5482a7d18e66.webp", name: "Mundo Gamer", desc: "Sus personajes favoritos con su nombre, la luz que presume a sus amigos" },
-        { file: "844daad1-9e38-4c93-88d7-1d4ec7cb02e7.webp", name: "Pequeña Campeona", desc: "Su rutina en la viga con su nombre, una medalla que brilla cada noche" },
-        { file: "b6fec1a0-b953-4766-80a4-5aefa79e9cc0.webp", name: "Futuro Crack", desc: "Su ídolo y su nombre en el escudo, para soñar con el gol cada noche" },
         { file: "ecf5f6d6-b1ac-4802-9dd7-63ecf62e9492.webp", name: "Dulce Fresita", desc: "Su personaje más tierno con su nombre, dulces sueños garantizados" },
         { src: "/sitio/img/lamp-nino.webp", name: "Pequeño Astronauta", desc: "Su propio planeta con su nombre, para dormir soñando con estrellas" },
         { src: "/sitio/img/lamp-baby.webp", name: "Sueños de Bebé", desc: "Su primera foto entre lunas y estrellas, un recuerdo que ilumina" }
@@ -787,11 +813,19 @@ const PHOTOS = {
         { file: "77ea673d-9f5b-488c-b683-61485a96ce5a.webp", name: "Orgullo de Ruta", desc: "Tu flota y tu nombre iluminados, la empresa que construiste brillando" }
     ],
     familia: [
-        { file: "460b38b0-4d38-4127-b508-bbb03e55660b.webp", name: "Huellas de Luz", desc: "Sus perritos iluminando la sala, homenaje a los más fieles de casa" },
         { file: "559ea191-b2b9-41ce-8af3-cfde8c193065.webp", name: "Mi Primer Héroe", desc: "Papá y su niño con la frase que lo dice todo, un regalo que ilumina" },
         { file: "75626782-dc3b-4e3d-ba26-9bad0ad5e49d.webp", name: "Mi Pequeña Estrella", desc: "Su carita y su nombre velando el cuarto, la compañía de cada noche" },
         { src: "/sitio/img/lamp-family.webp", name: "Siempre Te Amaremos", desc: "Toda la familia en una placa de luz, dedicatoria eterna para papá" },
         { src: "/sitio/img/lamp-familia2.webp", name: "Nuestro Apellido", desc: "El retrato familiar con su apellido, la luz que une su hogar" }
+    ],
+    mascotas: [
+        { src: "/sitio/img/col/familia/460b38b0-4d38-4127-b508-bbb03e55660b.webp", name: "Huellas de Luz", desc: "Sus perritos iluminando la sala, homenaje a los más fieles de casa" }
+    ],
+    graduacion: [],
+    profesiones: [],
+    deportes: [
+        { src: "/sitio/img/col/ninos/b6fec1a0-b953-4766-80a4-5aefa79e9cc0.webp", name: "Futuro Crack", desc: "Su ídolo y su nombre en el escudo, para soñar con el gol cada noche" },
+        { src: "/sitio/img/col/ninos/844daad1-9e38-4c93-88d7-1d4ec7cb02e7.webp", name: "Pequeña Campeona", desc: "Su rutina en la viga con su nombre, una medalla que brilla cada noche" }
     ],
     memorial: [
         { file: "9058f734-a4d3-4806-bef6-40e646a1617c.webp", name: "Siempre Conmigo", desc: "Su foto con luz cálida, un recuerdo encendido que lo mantiene cerca" }
@@ -811,7 +845,7 @@ const PHOTOS = {
 };
 
 function waLinkFor(name) {
-    const msg = `Hola Dekoor, me encanta el modelo "${name}" de la colección ${col.title} y quiero uno con mi foto. ¿Me ayudan?`;
+    const msg = `Hola Dekoor, quiero personalizar el modelo "${name}" (${col.title}) para mí. ¿Me ayudan?`;
     return `https://wa.me/${WA}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -850,7 +884,7 @@ function loadProducts() {
                     <i class="fab fa-whatsapp"></i> Cotizar por WhatsApp
                </a>`
             : `<a href="${waLinkFor(p.name)}" target="_blank" rel="noopener" class="product-card-btn whatsapp" style="width:100%;justify-content:center;">
-                    <i class="fab fa-whatsapp"></i> Lo quiero con mi foto
+                    <i class="fab fa-whatsapp"></i> Personalizar este modelo
                </a>
                <button onclick="addToCart('${url}', '${p.name}')" class="product-card-btn" style="width:100%;justify-content:center;">
                     <i class="fas fa-cart-plus"></i> Agregar al carrito
