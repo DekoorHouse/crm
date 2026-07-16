@@ -1489,6 +1489,13 @@ function mkLzUnionBBox(boxes) {
 // Bounding box del item en coordenadas del LIENZO (los <g> de vectores llevan transform,
 // así que su getBBox local se mapea con translate+scale).
 function mkLzCanvasBBox(it) {
+    // TEXTO: caja de TINTA real (lo que se ve). El getBBox del <text> incluye el espacio del
+    // em (ascendentes/descendentes) y haría el recuadro de selección más grande que las letras.
+    if (it.type === 'text') {
+        const ink = mkLzInkBBox(it, it.size);
+        if (!ink || ink.w < 4 || ink.h < 4) return { x: it.x - 20, y: it.y - 20, w: 40, h: 40 };   // texto vacío: caja mínima seleccionable
+        return ink;
+    }
     const svg = document.getElementById('mk-lz-svg');
     const node = svg && svg.querySelector(`[data-lz="${it.id}"]`);
     if (!node) return null;
