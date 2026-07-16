@@ -56,15 +56,20 @@ lampara y se juntan 2 en una hoja); solo va 1 cuando ya no hay mas pedidos que d
 
 ## Subida a Drive (carpeta "SVG Corte", id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`)
 
-**Via principal** (rapida, sin costo de contexto):
+**Via principal** (rapida, sin costo de contexto; setup YA HECHO el 2026-07-16):
 
     node "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\upload-drive.js" "<ruta-del-svg>"
 
-Imprime JSON `{ok:true, id, name, webViewLink}`. Usa la cuenta de servicio del repo
-(`serviceAccountKey.json`). Setup de una sola vez (si da 403/404, pedirselo al usuario):
-1. Habilitar Drive API en el proyecto: https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=300825194175
-2. Compartir la carpeta "SVG Corte" (como Editor) con:
-   `firebase-adminsdk-fbsvc@pedidos-con-gemini.iam.gserviceaccount.com`
+Imprime JSON `{ok:true, id, name, webViewLink}` — usar ese webViewLink en el reporte.
+Funciona via un Google Apps Script del usuario (URL y secreto en `drive-webapp.json`;
+codigo de referencia en `apps-script-uploader.gs`). Los archivos quedan como propiedad de
+dekoorhouse.work@gmail.com. NOTA: la cuenta de servicio del repo NO sirve para esto —
+Google ya no da cuota de Drive a service accounts en cuentas personales.
+
+Si algun dia responde HTML/login o "secreto invalido": el usuario debe re-desplegar el
+Apps Script (script.google.com → su proyecto "SVG Corte Uploader" → Implementar → Nueva
+implementacion → App web → Ejecutar como: Yo → Acceso: **Cualquier persona**, la opcion
+SIN "que tenga una Cuenta de Google") y pasar la nueva URL /exec para `drive-webapp.json`.
 
 **Fallback** (sin setup; usarlo solo con archivos chicos, cuesta muchos tokens con SVGs
 grandes): tools del conector Google Drive via ToolSearch

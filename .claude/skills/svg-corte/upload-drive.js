@@ -1,6 +1,6 @@
-// upload-drive.js — Sube un archivo a la carpeta "SVG Corte" de Google Drive usando la
-// cuenta de servicio del repo (serviceAccountKey.json). Requiere que la carpeta este
-// compartida (como Editor) con el correo de la cuenta de servicio.
+// upload-drive.js — Sube un archivo a la carpeta "SVG Corte" de Google Drive a traves del
+// Apps Script del usuario (ver apps-script-uploader.gs). Los archivos quedan como propiedad
+// del usuario (las cuentas de servicio ya no tienen cuota en Drive personal).
 //
 // Uso: node upload-drive.js <ruta-archivo> [folderId]
 // Exito: imprime una linea JSON {ok:true, id, name, webViewLink}
@@ -8,48 +8,55 @@
 
 const fs = require('fs');
 const path = require('path');
-const { google } = require('googleapis');
-
-const FOLDER_SVG_CORTE = '1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b';
 
 async function main() {
     const filePath = process.argv[2];
-    const folderId = process.argv[3] || FOLDER_SVG_CORTE;
+    const folderId = process.argv[3] || null;
     if (!filePath || !fs.existsSync(filePath)) {
         console.error(JSON.stringify({ ok: false, error: 'Archivo no encontrado: ' + filePath }));
         process.exit(1);
     }
 
-    const keyPath = path.resolve(__dirname, '..', '..', '..', 'serviceAccountKey.json');
-    if (!fs.existsSync(keyPath)) {
-        console.error(JSON.stringify({ ok: false, error: 'No existe serviceAccountKey.json en la raiz del repo' }));
+    const cfgPath = path.join(__dirname, 'drive-webapp.json');
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    if (!cfg.url || !cfg.url.startsWith('https://script.google.com/')) {
+        console.error(JSON.stringify({ ok: false, error: 'drive-webapp.json sin URL valida del Apps Script (debe terminar en /exec). Ver apps-script-uploader.gs para el setup.' }));
         process.exit(1);
     }
 
-    const auth = new google.auth.GoogleAuth({
-        keyFile: keyPath,
-        scopes: ['https://www.googleapis.com/auth/drive'],
-    });
-    const drive = google.drive({ version: 'v3', auth });
-
     const ext = path.extname(filePath).toLowerCase();
-    const mime = ext === '.svg' ? 'image/svg+xml' : 'application/octet-stream';
+    const mime = ext === '.svg' ? 'image/svg+xml'
+        : ext === '.png' ? 'image/png'
+        : ext === '.cdr' ? 'application/x-coreldraw'
+        : 'application/octet-stream';
+
+    const payload = {
+        secret: cfg.secret,
+        name: path.basename(filePath),
+        mimeType: mime,
+        b64: fs.readFileSync(filePath).toString('base64'),
+    };
+    if (folderId) payload.folderId = folderId;
 
     try {
-        const res = await drive.files.create({
-            requestBody: { name: path.basename(filePath), parents: [folderId] },
-            media: { mimeType: mime, body: fs.createReadStream(filePath) },
-            fields: 'id, name, webViewLink',
-            supportsAllDrives: true,
+        const res = await fetch(cfg.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            redirect: 'follow',
         });
-        console.log(JSON.stringify({ ok: true, ...res.data }));
-    } catch (e) {
-        const code = e && e.code;
-        let hint = '';
-        if (code === 404 || code === 403) {
-            hint = 'La carpeta no esta compartida con la cuenta de servicio. Compartir "SVG Corte" (Editor) con: firebase-adminsdk-fbsvc@pedidos-con-gemini.iam.gserviceaccount.com';
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); }
+        catch { data = { ok: false, error: 'Respuesta no-JSON del Apps Script: ' + text.slice(0, 300) }; }
+        if (data.ok) {
+            console.log(JSON.stringify(data));
+        } else {
+            console.error(JSON.stringify(data));
+            process.exit(1);
         }
-        console.error(JSON.stringify({ ok: false, code, error: String(e.message || e), hint }));
+    } catch (e) {
+        console.error(JSON.stringify({ ok: false, error: String(e.message || e) }));
         process.exit(1);
     }
 }
