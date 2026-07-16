@@ -1076,7 +1076,7 @@ function mkLzHtml() {
                 <div class="mk-lz-side">
                     <button type="button" class="btn btn-primary btn-sm" onclick="mkLzUseAsRef(this)"><i class="fas fa-file-image mr-1"></i>Convertir a PNG → 2ª referencia</button>
                     <button type="button" class="btn btn-outline btn-sm" onclick="mkLzDownload(this)"><i class="fas fa-download mr-1"></i>Descargar PNG</button>
-                    <small class="mk-muted">Haz clic en un elemento para seleccionarlo y arrástralo para moverlo. Con uno seleccionado puedes editar su texto, fuente, tamaño o escala, o eliminarlo. El PNG sale en 864×1152 con fondo negro.</small>
+                    <small class="mk-muted">Haz clic en un elemento para seleccionarlo, arrástralo para moverlo y usa los <b>cuadritos de las esquinas</b> para escalarlo. Con uno seleccionado puedes editar su texto, fuente, tamaño o escala, o eliminarlo. El PNG sale en 864×1152 con fondo negro.</small>
                 </div>
             </div>
         </div>`;
@@ -1115,17 +1115,31 @@ function mkLzRenderCanvas() {
     if (!st.items.length) inner += `<text x="${MK_LZ_W / 2}" y="${MK_LZ_H / 2}" fill="#555" font-size="34" text-anchor="middle" style="pointer-events:none;">Lienzo vacío: agrega texto o elementos</text>`;
     inner += mkLzItemsMarkup();
     svg.innerHTML = inner;
-    // Contorno de selección (se calcula con el bbox real del nodo ya montado).
+    // Contorno de selección + cuadritos de escala en las esquinas (bbox real del nodo montado).
     if (st.sel != null) {
-        const node = svg.querySelector(`[data-lz="${st.sel}"]`);
-        if (node) {
-            try {
-                const b = node.getBBox();
-                const tr = node.getAttribute('transform') || '';
-                svg.insertAdjacentHTML('beforeend', `<rect id="mk-lz-outline" x="${b.x - 6}" y="${b.y - 6}" width="${b.width + 12}" height="${b.height + 12}" fill="none" stroke="#4f8ff7" stroke-width="3" stroke-dasharray="8 5" transform="${tr}" style="pointer-events:none;"></rect>`);
-            } catch (_) { /* nodo sin bbox aún */ }
+        const it = st.items.find(i => i.id === st.sel);
+        const bb = it && mkLzCanvasBBox(it);
+        if (bb) {
+            const pad = 6, HS = 24;   // padding del contorno y tamaño del handle (unidades del viewBox)
+            const x0 = bb.x - pad, y0 = bb.y - pad, x1 = bb.x + bb.w + pad, y1 = bb.y + bb.h + pad;
+            let g = `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="#4f8ff7" stroke-width="3" stroke-dasharray="8 5" style="pointer-events:none;"></rect>`;
+            g += [['tl', x0, y0, 'nwse'], ['tr', x1, y0, 'nesw'], ['bl', x0, y1, 'nesw'], ['br', x1, y1, 'nwse']]
+                .map(([k, cx, cy, cur]) => `<rect data-lzh="${k}" x="${cx - HS / 2}" y="${cy - HS / 2}" width="${HS}" height="${HS}" fill="#ffffff" stroke="#4f8ff7" stroke-width="3" style="cursor:${cur}-resize;"></rect>`).join('');
+            svg.insertAdjacentHTML('beforeend', `<g id="mk-lz-selgfx">${g}</g>`);
         }
     }
+}
+
+// Bounding box del item en coordenadas del LIENZO (los <g> de vectores llevan transform,
+// así que su getBBox local se mapea con translate+scale).
+function mkLzCanvasBBox(it) {
+    const svg = document.getElementById('mk-lz-svg');
+    const node = svg && svg.querySelector(`[data-lz="${it.id}"]`);
+    if (!node) return null;
+    let b;
+    try { b = node.getBBox(); } catch (_) { return null; }
+    if (it.type === 'path') return { x: it.x + it.scale * b.x, y: it.y + it.scale * b.y, w: it.scale * b.width, h: it.scale * b.height };
+    return { x: b.x, y: b.y, w: b.width, h: b.height };
 }
 
 function mkLzRenderTools() {
@@ -1137,7 +1151,7 @@ function mkLzRenderTools() {
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddText()"><i class="fas fa-font mr-1"></i>Texto</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddPreset('infinito')"><i class="fas fa-infinity mr-1"></i>Infinito</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="mkLzAddPreset('corazon')"><i class="fas fa-heart mr-1"></i>Corazón</button>
-        <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-image mr-1"></i>Importar imagen<input type="file" accept="image/*" style="display:none;" onchange="mkLzOnImport(event)"></label>`;
+        <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-image mr-1"></i>Importar imagen/SVG<input type="file" accept="image/*,.svg" style="display:none;" onchange="mkLzOnImport(event)"></label>`;
     if (it) {
         html += `<span class="mk-lz-sep"></span>`;
         if (it.type === 'text') {
@@ -1197,26 +1211,63 @@ function mkLzOnImport(ev) {
     const f = ev.target.files && ev.target.files[0];
     ev.target.value = '';
     if (!f) return;
-    if (!f.type || !f.type.startsWith('image/')) { mkToast('Solo se aceptan imágenes.', 'error'); return; }
+    const isSvg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name || '');
+    if (!isSvg && (!f.type || !f.type.startsWith('image/'))) { mkToast('Solo se aceptan imágenes (PNG/JPG/SVG…).', 'error'); return; }
     const reader = new FileReader();
+    if (isSvg) {
+        // SVG: se lee como TEXTO y se normaliza (viewBox + width/height explícitos); un SVG
+        // sin tamaño intrínseco no se pinta dentro de <image> ni al rasterizar.
+        reader.onload = e => {
+            try { mkLzAddSvgItem(String(e.target.result)); }
+            catch (err) { mkToast('SVG no válido: ' + err.message, 'error'); }
+        };
+        reader.readAsText(f);
+        return;
+    }
     reader.onload = e => {
         const href = e.target.result;   // data URI (queda embebida, exporta sin problemas)
         const im = new Image();
         im.onload = () => {
-            const st = mkLzState();
             const natW = im.naturalWidth || 400, natH = im.naturalHeight || 400;
-            const w = Math.min(500, natW);
-            const ar = natH / natW;
-            const h = Math.round(w * ar);
-            const id = st.seq++;
-            st.items.push({ id, type: 'image', x: Math.round((MK_LZ_W - w) / 2), y: Math.round((MK_LZ_H - h) / 2), w, h, ar, href });
-            st.sel = id;
-            mkLzRenderCanvas(); mkLzRenderTools();
+            mkLzPushImage(href, natW, natH);
         };
         im.onerror = () => mkToast('No se pudo leer la imagen.', 'error');
         im.src = href;
     };
     reader.readAsDataURL(f);
+}
+
+// Agrega un SVG importado como item de imagen (data URI) con su aspecto real.
+function mkLzAddSvgItem(svgText) {
+    const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+    const root = doc.documentElement;
+    if (!root || root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) throw new Error('no se pudo leer el archivo.');
+    // Tamaño: primero el viewBox; si no hay, width/height (ignorando porcentajes).
+    const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    let w = 0, h = 0;
+    if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) { w = vb[2]; h = vb[3]; }
+    if (!w || !h) {
+        const aw = root.getAttribute('width') || '', ah = root.getAttribute('height') || '';
+        if (!aw.includes('%') && !ah.includes('%')) { w = parseFloat(aw) || 0; h = parseFloat(ah) || 0; }
+    }
+    if (!w || !h) { w = 400; h = 400; }
+    if (!root.getAttribute('viewBox')) root.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    root.setAttribute('width', w);    // tamaño intrínseco explícito: requisito para <image>
+    root.setAttribute('height', h);
+    const href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(root));
+    mkLzPushImage(href, w, h);
+}
+
+// Alta común de un item de imagen (raster o SVG), centrado y a lo sumo 500px de ancho.
+function mkLzPushImage(href, natW, natH) {
+    const st = mkLzState();
+    const w = Math.min(500, Math.round(natW));
+    const ar = natH / natW;
+    const h = Math.round(w * ar);
+    const id = st.seq++;
+    st.items.push({ id, type: 'image', x: Math.round((MK_LZ_W - w) / 2), y: Math.round((MK_LZ_H - h) / 2), w, h, ar, href });
+    st.sel = id;
+    mkLzRenderCanvas(); mkLzRenderTools();
 }
 
 function mkLzDelete() {
@@ -1239,6 +1290,26 @@ function mkLzPoint(ev) {
 
 function mkLzDown(ev) {
     const st = mkLzState();
+    // 1) ¿Agarró un cuadrito de escala? (van primero: los handles no llevan data-lz y
+    //    caerían en el "clic al vacío" que deselecciona)
+    const handle = ev.target && ev.target.closest ? ev.target.closest('[data-lzh]') : null;
+    if (handle && st.sel != null) {
+        const it = st.items.find(i => i.id === st.sel);
+        const bb = it && mkLzCanvasBBox(it);
+        if (!it || !bb) return;
+        ev.preventDefault();
+        // Ancla = la esquina OPUESTA al handle: queda fija mientras se escala.
+        const anchor = {
+            tl: { x: bb.x + bb.w, y: bb.y + bb.h }, tr: { x: bb.x, y: bb.y + bb.h },
+            bl: { x: bb.x + bb.w, y: bb.y }, br: { x: bb.x, y: bb.y },
+        }[handle.getAttribute('data-lzh')];
+        const p = mkLzPoint(ev);
+        const d0 = Math.hypot(p.x - anchor.x, p.y - anchor.y) || 1;
+        mkLzDrag = { resize: true, id: it.id, anchor, d0, ox: it.x, oy: it.y, m0: it.type === 'text' ? it.size : (it.type === 'image' ? it.w : it.scale) };
+        try { document.getElementById('mk-lz-svg').setPointerCapture(ev.pointerId); } catch (_) { /* noop */ }
+        return;
+    }
+    // 2) Clic sobre un elemento -> seleccionar y empezar a moverlo; al vacío -> deseleccionar.
     const node = ev.target && ev.target.closest ? ev.target.closest('[data-lz]') : null;
     if (!node) {
         if (st.sel != null) { st.sel = null; mkLzRenderCanvas(); mkLzRenderTools(); }
@@ -1260,37 +1331,29 @@ function mkLzMove(ev) {
     const it = st.items.find(i => i.id === mkLzDrag.id);
     if (!it) { mkLzDrag = null; return; }
     const p = mkLzPoint(ev);
-    it.x = Math.round(mkLzDrag.ox + (p.x - mkLzDrag.sx));
-    it.y = Math.round(mkLzDrag.oy + (p.y - mkLzDrag.sy));
-    mkLzSyncNode(it);   // mueve el nodo directo (sin re-render completo durante el arrastre)
+    if (mkLzDrag.resize) {
+        // Factor = distancia al ancla vs. la inicial (escala uniforme desde la esquina opuesta).
+        let f = Math.hypot(p.x - mkLzDrag.anchor.x, p.y - mkLzDrag.anchor.y) / mkLzDrag.d0;
+        f = Math.max(0.05, Math.min(20, f));
+        let fEff = f;   // factor efectivo tras topes por tipo (mantiene el ancla fija)
+        if (it.type === 'text') { it.size = Math.max(10, Math.round(mkLzDrag.m0 * f)); fEff = it.size / mkLzDrag.m0; }
+        else if (it.type === 'image') { it.w = Math.max(20, Math.round(mkLzDrag.m0 * f)); it.h = Math.round(it.w * (it.ar || 1)); fEff = it.w / mkLzDrag.m0; }
+        else { it.scale = Math.max(0.1, +(mkLzDrag.m0 * f).toFixed(2)); fEff = it.scale / mkLzDrag.m0; }
+        it.x = Math.round(mkLzDrag.anchor.x + (mkLzDrag.ox - mkLzDrag.anchor.x) * fEff);
+        it.y = Math.round(mkLzDrag.anchor.y + (mkLzDrag.oy - mkLzDrag.anchor.y) * fEff);
+    } else {
+        it.x = Math.round(mkLzDrag.ox + (p.x - mkLzDrag.sx));
+        it.y = Math.round(mkLzDrag.oy + (p.y - mkLzDrag.sy));
+    }
+    mkLzRenderCanvas();   // el SVG persiste (solo cambia su contenido), el pointer capture no se pierde
 }
 
 function mkLzUp() {
     if (!mkLzDrag) return;
+    const wasResize = mkLzDrag.resize;
     mkLzDrag = null;
-    mkLzRenderCanvas();   // repinta limpio (contorno incluido)
-}
-
-function mkLzSyncNode(it) {
-    const svg = document.getElementById('mk-lz-svg');
-    const node = svg && svg.querySelector(`[data-lz="${it.id}"]`);
-    if (!node) return;
-    let tr = '';
-    if (it.type === 'path') {
-        tr = `translate(${it.x},${it.y}) scale(${it.scale})`;
-        node.setAttribute('transform', tr);
-    } else {
-        node.setAttribute('x', it.x);
-        node.setAttribute('y', it.y);
-    }
-    const o = svg.querySelector('#mk-lz-outline');
-    if (!o) return;
-    if (it.type === 'path') { o.setAttribute('transform', tr); return; }
-    try {
-        const b = node.getBBox();
-        o.setAttribute('x', b.x - 6); o.setAttribute('y', b.y - 6);
-        o.setAttribute('width', b.width + 12); o.setAttribute('height', b.height + 12);
-    } catch (_) { /* noop */ }
+    mkLzRenderCanvas();
+    if (wasResize) mkLzRenderTools();   // sincroniza los inputs numéricos (tamaño/escala/ancho)
 }
 
 // ---- exportar: SVG independiente (fuente embebida) -> canvas 864×1152 -> PNG ----
