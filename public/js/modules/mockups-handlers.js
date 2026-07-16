@@ -151,6 +151,7 @@ async function initializeMockupsHandlers() {
     // (selector de plantilla + mensaje de "crea la primera").
     try { await mkLoadTemplates(); } catch (e) { mkToast(e.message, 'error'); }
     await mkLzFetchDesigns();   // diseños del lienzo: los bloques ofrecen elegirlos como 2ª ref
+    mkEnsureDesignFontLoaded(); // precarga la fuente (métricas correctas al generar referencias)
     try { await mkLoadPending(); } catch (e) { mkToast(e.message, 'error'); }
 }
 
@@ -665,6 +666,29 @@ function mkFontDataUrl() {
     return mkFontDataUrlPromise;
 }
 
+// Garantiza que la fuente manuscrita esté CARGADA en document.fonts antes de medir con
+// canvas.measureText. Sin esto, measureText usa una fuente de reemplazo (más ancha) y el
+// ajuste dentro de los límites encoge el texto de más (sale más chico que en el lienzo vivo).
+// Usa la FontFace API con el TTF ya descargado (mkFontDataUrl), así no depende del @font-face.
+let mkDesignFontLoadPromise = null;
+function mkEnsureDesignFontLoaded() {
+    if (!mkDesignFontLoadPromise) {
+        mkDesignFontLoadPromise = (async () => {
+            try {
+                if (!document.fonts || !window.FontFace) return;
+                // Siempre cargamos el TTF real y lo añadimos a document.fonts (idempotente por la
+                // promesa cacheada). No usamos document.fonts.check(): devuelve true cuando NO hay
+                // @font-face declarado y saltaría la carga, dejando measureText con la de reemplazo.
+                const url = await mkFontDataUrl();
+                const ff = new FontFace(MK_DESIGN_FONT_FAMILY, 'url(' + url + ')');
+                await ff.load();
+                document.fonts.add(ff);
+            } catch (_) { mkDesignFontLoadPromise = null; }   // best-effort; permite reintentar
+        })();
+    }
+    return mkDesignFontLoadPromise;
+}
+
 // SVG final: rellena textos + embebe la fuente como @font-face + garantiza xmlns.
 async function mkBuildDesignSvg(svg, fields) {
     let filled = mkFillDesignSvg(svg, fields).trim();
@@ -763,6 +787,7 @@ async function mkRasterizeLzDesignBlob(designId, fields) {
     if (!d) throw new Error('El diseño del lienzo no está disponible.');
     let items = await mkLzHydrateItems(d.items || []);   // imágenes remotas -> data URI
     items = mkLzFillItemsWithFields(items, fields);       // textos -> datos del pedido
+    await mkEnsureDesignFontLoaded();                     // measureText con métricas correctas
     mkLzComputeSizes(items);                              // aplica los límites al texto nuevo
     return await mkLzRasterizeItems(items);
 }
@@ -1308,7 +1333,7 @@ function mkLzMount() {
     mkLzBindKeys();          // Supr = eliminar, Ctrl+D = duplicar (una sola vez por sesión)
     // Cuando termina de cargar la fuente manuscrita, las medidas de tinta cambian:
     // re-ajustar los textos dentro de límites con las métricas reales.
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => mkLzEnforceLimits());
+    mkEnsureDesignFontLoaded().then(() => mkLzEnforceLimits());
 }
 
 // Markup de los items (compartido entre el lienzo en vivo y el SVG exportado).
