@@ -83,6 +83,14 @@ grandes): tools del conector Google Drive via ToolSearch
 `disableConversionToGoogleType` = true, `textContent` = contenido exacto del SVG. Si el
 parentId fallara, re-buscar la carpeta: `title = 'SVG Corte' and mimeType = 'application/vnd.google-apps.folder'`.
 
+## Automatización (worker local)
+
+`scripts/svg-corte-worker.js` (repo crm) hace el Modo 2 SOLO: pedidos 'Fabricar' con mockup
+aprobado → hoja de 2 → Corel → Drive → estatus "Diseñado por IA". Corre cada 15 min via el
+Programador de tareas de Windows ("CRM SVG Corte Worker", lanzador svg-corte-worker-hidden.vbs).
+Kill-switch: Firestore `svg_corte_config/settings.autoGenerate = false`. Log en
+`Documents\SVG-Corte\worker.log`. Flags: `--dry` (solo lista), `--force`, `--max N`.
+
 ## Plantillas (`plantillas/`)
 
 - `plantilla-infinito-2.cdr`: hoja 350x330 con DOS lamparas y placeholders
@@ -105,6 +113,8 @@ parentId fallara, re-buscar la carpeta: `title = 'SVG Corte' and mimeType = 'app
 - Un ShapeRange NO se indexa en VBS (`sr(i)` truena); iterar `For Each s In page.Shapes`.
 - `ShapeRange.Group` SI regresa el grupo (usar con Set), pero `Shape.Ungroup` NO regresa
   objeto en v23 — llamarlo como instruccion simple, sin `Set`.
+- El stdout de cscript sale en codepage OEM: NO parsear rutas con acentos desde un proceso
+  padre (llegan mojibake). Dictar el nombre de salida con `/file:` (ASCII) como hace el worker.
 - **NUNCA recorrer todo el documento de produccion del usuario (799+ shapes) leyendo
   colores/fills**: eso tumbo CorelDRAW una vez (se pierde trabajo no guardado). Leer solo
   region/indices acotados y propiedades baratas (pos/tam/texto).
