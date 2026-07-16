@@ -14,8 +14,12 @@
 const { db, admin } = require('../config');
 
 // Estatus "terminado" para diseño: si el pedido está aquí, NO hay pendiente (limpia la bandera).
+// OJO: 'Fabricar' NO va aquí. En este flujo se pone 'Fabricar' al CONFIRMAR la venta (dispara el
+// evento Purchase a Meta), a veces ANTES de diseñar (ej. DH13491: pagó y pasó a Fabricar el mismo día,
+// sin preview). Por eso un 'Fabricar' pagado y no enviado se considera pendiente de diseño; si ya
+// estaba diseñado, se saca con el botón ✓ Diseñado. El diseño terminado real se marca como 'Diseñado'.
 const DONE = new Set([
-    'diseñado', 'disenado', 'fabricar', 'corregido',
+    'diseñado', 'disenado', 'corregido',
     'cancelado', 'entregado', 'devolución', 'devolucion', 'mns amenazador',
 ]);
 
