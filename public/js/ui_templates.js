@@ -914,7 +914,7 @@ const MockupsViewTemplate = () => `
             .mk-ref2{margin-top:10px}
             .mk-ref2>label{display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light);margin-bottom:4px;text-transform:uppercase;letter-spacing:.02em}
             .mk-ref2-row{display:flex;gap:12px;align-items:flex-start}
-            .mk-ref-thumb{width:104px;height:74px;object-fit:contain;border:1px solid var(--color-border);border-radius:8px;background:#000;flex-shrink:0}
+            .mk-ref-thumb{width:120px;height:150px;object-fit:contain;border:1px solid var(--color-border);border-radius:8px;background:#000;flex-shrink:0;cursor:zoom-in}
             .mk-ref2-controls{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
             .mk-ref2-check{display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--color-text)}
             .mk-ref2-btns{display:flex;gap:6px;flex-wrap:wrap}

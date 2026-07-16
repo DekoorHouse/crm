@@ -797,6 +797,7 @@ function mkRef2Html(blockId, hasDesign, tplId) {
     const designs = mkLzState().designs || [];
     const pickedId = (mkState.lzPickByTemplate && mkState.lzPickByTemplate[tplId]) || '';
     const uploadLabel = (hasDesign || designs.length) ? 'Subir otra' : 'Subir imagen';
+    const canGen = designs.length || hasDesign;   // ¿hay una fuente para generar la referencia?
     // Selector de DISEÑO DEL LIENZO (diseños guardados): se rellena con los datos del pedido.
     const lzPick = designs.length ? `
                     <div class="mk-lz-pickrow">
@@ -805,50 +806,77 @@ function mkRef2Html(blockId, hasDesign, tplId) {
                             <option value="">— usar el de la plantilla —</option>
                             ${designs.map(d => `<option value="${mkAttr(d.id)}"${d.id === pickedId ? ' selected' : ''}>${mkEsc(d.nombre)}</option>`).join('')}
                         </select>
-                        <button type="button" class="btn btn-outline btn-sm" onclick="mkPreviewLzDesign('${b}')"><i class="fas fa-eye mr-1"></i>Ver</button>
                     </div>` : '';
+    const genBtn = canGen ? `<button type="button" class="btn btn-secondary btn-sm" onclick="mkGenRef2('${b}', this)"><i class="fas fa-wand-magic-sparkles mr-1"></i>Generar imagen de referencia</button>` : '';
     const uploadBtns = `
                     <div class="mk-ref2-btns">
-                        ${hasDesign ? `<button type="button" class="btn btn-outline btn-sm" onclick="mkPreviewDesign('${b}')"><i class="fas fa-eye mr-1"></i>Ver diseño plantilla</button>` : ''}
+                        ${genBtn}
                         <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-upload mr-1"></i>${uploadLabel}<input type="file" class="mk-ref-file" accept="image/*" style="display:none;" onchange="mkOnRefFile(event,'${b}')"></label>
                         <button type="button" class="btn btn-outline btn-sm" id="mk-ref-clear-${b}" style="display:none;" onclick="mkClearRef('${b}')"><i class="fas fa-times mr-1"></i>Quitar</button>
                     </div>`;
     const check = hasDesign ? `<label class="mk-ref2-check"><input type="checkbox" class="mk-usedesign" checked> Usar el diseño de la plantilla</label>` : '';
     const hint = designs.length
-        ? '<small class="mk-muted">Elige un <b>diseño del lienzo</b> (se rellena con los nombres/fecha del pedido) o sube/<b>arrastra</b>/<b>pega</b> una imagen. Prioridad: imagen subida › diseño del lienzo › diseño de la plantilla.</small>'
+        ? '<small class="mk-muted">Elige un <b>diseño del lienzo</b> (se rellena con los nombres/fecha del pedido) y dale <b>Generar imagen de referencia</b>, o sube/<b>arrastra</b>/<b>pega</b> una imagen. Prioridad: imagen subida › diseño del lienzo › diseño de la plantilla.</small>'
         : (hasDesign
-            ? '<small class="mk-muted">Se manda junto a la foto base para que la IA grabe ese diseño. Puedes subir, <b>arrastrar</b> o <b>pegar (Ctrl+V)</b> una imagen; si lo haces, se usa esa.</small>'
+            ? '<small class="mk-muted">Dale <b>Generar imagen de referencia</b> para verla, o sube/<b>arrastra</b>/<b>pega (Ctrl+V)</b> una imagen; si subes una, se usa esa. Se manda junto a la foto base para que la IA grabe ese diseño.</small>'
             : '<small class="mk-muted">Opcional: sube, <b>arrastra</b> o <b>pega (Ctrl+V)</b> una imagen para usarla como 2ª referencia (esta plantilla no tiene diseño).</small>');
     return `
         <div class="mk-ref2" ondragover="event.preventDefault()" ondrop="mkOnRefDrop(event,'${b}')" onmousedown="mkSetRefPasteTarget('${b}')">
             <label>2ª referencia · diseño a grabar (opcional)</label>
             <div class="mk-ref2-row">
-                <img class="mk-ref-thumb" id="mk-ref-thumb-${b}" alt="" style="display:none;">
+                <img class="mk-ref-thumb" id="mk-ref-thumb-${b}" alt="" title="Clic para ver en grande" onclick="mkThumbZoom(this)" style="display:none;">
                 <div class="mk-ref2-controls">${check}${lzPick}${uploadBtns}${hint}
                 </div>
             </div>
         </div>`;
 }
 
-// Elegir un diseño del lienzo en un bloque: recuerda la elección por plantilla y previsualiza.
+// Elegir un diseño del lienzo en un bloque: recuerda la elección por plantilla y auto-genera
+// la vista previa de la 2ª referencia con los datos del pedido.
 function mkOnPickLzDesign(blockId, designId) {
     const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
     if (!block) return;
     const tplSel = block.querySelector('.mk-tpl');
     if (tplSel) mkState.lzPickByTemplate[tplSel.value] = designId;
-    if (designId) mkPreviewLzDesign(blockId);
+    if (designId) mkGenRef2(blockId);
     else if (!mkState.refFiles[blockId]) mkSetRefThumb(blockId, '');
 }
 
-// "Ver": rasteriza el diseño del lienzo elegido con los datos del bloque y lo muestra.
-async function mkPreviewLzDesign(blockId) {
+// Genera la imagen de 2ª referencia con los datos del pedido y la muestra en la miniatura:
+// usa el DISEÑO DEL LIENZO elegido; si no hay, el diseño SVG de la plantilla. Es la MISMA
+// imagen que se enviará a la IA al generar el preview.
+async function mkGenRef2(blockId, btn) {
     const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
     if (!block) return;
+    if (mkState.refFiles[blockId]) { mkToast('Tienes una imagen subida como 2ª referencia; quítala para generarla desde el diseño.', 'error'); return; }
+    const fields = mkReadFields(block);
     const pick = block.querySelector('.mk-lz-pick');
     const designId = pick ? pick.value : '';
-    if (!designId) { mkToast('Elige un diseño del lienzo primero.', 'error'); return; }
-    try { mkSetRefThumb(blockId, (await mkRasterizeLzDesignBlob(designId, mkReadFields(block))).dataUrl); }
-    catch (e) { mkToast('No se pudo generar el diseño: ' + e.message, 'error'); }
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Generando…'; }
+    try {
+        let dataUrl;
+        if (designId) {
+            dataUrl = (await mkRasterizeLzDesignBlob(designId, fields)).dataUrl;
+        } else {
+            const tpl = mkGetTemplate(block.querySelector('.mk-tpl').value);
+            if (!tpl || !tpl.designSvg) { mkToast('Elige un "Diseño del lienzo", o usa una plantilla con diseño, o sube una imagen.', 'error'); return; }
+            dataUrl = await mkDesignDataUrl(tpl.designSvg, fields);
+        }
+        mkSetRefThumb(blockId, dataUrl);
+        if (btn) mkToast('Imagen de referencia generada ✓ (haz clic en la miniatura para verla en grande)', 'success');
+    } catch (e) {
+        mkToast('No se pudo generar la referencia: ' + e.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    }
+}
+
+// Abre una imagen (miniatura de referencia) en grande en una pestaña nueva.
+function mkThumbZoom(img) {
+    if (!img || !img.getAttribute('src')) return;
+    const w = window.open('', '_blank');
+    if (w) w.document.write('<title>2ª referencia</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;height:100vh"><img src="' + img.getAttribute('src') + '" style="max-width:100%;max-height:100%"></body>');
 }
 
 // Restaura la miniatura + botón "Quitar" de una imagen subida a un bloque tras un re-render.
