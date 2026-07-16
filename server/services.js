@@ -1627,6 +1627,45 @@ async function markOrderCancelledForContact(contactId) {
 }
 
 /**
+ * La IA de VENTA emite el comando interno /esperaanticipo cuando pide el ANTICIPO de un pedido
+ * ESPECIAL (fotografía grabada, logos, frases largas, cambiar cantidad de corazones, caballos…).
+ * Si el cliente YA tenía un pedido registrado que ahora se volvió especial (caso real DH13486:
+ * pidió corazones estándar, se registró, y 6 min después cambió a caballos), ese pedido se queda
+ * "Sin estatus" en la fila de mockups esperando un anticipo que quizá nunca llegue y estorba en
+ * cada revisión de pendientes. Este helper lo saca de la fila moviéndolo a "Esperando anticipo".
+ * Cuando el cliente paga y la IA re-emite /registrar, aiOrderRegistration lo regresa a "Sin estatus".
+ *
+ * Solo toca el pedido más reciente si está "Sin estatus" (no un pedido ya avanzado/pagado/cancelado)
+ * y solo si NO tiene comprobante validado (por si el anticipo ya se registró). Idempotente. Nunca lanza.
+ */
+async function markOrderEsperandoAnticipoForContact(contactId) {
+    try {
+        const orderDoc = await getLatestOrderForContact(contactId);
+        if (!orderDoc) return null; // pedido especial NUEVO aún no registrado: nada que mover (correcto)
+        const orderData = orderDoc.data();
+        const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : `(pedido ${orderDoc.id})`;
+        const cur = String(orderData.estatus || 'Sin estatus');
+        if (cur !== 'Sin estatus') {
+            console.log(`[ANTICIPO] Pedido ${orderNumber} está "${cur}" (no "Sin estatus"); no se mueve a Esperando anticipo.`);
+            return null;
+        }
+        if (orderData.comprobanteValidadoAt) {
+            console.log(`[ANTICIPO] Pedido ${orderNumber} ya tiene comprobante validado; no se mueve a Esperando anticipo.`);
+            return null;
+        }
+        await orderDoc.ref.update({
+            estatus: 'Esperando anticipo',
+            esperandoAnticipoAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        console.log(`[ANTICIPO] Pedido ${orderNumber} (${orderDoc.id}) → Esperando anticipo (${contactId}); sale de la fila de mockups.`);
+        return orderNumber;
+    } catch (e) {
+        console.warn('[ANTICIPO] markOrderEsperandoAnticipoForContact falló:', e.message);
+        return null;
+    }
+}
+
+/**
  * Crea o renueva el caché de contexto en la API de Gemini.
  * Solo se recrea si el contenido cambió o el TTL ha expirado.
  * @param {string} botInstructions - Instrucciones del bot (personalizadas por dept/ad o generales)
@@ -2764,6 +2803,12 @@ Reglas:
         // el sistema extrae los datos de la conversación y registra el pedido en el CRM
         // (orders/aiOrderRegistration.js). Si algo falla, cae al flujo manual (pendientes_ia).
         const registerOrderCmd = !isPostVenta && /\/registrar\b/i.test(aiResponse);
+        // La IA emite /esperaanticipo (venta) cuando pide el ANTICIPO de un pedido ESPECIAL. Si el
+        // cliente ya tenía un pedido registrado que ahora se volvió especial, ese pedido se saca de
+        // la fila de mockups moviéndolo a "Esperando anticipo" (ver el manejo después del loop).
+        // Si en el mismo turno también salió /registrar (el anticipo se pagó), manda /registrar: son
+        // excluyentes — /registrar regresa el pedido a "Sin estatus".
+        const esperaAnticipoCmd = !isPostVenta && !registerOrderCmd && /\/esperaanticipo\b/i.test(aiResponse);
         // La IA emite /corregir cuando el cliente, DESPUÉS de recibir la foto de su pedido
         // terminado, reporta que nos equivocamos en algo (ej. faltó una frase, un nombre mal
         // escrito). Cambia el pedido a estatus "Corregir" y avisa al equipo. Solo en post-venta
@@ -2774,7 +2819,7 @@ Reglas:
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
         // (anuncia pedido LISTO + datos de pago); la IA no puede saber si el pedido físico
         // ya está terminado, así que jamás debe enviarlo ni expandirlo.
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').trim()).filter(m => m.length > 0);
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -2967,6 +3012,14 @@ Reglas:
             require('./orders/aiOrderRegistration')
                 .registerOrderFromAI({ contactId, contactData, conversationText: fullTranscript })
                 .catch(e => console.warn('[AI_ORDER] registro automático falló:', e.message));
+        }
+
+        // /esperaanticipo: la IA pidió el anticipo de un pedido especial. Si el cliente ya tenía un
+        // pedido "Sin estatus" (se volvió especial DESPUÉS de registrarse), se saca de la fila de
+        // mockups moviéndolo a "Esperando anticipo". Fire-and-forget; no debe afectar la respuesta.
+        if (esperaAnticipoCmd) {
+            markOrderEsperandoAnticipoForContact(contactId)
+                .catch(e => console.warn('[ANTICIPO] mover a Esperando anticipo falló:', e.message));
         }
 
         // Comprobante sospechoso: reenviar al admin la última imagen/PDF que mandó el cliente

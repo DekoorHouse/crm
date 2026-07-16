@@ -355,7 +355,12 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
         if (recent) {
             const r = recent.data;
             const rNum = r.consecutiveOrderNumber != null ? `DH${r.consecutiveOrderNumber}` : recent.id;
-            const editable = r.registeredByAI === true && r.aiReviewStatus === 'pending' && (r.estatus || 'Sin estatus') === 'Sin estatus';
+            // "Esperando anticipo" también es editable: es un pedido que se sacó de la fila mientras
+            // esperaba el anticipo de una personalización especial (ver markOrderEsperandoAnticipoForContact
+            // en services.js). Al re-emitir /registrar el cliente ya pagó y confirmó el cambio, así que
+            // se ACTUALIZA con los datos especiales y se regresa a "Sin estatus" (vuelve a la fila).
+            const estActual = r.estatus || 'Sin estatus';
+            const editable = r.registeredByAI === true && r.aiReviewStatus === 'pending' && (estActual === 'Sin estatus' || estActual === 'Esperando anticipo');
             if (!editable) {
                 console.warn(`[AI_ORDER] ${contactId} confirmó un cambio pero ${rNum} ya no es editable (${r.vendedor || 'manual'}, ${r.estatus}, review: ${r.aiReviewStatus || '-'}). Se avisa al admin.`);
                 await alertAdmin(`⚠️ *El cliente cambió/confirmó un pedido, pero ya existe ${rNum} reciente* (${r.estatus || 'Sin estatus'}${r.registeredByAI ? ', registrado por IA' : ', registrado manual'}${r.aiReviewStatus === 'approved' ? ', ya revisado' : ''}).\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nLo que el cliente confirmó ahora:\n${itemsTxt}\nTotal: $${extraction.total}\n\nRevisa el chat y edita/registra tú desde el CRM. La IA no creó ni modificó nada.`);
@@ -367,7 +372,7 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             const { totalValue, mainProducto, mainDatosProducto } = computeOrderMainFields(extraction.items);
             // Comentario sin acumular: se reemplaza la línea de actualización anterior (si la hay).
             const comentarioBase = (r.comentarios || '').split('\n').filter(l => !/^Actualizado por la IA:/.test(l.trim())).join('\n').trim();
-            await recent.ref.update({
+            const updatePayload = {
                 items: extraction.items,
                 producto: mainProducto,
                 precio: totalValue,
@@ -375,7 +380,11 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
                 aiConfidence: extraction.confianza,
                 aiUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 comentarios: `${comentarioBase}\nActualizado por la IA: el cliente cambió su pedido (confianza ${extraction.confianza}%).`.trim()
-            });
+            };
+            // Si estaba "Esperando anticipo", el anticipo ya se pagó (la IA re-emitió /registrar):
+            // regrésalo a la fila de mockups ("Sin estatus") para que se pueda diseñar/fabricar.
+            if (estActual === 'Esperando anticipo') updatePayload.estatus = 'Sin estatus';
+            await recent.ref.update(updatePayload);
             // Igual que al crear: el cierre acaba de poner pendientes_ia; un cambio APLICADO ya no
             // necesita registro manual — sin esto el contacto se queda en la cola y alguien
             // registraría un DH duplicado a mano.

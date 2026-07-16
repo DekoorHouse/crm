@@ -16,6 +16,7 @@ let state = {
     orderStatuses: [
         { key: "Sin estatus", label: "Sin Estatus", color: "#6c757d" },
         { key: "Foto enviada", label: "Foto Enviada", color: "#007bff" },
+        { key: "Esperando anticipo", label: "Esperando Anticipo", color: "#0d9488" },
         { key: "Esperando pago", label: "Esperando Pago", color: "#ffc107" },
         { key: "Pagado", label: "Pagado", color: "#28a745" },
         { key: "Diseñado", label: "Diseñado", color: "#6f42c1" },
