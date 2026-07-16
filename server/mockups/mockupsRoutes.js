@@ -31,6 +31,7 @@ async function savePreview(orderId, image, prompt, meta = {}) {
             fields: meta.fields || {},
             createdAt: new Date().toISOString(),
         };
+        if (meta.secondRefUrl) entry.secondRefUrl = meta.secondRefUrl;   // 2ª referencia usada (diseño/subida)
         const i = previews.findIndex(p => p.blockId === blockId);
         if (i >= 0) previews[i] = entry; else previews.push(entry);
         await ref.set({ orderId: String(orderId), previews }, { merge: true });
@@ -178,8 +179,8 @@ router.get('/templates', asyncHandler(async (req, res) => {
 }));
 
 router.post('/templates', asyncHandler(async (req, res) => {
-    const { nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio } = req.body;
-    const template = await svc.createTemplate({ nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio });
+    const { nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio, designSvg } = req.body;
+    const template = await svc.createTemplate({ nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio, designSvg });
     res.json({ success: true, template });
 }));
 
@@ -200,6 +201,15 @@ router.post('/templates/upload', upload.single('foto'), asyncHandler(async (req,
     res.json({ success: true, ...out });
 }));
 
+// POST /api/mockups/upload-image — Subir una imagen cualquiera y devolver su URL pública.
+// La usa la 2ª referencia del preview: el diseño rasterizado por el navegador (PNG) o una
+// imagen que el operador suba a mano. Debe ser pública (WaveSpeed la descarga por URL).
+router.post('/upload-image', upload.single('file'), asyncHandler(async (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No se envió archivo.' });
+    const out = await svc.uploadPublicImage(req.file.buffer, 'refs');
+    res.json({ success: true, url: out.url, path: out.path });
+}));
+
 // POST /api/mockups/generate-preview — Generar preview desde plantilla + campos
 router.post('/generate-preview', asyncHandler(async (req, res) => {
     const { templateId, fields = {}, provider = 'wavespeed', resolution, quality } = req.body;
@@ -216,26 +226,38 @@ router.post('/generate-preview', asyncHandler(async (req, res) => {
     const extraPrompt = String(req.body.extraPrompt || '').trim();
     if (extraPrompt) prompt += '\n\nInstrucciones adicionales del operador (aplícalas además de lo anterior): ' + extraPrompt;
 
+    // 2ª imagen de referencia (opcional): el DISEÑO a grabar (nombres/fecha/símbolo). Puede venir
+    // generada por código (SVG->PNG) o subida a mano. Debe ser una URL pública. Cuando está
+    // presente, se le indica a la IA que reproduzca ese diseño sobre la lámpara base.
+    const secondImageUrl = String(req.body.secondImageUrl || '').trim();
+    if (secondImageUrl) {
+        prompt += '\n\nSe adjuntan DOS imágenes: (1) la foto de la lámpara base —NO la modifiques (figura, base, acrílico, color, iluminación y fondo intactos)— y (2) el DISEÑO de referencia que debes grabar en la lámpara. Reproduce el diseño (2) EXACTAMENTE: mismas palabras y ortografía, misma tipografía manuscrita, mismo símbolo y misma composición. Intégralo de forma foto-realista sobre la lámpara ajustando solo tamaño, posición y perspectiva; no inventes ni cambies el texto.';
+    }
+
     // Gemini responde en una sola llamada (rápido) -> síncrono.
     if (provider === 'gemini') {
-        const ref = await svc.fetchImageAsBase64(tpl.baseImageUrl);
-        const result = await svc.generateImage(prompt, aspectRatio, [ref], resolution || '2K');
+        const refs = [await svc.fetchImageAsBase64(tpl.baseImageUrl)];
+        if (secondImageUrl) refs.push(await svc.fetchImageAsBase64(secondImageUrl));
+        const result = await svc.generateImage(prompt, aspectRatio, refs, resolution || '2K');
         const saved = await svc.saveToGallery(prompt, aspectRatio, result.images, result.usage, result.cost);
-        await savePreview(req.body.orderId, saved[0], prompt, { blockId: req.body.blockId, templateId, fields });
+        await savePreview(req.body.orderId, saved[0], prompt, { blockId: req.body.blockId, templateId, fields, secondRefUrl: secondImageUrl });
         return res.json({ success: true, image: saved[0], prompt, cost: result.cost });
     }
 
     // WaveSpeed (GPT Image 2) puede tardar >90s -> asíncrono: enviamos la tarea
     // y devolvemos un jobId; el front consulta /generate-status/:jobId.
+    const images = [tpl.baseImageUrl];
+    if (secondImageUrl) images.push(secondImageUrl);
     const wave = require('./wavespeedClient');
-    const { predictionId } = await wave.submitEdit(prompt, [tpl.baseImageUrl], {
+    const { predictionId } = await wave.submitEdit(prompt, images, {
         aspectRatio,
         resolution: resolution || '1k',
         quality: quality || 'high',
     });
     await db.collection('mockup_jobs').doc(predictionId).set({
         prompt, aspectRatio, templateId, orderId: req.body.orderId || null,
-        blockId: req.body.blockId || null, fields: fields || {}, createdAt: new Date().toISOString(),
+        blockId: req.body.blockId || null, fields: fields || {}, secondRefUrl: secondImageUrl || null,
+        createdAt: new Date().toISOString(),
     });
     res.json({ success: true, jobId: predictionId, prompt });
 }));
@@ -266,7 +288,7 @@ router.get('/generate-status/:jobId', asyncHandler(async (req, res) => {
         cost
     );
     try { await db.collection('mockup_jobs').doc(jobId).delete(); } catch (_) { /* ignore */ }
-    await savePreview(job.orderId, saved[0], job.prompt || '', { blockId: job.blockId, templateId: job.templateId, fields: job.fields });
+    await savePreview(job.orderId, saved[0], job.prompt || '', { blockId: job.blockId, templateId: job.templateId, fields: job.fields, secondRefUrl: job.secondRefUrl });
 
     res.json({ success: true, status: 'completed', image: saved[0], cost });
 }));

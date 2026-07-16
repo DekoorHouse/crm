@@ -189,7 +189,7 @@ async function getTemplate(id) {
     return { id: doc.id, ...doc.data() };
 }
 
-async function createTemplate({ nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio }) {
+async function createTemplate({ nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio, designSvg }) {
     const doc = {
         nombre: (nombre || '').toString().trim() || 'Sin nombre',
         baseImagePath: baseImagePath || null,
@@ -197,6 +197,10 @@ async function createTemplate({ nombre, baseImagePath, baseImageUrl, promptTempl
         promptTemplate: (promptTemplate || '').toString(),
         productMatch: Array.isArray(productMatch) ? productMatch : [],
         aspectRatio: aspectRatio || '1:1',
+        // SVG del diseño de referencia (2ª imagen). Usa los mismos placeholders que el
+        // prompt ({nombre1} {nombre2} {fecha}); el frontend lo rellena, lo rasteriza a PNG
+        // y lo sube como 2ª referencia para que la IA grabe ese diseño en la lámpara.
+        designSvg: (designSvg || '').toString(),
         createdAt: new Date().toISOString(),
     };
     const ref = await db.collection(TEMPLATES_COLLECTION).add(doc);
@@ -205,7 +209,7 @@ async function createTemplate({ nombre, baseImagePath, baseImageUrl, promptTempl
 
 async function updateTemplate(id, patch = {}) {
     const allowed = {};
-    for (const k of ['nombre', 'baseImagePath', 'baseImageUrl', 'promptTemplate', 'productMatch', 'aspectRatio']) {
+    for (const k of ['nombre', 'baseImagePath', 'baseImageUrl', 'promptTemplate', 'productMatch', 'aspectRatio', 'designSvg']) {
         if (patch[k] !== undefined) allowed[k] = patch[k];
     }
     await db.collection(TEMPLATES_COLLECTION).doc(id).set(allowed, { merge: true });
@@ -233,6 +237,22 @@ async function uploadTemplateBaseImage(buffer) {
     await file.save(webp, { metadata: { contentType: 'image/webp' }, public: true, resumable: false });
     const baseImageUrl = `https://storage.googleapis.com/${bucket.name}/${baseImagePath}`;
     return { baseImagePath, baseImageUrl };
+}
+
+// Sube una imagen cualquiera (buffer) como webp PÚBLICO y devuelve su URL. La usa la 2ª
+// referencia del preview (diseño generado por código o imagen subida a mano); debe ser
+// pública porque WaveSpeed la descarga por URL del lado servidor (una firmada daría 403).
+async function uploadPublicImage(buffer, subdir = 'refs') {
+    const id = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const webp = await sharp(buffer)
+        .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 90 })
+        .toBuffer();
+    const path = `${STORAGE_DIR}/${subdir}/${id}.webp`;
+    const file = bucket.file(path);
+    await file.save(webp, { metadata: { contentType: 'image/webp' }, public: true, resumable: false });
+    const url = `https://storage.googleapis.com/${bucket.name}/${path}`;
+    return { path, url };
 }
 
 // Reemplaza los placeholders del prompt con los campos del pedido.
@@ -323,5 +343,5 @@ async function ensureJpeg(url) {
 module.exports = {
     generateImage, saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch,
     listTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate,
-    uploadTemplateBaseImage, buildPromptFromTemplate, fetchImageAsBase64, ensureJpeg, parseDatos,
+    uploadTemplateBaseImage, uploadPublicImage, buildPromptFromTemplate, fetchImageAsBase64, ensureJpeg, parseDatos,
 };

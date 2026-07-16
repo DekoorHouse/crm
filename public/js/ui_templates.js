@@ -910,6 +910,14 @@ const MockupsViewTemplate = () => `
             .mk-tpl-thumb{width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--color-border);flex-shrink:0;background:var(--color-subtle-bg)}
             .mk-chip{display:inline-block;background:var(--color-subtle-bg);border:1px solid var(--color-border);border-radius:999px;padding:1px 8px;font-size:.72rem;margin:2px 3px 0 0}
             .mk-muted{color:var(--color-text-light);font-size:.85rem}
+            /* 2ª referencia (diseño a grabar) */
+            .mk-ref2{margin-top:10px}
+            .mk-ref2>label{display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light);margin-bottom:4px;text-transform:uppercase;letter-spacing:.02em}
+            .mk-ref2-row{display:flex;gap:12px;align-items:flex-start}
+            .mk-ref-thumb{width:104px;height:74px;object-fit:contain;border:1px solid var(--color-border);border-radius:8px;background:#000;flex-shrink:0}
+            .mk-ref2-controls{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+            .mk-ref2-check{display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--color-text)}
+            .mk-ref2-btns{display:flex;gap:6px;flex-wrap:wrap}
         </style>
         <div class="view-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
             <div>
@@ -929,6 +937,7 @@ const MockupsViewTemplate = () => `
         <div class="settings-tabs mk-tabs-wrap">
             <button class="settings-tab active" data-mktab="pendientes" onclick="mkSwitchTab('pendientes')"><i class="fas fa-clock mr-2"></i>Pendientes <span id="mk-pending-count" class="mk-count"></span></button>
             <button class="settings-tab" data-mktab="plantillas" onclick="mkSwitchTab('plantillas')"><i class="fas fa-layer-group mr-2"></i>Plantillas</button>
+            <button class="settings-tab" data-mktab="pruebas" onclick="mkSwitchTab('pruebas')"><i class="fas fa-flask mr-2"></i>Pruebas</button>
         </div>
 
         <div id="mk-pane-pendientes">
@@ -941,6 +950,8 @@ const MockupsViewTemplate = () => `
             </div>
             <div id="mk-plantillas"><p class="mk-muted">Cargando plantillas…</p></div>
         </div>
+
+        <div id="mk-pane-pruebas" class="mt-4" style="display:none;"></div>
     </div>
 `;
 

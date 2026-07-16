@@ -16,9 +16,36 @@ const MK_SEED_PROMPT = 'Edita esta foto de la lámpara. NO modifiques la lámpar
 // (sin variables ni header de imagen): avisa "tu foto está lista, respóndenos".
 const MK_CLOSED_TEMPLATE = { name: 'foto_lista', language: 'es' };
 
+// Ruta de la fuente manuscrita "Rows of Sunflowers" (ya vive en el editor). Se usa para
+// rasterizar el diseño de referencia (2ª imagen) con el mismo tipo de letra del producto.
+const MK_DESIGN_FONT_URL = '/editor/fonts/RowsOfSunflowers.ttf';
+const MK_DESIGN_FONT_FAMILY = 'Rows of Sunflowers';
+
+// SVG semilla del DISEÑO de referencia (2ª imagen) para lámparas de infinito/corazón.
+// Texto EDITABLE con los mismos placeholders del prompt ({nombre1} {nombre2} {fecha}); el
+// código los sustituye, rasteriza el SVG a PNG y lo manda como 2ª referencia a la IA. Es un
+// punto de partida: se puede editar el arte del SVG en el editor de plantillas.
+const MK_DESIGN_SEED = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520">
+  <rect x="0" y="0" width="900" height="520" fill="#000000"/>
+  <path d="M 450 250 C 380 160 220 160 180 250 C 220 340 380 340 450 250 C 520 160 680 160 720 250 C 680 340 520 340 450 250 Z" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="312" y="250" fill="#ffffff" font-family="'Rows of Sunflowers'" font-size="66" text-anchor="middle" dominant-baseline="central">{nombre1}</text>
+  <text x="588" y="250" fill="#ffffff" font-family="'Rows of Sunflowers'" font-size="66" text-anchor="middle" dominant-baseline="central">{nombre2}</text>
+  <text x="372" y="300" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="32" letter-spacing="1" text-anchor="middle" dominant-baseline="central">{fecha}</text>
+  <g fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round">
+    <path transform="translate(566,306) scale(1.35)" d="M12 21 C12 21 3 14.5 3 8.5 C3 5.4 5.4 3 8.5 3 C10.4 3 12 4.7 12 4.7 C12 4.7 13.6 3 15.5 3 C18.6 3 21 5.4 21 8.5 C21 14.5 12 21 12 21 Z"/>
+    <path transform="translate(614,306) scale(1.35)" d="M12 21 C12 21 3 14.5 3 8.5 C3 5.4 5.4 3 8.5 3 C10.4 3 12 4.7 12 4.7 C12 4.7 13.6 3 15.5 3 C18.6 3 21 5.4 21 8.5 C21 14.5 12 21 12 21 Z"/>
+    <path transform="translate(662,306) scale(1.35)" d="M12 21 C12 21 3 14.5 3 8.5 C3 5.4 5.4 3 8.5 3 C10.4 3 12 4.7 12 4.7 C12 4.7 13.6 3 15.5 3 C18.6 3 21 5.4 21 8.5 C21 14.5 12 21 12 21 Z"/>
+  </g>
+</svg>`;
+
 // results: URL de preview por blockId (en sesión). paymentSent/noticeSent: dedupe de
 // envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {} };
+// refFiles: 2ª referencia subida a mano por bloque (blockId -> File). pruebas: estado del
+// banco de pruebas (pestaña "Pruebas").
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null } };
+
+// Cache (promesa) del data-URI de la fuente manuscrita, para embeberla en el SVG al rasterizar.
+let mkFontDataUrlPromise = null;
 
 // ---------- utilidades ----------
 function mkEsc(s) { const d = document.createElement('div'); d.textContent = (s == null ? '' : String(s)); return d.innerHTML; }
@@ -129,11 +156,13 @@ async function initializeMockupsHandlers() {
 function mkSwitchTab(tab) {
     mkState.tab = tab;
     document.querySelectorAll('[data-mktab]').forEach(b => b.classList.toggle('active', b.dataset.mktab === tab));
-    const p1 = document.getElementById('mk-pane-pendientes');
-    const p2 = document.getElementById('mk-pane-plantillas');
-    if (p1) p1.style.display = tab === 'pendientes' ? '' : 'none';
-    if (p2) p2.style.display = tab === 'plantillas' ? '' : 'none';
+    const panes = { pendientes: 'mk-pane-pendientes', plantillas: 'mk-pane-plantillas', pruebas: 'mk-pane-pruebas' };
+    for (const [t, id] of Object.entries(panes)) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = tab === t ? '' : 'none';
+    }
     if (tab === 'plantillas') mkRenderTemplates();
+    if (tab === 'pruebas') mkRenderPruebas();
 }
 
 // Toggle de auto-generación (scheduler del backend).
@@ -341,6 +370,7 @@ function mkBlockHtml(order, block, n) {
                     </select></div>
                 </div>
                 <div class="mk-fields mk-inputs" style="margin-top:8px;">${mkFieldsHtml(mkTemplateFieldDefs(tplId), block.values)}</div>
+                ${mkRef2Html(block.id, !!(mkGetTemplate(tplId) && mkGetTemplate(tplId).designSvg))}
                 <div class="mk-extra-wrap" style="margin-top:10px;">
                     <label>Detalles adicionales (opcional)</label>
                     <textarea class="mk-extra" rows="2" placeholder="Instrucciones extra para la IA además de la plantilla: ej. agrégale un moño rojo, fondo más oscuro, la letra más grande…">${mkEsc(block.extra || '')}</textarea>
@@ -371,13 +401,20 @@ function mkRemoveBlock(blockId) {
     delete mkState.results[blockId];
 }
 
-// Al cambiar la plantilla de un bloque, re-render de sus campos (conservando lo escrito por clave).
+// Al cambiar la plantilla de un bloque, re-render de sus campos (conservando lo escrito por clave)
+// y del panel de 2ª referencia (según la nueva plantilla tenga diseño o no).
 function mkOnBlockTemplateChange(blockId) {
     const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
     if (!block) return;
     const cur = {};
     block.querySelectorAll('.mk-fld').forEach(i => { cur[i.dataset.key] = i.value; });
-    block.querySelector('.mk-fields').innerHTML = mkFieldsHtml(mkTemplateFieldDefs(block.querySelector('.mk-tpl').value), cur);
+    const tplId = block.querySelector('.mk-tpl').value;
+    block.querySelector('.mk-fields').innerHTML = mkFieldsHtml(mkTemplateFieldDefs(tplId), cur);
+    const ref2 = block.querySelector('.mk-ref2');
+    if (ref2) {
+        ref2.outerHTML = mkRef2Html(blockId, !!(mkGetTemplate(tplId) && mkGetTemplate(tplId).designSvg));
+        mkRestoreRefThumb(blockId);   // conserva la miniatura de una imagen ya subida
+    }
 }
 
 function mkResultHtml(orderId, blockId, imgUrl) {
@@ -413,19 +450,15 @@ async function mkGenerate(orderId, blockId) {
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generando…'; }
     const setBox = (msg) => { if (box) box.innerHTML = `<div class="mk-spin"></div><div class="mk-result-empty">${mkEsc(msg)}</div>`; };
     const setProgress = (pct) => { if (box) box.innerHTML = `<div class="mk-progress"><div class="mk-progress-bar"><div class="mk-progress-fill" style="width:${pct}%"></div></div><div class="mk-result-empty">Generando… ${pct}%</div></div>`; };
-    setBox('Enviando a la IA…');
 
     try {
-        const data = await mkFetchJson('/api/mockups/generate-preview', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ templateId, provider, fields, extraPrompt, orderId, blockId }),
-        });
+        // 2ª referencia (diseño generado por código o imagen subida): se resuelve y sube ANTES
+        // de llamar a la IA para obtener su URL pública.
+        setBox('Preparando diseño…');
+        const secondImageUrl = await mkResolveSecondRef(block, templateId, fields);
 
-        let url;
-        if (data.image) url = data.image.fullUrl || data.image.thumbUrl;   // Gemini (síncrono)
-        else if (data.jobId) url = await mkPollJob(data.jobId, setProgress); // WaveSpeed (asíncrono)
-        if (!url) throw new Error('No se recibió la imagen generada.');
+        setBox('Enviando a la IA…');
+        const url = await mkRunGeneration({ templateId, provider, fields, extraPrompt, orderId, blockId, secondImageUrl }, setProgress);
 
         mkState.results[blockId] = url;
         if (box) box.innerHTML = mkResultHtml(orderId, blockId, url);
@@ -435,6 +468,23 @@ async function mkGenerate(orderId, blockId) {
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-wand-magic-sparkles mr-2"></i>Generar preview'; }
     }
+}
+
+// Llamada de red compartida (Pendientes y Pruebas): POST /generate-preview y espera la imagen
+// (Gemini síncrono o WaveSpeed asíncrono con polling). Devuelve la URL o lanza error.
+async function mkRunGeneration(payload, setProgress) {
+    const body = Object.assign({}, payload);
+    if (!body.secondImageUrl) delete body.secondImageUrl;
+    const data = await mkFetchJson('/api/mockups/generate-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    let url;
+    if (data.image) url = data.image.fullUrl || data.image.thumbUrl;   // Gemini (síncrono)
+    else if (data.jobId) url = await mkPollJob(data.jobId, setProgress); // WaveSpeed (asíncrono)
+    if (!url) throw new Error('No se recibió la imagen generada.');
+    return url;
 }
 
 // Polling del preview asíncrono (WaveSpeed). Devuelve la URL o lanza error.
@@ -566,6 +616,355 @@ async function mkAfterSend(orderId, telefono, photoSent) {
     }
 }
 
+// ===================================================================
+// 2ª REFERENCIA (DISEÑO): SVG editable -> PNG -> URL pública
+// -------------------------------------------------------------------
+// El diseño (nombres/fecha/símbolo) vive como SVG con placeholders en la
+// plantilla; el navegador lo rellena con los datos del pedido, lo rasteriza
+// con la fuente manuscrita EMBEBIDA y lo sube como 2ª imagen de referencia
+// para que la IA lo grabe en la lámpara base.
+// ===================================================================
+function mkGetTemplate(id) { return mkState.templates.find(t => t.id === id) || null; }
+
+// XML-escape para meter valores dentro del <text> del SVG sin romperlo.
+function mkXmlEsc(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+// Sustituye {clave} en el SVG por los valores (XML-escapados). Los placeholders
+// sin valor se vacían para no dejar "{fecha}" a la vista.
+function mkFillDesignSvg(svg, fields = {}) {
+    let out = String(svg || '');
+    for (const [k, v] of Object.entries(fields)) {
+        const esc = mkXmlEsc(v);
+        // Reemplazo por FUNCIÓN: si se pasa como string, los `$` del valor ($&, $1, $$…) se
+        // interpretarían como patrones de reemplazo y corromperían el texto (ej. "$&").
+        out = out.replace(new RegExp('\\{' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\}', 'g'), () => esc);
+    }
+    return out.replace(/\{[a-zA-Z0-9_]+\}/g, '');
+}
+
+// Descarga la fuente una sola vez y la deja como data-URI base64 (para embeberla en el SVG,
+// requisito para que la tipografía se vea al rasterizar el SVG dentro de un <canvas>).
+function mkFontDataUrl() {
+    if (!mkFontDataUrlPromise) {
+        mkFontDataUrlPromise = fetch(MK_API + MK_DESIGN_FONT_URL)
+            .then(r => { if (!r.ok) throw new Error('No se pudo cargar la fuente del diseño.'); return r.arrayBuffer(); })
+            .then(buf => {
+                let bin = '';
+                const bytes = new Uint8Array(buf);
+                for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+                return 'data:font/ttf;base64,' + btoa(bin);
+            })
+            .catch(e => { mkFontDataUrlPromise = null; throw e; });   // permite reintentar
+    }
+    return mkFontDataUrlPromise;
+}
+
+// SVG final: rellena textos + embebe la fuente como @font-face + garantiza xmlns.
+async function mkBuildDesignSvg(svg, fields) {
+    let filled = mkFillDesignSvg(svg, fields).trim();
+    if (!/xmlns=/.test(filled)) filled = filled.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+    const fontUrl = await mkFontDataUrl();
+    const style = `<defs><style>@font-face{font-family:'${MK_DESIGN_FONT_FAMILY}';src:url(${fontUrl}) format('truetype');}</style></defs>`;
+    return filled.replace(/(<svg\b[^>]*>)/, '$1' + style);   // <defs> justo tras la etiqueta <svg ...>
+}
+
+// width/height del viewBox del SVG, escalados a targetW (para el tamaño del canvas).
+function mkSvgDims(svg, targetW = 1024) {
+    const m = String(svg).match(/viewBox\s*=\s*"\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)/);
+    let w = 1024, h = 1024;
+    if (m) { const vw = parseFloat(m[1]), vh = parseFloat(m[2]); if (vw > 0 && vh > 0) { w = vw; h = vh; } }
+    const scale = targetW / w;
+    return { w: Math.round(w * scale), h: Math.round(h * scale) };
+}
+
+// Rasteriza el SVG (con la fuente) a un canvas -> { blob, dataUrl } (PNG).
+async function mkRasterizeDesign(svg, fields) {
+    const full = await mkBuildDesignSvg(svg, fields);
+    const dims = mkSvgDims(full, 1024);
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(full);
+    await (img.decode ? img.decode() : new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('No se pudo renderizar el diseño.')); }));
+    const canvas = document.createElement('canvas');
+    canvas.width = dims.w; canvas.height = dims.h;
+    canvas.getContext('2d').drawImage(img, 0, 0, dims.w, dims.h);
+    const dataUrl = canvas.toDataURL('image/png');
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+    if (!blob) throw new Error('No se pudo exportar el diseño a imagen.');
+    return { blob, dataUrl };
+}
+
+async function mkDesignDataUrl(svg, fields) { return (await mkRasterizeDesign(svg, fields)).dataUrl; }
+
+// Sube una imagen (File/Blob) y devuelve su URL pública (para usarla como 2ª referencia).
+async function mkUploadRefImage(fileOrBlob, filename) {
+    const fd = new FormData();
+    fd.append('file', fileOrBlob, filename || 'ref.png');
+    const up = await mkFetchJson('/api/mockups/upload-image', { method: 'POST', body: fd });
+    return up.url;
+}
+
+// Lee los campos (nombre1/nombre2/fecha…) de un contenedor (bloque o pane de pruebas).
+function mkReadFields(scope) {
+    const fields = {};
+    scope.querySelectorAll('.mk-fld').forEach(i => {
+        let v = i.value.trim();
+        if (/nombre/i.test(i.dataset.key)) v = mkTitleCase(v);
+        fields[i.dataset.key] = v;
+    });
+    return fields;
+}
+
+// Resuelve la 2ª referencia de un bloque: prioriza una imagen subida a mano; si no, el diseño
+// de la plantilla (rasterizado con los campos actuales) cuando está activado. '' si no aplica.
+async function mkResolveSecondRef(block, templateId, fields) {
+    const blockId = block.dataset.block;
+    const file = mkState.refFiles[blockId];
+    if (file) return await mkUploadRefImage(file, 'ref-upload.png');
+    const tpl = mkGetTemplate(templateId);
+    const useDesign = block.querySelector('.mk-usedesign');
+    if (tpl && tpl.designSvg && (!useDesign || useDesign.checked)) {
+        const { blob } = await mkRasterizeDesign(tpl.designSvg, fields);
+        return await mkUploadRefImage(blob, 'design.png');
+    }
+    return '';
+}
+
+// Panel de "2ª referencia" dentro de un bloque de preview. Los controles de "diseño" (casilla
+// + Ver diseño) solo aparecen si la plantilla seleccionada tiene un designSvg; la subida manual
+// está siempre disponible. Se re-renderiza al cambiar de plantilla (mkOnBlockTemplateChange).
+function mkRef2Html(blockId, hasDesign) {
+    const b = mkAttr(blockId);
+    const uploadLabel = hasDesign ? 'Subir otra' : 'Subir imagen';
+    const uploadBtns = `
+                    <div class="mk-ref2-btns">
+                        ${hasDesign ? `<button type="button" class="btn btn-outline btn-sm" onclick="mkPreviewDesign('${b}')"><i class="fas fa-eye mr-1"></i>Ver diseño</button>` : ''}
+                        <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-upload mr-1"></i>${uploadLabel}<input type="file" class="mk-ref-file" accept="image/*" style="display:none;" onchange="mkOnRefFile(event,'${b}')"></label>
+                        <button type="button" class="btn btn-outline btn-sm" id="mk-ref-clear-${b}" style="display:none;" onclick="mkClearRef('${b}')"><i class="fas fa-times mr-1"></i>Quitar</button>
+                    </div>`;
+    const controls = hasDesign
+        ? `<label class="mk-ref2-check"><input type="checkbox" class="mk-usedesign" checked> Usar el diseño de la plantilla</label>${uploadBtns}<small class="mk-muted">Se manda junto a la foto base para que la IA grabe ese diseño. Si subes una imagen, se usa esa.</small>`
+        : `${uploadBtns}<small class="mk-muted">Opcional: sube una imagen para usarla como 2ª referencia (esta plantilla no tiene diseño).</small>`;
+    return `
+        <div class="mk-ref2">
+            <label>2ª referencia · diseño a grabar (opcional)</label>
+            <div class="mk-ref2-row">
+                <img class="mk-ref-thumb" id="mk-ref-thumb-${b}" alt="" style="display:none;">
+                <div class="mk-ref2-controls">${controls}
+                </div>
+            </div>
+        </div>`;
+}
+
+// Restaura la miniatura + botón "Quitar" de una imagen subida a un bloque tras un re-render.
+function mkRestoreRefThumb(blockId) {
+    const f = mkState.refFiles[blockId];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = e => mkSetRefThumb(blockId, e.target.result);
+    reader.readAsDataURL(f);
+    const clr = document.getElementById('mk-ref-clear-' + blockId);
+    if (clr) clr.style.display = '';
+}
+
+function mkSetRefThumb(blockId, src) {
+    const img = document.getElementById('mk-ref-thumb-' + blockId);
+    if (!img) return;
+    if (src) { img.src = src; img.style.display = ''; } else { img.removeAttribute('src'); img.style.display = 'none'; }
+}
+
+// "Ver diseño": rasteriza el diseño de la plantilla con los valores actuales y lo muestra.
+async function mkPreviewDesign(blockId) {
+    const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
+    if (!block) return;
+    const tpl = mkGetTemplate(block.querySelector('.mk-tpl').value);
+    if (!tpl || !tpl.designSvg) { mkToast('Esta plantilla no tiene diseño de referencia. Agrégalo en Plantillas.', 'error'); return; }
+    try { mkSetRefThumb(blockId, await mkDesignDataUrl(tpl.designSvg, mkReadFields(block))); }
+    catch (e) { mkToast('No se pudo generar el diseño: ' + e.message, 'error'); }
+}
+
+function mkOnRefFile(ev, blockId) {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if (!file.type || !file.type.startsWith('image/')) { mkToast('Solo se aceptan imágenes.', 'error'); return; }
+    mkState.refFiles[blockId] = file;
+    const reader = new FileReader();
+    reader.onload = e => mkSetRefThumb(blockId, e.target.result);
+    reader.readAsDataURL(file);
+    const clr = document.getElementById('mk-ref-clear-' + blockId);
+    if (clr) clr.style.display = '';
+}
+
+function mkClearRef(blockId) {
+    delete mkState.refFiles[blockId];
+    mkSetRefThumb(blockId, '');
+    const clr = document.getElementById('mk-ref-clear-' + blockId);
+    if (clr) clr.style.display = 'none';
+    const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
+    const inp = block && block.querySelector('.mk-ref-file');
+    if (inp) inp.value = '';
+}
+
+// ---------- pestaña "Pruebas" (banco de mockup, sin pedido) ----------
+function mkRenderPruebas() {
+    const cont = document.getElementById('mk-pane-pruebas');
+    if (!cont) return;
+    if (!mkState.templates.length) {
+        cont.innerHTML = '<div class="settings-card"><p class="mk-muted">Crea primero una plantilla (pestaña <b>Plantillas</b>) para poder probar.</p></div>';
+        return;
+    }
+    const P = mkState.pruebas;
+    const tplId = (P.templateId && mkGetTemplate(P.templateId)) ? P.templateId : mkState.templates[0].id;
+    P.templateId = tplId;
+    const tpl = mkGetTemplate(tplId);
+    cont.innerHTML = `
+    <div class="settings-card">
+        <h2 class="text-xl font-bold mb-1">Banco de pruebas</h2>
+        <p class="mk-muted" style="margin-bottom:14px;">Genera un mockup libre (sin pedido). Ajusta el diseño y el prompt hasta que quede; <b>nada se envía al cliente</b>.</p>
+        <div class="mk-block-body">
+            <div>
+                <div class="mk-inputs">
+                    <div><label>Plantilla</label><select id="mk-pr-tpl" onchange="mkPruebasTplChange()">${mkTemplateOptionsSel(tplId)}</select></div>
+                    <div><label>Modelo</label><select id="mk-pr-provider">
+                        <option value="wavespeed"${P.provider === 'wavespeed' ? ' selected' : ''}>GPT Image 2 (WaveSpeed)</option>
+                        <option value="gemini"${P.provider === 'gemini' ? ' selected' : ''}>Nano Banana (Gemini)</option>
+                    </select></div>
+                </div>
+                <div class="mk-fields mk-inputs" id="mk-pr-fields" style="margin-top:8px;">${mkFieldsHtml(mkTemplateFieldDefs(tplId), P.values)}</div>
+                <div class="mk-ref2" style="margin-top:12px;">
+                    <label>Diseño (2ª referencia)</label>
+                    <div class="mk-ref2-row">
+                        <img class="mk-ref-thumb" id="mk-pr-design" alt="" style="display:none;">
+                        <div class="mk-ref2-controls">
+                            <div class="mk-ref2-btns">
+                                <button type="button" class="btn btn-outline btn-sm" onclick="mkPruebasPreviewDesign()"><i class="fas fa-eye mr-1"></i>Ver diseño</button>
+                                <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;"><i class="fas fa-upload mr-1"></i>Subir imagen<input type="file" id="mk-pr-file" accept="image/*" style="display:none;" onchange="mkPruebasOnFile(event)"></label>
+                                <button type="button" class="btn btn-outline btn-sm" id="mk-pr-clear" style="display:none;" onclick="mkPruebasClear()"><i class="fas fa-times mr-1"></i>Quitar</button>
+                            </div>
+                            <small class="mk-muted">${tpl && tpl.designSvg ? 'Esta plantilla tiene diseño. Míralo o sube uno propio.' : 'Esta plantilla no tiene diseño; sube una imagen para usarla como 2ª referencia.'}</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="mk-extra-wrap" style="margin-top:10px;">
+                    <label>Detalles adicionales (opcional)</label>
+                    <textarea id="mk-pr-extra" class="mk-extra" rows="2" placeholder="Instrucciones extra para la IA…">${mkEsc(P.extra || '')}</textarea>
+                </div>
+                <div style="margin-top:12px;">
+                    <button class="btn btn-primary btn-sm" id="mk-pr-gen" onclick="mkPruebasGenerate()"><i class="fas fa-wand-magic-sparkles mr-2"></i>Generar mockup</button>
+                </div>
+            </div>
+            <div class="mk-result" id="mk-pr-result">
+                ${P.resultUrl ? mkPruebasResultHtml(P.resultUrl) : '<div class="mk-result-empty">El mockup aparecerá aquí</div>'}
+            </div>
+        </div>
+    </div>`;
+    // Si había una imagen subida como 2ª referencia, restaura su miniatura + botón "Quitar" tras
+    // el re-render (si no, el archivo quedaría activo sin verse y anularía el diseño en silencio).
+    if (P.refFile) {
+        const clr = document.getElementById('mk-pr-clear'); if (clr) clr.style.display = '';
+        const reader = new FileReader();
+        reader.onload = e => { const img = document.getElementById('mk-pr-design'); if (img) { img.src = e.target.result; img.style.display = ''; } };
+        reader.readAsDataURL(P.refFile);
+    }
+}
+
+// Guarda lo escrito (campos/modelo/extra) antes de un re-render de la pestaña.
+function mkPruebasCapture() {
+    const P = mkState.pruebas;
+    const v = {};
+    document.querySelectorAll('#mk-pr-fields .mk-fld').forEach(i => { v[i.dataset.key] = i.value; });
+    P.values = v;
+    const prov = document.getElementById('mk-pr-provider'); if (prov) P.provider = prov.value;
+    const ex = document.getElementById('mk-pr-extra'); if (ex) P.extra = ex.value;
+}
+
+function mkPruebasTplChange() {
+    mkPruebasCapture();
+    mkState.pruebas.templateId = document.getElementById('mk-pr-tpl').value;
+    mkRenderPruebas();
+}
+
+async function mkPruebasPreviewDesign() {
+    const tpl = mkGetTemplate(document.getElementById('mk-pr-tpl').value);
+    if (!tpl || !tpl.designSvg) { mkToast('Esta plantilla no tiene diseño de referencia.', 'error'); return; }
+    const img = document.getElementById('mk-pr-design');
+    try { const url = await mkDesignDataUrl(tpl.designSvg, mkReadFields(document.getElementById('mk-pr-fields'))); if (img) { img.src = url; img.style.display = ''; } }
+    catch (e) { mkToast('No se pudo generar el diseño: ' + e.message, 'error'); }
+}
+
+function mkPruebasOnFile(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if (!file.type || !file.type.startsWith('image/')) { mkToast('Solo se aceptan imágenes.', 'error'); return; }
+    mkState.pruebas.refFile = file;
+    const reader = new FileReader();
+    reader.onload = e => { const img = document.getElementById('mk-pr-design'); if (img) { img.src = e.target.result; img.style.display = ''; } };
+    reader.readAsDataURL(file);
+    const clr = document.getElementById('mk-pr-clear'); if (clr) clr.style.display = '';
+}
+
+function mkPruebasClear() {
+    mkState.pruebas.refFile = null;
+    const img = document.getElementById('mk-pr-design'); if (img) { img.removeAttribute('src'); img.style.display = 'none'; }
+    const clr = document.getElementById('mk-pr-clear'); if (clr) clr.style.display = 'none';
+    const inp = document.getElementById('mk-pr-file'); if (inp) inp.value = '';
+}
+
+function mkPruebasResultHtml(url) {
+    return `
+        <img src="${mkAttr(url)}" alt="Mockup">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+            <a class="btn btn-outline btn-sm" href="${mkAttr(url)}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt mr-2"></i>Abrir</a>
+            <button class="btn btn-secondary btn-sm" onclick="mkPruebasGenerate()"><i class="fas fa-redo mr-2"></i>Regenerar</button>
+        </div>`;
+}
+
+async function mkPruebasGenerate() {
+    const tplId = document.getElementById('mk-pr-tpl').value;
+    const provider = document.getElementById('mk-pr-provider').value;
+    const P = mkState.pruebas;
+    P.templateId = tplId; P.provider = provider;
+    if (!tplId) { mkToast('Selecciona una plantilla.', 'error'); return; }
+
+    const scope = document.getElementById('mk-pr-fields');
+    const fields = {};
+    scope.querySelectorAll('.mk-fld').forEach(i => { let v = i.value.trim(); if (/nombre/i.test(i.dataset.key)) { v = mkTitleCase(v); i.value = v; } fields[i.dataset.key] = v; });
+    P.values = Object.assign({}, fields);
+    const extraPrompt = (document.getElementById('mk-pr-extra')?.value || '').trim();
+    P.extra = extraPrompt;
+
+    const box = document.getElementById('mk-pr-result');
+    const btn = document.getElementById('mk-pr-gen');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generando…'; }
+    const setBox = (msg) => { if (box) box.innerHTML = `<div class="mk-spin"></div><div class="mk-result-empty">${mkEsc(msg)}</div>`; };
+    const setProgress = (pct) => { if (box) box.innerHTML = `<div class="mk-progress"><div class="mk-progress-bar"><div class="mk-progress-fill" style="width:${pct}%"></div></div><div class="mk-result-empty">Generando… ${pct}%</div></div>`; };
+
+    try {
+        setBox('Preparando diseño…');
+        let secondImageUrl = '';
+        if (P.refFile) {
+            secondImageUrl = await mkUploadRefImage(P.refFile, 'ref-upload.png');
+        } else {
+            const tpl = mkGetTemplate(tplId);
+            if (tpl && tpl.designSvg) { const { blob } = await mkRasterizeDesign(tpl.designSvg, fields); secondImageUrl = await mkUploadRefImage(blob, 'design.png'); }
+        }
+
+        setBox('Enviando a la IA…');
+        const url = await mkRunGeneration({ templateId: tplId, provider, fields, extraPrompt, orderId: null, blockId: 'prueba', secondImageUrl }, setProgress);
+        P.resultUrl = url;
+        if (box) box.innerHTML = mkPruebasResultHtml(url);
+    } catch (e) {
+        if (box) box.innerHTML = `<div class="mk-result-empty" style="color:#dc2626;">${mkEsc(e.message)}</div>`;
+        mkToast('Error al generar: ' + e.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-wand-magic-sparkles mr-2"></i>Generar mockup'; }
+    }
+}
+
 // ---------- plantillas (CRUD / UI) ----------
 function mkRenderTemplates() {
     const cont = document.getElementById('mk-plantillas');
@@ -595,7 +994,10 @@ function mkRenderTemplates() {
 }
 
 function mkNewTemplate() {
-    mkState.editing = { id: null, nombre: '', baseImageUrl: '', baseImagePath: '', promptTemplate: MK_SEED_PROMPT, productMatch: [], aspectRatio: '1:1' };
+    // designSvg vacío por defecto: solo las lámparas de infinito/corazón llevan diseño de
+    // referencia. El operador lo agrega con el botón "Usar ejemplo" (o pegando su propio SVG),
+    // así una plantilla de nube u otra NO arrastra el diseño de infinito por accidente.
+    mkState.editing = { id: null, nombre: '', baseImageUrl: '', baseImagePath: '', promptTemplate: MK_SEED_PROMPT, productMatch: [], aspectRatio: '1:1', designSvg: '' };
     mkState.newFile = null;
     mkSwitchTab('plantillas');
     mkRenderTemplateForm();
@@ -640,6 +1042,17 @@ function mkRenderTemplateForm() {
                     <div style="margin-top:10px;"><label class="text-xs font-semibold text-gray-500">Coincide con productos (separados por coma)</label>
                         <input id="mk-tpl-match" value="${mkAttr((t.productMatch || []).join(', '))}" placeholder="infinito, corazones, lampara 3d" class="!mb-0">
                     </div>
+                    <div style="margin-top:12px;">
+                        <label class="text-xs font-semibold text-gray-500">Diseño de referencia · SVG (opcional) — usa {nombre1} {nombre2} {fecha}</label>
+                        <div style="display:grid;grid-template-columns:1fr 200px;gap:12px;align-items:start;">
+                            <textarea id="mk-tpl-design" rows="6" class="!mb-0" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;" placeholder="Pega aquí el SVG del diseño (infinito, nombres, fecha, corazones)…" oninput="mkDesignFormPreview()">${mkEsc(t.designSvg || '')}</textarea>
+                            <div style="text-align:center;">
+                                <img id="mk-tpl-design-preview" style="width:100%;max-width:200px;border:1px solid var(--color-border);border-radius:8px;background:#000;display:block;min-height:70px;" alt="">
+                                <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="mkUseDesignSeed()"><i class="fas fa-infinity mr-1"></i>Usar ejemplo</button>
+                            </div>
+                        </div>
+                        <p class="mk-muted" style="margin-top:4px;">Vista previa con nombres de muestra. Al generar, se rellena con los datos del pedido, se rasteriza a PNG y se manda como 2ª referencia.</p>
+                    </div>
                     <div id="mk-tpl-error" class="text-sm mt-2" style="color:#dc2626;"></div>
                     <div style="display:flex;gap:8px;margin-top:14px;">
                         <button id="mk-tpl-save" class="btn btn-primary btn-sm" onclick="mkSaveTemplate()"><i class="fas fa-save mr-2"></i>Guardar</button>
@@ -649,6 +1062,26 @@ function mkRenderTemplateForm() {
             </div>
         </div>`;
     mkUpdateAspectPreview();
+    mkDesignFormPreview();
+}
+
+// Vista previa (debounced) del diseño SVG del editor de plantillas, con nombres de muestra.
+function mkDesignFormPreview() {
+    const ta = document.getElementById('mk-tpl-design');
+    const img = document.getElementById('mk-tpl-design-preview');
+    if (!ta || !img) return;
+    const svg = ta.value.trim();
+    if (!svg) { img.removeAttribute('src'); return; }
+    clearTimeout(mkDesignFormPreview._t);
+    mkDesignFormPreview._t = setTimeout(async () => {
+        try { img.src = await mkDesignDataUrl(svg, { nombre1: 'Brenda', nombre: 'Brenda', nombre2: 'Oscar', fecha: '18-10-2025' }); }
+        catch (e) { /* SVG a medio escribir: no molestar */ }
+    }, 400);
+}
+
+function mkUseDesignSeed() {
+    const ta = document.getElementById('mk-tpl-design');
+    if (ta) { ta.value = MK_DESIGN_SEED; mkDesignFormPreview(); }
 }
 
 // Ajusta la forma de la miniatura de la foto base al aspecto elegido (para previsualizar el encuadre).
@@ -721,6 +1154,7 @@ async function mkSaveTemplate() {
     const promptTemplate = document.getElementById('mk-tpl-prompt').value.trim();
     const aspectRatio = document.getElementById('mk-tpl-aspect').value;
     const productMatch = document.getElementById('mk-tpl-match').value.split(',').map(s => s.trim()).filter(Boolean);
+    const designSvg = (document.getElementById('mk-tpl-design')?.value || '').trim();
     if (!nombre) return setErr('Ponle un nombre a la plantilla.');
     if (!promptTemplate) return setErr('El prompt no puede estar vacío.');
     if (!t.id && !mkState.newFile) return setErr('Sube la foto base de la lámpara.');
@@ -737,7 +1171,7 @@ async function mkSaveTemplate() {
             baseImagePath = up.baseImagePath;
             baseImageUrl = up.baseImageUrl;
         }
-        const payload = { nombre, promptTemplate, aspectRatio, productMatch, baseImagePath, baseImageUrl };
+        const payload = { nombre, promptTemplate, aspectRatio, productMatch, baseImagePath, baseImageUrl, designSvg };
         if (t.id) await mkFetchJson('/api/mockups/templates/' + t.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         else await mkFetchJson('/api/mockups/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
 
