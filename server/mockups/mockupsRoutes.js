@@ -179,8 +179,8 @@ router.get('/templates', asyncHandler(async (req, res) => {
 }));
 
 router.post('/templates', asyncHandler(async (req, res) => {
-    const { nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio, designSvg } = req.body;
-    const template = await svc.createTemplate({ nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio, designSvg });
+    const { nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio, designSvg, designId } = req.body;
+    const template = await svc.createTemplate({ nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio, designSvg, designId });
     res.json({ success: true, template });
 }));
 

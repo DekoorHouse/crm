@@ -42,7 +42,7 @@ const MK_DESIGN_SEED = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
 // envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
 // refFiles: 2ª referencia subida a mano por bloque (blockId -> File). pruebas: estado del
 // banco de pruebas (pestaña "Pruebas").
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, lzPickByTemplate: {}, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, lzPickByTemplate: {}, lzHydrated: {}, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
 
 // Cache (promesa) del data-URI de la fuente manuscrita, para embeberla en el SVG al rasterizar.
 let mkFontDataUrlPromise = null;
@@ -329,6 +329,23 @@ function mkRenderPending() {
             <button class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="mkAddBlock('${mkAttr(o.id)}')"><i class="fas fa-plus mr-2"></i>Otro preview</button>
         </div>`;
     }).join('');
+    mkAutoGenRefThumbs();   // genera en 2º plano la miniatura de referencia de los bloques con diseño pre-seleccionado
+}
+
+// Genera (en segundo plano, de a uno) la imagen de referencia de cada bloque que ya tiene un
+// diseño del lienzo pre-seleccionado y aún no muestra miniatura, para que el operador la vea
+// sin tener que elegir/generar a mano.
+async function mkAutoGenRefThumbs() {
+    const picks = [...document.querySelectorAll('.mk-block .mk-lz-pick')];
+    for (const pick of picks) {
+        if (!pick.value) continue;
+        const block = pick.closest('.mk-block');
+        const blockId = block && block.dataset.block;
+        if (!blockId || mkState.refFiles[blockId]) continue;                 // hay imagen subida a mano
+        const thumb = document.getElementById('mk-ref-thumb-' + blockId);
+        if (thumb && thumb.getAttribute('src')) continue;                    // ya tiene miniatura
+        try { await mkGenRef2(blockId); } catch (_) { /* best-effort, no bloquea */ }
+    }
 }
 
 // Mapea el texto parseado a los posibles campos (según cómo se llamen en la plantilla).
@@ -785,8 +802,10 @@ function mkLzFillItemsWithFields(items, fields) {
 async function mkRasterizeLzDesignBlob(designId, fields) {
     const d = (mkLzState().designs || []).find(x => x.id === designId);
     if (!d) throw new Error('El diseño del lienzo no está disponible.');
-    let items = await mkLzHydrateItems(d.items || []);   // imágenes remotas -> data URI
-    items = mkLzFillItemsWithFields(items, fields);       // textos -> datos del pedido
+    // Hidratar (imágenes remotas -> data URI) UNA vez por diseño y cachearlo: varios bloques
+    // usan el mismo diseño y no queremos re-descargar sus imágenes cada vez.
+    if (!mkState.lzHydrated[designId]) mkState.lzHydrated[designId] = await mkLzHydrateItems(d.items || []);
+    let items = mkLzFillItemsWithFields(mkState.lzHydrated[designId], fields);   // textos -> datos del pedido
     await mkEnsureDesignFontLoaded();                     // measureText con métricas correctas
     mkLzComputeSizes(items);                              // aplica los límites al texto nuevo
     return await mkLzRasterizeItems(items);
@@ -820,7 +839,10 @@ async function mkResolveSecondRef(block, templateId, fields) {
 function mkRef2Html(blockId, hasDesign, tplId) {
     const b = mkAttr(blockId);
     const designs = mkLzState().designs || [];
-    const pickedId = (mkState.lzPickByTemplate && mkState.lzPickByTemplate[tplId]) || '';
+    const tpl = mkGetTemplate(tplId);
+    // Diseño pre-seleccionado: lo elegido en esta sesión gana; si no, el guardado en la plantilla.
+    const sess = mkState.lzPickByTemplate;
+    const pickedId = (sess && Object.prototype.hasOwnProperty.call(sess, tplId)) ? (sess[tplId] || '') : ((tpl && tpl.designId) || '');
     const uploadLabel = (hasDesign || designs.length) ? 'Subir otra' : 'Subir imagen';
     const canGen = designs.length || hasDesign;   // ¿hay una fuente para generar la referencia?
     // Selector de DISEÑO DEL LIENZO (diseños guardados): se rellena con los datos del pedido.
@@ -862,7 +884,16 @@ function mkOnPickLzDesign(blockId, designId) {
     const block = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
     if (!block) return;
     const tplSel = block.querySelector('.mk-tpl');
-    if (tplSel) mkState.lzPickByTemplate[tplSel.value] = designId;
+    const tplId = tplSel ? tplSel.value : '';
+    if (tplId) {
+        mkState.lzPickByTemplate[tplId] = designId;
+        // Persistir en la plantilla: queda fijo para TODOS los pedidos de esa plantilla (y al recargar).
+        const tpl = mkGetTemplate(tplId);
+        if (tpl && (tpl.designId || '') !== (designId || '')) {
+            tpl.designId = designId || null;   // optimista
+            mkFetchJson('/api/mockups/templates/' + tplId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ designId: designId || null }) }).catch(() => {});
+        }
+    }
     if (designId) mkGenRef2(blockId);
     else if (!mkState.refFiles[blockId]) mkSetRefThumb(blockId, '');
 }
@@ -2152,6 +2183,7 @@ async function mkLzFetchDesigns() {
     try {
         const d = await mkFetchJson('/api/mockups/designs');
         mkLzState().designs = d.designs || [];
+        mkState.lzHydrated = {};   // los diseños cambiaron: invalida el cache de hidratación
     } catch (_) { /* sin red o backend viejo: el lienzo sigue funcionando */ }
     return mkLzState().designs;
 }

@@ -189,7 +189,7 @@ async function getTemplate(id) {
     return { id: doc.id, ...doc.data() };
 }
 
-async function createTemplate({ nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio, designSvg }) {
+async function createTemplate({ nombre, baseImagePath, baseImageUrl, promptTemplate, productMatch, aspectRatio, designSvg, designId }) {
     const doc = {
         nombre: (nombre || '').toString().trim() || 'Sin nombre',
         baseImagePath: baseImagePath || null,
@@ -201,6 +201,9 @@ async function createTemplate({ nombre, baseImagePath, baseImageUrl, promptTempl
         // prompt ({nombre1} {nombre2} {fecha}); el frontend lo rellena, lo rasteriza a PNG
         // y lo sube como 2ª referencia para que la IA grabe ese diseño en la lámpara.
         designSvg: (designSvg || '').toString(),
+        // Diseño del lienzo (mockup_designs) que usa esta plantilla por defecto: el bloque de
+        // preview lo pre-selecciona y genera la 2ª referencia con los datos del pedido.
+        designId: designId || null,
         createdAt: new Date().toISOString(),
     };
     const ref = await db.collection(TEMPLATES_COLLECTION).add(doc);
@@ -209,7 +212,7 @@ async function createTemplate({ nombre, baseImagePath, baseImageUrl, promptTempl
 
 async function updateTemplate(id, patch = {}) {
     const allowed = {};
-    for (const k of ['nombre', 'baseImagePath', 'baseImageUrl', 'promptTemplate', 'productMatch', 'aspectRatio', 'designSvg']) {
+    for (const k of ['nombre', 'baseImagePath', 'baseImageUrl', 'promptTemplate', 'productMatch', 'aspectRatio', 'designSvg', 'designId']) {
         if (patch[k] !== undefined) allowed[k] = patch[k];
     }
     await db.collection(TEMPLATES_COLLECTION).doc(id).set(allowed, { merge: true });
