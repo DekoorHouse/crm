@@ -269,6 +269,7 @@ async function openDesignPendingChat(orderId) {
     await openChatEnviosModal(String(o.contactId));   // openChatEnviosModal pone _designChatActive=false...
     window._designChatIndex = idx;
     window._designChatActive = true;                  // ...y aquí lo reactivamos para navegar.
+    designChatUpdateToolbar();
 }
 window.openDesignPendingChat = openDesignPendingChat;
 
@@ -282,7 +283,74 @@ async function _designChatNavigate(dir) {
     if (!o || !o.contactId) return;
     window._designChatIndex = i;
     try { await handleSelectContact(String(o.contactId)); } catch (e) { console.warn('[diseño] nav chat:', e); }
+    designChatUpdateToolbar();
 }
+
+// Barra interna del modal (solo para chats abiertos desde Pendientes de Diseño): nº de pedido,
+// comentario del diseñador y botón Diseñado/Regresar. Se refresca al abrir y al navegar.
+function designChatUpdateToolbar() {
+    const tb = document.getElementById('design-chat-toolbar');
+    if (!tb) return;
+    const list = window._designShownOrders || [];
+    const o = (window._designChatActive && typeof window._designChatIndex === 'number') ? list[window._designChatIndex] : null;
+    if (!o) { tb.style.display = 'none'; return; }
+    const isDone = window._designPendingTab === 'disenados';
+    const actionBtn = isDone
+        ? `<button onclick="designModalAction('reopen')" title="Regresar a Pendientes" style="background:transparent;color:#334155;border:1px solid var(--color-border,#e5e7eb);padding:6px 12px;border-radius:6px;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-rotate-left" style="margin-right:4px"></i>Regresar</button>`
+        : `<button onclick="designModalAction('done')" title="Marcar como diseñado (pasa al siguiente)" style="background:#16a34a;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-check" style="margin-right:4px"></i>Diseñado</button>`;
+    tb.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 52px 8px 14px;border-bottom:1px solid var(--color-border);flex-shrink:0;background:var(--color-container-bg,#fff)';
+    tb.innerHTML = `
+        <span style="font-weight:700;color:var(--color-primary);white-space:nowrap;font-size:.9rem">${escapeHtml(o.orderNumber || '')}</span>
+        <input id="design-chat-comment" type="text" placeholder="Comentario del diseñador…" value="${escapeHtml(o.comentarioDiseno || '')}" onblur="designChatSaveComment(this)"
+            style="flex:1;min-width:0;font-size:12px;padding:6px 9px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155)">
+        ${actionBtn}`;
+}
+window.designChatUpdateToolbar = designChatUpdateToolbar;
+
+// Guarda el comentario del diseñador del pedido abierto en el modal (mismo campo que la columna).
+async function designChatSaveComment(el) {
+    const o = (window._designShownOrders || [])[window._designChatIndex];
+    if (!o) return;
+    const comentario = el.value;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending/${o.id}/comentario`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comentario }),
+        });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        o.comentarioDiseno = comentario;   // refleja en el cache (mismo objeto que en la tabla)
+        el.style.borderColor = '#16a34a'; setTimeout(() => { el.style.borderColor = ''; }, 900);
+    } catch (e) { el.style.borderColor = '#dc2626'; console.error('[diseño] comentario modal:', e.message); }
+}
+window.designChatSaveComment = designChatSaveComment;
+
+// Marca Diseñado (o Regresa) el pedido abierto SIN cerrar el modal: lo quita de la tabla y pasa al
+// siguiente pedido de la lista dentro del mismo modal (o cierra si ya no quedan).
+async function designModalAction(kind) {
+    const list = window._designShownOrders || [];
+    const idx = window._designChatIndex;
+    const o = (typeof idx === 'number' && idx >= 0) ? list[idx] : null;
+    if (!o) return;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending/${o.id}/${kind}`, { method: 'POST' });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+    } catch (e) { alert('No se pudo: ' + (e.message || e)); return; }
+    // Quitar del cache local y re-pintar la tabla detrás del modal (refresca _designShownOrders).
+    const arr = window._designPendingData || [];
+    const ai = arr.findIndex(x => x.id === o.id); if (ai >= 0) arr.splice(ai, 1);
+    if (typeof window._designPendingTotal === 'number' && window._designPendingTotal > 0) window._designPendingTotal--;
+    _paintDesignPending();
+    // Avanzar al siguiente pedido dentro del modal, o cerrar si ya no quedan.
+    const newList = window._designShownOrders || [];
+    if (!newList.length) { closeChatEnviosModal(); return; }
+    const nextIdx = Math.min(idx, newList.length - 1);
+    window._designChatIndex = nextIdx;
+    const next = newList[nextIdx];
+    if (next && next.contactId) { try { await handleSelectContact(String(next.contactId)); } catch (_) {} }
+    designChatUpdateToolbar();
+}
+window.designModalAction = designModalAction;
 
 // ← / → cambian de pedido cuando el modal de chat (abierto desde Pendientes de Diseño) está visible.
 document.addEventListener('keydown', (e) => {
@@ -615,6 +683,7 @@ function _chatEnviosModalEl() {
         <div style="position:absolute;top:2vh;left:50%;transform:translateX(-50%);width:min(480px,96vw);height:96vh;background:var(--color-container-bg,#fff);border-radius:16px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45);display:flex;flex-direction:column">
             <button onclick="closeChatEnviosModal()" title="Cerrar (Esc)"
                 style="position:absolute;top:10px;right:14px;z-index:30;border:none;background:rgba(255,255,255,.92);border-radius:50%;width:34px;height:34px;font-size:22px;line-height:1;cursor:pointer;color:#334155;box-shadow:0 2px 8px rgba(0,0,0,.25)">&times;</button>
+            <div id="design-chat-toolbar" style="display:none"></div>
             <div id="chat-envios-slot" style="flex:1;min-height:0;overflow:hidden"></div>
         </div>`;
     m.addEventListener('click', e => { if (e.target === m) closeChatEnviosModal(); });
@@ -628,6 +697,7 @@ async function openChatEnviosModal(contactId) {
     // Si ya estás en la vista de Chats, no hace falta modal: seleccionar normal.
     if (state.activeView === 'chats') { handleSelectContactFromPipeline(contactId); return; }
     const m = _chatEnviosModalEl();
+    if (typeof designChatUpdateToolbar === 'function') designChatUpdateToolbar();   // oculta el panel (active=false); se re-muestra si viene de Diseño
     const slot = m.querySelector('#chat-envios-slot');
     slot.innerHTML = ChatViewTemplate();
     // Mostrar SOLO la conversación: ocultar lista de contactos y panel de detalles; chat a todo lo ancho.
