@@ -837,8 +837,12 @@ const PHOTOS = {
     ]
 };
 
-function waLinkFor(name) {
-    const msg = `Hola Dekoor, quiero personalizar el modelo "${name}" (${col.title}) con mi foto. Ahorita se las mando por aquí 📷`;
+function waLinkFor(name, imgUrl) {
+    // El enlace directo a la foto del modelo hace dos cosas: WhatsApp muestra la
+    // miniatura en el chat (el equipo VE el modelo) y la IA identifica el producto
+    // exacto por el nombre + el código único del archivo.
+    const abs = 'https://app.dekoormx.com' + imgUrl;
+    const msg = `Hola Dekoor, quiero personalizar este modelo para mí:\n"${name}" (${col.title})\n${abs}`;
     return `https://wa.me/${WA}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -873,10 +877,10 @@ function loadProducts() {
                     <div class="price-shipping"><i class="fas fa-truck"></i> Envío gratis</div>
                </div>`;
         const buttons = col.quoteOnly
-            ? `<a href="${waLinkFor(p.name)}" target="_blank" rel="noopener" class="product-card-btn whatsapp" style="width:100%;justify-content:center;">
+            ? `<a href="${waLinkFor(p.name, url)}" target="_blank" rel="noopener" class="product-card-btn whatsapp" style="width:100%;justify-content:center;">
                     <i class="fab fa-whatsapp"></i> Cotizar por WhatsApp
                </a>`
-            : `<a href="${waLinkFor(p.name)}" target="_blank" rel="noopener" class="product-card-btn whatsapp" style="width:100%;justify-content:center;">
+            : `<a href="${waLinkFor(p.name, url)}" target="_blank" rel="noopener" class="product-card-btn whatsapp" style="width:100%;justify-content:center;">
                     <i class="fab fa-whatsapp"></i> Personalizar este modelo
                </a>
                <button onclick="addToCart('${url}', '${p.name}')" class="product-card-btn" style="width:100%;justify-content:center;">
