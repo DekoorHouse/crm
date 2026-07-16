@@ -127,6 +127,10 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = MockupsViewTemplate();
             initializeMockupsHandlers(); // Preview de lámparas (pendientes + plantillas)
             break;
+        case 'pendientes-diseno':
+            mainViewContainer.innerHTML = DesignPendingViewTemplate();
+            renderDesignPendingView(); // Tablero de pedidos con algún pendiente de diseño (5 motivos)
+            break;
         default:
             mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
     }
@@ -146,6 +150,140 @@ function courierBadge(paq) {
     else if (p.includes('EXPRESS')) { bg = '#0ea5e9'; label = paq; }
     return `<span style="display:inline-block;background:${bg};color:${fg};font-size:10px;font-weight:800;letter-spacing:.3px;padding:2px 7px;border-radius:5px;white-space:nowrap">${escapeHtml(label)}</span>`;
 }
+
+// ===== Sección "Pendientes de Diseño" =====================================================
+// Tablero de pedidos que necesitan algo del equipo de diseño (5 motivos). Lee GET /api/design-pending
+// (que evalúa los pedidos con la misma lógica del server). Cada fila: pedido, cliente, producto,
+// motivo(s), estatus editable y "ver chat". Cambiar el estatus a un estado de diseño terminado
+// (Diseñado/Fabricar/Corregido/…) saca el pedido de la lista al refrescar.
+const DP_MOTIVOS = {
+    mockup_pagado: ['Mockup pagado', '#6f42c1', 'fa-image'],
+    datos: ['Datos', '#fd7e14', 'fa-triangle-exclamation'],
+    video: ['Video', '#e83e8c', 'fa-video'],
+    anticipo: ['Anticipo', '#0d9488', 'fa-receipt'],
+    segundo_producto: ['+Producto', '#2563eb', 'fa-plus'],
+};
+
+function DesignPendingViewTemplate() {
+    return `<div class="p-4 md:p-6 h-full overflow-auto">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+            <h1 class="text-2xl font-bold" style="margin:0"><i class="fas fa-palette mr-2" style="color:#6f42c1"></i>Pendientes de Diseño</h1>
+            <button onclick="renderDesignPendingView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">Pedidos que necesitan algo del equipo de diseño: mockup pagado, dato mal, video, anticipo (pagó y aún sin preview) o segundo producto tras pagar.</p>
+        <div id="design-pending-container"></div>
+    </div>`;
+}
+window.DesignPendingViewTemplate = DesignPendingViewTemplate;
+
+async function renderDesignPendingView() {
+    const container = document.getElementById('design-pending-container');
+    if (!container) return;
+    container.innerHTML = '<p class="text-gray-500">Cargando pendientes de diseño…</p>';
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending`);
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
+        window._designPendingData = data.orders || [];
+        window._designPendingTotal = data.total != null ? data.total : window._designPendingData.length;
+        _paintDesignPending();
+    } catch (e) {
+        container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los pendientes: ${escapeHtml(e.message || String(e))}</p>
+            <button class="btn btn-outline btn-sm mt-2" onclick="renderDesignPendingView()">Reintentar</button>`;
+    }
+}
+window.renderDesignPendingView = renderDesignPendingView;
+
+function setDesignPendingFilter(f) { window._designPendingFilter = f; _paintDesignPending(); }
+window.setDesignPendingFilter = setDesignPendingFilter;
+
+// Pinta desde window._designPendingData (sin re-consultar) para filtros instantáneos.
+function _paintDesignPending() {
+    const container = document.getElementById('design-pending-container');
+    if (!container) return;
+    const all = window._designPendingData || [];
+    if (!all.length) {
+        container.innerHTML = '<p class="text-gray-500">🎉 No hay pedidos pendientes de diseño ahora mismo.</p>';
+        return;
+    }
+    const counts = {}; Object.keys(DP_MOTIVOS).forEach(k => counts[k] = 0);
+    all.forEach(o => (o.reasons || []).forEach(r => { if (counts[r] != null) counts[r]++; }));
+    const filter = window._designPendingFilter || 'all';
+    const shown = filter === 'all' ? all : all.filter(o => (o.reasons || []).includes(filter));
+
+    const chipDefs = [['all', 'Todos', all.length]].concat(Object.keys(DP_MOTIVOS).map(k => [k, DP_MOTIVOS[k][0], counts[k]]));
+    const chips = chipDefs.map(([k, lbl, c]) => {
+        const on = filter === k;
+        const col = k === 'all' ? 'var(--color-primary,#ef4444)' : DP_MOTIVOS[k][1];
+        return `<button onclick="setDesignPendingFilter('${k}')" style="border:1px solid ${on ? col : 'var(--color-border,#e5e7eb)'};background:${on ? col : 'transparent'};color:${on ? '#fff' : 'var(--color-text,#334155)'};border-radius:999px;padding:5px 14px;font-size:.8rem;cursor:pointer;font-weight:600;white-space:nowrap">${lbl} (${c})</button>`;
+    }).join('');
+
+    const rows = shown.map((o, i) => {
+        const badges = (o.reasons || []).map(r => {
+            const m = DP_MOTIVOS[r]; if (!m) return '';
+            return `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>`;
+        }).join('');
+        const chan = o.channel === 'instagram' ? '<i class="fab fa-instagram" style="color:#e1306c"></i>'
+            : o.channel === 'messenger' ? '<i class="fab fa-facebook-messenger" style="color:#0084ff"></i>'
+            : '<i class="fab fa-whatsapp" style="color:#25d366"></i>';
+        const statusSel = `<select onchange="changeDesignPendingStatus('${o.id}', this.value, this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);width:132px">${ENVIO_STATUS_OPTIONS.map(s => `<option${(o.estatus || 'Sin estatus') === s ? ' selected' : ''}>${s}</option>`).join('')}</select>`;
+        const chatBtn = o.contactId ? `<button onclick="openChatEnviosModal('${escapeHtml(String(o.contactId))}')" title="Ver conversación" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:14px"><i class="fas fa-comments"></i></button>` : '';
+        const fecha = o.corregirAt || o.comprobanteValidadoAt || o.createdAt;
+        const fechaTxt = fecha ? new Date(fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) : '—';
+        const prod = escapeHtml(o.producto || '') + (o.itemCount > 1 ? ` <span style="color:#94a3b8">+${o.itemCount - 1}</span>` : '');
+        return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:middle">
+            <td style="padding:9px 12px 9px 0;color:#94a3b8;font-weight:600">${i + 1}</td>
+            <td style="padding:9px 12px 9px 0;font-weight:700;color:var(--color-primary);white-space:nowrap">${escapeHtml(o.orderNumber)}</td>
+            <td style="padding:9px 12px 9px 0;white-space:nowrap">${chan} ${escapeHtml(o.clienteName || '')}</td>
+            <td style="padding:9px 12px 9px 0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${prod}</td>
+            <td style="padding:9px 12px 9px 0">${badges}</td>
+            <td style="padding:6px 12px 6px 0;white-space:nowrap">${statusSel}</td>
+            <td style="padding:9px 12px 9px 0;color:#94a3b8;white-space:nowrap">${fechaTxt}</td>
+            <td style="padding:9px 0;text-align:right;white-space:nowrap">${chatBtn}</td>
+        </tr>`;
+    }).join('');
+
+    const totalNote = (window._designPendingTotal > all.length) ? ` · mostrando ${all.length} de ${window._designPendingTotal}` : '';
+    container.innerHTML = `
+        <style>
+          #design-pending-container thead th{position:sticky;top:0;z-index:2;background:var(--color-container-bg,#fff);box-shadow:inset 0 -2px 0 var(--color-border)}
+        </style>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">${chips}<span style="color:#94a3b8;font-size:.8rem">${totalNote}</span></div>
+        <div style="overflow:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
+            <thead>
+              <tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light);white-space:nowrap">
+                <th style="padding:8px 12px 8px 0">#</th>
+                <th style="padding:8px 12px 8px 0">Pedido</th>
+                <th style="padding:8px 12px 8px 0">Cliente</th>
+                <th style="padding:8px 12px 8px 0">Producto</th>
+                <th style="padding:8px 12px 8px 0">Motivo</th>
+                <th style="padding:8px 12px 8px 0">Estatus</th>
+                <th style="padding:8px 12px 8px 0">Desde</th>
+                <th style="padding:8px 0;text-align:right">Chat</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+}
+
+// Cambia el estatus de un pedido desde el tablero y refresca (puede salir de la lista si pasó a diseño terminado).
+async function changeDesignPendingStatus(orderId, newStatus, el) {
+    if (el) el.disabled = true;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/orders/${orderId}/change-status`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newStatus }),
+        });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        renderDesignPendingView();
+    } catch (e) {
+        if (el) el.disabled = false;
+        alert('No se pudo cambiar el estatus: ' + (e.message || e));
+    }
+}
+window.changeDesignPendingStatus = changeDesignPendingStatus;
 
 async function renderEnviosView() {
     const container = document.getElementById('envios-container');

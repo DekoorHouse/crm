@@ -7916,6 +7916,68 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 // --- GET /api/envios — pedidos con comprobante validado (para la sección Envíos del CRM) ---
 // Devuelve por pedido: número, monto pagado (precio) y datos de envío (si el cliente ya llenó el
 // formulario; se unen por numeroPedido con la colección datos_envio).
+// GET /api/design-pending — Pedidos con algún pendiente para el equipo de diseño (5 motivos:
+// mockup pagado / datos / video / anticipo / 2º producto). Fuente de verdad: los propios pedidos,
+// evaluados con la MISMA lógica que server/design/designPending.js. Devuelve cada pedido con sus
+// motivos + nombre/canal del cliente. La lista de la sección "Pendientes de Diseño" del CRM la usa.
+router.get('/design-pending', async (_req, res) => {
+    try {
+        const { reasonsForOrderData } = require('./design/designPending');
+        const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
+
+        // Candidatos: estatus de diseño-pendiente (Corregir/Pagado) + los que tienen comprobante
+        // validado (el "anticipo" puede estar en cualquier estatus previo al diseño). Se deduplica por id.
+        const byId = new Map();
+        const [s1, s2] = await Promise.all([
+            db.collection('pedidos').where('estatus', 'in', ['Corregir', 'Pagado']).get(),
+            db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(500).get(),
+        ]);
+        s1.forEach(d => byId.set(d.id, d));
+        s2.forEach(d => byId.set(d.id, d));
+
+        let orders = [];
+        for (const doc of byId.values()) {
+            const p = doc.data();
+            const reasons = reasonsForOrderData(p);
+            if (!reasons.length) continue;
+            const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
+            orders.push({
+                id: doc.id,
+                orderNumber: num != null ? `DH${num}` : (p.numeroPedido || doc.id),
+                contactId: p.contactId || p.telefono || null,
+                telefono: p.telefono || null,
+                estatus: p.estatus || 'Sin estatus',
+                producto: p.producto || (Array.isArray(p.items) && p.items[0] ? p.items[0].producto : ''),
+                itemCount: Array.isArray(p.items) ? p.items.length : (p.producto ? 1 : 0),
+                precio: (p.precio != null ? p.precio : null),
+                reasons,
+                createdAt: tsToMs(p.createdAt),
+                comprobanteValidadoAt: tsToMs(p.comprobanteValidadoAt),
+                corregirAt: tsToMs(p.corregirAt),
+            });
+        }
+
+        // Nombre + canal del cliente (batch getAll).
+        const ids = [...new Set(orders.map(o => o.contactId).filter(Boolean))];
+        const infoById = new Map();
+        for (let i = 0; i < ids.length; i += 300) {
+            const refs = ids.slice(i, i + 300).map(id => db.collection('contacts_whatsapp').doc(String(id)));
+            const docs = await db.getAll(...refs);
+            docs.forEach(d => { if (d.exists) infoById.set(d.id, { name: d.data().name || null, channel: d.data().channel || 'whatsapp' }); });
+        }
+        orders.forEach(o => { const c = infoById.get(o.contactId) || {}; o.clienteName = c.name || o.contactId; o.channel = c.channel || 'whatsapp'; });
+
+        // Más recientes por su "momento pendiente" arriba.
+        orders.sort((a, b) => (b.corregirAt || b.comprobanteValidadoAt || b.createdAt || 0) - (a.corregirAt || a.comprobanteValidadoAt || a.createdAt || 0));
+
+        const total = orders.length;
+        res.json({ success: true, total, orders: orders.slice(0, 500) });
+    } catch (e) {
+        console.error('[design-pending] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 router.get('/envios', async (_req, res) => {
     try {
         const [pedidosSnap, datosSnap, manualSnap] = await Promise.all([
