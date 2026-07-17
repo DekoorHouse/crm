@@ -2,7 +2,10 @@
 // === Scheduler de COBRANZA AUTOMÁTICA (Andrea cobra sola) =========
 // =================================================================
 // Flujo definido por el negocio (17-jul-2026, versión 4 toques espaciados):
-//   - Cobra pedidos en estatus "Foto enviada" o "Esperando pago".
+//   - Cobra pedidos en estatus "Foto enviada", "Esperando pago" o "Corregido"
+//     (corrección YA hecha con foto nueva enviada; lo normal es que regresen a
+//     "Foto enviada", pero si quedan en "Corregido" también se cobran). "Corregir"
+//     NUNCA se cobra: ahí el equipo le debe la corrección al cliente.
 //   - CUATRO cobros máximo por cliente, espaciados: día 0 (la misma tarde de la
 //     foto, pase VESPERTINO), día 2, día 5 y día 9 (última llamada). Al día
 //     siguiente del 4º cobro sin pago (~día 10), el pedido se CANCELA
@@ -39,7 +42,7 @@ const { db, admin } = require('../config');
 const { cobrarContacto } = require('./cobranzaService');
 const { decideCobranzaAction, MAX_ATTEMPTS, MAX_DAYS } = require('./cobranzaLogic');
 
-const ESTATUS_COBRABLES = ['Foto enviada', 'Esperando pago'];
+const ESTATUS_COBRABLES = ['Foto enviada', 'Esperando pago', 'Corregido'];
 const LOOKBACK_DAYS = 30;        // ventana de búsqueda de pedidos (colchón para fabricación)
 const SEND_DELAY_MS = 1500;      // pausa entre envíos (rate limit de Meta)
 const CRON_SCHEDULE = '*/15 * * * *'; // el gate interno decide si ya toca correr cada pase
