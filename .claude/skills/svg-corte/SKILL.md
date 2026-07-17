@@ -111,14 +111,17 @@ grandes): tools del conector Google Drive via ToolSearch
 `disableConversionToGoogleType` = true, `textContent` = contenido exacto del SVG. Si el
 parentId fallara, re-buscar la carpeta: `title = 'SVG Corte' and mimeType = 'application/vnd.google-apps.folder'`.
 
-## Automatización (worker local) — EN PAUSA desde 2026-07-16
+## Automatización (worker local) — ACTIVO (cada 15 min; confirmado 2026-07-17)
 
 `scripts/svg-corte-worker.js` (repo crm) hace el Modo 2 SOLO: pedidos 'Fabricar' con mockup
 aprobado → hoja de 2 → Corel → Drive → estatus "Diseñado por IA". **Fidelidad con el mockup**:
 usa `mockup_previews.previews[].layout` (renglones leidos por vision de la imagen que el
 cliente aprobo) como fuente de verdad de los textos; sin eso, los fields (que ya traen `\n`
-si la regla de renglones decidio 2 lineas). Para reactivar: poner
-`svg_corte_config/settings.autoGenerate = true` y recrear la tarea programada con
+si la regla de renglones decidio 2 lineas). **CANDADO anti-re-corte** (commit a779b46d): salta
+pedidos con `guiaEnvio.guia` u `ocultoDeEnvios` (ya fabricados/enviados) y los que ya tienen
+`svgCorteAt`/`disenoListoAt` — MISMA regla que Pendientes de Diseño (`designPending.js`). Sin ese
+candado el worker re-cortó 9 pedidos ya enviados el 2026-07-16 (corrida de las ~5pm). Para pausar:
+`svg_corte_config/settings.autoGenerate = false`. Para (re)crear la tarea programada:
 `cmd /c 'schtasks /Create /F /TN "CRM SVG Corte Worker" /SC MINUTE /MO 15 /TR "\"C:\Program Files\nodejs\node.exe\" \"C:\Users\chris\Documents\crm\scripts\svg-corte-worker.js\""'`
 (node DIRECTO: WSH no lanza procesos bajo el Programador). Log en
 `Documents\SVG-Corte\worker.log`. Flags: `--dry` (solo lista), `--force`, `--max N`.
