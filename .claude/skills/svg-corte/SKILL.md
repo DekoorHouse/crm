@@ -87,6 +87,29 @@ Receta por si hay que recolocar a mano: nombre izq. centro **(72.0, 274.2) mm 62
 **(152.9, 274.2) 62.4 pt**; fecha **(112.3, 247.4) 23.5 pt**; todo negro, fuente **Rows of Sunflowers**;
 diseno centrado en X≈112.3. (Verificado end-to-end con DH13523 el 2026-07-17.)
 
+## Modo 4: imagen para GRABADO RASTER (foto del cliente -> WaveSpeed)
+
+Cuando el cliente pide **grabar una imagen/foto** (una foto de pareja, mascota, etc.). Convierte la
+foto en una imagen lista para **grabado laser raster**: **rellenos blancos, fondo negro, degradado en
+trama (halftone) y alto detalle**. Usa **WaveSpeed (GPT Image 2 Edit)**; la llave vive SOLO en Render,
+por eso la skill llama al endpoint del servidor, no directo.
+
+    node "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\gen-grabado.js" --img "<foto.jpg | http...>" [--corazon] [--extra "..."] [--out "<ruta.png>"] [--res 1k|2k] [--aspect 1:1|2:3|3:2]
+
+- `--img` foto de entrada (ruta local -> se sube sola, o URL publica).
+- `--corazon` cuando el grabado va en el **modelo de corazones**: le manda a WaveSpeed la silueta
+  `referencias/corazon-forma.png` para que el grabado salga **con forma de corazon** (todo lo de fuera
+  del corazon queda negro). Sin la bandera sale en el encuadre normal de la foto.
+- `--extra "..."` instrucciones extra al modelo; `--out` ruta del PNG (default `Documents\SVG-Corte\grabado-<stamp>.png`).
+
+Flujo interno: sube la(s) imagen(es) a URL publica (`POST /api/mockups/upload-image`) -> `POST
+/api/mockups/engrave-submit {imageUrl, shapeImageUrl?}` (arma el prompt de grabado y manda a WaveSpeed)
+-> `GET /api/mockups/generate-status/:jobId` hasta terminar -> baja el resultado y lo guarda como PNG.
+Exito = ultima linea `OK <ruta-png>`. El prompt de grabado vive en el servidor
+(`server/mockups/mockupsRoutes.js`, `ENGRAVE_PROMPT_BASE` / `ENGRAVE_PROMPT_SHAPE`). El PNG resultante
+va DENTRO de la lampara con el pipeline de Corel (como el panda/toronja) y luego a Drive. **Convencion
+de color**: si el laser necesita lo contrario (negro sobre blanco), invertir el PNG (sharp `.negate()`).
+
 ## Subida a Drive (carpeta "SVG Corte", id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`)
 
 **Via principal** (rapida, sin costo de contexto; setup YA HECHO el 2026-07-16):
