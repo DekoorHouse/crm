@@ -134,6 +134,13 @@ async function findCandidates() {
         // EXACTOS que el cliente vio en su mockup. Es la fuente de verdad del diseño; si no
         // existe, se usan los fields (que ya traen '\n' cuando la regla de renglones decidió).
         const lay = last.layout || null;
+        // Si la visión detectó que lo grabado en el mockup NO coincide con los datos del pedido
+        // (nombre mal escrito por la IA de imagen, nombre faltante, etc.), este pedido requiere
+        // ojos humanos: NO se corta automáticamente ni con los fields ni con lo detectado.
+        if (lay && lay.ok === false) {
+            log(`  ~ ${dhOf(o)} layout del mockup NO coincide con los datos (izq=${JSON.stringify(lay.izquierdo)} der=${JSON.stringify(lay.derecho)}) -> revisión manual`);
+            continue;
+        }
         const conLineas = (vision, plain) => (vision && vision.length ? vision.join('\n') : String(plain || ''));
         const nombre1 = lay ? conLineas(lay.izquierdo, f.nombre1) : String(f.nombre1 || '');
         const nombre2 = lay ? conLineas(lay.derecho, f.nombre2) : String(f.nombre2 || '');
