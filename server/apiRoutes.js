@@ -9813,6 +9813,37 @@ router.get('/cobranza/buscar-pedidos', async (req, res) => {
     }
 });
 
+// Correr un pase de la cobranza automática A MANO (botones de la página de cobranza).
+// Dispara el MISMO sweep del scheduler con force:true (corre aunque el interruptor esté
+// apagado — sirve para testear), respetando TODAS las reglas: candados de 1 cobro/día por
+// contacto, margen de 5h del pase vespertino, promesas, recordatorios, tope, etc.
+// La corrida QUEDA como la del día (claim lastRunDate/lastEveningRunDate): el pase
+// automático ya no se repite ese día. Corre en segundo plano (puede tardar minutos);
+// el resultado se consulta en cobranza_runs (el resumen de la página).
+router.post('/cobranza/auto/run', async (req, res) => {
+    try {
+        const pass = (req.body && req.body.pass === 'tarde') ? 'tarde' : 'manana';
+        const { runCobranzaSweep, isSweepRunning } = require('./cobranza/cobranzaScheduler');
+        if (isSweepRunning()) {
+            return res.json({ success: false, message: 'Ya hay una corrida de cobranza en curso. Espera a que termine y vuelve a intentar.' });
+        }
+        // ¿Este pase ya corrió hoy? (informativo: los candados por contacto evitan cobros dobles)
+        const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+        const cfgSnap = await db.collection('crm_settings').doc('cobranza_auto').get();
+        const cfgD = cfgSnap.exists ? cfgSnap.data() : {};
+        const alreadyRanToday = pass === 'tarde' ? cfgD.lastEveningRunDate === todayMx : cfgD.lastRunDate === todayMx;
+
+        // Fire-and-forget: la corrida puede tardar minutos (una llamada de IA por cliente).
+        runCobranzaSweep(pass, { force: true })
+            .catch(e => console.error('[COBRANZA_AUTO] Corrida manual falló:', e.message));
+
+        res.json({ success: true, started: true, pass, alreadyRanToday });
+    } catch (error) {
+        console.error('Error al iniciar corrida manual de cobranza:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // Enviar mensaje de cobranza IA para un contacto.
 // El MOTOR vive en server/cobranza/cobranzaService.js (cobrarContacto), compartido con el
 // scheduler de cobranza automática. Este endpoint solo valida y delega; el contrato de

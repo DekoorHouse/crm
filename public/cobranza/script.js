@@ -170,6 +170,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Corre un pase de la cobranza automática AHORA (endpoint /cobranza/auto/run).
+    // El servidor aplica todas las reglas; aquí solo se dispara y se refresca el resumen
+    // varias veces mientras la corrida termina en segundo plano.
+    let refreshTimer = null;
+    window.correrPaseManual = async (pass) => {
+        const nombre = pass === 'tarde' ? 'vespertino' : 'de la mañana';
+        if (!confirm(`¿Correr el pase ${nombre} AHORA? Enviará cobros REALES a los clientes que toquen, siguiendo todas las reglas (1 cobro por día por cliente, margen de 5h del vespertino, promesas de pago, tope). Contará como la corrida de hoy de ese pase.`)) return;
+        const btnM = document.getElementById('btnCorrerManana');
+        const btnT = document.getElementById('btnCorrerTarde');
+        try {
+            btnM.disabled = true; btnT.disabled = true;
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch('/api/cobranza/auto/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ pass })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || 'No se pudo iniciar la corrida.');
+            const aviso = data.alreadyRanToday
+                ? '\n\nOJO: este pase ya había corrido hoy. No se cobrará doble a nadie (candado de 1 cobro/día); solo alcanzará a clientes que hayan quedado pendientes.'
+                : '';
+            alert(`Corrida ${nombre} iniciada. Puede tardar unos minutos; el resumen de aquí abajo se irá actualizando solo.${aviso}`);
+            // Refrescar el resumen cada 20s durante ~3 minutos mientras corre en el servidor.
+            if (refreshTimer) clearInterval(refreshTimer);
+            let n = 0;
+            refreshTimer = setInterval(async () => {
+                await cargarUltimaCorrida();
+                if (++n >= 9) { clearInterval(refreshTimer); refreshTimer = null; }
+            }, 20000);
+        } catch (e) {
+            console.error('Error al iniciar corrida manual:', e);
+            alert('Error: ' + e.message);
+        } finally {
+            btnM.disabled = false; btnT.disabled = false;
+        }
+    };
+
     window.guardarCobranzaAuto = async () => {
         try {
             const enabled = document.getElementById('autoEnabled').checked;

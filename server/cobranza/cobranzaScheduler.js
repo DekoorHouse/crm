@@ -96,7 +96,7 @@ function buildAttemptContext(cobroNum) {
  *   del mismo día (foto enviada hoy y cliente en silencio), vía sameDayFirstTouch.
  */
 async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
-    if (sweepRunning) { console.log('[COBRANZA_AUTO] Sweep ya en curso; se omite.'); return; }
+    if (sweepRunning) { console.log('[COBRANZA_AUTO] Sweep ya en curso; se omite.'); return { alreadyRunning: true }; }
     sweepRunning = true;
     const isTarde = pass === 'tarde';
     const todayMx = todayMxStr();
@@ -110,7 +110,7 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
 
     try {
         const cfg = await getConfig();
-        if (!cfg.enabled && !force) return;
+        if (!cfg.enabled && !force) return { disabled: true };
 
         // Claim del día ANTES de trabajar: si el server se reinicia a media corrida,
         // no se vuelve a cobrar hoy (mejor quedarse corto que cobrar doble).
@@ -283,6 +283,12 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
             console.warn('[COBRANZA_AUTO] No se pudo guardar el reporte de la corrida:', e.message);
         }
     }
+    return report;
+}
+
+// ¿Hay una corrida en curso? (para que el endpoint de corrida manual no encime otra)
+function isSweepRunning() {
+    return sweepRunning;
 }
 
 function startCobranzaScheduler() {
@@ -315,6 +321,7 @@ function startCobranzaScheduler() {
 module.exports = {
     startCobranzaScheduler,
     runCobranzaSweep,       // exportado para trigger manual/pruebas
+    isSweepRunning,
     decideCobranzaAction,   // pura, para tests
     MAX_ATTEMPTS,
     MAX_DAYS

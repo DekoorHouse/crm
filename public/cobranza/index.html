@@ -149,6 +149,17 @@
             <button id="btnGuardarAuto" onclick="guardarCobranzaAuto()">
                 <i class="fas fa-save"></i> Guardar configuraci&oacute;n autom&aacute;tica
             </button>
+            <div style="margin-top:14px; padding-top:12px; border-top:1px solid #e5e7eb;">
+                <p class="hint" style="margin:0 0 8px;">Correr un pase <b>ahora mismo</b> (mismas reglas: 1 cobro por d&iacute;a por cliente, margen de 5h del vespertino, promesas, tope). La corrida manual cuenta como la del d&iacute;a: el pase autom&aacute;tico ya no se repite hoy.</p>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button id="btnCorrerManana" onclick="correrPaseManual('manana')">
+                        <i class="fas fa-sun"></i> Correr pase de la ma&ntilde;ana ahora
+                    </button>
+                    <button id="btnCorrerTarde" onclick="correrPaseManual('tarde')">
+                        <i class="fas fa-moon"></i> Correr pase vespertino ahora
+                    </button>
+                </div>
+            </div>
             <div id="autoUltimaCorrida" class="hint" style="margin-top:12px;"></div>
         </div>
 
@@ -193,7 +204,7 @@
     </div>
 </div>
 
-<script type="module" src="/cobranza/script.js?v=4"></script>
+<script type="module" src="/cobranza/script.js?v=5"></script>
 <script src="/comunicacion-pwa.js?v=2"></script>
 </body>
 </html>
