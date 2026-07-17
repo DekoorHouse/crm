@@ -71,12 +71,27 @@ async function generateOne(o, tpl, cfg = {}) {
         // Regla de renglones: nombres compuestos con '\n' decidido por nosotros (el prompt le
         // ordena el salto a la IA y el diseño de corte reproduce el mismo layout).
         if (cfg.nameLayoutRule !== false) fields = require('./nameLayout').applyNameLayout(fields);
-        const prompt = svc.buildPromptFromTemplate(tpl.promptTemplate, fields);
+        let prompt = svc.buildPromptFromTemplate(tpl.promptTemplate, fields);
         if (!prompt) return false;
+
+        // 2ª referencia ("diseño a grabar") renderizada en el SERVIDOR (@resvg + fuente manuscrita):
+        // se la mandamos a la IA para que grabe EXACTAMENTE ese diseño (nombres/fecha/símbolo), igual
+        // que el camino manual. Si falla o la plantilla no tiene diseño, se genera sin ella.
+        const images = [tpl.baseImageUrl];
+        let secondRefUrl = null;
+        try {
+            const rr = require('./refRenderer');
+            const refPng = await rr.renderReferenceForTemplate(tpl, fields);
+            if (refPng) {
+                secondRefUrl = (await svc.uploadPublicImage(refPng, 'refs-auto')).url;
+                images.push(secondRefUrl);
+                prompt += rr.SECOND_REF_PROMPT;
+            }
+        } catch (e) { console.warn('[mockup-auto] referencia falló (sigo sin ella):', e.message); }
 
         let submit;
         try {
-            submit = await wave.submitEdit(prompt, [tpl.baseImageUrl], { aspectRatio: tpl.aspectRatio || '1:1', resolution: '1k', quality: 'high' });
+            submit = await wave.submitEdit(prompt, images, { aspectRatio: tpl.aspectRatio || '1:1', resolution: '1k', quality: 'high' });
         } catch (e) {
             if (/balance|insufficient|top.?up|saldo|402|payment|fund/i.test(e.message)) return 'no-balance';
             throw e;
@@ -97,7 +112,7 @@ async function generateOne(o, tpl, cfg = {}) {
         const blockId = 'auto' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
         await db.collection('mockup_previews').doc(String(o.id)).set({
             orderId: String(o.id),
-            previews: [{ blockId, imageUrl: saved[0].fullUrl, templateId: tpl.id, fields, createdAt: new Date().toISOString() }],
+            previews: [{ blockId, imageUrl: saved[0].fullUrl, templateId: tpl.id, fields, secondRefUrl, createdAt: new Date().toISOString() }],
         }, { merge: true });
         // Verificar por visión cómo quedaron los textos (renglones) y guardarlo en el preview.
         await svc.verifyAndStoreLayout(String(o.id), blockId);
