@@ -2,11 +2,12 @@
 name: svg-corte
 description: >
   Genera archivos SVG de corte/grabado laser en CorelDRAW y los sube a la carpeta "SVG Corte"
-  de Google Drive. Dos modos: (1) cuadrado simple de N cm; (2) lampara infinito personalizada
-  (dos nombres + fecha por pedido, 1 o 2 pedidos por hoja de 350x330 mm). Usar siempre que el
-  usuario pida un cuadrado de corte, una lampara/plantilla infinito, "archivo para laser",
-  poner nombres y fecha a una lampara, o dibujar/exportar algo en CorelDRAW y subirlo a Drive —
-  aunque solo diga "hazme la de Juan y Maria del 14-Febrero-2026".
+  de Google Drive. Modos: lampara infinito personalizada (dos nombres + fecha por pedido, 1 o 2
+  pedidos por hoja de 350x330 mm), lampara de 4 corazones (tabloide), e imagen para grabado raster
+  (foto del cliente -> WaveSpeed). Usar siempre que el usuario pida una lampara/plantilla infinito,
+  "archivo para laser", poner nombres y fecha a una lampara, convertir una foto en imagen de grabado,
+  o dibujar/exportar algo en CorelDRAW y subirlo a Drive — aunque solo diga "hazme la de Juan y Maria
+  del 14-Febrero-2026".
 ---
 
 # svg-corte: archivos de corte laser en CorelDRAW → SVG → Drive
@@ -14,21 +15,8 @@ description: >
 Skill verificada en esta maquina con CorelDRAW 2021 (v23). Convenciones del negocio:
 **corte = linea roja, grabado = negro, azul = infinito/corazones/marco** (tercera pasada).
 Las hojas de lamparas son de **350x330 mm** con todo alineado **arriba-izquierda**.
-Scripts junto a esta skill: `draw-square.vbs`, `infinito.vbs`, `upload-drive.js`,
-plantillas en `plantillas/`.
-
-## Modo 1: cuadrado simple
-
-1. Medida en **cm** (si no la dieron, preguntar con AskUserQuestion: 5/10/15/20 cm; "Other"
-   permite otra). Acepta decimales. Si responden en mm o pulgadas, convertir a cm.
-2. Ejecutar:
-
-       cscript //nologo "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\draw-square.vbs" <medida>
-
-   Exito = ultima linea `OK <ruta>`. Crea el SVG en `Documents\SVG-Corte\` con la pagina del
-   tamano exacto del cuadrado; el doc queda abierto en Corel a proposito.
-3. Verificar leyendo el SVG: `width`/`height` = `<N×10>mm`.
-4. Subirlo a Drive (ver "Subida a Drive") y reportar medida + ruta local + link.
+Scripts junto a esta skill: `infinito.vbs`, `gen-corazones.vbs`, `gen-grabado.js`,
+`upload-drive.js`, plantillas en `plantillas/`.
 
 ## Modo 2: lampara infinito (nombres + fecha)
 
