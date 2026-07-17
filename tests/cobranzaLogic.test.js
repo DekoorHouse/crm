@@ -45,18 +45,42 @@ describe('decideCobranzaAction — flujo 3 cobros, uno por día', () => {
     });
 });
 
-describe('decideCobranzaAction — corte de 10 días', () => {
+describe('decideCobranzaAction — corte de 10 días (sin promesa de por medio)', () => {
     test('a los 9 días con menos de 3 cobros: aún se cobra', () => {
         expect(decideCobranzaAction([order({ attempts: 2, firstDaysAgo: 9 })], TODAY, NOW).action).toBe('collect');
     });
 
-    test('pasados los 10 días con menos de 3 cobros: sale a revisión manual (expire), NO se cancela', () => {
+    test('pasados los 10 días SIN promesa y con menos de 3 cobros: sale a revisión manual (expire), NO se cancela', () => {
         const d = decideCobranzaAction([order({ attempts: 1, firstDaysAgo: MAX_DAYS + 1 })], TODAY, NOW);
         expect(d.action).toBe('expire');
     });
 
     test('viejo Y con 3 cobros: cancelar gana sobre expirar (3 cobros sin pago = no va a pagar)', () => {
         const d = decideCobranzaAction([order({ attempts: 3, firstDaysAgo: 12 })], TODAY, NOW);
+        expect(d.action).toBe('cancel');
+    });
+});
+
+describe('decideCobranzaAction — la promesa PAUSA el reloj de 10 días', () => {
+    test('promesa a 15 días que vence HOY (pedido de hace 15 días): Andrea RETOMA el cobro, no lo manda a manual', () => {
+        // Caso del dueño: "les pago en 15 días". Al vencer la promesa, el corte de 10 días
+        // se cuenta desde la fecha prometida — retoma con los cobros que le quedaban.
+        const d = decideCobranzaAction([order({ attempts: 1, firstDaysAgo: 15, futureDate: TODAY })], TODAY, NOW);
+        expect(d.action).toBe('collect');
+    });
+
+    test('promesa vencida hace 2 días (pedido de hace 17): sigue cobrando (el reloj corre desde la promesa)', () => {
+        const d = decideCobranzaAction([order({ attempts: 2, firstDaysAgo: 17, futureDate: '2026-07-15' })], TODAY, NOW);
+        expect(d.action).toBe('collect');
+    });
+
+    test('promesa vencida hace 12 días y puro silencio después: ahora sí expira a revisión manual', () => {
+        const d = decideCobranzaAction([order({ attempts: 1, firstDaysAgo: 20, futureDate: '2026-07-05' })], TODAY, NOW);
+        expect(d.action).toBe('expire');
+    });
+
+    test('promesa vencida + ya lleva 3 cobros: se cancela (el tope de 3 siempre manda)', () => {
+        const d = decideCobranzaAction([order({ attempts: 3, firstDaysAgo: 15, futureDate: TODAY })], TODAY, NOW);
         expect(d.action).toBe('cancel');
     });
 });

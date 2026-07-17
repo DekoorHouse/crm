@@ -6,10 +6,11 @@
 //   - Máximo 1 cobro por día por cliente, y máximo 3 cobros en total.
 //   - Cuando TOCARÍA el 4º cobro (ya hubo 3 sin pago), ya NO se cobra:
 //     el pedido se CANCELA (estatus "Cancelado") y queda registrado.
-//   - Corte por tiempo: si un pedido lleva más de 10 días en la automatización
-//     sin completar el ciclo (p. ej. por promesas de pago o conversaciones que
-//     pausaron los cobros), se saca de la automatización SIN cancelar y se
-//     reporta para revisión manual ("si no pagaron en 10 días ya no van a pagar").
+//   - Corte por tiempo: si un pedido lleva más de 10 días SIN promesa de por medio,
+//     se saca de la automatización SIN cancelar y se reporta para revisión manual
+//     ("si no pagaron en 10 días ya no van a pagar"). Las promesas de pago con
+//     fecha PAUSAN ese reloj: al vencer la promesa, Andrea retoma con los cobros
+//     restantes y el corte se cuenta desde la fecha prometida (ver cobranzaLogic).
 //   - Respeta: promesas de fecha futura ([FUTURE] de la IA), recordatorios ya
 //     agendados (scheduled_reminders), conversaciones activas hoy y el límite de
 //     1 mensaje de cobranza por día (estos dos últimos viven en cobranzaService).

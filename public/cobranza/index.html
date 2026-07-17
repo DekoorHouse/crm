@@ -115,10 +115,11 @@
                 Con esto encendido, Andrea cobra <b>sola una vez al d&iacute;a</b> los pedidos de los &uacute;ltimos 30 d&iacute;as
                 que est&eacute;n en <b>Foto enviada</b> o <b>Esperando pago</b>, usando las instrucciones de arriba.
                 El flujo es: m&aacute;ximo <b>3 cobros</b> por cliente (uno por d&iacute;a); si despu&eacute;s del tercero no paga,
-                el pedido se <b>cancela autom&aacute;ticamente</b>. Si un pedido lleva m&aacute;s de <b>10 d&iacute;as</b> en cobranza sin
-                resolverse (por promesas de pago o conversaciones de por medio), sale de la automatizaci&oacute;n y queda
-                para revisi&oacute;n manual. Andrea respeta promesas de fecha futura, recordatorios ya agendados y
-                conversaciones activas del d&iacute;a; si el chat lleva +24h cerrado usa una plantilla aprobada.
+                el pedido se <b>cancela autom&aacute;ticamente</b>. Las <b>promesas de pago con fecha</b> ("te pago el 23")
+                pausan el ciclo: Andrea espera y al vencer la promesa retoma con los cobros que le quedaban.
+                Si un pedido lleva m&aacute;s de <b>10 d&iacute;as</b> sin promesa de por medio, sale de la automatizaci&oacute;n y
+                queda para revisi&oacute;n manual. Andrea tambi&eacute;n respeta recordatorios ya agendados y conversaciones
+                activas del d&iacute;a; si el chat lleva +24h cerrado usa una plantilla aprobada.
             </p>
             <div class="filtros-grid">
                 <div class="filtro-item">
