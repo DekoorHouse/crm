@@ -1622,7 +1622,7 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
             const name = (contactData && contactData.name) || contactId;
             const req = String(clientMessage || '').trim().slice(0, 300);
             const text = isVideo
-                ? `🎥 *Pedido a CORREGIR — pide VIDEO*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente pide un video de su producto ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nGraba el video del pedido y envíaselo.`
+                ? `🎥 *Pedido a CORREGIR — pide VIDEO/FOTO extra*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente pide un video o una foto adicional (ej. otro color de luz) de su producto ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nNO hay que re-fabricar nada: graba/toma lo que pide y envíaselo por el chat. Al mandarlo, regresa el pedido a "Foto enviada" para que siga su cobro.`
                 : `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nRevisa la conversación y corrígelo.`;
             await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
             console.log(`[POSTVENTA] Alerta de ${isVideo ? 'video' : 'corrección'} enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
@@ -2874,12 +2874,18 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // escrito). Cambia el pedido a estatus "Corregir" y avisa al equipo. Solo en post-venta
         // (es cuando ya se le envió la foto del pedido). Ver el manejo después del loop.
         const needsCorrection = isPostVenta && /\/corregir/i.test(aiResponse);
+        // La IA emite /pidevideo cuando el cliente pide un VIDEO o una FOTO ADICIONAL de su
+        // pedido terminado (ej. con otro color de luz): el pedido pasa a "Corregir" con motivo
+        // 'video' (cola visible de Pendientes de Diseño, SIN re-fabricación) y se avisa al admin
+        // con la alerta específica. La cobranza automática lo suelta mientras esté en "Corregir"
+        // y retoma sola cuando el equipo lo regresa a "Foto enviada". Solo post-venta.
+        const wantsProductMedia = isPostVenta && /\/pidevideo\b/i.test(aiResponse);
 
         // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado, /comprobante, /registrar) de los mensajes antes de enviar.
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
         // (anuncia pedido LISTO + datos de pago); la IA no puede saber si el pedido físico
         // ya está terminado, así que jamás debe enviarlo ni expandirlo.
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').trim()).filter(m => m.length > 0);
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -3138,6 +3144,13 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         if (needsCorrection) {
             markOrderCorregirForContact(contactId, contactData, messageText)
                 .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact falló:', e.message));
+        }
+
+        // El cliente pide video/foto extra de su pedido terminado (/pidevideo): a "Corregir"
+        // con motivo 'video' (sin re-fabricar) + alerta 🎥 al admin. Fire-and-forget.
+        if (wantsProductMedia && !needsCorrection) {
+            markOrderCorregirForContact(contactId, contactData, messageText, 'video')
+                .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact (video) falló:', e.message));
         }
 
         // Cancelación de un pedido YA REGISTRADO (post-venta): pasar el pedido a "Cancelado".
