@@ -2240,6 +2240,15 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             return;
         }
 
+        // --- Modo APROBACIÓN DE DISEÑO (diseños especiales) ---
+        // Si el contacto espera que el cliente apruebe su diseño, un clasificador dedicado maneja
+        // la respuesta (aprobó / pidió cambio / ambiguo) en vez de la IA de ventas o post-venta.
+        const designApproval = require('./design/designApproval');
+        if (designApproval.isPending(contactData)) {
+            await designApproval.handleReply(contactId, message, contactRef, contactData);
+            return;
+        }
+
         // --- Obtener instrucciones del bot ---
         let botInstructions = 'Eres un asistente virtual amigable y servicial.';
         let departmentReferenceImages = []; // Imágenes estáticas del departamento como contexto

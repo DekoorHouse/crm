@@ -8076,6 +8076,20 @@ router.post('/design-pending/:orderId/reopen', async (req, res) => {
     }
 });
 
+// POST /api/design-approval/test-classify — prueba el clasificador de aprobación de diseño con un
+// texto de ejemplo (sin tocar ningún pedido). Body: { text, designText }. Para validar calidad.
+router.post('/design-approval/test-classify', async (req, res) => {
+    try {
+        const text = String((req.body && req.body.text) || '');
+        const designText = String((req.body && req.body.designText) || '');
+        if (!text) return res.status(400).json({ success: false, message: 'Falta text.' });
+        const r = await require('./design/designApproval').classifyReply(text, designText);
+        res.json({ success: true, ...r });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // GET /api/debug/mockup-ref — Renderiza la 2ª referencia ("diseño a grabar") en el servidor y la
 // devuelve como PNG, SIN llamar a WaveSpeed (no gasta créditos). Solo para verificar que
 // @resvg/resvg-js + la fuente manuscrita funcionan en el entorno (Render). Params: n1, n2, f.

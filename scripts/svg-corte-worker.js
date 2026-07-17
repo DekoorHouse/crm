@@ -217,6 +217,58 @@ async function processSheet(entries) {
     }
 }
 
+// Sube a Drive los diseños ESPECIALES que el cliente ya aprobó (designApproval.status='approved').
+// El SVG fue generado a mano y quedó "staged" (ruta local) al mandar la captura de aprobación.
+// Al subir: pedido -> "Diseñado por IA" + svgCorteUrl, y designApproval.status='uploaded'.
+async function processApprovedDesigns() {
+    let snap;
+    try {
+        snap = await db.collection('pedidos').where('designApproval.status', '==', 'approved').limit(50).get();
+    } catch (e) { log('No pude consultar aprobados: ' + e.message); return; }
+    if (snap.empty) return;
+    log(`Diseños aprobados por el cliente pendientes de subir: ${snap.size}` + (DRY ? ' (DRY RUN)' : ''));
+    for (const doc of snap.docs) {
+        const o = { id: doc.id, ...doc.data() };
+        const da = o.designApproval || {};
+        const dh = dhOf(o);
+        // Guard: no resucitar un pedido cancelado / con guía / oculto de Envíos (misma regla que
+        // findCandidates). Lo marca 'needs_review' para que deje de aparecer en la query.
+        const estatus = String(o.estatus || '').toLowerCase();
+        if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios || /cancel/.test(estatus)) {
+            log(`  ~ ${dh} aprobado pero el pedido está "${o.estatus}"/enviado -> needs_review (no subo)`);
+            if (!DRY) await doc.ref.update({ 'designApproval.status': 'needs_review' });
+            continue;
+        }
+        if (o.svgCorteAt) {   // ya subido antes; solo cierra el estado
+            if (!DRY) await doc.ref.update({ 'designApproval.status': 'uploaded' });
+            continue;
+        }
+        const svg = da.stagedSvgLocalPath;
+        if (!svg || !fs.existsSync(svg)) {
+            log(`  ~ ${dh} aprobado pero sin SVG staged (${svg || 'null'}) -> revisar a mano`);
+            continue;
+        }
+        log(`> ${dh} aprobado por el cliente -> subiendo ${path.basename(svg)}`);
+        if (DRY) continue;
+        try {
+            const up = await uploadToDrive(svg);
+            await doc.ref.update({
+                estatus: NEW_STATUS,
+                svgCorteAt: admin.firestore.FieldValue.serverTimestamp(),
+                svgCorteUrl: up.webViewLink,
+                svgCorteFileName: up.name,
+                svgCorteBy: 'design-approval',
+                'designApproval.status': 'uploaded',
+                'designApproval.uploadedAt': admin.firestore.FieldValue.serverTimestamp(),
+            });
+            try { await recomputeForContact(o.contactId || o.telefono); } catch (_) {}
+            log(`  OK ${dh} -> ${up.webViewLink}`);
+        } catch (e) {
+            log(`  ERROR subiendo ${dh}: ${e.message}`);
+        }
+    }
+}
+
 async function main() {
     // Lock local para no encimarse con una corrida anterior
     try {
@@ -227,6 +279,12 @@ async function main() {
 
     try {
         const cfg = await getSettings();
+
+        // Subir a Drive los diseños especiales que el cliente ya aprobó — SIEMPRE, aunque el
+        // auto-corte esté apagado (son kill-switches independientes: apagar la generación de
+        // hojas no debe dejar sin subir un diseño que el cliente ya aprobó).
+        await processApprovedDesigns();
+
         if (!FORCE && cfg.autoGenerate === false) { log('autoGenerate=false (kill-switch), salgo.'); return; }
 
         const candidates = await findCandidates();
