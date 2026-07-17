@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
             seccionCobranza.style.display = 'block';
             usuarioLogueado.textContent = user.email;
             await cargarInstrucciones();
+            await cargarCobranzaAuto();
         } else {
             seccionLogin.style.display = 'block';
             seccionCobranza.style.display = 'none';
@@ -85,6 +86,70 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
             console.error('Error guardando instrucciones:', e);
             alert('Error al guardar.');
+        }
+    };
+
+    // --- Cobranza automática (Andrea) ---
+    // Config en crm_settings/cobranza_auto; el scheduler del servidor la lee cada 15 min.
+    async function cargarCobranzaAuto() {
+        const selHora = document.getElementById('autoHora');
+        if (selHora && !selHora.options.length) {
+            for (let h = 6; h <= 22; h++) {
+                const opt = document.createElement('option');
+                opt.value = h;
+                opt.textContent = `${h}:00`;
+                selHora.appendChild(opt);
+            }
+        }
+        try {
+            const cfgSnap = await getDoc(doc(db, 'crm_settings', 'cobranza_auto'));
+            const cfg = cfgSnap.exists() ? cfgSnap.data() : {};
+            document.getElementById('autoEnabled').checked = cfg.enabled === true;
+            if (selHora) selHora.value = Number.isFinite(Number(cfg.hour)) ? Number(cfg.hour) : 11;
+            document.getElementById('autoTope').value = Number(cfg.maxPerRun) > 0 ? Number(cfg.maxPerRun) : 40;
+        } catch (e) {
+            console.error('Error cargando config de cobranza automática:', e);
+        }
+        await cargarUltimaCorrida();
+    }
+
+    async function cargarUltimaCorrida() {
+        const box = document.getElementById('autoUltimaCorrida');
+        if (!box) return;
+        try {
+            const q = query(collection(db, 'cobranza_runs'), orderBy('date', 'desc'), limit(1));
+            const snap = await getDocs(q);
+            if (snap.empty) {
+                box.innerHTML = '<i class="fas fa-info-circle"></i> A&uacute;n no hay corridas autom&aacute;ticas.';
+                return;
+            }
+            const r = snap.docs[0].data();
+            const err = r.error ? ` &middot; <span style="color:#dc2626;">⚠ ${r.error}</span>` : '';
+            box.innerHTML = `<i class="fas fa-history"></i> <b>&Uacute;ltima corrida (${r.date}):</b> ` +
+                `${r.enviados || 0} cobros enviados &middot; ${r.cancelados || 0} pedidos cancelados &middot; ` +
+                `${r.vencidos || 0} vencidos (revisar manual) &middot; ${r.saltados || 0} saltados &middot; ${r.errores || 0} errores${err}`;
+        } catch (e) {
+            console.error('Error cargando última corrida:', e);
+            box.textContent = 'No se pudo cargar la última corrida.';
+        }
+    }
+
+    window.guardarCobranzaAuto = async () => {
+        try {
+            const enabled = document.getElementById('autoEnabled').checked;
+            const hour = Number(document.getElementById('autoHora').value);
+            const maxPerRun = Math.max(1, Math.min(200, Number(document.getElementById('autoTope').value) || 40));
+            if (enabled && !instruccionesTA.value.trim()) {
+                alert('Escribe y guarda primero las instrucciones de la IA: la cobranza automática las necesita.');
+                return;
+            }
+            await setDoc(doc(db, 'crm_settings', 'cobranza_auto'), { enabled, hour, maxPerRun }, { merge: true });
+            alert(enabled
+                ? `Cobranza automática ENCENDIDA. Correrá todos los días a partir de las ${hour}:00 (hora MX), máximo ${maxPerRun} cobros por día.`
+                : 'Cobranza automática APAGADA.');
+        } catch (e) {
+            console.error('Error guardando config de cobranza automática:', e);
+            alert('Error al guardar la configuración.');
         }
     };
 

@@ -24,6 +24,7 @@ const { startScheduledMessagesScheduler } = require('./scheduledMessages/schedul
 const { startShippingDigestScheduler } = require('./shipping/shippingDigestScheduler');
 const { startSpendCapAlertScheduler } = require('./meta/spendCapAlertScheduler');
 const { startMockupAutoScheduler } = require('./mockups/mockupAutoScheduler');
+const { startCobranzaScheduler } = require('./cobranza/cobranzaScheduler');
 const orderFollowupRouter = require('./leads/orderFollowupRoutes');
 const scheduledReminderRouter = require('./leads/scheduledReminderRoutes');
 const path = require('path');
@@ -532,6 +533,8 @@ const server = app.listen(PORT, () => {
   startSpendCapAlertScheduler();
   // Iniciar scheduler de auto-generación de mockups (cada 10 min; SOLO genera, no envía)
   startMockupAutoScheduler();
+  // Iniciar scheduler de cobranza automática (3 cobros diarios máx; luego cancela; se enciende desde la página de cobranza)
+  startCobranzaScheduler();
   // Conectar bridge TCP a MeerK40t
   laserBridge.connect();
 });

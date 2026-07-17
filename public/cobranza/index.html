@@ -108,6 +108,38 @@
             </button>
         </div>
 
+        <!-- Cobranza automatica (Andrea) -->
+        <div class="content-box">
+            <h2><i class="fas fa-robot" style="color:#6366f1;"></i> Cobranza autom&aacute;tica (Andrea)</h2>
+            <p class="hint">
+                Con esto encendido, Andrea cobra <b>sola una vez al d&iacute;a</b> los pedidos de los &uacute;ltimos 30 d&iacute;as
+                que est&eacute;n en <b>Foto enviada</b> o <b>Esperando pago</b>, usando las instrucciones de arriba.
+                El flujo es: m&aacute;ximo <b>3 cobros</b> por cliente (uno por d&iacute;a); si despu&eacute;s del tercero no paga,
+                el pedido se <b>cancela autom&aacute;ticamente</b>. Si un pedido lleva m&aacute;s de <b>10 d&iacute;as</b> en cobranza sin
+                resolverse (por promesas de pago o conversaciones de por medio), sale de la automatizaci&oacute;n y queda
+                para revisi&oacute;n manual. Andrea respeta promesas de fecha futura, recordatorios ya agendados y
+                conversaciones activas del d&iacute;a; si el chat lleva +24h cerrado usa una plantilla aprobada.
+            </p>
+            <div class="filtros-grid">
+                <div class="filtro-item">
+                    <label for="autoEnabled"><i class="fas fa-power-off"></i> Encendida:</label>
+                    <input type="checkbox" id="autoEnabled" style="width:22px;height:22px;">
+                </div>
+                <div class="filtro-item">
+                    <label for="autoHora"><i class="fas fa-clock"></i> Hora de la corrida (MX):</label>
+                    <select id="autoHora"></select>
+                </div>
+                <div class="filtro-item">
+                    <label for="autoTope"><i class="fas fa-tachometer-alt"></i> Tope de env&iacute;os por d&iacute;a:</label>
+                    <input type="number" id="autoTope" min="1" max="200" value="40">
+                </div>
+            </div>
+            <button id="btnGuardarAuto" onclick="guardarCobranzaAuto()">
+                <i class="fas fa-save"></i> Guardar configuraci&oacute;n autom&aacute;tica
+            </button>
+            <div id="autoUltimaCorrida" class="hint" style="margin-top:12px;"></div>
+        </div>
+
         <!-- Seleccion de rango -->
         <div class="content-box">
             <h2><i class="fas fa-calendar-alt"></i> Seleccionar pedidos por rango de fecha</h2>
@@ -149,7 +181,7 @@
     </div>
 </div>
 
-<script type="module" src="/cobranza/script.js"></script>
+<script type="module" src="/cobranza/script.js?v=2"></script>
 <script src="/comunicacion-pwa.js?v=2"></script>
 </body>
 </html>
