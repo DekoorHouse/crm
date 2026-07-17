@@ -8073,6 +8073,30 @@ router.post('/design-pending/:orderId/reopen', async (req, res) => {
     }
 });
 
+// GET /api/debug/mockup-ref — Renderiza la 2ª referencia ("diseño a grabar") en el servidor y la
+// devuelve como PNG, SIN llamar a WaveSpeed (no gasta créditos). Solo para verificar que
+// @resvg/resvg-js + la fuente manuscrita funcionan en el entorno (Render). Params: n1, n2, f.
+router.get('/debug/mockup-ref', async (req, res) => {
+    try {
+        const rr = require('./mockups/refRenderer');
+        const svc = require('./mockups/mockupsService');
+        const templates = await svc.listTemplates();
+        const tpl = templates.find(t => /corazon/i.test(t.nombre) || (t.productMatch || []).some(m => /corazon/i.test(m)));
+        if (!tpl) return res.status(404).json({ success: false, message: 'Sin plantilla de corazones.' });
+        const fields = {
+            nombre1: String(req.query.n1 || 'Adry'),
+            nombre2: String(req.query.n2 || 'Vale'),
+            fecha: String(req.query.f || '15-Julio-2026'),
+        };
+        const png = await rr.renderReferenceForTemplate(tpl, fields);
+        if (!png) return res.status(404).json({ success: false, message: 'La plantilla no tiene diseño de referencia.' });
+        res.set('Content-Type', 'image/png').send(png);
+    } catch (e) {
+        console.error('[debug/mockup-ref] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 router.get('/envios', async (_req, res) => {
     try {
         const [pedidosSnap, datosSnap, manualSnap] = await Promise.all([
