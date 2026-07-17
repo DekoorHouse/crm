@@ -25,6 +25,7 @@ const { startShippingDigestScheduler } = require('./shipping/shippingDigestSched
 const { startSpendCapAlertScheduler } = require('./meta/spendCapAlertScheduler');
 const { startMockupAutoScheduler } = require('./mockups/mockupAutoScheduler');
 const { startCobranzaScheduler } = require('./cobranza/cobranzaScheduler');
+const { startDesignApprovalPoller } = require('./design/designApprovalPoller');
 const orderFollowupRouter = require('./leads/orderFollowupRoutes');
 const scheduledReminderRouter = require('./leads/scheduledReminderRoutes');
 const path = require('path');
@@ -535,6 +536,9 @@ const server = app.listen(PORT, () => {
   startMockupAutoScheduler();
   // Iniciar scheduler de cobranza automática (3 cobros diarios máx; luego cancela; se enciende desde la página de cobranza)
   startCobranzaScheduler();
+  // Red de seguridad de aprobaciones de diseño (cada 2 min): procesa respuestas del cliente que el
+  // timer en memoria (frágil ante reinicios de Render) no atendió. Independiente de botActive.
+  startDesignApprovalPoller();
   // Conectar bridge TCP a MeerK40t
   laserBridge.connect();
 });

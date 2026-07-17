@@ -143,6 +143,12 @@ async function handleReply(contactId, message, contactRef, contactData) {
             clientText = extractClientText(saved, message);
         }
 
+        // Reclamar esta respuesta como procesada (idempotencia con la red de seguridad
+        // designApprovalPoller): ambos caminos escriben lastReplyMs con el timestamp del último
+        // mensaje entrante, así el poller no vuelve a procesar lo que este camino ya atendió.
+        const savedMs = saved && saved.timestamp && saved.timestamp.toMillis ? saved.timestamp.toMillis() : 0;
+        if (savedMs) { try { await orderRef.update({ 'designApproval.lastReplyMs': savedMs }); } catch (_) {} }
+
         // Sin texto utilizable (sticker/foto/ubicación/voz sin transcripción) NO va al clasificador:
         // se trata como ambiguo (evita mandarle basura a Gemini y un falso 'approved' sobre nada).
         let decision = 'unclear', changeSummary = '';

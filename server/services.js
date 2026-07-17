@@ -2234,18 +2234,22 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         const isIndividuallyActive = contactData.botActive === true;
         const shouldRun = isIndividuallyActive;
 
-        if (!shouldRun) {
-            console.log(`[AI] El bot ya no está activo para ${contactId} (Global: ${globalBotActive}, Individual: ${contactData.botActive}). Abortando respuesta.`);
-            await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() }); // no dejar el estado 'generating' huérfano
-            return;
-        }
-
         // --- Modo APROBACIÓN DE DISEÑO (diseños especiales) ---
         // Si el contacto espera que el cliente apruebe su diseño, un clasificador dedicado maneja
         // la respuesta (aprobó / pidió cambio / ambiguo) en vez de la IA de ventas o post-venta.
+        // Va ANTES del corte por botActive: una aprobación pendiente debe procesarse aunque el bot
+        // individual se haya apagado entre armar y responder. (La red de seguridad
+        // designApprovalPoller también la atiende; esto es el camino rápido.) handleReply respeta su
+        // propio kill-switch (designApprovalAutoActive).
         const designApproval = require('./design/designApproval');
         if (designApproval.isPending(contactData)) {
             await designApproval.handleReply(contactId, message, contactRef, contactData);
+            return;
+        }
+
+        if (!shouldRun) {
+            console.log(`[AI] El bot ya no está activo para ${contactId} (Global: ${globalBotActive}, Individual: ${contactData.botActive}). Abortando respuesta.`);
+            await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() }); // no dejar el estado 'generating' huérfano
             return;
         }
 
