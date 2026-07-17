@@ -60,6 +60,33 @@ lampara y se juntan 2 en una hoja); solo va 1 cuando ya no hay mas pedidos que d
    orden de arriba a abajo es nombre4, nombre3, nombre2, nombre1. Nada encimado.
 4. Subir el SVG a Drive y reportar con el link.
 
+## Modo 3: lampara de 4 corazones ("Plantilla Corazones para Claude")
+
+Diseno mas nuevo de "Lampara de corazones": **4 corazones 3D con malla** (grabado) + simbolo de
+infinito con los **2 nombres** y la **fecha**, en hoja **tabloide 279x431 mm (1 pieza)**. La
+plantilla vive en `C:\Users\chris\Documents\Corel\Plantilla Corazones para Claude.cdr` (la mantiene
+Chris; DEBE conservar sus 3 textos de ejemplo **"Romario" / "Romina" / "13-Agosto-1992"**, que
+funcionan como placeholders detectados por CONTENIDO). No confundir con "Plantillas Corazones.cdr"
+(doc de produccion intocable).
+
+1. **Datos**: nombre izquierdo, nombre derecho, fecha y — opcional — un **texto adicional** (p. ej.
+   el campo "Especial" del pedido, tipo "Aniversario No. 27") que va CENTRADO **debajo de la fecha**.
+2. Ejecutar:
+
+       cscript //nologo "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\gen-corazones.vbs" /file:DHxxxx /mirror /svg /png /save "Nombre1" "Nombre2" "Fecha" ["TextoAdicional"]
+
+   Copia la plantilla, reemplaza los 3 textos por contenido conservando el centro (auto-reduce si el
+   nombre pasa de 52 mm o la fecha de 50 mm), crea el texto adicional bajo la fecha (~18 pt),
+   convierte a curvas y con **/mirror** aplica la orientacion de produccion (rotar -90 + espejo
+   vertical; el grabado va ESPEJEADO porque el laser graba por atras). Flags: `/svg` (SVG laser),
+   `/png` (revision), `/save` (.cdr editable al derecho), `/close` (cierra el doc),
+   `/extrasize:N` (pt del texto adicional, default 18).
+3. Verificar el PNG (diseno EN ESPEJO, nada encimado) y subir el SVG a Drive (ver abajo).
+
+Receta por si hay que recolocar a mano: nombre izq. centro **(72.0, 274.2) mm 62.4 pt**; nombre der.
+**(152.9, 274.2) 62.4 pt**; fecha **(112.3, 247.4) 23.5 pt**; todo negro, fuente **Rows of Sunflowers**;
+diseno centrado en X≈112.3. (Verificado end-to-end con DH13523 el 2026-07-17.)
+
 ## Subida a Drive (carpeta "SVG Corte", id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`)
 
 **Via principal** (rapida, sin costo de contexto; setup YA HECHO el 2026-07-16):
