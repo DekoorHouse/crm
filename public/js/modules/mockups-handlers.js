@@ -1674,13 +1674,20 @@ function mkLzInkBBox(it, size) {
     const ctx = mkLzMeasureCtx;
     ctx.font = `${size}px ${it.font === 'arial' ? 'Arial, Helvetica, sans-serif' : "'Rows of Sunflowers'"}`;
     ctx.textAlign = it.align === 'left' ? 'left' : (it.align === 'right' ? 'right' : 'center');
-    ctx.textBaseline = 'middle';   // equivalente al dominant-baseline:central del SVG
+    ctx.textBaseline = 'alphabetic';
     const m = ctx.measureText(it.text || '');
     const left = m.actualBoundingBoxLeft != null ? m.actualBoundingBoxLeft : m.width / 2;
     const right = m.actualBoundingBoxRight != null ? m.actualBoundingBoxRight : m.width / 2;
-    const asc = m.actualBoundingBoxAscent != null ? m.actualBoundingBoxAscent : size * 0.5;
-    const desc = m.actualBoundingBoxDescent != null ? m.actualBoundingBoxDescent : size * 0.5;
-    return { x: it.x - left, y: it.y - asc, w: left + right, h: asc + desc };
+    const asc = m.actualBoundingBoxAscent != null ? m.actualBoundingBoxAscent : size * 0.7;
+    const desc = m.actualBoundingBoxDescent != null ? m.actualBoundingBoxDescent : size * 0.2;
+    // El SVG usa dominant-baseline:central -> la baseline CENTRAL queda en it.y. La baseline
+    // ALFABÉTICA (donde se apoyan las letras, referencia de las medidas de tinta) está en
+    // it.y + (ascent-descent)/2 según las métricas de la fuente. Sin este ajuste la caja
+    // sale corrida hacia arriba (le sobra arriba y le falta abajo).
+    const fA = m.fontBoundingBoxAscent != null ? m.fontBoundingBoxAscent : size * 0.8;
+    const fD = m.fontBoundingBoxDescent != null ? m.fontBoundingBoxDescent : size * 0.2;
+    const alpha = it.y + (fA - fD) / 2;
+    return { x: it.x - left, y: alpha - asc, w: left + right, h: asc + desc };
 }
 
 // Todas las áreas de límite como POLÍGONOS en coords del lienzo (el rect se convierte;
