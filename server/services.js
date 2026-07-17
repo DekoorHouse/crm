@@ -950,11 +950,36 @@ function simpleHash(str) {
     return hash.toString();
 }
 
+// --- Comandos/protocolos internos FIJOS que se anexan a las instrucciones del sistema ---
+// Antes se concatenaban al turno final del usuario en CADA petición (y se recobraban como
+// tokens nuevos en cada turno). Como su texto NO cambia, ahora viven en el texto cacheado
+// (systemText) y se pagan una sola vez por caché. Se anexan SIEMPRE por código —aunque el
+// prompt esté personalizado en la UI— para garantizar que la IA conozca estos comandos.
+const CANCEL_COMMAND_NOTE = `\n\n**Cancelación de pedido:** Si el cliente te dice claramente que YA NO quiere el pedido, que lo CANCELA o que NO podrá continuar con él (por ejemplo: "ya no lo quiero", "mejor cancélalo", "ya no voy a poder con el pedido"), respóndele con empatía y escribe al FINAL de tu mensaje el comando /cancelado (el cliente NO lo ve; es una señal para el equipo). NO lo emitas por una simple demora o aplazamiento del pago (por ejemplo "mañana te pago", "dame unos días"): en esos casos NO se cancela. Emítelo UNA sola vez.`;
+
+const POSTVENTA_PROTOCOL_NOTE = `\n\n**PROTOCOLO DE DATOS DE ENVÍO:**
+Los datos de envío se recopilan por un FORMULARIO (un enlace con el número de pedido ya cargado), NO por texto. El sistema le envía ese formulario al cliente automáticamente cuando se valida su pago.
+Reglas:
+- NUNCA pidas los datos de envío por texto ni por partes (no pidas campos sueltos como calle, colonia, CP, etc.).
+- Si el cliente ESCRIBE su dirección o datos por texto, NO los tomes campo por campo:
+   · Si su pago YA está validado (ya se le envió el formulario), agradécele con calidez y pídele que por favor los ponga en el FORMULARIO que le enviamos, porque así su pedido queda cargado correcto y sacamos la guía enseguida. Si dice que no le llegó el enlace o lo perdió, dile que se lo reenviamos y NO tomes los datos por texto.
+   · Si su pago AÚN no está validado, enfócate primero en el pago; dile que en cuanto se valide le llega el formulario para capturar sus datos de envío. NO tomes los datos por texto todavía.
+- EXCEPCIÓN (única forma de tomarlos por texto): SOLO si el cliente dice claramente que NO PUEDE abrir o llenar el formulario (ej. "no me abre el link", "no me deja", "no puedo llenarlo", "desde aquí no puedo"). Entonces recíbelos por texto: 1) Nombre completo, 2) Calle y número (int/ext), 3) Colonia/Fraccionamiento, 4) C.P., 5) Entre calles, 6) Referencia del domicilio, 7) Estado y Municipio, 8) Teléfono. Junta lo que haya escrito en varios mensajes. Si faltan, pídele SOLO los que falten. Cuando los tengas TODOS, confírmaselos ordenados, dile que un compañero del equipo termina de registrar su envío enseguida, y al FINAL de tu mensaje escribe el comando /equipo (el cliente NO lo ve; avisa a un humano para que capture sus datos y genere la guía). Emítelo UNA sola vez.`;
+
+const COMPROBANTE_COMMAND_NOTE = `\n\n**Comprobante de pago y formulario de envío:**
+- Cuando el cliente te MANDE su comprobante de pago (imagen o PDF) y verifiques que es GENUINO (el destino y el monto coinciden con lo esperado), responde ÚNICAMENTE con el comando /comprobante (SOLO eso, sin ningún otro texto ni saludo). NO escribas tú la confirmación, NO le pidas los datos de envío por texto y NO le mandes ningún enlace: al recibir /comprobante, el SISTEMA le manda automáticamente el mensaje de confirmación ("ya validamos tu pago") junto con el formulario de envío. Emítelo UNA sola vez por pedido.
+- MUY IMPORTANTE: si YA validaste el comprobante antes en esta conversación (ya se le envió el formulario de envío, aunque el comprobante siga viéndose en el chat), NO vuelvas a emitir /comprobante. En los turnos siguientes responde NORMALMENTE a lo que el cliente diga (dudas, datos, etc.); reenviar el formulario en cada turno lo satura.
+- Si el comprobante es sospechoso o NO coincide, usa /sospechoso (NO /comprobante). Si el cliente solo dice que "ya pagó" pero todavía NO ha mandado el comprobante, pídeselo con amabilidad (NO emitas /comprobante).
+- Cuando el cliente te confirme que YA LLENÓ su formulario de envío (por ejemplo: "ya llené el formulario", "listo, ya mandé mis datos"), responde ÚNICAMENTE con /pagado (solo eso, sin ningún otro texto).`;
+
 /**
  * Construye el texto estático del sistema (instrucciones + conocimiento + respuestas rápidas).
  * Este es el contenido que se cachea.
+ * @param {boolean} paymentPhaseActive - En fase de pago (post-venta o venta con pedido ya
+ *   registrado) se anexan los protocolos de datos de envío y de comprobante. El hash del caché
+ *   separa esta variante de la que no está en fase de pago automáticamente.
  */
-async function buildStaticContext(botInstructions, isPostVenta = false) {
+async function buildStaticContext(botInstructions, isPostVenta = false, paymentPhaseActive = false) {
     const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
     const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
 
@@ -986,7 +1011,7 @@ async function buildStaticContext(botInstructions, isPostVenta = false) {
     }
 
     // Instrucciones van en systemInstruction, no en contents
-    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.`;
+    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE : ''}`;
 
     // Material de referencia va en contents (como contexto, no como instrucciones)
     const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo:** Si una de estas respuestas aplica perfectamente, puedes enviarla respondiendo ÚNICAMENTE con su atajo (ejemplo: responde exactamente "/ttt" y nada más); el sistema lo reemplazará automáticamente por su contenido completo, incluida cualquier imagen. También puedes escribir el contenido directamente si lo prefieres. NUNCA combines un atajo con más texto en el mismo mensaje.\n${quickReplies || 'No hay respuestas rápidas.'}`;
@@ -1682,10 +1707,10 @@ async function markOrderEsperandoAnticipoForContact(contactId) {
  * @param {Array<{inlineData: {data: string, mimeType: string}}>} departmentImageParts - Imágenes estáticas a cachear como parte del contexto
  * @param {string} imagesHashInput - String determinista con identificadores de las imágenes (para el hash del caché)
  */
-async function getOrCreateCache(botInstructions, departmentImageParts = [], imagesHashInput = '', isPostVenta = false) {
+async function getOrCreateCache(botInstructions, departmentImageParts = [], imagesHashInput = '', isPostVenta = false, paymentPhaseActive = false) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
 
-    const { systemText, referenceText } = await buildStaticContext(botInstructions, isPostVenta);
+    const { systemText, referenceText } = await buildStaticContext(botInstructions, isPostVenta, paymentPhaseActive);
     const currentHash = simpleHash(systemText + referenceText + '|imgs:' + imagesHashInput);
     const now = Date.now();
 
@@ -2300,7 +2325,15 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (GENERIC_MEDIA_TEXTS.test(t)) t = ''; // texto de relleno, no caption real
             switch (effectiveType(d)) {
                 case 'image': return t ? `[imagen: ${t}]` : '[imagen]';
-                case 'audio': return t ? `[audio: ${t}]` : '[audio/nota de voz]';
+                case 'audio': {
+                    // Si la nota de voz ya fue transcrita (transcribeIncomingAudioMessage la guarda
+                    // en el propio mensaje), mostrar el TEXTO de lo que dijo el cliente. Sin esto la
+                    // IA solo veía "[audio/nota de voz]" y quedaba ciega a audios fuera de la ventana
+                    // de multimedia (últimos 2, <24h), aunque la transcripción ya existiera en Firestore.
+                    const trans = (d.transcription || '').trim();
+                    if (trans) return `[nota de voz, el cliente dijo: "${trans}"]`;
+                    return t ? `[audio: ${t}]` : '[audio/nota de voz]';
+                }
                 case 'video': return t ? `[video: ${t}]` : '[video]';
                 case 'document': return t ? `[PDF/documento: ${t}]` : '[PDF/documento]';
                 case 'sticker': return '[sticker]';
@@ -2345,6 +2378,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (!((d.type === 'image' || d.type === 'audio' || d.type === 'video' || d.type === 'document') && d.fileUrl)) continue;
             const ts = (d.timestamp && typeof d.timestamp.toMillis === 'function') ? d.timestamp.toMillis() : 0;
             if (!ts || (Date.now() - ts) > AI_MEDIA_MAX_AGE_MS) continue;
+            // Nota de voz YA transcrita: su texto ya viaja en el historial (msgDisplayText), así que
+            // no reenviamos el audio crudo — ahorra tokens y descarga en cada turno mientras el audio
+            // sigue en ventana. Si aún NO hay transcripción (p. ej. la carrera con el fire-and-forget),
+            // caemos al comportamiento normal y se adjunta el audio para no perder lo que dijo.
+            if (d.type === 'audio' && (d.transcription || '').trim()) continue;
             const mimeType = d.fileType || (d.type === 'image' ? 'image/jpeg' : (d.type === 'audio' ? 'audio/mpeg' : (d.type === 'video' ? 'video/mp4' : 'application/pdf')));
             downloadedMedia.push({ url: d.fileUrl, mimeType: mimeType, type: d.type });
             mediaCount++;
@@ -2439,150 +2477,207 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             break; // solo evaluamos el último mensaje del cliente
         }
 
-        // --- Descargar imágenes de referencia del departamento ---
-        // Se adjuntan al request (redimensionadas/acotadas) para que la IA pueda describir y
-        // comparar el producto. NO van al caché (requests grandes causaban "Premature close").
-        // Antes se descargaban pero nunca se enviaban, y una nota le decía al modelo que las
-        // imágenes "venían adjuntas": el modelo confundía las fotos del cliente con el catálogo.
-        const departmentImageParts = [];
-        let departmentImagesBytes = 0;
-        for (const refImage of departmentReferenceImages) {
-            if (!(refImage && refImage.url && typeof refImage.url === 'string' && refImage.url.startsWith('http'))) continue;
-            try {
-                const response = await fetch(refImage.url, { signal: AbortSignal.timeout(15000) });
-                if (!response.ok) {
-                    // Con Uniform Bucket-Level Access, las URLs storage.googleapis.com dan 403.
-                    // NO metemos el cuerpo del error como "imagen" (eso cuelga/atraganta a Gemini): la omitimos.
-                    console.warn(`[AI] Imagen de referencia del departamento no disponible (HTTP ${response.status}). Se omite.`);
-                    continue;
-                }
-                const buffer = Buffer.from(await response.arrayBuffer());
-                if (buffer.length === 0) continue;
-                const prepared = await buildSafeGeminiMediaPart(buffer, refImage.mimeType || 'image/jpeg', 'image');
-                if (prepared.skipped) {
-                    console.warn(`[AI] Imagen de referencia del departamento omitida: ${prepared.skipped}.`);
-                    continue;
-                }
-                // Las imágenes de referencia usan como máximo la mitad del presupuesto total,
-                // para que los archivos del cliente (comprobantes, fotos) siempre quepan.
-                if (departmentImagesBytes + prepared.bytes > GEMINI_MAX_TOTAL_MEDIA_BYTES / 2) {
-                    console.warn('[AI] Imagen de referencia del departamento omitida: excede el presupuesto de tamaño.');
-                    continue;
-                }
-                departmentImageParts.push(prepared.part);
-                departmentImagesBytes += prepared.bytes;
-                console.log(`[AI] Imagen de referencia del departamento lista (${Math.round(prepared.bytes / 1024)} KB).`);
-            } catch (e) {
-                console.warn('[AI] Error descargando imagen de referencia del departamento:', e.message);
-            }
-        }
-
-        // --- Descargar y preparar multimedia de la conversación (dinámico) ---
-        // Se redimensiona/acota cada archivo para evitar "Premature close" por requests
-        // grandes (ver buildSafeGeminiMediaPart). Lo que no se pueda procesar se omite con aviso.
-        // Las imágenes de referencia del departamento van PRIMERO (la nota del prompt lo indica).
-        const mediaParts = [...departmentImageParts];
-        const skippedMediaTypes = [];
-        let totalMediaBytes = departmentImagesBytes;
-        for (const media of downloadedMedia.reverse()) { // Voltear para mantener orden cronológico
-            if (!media.url || !media.url.startsWith('http')) continue;
-            try {
-                const response = await fetch(media.url, { signal: AbortSignal.timeout(15000) });
-                if (!response.ok) {
-                    console.warn(`[AI] Multimedia de conversación no disponible (HTTP ${response.status}). Se omite.`);
-                    skippedMediaTypes.push(media.type);
-                    continue;
-                }
-                const buffer = Buffer.from(await response.arrayBuffer());
-                if (buffer.length === 0) continue;
-                const prepared = await buildSafeGeminiMediaPart(buffer, media.mimeType, media.type);
-                if (prepared.skipped) {
-                    console.warn(`[AI] Multimedia (${media.type}) omitida: ${prepared.skipped}.`);
-                    skippedMediaTypes.push(media.type);
-                    continue;
-                }
-                if (totalMediaBytes + prepared.bytes > GEMINI_MAX_TOTAL_MEDIA_BYTES) {
-                    console.warn(`[AI] Multimedia (${media.type}) omitida: excede el total permitido por request.`);
-                    skippedMediaTypes.push(media.type);
-                    continue;
-                }
-                mediaParts.push(prepared.part);
-                totalMediaBytes += prepared.bytes;
-                console.log(`[AI] Multimedia (${media.type}) lista para Gemini: ${Math.round(prepared.bytes / 1024)} KB${media.type === 'image' ? ' (redimensionada)' : ''}.`);
-            } catch (e) {
-                console.warn('[AI] Error preparando multimedia para contexto:', e.message);
-                skippedMediaTypes.push(media.type);
-            }
-        }
-        const esTipoMedia = (t) => t === 'image' ? 'imagen' : t === 'audio' ? 'audio' : t === 'video' ? 'video' : t === 'document' ? 'documento/PDF' : 'archivo';
-        const skippedMediaNote = skippedMediaTypes.length > 0
-            ? `\n\n**Nota:** El cliente envió ${skippedMediaTypes.length} archivo(s) (${skippedMediaTypes.map(esTipoMedia).join(', ')}) que no se pudieron procesar (probablemente muy grandes). Pídele amablemente que te describa por texto su contenido o que lo reenvíe más corto.`
-            : '';
-
-        // Detectar código postal (para el chequeo de cobertura de T1, más abajo).
+        // Detectar código postal (para el chequeo de cobertura de T1). Se calcula ANTES de lanzar
+        // las tareas de red para que la cotización T1 pueda correr en paralelo con las descargas.
         const messageText = message.text?.body || message.text || '';
         const postalCodeMatch = messageText.match(/\b(\d{5})\b/);
-        // La cotización de envío corre por T1 (coberturaNote, más abajo). La vieja nota de Skydropx
-        // (shippingInfo) se RETIRÓ: le daba a la IA una SEGUNDA lista de tarifas que chocaba con el
-        // chequeo de cobertura de T1 — p. ej. ofrecerle tarifas de envío al cliente justo cuando la
-        // zona debe declinarse con /lamento. Se deja la variable vacía porque se concatena más abajo.
+        // La cotización de envío corre por T1 (coberturaNote). La vieja nota de Skydropx (shippingInfo)
+        // se RETIRÓ: le daba a la IA una SEGUNDA lista de tarifas que chocaba con el chequeo de T1 —
+        // p. ej. ofrecerle tarifas al cliente justo cuando la zona debe declinarse con /lamento. Se
+        // deja la variable vacía porque se concatena más abajo.
         let shippingInfo = '';
 
-        // Cobertura/cotización T1: cuando la IA revisa cobertura de un C.P. (labor de venta), cotizar
-        // en T1 (DHL/FedEx, precios reales) para saber si hay envío y a qué costo. Reemplaza el scraping
-        // de Estafeta. El envío al cliente es GRATIS; los montos son referencia interna de costo.
-        let coberturaNote = '';
-        if (postalCodeMatch) {
-            try {
-                const t1 = require('./t1/t1Client');
-                const q = await t1.cotizar({ cpDestino: postalCodeMatch[1] });
-                const result = Array.isArray(q && q.result) ? q.result : [];
-                const ops = [];
-                result.forEach((r) => {
-                    const svc = (r.cotizacion && r.cotizacion.servicios) || {};
-                    Object.keys(svc).forEach((k) => {
-                        const s = svc[k] || {};
-                        if (s.costo_total != null) ops.push({ paq: r.clave, serv: s.servicio, dias: s.dias_entrega, costo: Number(s.costo_total) });
-                    });
-                });
-                ops.sort((a, b) => a.costo - b.costo);
-                if (ops.length) {
-                    const top = ops.slice(0, 4).map(o => `${o.paq} ${o.serv} $${o.costo.toFixed(2)}${o.dias ? ` (~${o.dias}d)` : ''}`).join(' · ');
-                    // Umbral de envío: SERVIMOS la zona (envío GRATIS, nosotros pagamos la guía) solo si
-                    // existe una paquetería que llegue por <= este monto. Antes se miraba solo DHL y arriba
-                    // del umbral se le COBRABA el envío al cliente; ahora, por decisión del negocio, la zona
-                    // cara se DECLINA con /lamento — pero SOLO si NINGUNA paquetería (DHL/FedEx/Paquetexpress)
-                    // baja del umbral, porque la guía se genera con la más barata (modal de guías del CRM).
-                    const UMBRAL_ENVIO = Number(process.env.MAX_ENVIO_SERVIBLE || 200);
-                    // ops ya viene ordenado ascendente -> ops[0] = la paquetería MÁS BARATA (cualquiera). El
-                    // costo DHL se conserva solo para el log (DHL en T1 = "EXPRESS/ECONOMY ... DOMESTIC").
-                    const dhlOps = ops.filter(o => /dhl|domestic/i.test(`${o.paq || ''} ${o.serv || ''}`));
-                    const dhlCosto = dhlOps.length ? dhlOps[0].costo : null;
-                    const minCosto = ops[0].costo;
-                    console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops, más barata ${ops[0].paq} $${minCosto}${dhlCosto != null ? `, DHL $${dhlCosto}` : ', sin DHL'} vs umbral $${UMBRAL_ENVIO} -> ${minCosto <= UMBRAL_ENVIO ? 'SERVIR' : 'LAMENTO'}`);
-                    if (minCosto <= UMBRAL_ENVIO) {
-                        coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real de paqueterías vía T1, desde Durango):** SÍ hay cobertura a domicilio y el envío al cliente es GRATIS (nosotros pagamos la guía). Opciones (referencia interna de costo, NO para el cliente): ${top}. NO le cobres envío ni le menciones estos montos; úsalos solo para saber que sí llegamos y a qué costo. Sigue el flujo normal de cobertura (responde "/ttt" y luego "/qqq"). Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
-                    } else {
-                        coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real vía T1, desde Durango):** esta zona NO es viable para nosotros — la paquetería MÁS BARATA (${ops[0].paq}) cuesta $${minCosto.toFixed(2)}, por arriba de nuestro límite de $${UMBRAL_ENVIO}. En este caso NO tomamos el pedido: responde ÚNICAMENTE con "/lamento" (en su propio renglón, sólo eso, sin ningún texto adicional). NO le menciones al cliente el costo del envío ni ningún monto; el mensaje de /lamento ya le explica con amabilidad e invita a dar otro código postal de otra zona. (Referencia interna de opciones: ${top}.) Aplica esto SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
+        // --- I/O del turno en PARALELO ---
+        // Estas tres tareas hacen red (descargas de multimedia, cotización T1, lectura del pedido +
+        // rastreo DHL) y son INDEPENDIENTES entre sí. Antes corrían en serie y sus latencias se
+        // sumaban; ahora arrancan juntas y se esperan una sola vez (Promise.all, más abajo), lo que
+        // recorta varios segundos en los turnos con archivos o con código postal.
+
+        // (A) Multimedia: imágenes de referencia del departamento + archivos de la conversación.
+        // Se redimensiona/acota cada archivo (buildSafeGeminiMediaPart) respetando un presupuesto de
+        // bytes; las de referencia van PRIMERO (la nota del prompt lo indica). NO van al caché
+        // (requests grandes causaban "Premature close").
+        const mediaWorkPromise = (async () => {
+            const departmentImageParts = [];
+            let departmentImagesBytes = 0;
+            for (const refImage of departmentReferenceImages) {
+                if (!(refImage && refImage.url && typeof refImage.url === 'string' && refImage.url.startsWith('http'))) continue;
+                try {
+                    const response = await fetch(refImage.url, { signal: AbortSignal.timeout(15000) });
+                    if (!response.ok) {
+                        // Con Uniform Bucket-Level Access, las URLs storage.googleapis.com dan 403.
+                        // NO metemos el cuerpo del error como "imagen" (eso cuelga/atraganta a Gemini): la omitimos.
+                        console.warn(`[AI] Imagen de referencia del departamento no disponible (HTTP ${response.status}). Se omite.`);
+                        continue;
                     }
-                } else {
-                    console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: sin tarifas (posible zona sin cobertura o CP inválido)`);
-                    coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]}:** ninguna paquetería (DHL/FedEx) devolvió tarifa para ese C.P. — posible zona sin cobertura o C.P. inválido. Si el cliente pregunta por envío a esa zona, avísale con amabilidad que lo confirmarás y escribe /equipo (en su propio renglón) antes de prometer la entrega. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
+                    const buffer = Buffer.from(await response.arrayBuffer());
+                    if (buffer.length === 0) continue;
+                    const prepared = await buildSafeGeminiMediaPart(buffer, refImage.mimeType || 'image/jpeg', 'image');
+                    if (prepared.skipped) {
+                        console.warn(`[AI] Imagen de referencia del departamento omitida: ${prepared.skipped}.`);
+                        continue;
+                    }
+                    // Las imágenes de referencia usan como máximo la mitad del presupuesto total,
+                    // para que los archivos del cliente (comprobantes, fotos) siempre quepan.
+                    if (departmentImagesBytes + prepared.bytes > GEMINI_MAX_TOTAL_MEDIA_BYTES / 2) {
+                        console.warn('[AI] Imagen de referencia del departamento omitida: excede el presupuesto de tamaño.');
+                        continue;
+                    }
+                    departmentImageParts.push(prepared.part);
+                    departmentImagesBytes += prepared.bytes;
+                    console.log(`[AI] Imagen de referencia del departamento lista (${Math.round(prepared.bytes / 1024)} KB).`);
+                } catch (e) {
+                    console.warn('[AI] Error descargando imagen de referencia del departamento:', e.message);
                 }
-            } catch (e) {
-                console.warn('[AI] Cotización de cobertura T1 falló:', e.message);
             }
-        }
 
-        // Solo se menciona lo que REALMENTE va adjunto (departmentImageParts, no la lista
-        // configurada): prometer imágenes que no llegan hacía alucinar al modelo.
-        const deptImagesNote = departmentImageParts.length > 0
-            ? `\n\n**Imágenes de referencia del producto/departamento:**\nLas primeras ${departmentImageParts.length} ${departmentImageParts.length === 1 ? 'imagen adjunta es una referencia visual' : 'imágenes adjuntas son referencias visuales'} del producto o catálogo del departamento. Úsalas para describir, comparar o responder preguntas del cliente. Los archivos posteriores (si los hay) son los que el cliente envió en la conversación.`
-            : '';
+            const mediaParts = [...departmentImageParts];
+            const skippedMediaTypes = [];
+            let totalMediaBytes = departmentImagesBytes;
+            for (const media of downloadedMedia.reverse()) { // Voltear para mantener orden cronológico
+                if (!media.url || !media.url.startsWith('http')) continue;
+                try {
+                    const response = await fetch(media.url, { signal: AbortSignal.timeout(15000) });
+                    if (!response.ok) {
+                        console.warn(`[AI] Multimedia de conversación no disponible (HTTP ${response.status}). Se omite.`);
+                        skippedMediaTypes.push(media.type);
+                        continue;
+                    }
+                    const buffer = Buffer.from(await response.arrayBuffer());
+                    if (buffer.length === 0) continue;
+                    const prepared = await buildSafeGeminiMediaPart(buffer, media.mimeType, media.type);
+                    if (prepared.skipped) {
+                        console.warn(`[AI] Multimedia (${media.type}) omitida: ${prepared.skipped}.`);
+                        skippedMediaTypes.push(media.type);
+                        continue;
+                    }
+                    if (totalMediaBytes + prepared.bytes > GEMINI_MAX_TOTAL_MEDIA_BYTES) {
+                        console.warn(`[AI] Multimedia (${media.type}) omitida: excede el total permitido por request.`);
+                        skippedMediaTypes.push(media.type);
+                        continue;
+                    }
+                    mediaParts.push(prepared.part);
+                    totalMediaBytes += prepared.bytes;
+                    console.log(`[AI] Multimedia (${media.type}) lista para Gemini: ${Math.round(prepared.bytes / 1024)} KB${media.type === 'image' ? ' (redimensionada)' : ''}.`);
+                } catch (e) {
+                    console.warn('[AI] Error preparando multimedia para contexto:', e.message);
+                    skippedMediaTypes.push(media.type);
+                }
+            }
+            const esTipoMedia = (t) => t === 'image' ? 'imagen' : t === 'audio' ? 'audio' : t === 'video' ? 'video' : t === 'document' ? 'documento/PDF' : 'archivo';
+            const skippedMediaNote = skippedMediaTypes.length > 0
+                ? `\n\n**Nota:** El cliente envió ${skippedMediaTypes.length} archivo(s) (${skippedMediaTypes.map(esTipoMedia).join(', ')}) que no se pudieron procesar (probablemente muy grandes). Pídele amablemente que te describa por texto su contenido o que lo reenvíe más corto.`
+                : '';
+            // Solo se menciona lo que REALMENTE va adjunto (departmentImageParts, no la lista
+            // configurada): prometer imágenes que no llegan hacía alucinar al modelo.
+            const deptImagesNote = departmentImageParts.length > 0
+                ? `\n\n**Imágenes de referencia del producto/departamento:**\nLas primeras ${departmentImageParts.length} ${departmentImageParts.length === 1 ? 'imagen adjunta es una referencia visual' : 'imágenes adjuntas son referencias visuales'} del producto o catálogo del departamento. Úsalas para describir, comparar o responder preguntas del cliente. Los archivos posteriores (si los hay) son los que el cliente envió en la conversación.`
+                : '';
+            return { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote };
+        })();
 
-        // Fecha/hora actual de México para que la IA calcule bien los tiempos de entrega.
-        // Sin esto el modelo no sabe qué día es "hoy" (su conocimiento es de ene-2025) y su
-        // regla de fechas límite no funciona.
+        // (B) Cobertura/cotización T1: cuando la IA revisa cobertura de un C.P. (labor de venta),
+        // cotizar en T1 (DHL/FedEx, precios reales) para saber si hay envío y a qué costo. Reemplaza
+        // el scraping de Estafeta. El envío al cliente es GRATIS; los montos son referencia interna.
+        const coberturaPromise = (async () => {
+            let coberturaNote = '';
+            if (postalCodeMatch) {
+                try {
+                    const t1 = require('./t1/t1Client');
+                    const q = await t1.cotizar({ cpDestino: postalCodeMatch[1] });
+                    const result = Array.isArray(q && q.result) ? q.result : [];
+                    const ops = [];
+                    result.forEach((r) => {
+                        const svc = (r.cotizacion && r.cotizacion.servicios) || {};
+                        Object.keys(svc).forEach((k) => {
+                            const s = svc[k] || {};
+                            if (s.costo_total != null) ops.push({ paq: r.clave, serv: s.servicio, dias: s.dias_entrega, costo: Number(s.costo_total) });
+                        });
+                    });
+                    ops.sort((a, b) => a.costo - b.costo);
+                    if (ops.length) {
+                        const top = ops.slice(0, 4).map(o => `${o.paq} ${o.serv} $${o.costo.toFixed(2)}${o.dias ? ` (~${o.dias}d)` : ''}`).join(' · ');
+                        // Umbral de envío: SERVIMOS la zona (envío GRATIS, nosotros pagamos la guía) solo si
+                        // existe una paquetería que llegue por <= este monto. Antes se miraba solo DHL y arriba
+                        // del umbral se le COBRABA el envío al cliente; ahora, por decisión del negocio, la zona
+                        // cara se DECLINA con /lamento — pero SOLO si NINGUNA paquetería (DHL/FedEx/Paquetexpress)
+                        // baja del umbral, porque la guía se genera con la más barata (modal de guías del CRM).
+                        const UMBRAL_ENVIO = Number(process.env.MAX_ENVIO_SERVIBLE || 200);
+                        // ops ya viene ordenado ascendente -> ops[0] = la paquetería MÁS BARATA (cualquiera). El
+                        // costo DHL se conserva solo para el log (DHL en T1 = "EXPRESS/ECONOMY ... DOMESTIC").
+                        const dhlOps = ops.filter(o => /dhl|domestic/i.test(`${o.paq || ''} ${o.serv || ''}`));
+                        const dhlCosto = dhlOps.length ? dhlOps[0].costo : null;
+                        const minCosto = ops[0].costo;
+                        console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops, más barata ${ops[0].paq} $${minCosto}${dhlCosto != null ? `, DHL $${dhlCosto}` : ', sin DHL'} vs umbral $${UMBRAL_ENVIO} -> ${minCosto <= UMBRAL_ENVIO ? 'SERVIR' : 'LAMENTO'}`);
+                        if (minCosto <= UMBRAL_ENVIO) {
+                            coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real de paqueterías vía T1, desde Durango):** SÍ hay cobertura a domicilio y el envío al cliente es GRATIS (nosotros pagamos la guía). Opciones (referencia interna de costo, NO para el cliente): ${top}. NO le cobres envío ni le menciones estos montos; úsalos solo para saber que sí llegamos y a qué costo. Sigue el flujo normal de cobertura (responde "/ttt" y luego "/qqq"). Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
+                        } else {
+                            coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real vía T1, desde Durango):** esta zona NO es viable para nosotros — la paquetería MÁS BARATA (${ops[0].paq}) cuesta $${minCosto.toFixed(2)}, por arriba de nuestro límite de $${UMBRAL_ENVIO}. En este caso NO tomamos el pedido: responde ÚNICAMENTE con "/lamento" (en su propio renglón, sólo eso, sin ningún texto adicional). NO le menciones al cliente el costo del envío ni ningún monto; el mensaje de /lamento ya le explica con amabilidad e invita a dar otro código postal de otra zona. (Referencia interna de opciones: ${top}.) Aplica esto SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
+                        }
+                    } else {
+                        console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: sin tarifas (posible zona sin cobertura o CP inválido)`);
+                        coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]}:** ninguna paquetería (DHL/FedEx) devolvió tarifa para ese C.P. — posible zona sin cobertura o C.P. inválido. Si el cliente pregunta por envío a esa zona, avísale con amabilidad que lo confirmarás y escribe /equipo (en su propio renglón) antes de prometer la entrega. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
+                    }
+                } catch (e) {
+                    console.warn('[AI] Cotización de cobertura T1 falló:', e.message);
+                }
+            }
+            return coberturaNote;
+        })();
+
+        // (C) Pedido REGISTRADO (orderInfoNote) + RASTREO del envío (trackingNote). Ambos parten del
+        // MISMO pedido más reciente, que ahora se lee UNA sola vez (antes getLatestOrderForContact se
+        // llamaba dos veces). orderInfoNote es la fuente de verdad del TOTAL; el rastreo solo se arma
+        // si el cliente pregunta por él y su pedido ya tiene guía DHL.
+        const orderNotesPromise = (async () => {
+            let orderInfoNote = '';
+            let trackingNote = '';
+            let lastOrderDoc = null;
+            try {
+                lastOrderDoc = await getLatestOrderForContact(contactId);
+            } catch (e) {
+                console.warn('[AI] No se pudo leer el pedido registrado para', contactId, e.message);
+            }
+            // --- Pedido REGISTRADO en el CRM: fuente de verdad para el TOTAL ---
+            // Sin esto la IA contestaba precios con la promoción general (ej. "2 x $1,000")
+            // aunque el pedido registrado fuera de otro monto (ej. Corazón 2 pzas = $1,500).
+            if (lastOrderDoc) {
+                const o = lastOrderDoc.data();
+                const createdMs = o.createdAt && o.createdAt.toMillis ? o.createdAt.toMillis() : 0;
+                // Solo pedidos recientes: uno viejo ya no aplica a la conversación actual.
+                if (createdMs && (Date.now() - createdMs) <= 45 * 24 * 60 * 60 * 1000) {
+                    const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : '(sin número)';
+                    const datos = String(o.datosProducto || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+                    orderInfoNote = `\n\n**Pedido REGISTRADO en el sistema:**\n${num} — Producto: ${o.producto || '-'} — TOTAL registrado: ${o.precio != null ? `$${o.precio}` : 'no registrado'} — Estatus: ${o.estatus || '-'}${datos ? ` — Datos: ${datos}` : ''}.\nPara el precio/total del pedido usa este ORDEN DE PRIORIDAD: 1) si un humano del equipo acordó en la conversación un total DISTINTO (descuento o ajuste), ese acuerdo MANDA — respétalo y no lo "corrijas" al del sistema; 2) si no hay un acuerdo distinto en el chat, usa el TOTAL registrado de arriba; 3) NUNCA lo calcules con promociones generales. Si hay conflicto y no queda claro cuál aplica, no afirmes ninguno: di que lo confirmas y escribe /equipo en su propio mensaje. Si el cliente quiere algo distinto a lo registrado (otra cantidad u otro modelo), aclara antes de dar totales. El estatus del pedido es SOLO informativo: NUNCA anuncies por tu cuenta que el pedido "ya está listo" ni inicies el cobro — eso lo hace el equipo humano cuando manda la foto del trabajo terminado.`;
+                }
+            }
+            // --- Rastreo del envío: cuando el cliente pregunta "¿dónde va mi pedido?" y su pedido ya
+            // tiene guía DHL, le damos el estatus (API oficial de DHL si hay DHL_API_KEY) y/o el link.
+            // Se activa SOLO ante palabras de rastreo para no gastar llamadas en cada mensaje. ---
+            if (lastOrderDoc && /(rastre|d[oó]nde va|d[oó]nde est[aá]|ya (lleg|va)|cu[aá]ndo (me )?(llega|entregan)|mi (pedido|paquete|env[ií]o|orden|gu[ií]a)|n[uú]mero de (rastreo|gu[ií]a)|seguimiento|tracking)/i.test(messageText)) {
+                try {
+                    const o = lastOrderDoc.data();
+                    const ge = o && o.guiaEnvio;
+                    if (ge && ge.guia) {
+                        let estatusTxt = '';
+                        try {
+                            // Solo DHL oficial (si hay DHL_API_KEY); si no, devuelve null y caemos al link.
+                            const dhlTrack = require('./dhl/dhlTracking');
+                            const st = await dhlTrack.getTracking(ge.guia);
+                            if (st && st.fase) estatusTxt = ` Estatus actual del envío: ${st.fase}${st.descripcion ? ` (${st.descripcion})` : ''}${st.ubicacion ? ` — ${st.ubicacion}` : ''}${st.fecha ? ` [${st.fecha}]` : ''}. Explícaselo en términos simples y cálidos.`;
+                        } catch (_) { /* sin estatus: cae al link */ }
+                        const link = ge.tracking || `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${ge.guia}`;
+                        const dhNum = o.consecutiveOrderNumber != null ? ` DH${o.consecutiveOrderNumber}` : '';
+                        trackingNote = `\n\n**El cliente pregunta por el RASTREO de su pedido${dhNum}:** su pedido ya se envió por DHL (guía ${ge.guia}).${estatusTxt} Comparte este link para que vea su rastreo en vivo: ${link}${estatusTxt ? '' : ' Si no tienes el estatus exacto, dile con amabilidad que ahí puede seguir su paquete y recuérdale que suele llegar en 3-5 días hábiles desde que se envió.'} NO inventes una ubicación ni una fecha de entrega que no tengas.`;
+                    }
+                } catch (e) { console.warn('[AI] Nota de rastreo falló:', e.message); }
+            }
+            return { orderInfoNote, trackingNote };
+        })();
+
+        // Fecha/hora actual de México para que la IA calcule bien los tiempos de entrega. Sin esto el
+        // modelo no sabe qué día es "hoy" (su conocimiento es de ene-2025). Es SÍNCRONO: se calcula
+        // mientras las tareas de red de arriba siguen en vuelo.
         const nowMx = new Date().toLocaleString('es-MX', {
             timeZone: 'America/Mexico_City',
             weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -2602,79 +2697,17 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // formulario de un pedido cancelado/entregado.
         const paymentPhaseActive = isPostVenta || contactData.purchaseStatus === 'registered';
 
-        // Protocolo de recolección de datos de envío por FORMULARIO. Se agrega SIEMPRE por código
-        // —aunque el prompt esté personalizado en la UI— para que la IA use el formulario y no
-        // recopile los datos por texto.
-        const postventaProtocolNote = paymentPhaseActive ? `\n\n**PROTOCOLO DE DATOS DE ENVÍO:**
-Los datos de envío se recopilan por un FORMULARIO (un enlace con el número de pedido ya cargado), NO por texto. El sistema le envía ese formulario al cliente automáticamente cuando se valida su pago.
-Reglas:
-- NUNCA pidas los datos de envío por texto ni por partes (no pidas campos sueltos como calle, colonia, CP, etc.).
-- Si el cliente ESCRIBE su dirección o datos por texto, NO los tomes campo por campo:
-   · Si su pago YA está validado (ya se le envió el formulario), agradécele con calidez y pídele que por favor los ponga en el FORMULARIO que le enviamos, porque así su pedido queda cargado correcto y sacamos la guía enseguida. Si dice que no le llegó el enlace o lo perdió, dile que se lo reenviamos y NO tomes los datos por texto.
-   · Si su pago AÚN no está validado, enfócate primero en el pago; dile que en cuanto se valide le llega el formulario para capturar sus datos de envío. NO tomes los datos por texto todavía.
-- EXCEPCIÓN (única forma de tomarlos por texto): SOLO si el cliente dice claramente que NO PUEDE abrir o llenar el formulario (ej. "no me abre el link", "no me deja", "no puedo llenarlo", "desde aquí no puedo"). Entonces recíbelos por texto: 1) Nombre completo, 2) Calle y número (int/ext), 3) Colonia/Fraccionamiento, 4) C.P., 5) Entre calles, 6) Referencia del domicilio, 7) Estado y Municipio, 8) Teléfono. Junta lo que haya escrito en varios mensajes. Si faltan, pídele SOLO los que falten. Cuando los tengas TODOS, confírmaselos ordenados, dile que un compañero del equipo termina de registrar su envío enseguida, y al FINAL de tu mensaje escribe el comando /equipo (el cliente NO lo ve; avisa a un humano para que capture sus datos y genere la guía). Emítelo UNA sola vez.` : '';
+        // NOTA: el protocolo de datos de envío, el de comprobante y el comando de cancelación
+        // se anexan ahora al texto CACHEADO del sistema (ver CANCEL_COMMAND_NOTE /
+        // POSTVENTA_PROTOCOL_NOTE / COMPROBANTE_COMMAND_NOTE en buildStaticContext, que recibe
+        // paymentPhaseActive). Son texto FIJO: vivían aquí y se recobraban como tokens nuevos en
+        // cada turno; ahora se pagan una sola vez por caché. El hash del caché separa la variante
+        // en fase de pago de la que no lo está.
 
-        // Comando interno de cancelación (venta y post-venta). Se inyecta SIEMPRE por código
-        // —aunque el prompt esté personalizado en la UI— para que la IA sepa avisar cuando el
-        // cliente decide NO seguir con el pedido; el sistema quita la etiqueta "Pendientes de
-        // revisión IA" si todavía no hay un pedido registrado (ver más abajo).
-        const cancelCommandNote = `\n\n**Cancelación de pedido:** Si el cliente te dice claramente que YA NO quiere el pedido, que lo CANCELA o que NO podrá continuar con él (por ejemplo: "ya no lo quiero", "mejor cancélalo", "ya no voy a poder con el pedido"), respóndele con empatía y escribe al FINAL de tu mensaje el comando /cancelado (el cliente NO lo ve; es una señal para el equipo). NO lo emitas por una simple demora o aplazamiento del pago (por ejemplo "mañana te pago", "dame unos días"): en esos casos NO se cancela. Emítelo UNA sola vez.`;
-
-        // Comando interno de comprobante validado + formulario de envío. Se inyecta por código para
-        // que funcione con cualquier prompt personalizado, y en fase de pago (post-venta O venta con
-        // pedido ya registrado): un cliente puede pagar antes de que se mande /cuatro. Cuando la IA
-        // valida un comprobante GENUINO emite /comprobante: el sistema marca el pedido para la
-        // sección "Envíos" del CRM y le manda al cliente el enlace del formulario de datos de envío.
-        const comprobanteCommandNote = paymentPhaseActive ? `\n\n**Comprobante de pago y formulario de envío:**
-- Cuando el cliente te MANDE su comprobante de pago (imagen o PDF) y verifiques que es GENUINO (el destino y el monto coinciden con lo esperado), responde ÚNICAMENTE con el comando /comprobante (SOLO eso, sin ningún otro texto ni saludo). NO escribas tú la confirmación, NO le pidas los datos de envío por texto y NO le mandes ningún enlace: al recibir /comprobante, el SISTEMA le manda automáticamente el mensaje de confirmación ("ya validamos tu pago") junto con el formulario de envío. Emítelo UNA sola vez por pedido.
-- MUY IMPORTANTE: si YA validaste el comprobante antes en esta conversación (ya se le envió el formulario de envío, aunque el comprobante siga viéndose en el chat), NO vuelvas a emitir /comprobante. En los turnos siguientes responde NORMALMENTE a lo que el cliente diga (dudas, datos, etc.); reenviar el formulario en cada turno lo satura.
-- Si el comprobante es sospechoso o NO coincide, usa /sospechoso (NO /comprobante). Si el cliente solo dice que "ya pagó" pero todavía NO ha mandado el comprobante, pídeselo con amabilidad (NO emitas /comprobante).
-- Cuando el cliente te confirme que YA LLENÓ su formulario de envío (por ejemplo: "ya llené el formulario", "listo, ya mandé mis datos"), responde ÚNICAMENTE con /pagado (solo eso, sin ningún otro texto).` : '';
-
-        // --- Pedido REGISTRADO en el CRM: fuente de verdad para el TOTAL ---
-        // Sin esto la IA contestaba precios con la promoción general (ej. "2 x $1,000")
-        // aunque el pedido registrado fuera de otro monto (ej. Corazón 2 pzas = $1,500):
-        // la IA nunca veía los pedidos del CRM, solo el texto del chat.
-        let orderInfoNote = '';
-        try {
-            const lastOrderDoc = await getLatestOrderForContact(contactId);
-            if (lastOrderDoc) {
-                const o = lastOrderDoc.data();
-                const createdMs = o.createdAt && o.createdAt.toMillis ? o.createdAt.toMillis() : 0;
-                // Solo pedidos recientes: uno viejo ya no aplica a la conversación actual.
-                if (createdMs && (Date.now() - createdMs) <= 45 * 24 * 60 * 60 * 1000) {
-                    const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : '(sin número)';
-                    const datos = String(o.datosProducto || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-                    orderInfoNote = `\n\n**Pedido REGISTRADO en el sistema:**\n${num} — Producto: ${o.producto || '-'} — TOTAL registrado: ${o.precio != null ? `$${o.precio}` : 'no registrado'} — Estatus: ${o.estatus || '-'}${datos ? ` — Datos: ${datos}` : ''}.\nPara el precio/total del pedido usa este ORDEN DE PRIORIDAD: 1) si un humano del equipo acordó en la conversación un total DISTINTO (descuento o ajuste), ese acuerdo MANDA — respétalo y no lo "corrijas" al del sistema; 2) si no hay un acuerdo distinto en el chat, usa el TOTAL registrado de arriba; 3) NUNCA lo calcules con promociones generales. Si hay conflicto y no queda claro cuál aplica, no afirmes ninguno: di que lo confirmas y escribe /equipo en su propio mensaje. Si el cliente quiere algo distinto a lo registrado (otra cantidad u otro modelo), aclara antes de dar totales. El estatus del pedido es SOLO informativo: NUNCA anuncies por tu cuenta que el pedido "ya está listo" ni inicies el cobro — eso lo hace el equipo humano cuando manda la foto del trabajo terminado.`;
-                }
-            }
-        } catch (e) {
-            console.warn('[AI] No se pudo leer el pedido registrado para', contactId, e.message);
-        }
-
-        // --- Rastreo del envío: cuando el cliente pregunta "¿dónde va mi pedido?" y su pedido ya
-        // tiene guía DHL, le damos el estatus (API oficial de DHL si hay DHL_API_KEY) y/o el link de
-        // rastreo. Se activa SOLO ante palabras de rastreo para no gastar llamadas en cada mensaje. ---
-        let trackingNote = '';
-        if (/(rastre|d[oó]nde va|d[oó]nde est[aá]|ya (lleg|va)|cu[aá]ndo (me )?(llega|entregan)|mi (pedido|paquete|env[ií]o|orden|gu[ií]a)|n[uú]mero de (rastreo|gu[ií]a)|seguimiento|tracking)/i.test(messageText)) {
-            try {
-                const lastOrderDoc = await getLatestOrderForContact(contactId);
-                const o = lastOrderDoc && lastOrderDoc.data();
-                const ge = o && o.guiaEnvio;
-                if (ge && ge.guia) {
-                    let estatusTxt = '';
-                    try {
-                        // Solo DHL oficial (si hay DHL_API_KEY); si no, devuelve null y caemos al link.
-                        const dhlTrack = require('./dhl/dhlTracking');
-                        const st = await dhlTrack.getTracking(ge.guia);
-                        if (st && st.fase) estatusTxt = ` Estatus actual del envío: ${st.fase}${st.descripcion ? ` (${st.descripcion})` : ''}${st.ubicacion ? ` — ${st.ubicacion}` : ''}${st.fecha ? ` [${st.fecha}]` : ''}. Explícaselo en términos simples y cálidos.`;
-                    } catch (_) { /* sin estatus: cae al link */ }
-                    const link = ge.tracking || `https://www.dhl.com/mx-es/home/rastreo.html?tracking-id=${ge.guia}`;
-                    const dhNum = o.consecutiveOrderNumber != null ? ` DH${o.consecutiveOrderNumber}` : '';
-                    trackingNote = `\n\n**El cliente pregunta por el RASTREO de su pedido${dhNum}:** su pedido ya se envió por DHL (guía ${ge.guia}).${estatusTxt} Comparte este link para que vea su rastreo en vivo: ${link}${estatusTxt ? '' : ' Si no tienes el estatus exacto, dile con amabilidad que ahí puede seguir su paquete y recuérdale que suele llegar en 3-5 días hábiles desde que se envió.'} NO inventes una ubicación ni una fecha de entrega que no tengas.`;
-                }
-            } catch (e) { console.warn('[AI] Nota de rastreo falló:', e.message); }
-        }
+        // Esperar las tres tareas de red juntas (arrancaron arriba y corrieron en paralelo).
+        const [mediaBundle, coberturaNote, orderNotes] = await Promise.all([mediaWorkPromise, coberturaPromise, orderNotesPromise]);
+        const { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote } = mediaBundle;
+        const { orderInfoNote, trackingNote } = orderNotes;
 
         // Cliente RECURRENTE en etapa de venta: ya le hemos enviado antes (purchaseStatus
         // 'completed' se pone cuando su pedido anterior pasó a Fabricar tras pagar). En una
@@ -2697,7 +2730,9 @@ Reglas:
         const mediaTaskNote = mediaParts.length > departmentImageParts.length
             ? ' Vienen adjuntos archivos de la conversación (fotos, audios, videos o documentos/PDF, p. ej. comprobantes de pago): analízalos con cuidado cuando sean relevantes para el último mensaje del cliente; si ya los atendiste en un turno anterior, no los vuelvas a comentar.'
             : '';
-        const finalUserText = `${fechaActualNote}${orderInfoNote}${trackingNote}${repeatBuyerNote}${postventaProtocolNote}${cancelCommandNote}${comprobanteCommandNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        // Los protocolos de pago/cancelación ya NO van aquí: viven en el texto cacheado del sistema
+        // (ver buildStaticContext). Aquí solo quedan las notas DINÁMICAS (dependen del cliente/turno).
+        const finalUserText = `${fechaActualNote}${orderInfoNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
@@ -2709,7 +2744,7 @@ Reglas:
             // El caché guarda SOLO texto (instrucciones + conocimiento + respuestas rápidas).
             // La multimedia (del cliente y de referencia del departamento) va en mediaParts,
             // ya redimensionada/acotada por buildSafeGeminiMediaPart.
-            const cacheName = await getOrCreateCache(botInstructions, [], '', isPostVenta);
+            const cacheName = await getOrCreateCache(botInstructions, [], '', isPostVenta, paymentPhaseActive);
             if (cacheName) {
                 console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (${historyTurns.length} turnos + ${mediaParts.length} archivo(s) multimedia, ${departmentImageParts.length} de referencia del depto)`);
                 aiResult = await generateGeminiResponseWithCache(cacheName, dynamicContents, mediaParts);
@@ -2722,7 +2757,7 @@ Reglas:
             // systemInstruction. Se manda la MISMA conversación y la MISMA multimedia (antes el
             // fallback iba solo texto y le pedía al cliente re-describir archivos ya enviados).
             console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché.`);
-            const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions, isPostVenta);
+            const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions, isPostVenta, paymentPhaseActive);
             const fallbackContents = [
                 { role: 'user', parts: [{ text: fallbackRef }] },
                 ...historyTurns,
@@ -3153,6 +3188,13 @@ Reglas:
     }
 }
 
+// Throttle del etiquetado en vivo: NO re-clasificar (una llamada a Gemini SIN caché, con todo
+// el transcript) en cada turno. La etiqueta solo la consume el scheduler de order_followup horas
+// después, y ese además re-clasifica en su propia corrida, así que un valor con unos minutos de
+// antigüedad es suficiente. En una racha de varios mensajes seguidos del cliente, esto pasa de
+// ~1 clasificación por turno a ~1 cada ORDER_LIVE_TAG_THROTTLE_MS (ahorro de tokens directo).
+const ORDER_LIVE_TAG_THROTTLE_MS = Number(process.env.ORDER_LIVE_TAG_THROTTLE_MS || 10 * 60 * 1000);
+
 /**
  * Etiqueta "en vivo" el estado de pedido del contacto (parte de escritura del híbrido
  * de order_followup). Reutiliza el historial ya construido por la IA, clasifica una
@@ -3167,6 +3209,21 @@ async function tagOrderInProgress(contactId, contactRef, conversationHistory, na
 
     const cfg = await getOrderFollowupConfig();
     if (!cfg.enabled || !cfg.liveTagging) return;
+
+    // Throttle: si ya etiquetamos hace poco (típico cuando el cliente manda varios mensajes
+    // seguidos), no relanzar la clasificación en este turno. Ahorra una llamada a Gemini por
+    // turno en las rachas. Si no se puede leer el timestamp previo, seguimos y clasificamos.
+    try {
+        const snap = await contactRef.get();
+        const prevAt = snap.exists ? (snap.data().orderTag && snap.data().orderTag.at) : null;
+        const prevMs = prevAt && typeof prevAt.toMillis === 'function' ? prevAt.toMillis() : 0;
+        if (prevMs && (Date.now() - prevMs) < ORDER_LIVE_TAG_THROTTLE_MS) {
+            console.log(`[ORDER_FOLLOWUP] live-tag omitido para ${contactId} (última etiqueta hace ${Math.round((Date.now() - prevMs) / 1000)}s < throttle ${Math.round(ORDER_LIVE_TAG_THROTTLE_MS / 1000)}s).`);
+            return;
+        }
+    } catch (e) {
+        console.warn('[ORDER_FOLLOWUP] no se pudo leer orderTag para el throttle; se clasifica igual:', e.message);
+    }
 
     const cls = await classifyOrderIntent({ conversationText: conversationHistory, name });
     if (!cls) return;
