@@ -103,18 +103,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // El tope se guarda en maxPerRun; 0 = SIN tope (ilimitado). El checkbox "Sin tope"
+    // deshabilita el campo numérico para que se vea claro cuál manda.
+    function syncTopeUI() {
+        const sinTope = document.getElementById('autoSinTope');
+        const tope = document.getElementById('autoTope');
+        if (sinTope && tope) tope.disabled = sinTope.checked;
+    }
+
     async function cargarCobranzaAuto() {
         const selHora = document.getElementById('autoHora');
         const selHoraTarde = document.getElementById('autoHoraTarde');
         llenarHoras(selHora, 6, 22);
         llenarHoras(selHoraTarde, 14, 22);
+        const sinTopeChk = document.getElementById('autoSinTope');
+        if (sinTopeChk) sinTopeChk.onchange = syncTopeUI;
         try {
             const cfgSnap = await getDoc(doc(db, 'crm_settings', 'cobranza_auto'));
             const cfg = cfgSnap.exists() ? cfgSnap.data() : {};
             document.getElementById('autoEnabled').checked = cfg.enabled === true;
             if (selHora) selHora.value = Number.isFinite(Number(cfg.hour)) ? Number(cfg.hour) : 11;
             if (selHoraTarde) selHoraTarde.value = Number.isFinite(Number(cfg.eveningHour)) ? Number(cfg.eveningHour) : 19;
+            const sinTope = Number(cfg.maxPerRun) === 0; // 0 = ilimitado
+            if (sinTopeChk) sinTopeChk.checked = sinTope;
             document.getElementById('autoTope').value = Number(cfg.maxPerRun) > 0 ? Number(cfg.maxPerRun) : 40;
+            syncTopeUI();
         } catch (e) {
             console.error('Error cargando config de cobranza automática:', e);
         }
@@ -162,14 +175,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const enabled = document.getElementById('autoEnabled').checked;
             const hour = Number(document.getElementById('autoHora').value);
             const eveningHour = Number(document.getElementById('autoHoraTarde').value);
-            const maxPerRun = Math.max(1, Math.min(200, Number(document.getElementById('autoTope').value) || 40));
+            const sinTope = document.getElementById('autoSinTope').checked;
+            // 0 = sin tope (el scheduler lo interpreta como ilimitado)
+            const maxPerRun = sinTope ? 0 : Math.max(1, Math.min(200, Number(document.getElementById('autoTope').value) || 40));
             if (enabled && !instruccionesTA.value.trim()) {
                 alert('Escribe y guarda primero las instrucciones de la IA: la cobranza automática las necesita.');
                 return;
             }
+            if (enabled && sinTope && !confirm('Vas a dejar la cobranza SIN tope de envíos: cobrará a TODOS los pedidos que toquen ese día (la primera corrida puede ser un volumen alto de mensajes y plantillas). ¿Confirmas?')) {
+                return;
+            }
             await setDoc(doc(db, 'crm_settings', 'cobranza_auto'), { enabled, hour, eveningHour, maxPerRun }, { merge: true });
             alert(enabled
-                ? `Cobranza automática ENCENDIDA. Pase de la mañana a las ${hour}:00 y vespertino a las ${eveningHour}:00 (hora MX), máximo ${maxPerRun} cobros por día.`
+                ? `Cobranza automática ENCENDIDA. Pase de la mañana a las ${hour}:00 y vespertino a las ${eveningHour}:00 (hora MX), ${sinTope ? 'SIN tope de envíos' : `máximo ${maxPerRun} cobros por día`}.`
                 : 'Cobranza automática APAGADA.');
         } catch (e) {
             console.error('Error guardando config de cobranza automática:', e);

@@ -33,7 +33,7 @@
 // Config en crm_settings/cobranza_auto:
 //   { enabled: bool (default false), hour: 0-23 (default 11, hora MX),
 //     eveningEnabled: bool (default true), eveningHour: 0-23 (default 19, hora MX),
-//     maxPerRun: number (default 40),
+//     maxPerRun: number (default 40; 0 = SIN tope/ilimitado),
 //     lastRunDate: 'YYYY-MM-DD', lastEveningRunDate: 'YYYY-MM-DD' }
 // Cada corrida deja su reporte en cobranza_runs/{YYYY-MM-DD} bajo el campo del pase
 // ('manana' | 'tarde'), visible en la página de cobranza.
@@ -66,7 +66,9 @@ async function getConfig() {
         hour: Number.isFinite(Number(d.hour)) ? Number(d.hour) : 11,
         eveningEnabled: d.eveningEnabled !== false, // el pase vespertino viene incluido salvo que se apague
         eveningHour: Number.isFinite(Number(d.eveningHour)) ? Number(d.eveningHour) : 19,
-        maxPerRun: Number.isFinite(Number(d.maxPerRun)) && Number(d.maxPerRun) > 0 ? Number(d.maxPerRun) : 40,
+        // maxPerRun: 0 = SIN tope (Infinity); ausente/ inválido = 40 por default.
+        maxPerRun: Number(d.maxPerRun) === 0 ? Infinity
+            : (Number.isFinite(Number(d.maxPerRun)) && Number(d.maxPerRun) > 0 ? Number(d.maxPerRun) : 40),
         lastRunDate: d.lastRunDate || null,
         lastEveningRunDate: d.lastEveningRunDate || null
     };
