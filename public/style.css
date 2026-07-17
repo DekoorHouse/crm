@@ -2727,7 +2727,10 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
     .message-bubble:not(.has-image):not(.has-video) .time-overlay i { color: rgba(0,0,0,0.45) !important; }
     body.dark-mode .message-bubble:not(.has-image):not(.has-video) .time-overlay,
     body.dark-mode .message-bubble:not(.has-image):not(.has-video) .time-overlay i { color: rgba(255,255,255,0.65) !important; }
-    .chat-image-preview { width: 100%; height: auto; max-width: 240px; max-height: 280px; }
+    /* Altura RESERVADA (cuadrada, como en desktop): con height:auto las imágenes median 0px
+       antes de cargar, crecían después del anclaje de scroll y el chat abría a media
+       conversación (parecía que "mandaba al primer mensaje" y que faltaba historia). */
+    .chat-image-preview { width: 240px; height: 240px; object-fit: cover; max-width: 100%; }
     .chat-audio-player { width: 100%; min-width: 0; max-width: 250px; }
 
     /* Messages container: padding compacto + pegar mensajes al bottom cuando hay pocos */

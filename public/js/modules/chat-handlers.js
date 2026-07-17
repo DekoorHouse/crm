@@ -259,23 +259,31 @@ function renderChatWindow(options = {}) {
             // MODIFICADO: Pasar las opciones a renderMessages para que maneje el scroll correctamente
             renderMessages(options);
             
-            const messagesContainer = document.getElementById('messages-container'); 
-            if (messagesContainer) { 
-                messagesContainer.addEventListener('scroll', () => { 
-                    if (!ticking) { 
-                        window.requestAnimationFrame(() => { 
-                            handleScroll(); 
-                            
+            const messagesContainer = document.getElementById('messages-container');
+            if (messagesContainer) {
+                messagesContainer.addEventListener('scroll', () => {
+                    if (!ticking) {
+                        window.requestAnimationFrame(() => {
+                            handleScroll();
+
                             // Lógica de Scroll Infinito para Mensajes
                             if (messagesContainer.scrollTop < 50) {
                                 loadMoreMessages();
                             }
-                            
-                            ticking = false; 
-                        }); 
-                        ticking = true; 
-                    } 
-                }); 
+
+                            ticking = false;
+                        });
+                        ticking = true;
+                    }
+                });
+
+                // Abrir imágenes por DELEGACIÓN (además del onclick de cada <img>): el listener
+                // vive en el contenedor y sobrevive a los re-render del onSnapshot; sin esto, un
+                // tap que coincide con un re-render (recibos de leído, mensajes nuevos) se perdía.
+                messagesContainer.addEventListener('click', (e) => {
+                    const img = e.target.closest && e.target.closest('.chat-image-preview');
+                    if (img && img.src) openImageModal(img.src);
+                });
             }
             
             // --- INICIO DE LA MODIFICACIÓN: Doble clic en el área del mensaje para responder ---

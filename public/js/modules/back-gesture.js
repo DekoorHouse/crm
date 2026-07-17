@@ -69,10 +69,22 @@
 
     // Cierra un overlay usando su propio mecanismo (botón de cierre → click en backdrop → forzar).
     function closeOverlay(el) {
-        var btn = el.querySelector('.modal-close-btn,.close-modal,.modal-close,[data-dismiss],[data-close],[aria-label="Cerrar"],[title^="Cerrar"]');
+        // El visor de imagen se cierra con su propia función y ya: su transición de 0.3s hacía
+        // que el chequeo inmediato lo viera "aún abierto" y el forzado de abajo le dejaba
+        // display:none pegado — después ya no volvía a abrir ninguna imagen en la PWA.
+        if (el.classList.contains('image-modal-backdrop')) {
+            if (typeof window.closeImageModal === 'function') window.closeImageModal();
+            else el.classList.remove('visible');
+            return;
+        }
+        var btn = el.querySelector('.modal-close-btn,.close-modal,.modal-close,.image-modal-close,[data-dismiss],[data-close],[aria-label="Cerrar"],[title^="Cerrar"]');
         if (btn) { btn.click(); if (!elVisible(el)) return; }
         try { el.click(); } catch (e) {}          // dispara handlers de "click en el backdrop cierra"
         if (!elVisible(el)) return;
+        // Si el overlay se cierra con transición (opacity/visibility), darle el beneficio de la
+        // duda: si su clase cambió tras el click, se está cerrando solo — no forzar display:none.
+        var cs = window.getComputedStyle(el);
+        if (parseFloat(cs.transitionDuration) > 0 && !el.classList.contains('visible')) return;
         // Último recurso: ocultar (equivale a lo que hacen las funciones close() del CRM).
         el.classList.add('hidden');
         el.style.display = 'none';

@@ -3664,7 +3664,9 @@ function scrollMessagesToBottom(container) {
     toBottom();
     requestAnimationFrame(toBottom);
     setTimeout(toBottom, 120); // tras el primer layout
-    const deadline = Date.now() + 1500;
+    // 5s: las imágenes del chat pasan por el proxy firmado y en el celular tardan más de 1.5s;
+    // si el deadline vence antes de que carguen, el chat se queda a media conversación.
+    const deadline = Date.now() + 5000;
     container.querySelectorAll('img, video').forEach(el => {
         if (el.complete) return;
         const onready = () => { if (Date.now() <= deadline) toBottomIfNear(); };
@@ -3894,6 +3896,10 @@ function hideError() {
 function openImageModal(imageUrl) {
     const modal = document.getElementById('image-modal');
     const modalImage = document.getElementById('modal-image-content');
+    // Auto-reparación: si el gesto Atrás (back-gesture.js) lo cerró a la fuerza alguna vez,
+    // dejaba display:none/.hidden pegados y el modal ya no volvía a abrir en la PWA.
+    modal.classList.remove('hidden');
+    modal.style.display = '';
     modalImage.src = imageUrl; // Establece la imagen
     modal.classList.add('visible'); // Muestra el modal
 }
