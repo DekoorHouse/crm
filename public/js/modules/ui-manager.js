@@ -452,7 +452,7 @@ function _paintDesignPending() {
         const comentarioCell = `<textarea data-dp-comment="${o.id}" onblur="changeDesignComentario('${o.id}', this)" placeholder="Nota interna…" title="Notas del diseñador (solo para el equipo)" style="width:170px;min-height:34px;max-height:110px;font-size:12px;line-height:1.3;padding:5px 7px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;resize:vertical;background:var(--color-surface,#fff);color:var(--color-text,#334155)">${escapeHtml(o.comentarioDiseno || '')}</textarea>`;
         return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:middle">
             <td style="padding:9px 12px 9px 0;color:#94a3b8;font-weight:600">${i + 1}</td>
-            <td style="padding:9px 12px 9px 0;font-weight:700;color:var(--color-primary);white-space:nowrap">${escapeHtml(o.orderNumber)}</td>
+            <td onclick="copyDesignOrderNumber(this, '${escapeHtml(o.orderNumber)}')" title="Clic para copiar el número de pedido" style="padding:9px 12px 9px 0;font-weight:700;color:var(--color-primary);white-space:nowrap;cursor:pointer">${escapeHtml(o.orderNumber)}</td>
             <td style="padding:9px 12px 9px 0;max-width:250px;min-width:150px">${datosCell}</td>
             <td style="padding:9px 12px 9px 0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${prod}</td>
             <td style="padding:9px 12px 9px 0">${motivoCell}</td>
@@ -510,6 +510,28 @@ async function changeDesignComentario(orderId, el) {
     }
 }
 window.changeDesignComentario = changeDesignComentario;
+
+// Copia el número de pedido al hacer clic en su celda (con un breve "✓ Copiado").
+function copyDesignOrderNumber(el, num) {
+    const flash = () => {
+        el.textContent = '✓ Copiado';
+        el.style.color = '#16a34a';
+        setTimeout(() => { el.textContent = num; el.style.color = ''; }, 900);
+    };
+    const fallback = () => {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = num; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+            flash();
+        } catch (_) {}
+    };
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(num).then(flash).catch(fallback);
+        else fallback();
+    } catch (_) { fallback(); }
+}
+window.copyDesignOrderNumber = copyDesignOrderNumber;
 
 // Cambia el estatus de un pedido desde el tablero y refresca (puede salir de la lista si pasó a diseño terminado).
 async function changeDesignPendingStatus(orderId, newStatus, el) {
