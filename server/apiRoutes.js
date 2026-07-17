@@ -15,6 +15,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
+const { logAiUsage } = require('./aiUsage');
 const PRICES = require('./prices');
 const { sendConversionEvent, messagingContactInfo, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer, compressVideoToLimit } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
@@ -10098,15 +10099,8 @@ Analiza la conversación y decide qué acción de cobranza tomar.`;
         const aiResponse = await generateGeminiResponse(dynamicPrompt, [], systemPrompt);
         let responseText = aiResponse.text.trim();
 
-        // 8. Log de uso de tokens
-        const today = new Date().toISOString().split('T')[0];
-        const usageRef = db.collection('ai_usage_logs').doc(today);
-        await usageRef.set({
-            inputTokens: admin.firestore.FieldValue.increment(aiResponse.inputTokens),
-            outputTokens: admin.firestore.FieldValue.increment(aiResponse.outputTokens),
-            requestCount: admin.firestore.FieldValue.increment(1),
-            date: today
-        }, { merge: true });
+        // 8. Log de uso de tokens (fuente 'cobranza')
+        await logAiUsage('cobranza', aiResponse);
 
         // 9. FUTURE - el cliente ya dio una fecha futura de pago
         const futureMatch = responseText.match(/\[FUTURE:(\d{4}-\d{2}-\d{2})\]/i);
@@ -10617,15 +10611,8 @@ Analiza la conversación y decide qué mensaje de retargeting enviar al cliente.
         const aiResponse = await generateGeminiResponse(dynamicPrompt, [], systemPrompt);
         let responseText = aiResponse.text.trim();
 
-        // Log de uso de tokens
-        const today = new Date().toISOString().split('T')[0];
-        const usageRef = db.collection('ai_usage_logs').doc(today);
-        await usageRef.set({
-            inputTokens: admin.firestore.FieldValue.increment(aiResponse.inputTokens),
-            outputTokens: admin.firestore.FieldValue.increment(aiResponse.outputTokens),
-            requestCount: admin.firestore.FieldValue.increment(1),
-            date: today
-        }, { merge: true });
+        // Log de uso de tokens (fuente 'reactivacion')
+        await logAiUsage('reactivacion', aiResponse);
 
         if (responseText.toUpperCase().includes('SKIP')) {
             return res.json({ success: false, skipped: true, reason: 'IA determinó que no conviene re-contactar' });
@@ -12071,16 +12058,14 @@ async function runSatisfaccionJob(jobId, options = {}) {
             }
         })));
 
-        // Tracking de tokens (igual que cobranza/retargeting)
+        // Tracking de tokens (fuente 'satisfaccion'; es un LOTE de varias llamadas)
         if (totalAiCalls > 0) {
-            const today = new Date().toISOString().split('T')[0];
-            await db.collection('ai_usage_logs').doc(today).set({
-                inputTokens: admin.firestore.FieldValue.increment(totalTokens.input),
-                outputTokens: admin.firestore.FieldValue.increment(totalTokens.output),
-                cachedTokens: admin.firestore.FieldValue.increment(totalTokens.cached),
-                requestCount: admin.firestore.FieldValue.increment(totalAiCalls),
-                date: today
-            }, { merge: true });
+            await logAiUsage('satisfaccion', {
+                inputTokens: totalTokens.input,
+                outputTokens: totalTokens.output,
+                cachedTokens: totalTokens.cached,
+                requestCount: totalAiCalls
+            });
         }
 
         // Invalidar cache del listado para que la siguiente lectura traiga los nuevos niveles

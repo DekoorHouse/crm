@@ -204,17 +204,9 @@ Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelv
         return null;
     }
 
-    // Registrar uso de tokens (mismo doc diario que usa el bot)
-    try {
-        const today = new Date().toISOString().split('T')[0];
-        await db.collection('ai_usage_logs').doc(today).set({
-            inputTokens: admin.firestore.FieldValue.increment(res.inputTokens || 0),
-            outputTokens: admin.firestore.FieldValue.increment(res.outputTokens || 0),
-            cachedTokens: admin.firestore.FieldValue.increment(res.cachedTokens || 0),
-            requestCount: admin.firestore.FieldValue.increment(1),
-            date: today
-        }, { merge: true });
-    } catch (_) { /* el logging no debe tumbar la extracción */ }
+    // Registrar uso de tokens etiquetado como 'registro_pedido' (extracción de datos del pedido
+    // por IA). El helper mantiene los totales y añade el desglose por fuente.
+    require('../aiUsage').logAiUsage('registro_pedido', res).catch(() => {});
 
     const parsed = parseClassifierJson(res.text);
     if (!parsed || typeof parsed !== 'object') return null;

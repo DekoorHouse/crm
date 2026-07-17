@@ -3412,11 +3412,22 @@ async function loadAIUsageStats() {
             .get();
 
         let monthInput = 0, monthOutput = 0, monthRequests = 0;
+        // Acumulador del desglose por fuente (bySource) sumando todos los días del mes.
+        const bySourceAgg = {};
         monthSnapshot.docs.forEach(doc => {
             const data = doc.data();
             monthInput += data.inputTokens || 0;
             monthOutput += data.outputTokens || 0;
             monthRequests += data.requestCount || 0;
+            const bs = data.bySource || {};
+            Object.keys(bs).forEach(src => {
+                const s = bs[src] || {};
+                const acc = bySourceAgg[src] || (bySourceAgg[src] = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, requestCount: 0 });
+                acc.inputTokens += s.inputTokens || 0;
+                acc.outputTokens += s.outputTokens || 0;
+                acc.cachedTokens += s.cachedTokens || 0;
+                acc.requestCount += s.requestCount || 0;
+            });
         });
 
         const monthCost = calculateCost(monthInput, monthOutput);
@@ -3431,9 +3442,49 @@ async function loadAIUsageStats() {
         if (monthOutEl) monthOutEl.textContent = formatNumber(monthOutput);
         if (monthCostEl) monthCostEl.textContent = '$' + monthCost.toFixed(4);
 
+        renderUsageBreakdown(bySourceAgg, { calculateCost, formatNumber });
+
     } catch (error) {
         console.error('Error al cargar estadísticas de uso de IA:', error);
     }
+}
+
+// Nombres legibles de cada fuente de consumo (ver server/aiUsage.js). Las no listadas
+// (features aún sin etiquetar) se muestran con su clave cruda.
+const AI_SOURCE_LABELS = {
+    bot: 'Andrea (respuestas a clientes)',
+    transcripcion: 'Transcripción de audios',
+    clasificador_pedido: 'Clasificador de pedidos',
+    clasificador_recordatorio: 'Clasificador de recordatorios',
+    registro_pedido: 'Registro de pedidos',
+    cobranza: 'Cobranza',
+    reactivacion: 'Reactivación de leads',
+    satisfaccion: 'Encuesta de satisfacción'
+};
+
+// Renderiza la tabla de desglose por fuente (ordenada por costo descendente).
+function renderUsageBreakdown(bySourceAgg, { calculateCost, formatNumber }) {
+    const tbody = document.getElementById('usage-breakdown-body');
+    if (!tbody) return;
+    const rows = Object.keys(bySourceAgg).map(src => {
+        const s = bySourceAgg[src];
+        return { src, ...s, cost: calculateCost(s.inputTokens, s.outputTokens) };
+    }).sort((a, b) => b.cost - a.cost);
+
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="py-3 text-center text-gray-400">Aún no hay datos del desglose este mes.</td></tr>';
+        return;
+    }
+    const esc = (str) => String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    tbody.innerHTML = rows.map(r => `
+        <tr class="border-b last:border-0">
+            <td class="py-2 pr-4 font-medium">${esc(AI_SOURCE_LABELS[r.src] || r.src)}</td>
+            <td class="py-2 pr-4 text-right">${r.requestCount.toLocaleString('es-MX')}</td>
+            <td class="py-2 pr-4 text-right">${formatNumber(r.inputTokens)}</td>
+            <td class="py-2 pr-4 text-right">${formatNumber(r.outputTokens)}</td>
+            <td class="py-2 pr-4 text-right text-gray-500">${formatNumber(r.cachedTokens)}</td>
+            <td class="py-2 text-right font-semibold text-amber-600">$${r.cost.toFixed(4)}</td>
+        </tr>`).join('');
 }
 
 // Exportar funciones globalmente

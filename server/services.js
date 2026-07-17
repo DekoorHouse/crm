@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const FormData = require('form-data');
 const ffmpeg = require('fluent-ffmpeg');
 const { db, admin, bucket } = require('./config');
+const { logAiUsage } = require('./aiUsage');
 
 // El path de ffmpeg ya suele configurarlo apiRoutes.js sobre el mismo módulo
 // (fluent-ffmpeg es singleton), pero lo fijamos aquí también por si services.js
@@ -1946,8 +1947,12 @@ async function transcribeAudio(fileUrl, mimeType) {
     const prompt = 'Transcribe EXACTAMENTE lo que dice esta nota de voz (de un cliente, español de México). '
         + 'Devuelve SOLO la transcripción literal, sin comentarios, sin comillas ni prefijos. '
         + 'Si no hay voz o no se entiende nada, responde exactamente: (audio sin voz clara).';
-    const { text } = await generateGeminiResponse(prompt, [prepared.part]);
-    const clean = (text || '').trim();
+    const genResult = await generateGeminiResponse(prompt, [prepared.part]);
+    // La transcripción también consume tokens de Gemini y ANTES no se contabilizaba (fuga de
+    // medición). La registramos como fuente 'transcripcion'. Fire-and-forget: no debe afectar
+    // el resultado de la transcripción.
+    logAiUsage('transcripcion', genResult).catch(() => {});
+    const clean = (genResult.text || '').trim();
     return clean || null;
 }
 
@@ -2768,16 +2773,9 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 
         const aiResponse = aiResult.text;
         
-        // Registrar uso de tokens en Firestore (incluyendo tokens cacheados)
-        const today = new Date().toISOString().split('T')[0];
-        const usageRef = db.collection('ai_usage_logs').doc(today);
-        await usageRef.set({
-            inputTokens: admin.firestore.FieldValue.increment(aiResult.inputTokens),
-            outputTokens: admin.firestore.FieldValue.increment(aiResult.outputTokens),
-            cachedTokens: admin.firestore.FieldValue.increment(aiResult.cachedTokens || 0),
-            requestCount: admin.firestore.FieldValue.increment(1),
-            date: today
-        }, { merge: true });
+        // Registrar uso de tokens en Firestore, etiquetado como fuente 'bot' (la respuesta de
+        // Andrea al cliente). El desglose por fuente vive en bySource; los totales se conservan.
+        await logAiUsage('bot', aiResult);
         console.log(`[AI] Tokens usados - Entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}, Cacheados: ${aiResult.cachedTokens || 0}`);
         
         // Antes de enviar mensajes, verificar si el usuario canceló

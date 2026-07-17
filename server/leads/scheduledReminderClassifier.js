@@ -9,7 +9,6 @@
  *
  * El parseo/normalizado vive en scheduledReminderLogic.js (puro). Aquí solo el I/O.
  */
-const { db, admin } = require('../config');
 const { parseDeferralJson, normalizeDeferral } = require('./scheduledReminderLogic');
 
 const SYSTEM_INSTRUCTION = `Eres un asistente de DekoorHouse, una tienda mexicana de lámparas personalizadas.
@@ -106,17 +105,9 @@ async function classifyDeferral({ conversationText, name, todayISO }) {
         return null;
     }
 
-    // Registrar uso de tokens (mismo doc diario que usa el bot)
-    try {
-        const today = new Date().toISOString().split('T')[0];
-        await db.collection('ai_usage_logs').doc(today).set({
-            inputTokens: admin.firestore.FieldValue.increment(res.inputTokens || 0),
-            outputTokens: admin.firestore.FieldValue.increment(res.outputTokens || 0),
-            cachedTokens: admin.firestore.FieldValue.increment(res.cachedTokens || 0),
-            requestCount: admin.firestore.FieldValue.increment(1),
-            date: today
-        }, { merge: true });
-    } catch (_) { /* el logging no debe tumbar la clasificación */ }
+    // Registrar uso de tokens etiquetado como 'clasificador_recordatorio' (detección en vivo
+    // de aplazamientos). El helper mantiene los totales y añade el desglose por fuente.
+    require('../aiUsage').logAiUsage('clasificador_recordatorio', res).catch(() => {});
 
     return normalizeDeferral(parseDeferralJson(res.text));
 }

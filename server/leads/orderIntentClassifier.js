@@ -8,7 +8,6 @@
  * El parseo/normalizado vive en orderFollowupLogic.js (puro/testeable). Aquí solo
  * el I/O: llamada a Gemini + registro de tokens.
  */
-const { db, admin } = require('../config');
 const { parseClassifierJson, normalizeClassification } = require('./orderFollowupLogic');
 
 const SYSTEM_INSTRUCTION = `Eres un clasificador para DekoorHouse, una tienda mexicana de lámparas personalizadas.
@@ -55,17 +54,9 @@ async function classifyOrderIntent({ conversationText, name }) {
         return null;
     }
 
-    // Registrar uso de tokens (mismo doc diario que usa el bot)
-    try {
-        const today = new Date().toISOString().split('T')[0];
-        await db.collection('ai_usage_logs').doc(today).set({
-            inputTokens: admin.firestore.FieldValue.increment(res.inputTokens || 0),
-            outputTokens: admin.firestore.FieldValue.increment(res.outputTokens || 0),
-            cachedTokens: admin.firestore.FieldValue.increment(res.cachedTokens || 0),
-            requestCount: admin.firestore.FieldValue.increment(1),
-            date: today
-        }, { merge: true });
-    } catch (_) { /* el logging no debe tumbar la clasificación */ }
+    // Registrar uso de tokens etiquetado como 'clasificador_pedido' (el análisis en vivo de
+    // "pedido en proceso"). El helper mantiene los totales y añade el desglose por fuente.
+    require('../aiUsage').logAiUsage('clasificador_pedido', res).catch(() => {});
 
     return normalizeClassification(parseClassifierJson(res.text));
 }

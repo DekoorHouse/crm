@@ -1281,6 +1281,29 @@ const AITrainingViewTemplate = () => `
                     </div>
                 </div>
 
+                <!-- Desglose por fuente (este mes) -->
+                <div class="mt-6">
+                    <h3 class="font-semibold text-lg mb-3">🔧 Desglose por fuente (este mes)</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-xs text-gray-500 uppercase border-b">
+                                    <th class="py-2 pr-4">Fuente</th>
+                                    <th class="py-2 pr-4 text-right">Peticiones</th>
+                                    <th class="py-2 pr-4 text-right">Entrada</th>
+                                    <th class="py-2 pr-4 text-right">Salida</th>
+                                    <th class="py-2 pr-4 text-right">Cacheados</th>
+                                    <th class="py-2 text-right">Costo</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usage-breakdown-body">
+                                <tr><td colspan="6" class="py-3 text-center text-gray-400">Cargando…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-2">Nota: el desglose empieza a acumular desde el despliegue de esta función; los días previos solo tienen el total.</p>
+                </div>
+
                 <p class="text-xs text-gray-400 mt-4 text-right">* Costos estimados: $0.10 USD / 1M tokens entrada, $0.40 USD / 1M tokens salida (Gemini Flash)</p>
             </div>
         </div>
