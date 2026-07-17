@@ -122,6 +122,9 @@ async function findCandidates() {
     for (const doc of snap.docs) {
         const o = { id: doc.id, ...doc.data() };
         if (o.disenoListoAt || o.svgCorteAt) continue;                       // ya diseñado / ya tiene SVG
+        // Con guía de envío (o quitado de Envíos) el pedido ya se fabricó/gestionó: cortarlo
+        // sería duplicar producción. Misma regla que Pendientes de Diseño (designPending.js).
+        if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios) continue;
         if (ms(o.svgCorteStartedAt) > staleMs) continue;                     // otro proceso lo está trabajando
         if (!/corazon/i.test(productOf(o))) continue;                        // solo lámpara de corazones
         if (SPECIAL_RE.test(datosOf(o))) continue;                           // especial -> manual
