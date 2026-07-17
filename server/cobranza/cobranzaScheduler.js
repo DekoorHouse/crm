@@ -121,6 +121,20 @@ async function runCobranzaSweep({ force = false } = {}) {
             const dhList = orders.map(o => 'DH' + o.consecutiveOrderNumber).join(', ');
 
             try {
+                // Recordatorio YA agendado para este cliente (p. ej. Andrea lo armó en el chat
+                // cuando el cliente dijo "te pago el 23"): ese mecanismo es el dueño del siguiente
+                // contacto — la cobranza no se le encima. No cobra NI cancela mientras esté vigente.
+                try {
+                    const remSnap = await db.collection('scheduled_reminders').doc(contactId).get();
+                    if (remSnap.exists && remSnap.data().status === 'scheduled') {
+                        report.saltados++;
+                        pushDetail({ contactId, pedidos: dhList, resultado: 'saltado: ya hay un recordatorio agendado para este cliente' });
+                        continue;
+                    }
+                } catch (e) {
+                    console.warn(`[COBRANZA_AUTO] No se pudo leer scheduled_reminders de ${contactId}; se continúa:`, e.message);
+                }
+
                 const decision = decideCobranzaAction(orders, todayMx, nowMs);
 
                 if (decision.action === 'skip_future') {
