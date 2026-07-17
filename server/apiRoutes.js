@@ -7948,14 +7948,24 @@ router.get('/design-pending', async (req, res) => {
                 corregirAt: tsToMs(p.corregirAt),
                 disenoListoAt: tsToMs(p.disenoListoAt),
                 comentarioDiseno: p.comentarioDiseno || '',
+                // Diseño automático (svg-corte-worker): link a la hoja SVG en Drive y compañero de hoja.
+                svgCorteUrl: p.svgCorteUrl || null,
+                svgCorteAt: tsToMs(p.svgCorteAt),
+                svgCorteSheetWith: p.svgCorteSheetWith || null,
             };
         };
 
         let orders = [];
         if (doneMode) {
-            // Lista "Diseñados": pedidos marcados a mano como listos (disenoListoAt), recientes arriba.
-            const snap = await db.collection('pedidos').orderBy('disenoListoAt', 'desc').limit(300).get();
-            snap.forEach(doc => orders.push(mapOrder(doc, [])));
+            // Lista "Diseñados": los marcados a mano (disenoListoAt) + los diseñados por la IA
+            // (estatus "Diseñado por IA" del svg-corte-worker), recientes arriba.
+            const [snap, snapIA] = await Promise.all([
+                db.collection('pedidos').orderBy('disenoListoAt', 'desc').limit(300).get(),
+                db.collection('pedidos').where('estatus', '==', 'Diseñado por IA').limit(300).get(),
+            ]);
+            const seen = new Set();
+            snap.forEach(doc => { seen.add(doc.id); orders.push(mapOrder(doc, [])); });
+            snapIA.forEach(doc => { if (!seen.has(doc.id)) orders.push(mapOrder(doc, [])); });
         } else {
             // Pendientes (2 etapas de diseño): 'Sin estatus' (falta mockup) + 'Fabricar' (falta corte) +
             // 'Corregir' (datos/video) + 2º producto. El motor (designPending.js) decide el motivo real.
@@ -7995,7 +8005,7 @@ router.get('/design-pending', async (req, res) => {
         }
         orders.forEach(o => { const c = infoById.get(o.contactId) || {}; o.clienteName = c.name || o.contactId; o.channel = c.channel || 'whatsapp'; });
 
-        if (doneMode) orders.sort((a, b) => (b.disenoListoAt || 0) - (a.disenoListoAt || 0));
+        if (doneMode) orders.sort((a, b) => (b.disenoListoAt || b.svgCorteAt || 0) - (a.disenoListoAt || a.svgCorteAt || 0));
         else orders.sort((a, b) => (b.corregirAt || b.comprobanteValidadoAt || b.createdAt || 0) - (a.corregirAt || a.comprobanteValidadoAt || a.createdAt || 0));
 
         res.json({ success: true, total: orders.length, orders: orders.slice(0, 500) });
@@ -8041,14 +8051,20 @@ router.post('/design-pending/:orderId/done', async (req, res) => {
 });
 
 // POST /api/design-pending/:orderId/reopen — regresa un pedido de Diseñados a Pendientes (quita la marca).
+// Si el pedido estaba "Diseñado por IA" (svg-corte-worker), también lo regresa a 'Fabricar' para
+// que vuelva a la cola de diseño (conserva svgCorte* como referencia; el worker no lo repite).
 router.post('/design-pending/:orderId/reopen', async (req, res) => {
     const { orderId } = req.params;
     try {
         const ref = db.collection('pedidos').doc(orderId);
         const doc = await ref.get();
         if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
-        await ref.update({ disenoListoAt: admin.firestore.FieldValue.delete() });
         const d = doc.data();
+        const upd = { disenoListoAt: admin.firestore.FieldValue.delete() };
+        if (String(d.estatus || '').toLowerCase().startsWith('diseñado por ia') || String(d.estatus || '').toLowerCase().startsWith('disenado por ia')) {
+            upd.estatus = 'Fabricar';
+        }
+        await ref.update(upd);
         try { await require('./design/designPending').recomputeForContact(d.contactId || d.telefono); } catch (_) {}
         res.json({ success: true });
     } catch (e) {

@@ -409,15 +409,21 @@ function _paintDesignPending() {
         const chan = o.channel === 'instagram' ? '<i class="fab fa-instagram" style="color:#e1306c"></i>'
             : o.channel === 'messenger' ? '<i class="fab fa-facebook-messenger" style="color:#0084ff"></i>'
             : '<i class="fab fa-whatsapp" style="color:#25d366"></i>';
-        const motivoCell = tab === 'disenados'
-            ? `<span style="display:inline-block;background:#16a34a22;color:#16a34a;border:1px solid #16a34a66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px"><i class="fas fa-check" style="margin-right:3px"></i>Diseñado</span>`
-            : (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('');
+        // Insignia "Diseñado por IA": el pedido ya tiene su hoja SVG generada por el worker
+        // (link directo a Drive). Aparece en Diseñados (estatus "Diseñado por IA") y también en
+        // Pendientes si el pedido regresó a la cola pero conserva su SVG de IA como referencia.
+        const iaBadge = o.svgCorteUrl
+            ? `<a href="${escapeHtml(o.svgCorteUrl)}" target="_blank" rel="noopener" title="Diseñado por IA — abrir el SVG en Drive${o.svgCorteSheetWith ? ' (hoja compartida con ' + escapeHtml(o.svgCorteSheetWith) + ')' : ''}" style="display:inline-block;background:#e83e8c22;color:#e83e8c;border:1px solid #e83e8c66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0;text-decoration:none"><i class="fas fa-robot" style="margin-right:3px"></i>Diseñado por IA <i class="fas fa-arrow-up-right-from-square" style="font-size:.55rem;margin-left:2px"></i></a>`
+            : '';
+        const motivoCell = (tab === 'disenados'
+            ? (o.disenoListoAt ? `<span style="display:inline-block;background:#16a34a22;color:#16a34a;border:1px solid #16a34a66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px"><i class="fas fa-check" style="margin-right:3px"></i>Diseñado</span>` : '')
+            : (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('')) + iaBadge;
         const statusSel = `<select onchange="changeDesignPendingStatus('${o.id}', this.value, this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);width:132px">${ENVIO_STATUS_OPTIONS.map(s => `<option${(o.estatus || 'Sin estatus') === s ? ' selected' : ''}>${s}</option>`).join('')}</select>`;
         const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (usa ← → para el siguiente/anterior pedido)" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:14px"><i class="fas fa-comments"></i></button>` : '';
         const actionBtn = tab === 'disenados'
             ? `<button onclick="reopenDesign('${o.id}', this)" title="Regresar a Pendientes" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;cursor:pointer;color:#334155;padding:4px 10px;font-size:12px;border-radius:6px;font-weight:600"><i class="fas fa-rotate-left" style="margin-right:4px"></i>Regresar</button>`
             : `<button onclick="markDesignDone('${o.id}', this)" title="Marcar como diseñado y sacar de la lista" style="border:none;background:#16a34a;color:#fff;cursor:pointer;padding:5px 10px;font-size:12px;border-radius:6px;font-weight:700"><i class="fas fa-check" style="margin-right:4px"></i>Diseñado</button>`;
-        const fecha = tab === 'disenados' ? o.disenoListoAt : (o.corregirAt || o.comprobanteValidadoAt || o.createdAt);
+        const fecha = tab === 'disenados' ? (o.disenoListoAt || o.svgCorteAt) : (o.corregirAt || o.comprobanteValidadoAt || o.createdAt);
         const fechaTxt = fecha ? new Date(fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) : '—';
         const prod = escapeHtml(o.producto || '') + (o.itemCount > 1 ? ` <span style="color:#94a3b8">+${o.itemCount - 1}</span>` : '');
         const comentarioCell = `<textarea onblur="changeDesignComentario('${o.id}', this)" placeholder="Nota interna…" title="Notas del diseñador (solo para el equipo)" style="width:170px;min-height:34px;max-height:110px;font-size:12px;line-height:1.3;padding:5px 7px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;resize:vertical;background:var(--color-surface,#fff);color:var(--color-text,#334155)">${escapeHtml(o.comentarioDiseno || '')}</textarea>`;
