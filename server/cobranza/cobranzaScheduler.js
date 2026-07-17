@@ -20,7 +20,8 @@
 //     agendados (scheduled_reminders), conversaciones activas hoy y el límite de
 //     1 mensaje de cobranza por día (estos dos últimos viven en cobranzaService).
 //   - A la IA se le dice EN QUÉ COBRO va (1..4) y qué plantilla preferir
-//     (cobranza_1..cobranza_4) cuando la ventana de 24h está cerrada.
+//     (cobro_1..cobro_4, SIN variable de nombre: los nombres de WhatsApp a veces
+//     son basura tipo "ds65834") cuando la ventana de 24h está cerrada.
 //
 // El envío usa el MISMO motor que la página manual de cobranza (cobrarContacto):
 // la IA lee la conversación y decide mensaje libre / respuesta rápida / plantilla,
@@ -80,7 +81,7 @@ function buildAttemptContext(cobroNum) {
         (ultima
             ? ` Es la ÚLTIMA LLAMADA: avisa con calidez y claridad que si no se recibe su pago, su pedido se cancelará automáticamente mañana. No amenaces; transmite que no queremos que lo pierda.`
             : '') +
-        `\nSi la ventana de 24h está CERRADA y existe la plantilla "cobranza_${cobroNum}", usa EXACTAMENTE esa (responde [TEMPLATE:cobranza_${cobroNum}]). Si no existe, elige la plantilla aprobada más adecuada.`;
+        `\nSi la ventana de 24h está CERRADA y existe la plantilla "cobro_${cobroNum}", usa EXACTAMENTE esa (responde [TEMPLATE:cobro_${cobroNum}]). Si no existe, elige la plantilla aprobada más adecuada.`;
 }
 
 /**
