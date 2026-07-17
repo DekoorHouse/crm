@@ -343,6 +343,67 @@ router.get('/generate-status/:jobId', asyncHandler(async (req, res) => {
     res.json({ success: true, status: 'completed', image: saved[0], cost });
 }));
 
+// ===================== GRABADO LÁSER (foto del cliente -> imagen para raster engrave) =====================
+// Convierte una FOTO cualquiera (la que el cliente quiere grabada) en una imagen lista para grabado
+// raster: rellenos BLANCOS, fondo NEGRO, sombreado por TRAMA (halftone) y alto detalle. Si va en el
+// modelo de corazones, se pasa una 2ª imagen con la SILUETA DE CORAZÓN para que el grabado salga con
+// esa forma. Usa WaveSpeed (GPT Image 2 Edit) — mismo flujo async que el preview: este submit
+// devuelve jobId; se consulta con GET /generate-status/:jobId (reusa descarga + galería).
+const ENGRAVE_PROMPT_BASE = [
+    'Convierte la fotografía adjunta en una ILUSTRACIÓN EN BLANCO Y NEGRO lista para GRABADO LÁSER RASTER (raster engrave).',
+    'Reglas obligatorias:',
+    '- Estrictamente MONOCROMA: solo blanco puro (#FFFFFF) y negro puro (#000000). Sin color, sin grises planos.',
+    '- El FONDO debe ser NEGRO sólido. El sujeto y sus detalles se representan con RELLENOS BLANCOS (formas blancas sobre negro).',
+    '- Los tonos, sombras y volúmenes se logran con TRAMA de puntos/líneas (halftone / dithering): un DEGRADADO EN TRAMA. Más densidad de puntos en las zonas oscuras, menos en las claras.',
+    '- ALTO DETALLE y máximo parecido: conserva claramente los rostros, cabello, lentes, facciones, ropa y bordes de las personas para que sean reconocibles.',
+    '- Bordes limpios y nítidos. SIN texto, SIN marca de agua, SIN marco, SIN objetos de fondo adicionales.',
+    'Resultado: una máscara de grabado de alto contraste, blanco sobre negro, con sombreado por trama, lista para grabar.',
+].join('\n');
+
+const ENGRAVE_PROMPT_SHAPE = [
+    '',
+    'Se adjuntan DOS imágenes: (1) la FOTO a convertir y (2) una SILUETA (forma) de referencia.',
+    'Compón el grabado de modo que TODA la escena quede DENTRO de la forma de la imagen (2): el área de la',
+    'forma se llena con el grabado blanco-sobre-negro con trama de la foto (1), y TODO lo que quede FUERA de',
+    'la forma es negro sólido. La forma va centrada, con su contorno limpio, y la foto se encuadra para que',
+    'las personas se vean completas dentro de la forma.',
+].join('\n');
+
+function buildEngravePrompt(hasShape, extra) {
+    let p = ENGRAVE_PROMPT_BASE;
+    if (hasShape) p += '\n' + ENGRAVE_PROMPT_SHAPE;
+    const e = String(extra || '').trim();
+    if (e) p += '\n\nInstrucciones adicionales del operador (aplícalas además de lo anterior): ' + e;
+    return p;
+}
+
+// POST /api/mockups/engrave-submit — { imageUrl, shapeImageUrl?, extraPrompt?, aspectRatio?, resolution? }
+router.post('/engrave-submit', asyncHandler(async (req, res) => {
+    const imageUrl = String(req.body.imageUrl || '').trim();
+    const shapeImageUrl = String(req.body.shapeImageUrl || '').trim();
+    if (!/^https?:\/\//.test(imageUrl)) {
+        return res.status(400).json({ success: false, error: 'Se requiere imageUrl (URL pública de la foto a grabar).' });
+    }
+    if (shapeImageUrl && !/^https?:\/\//.test(shapeImageUrl)) {
+        return res.status(400).json({ success: false, error: 'shapeImageUrl debe ser una URL pública.' });
+    }
+    const aspectRatio = String(req.body.aspectRatio || '1:1');
+    const prompt = buildEngravePrompt(!!shapeImageUrl, req.body.extraPrompt);
+    const images = shapeImageUrl ? [imageUrl, shapeImageUrl] : [imageUrl];
+
+    const wave = require('./wavespeedClient');
+    const { predictionId } = await wave.submitEdit(prompt, images, {
+        aspectRatio,
+        resolution: req.body.resolution || '1k',
+        quality: req.body.quality || 'high',
+    });
+    // Reusa el poller /generate-status/:jobId (descarga + galería). Sin orderId -> no toca pedidos.
+    await db.collection('mockup_jobs').doc(predictionId).set({
+        prompt, aspectRatio, kind: 'grabado', createdAt: new Date().toISOString(),
+    });
+    res.json({ success: true, jobId: predictionId, prompt });
+}));
+
 // POST /api/mockups/backfill-layout — verifica por visión los previews SIN `layout` de pedidos
 // vigentes ('Sin estatus' y 'Fabricar'). Para el backlog histórico y como red de seguridad.
 // Body: { limit } — máximo por llamada (default 8) para no exceder tiempos de request.
