@@ -706,21 +706,54 @@ function mkEnsureDesignFontLoaded() {
     return mkDesignFontLoadPromise;
 }
 
-// Convierte los <text> cuyo contenido trae saltos de línea en <tspan> apilados. SVG ignora
-// los '\n' (aplasta todo a un renglón), así que un campo con enter — ej. la fecha
-// "21-Julio-2026 ⏎ Aniversario No. 27" — se perdería en la imagen de referencia. Con
-// dominant-baseline central, la 1ª línea sube medio bloque por renglón extra para que el
-// conjunto quede centrado en la y original y los renglones extra caigan ABAJO.
-function mkExpandMultilineSvgText(svg) {
+// --- Layout de textos del diseño: renglones (enters) + tamaños de producción -----------------
+// SVG ignora los '\n' (aplasta todo a un renglón) y un texto largo se desborda de su zona.
+// Este pase replica las reglas de PRODUCCIÓN (las mismas del diseño de corte en Corel):
+//   - Campo con enter (ej. fecha "21-Julio-2026 ⏎ Aniversario No. 27") -> renglones apilados
+//     y centrados en la y original (la 1ª línea sube medio bloque; el resto cae abajo).
+//   - 2+ renglones -> el tamaño baja a 69% (44.8pt/65.2pt, proporción de los diseños manuales),
+//     para que el bloque no crezca al doble de alto.
+//   - Auto-ajuste de ancho: la línea más ancha debe caber en su zona (nombres ~24% del ancho
+//     del lienzo = el aro del infinito; otros textos ~32%). Se puede afinar por texto con el
+//     atributo opcional data-max-w="<px del viewBox>" en el SVG del diseño.
+const MK_2L_RATIO = 0.69;        // proporción 2 renglones (44.8/65.2 de producción)
+const MK_MAXW_NOMBRE = 0.24;     // ancho máx de un nombre, como fracción del viewBox
+const MK_MAXW_OTROS = 0.32;      // ancho máx de fecha/otros textos
+function mkLayoutDesignSvg(svg, fields = {}) {
     try {
         const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
-        if (doc.querySelector('parsererror')) return svg;
+        if (doc.querySelector('parsererror')) return mkFillDesignSvg(svg, fields);
+        const root = doc.documentElement;
+        const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(parseFloat);
+        const vbW = (vb.length === 4 && vb[2] > 0) ? vb[2] : (parseFloat(root.getAttribute('width')) || 1024);
+        const ctx = document.createElement('canvas').getContext('2d');
+
         doc.querySelectorAll('text').forEach(t => {
             if (t.children.length) return;                    // ya trae tspans/markup propio
-            const raw = t.textContent || '';
-            if (raw.indexOf('\n') < 0) return;
+            const raw0 = t.textContent || '';
+            const keys = Array.from(raw0.matchAll(/\{([a-zA-Z0-9_]+)\}/g)).map(m => m[1].toLowerCase());
+            const raw = raw0.replace(/\{([a-zA-Z0-9_]+)\}/g, (m, k) => {
+                const v = fields[k.toLowerCase()];
+                return v != null ? String(v) : '';
+            });
+            if (raw === raw0 && raw.indexOf('\n') < 0) return; // texto fijo de una línea: intacto
             const lines = raw.split('\n').map(s => s.trim()).filter(Boolean);
-            if (lines.length < 2) { t.textContent = lines[0] || ''; return; }
+            if (!lines.length) { t.textContent = ''; return; }
+
+            let size = parseFloat(t.getAttribute('font-size')) || 32;
+            const original = size;
+            if (lines.length > 1) size = size * MK_2L_RATIO;  // 2 renglones -> tamaño de producción
+
+            // Auto-ajuste de ancho midiendo con la fuente real (ya cargada en document.fonts).
+            const fam = t.getAttribute('font-family') || 'sans-serif';
+            const esNombre = keys.some(k => /nombre/.test(k));
+            const maxW = parseFloat(t.getAttribute('data-max-w')) || vbW * (esNombre ? MK_MAXW_NOMBRE : MK_MAXW_OTROS);
+            ctx.font = size + 'px ' + fam;
+            const wMax = Math.max.apply(null, lines.map(l => ctx.measureText(l).width));
+            if (wMax > maxW && wMax > 0) size = Math.max(8, size * maxW / wMax);
+            if (size !== original) t.setAttribute('font-size', String(Math.round(size * 100) / 100));
+
+            if (lines.length === 1) { t.textContent = lines[0]; return; }
             const x = t.getAttribute('x') || '0';
             const LH = 1.15;                                  // interlineado en em
             t.textContent = '';
@@ -732,13 +765,14 @@ function mkExpandMultilineSvgText(svg) {
                 t.appendChild(ts);
             });
         });
-        return new XMLSerializer().serializeToString(doc.documentElement);
-    } catch (_) { return svg; }                               // ante cualquier duda, intacto
+        return new XMLSerializer().serializeToString(root);
+    } catch (_) { return mkFillDesignSvg(svg, fields); }      // ante cualquier duda, relleno simple
 }
 
-// SVG final: rellena textos + apila renglones (enters) + embebe la fuente + garantiza xmlns.
+// SVG final: layout de textos (relleno + renglones + tamaños) + fuente embebida + xmlns.
 async function mkBuildDesignSvg(svg, fields) {
-    let filled = mkExpandMultilineSvgText(mkFillDesignSvg(svg, fields)).trim();
+    await mkEnsureDesignFontLoaded();                          // para medir texto con la fuente real
+    let filled = mkLayoutDesignSvg(svg, fields).trim();
     if (!/xmlns=/.test(filled)) filled = filled.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
     const fontUrl = await mkFontDataUrl();
     const style = `<defs><style>@font-face{font-family:'${MK_DESIGN_FONT_FAMILY}';src:url(${fontUrl}) format('truetype');}</style></defs>`;
