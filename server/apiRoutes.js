@@ -7952,6 +7952,8 @@ router.get('/design-pending', async (req, res) => {
                 svgCorteUrl: p.svgCorteUrl || null,
                 svgCorteAt: tsToMs(p.svgCorteAt),
                 svgCorteSheetWith: p.svgCorteSheetWith || null,
+                // Datos de personalización (nombres/fecha): lo que el diseñador necesita a la vista.
+                datos: (Array.isArray(p.items) ? p.items.map(i => i.datosProducto).filter(Boolean).join(' | ') : '') || p.datosProducto || '',
             };
         };
 

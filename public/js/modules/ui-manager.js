@@ -437,11 +437,23 @@ function _paintDesignPending() {
         const fecha = tab === 'disenados' ? (o.disenoListoAt || o.svgCorteAt) : (o.corregirAt || o.comprobanteValidadoAt || o.createdAt);
         const fechaTxt = fecha ? new Date(fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) : '—';
         const prod = escapeHtml(o.producto || '') + (o.itemCount > 1 ? ` <span style="color:#94a3b8">+${o.itemCount - 1}</span>` : '');
+        // Datos del pedido (nombres/fecha) en lugar del nombre de perfil del cliente: es lo que
+        // el diseñador necesita leer de un vistazo. El cliente queda en el tooltip; si el pedido
+        // no trae datos (ej. Especial sin captura), se muestra el cliente como antes.
+        const datosCompactos = String(o.datos || '')
+            .replace(/nombres?\s*:\s*/i, '')
+            .replace(/\s*\|\s*fecha\s*:\s*/i, ' · ')
+            .replace(/\s*\|\s*/g, ' · ')
+            .replace(/\s*\n\s*/g, ' · ')
+            .trim();
+        const datosCell = datosCompactos
+            ? `<span title="Cliente: ${escapeHtml(o.clienteName || '')} — ${escapeHtml(o.datos || '')}" style="display:inline-block;max-width:100%;font-weight:600">${chan} ${escapeHtml(datosCompactos)}</span>`
+            : `<span style="white-space:nowrap">${chan} ${escapeHtml(o.clienteName || '')}</span>`;
         const comentarioCell = `<textarea data-dp-comment="${o.id}" onblur="changeDesignComentario('${o.id}', this)" placeholder="Nota interna…" title="Notas del diseñador (solo para el equipo)" style="width:170px;min-height:34px;max-height:110px;font-size:12px;line-height:1.3;padding:5px 7px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;resize:vertical;background:var(--color-surface,#fff);color:var(--color-text,#334155)">${escapeHtml(o.comentarioDiseno || '')}</textarea>`;
         return `<tr style="border-bottom:1px solid var(--color-border);vertical-align:middle">
             <td style="padding:9px 12px 9px 0;color:#94a3b8;font-weight:600">${i + 1}</td>
             <td style="padding:9px 12px 9px 0;font-weight:700;color:var(--color-primary);white-space:nowrap">${escapeHtml(o.orderNumber)}</td>
-            <td style="padding:9px 12px 9px 0;white-space:nowrap">${chan} ${escapeHtml(o.clienteName || '')}</td>
+            <td style="padding:9px 12px 9px 0;max-width:250px;min-width:150px">${datosCell}</td>
             <td style="padding:9px 12px 9px 0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${prod}</td>
             <td style="padding:9px 12px 9px 0">${motivoCell}</td>
             <td style="padding:6px 12px 6px 0;white-space:nowrap">${statusSel}</td>
@@ -464,7 +476,7 @@ function _paintDesignPending() {
               <tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light);white-space:nowrap">
                 <th style="padding:8px 12px 8px 0">#</th>
                 <th style="padding:8px 12px 8px 0">Pedido</th>
-                <th style="padding:8px 12px 8px 0">Cliente</th>
+                <th style="padding:8px 12px 8px 0">Datos del pedido</th>
                 <th style="padding:8px 12px 8px 0">Producto</th>
                 <th style="padding:8px 12px 8px 0">${tab === 'disenados' ? 'Estado' : 'Motivo'}</th>
                 <th style="padding:8px 12px 8px 0">Estatus</th>
