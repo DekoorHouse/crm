@@ -91,21 +91,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Cobranza automática (Andrea) ---
     // Config en crm_settings/cobranza_auto; el scheduler del servidor la lee cada 15 min.
+    // Dos pases diarios: mañana (cobros 2..4, cancelaciones) y vespertino (cobro 1 del
+    // mismo día de la foto). El reporte diario trae un campo por pase: {manana, tarde}.
+    function llenarHoras(sel, desde, hasta) {
+        if (!sel || sel.options.length) return;
+        for (let h = desde; h <= hasta; h++) {
+            const opt = document.createElement('option');
+            opt.value = h;
+            opt.textContent = `${h}:00`;
+            sel.appendChild(opt);
+        }
+    }
+
     async function cargarCobranzaAuto() {
         const selHora = document.getElementById('autoHora');
-        if (selHora && !selHora.options.length) {
-            for (let h = 6; h <= 22; h++) {
-                const opt = document.createElement('option');
-                opt.value = h;
-                opt.textContent = `${h}:00`;
-                selHora.appendChild(opt);
-            }
-        }
+        const selHoraTarde = document.getElementById('autoHoraTarde');
+        llenarHoras(selHora, 6, 22);
+        llenarHoras(selHoraTarde, 14, 22);
         try {
             const cfgSnap = await getDoc(doc(db, 'crm_settings', 'cobranza_auto'));
             const cfg = cfgSnap.exists() ? cfgSnap.data() : {};
             document.getElementById('autoEnabled').checked = cfg.enabled === true;
             if (selHora) selHora.value = Number.isFinite(Number(cfg.hour)) ? Number(cfg.hour) : 11;
+            if (selHoraTarde) selHoraTarde.value = Number.isFinite(Number(cfg.eveningHour)) ? Number(cfg.eveningHour) : 19;
             document.getElementById('autoTope').value = Number(cfg.maxPerRun) > 0 ? Number(cfg.maxPerRun) : 40;
         } catch (e) {
             console.error('Error cargando config de cobranza automática:', e);
@@ -124,10 +132,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const r = snap.docs[0].data();
-            const err = r.error ? ` &middot; <span style="color:#dc2626;">⚠ ${r.error}</span>` : '';
+            // Estructura nueva: {date, manana:{...}, tarde:{...}}. Compat: docs viejos planos.
+            const pases = [];
+            if (r.manana) pases.push(['mañana', r.manana]);
+            if (r.tarde) pases.push(['tarde', r.tarde]);
+            if (!pases.length && (r.enviados != null || r.error)) pases.push(['corrida', r]);
+
+            const tot = { enviados: 0, cancelados: 0, vencidos: 0, saltados: 0, esperando: 0, errores: 0 };
+            const errs = [];
+            const porPase = [];
+            for (const [nombre, p] of pases) {
+                for (const k of Object.keys(tot)) tot[k] += Number(p[k]) || 0;
+                if (p.error) errs.push(`${nombre}: ${p.error}`);
+                porPase.push(`${nombre}: ${p.enviados || 0} enviado(s)`);
+            }
+            const errHtml = errs.length ? ` &middot; <span style="color:#dc2626;">⚠ ${errs.join(' | ')}</span>` : '';
             box.innerHTML = `<i class="fas fa-history"></i> <b>&Uacute;ltima corrida (${r.date}):</b> ` +
-                `${r.enviados || 0} cobros enviados &middot; ${r.cancelados || 0} pedidos cancelados &middot; ` +
-                `${r.vencidos || 0} vencidos (revisar manual) &middot; ${r.saltados || 0} saltados &middot; ${r.errores || 0} errores${err}`;
+                `${tot.enviados} cobros enviados (${porPase.join(' &middot; ') || 'sin pases'}) &middot; ` +
+                `${tot.cancelados} cancelados &middot; ${tot.vencidos} vencidos (revisar manual) &middot; ` +
+                `${tot.saltados} saltados &middot; ${tot.esperando} en espera de su d&iacute;a &middot; ${tot.errores} errores${errHtml}`;
         } catch (e) {
             console.error('Error cargando última corrida:', e);
             box.textContent = 'No se pudo cargar la última corrida.';
@@ -138,14 +161,15 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const enabled = document.getElementById('autoEnabled').checked;
             const hour = Number(document.getElementById('autoHora').value);
+            const eveningHour = Number(document.getElementById('autoHoraTarde').value);
             const maxPerRun = Math.max(1, Math.min(200, Number(document.getElementById('autoTope').value) || 40));
             if (enabled && !instruccionesTA.value.trim()) {
                 alert('Escribe y guarda primero las instrucciones de la IA: la cobranza automática las necesita.');
                 return;
             }
-            await setDoc(doc(db, 'crm_settings', 'cobranza_auto'), { enabled, hour, maxPerRun }, { merge: true });
+            await setDoc(doc(db, 'crm_settings', 'cobranza_auto'), { enabled, hour, eveningHour, maxPerRun }, { merge: true });
             alert(enabled
-                ? `Cobranza automática ENCENDIDA. Correrá todos los días a partir de las ${hour}:00 (hora MX), máximo ${maxPerRun} cobros por día.`
+                ? `Cobranza automática ENCENDIDA. Pase de la mañana a las ${hour}:00 y vespertino a las ${eveningHour}:00 (hora MX), máximo ${maxPerRun} cobros por día.`
                 : 'Cobranza automática APAGADA.');
         } catch (e) {
             console.error('Error guardando config de cobranza automática:', e);

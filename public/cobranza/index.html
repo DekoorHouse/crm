@@ -112,14 +112,16 @@
         <div class="content-box">
             <h2><i class="fas fa-robot" style="color:#6366f1;"></i> Cobranza autom&aacute;tica (Andrea)</h2>
             <p class="hint">
-                Con esto encendido, Andrea cobra <b>sola una vez al d&iacute;a</b> los pedidos de los &uacute;ltimos 30 d&iacute;as
-                que est&eacute;n en <b>Foto enviada</b> o <b>Esperando pago</b>, usando las instrucciones de arriba.
-                El flujo es: m&aacute;ximo <b>3 cobros</b> por cliente (uno por d&iacute;a); si despu&eacute;s del tercero no paga,
-                el pedido se <b>cancela autom&aacute;ticamente</b>. Las <b>promesas de pago con fecha</b> ("te pago el 23")
-                pausan el ciclo: Andrea espera y al vencer la promesa retoma con los cobros que le quedaban.
-                Si un pedido lleva m&aacute;s de <b>10 d&iacute;as</b> sin promesa de por medio, sale de la automatizaci&oacute;n y
-                queda para revisi&oacute;n manual. Andrea tambi&eacute;n respeta recordatorios ya agendados y conversaciones
-                activas del d&iacute;a; si el chat lleva +24h cerrado usa una plantilla aprobada.
+                Con esto encendido, Andrea cobra sola los pedidos de los &uacute;ltimos 30 d&iacute;as que est&eacute;n en
+                <b>Foto enviada</b> o <b>Esperando pago</b>, usando las instrucciones de arriba. El ciclo es de
+                <b>4 cobros espaciados</b>: el <b>cobro 1 sale la misma tarde</b> si al cliente se le envi&oacute; la foto
+                en el d&iacute;a y sigue en silencio (con al menos 5h de margen); los siguientes salen los d&iacute;as
+                <b>2, 5 y 9</b> (&uacute;ltima llamada). Si despu&eacute;s del 4&ordm; no paga, el pedido se
+                <b>cancela autom&aacute;ticamente al d&iacute;a 10</b>. Las <b>promesas de pago con fecha</b> ("te pago el 23")
+                pausan el ciclo: al vencer, Andrea retoma con los cobros que le quedaban. Si un pedido lleva
+                m&aacute;s de <b>10 d&iacute;as</b> sin promesa de por medio, sale de la automatizaci&oacute;n para revisi&oacute;n manual.
+                Andrea tambi&eacute;n respeta recordatorios ya agendados y conversaciones activas del d&iacute;a; si el chat
+                lleva +24h cerrado usa una plantilla aprobada (prefiere <b>cobranza_1..4</b> seg&uacute;n la etapa).
             </p>
             <div class="filtros-grid">
                 <div class="filtro-item">
@@ -127,8 +129,12 @@
                     <input type="checkbox" id="autoEnabled" style="width:22px;height:22px;">
                 </div>
                 <div class="filtro-item">
-                    <label for="autoHora"><i class="fas fa-clock"></i> Hora de la corrida (MX):</label>
+                    <label for="autoHora"><i class="fas fa-sun"></i> Pase de la ma&ntilde;ana (MX):</label>
                     <select id="autoHora"></select>
+                </div>
+                <div class="filtro-item">
+                    <label for="autoHoraTarde"><i class="fas fa-moon"></i> Pase vespertino (MX):</label>
+                    <select id="autoHoraTarde"></select>
                 </div>
                 <div class="filtro-item">
                     <label for="autoTope"><i class="fas fa-tachometer-alt"></i> Tope de env&iacute;os por d&iacute;a:</label>
@@ -182,7 +188,7 @@
     </div>
 </div>
 
-<script type="module" src="/cobranza/script.js?v=2"></script>
+<script type="module" src="/cobranza/script.js?v=3"></script>
 <script src="/comunicacion-pwa.js?v=2"></script>
 </body>
 </html>

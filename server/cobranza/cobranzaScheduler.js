@@ -1,11 +1,16 @@
 // =================================================================
 // === Scheduler de COBRANZA AUTOMÁTICA (Andrea cobra sola) =========
 // =================================================================
-// Flujo definido por el negocio (17-jul-2026):
+// Flujo definido por el negocio (17-jul-2026, versión 4 toques espaciados):
 //   - Cobra pedidos en estatus "Foto enviada" o "Esperando pago".
-//   - Máximo 1 cobro por día por cliente, y máximo 3 cobros en total.
-//   - Cuando TOCARÍA el 4º cobro (ya hubo 3 sin pago), ya NO se cobra:
-//     el pedido se CANCELA (estatus "Cancelado") y queda registrado.
+//   - CUATRO cobros máximo por cliente, espaciados: día 0 (la misma tarde de la
+//     foto, pase VESPERTINO), día 2, día 5 y día 9 (última llamada). Al día
+//     siguiente del 4º cobro sin pago (~día 10), el pedido se CANCELA
+//     (estatus "Cancelado") y queda registrado. El espaciado vive en cobranzaLogic.
+//   - Pase VESPERTINO (default 19:00 MX): SOLO hace el cobro 1 del mismo día —
+//     clientes a los que HOY se les envió la foto y siguen en silencio (guardias:
+//     sin mensaje del cliente hoy, último envío del equipo con ≥5h). Los demás
+//     cobros salen en el pase de la MAÑANA (default 11:00 MX).
 //   - Corte por tiempo: si un pedido lleva más de 10 días SIN promesa de por medio,
 //     se saca de la automatización SIN cancelar y se reporta para revisión manual
 //     ("si no pagaron en 10 días ya no van a pagar"). Las promesas de pago con
@@ -14,15 +19,20 @@
 //   - Respeta: promesas de fecha futura ([FUTURE] de la IA), recordatorios ya
 //     agendados (scheduled_reminders), conversaciones activas hoy y el límite de
 //     1 mensaje de cobranza por día (estos dos últimos viven en cobranzaService).
+//   - A la IA se le dice EN QUÉ COBRO va (1..4) y qué plantilla preferir
+//     (cobranza_1..cobranza_4) cuando la ventana de 24h está cerrada.
 //
 // El envío usa el MISMO motor que la página manual de cobranza (cobrarContacto):
-// la IA lee la conversación y decide mensaje libre / respuesta rápida / plantilla
-// (si la ventana de 24h está cerrada), con las instrucciones de crm_settings/bot_cobranza.
+// la IA lee la conversación y decide mensaje libre / respuesta rápida / plantilla,
+// con las instrucciones de crm_settings/bot_cobranza.
 //
 // Config en crm_settings/cobranza_auto:
 //   { enabled: bool (default false), hour: 0-23 (default 11, hora MX),
-//     maxPerRun: number (default 40), lastRunDate: 'YYYY-MM-DD' }
-// Cada corrida deja su reporte en cobranza_runs/{YYYY-MM-DD} (visible en la página).
+//     eveningEnabled: bool (default true), eveningHour: 0-23 (default 19, hora MX),
+//     maxPerRun: number (default 40),
+//     lastRunDate: 'YYYY-MM-DD', lastEveningRunDate: 'YYYY-MM-DD' }
+// Cada corrida deja su reporte en cobranza_runs/{YYYY-MM-DD} bajo el campo del pase
+// ('manana' | 'tarde'), visible en la página de cobranza.
 const cron = require('node-cron');
 const { db, admin } = require('../config');
 const { cobrarContacto } = require('./cobranzaService');
@@ -31,7 +41,7 @@ const { decideCobranzaAction, MAX_ATTEMPTS, MAX_DAYS } = require('./cobranzaLogi
 const ESTATUS_COBRABLES = ['Foto enviada', 'Esperando pago'];
 const LOOKBACK_DAYS = 30;        // ventana de búsqueda de pedidos (colchón para fabricación)
 const SEND_DELAY_MS = 1500;      // pausa entre envíos (rate limit de Meta)
-const CRON_SCHEDULE = '*/15 * * * *'; // el gate interno decide si ya toca correr hoy
+const CRON_SCHEDULE = '*/15 * * * *'; // el gate interno decide si ya toca correr cada pase
 
 let scheduledTask = null;
 let sweepRunning = false;
@@ -50,22 +60,43 @@ async function getConfig() {
     return {
         enabled: d.enabled === true, // apagado por default: se enciende desde la página de cobranza
         hour: Number.isFinite(Number(d.hour)) ? Number(d.hour) : 11,
+        eveningEnabled: d.eveningEnabled !== false, // el pase vespertino viene incluido salvo que se apague
+        eveningHour: Number.isFinite(Number(d.eveningHour)) ? Number(d.eveningHour) : 19,
         maxPerRun: Number.isFinite(Number(d.maxPerRun)) && Number(d.maxPerRun) > 0 ? Number(d.maxPerRun) : 40,
-        lastRunDate: d.lastRunDate || null
+        lastRunDate: d.lastRunDate || null,
+        lastEveningRunDate: d.lastEveningRunDate || null
     };
 }
 
-// La decisión de negocio por cliente (3 cobros → cancelar; 10 días → revisión manual;
-// respetar promesas futuras) vive en cobranzaLogic.js: es pura y tiene tests en tests/.
+// La decisión de negocio por cliente (espaciado de los 4 cobros → cancelar; 10 días →
+// revisión manual; promesas pausan) vive en cobranzaLogic.js: es pura y tiene tests.
 
-async function runCobranzaSweep({ force = false } = {}) {
+// Contexto que se anexa a las instrucciones para que la IA sepa en qué punto del
+// ciclo va este cliente y qué plantilla usar si la ventana de 24h está cerrada.
+function buildAttemptContext(cobroNum) {
+    const ultima = cobroNum >= MAX_ATTEMPTS;
+    return `\n\n[CONTEXTO DEL SISTEMA — NO se lo menciones al cliente]\n` +
+        `Este es el cobro número ${cobroNum} de ${MAX_ATTEMPTS} del ciclo de cobranza automática de este cliente.` +
+        (ultima
+            ? ` Es la ÚLTIMA LLAMADA: avisa con calidez y claridad que si no se recibe su pago, su pedido se cancelará automáticamente mañana. No amenaces; transmite que no queremos que lo pierda.`
+            : '') +
+        `\nSi la ventana de 24h está CERRADA y existe la plantilla "cobranza_${cobroNum}", usa EXACTAMENTE esa (responde [TEMPLATE:cobranza_${cobroNum}]). Si no existe, elige la plantilla aprobada más adecuada.`;
+}
+
+/**
+ * Corrida de cobranza de un pase.
+ * @param {'manana'|'tarde'} pass - 'manana': cobros 2..4, cancelaciones y vencimientos
+ *   (y cobro 1 de pedidos cuya foto fue de días anteriores). 'tarde': SOLO cobro 1
+ *   del mismo día (foto enviada hoy y cliente en silencio), vía sameDayFirstTouch.
+ */
+async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
     if (sweepRunning) { console.log('[COBRANZA_AUTO] Sweep ya en curso; se omite.'); return; }
     sweepRunning = true;
+    const isTarde = pass === 'tarde';
     const todayMx = todayMxStr();
     const report = {
-        date: todayMx,
         startedAt: admin.firestore.FieldValue.serverTimestamp(),
-        enviados: 0, cancelados: 0, vencidos: 0, saltados: 0, errores: 0,
+        enviados: 0, cancelados: 0, vencidos: 0, saltados: 0, esperando: 0, errores: 0,
         candidatos: 0,
         detalle: []
     };
@@ -77,7 +108,8 @@ async function runCobranzaSweep({ force = false } = {}) {
 
         // Claim del día ANTES de trabajar: si el server se reinicia a media corrida,
         // no se vuelve a cobrar hoy (mejor quedarse corto que cobrar doble).
-        await db.collection('crm_settings').doc('cobranza_auto').set({ lastRunDate: todayMx }, { merge: true });
+        await db.collection('crm_settings').doc('cobranza_auto')
+            .set(isTarde ? { lastEveningRunDate: todayMx } : { lastRunDate: todayMx }, { merge: true });
 
         // Instrucciones del bot de cobranza (las mismas de la página manual).
         const instrSnap = await db.collection('crm_settings').doc('bot_cobranza').get();
@@ -109,11 +141,20 @@ async function runCobranzaSweep({ force = false } = {}) {
             if (!byContact.has(key)) byContact.set(key, []);
             byContact.get(key).push(o);
         }
-        report.candidatos = byContact.size;
-        console.log(`[COBRANZA_AUTO] Corrida ${todayMx}: ${cobrables.length} pedidos cobrables de ${byContact.size} clientes.`);
+
+        // Pase vespertino: SOLO clientes sin ningún cobro previo (candidatos a cobro 1
+        // del mismo día de la foto). El resto del ciclo es del pase de la mañana.
+        const contactsToProcess = [];
+        for (const [contactId, orders] of byContact) {
+            const attempts = Math.max(0, ...orders.map(o => (o.cobranzaAuto || {}).attempts || 0));
+            if (isTarde && attempts > 0) continue;
+            contactsToProcess.push([contactId, orders, attempts]);
+        }
+        report.candidatos = contactsToProcess.length;
+        console.log(`[COBRANZA_AUTO] Corrida ${todayMx} (${pass}): ${cobrables.length} pedidos cobrables, ${contactsToProcess.length} clientes a evaluar.`);
 
         const nowMs = Date.now();
-        for (const [contactId, orders] of byContact) {
+        for (const [contactId, orders, attemptsPrev] of contactsToProcess) {
             if (report.enviados >= cfg.maxPerRun) {
                 pushDetail({ contactId, resultado: 'tope diario alcanzado, queda para mañana' });
                 report.saltados++;
@@ -138,6 +179,13 @@ async function runCobranzaSweep({ force = false } = {}) {
 
                 const decision = decideCobranzaAction(orders, todayMx, nowMs);
 
+                if (decision.action === 'wait') {
+                    // Aún no toca el siguiente cobro (espaciado del ciclo). Sin detalle para
+                    // no inflar el reporte: es el estado normal de la mayoría cada día.
+                    report.esperando++;
+                    continue;
+                }
+
                 if (decision.action === 'skip_future') {
                     report.saltados++;
                     pushDetail({ contactId, pedidos: dhList, resultado: `saltado: ${decision.reason}` });
@@ -150,7 +198,7 @@ async function runCobranzaSweep({ force = false } = {}) {
                             estatus: 'Cancelado',
                             canceladoPorCobranza: true,
                             canceladoPorCobranzaAt: admin.firestore.FieldValue.serverTimestamp(),
-                            'cobranzaAuto.done': 'cancelado_3_cobros'
+                            'cobranzaAuto.done': 'cancelado_4_cobros'
                         });
                         console.log(`[COBRANZA_AUTO] ✗ DH${o.consecutiveOrderNumber} CANCELADO (${decision.reason}).`);
                     }
@@ -177,10 +225,12 @@ async function runCobranzaSweep({ force = false } = {}) {
                     }
                 }
 
+                const cobroNum = attemptsPrev + 1;
                 const result = await cobrarContacto({
                     contactId,
-                    instructions,
-                    orderNumbers: orders.map(o => o.consecutiveOrderNumber)
+                    instructions: instructions + buildAttemptContext(cobroNum),
+                    orderNumbers: orders.map(o => o.consecutiveOrderNumber),
+                    sameDayFirstTouch: isTarde
                 });
 
                 if (result.success) {
@@ -192,9 +242,8 @@ async function runCobranzaSweep({ force = false } = {}) {
                         });
                     }
                     report.enviados++;
-                    const intento = Math.max(0, ...orders.map(o => (o.cobranzaAuto || {}).attempts || 0)) + 1;
-                    pushDetail({ contactId, pedidos: dhList, resultado: `cobro ${intento}/${MAX_ATTEMPTS} enviado${result.windowOpen ? '' : ' (plantilla)'}` });
-                    console.log(`[COBRANZA_AUTO] ✓ ${contactId} (${dhList}): cobro ${intento}/${MAX_ATTEMPTS} enviado.`);
+                    pushDetail({ contactId, pedidos: dhList, resultado: `cobro ${cobroNum}/${MAX_ATTEMPTS} enviado${result.windowOpen ? '' : ' (plantilla)'}` });
+                    console.log(`[COBRANZA_AUTO] ✓ ${contactId} (${dhList}): cobro ${cobroNum}/${MAX_ATTEMPTS} enviado (${pass}).`);
                     await new Promise(r => setTimeout(r, SEND_DELAY_MS));
                 } else if (result.futureDate) {
                     // La IA detectó promesa de fecha futura: guardarla para respetarla.
@@ -214,7 +263,7 @@ async function runCobranzaSweep({ force = false } = {}) {
             }
         }
 
-        console.log(`[COBRANZA_AUTO] Corrida ${todayMx} terminada: ${report.enviados} enviados, ${report.cancelados} cancelados, ${report.vencidos} vencidos, ${report.saltados} saltados, ${report.errores} errores.`);
+        console.log(`[COBRANZA_AUTO] Corrida ${todayMx} (${pass}) terminada: ${report.enviados} enviados, ${report.cancelados} cancelados, ${report.vencidos} vencidos, ${report.saltados} saltados, ${report.esperando} en espera, ${report.errores} errores.`);
     } catch (e) {
         report.error = String(e.message || e).slice(0, 300);
         console.error('[COBRANZA_AUTO] Sweep falló:', e.message);
@@ -222,7 +271,8 @@ async function runCobranzaSweep({ force = false } = {}) {
         sweepRunning = false;
         try {
             report.finishedAt = admin.firestore.FieldValue.serverTimestamp();
-            await db.collection('cobranza_runs').doc(todayMx).set(report, { merge: true });
+            // Un doc por día con un campo por pase: {date, manana: {...}, tarde: {...}}
+            await db.collection('cobranza_runs').doc(todayMx).set({ date: todayMx, [pass]: report }, { merge: true });
         } catch (e) {
             console.warn('[COBRANZA_AUTO] No se pudo guardar el reporte de la corrida:', e.message);
         }
@@ -238,11 +288,18 @@ function startCobranzaScheduler() {
     scheduledTask = cron.schedule(CRON_SCHEDULE, async () => {
         try {
             const cfg = await getConfig();
-            const today = todayMxStr();
             if (!cfg.enabled) return;
-            if (cfg.lastRunDate === today) return;    // ya corrió hoy
-            if (hourMx() < cfg.hour) return;          // aún no es la hora configurada
-            await runCobranzaSweep();
+            const today = todayMxStr();
+            const h = hourMx();
+            // Pase de la MAÑANA: cobros 2..4, cancelaciones, vencimientos y cobros 1 rezagados.
+            if (cfg.lastRunDate !== today && h >= cfg.hour) {
+                await runCobranzaSweep('manana');
+                return; // un pase por tick: el vespertino saldrá en un tick posterior
+            }
+            // Pase VESPERTINO: cobro 1 del mismo día de la foto (cliente en silencio).
+            if (cfg.eveningEnabled && cfg.lastEveningRunDate !== today && h >= cfg.eveningHour) {
+                await runCobranzaSweep('tarde');
+            }
         } catch (e) {
             console.error('[COBRANZA_AUTO] Gate del cron falló:', e.message);
         }

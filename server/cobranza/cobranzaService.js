@@ -48,13 +48,22 @@ async function fetchApprovedTemplates() {
     return templatesData;
 }
 
+// Guardia del pase vespertino: no cobrar si el último mensaje del equipo (la foto)
+// tiene menos de estas horas — se sentiría encimoso.
+const SAME_DAY_MIN_GAP_MS = 5 * 60 * 60 * 1000;
+
 /**
  * Ejecuta UN intento de cobranza IA para un contacto (mismo comportamiento que tenía
  * el endpoint /cobranza/enviar). No decide elegibilidad de negocio (eso es del caller):
  * aquí solo están las salvaguardas de conversación (ya cobrado hoy, conversación hoy,
  * ventana 24h, FUTURE, SKIP) y el envío.
+ *
+ * @param {boolean} [sameDayFirstTouch=false] - Modo del PASE VESPERTINO (cobro 1 la misma
+ *   tarde de la foto): en vez de saltar por "tiene conversación hoy", exige que HOY haya
+ *   habido envío del equipo (la foto), que el cliente NO haya escrito hoy (sigue en
+ *   silencio) y que el último envío tenga al menos SAME_DAY_MIN_GAP_MS de antigüedad.
  */
-async function cobrarContacto({ contactId, instructions, orderNumbers }) {
+async function cobrarContacto({ contactId, instructions, orderNumbers, sameDayFirstTouch = false }) {
     // require perezoso para evitar ciclo de módulos (services es un módulo grande)
     const { sendAdvancedWhatsAppMessage, generateGeminiResponse } = require('../services');
 
@@ -78,15 +87,36 @@ async function cobrarContacto({ contactId, instructions, orderNumbers }) {
         .limit(50)
         .get();
 
-    // 2.1 Si la conversación tiene mensajes de hoy (cualquier dirección), no cobrar
-    const hasMessagesToday = messagesSnapshot.docs.some(d => {
+    // 2.1 Reglas de "conversación de hoy" según el modo:
+    //  - Modo normal: si hay CUALQUIER mensaje de hoy (entrante o saliente), no cobrar
+    //    (no interrumpir conversaciones activas; la foto de hoy también pospone al día sig.).
+    //  - Pase vespertino (sameDayFirstTouch): el escenario es EXACTAMENTE "hoy se le mandó
+    //    la foto y no ha contestado". Exige envío del equipo HOY, silencio del cliente HOY,
+    //    y que el último envío no sea demasiado reciente (SAME_DAY_MIN_GAP_MS).
+    const msgsToday = messagesSnapshot.docs.filter(d => {
         const ts = d.data().timestamp?.toDate();
         if (!ts) return false;
-        const msgDateMx = ts.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-        return msgDateMx === todayMx;
+        return ts.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' }) === todayMx;
     });
-    if (hasMessagesToday) {
-        return { success: false, skipped: true, reason: 'Tiene conversación hoy' };
+    if (!sameDayFirstTouch) {
+        if (msgsToday.length > 0) {
+            return { success: false, skipped: true, reason: 'Tiene conversación hoy' };
+        }
+    } else {
+        const inboundToday = msgsToday.some(d => d.data().from === contactId);
+        if (inboundToday) {
+            return { success: false, skipped: true, reason: 'El cliente escribió hoy (conversación activa)' };
+        }
+        const outboundTodayMs = msgsToday
+            .filter(d => d.data().from !== contactId)
+            .map(d => d.data().timestamp.toDate().getTime());
+        if (!outboundTodayMs.length) {
+            return { success: false, skipped: true, reason: 'Hoy no se le envió nada (el cobro vespertino es solo para el día de la foto)' };
+        }
+        const lastOutboundMs = Math.max(...outboundTodayMs);
+        if (Date.now() - lastOutboundMs < SAME_DAY_MIN_GAP_MS) {
+            return { success: false, skipped: true, reason: 'El último envío del equipo es muy reciente (se respeta el margen de horas)' };
+        }
     }
 
     // Detectar ventana de 24h: buscar último mensaje ENTRANTE del cliente
