@@ -112,9 +112,10 @@
         <div class="content-box">
             <h2><i class="fas fa-robot" style="color:#6366f1;"></i> Cobranza autom&aacute;tica (Andrea)</h2>
             <p class="hint">
-                Con esto encendido, Andrea cobra sola los pedidos de los &uacute;ltimos 30 d&iacute;as que est&eacute;n en
-                <b>Foto enviada</b>, <b>Esperando pago</b> o <b>Corregido</b> (nunca "Corregir": ah&iacute; le debemos
-                la correcci&oacute;n al cliente), usando las instrucciones de arriba. El ciclo es de
+                Con esto encendido, Andrea cobra sola los pedidos de los &uacute;ltimos <b>N d&iacute;as</b> (la "ventana
+                de pedidos" configurable aqu&iacute; abajo) que est&eacute;n en <b>Foto enviada</b>, <b>Esperando pago</b> o
+                <b>Corregido</b> (nunca "Corregir": ah&iacute; le debemos la correcci&oacute;n al cliente), usando las
+                instrucciones de arriba. El ciclo es de
                 <b>4 cobros espaciados</b>: el <b>cobro 1 sale la misma tarde</b> si al cliente se le envi&oacute; la foto
                 en el d&iacute;a y sigue en silencio (con al menos 5h de margen); los siguientes salen los d&iacute;as
                 <b>2, 5 y 9</b> (&uacute;ltima llamada). Si despu&eacute;s del 4&ordm; no paga, el pedido se
@@ -144,6 +145,10 @@
                 <div class="filtro-item">
                     <label for="autoSinTope"><i class="fas fa-infinity"></i> Sin tope (ilimitado):</label>
                     <input type="checkbox" id="autoSinTope" style="width:22px;height:22px;">
+                </div>
+                <div class="filtro-item">
+                    <label for="autoVentana"><i class="fas fa-calendar-week"></i> Ventana de pedidos (d&iacute;as):</label>
+                    <input type="number" id="autoVentana" min="5" max="90" value="30">
                 </div>
             </div>
             <button id="btnGuardarAuto" onclick="guardarCobranzaAuto()">
@@ -204,7 +209,7 @@
     </div>
 </div>
 
-<script type="module" src="/cobranza/script.js?v=5"></script>
+<script type="module" src="/cobranza/script.js?v=6"></script>
 <script src="/comunicacion-pwa.js?v=2"></script>
 </body>
 </html>

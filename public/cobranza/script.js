@@ -127,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const sinTope = Number(cfg.maxPerRun) === 0; // 0 = ilimitado
             if (sinTopeChk) sinTopeChk.checked = sinTope;
             document.getElementById('autoTope').value = Number(cfg.maxPerRun) > 0 ? Number(cfg.maxPerRun) : 40;
+            document.getElementById('autoVentana').value = Number(cfg.lookbackDays) > 0 ? Number(cfg.lookbackDays) : 30;
             syncTopeUI();
         } catch (e) {
             console.error('Error cargando config de cobranza automática:', e);
@@ -216,6 +217,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const sinTope = document.getElementById('autoSinTope').checked;
             // 0 = sin tope (el scheduler lo interpreta como ilimitado)
             const maxPerRun = sinTope ? 0 : Math.max(1, Math.min(200, Number(document.getElementById('autoTope').value) || 40));
+            // Ventana de búsqueda de pedidos (días desde su creación), acotada 5-90 igual que el servidor.
+            const lookbackDays = Math.max(5, Math.min(90, Number(document.getElementById('autoVentana').value) || 30));
             if (enabled && !instruccionesTA.value.trim()) {
                 alert('Escribe y guarda primero las instrucciones de la IA: la cobranza automática las necesita.');
                 return;
@@ -223,9 +226,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (enabled && sinTope && !confirm('Vas a dejar la cobranza SIN tope de envíos: cobrará a TODOS los pedidos que toquen ese día (la primera corrida puede ser un volumen alto de mensajes y plantillas). ¿Confirmas?')) {
                 return;
             }
-            await setDoc(doc(db, 'crm_settings', 'cobranza_auto'), { enabled, hour, eveningHour, maxPerRun }, { merge: true });
+            await setDoc(doc(db, 'crm_settings', 'cobranza_auto'), { enabled, hour, eveningHour, maxPerRun, lookbackDays }, { merge: true });
             alert(enabled
-                ? `Cobranza automática ENCENDIDA. Pase de la mañana a las ${hour}:00 y vespertino a las ${eveningHour}:00 (hora MX), ${sinTope ? 'SIN tope de envíos' : `máximo ${maxPerRun} cobros por día`}.`
+                ? `Cobranza automática ENCENDIDA. Pase de la mañana a las ${hour}:00 y vespertino a las ${eveningHour}:00 (hora MX), ${sinTope ? 'SIN tope de envíos' : `máximo ${maxPerRun} cobros por día`}, cobrando pedidos de los últimos ${lookbackDays} días.`
                 : 'Cobranza automática APAGADA.');
         } catch (e) {
             console.error('Error guardando config de cobranza automática:', e);

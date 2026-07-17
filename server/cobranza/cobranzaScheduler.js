@@ -34,6 +34,7 @@
 //   { enabled: bool (default false), hour: 0-23 (default 11, hora MX),
 //     eveningEnabled: bool (default true), eveningHour: 0-23 (default 19, hora MX),
 //     maxPerRun: number (default 40; 0 = SIN tope/ilimitado),
+//     lookbackDays: number (default 30; ventana de búsqueda de pedidos, acotada 5-90),
 //     lastRunDate: 'YYYY-MM-DD', lastEveningRunDate: 'YYYY-MM-DD' }
 // Cada corrida deja su reporte en cobranza_runs/{YYYY-MM-DD} bajo el campo del pase
 // ('manana' | 'tarde'), visible en la página de cobranza.
@@ -43,7 +44,7 @@ const { cobrarContacto } = require('./cobranzaService');
 const { decideCobranzaAction, MAX_ATTEMPTS, MAX_DAYS } = require('./cobranzaLogic');
 
 const ESTATUS_COBRABLES = ['Foto enviada', 'Esperando pago', 'Corregido'];
-const LOOKBACK_DAYS = 30;        // ventana de búsqueda de pedidos (colchón para fabricación)
+const LOOKBACK_DAYS = 30;        // ventana de búsqueda de pedidos por DEFAULT (configurable: cobranza_auto.lookbackDays)
 const SEND_DELAY_MS = 1500;      // pausa entre envíos (rate limit de Meta)
 const CRON_SCHEDULE = '*/15 * * * *'; // el gate interno decide si ya toca correr cada pase
 
@@ -69,6 +70,11 @@ async function getConfig() {
         // maxPerRun: 0 = SIN tope (Infinity); ausente/ inválido = 40 por default.
         maxPerRun: Number(d.maxPerRun) === 0 ? Infinity
             : (Number.isFinite(Number(d.maxPerRun)) && Number(d.maxPerRun) > 0 ? Number(d.maxPerRun) : 40),
+        // Ventana de búsqueda de pedidos (días desde su creación). Acotada a [5, 90]:
+        // menos de 5 no alcanza ni para fabricar; más de 90 barre cartera muerta.
+        lookbackDays: Number.isFinite(Number(d.lookbackDays)) && Number(d.lookbackDays) > 0
+            ? Math.max(5, Math.min(90, Number(d.lookbackDays)))
+            : LOOKBACK_DAYS,
         lastRunDate: d.lastRunDate || null,
         lastEveningRunDate: d.lastEveningRunDate || null
     };
@@ -127,8 +133,10 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
         }
 
         // Pedidos recientes en estatus cobrable. Se consulta solo por fecha (índice simple,
-        // igual que la página manual) y el estatus se filtra en memoria.
-        const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+        // igual que la página manual) y el estatus se filtra en memoria. La ventana es
+        // configurable (cobranza_auto.lookbackDays); pedidos creados antes de la ventana
+        // quedan FUERA aunque estén a medio ciclo (decisión del dueño: cartera vieja, manual).
+        const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - cfg.lookbackDays * 24 * 60 * 60 * 1000);
         const snap = await db.collection('pedidos')
             .where('createdAt', '>=', cutoff)
             .orderBy('createdAt', 'asc') // los más viejos primero: son los más urgentes de cobrar
