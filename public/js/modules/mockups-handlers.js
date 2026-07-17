@@ -706,9 +706,39 @@ function mkEnsureDesignFontLoaded() {
     return mkDesignFontLoadPromise;
 }
 
-// SVG final: rellena textos + embebe la fuente como @font-face + garantiza xmlns.
+// Convierte los <text> cuyo contenido trae saltos de línea en <tspan> apilados. SVG ignora
+// los '\n' (aplasta todo a un renglón), así que un campo con enter — ej. la fecha
+// "21-Julio-2026 ⏎ Aniversario No. 27" — se perdería en la imagen de referencia. Con
+// dominant-baseline central, la 1ª línea sube medio bloque por renglón extra para que el
+// conjunto quede centrado en la y original y los renglones extra caigan ABAJO.
+function mkExpandMultilineSvgText(svg) {
+    try {
+        const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+        if (doc.querySelector('parsererror')) return svg;
+        doc.querySelectorAll('text').forEach(t => {
+            if (t.children.length) return;                    // ya trae tspans/markup propio
+            const raw = t.textContent || '';
+            if (raw.indexOf('\n') < 0) return;
+            const lines = raw.split('\n').map(s => s.trim()).filter(Boolean);
+            if (lines.length < 2) { t.textContent = lines[0] || ''; return; }
+            const x = t.getAttribute('x') || '0';
+            const LH = 1.15;                                  // interlineado en em
+            t.textContent = '';
+            lines.forEach((line, i) => {
+                const ts = doc.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+                ts.setAttribute('x', x);
+                ts.setAttribute('dy', i === 0 ? (-((lines.length - 1) * LH) / 2) + 'em' : LH + 'em');
+                ts.textContent = line;
+                t.appendChild(ts);
+            });
+        });
+        return new XMLSerializer().serializeToString(doc.documentElement);
+    } catch (_) { return svg; }                               // ante cualquier duda, intacto
+}
+
+// SVG final: rellena textos + apila renglones (enters) + embebe la fuente + garantiza xmlns.
 async function mkBuildDesignSvg(svg, fields) {
-    let filled = mkFillDesignSvg(svg, fields).trim();
+    let filled = mkExpandMultilineSvgText(mkFillDesignSvg(svg, fields)).trim();
     if (!/xmlns=/.test(filled)) filled = filled.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
     const fontUrl = await mkFontDataUrl();
     const style = `<defs><style>@font-face{font-family:'${MK_DESIGN_FONT_FAMILY}';src:url(${fontUrl}) format('truetype');}</style></defs>`;
