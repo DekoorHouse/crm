@@ -1505,7 +1505,7 @@ async function notifyShippingDataReady(orderNumber, contactData, addressText) {
  * Purchase a Meta — y avisa a Rosario para que genere la guía. Idempotente (no repite si ya estaba
  * en Fabricar). Devuelve el número de pedido marcado, o null si no había pedido / ya estaba.
  */
-async function markOrderFabricarForContact(contactId, contactData, addressText) {
+async function markOrderFabricarForContact(contactId, contactData, addressText, { skipShippingNotify = false } = {}) {
     const orderDoc = await getLatestOrderForContact(contactId);
     if (!orderDoc) {
         console.warn(`[POSTVENTA] ${contactId} confirmó datos pero no tiene pedido registrado; no se cambia estatus ni se avisa a Rosario.`);
@@ -1517,7 +1517,7 @@ async function markOrderFabricarForContact(contactId, contactData, addressText) 
     const oldStatus = (orderData.estatus || 'Sin estatus').toLowerCase();
 
     if (oldStatus.includes('fabricar')) {
-        console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Fabricar; no se repite el aviso a Rosario.`);
+        console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Fabricar; no se repite.`);
         return null;
     }
 
@@ -1525,7 +1525,7 @@ async function markOrderFabricarForContact(contactId, contactData, addressText) 
     const updatePayload = { estatus: 'Fabricar' };
     if (!orderData.confirmedAt) updatePayload.confirmedAt = admin.firestore.FieldValue.serverTimestamp();
     await orderDoc.ref.update(updatePayload);
-    console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderId}) → Fabricar por datos de envío completos (${contactId}).`);
+    console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderId}) → Fabricar (${contactId})${skipShippingNotify ? ' [por anticipo — sin aviso de guía]' : ' por datos de envío completos'}.`);
 
     // 2) Descuento de inventario (idempotente)
     try {
@@ -1549,9 +1549,14 @@ async function markOrderFabricarForContact(contactId, contactData, addressText) 
     // 4) Evento Purchase a Meta (idempotente por metaPurchaseSentAt)
     await sendPurchaseEventOnFabricar(orderId, { ...orderData, estatus: 'Fabricar' }, oldStatus);
 
-    // 5) Avisar a Rosario para que haga la guía
-    await notifyShippingDataReady(orderNumber, contactData, addressText)
-        .catch(e => console.warn('[POSTVENTA] Aviso a Rosario falló:', e.message));
+    // 5) Avisar a Rosario para que haga la guía. Se OMITE cuando el pedido pasa a Fabricar por el
+    // ANTICIPO de un especial (skipShippingNotify): ahí apenas arranca la fabricación, todavía falta
+    // el pago del resto y los datos de envío — la guía se pide después (cuando el cliente liquide y
+    // llene el formulario, ya aparece en la sección Envíos por comprobanteValidadoAt).
+    if (!skipShippingNotify) {
+        await notifyShippingDataReady(orderNumber, contactData, addressText)
+            .catch(e => console.warn('[POSTVENTA] Aviso a Rosario falló:', e.message));
+    }
 
     return orderNumber;
 }
@@ -2814,6 +2819,10 @@ Reglas:
         // Si en el mismo turno también salió /registrar (el anticipo se pagó), manda /registrar: son
         // excluyentes — /registrar regresa el pedido a "Sin estatus".
         const esperaAnticipoCmd = !isPostVenta && !registerOrderCmd && /\/esperaanticipo\b/i.test(aiResponse);
+        // La IA emite /anticipopagado (venta) cuando VALIDA el comprobante del ANTICIPO ($200) de un
+        // pedido ESPECIAL: el anticipo es lo que arranca la fabricación, así que el pedido pasa a
+        // "Fabricar" (registrándolo antes si hace falta). Ver el manejo después del loop.
+        const anticipoPaidCmd = !isPostVenta && /\/anticipopagado\b/i.test(aiResponse);
         // La IA emite /corregir cuando el cliente, DESPUÉS de recibir la foto de su pedido
         // terminado, reporta que nos equivocamos en algo (ej. faltó una frase, un nombre mal
         // escrito). Cambia el pedido a estatus "Corregir" y avisa al equipo. Solo en post-venta
@@ -2824,7 +2833,7 @@ Reglas:
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
         // (anuncia pedido LISTO + datos de pago); la IA no puede saber si el pedido físico
         // ya está terminado, así que jamás debe enviarlo ni expandirlo.
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').trim()).filter(m => m.length > 0);
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -3006,7 +3015,9 @@ Reglas:
         // poner el cierre; si falla, el contacto queda en Pendientes IA (flujo manual de siempre)
         // y se avisa al admin. Fire-and-forget: nunca debe tumbar la respuesta al cliente.
         // require perezoso para evitar ciclo de módulos (aiOrderRegistration requiere services).
-        if (registerOrderCmd) {
+        // /anticipopagado implica registrar también (si aún no existe el pedido) y luego pasarlo a
+        // Fabricar: el anticipo del especial ya se validó, así que arranca la fabricación.
+        if (registerOrderCmd || anticipoPaidCmd) {
             // Anexar la respuesta del TURNO ACTUAL al transcript: conversationHistory se arma
             // ANTES de generar, así que sin esto el extractor no vería un resumen/cierre emitido
             // en este mismo turno (y las confirmaciones por nota de voz perderían su contexto).
@@ -3016,7 +3027,15 @@ Reglas:
             const fullTranscript = currentTurnText ? `${conversationHistory}\n${currentTurnText}` : conversationHistory;
             require('./orders/aiOrderRegistration')
                 .registerOrderFromAI({ contactId, contactData, conversationText: fullTranscript })
-                .catch(e => console.warn('[AI_ORDER] registro automático falló:', e.message));
+                .then(orderNum => {
+                    // Anticipo de especial validado ($200): el pedido arranca fabricación → "Fabricar"
+                    // (descuenta inventario, corona y evento Purchase a Meta), PERO sin avisar aún a
+                    // Rosario para la guía: falta el pago del resto y los datos de envío.
+                    if (orderNum && anticipoPaidCmd) {
+                        return markOrderFabricarForContact(contactId, contactData, null, { skipShippingNotify: true });
+                    }
+                })
+                .catch(e => console.warn('[AI_ORDER] registro/fabricar por anticipo falló:', e.message));
         }
 
         // /esperaanticipo: la IA pidió el anticipo de un pedido especial. Si el cliente ya tenía un
