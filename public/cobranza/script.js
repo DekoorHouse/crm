@@ -187,10 +187,23 @@ document.addEventListener('DOMContentLoaded', () => {
             if (logsBox) {
                 const parts = [];
                 for (const [nombre, p] of pases) {
-                    if (!Array.isArray(p.detalle) || !p.detalle.length) continue;
+                    const detalle = Array.isArray(p.detalle) ? p.detalle : [];
+                    if (!detalle.length && !p.enCurso) continue;
                     const finTxt = p.enCurso ? ' — ⏳ corriendo…' : (horaFin(p) ? ` — ✅ terminada ${esc(horaFin(p))}` : '');
                     parts.push(`<div style="font-weight:700; margin-top:4px;">Pase ${esc(nombre)}${finTxt} · ${p.enviados || 0} enviados de ${p.candidatos || 0} candidatos</div>`);
-                    for (const d of p.detalle) {
+                    // Barra de progreso: clientes evaluados (suma de todos los contadores) vs candidatos.
+                    const procesados = ['enviados', 'cancelados', 'vencidos', 'saltados', 'esperando', 'errores']
+                        .reduce((a, k) => a + (Number(p[k]) || 0), 0);
+                    const totalC = Number(p.candidatos) || 0;
+                    if (totalC > 0) {
+                        const pct = Math.min(100, Math.round(procesados * 100 / totalC));
+                        parts.push(
+                            `<div style="background:#e5e7eb; border-radius:6px; height:10px; margin:4px 0 2px; overflow:hidden;">` +
+                            `<div style="background:${p.enCurso ? '#f59e0b' : '#10b981'}; height:100%; width:${pct}%; transition:width .5s;"></div></div>` +
+                            `<div style="font-size:12px; color:#6b7280; margin-bottom:4px;">${procesados} de ${totalC} evaluados (${pct}%)</div>`
+                        );
+                    }
+                    for (const d of detalle) {
                         parts.push(`<div>• <b>${esc(d.pedidos || '')}</b> ${esc(d.contactId || '')} — ${esc(d.resultado || '')}</div>`);
                     }
                 }
