@@ -118,9 +118,19 @@ async function mkHideOrder(orderId) {
 // Extrae la fecha: primero por la etiqueta "Fecha:" (soporta mes con letras, rangos,
 // etc., ej. "6/ Nov/2005", "15 octubre 2023"); si no hay etiqueta, cae a una fecha
 // numérica suelta (dd/mm/aaaa).
+// ¿La "fecha" es en realidad "sin fecha" (el cliente NO quiere fecha)? -> tratarla como VACÍA para
+// que la casilla quede en blanco y el mockup NO grabe "Sin Fecha". (Espejo de esSinFecha del backend.)
+function mkEsSinFecha(v) {
+    const s = String(v || '').toLowerCase().trim();
+    if (!s) return false;
+    return /sin\s*fecha/.test(s) || /\bno\b[^]*\bfecha\b/.test(s) || /^(ninguna?|n\s*\/\s*a|s\s*\/\s*f|-{1,}|—{1,})$/.test(s);
+}
 function mkExtractFecha(raw) {
     const labeled = raw.match(/fecha\s*:\s*([^|\n]+)/i);
-    if (labeled) return labeled[1].trim().replace(/[\s|,]+$/, '').trim();
+    if (labeled) {
+        const v = labeled[1].trim().replace(/[\s|,]+$/, '').trim();
+        return mkEsSinFecha(v) ? '' : v;
+    }
     const numeric = raw.match(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/);
     return numeric ? numeric[0] : '';
 }

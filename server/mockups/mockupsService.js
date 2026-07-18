@@ -315,11 +315,14 @@ function escapeRegExp(str) {
 function buildPromptFromTemplate(promptTemplate, fields = {}) {
     let out = String(promptTemplate || '');
     let hasMultiline = false;
+    let fechaVacia = false;
     for (const [k, v] of Object.entries(fields)) {
         let val = (v === undefined || v === null) ? '' : String(v);
         // Quita separadores sueltos de los bordes (barra "|", comas, &, +) pero CONSERVA
         // los saltos de línea internos (ej. dos fechas apiladas que quiere el cliente).
         val = val.replace(/^[\s|,&+]+|[\s|,&+]+$/g, '').trim();
+        if (k === 'fecha' && esSinFecha(val)) val = '';   // "Sin Fecha" -> vacío (no se graba)
+        if (k === 'fecha' && !val) fechaVacia = true;
         if (val.includes('\n')) hasMultiline = true;
         out = out.replace(new RegExp('\\{' + escapeRegExp(k) + '\\}', 'g'), val);
     }
@@ -328,6 +331,10 @@ function buildPromptFromTemplate(promptTemplate, fields = {}) {
     // los grabe apilados (uno debajo del otro), no en una sola línea.
     if (hasMultiline) {
         out += '\nIMPORTANTE: algún texto (por ejemplo la fecha) viene en varios renglones; grábalo en líneas separadas, una debajo de la otra, respetando los saltos de línea.';
+    }
+    // Pedido SIN fecha: que la IA NO grabe ninguna fecha (antes dejaba "Sin Fecha" o inventaba una).
+    if (fechaVacia && /\{fecha\}/.test(String(promptTemplate || ''))) {
+        out += '\nIMPORTANTE: este pedido va SIN FECHA. NO grabes ninguna fecha ni ningún texto en el lugar de la fecha; deja ese espacio vacío.';
     }
     return out;
 }
@@ -338,9 +345,19 @@ function buildPromptFromTemplate(promptTemplate, fields = {}) {
 function mkTitleCase(s) {
     return String(s || '').toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
 }
+// ¿El valor de fecha es en realidad "sin fecha" (el cliente NO quiere fecha)? -> tratarlo como VACÍO
+// para que el mockup NO grabe "Sin Fecha" ni nada en el lugar de la fecha; la casilla queda en blanco.
+function esSinFecha(v) {
+    const s = String(v || '').toLowerCase().trim();
+    if (!s) return false;
+    return /sin\s*fecha/.test(s) || /\bno\b[^]*\bfecha\b/.test(s) || /^(ninguna?|n\s*\/\s*a|s\s*\/\s*f|-{1,}|—{1,})$/.test(s);
+}
 function extractFecha(raw) {
     const labeled = raw.match(/fecha\s*:\s*([^|\n]+)/i);
-    if (labeled) return labeled[1].trim().replace(/[\s|,]+$/, '').trim();
+    if (labeled) {
+        const v = labeled[1].trim().replace(/[\s|,]+$/, '').trim();
+        return esSinFecha(v) ? '' : v;
+    }
     const numeric = raw.match(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/);
     return numeric ? numeric[0] : '';
 }

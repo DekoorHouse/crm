@@ -24,13 +24,25 @@ const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g,
 // sin acentos, sin espacios. Así "Nombre 1" -> "nombre1".
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '');
 
+// "Sin Fecha" (el cliente NO quiere fecha) -> vacío, para que la referencia NO lleve ese texto.
+function esSinFecha(v) {
+    const s = String(v || '').toLowerCase().trim();
+    if (!s) return false;
+    return /sin\s*fecha/.test(s) || /\bno\b[^]*\bfecha\b/.test(s) || /^(ninguna?|n\s*\/\s*a|s\s*\/\s*f|-{1,}|—{1,})$/.test(s);
+}
+
 // Rellena el texto de un item con los datos del pedido: por placeholder {clave} o por el name del item.
 function fillText(it, fields) {
     const t = it.text || '';
-    if (/\{[a-zA-Z0-9_]+\}/.test(t)) return t.replace(/\{([a-zA-Z0-9_]+)\}/g, (m, k) => (fields[k] != null ? String(fields[k]) : ''));
+    if (/\{[a-zA-Z0-9_]+\}/.test(t)) return t.replace(/\{([a-zA-Z0-9_]+)\}/g, (m, k) => {
+        const val = fields[k] != null ? String(fields[k]) : '';
+        return (k === 'fecha' && esSinFecha(val)) ? '' : val;
+    });
     const key = norm(it.name);
     if (key && key !== 'personalizacion' && Object.prototype.hasOwnProperty.call(fields, key)) {
-        return fields[key] != null ? String(fields[key]) : '';
+        let v = fields[key] != null ? String(fields[key]) : '';
+        if (key === 'fecha' && esSinFecha(v)) v = '';   // "Sin Fecha" -> vacío
+        return v;
     }
     return t;
 }
