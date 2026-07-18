@@ -109,6 +109,9 @@ function handleSearchContacts() {
     if (state.designPendingFilter) {
         contactsToRender = contactsToRender.filter(c => c.designPending === true);
     }
+    if (state.aiOffFilter) {
+        contactsToRender = contactsToRender.filter(c => c.botActive !== true);
+    }
     if (Array.isArray(state.adIdFilters) && state.adIdFilters.length) {
         const selAds = new Set(state.adIdFilters);
         contactsToRender = contactsToRender.filter(c => Array.isArray(c.adSourceIds) && c.adSourceIds.some(id => selAds.has(id)));
@@ -1764,6 +1767,7 @@ function setFilter(filter) {
     state.unreadOnly = false;
     state.designReviewFilter = false;
     state.designPendingFilter = false;
+    state.aiOffFilter = false;
     state.adIdFilters = [];
     state.archivedOnly = false; // salir de la vista Archivados al elegir cualquier otro filtro
     if (filter === 'all') state.channelFilter = null; // "Todos" = reset total (incluye canal)
@@ -1787,6 +1791,7 @@ function toggleUnreadFilter() {
     state.purchaseFilter = null;
     state.designReviewFilter = false;
     state.designPendingFilter = false;
+    state.aiOffFilter = false;
     state.activeFilter = 'all';
     state.adIdFilters = [];
     state.archivedOnly = false;
@@ -1804,6 +1809,7 @@ function toggleArchivedFilter() {
         state.purchaseFilter = null;
         state.designReviewFilter = false;
     state.designPendingFilter = false;
+    state.aiOffFilter = false;
         state.activeFilter = 'all';
         state.adIdFilters = [];
     }
@@ -1843,6 +1849,7 @@ async function handleArchiveChat(event, contactId) {
 function setPurchaseFilter(filter) {
     state.designReviewFilter = false;
     state.designPendingFilter = false;
+    state.aiOffFilter = false;
     const current = state.purchaseFilter;
     if (!current) {
         state.purchaseFilter = filter;
@@ -1869,6 +1876,7 @@ window.setPurchaseFilter = setPurchaseFilter;
 function toggleDesignFilter() {
     state.designReviewFilter = !state.designReviewFilter;
     state.designPendingFilter = false;
+    state.aiOffFilter = false;
     state.unreadOnly = false;
     state.purchaseFilter = null;
     state.activeFilter = 'all';
@@ -1885,6 +1893,7 @@ window.toggleDesignFilter = toggleDesignFilter;
 function toggleDesignPendingFilter() {
     state.designPendingFilter = !state.designPendingFilter;
     state.designReviewFilter = false;
+    state.aiOffFilter = false;
     state.unreadOnly = false;
     state.purchaseFilter = null;
     state.activeFilter = 'all';
@@ -1895,6 +1904,23 @@ function toggleDesignPendingFilter() {
     fetchInitialContacts();
 }
 window.toggleDesignPendingFilter = toggleDesignPendingFilter;
+
+// Filtro "IA apagada": conversaciones con la IA desactivada (botActive != true). El fetch pide al
+// servidor los botActive==false (ordenados por recencia) y aquí se afina en cliente (incluye undefined).
+function toggleAiOffFilter() {
+    state.aiOffFilter = !state.aiOffFilter;
+    state.designPendingFilter = false;
+    state.designReviewFilter = false;
+    state.unreadOnly = false;
+    state.purchaseFilter = null;
+    state.activeFilter = 'all';
+    state.adIdFilters = [];
+    state.archivedOnly = false; // salir de la vista Archivados
+    renderTagFilters();
+    state.contacts = [];
+    fetchInitialContacts();
+}
+window.toggleAiOffFilter = toggleAiOffFilter;
 
 function toggleChannelFilter(channel) {
     // Si ya está activo, desactivar (volver a "todos los canales")
@@ -1921,6 +1947,7 @@ function applyAdFilters(ids) {
     state.unreadOnly = false;
     state.designReviewFilter = false;
     state.designPendingFilter = false;
+    state.aiOffFilter = false;
     state.channelFilter = null;
     state.archivedOnly = false; // salir de la vista Archivados
     renderTagFilters();

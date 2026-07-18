@@ -165,6 +165,56 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "botActive",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastMessageTimestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "contacts_whatsapp",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedDepartmentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "botActive",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastMessageTimestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "contacts_whatsapp",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "channel",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "botActive",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastMessageTimestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "contacts_whatsapp",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "purchaseStatus",
           "order": "ASCENDING"
         },

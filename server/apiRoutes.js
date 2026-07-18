@@ -3758,6 +3758,12 @@ router.get('/contacts', async (req, res) => {
             query = query.where('designPending', '==', true);
         }
 
+        // Filtro "IA apagada": conversaciones con la IA desactivada. Se consulta botActive==false
+        // (los explícitamente apagados, ordenados por recencia); el cliente afina con botActive!=true.
+        if (req.query.aiOff === 'true') {
+            query = query.where('botActive', '==', false);
+        }
+
         // Filtro "Archivados": SOLO chats archivados. Se consulta en Firestore (no en memoria) para que
         // persistan al recargar, aunque el chat ya no esté en la primera página por recencia.
         if (req.query.archivedOnly === 'true') {
