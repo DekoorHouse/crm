@@ -271,6 +271,10 @@ async function mkLoadPending() {
     if (cont && !mkState.pending.length) cont.innerHTML = '<p class="mk-muted">Cargando pendientes…</p>';
     const data = await mkFetchJson('/api/mockups/pending');
     mkState.pending = data.items || [];
+    // Si hay una generación en curso, NO re-renderices: reconstruir el DOM destruiría el bloque que
+    // está generando y su preview se guardaría como uno nuevo (DOBLE). Los datos ya quedaron frescos
+    // para el próximo render (cuando termine la generación).
+    if (mkState.busyGen > 0) return;
     mkRenderPending();
 }
 
@@ -468,6 +472,10 @@ async function mkGenerate(orderId, blockId) {
     const extraPrompt = (block.querySelector('.mk-extra')?.value || '').trim();
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generando…'; }
+    // Bloquea el re-render de la lista mientras se genera: si mkLoadPending reconstruye el DOM a mitad
+    // de la generación (p.ej. los refrescos de "Generar ahora"), este bloque se pierde y su preview se
+    // guarda con un blockId huérfano, creando un preview DOBLE. Ver el guard en mkLoadPending.
+    mkState.busyGen = (mkState.busyGen || 0) + 1;
     const setBox = (msg) => { if (box) box.innerHTML = `<div class="mk-spin"></div><div class="mk-result-empty">${mkEsc(msg)}</div>`; };
     const setProgress = (pct) => { if (box) box.innerHTML = `<div class="mk-progress"><div class="mk-progress-bar"><div class="mk-progress-fill" style="width:${pct}%"></div></div><div class="mk-result-empty">Generando… ${pct}%</div></div>`; };
 
@@ -486,6 +494,7 @@ async function mkGenerate(orderId, blockId) {
         if (box) box.innerHTML = `<div class="mk-result-empty" style="color:#dc2626;">${mkEsc(e.message)}</div>`;
         mkToast('Error al generar: ' + e.message, 'error');
     } finally {
+        mkState.busyGen = Math.max(0, (mkState.busyGen || 1) - 1);
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-wand-magic-sparkles mr-2"></i>Generar preview'; }
     }
 }
