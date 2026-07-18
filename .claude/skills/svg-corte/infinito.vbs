@@ -7,7 +7,8 @@
 '   /close: opcional, cierra el documento al terminar (para el worker automatico; sin esto el
 '           doc queda abierto en Corel para revision visual del operador).
 ' NOMBRES A 2 RENGLONES: el token literal \n dentro de un valor lo parte en renglones apilados
-'   y centrados (ej. "Rosa\nMaría"), a 44.8pt como los disenos manuales de produccion. Asi se
+'   y centrados (ej. "Rosa\nMaría"), a 44.8pt como los disenos manuales de produccion, con
+'   interlineado de 60% de altura de caracter (regla de Chris, 2026-07-18). Asi se
 '   reproduce EXACTAMENTE el layout que el cliente aprobo en su mockup.
 ' Imprime al final: "OK <ruta-svg>" y "CDR <ruta-cdr>"
 '
@@ -21,6 +22,7 @@ Const MAX_W_NOMBRE = 52     ' mm — ancho maximo para caber en el aro del infin
 Const BASE_FECHA = 25.3     ' pt
 Const MAX_W_FECHA = 55      ' mm
 Const ALINEACION_CENTRO = 3 ' cdrCenterAlignment (para textos de varios renglones)
+Const INTERLINEADO_2L = 60  ' % altura caracter — interlineado de renglones apilados (Chris, 2026-07-18)
 
 Dim args, nArgs, label, fileBase
 Set args = WScript.Arguments.Unnamed
@@ -184,6 +186,9 @@ Sub ReplaceText(doc, ph, valor, baseSize, base2L, maxW)
                     On Error Resume Next
                     s.Text.Story.Alignment = ALINEACION_CENTRO
                     On Error GoTo 0
+                    ' Interlineado compacto (60% altura caracter) — asignacion directa y SIN
+                    ' On Error: si la propiedad fallara, mejor enterarse que salir con el default
+                    s.Text.Story.LineSpacing = INTERLINEADO_2L
                 End If
                 s.CenterX = cx : s.CenterY = cy
                 w = s.SizeWidth

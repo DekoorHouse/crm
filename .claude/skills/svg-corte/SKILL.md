@@ -15,6 +15,8 @@ description: >
 Skill verificada en esta maquina con CorelDRAW 2021 (v23). Convenciones del negocio:
 **corte = linea roja, grabado = negro, azul = infinito/corazones/marco** (tercera pasada).
 Las hojas de lamparas son de **350x330 mm** con todo alineado **arriba-izquierda**.
+**Textos apilados (salto de linea): interlineado = 60% de altura de caracter** (Chris,
+2026-07-18; en Corel es Parrafo → interlineado en "% altura caracter").
 Scripts junto a esta skill: `infinito.vbs`, `gen-corazones.vbs`, `gen-grabado.js`,
 `upload-drive.js`, plantillas en `plantillas/`.
 
@@ -50,7 +52,8 @@ lampara y se juntan 2 en una hoja); solo va 1 cuando ya no hay mas pedidos que d
    tal cual: "30-Julio-2025", "Forever", etc.). Si el usuario no dio los datos completos,
    preguntarlos en el chat en un solo mensaje (son texto libre, no usar AskUserQuestion).
    **Nombres a 2 renglones**: pasar el token literal `\n` dentro del valor (ej. "Rosa\nMaría")
-   — sale apilado y centrado a 44.8pt como los disenos manuales. La regla de negocio de cuando
+   — sale apilado y centrado a 44.8pt con interlineado de 60% altura de caracter (infinito.vbs
+   lo aplica solo desde 2026-07-18). La regla de negocio de cuando
    partir un nombre vive en `server/mockups/nameLayout.js` (misma que usan los mockups).
 2. Ejecutar (3 argumentos = hoja de 1 lampara; 6 = hoja de 2):
 
