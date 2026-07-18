@@ -210,6 +210,25 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.correrPaseManual = async (pass) => {
+        // La corrida usa la configuración GUARDADA en el servidor. Si los campos de la
+        // página difieren de lo guardado (ej. palomeó "Sin tope" sin guardar), avisar y
+        // no correr: evita corridas con un tope/ventana que el usuario cree ya cambiado.
+        try {
+            const cfgSnap = await getDoc(doc(db, 'crm_settings', 'cobranza_auto'));
+            const cfg = cfgSnap.exists() ? cfgSnap.data() : {};
+            const savedSinTope = Number(cfg.maxPerRun) === 0;
+            const savedTope = Number(cfg.maxPerRun) > 0 ? Number(cfg.maxPerRun) : 40;
+            const savedVentana = Number(cfg.lookbackDays) > 0 ? Number(cfg.lookbackDays) : 30;
+            const uiSinTope = document.getElementById('autoSinTope').checked;
+            const uiTope = Math.max(1, Math.min(200, Number(document.getElementById('autoTope').value) || 40));
+            const uiVentana = Math.max(5, Math.min(90, Number(document.getElementById('autoVentana').value) || 30));
+            const difiere = (uiSinTope !== savedSinTope) || (!uiSinTope && uiTope !== savedTope) || (uiVentana !== savedVentana);
+            if (difiere) {
+                alert('Tienes cambios de configuración SIN GUARDAR (tope o ventana de días). La corrida usa la configuración GUARDADA.\n\nPresiona "Guardar configuración automática" primero y vuelve a intentar.');
+                return;
+            }
+        } catch (_) { /* si no se pudo comparar, la vista previa mostrará la config efectiva */ }
+
         const box = document.getElementById('autoPreviewBox');
         const titulo = document.getElementById('autoPreviewTitulo');
         const lista = document.getElementById('autoPreviewLista');
@@ -235,7 +254,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const r = data.resumen || {};
             const aCobrar = r.cobrar || 0;
             const topeTxt = (data.tope && aCobrar > data.tope) ? ` (por el tope de hoy se cobrará máximo a ${data.tope})` : '';
-            titulo.textContent = `Vista previa — pase ${nombrePase(pass)} · ventana ${data.lookbackDays} días` +
+            titulo.textContent = `Vista previa — pase ${nombrePase(pass)} · ventana ${data.lookbackDays} días · ` +
+                (data.tope ? `tope: ${data.tope}` : 'SIN tope') +
                 (data.alreadyRanToday ? ' · ⚠ este pase YA corrió hoy' : '');
 
             const GRUPOS = [
