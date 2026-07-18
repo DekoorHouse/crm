@@ -132,7 +132,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
             console.error('Error cargando config de cobranza automática:', e);
         }
-        await cargarUltimaCorrida();
+        // Si al abrir la página hay una corrida EN MARCHA (disparada antes de cerrar, o un
+        // pase automático), engancharse al seguimiento en vivo en vez de mostrarla congelada.
+        const enCurso = await cargarUltimaCorrida();
+        if (enCurso) iniciarLogsEnVivo();
     }
 
     // Pinta el resumen de la última corrida Y los logs por pase (detalle). Devuelve true si
