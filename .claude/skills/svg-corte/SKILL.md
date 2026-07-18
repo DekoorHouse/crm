@@ -21,7 +21,10 @@ Scripts junto a esta skill: `infinito.vbs`, `gen-corazones.vbs`, `gen-grabado.js
 **REGLA DE ORO (Chris, 2026-07-18, a raiz de DH13569): un diseno que el cliente NO ha
 aprobado (especiales del Modo 3 y variantes, grabados Modo 4, o cualquier hoja hecha a mano
 de un pedido SIN mockup aprobado) NO se sube a Drive ni se le cambia el estatus al pedido.**
-El flujo correcto al terminar el diseno es mandar el PREVIO y esperar la autorizacion:
+
+**Y ANTES del previo (Chris, 2026-07-18, tras DH13588): NO mandarle imagenes al cliente sin
+autorizacion de Chris.** Al terminar el diseno, ensenarle a Chris la captura EN EL CHAT y
+esperar su OK explicito; SOLO entonces mandar el previo al cliente:
 
     node "C:\Users\chris\Documents\crm\scripts\send-design-approval.js" --dh 13569 --cdr "<ruta.cdr>" --svg "<ruta.svg>"
 
