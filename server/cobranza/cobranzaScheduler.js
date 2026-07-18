@@ -40,7 +40,7 @@
 // ('manana' | 'tarde'), visible en la página de cobranza.
 const cron = require('node-cron');
 const { db, admin } = require('../config');
-const { cobrarContacto } = require('./cobranzaService');
+const { cobrarContacto, loadContactCobranzaContext } = require('./cobranzaService');
 const { decideCobranzaAction, MAX_ATTEMPTS, MAX_DAYS } = require('./cobranzaLogic');
 
 const ESTATUS_COBRABLES = ['Foto enviada', 'Esperando pago', 'Corregido'];
@@ -107,12 +107,25 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
     const isTarde = pass === 'tarde';
     const todayMx = todayMxStr();
     const report = {
-        startedAt: admin.firestore.FieldValue.serverTimestamp(),
+        startedAtMs: Date.now(),
         enviados: 0, cancelados: 0, vencidos: 0, saltados: 0, esperando: 0, errores: 0,
         candidatos: 0,
         detalle: []
     };
     const pushDetail = (entry) => { if (report.detalle.length < 200) report.detalle.push(entry); };
+
+    // Progreso EN VIVO: el reporte parcial se escribe en cobranza_runs mientras la corrida
+    // avanza (throttle ~2s) con enCurso:true, para que la página muestre los logs al momento
+    // en vez de esperar al final. Nunca tumba la corrida si falla.
+    let lastFlushMs = 0;
+    const flushProgress = async (force = false) => {
+        const now = Date.now();
+        if (!force && (now - lastFlushMs) < 2000) return;
+        lastFlushMs = now;
+        try {
+            await db.collection('cobranza_runs').doc(todayMx).set({ date: todayMx, [pass]: { ...report, enCurso: true } }, { merge: true });
+        } catch (_) { /* best effort */ }
+    };
 
     try {
         const cfg = await getConfig();
@@ -166,6 +179,7 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
         }
         report.candidatos = contactsToProcess.length;
         console.log(`[COBRANZA_AUTO] Corrida ${todayMx} (${pass}): ${cobrables.length} pedidos cobrables, ${contactsToProcess.length} clientes a evaluar.`);
+        await flushProgress(true); // marcar "en curso" de inmediato para la página
 
         const nowMs = Date.now();
         for (const [contactId, orders, attemptsPrev] of contactsToProcess) {
@@ -275,6 +289,7 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
                 pushDetail({ contactId, pedidos: dhList, resultado: `error: ${String(e.message || e).slice(0, 200)}` });
                 console.error(`[COBRANZA_AUTO] Error con ${contactId}:`, e.message);
             }
+            await flushProgress(); // progreso en vivo para la página (throttleado)
         }
 
         console.log(`[COBRANZA_AUTO] Corrida ${todayMx} (${pass}) terminada: ${report.enviados} enviados, ${report.cancelados} cancelados, ${report.vencidos} vencidos, ${report.saltados} saltados, ${report.esperando} en espera, ${report.errores} errores.`);
@@ -285,6 +300,7 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
         sweepRunning = false;
         try {
             report.finishedAt = admin.firestore.FieldValue.serverTimestamp();
+            report.enCurso = false; // apagar la marca de progreso en vivo
             // Un doc por día con un campo por pase: {date, manana: {...}, tarde: {...}}
             await db.collection('cobranza_runs').doc(todayMx).set({ date: todayMx, [pass]: report }, { merge: true });
         } catch (e) {
@@ -297,6 +313,84 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
 // ¿Hay una corrida en curso? (para que el endpoint de corrida manual no encime otra)
 function isSweepRunning() {
     return sweepRunning;
+}
+
+/**
+ * VISTA PREVIA de una corrida (no envía nada, no cambia nada): devuelve la lista de
+ * candidatos del pase con lo que les pasaría — cobrar (y qué nº de cobro), cancelar,
+ * vencer, esperar su día, o saltarse (promesa/recordatorio/conversación/margen de 5h).
+ * Usa las MISMAS reglas del sweep real, incluidas las guardias de conversación del service.
+ * Matiz: aun en los marcados "cobrar", la IA puede decidir SKIP al leer la conversación
+ * (comprobante ya enviado, se le debe un video…); eso solo se sabe en el cobro real.
+ */
+async function previewCobranzaSweep(pass = 'manana') {
+    const isTarde = pass === 'tarde';
+    const cfg = await getConfig();
+    const todayMx = todayMxStr();
+
+    const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - cfg.lookbackDays * 24 * 60 * 60 * 1000);
+    const snap = await db.collection('pedidos')
+        .where('createdAt', '>=', cutoff)
+        .orderBy('createdAt', 'asc')
+        .get();
+    const cobrables = snap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(o => ESTATUS_COBRABLES.includes(String(o.estatus || '').trim()))
+        .filter(o => o.telefono && o.consecutiveOrderNumber != null)
+        .filter(o => !(o.cobranzaAuto && o.cobranzaAuto.done));
+
+    const byContact = new Map();
+    for (const o of cobrables) {
+        const key = String(o.telefono).trim();
+        if (!byContact.has(key)) byContact.set(key, []);
+        byContact.get(key).push(o);
+    }
+
+    const items = [];
+    const nowMs = Date.now();
+    for (const [contactId, orders] of byContact) {
+        const attempts = Math.max(0, ...orders.map(o => (o.cobranzaAuto || {}).attempts || 0));
+        if (isTarde && attempts > 0) continue; // el vespertino solo hace cobros 1
+        const pedidos = orders.map(o => 'DH' + o.consecutiveOrderNumber).join(', ');
+        let item = null;
+        try {
+            const remSnap = await db.collection('scheduled_reminders').doc(contactId).get();
+            if (remSnap.exists && remSnap.data().status === 'scheduled') {
+                item = { accion: 'saltar', motivo: 'ya hay un recordatorio agendado' };
+            }
+        } catch (_) { /* si no se puede leer, el sweep real tampoco bloquea por esto */ }
+        if (!item) {
+            const d = decideCobranzaAction(orders, todayMx, nowMs);
+            if (d.action === 'skip_future') item = { accion: 'saltar', motivo: d.reason };
+            else if (d.action === 'cancel') item = { accion: 'cancelar', motivo: d.reason };
+            else if (d.action === 'expire') item = { accion: 'vencer', motivo: d.reason };
+            else if (d.action === 'wait') item = { accion: 'esperar', motivo: d.reason };
+            else {
+                // Candidato a cobro: validar también las guardias de conversación reales
+                // (ya cobrado hoy, conversación de hoy, margen de 5h del vespertino).
+                const ctx = await loadContactCobranzaContext({ contactId, sameDayFirstTouch: isTarde });
+                if (ctx.skip) item = { accion: 'saltar', motivo: ctx.skip };
+                else item = { accion: 'cobrar', motivo: `cobro ${attempts + 1}/${MAX_ATTEMPTS}${ctx.windowOpen ? '' : ' (plantilla)'}` };
+            }
+        }
+        items.push({ contactId, pedidos, ...item });
+    }
+
+    const resumen = {};
+    for (const it of items) resumen[it.accion] = (resumen[it.accion] || 0) + 1;
+
+    const cfgSnap = await db.collection('crm_settings').doc('cobranza_auto').get();
+    const cfgD = cfgSnap.exists ? cfgSnap.data() : {};
+    const alreadyRanToday = isTarde ? cfgD.lastEveningRunDate === todayMx : cfgD.lastRunDate === todayMx;
+
+    return {
+        pass,
+        alreadyRanToday,
+        tope: cfg.maxPerRun === Infinity ? null : cfg.maxPerRun,
+        lookbackDays: cfg.lookbackDays,
+        resumen,
+        items
+    };
 }
 
 function startCobranzaScheduler() {
@@ -329,6 +423,7 @@ function startCobranzaScheduler() {
 module.exports = {
     startCobranzaScheduler,
     runCobranzaSweep,       // exportado para trigger manual/pruebas
+    previewCobranzaSweep,   // vista previa (no envía nada)
     isSweepRunning,
     decideCobranzaAction,   // pura, para tests
     MAX_ATTEMPTS,

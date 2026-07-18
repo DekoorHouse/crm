@@ -53,6 +53,74 @@ async function fetchApprovedTemplates() {
 const SAME_DAY_MIN_GAP_MS = 5 * 60 * 60 * 1000;
 
 /**
+ * Carga el contacto + su conversación y aplica las GUARDIAS de conversación de la cobranza
+ * (contacto existe, no cobrado hoy, conversación de hoy según el modo, margen de 5h del pase
+ * vespertino). Compartida por cobrarContacto (cobro real) y por la VISTA PREVIA del sweep,
+ * para que ambas digan exactamente lo mismo.
+ * @returns {{skip: string}} si NO se debe cobrar (con el motivo), o
+ *          {{contactRef, contactData, messagesSnapshot, windowOpen, todayMx}} si sí.
+ */
+async function loadContactCobranzaContext({ contactId, sameDayFirstTouch = false }) {
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+    const contactDoc = await contactRef.get();
+    if (!contactDoc.exists) {
+        return { skip: 'Contacto no encontrado en WhatsApp' };
+    }
+
+    // No cobrar dos veces el mismo día (por fecha calendario, no 24h)
+    const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const contactData = contactDoc.data();
+    if (contactData.lastCobranzaDate === todayMx) {
+        return { skip: 'Ya se cobró hoy' };
+    }
+
+    // Historial (ordenado desc para detectar ventana 24h y mensajes de hoy)
+    const messagesSnapshot = await contactRef.collection('messages')
+        .orderBy('timestamp', 'desc')
+        .limit(50)
+        .get();
+
+    // Reglas de "conversación de hoy" según el modo:
+    //  - Modo normal: si hay CUALQUIER mensaje de hoy (entrante o saliente), no cobrar
+    //    (no interrumpir conversaciones activas; la foto de hoy también pospone al día sig.).
+    //  - Pase vespertino (sameDayFirstTouch): el escenario es EXACTAMENTE "hoy se le mandó
+    //    la foto y no ha contestado". Exige envío del equipo HOY, silencio del cliente HOY,
+    //    y que el último envío no sea demasiado reciente (SAME_DAY_MIN_GAP_MS).
+    const msgsToday = messagesSnapshot.docs.filter(d => {
+        const ts = d.data().timestamp?.toDate();
+        if (!ts) return false;
+        return ts.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' }) === todayMx;
+    });
+    if (!sameDayFirstTouch) {
+        if (msgsToday.length > 0) {
+            return { skip: 'Tiene conversación hoy' };
+        }
+    } else {
+        const inboundToday = msgsToday.some(d => d.data().from === contactId);
+        if (inboundToday) {
+            return { skip: 'El cliente escribió hoy (conversación activa)' };
+        }
+        const outboundTodayMs = msgsToday
+            .filter(d => d.data().from !== contactId)
+            .map(d => d.data().timestamp.toDate().getTime());
+        if (!outboundTodayMs.length) {
+            return { skip: 'Hoy no se le envió nada (el cobro vespertino es solo para el día de la foto)' };
+        }
+        const lastOutboundMs = Math.max(...outboundTodayMs);
+        if (Date.now() - lastOutboundMs < SAME_DAY_MIN_GAP_MS) {
+            return { skip: 'El último envío del equipo es muy reciente (se respeta el margen de horas)' };
+        }
+    }
+
+    // Ventana de 24h: abierta si el último mensaje ENTRANTE del cliente tiene <24h
+    const lastInboundMsg = messagesSnapshot.docs.find(d => d.data().from === contactId);
+    const lastInboundTime = lastInboundMsg?.data()?.timestamp?.toDate();
+    const windowOpen = !!(lastInboundTime && (Date.now() - lastInboundTime.getTime() < 24 * 60 * 60 * 1000));
+
+    return { contactRef, contactData, messagesSnapshot, windowOpen, todayMx };
+}
+
+/**
  * Ejecuta UN intento de cobranza IA para un contacto (mismo comportamiento que tenía
  * el endpoint /cobranza/enviar). No decide elegibilidad de negocio (eso es del caller):
  * aquí solo están las salvaguardas de conversación (ya cobrado hoy, conversación hoy,
@@ -67,62 +135,12 @@ async function cobrarContacto({ contactId, instructions, orderNumbers, sameDayFi
     // require perezoso para evitar ciclo de módulos (services es un módulo grande)
     const { sendAdvancedWhatsAppMessage, generateGeminiResponse } = require('../services');
 
-    // 1. Verificar que el contacto existe
-    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-    const contactDoc = await contactRef.get();
-    if (!contactDoc.exists) {
-        return { success: false, skipped: true, reason: 'Contacto no encontrado en WhatsApp' };
+    // 1-2. Contacto + conversación + guardias (compartidas con la vista previa del sweep)
+    const ctx = await loadContactCobranzaContext({ contactId, sameDayFirstTouch });
+    if (ctx.skip) {
+        return { success: false, skipped: true, reason: ctx.skip };
     }
-
-    // 1.5 Verificar que no se haya cobrado hoy (por fecha calendario, no 24h)
-    const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-    const contactData = contactDoc.data();
-    if (contactData.lastCobranzaDate === todayMx) {
-        return { success: false, skipped: true, reason: 'Ya se cobró hoy' };
-    }
-
-    // 2. Cargar historial de conversación (ordenado desc para detectar ventana 24h)
-    const messagesSnapshot = await contactRef.collection('messages')
-        .orderBy('timestamp', 'desc')
-        .limit(50)
-        .get();
-
-    // 2.1 Reglas de "conversación de hoy" según el modo:
-    //  - Modo normal: si hay CUALQUIER mensaje de hoy (entrante o saliente), no cobrar
-    //    (no interrumpir conversaciones activas; la foto de hoy también pospone al día sig.).
-    //  - Pase vespertino (sameDayFirstTouch): el escenario es EXACTAMENTE "hoy se le mandó
-    //    la foto y no ha contestado". Exige envío del equipo HOY, silencio del cliente HOY,
-    //    y que el último envío no sea demasiado reciente (SAME_DAY_MIN_GAP_MS).
-    const msgsToday = messagesSnapshot.docs.filter(d => {
-        const ts = d.data().timestamp?.toDate();
-        if (!ts) return false;
-        return ts.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' }) === todayMx;
-    });
-    if (!sameDayFirstTouch) {
-        if (msgsToday.length > 0) {
-            return { success: false, skipped: true, reason: 'Tiene conversación hoy' };
-        }
-    } else {
-        const inboundToday = msgsToday.some(d => d.data().from === contactId);
-        if (inboundToday) {
-            return { success: false, skipped: true, reason: 'El cliente escribió hoy (conversación activa)' };
-        }
-        const outboundTodayMs = msgsToday
-            .filter(d => d.data().from !== contactId)
-            .map(d => d.data().timestamp.toDate().getTime());
-        if (!outboundTodayMs.length) {
-            return { success: false, skipped: true, reason: 'Hoy no se le envió nada (el cobro vespertino es solo para el día de la foto)' };
-        }
-        const lastOutboundMs = Math.max(...outboundTodayMs);
-        if (Date.now() - lastOutboundMs < SAME_DAY_MIN_GAP_MS) {
-            return { success: false, skipped: true, reason: 'El último envío del equipo es muy reciente (se respeta el margen de horas)' };
-        }
-    }
-
-    // Detectar ventana de 24h: buscar último mensaje ENTRANTE del cliente
-    const lastInboundMsg = messagesSnapshot.docs.find(d => d.data().from === contactId);
-    const lastInboundTime = lastInboundMsg?.data()?.timestamp?.toDate();
-    const windowOpen = lastInboundTime && (Date.now() - lastInboundTime.getTime() < 24 * 60 * 60 * 1000);
+    const { contactRef, contactData, messagesSnapshot, windowOpen, todayMx } = ctx;
 
     const conversationHistory = messagesSnapshot.docs.map(doc => {
         const d = doc.data();
@@ -316,4 +334,4 @@ Analiza la conversación y decide qué acción de cobranza tomar.`;
     };
 }
 
-module.exports = { cobrarContacto };
+module.exports = { cobrarContacto, loadContactCobranzaContext };

@@ -165,7 +165,24 @@
                     </button>
                 </div>
             </div>
+
+            <!-- Vista previa del pase: lista de candidatos ANTES de confirmar el cobro -->
+            <div id="autoPreviewBox" style="display:none; margin-top:14px; border:1px solid #c7d2fe; background:#eef2ff; border-radius:10px; padding:12px 14px;">
+                <p id="autoPreviewTitulo" style="margin:0 0 8px; font-weight:700;"></p>
+                <div id="autoPreviewLista" style="max-height:280px; overflow-y:auto; font-size:13px; line-height:1.7; background:white; border-radius:8px; padding:8px 12px;"></div>
+                <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+                    <button id="btnConfirmarCorrida" onclick="confirmarCorridaManual()">
+                        <i class="fas fa-paper-plane"></i> <span id="btnConfirmarTxt">Confirmar y cobrar</span>
+                    </button>
+                    <button onclick="cancelarPreview()" style="background:#6b7280;">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                </div>
+            </div>
+
             <div id="autoUltimaCorrida" class="hint" style="margin-top:12px;"></div>
+            <!-- Logs de la corrida (se van llenando en vivo mientras corre) -->
+            <div id="autoDetalleLogs" style="display:none; margin-top:8px; max-height:260px; overflow-y:auto; font-size:12.5px; line-height:1.7; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:8px 12px;"></div>
         </div>
 
         <!-- Seleccion de rango -->
@@ -209,7 +226,7 @@
     </div>
 </div>
 
-<script type="module" src="/cobranza/script.js?v=6"></script>
+<script type="module" src="/cobranza/script.js?v=7"></script>
 <script src="/comunicacion-pwa.js?v=2"></script>
 </body>
 </html>

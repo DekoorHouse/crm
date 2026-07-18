@@ -135,15 +135,20 @@ document.addEventListener('DOMContentLoaded', () => {
         await cargarUltimaCorrida();
     }
 
+    // Pinta el resumen de la última corrida Y los logs por pase (detalle). Devuelve true si
+    // algún pase sigue corriendo (enCurso), para que el refresco en vivo sepa cuándo parar.
     async function cargarUltimaCorrida() {
         const box = document.getElementById('autoUltimaCorrida');
-        if (!box) return;
+        const logsBox = document.getElementById('autoDetalleLogs');
+        if (!box) return false;
+        let algunoEnCurso = false;
         try {
             const q = query(collection(db, 'cobranza_runs'), orderBy('date', 'desc'), limit(1));
             const snap = await getDocs(q);
             if (snap.empty) {
                 box.innerHTML = '<i class="fas fa-info-circle"></i> A&uacute;n no hay corridas autom&aacute;ticas.';
-                return;
+                if (logsBox) logsBox.style.display = 'none';
+                return false;
             }
             const r = snap.docs[0].data();
             // Estructura nueva: {date, manana:{...}, tarde:{...}}. Compat: docs viejos planos.
@@ -158,30 +163,119 @@ document.addEventListener('DOMContentLoaded', () => {
             for (const [nombre, p] of pases) {
                 for (const k of Object.keys(tot)) tot[k] += Number(p[k]) || 0;
                 if (p.error) errs.push(`${nombre}: ${p.error}`);
-                porPase.push(`${nombre}: ${p.enviados || 0} enviado(s)`);
+                if (p.enCurso) algunoEnCurso = true;
+                porPase.push(`${nombre}: ${p.enviados || 0} enviado(s)${p.enCurso ? ' ⏳ corriendo…' : ''}`);
             }
-            const errHtml = errs.length ? ` &middot; <span style="color:#dc2626;">⚠ ${errs.join(' | ')}</span>` : '';
-            box.innerHTML = `<i class="fas fa-history"></i> <b>&Uacute;ltima corrida (${r.date}):</b> ` +
-                `${tot.enviados} cobros enviados (${porPase.join(' &middot; ') || 'sin pases'}) &middot; ` +
+            const errHtml = errs.length ? ` &middot; <span style="color:#dc2626;">⚠ ${errs.map(esc).join(' | ')}</span>` : '';
+            box.innerHTML = `<i class="fas fa-history"></i> <b>&Uacute;ltima corrida (${esc(r.date)}):</b> ` +
+                `${tot.enviados} cobros enviados (${porPase.map(esc).join(' &middot; ') || 'sin pases'}) &middot; ` +
                 `${tot.cancelados} cancelados &middot; ${tot.vencidos} vencidos (revisar manual) &middot; ` +
                 `${tot.saltados} saltados &middot; ${tot.esperando} en espera de su d&iacute;a &middot; ${tot.errores} errores${errHtml}`;
+
+            // Logs por pase (el detalle que el servidor va escribiendo en vivo)
+            if (logsBox) {
+                const parts = [];
+                for (const [nombre, p] of pases) {
+                    if (!Array.isArray(p.detalle) || !p.detalle.length) continue;
+                    parts.push(`<div style="font-weight:700; margin-top:4px;">Pase ${esc(nombre)}${p.enCurso ? ' — ⏳ corriendo…' : ''} · ${p.enviados || 0} enviados de ${p.candidatos || 0} candidatos</div>`);
+                    for (const d of p.detalle) {
+                        parts.push(`<div>• <b>${esc(d.pedidos || '')}</b> ${esc(d.contactId || '')} — ${esc(d.resultado || '')}</div>`);
+                    }
+                }
+                logsBox.innerHTML = parts.join('');
+                logsBox.style.display = parts.length ? 'block' : 'none';
+                if (algunoEnCurso) logsBox.scrollTop = logsBox.scrollHeight;
+            }
         } catch (e) {
             console.error('Error cargando última corrida:', e);
             box.textContent = 'No se pudo cargar la última corrida.';
         }
+        return algunoEnCurso;
     }
 
-    // Corre un pase de la cobranza automática AHORA (endpoint /cobranza/auto/run).
-    // El servidor aplica todas las reglas; aquí solo se dispara y se refresca el resumen
-    // varias veces mientras la corrida termina en segundo plano.
+    // --- Corridas manuales: VISTA PREVIA → confirmar → logs en vivo ---
+    // Al pulsar un botón de pase primero se pide la vista previa (/cobranza/auto/preview):
+    // la lista de candidatos y qué les pasaría, SIN enviar nada. Solo al confirmar se
+    // dispara la corrida real (/cobranza/auto/run) y abajo se van mostrando los logs
+    // en vivo (el servidor escribe el avance en cobranza_runs mientras corre).
     let refreshTimer = null;
+    let previewPass = null;
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const nombrePase = (pass) => pass === 'tarde' ? 'vespertino' : 'de la mañana';
+
+    window.cancelarPreview = () => {
+        previewPass = null;
+        const box = document.getElementById('autoPreviewBox');
+        if (box) box.style.display = 'none';
+    };
+
     window.correrPaseManual = async (pass) => {
-        const nombre = pass === 'tarde' ? 'vespertino' : 'de la mañana';
-        if (!confirm(`¿Correr el pase ${nombre} AHORA? Enviará cobros REALES a los clientes que toquen, siguiendo todas las reglas (1 cobro por día por cliente, margen de 5h del vespertino, promesas de pago, tope). Contará como la corrida de hoy de ese pase.`)) return;
+        const box = document.getElementById('autoPreviewBox');
+        const titulo = document.getElementById('autoPreviewTitulo');
+        const lista = document.getElementById('autoPreviewLista');
+        const btnConf = document.getElementById('btnConfirmarCorrida');
         const btnM = document.getElementById('btnCorrerManana');
         const btnT = document.getElementById('btnCorrerTarde');
+        previewPass = null;
+        box.style.display = 'block';
+        titulo.textContent = `Vista previa — pase ${nombrePase(pass)}`;
+        lista.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cargando candidatos (leyendo conversaciones)…';
+        btnConf.disabled = true;
         try {
             btnM.disabled = true; btnT.disabled = true;
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch('/api/cobranza/auto/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ pass })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || 'No se pudo cargar la vista previa.');
+
+            const r = data.resumen || {};
+            const aCobrar = r.cobrar || 0;
+            const topeTxt = (data.tope && aCobrar > data.tope) ? ` (por el tope de hoy se cobrará máximo a ${data.tope})` : '';
+            titulo.textContent = `Vista previa — pase ${nombrePase(pass)} · ventana ${data.lookbackDays} días` +
+                (data.alreadyRanToday ? ' · ⚠ este pase YA corrió hoy' : '');
+
+            const GRUPOS = [
+                ['cobrar',   `✅ Se les cobrará (${r.cobrar || 0})${topeTxt}`],
+                ['cancelar', `🛑 Se CANCELARÁN (${r.cancelar || 0})`],
+                ['vencer',   `📤 Saldrán a revisión manual (${r.vencer || 0})`],
+                ['saltar',   `⏸ Saltados (${r.saltar || 0})`],
+                ['esperar',  `⏳ Esperando su día del ciclo (${r.esperar || 0})`]
+            ];
+            const parts = [];
+            for (const [accion, encabezado] of GRUPOS) {
+                const rows = (data.items || []).filter(i => i.accion === accion);
+                if (!rows.length) continue;
+                parts.push(`<div style="font-weight:700; margin-top:6px;">${encabezado}</div>`);
+                for (const it of rows) {
+                    parts.push(`<div>• <b>${esc(it.pedidos)}</b> · ${esc(it.contactId)} — ${esc(it.motivo || '')}</div>`);
+                }
+            }
+            lista.innerHTML = parts.length ? parts.join('') : 'No hay candidatos para este pase ahora mismo.';
+
+            const acciones = (r.cobrar || 0) + (r.cancelar || 0) + (r.vencer || 0);
+            document.getElementById('btnConfirmarTxt').textContent = acciones > 0
+                ? `Confirmar y ejecutar (${acciones} acción${acciones === 1 ? '' : 'es'})`
+                : 'Nada que ejecutar';
+            btnConf.disabled = acciones === 0;
+            previewPass = pass;
+        } catch (e) {
+            console.error('Error en vista previa:', e);
+            lista.innerHTML = `<span style="color:#dc2626;">Error: ${esc(e.message)}</span>`;
+        } finally {
+            btnM.disabled = false; btnT.disabled = false;
+        }
+    };
+
+    window.confirmarCorridaManual = async () => {
+        if (!previewPass) return;
+        const pass = previewPass;
+        const btnConf = document.getElementById('btnConfirmarCorrida');
+        try {
+            btnConf.disabled = true;
             const token = await auth.currentUser.getIdToken();
             const res = await fetch('/api/cobranza/auto/run', {
                 method: 'POST',
@@ -190,24 +284,28 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await res.json();
             if (!res.ok || !data.success) throw new Error(data.message || 'No se pudo iniciar la corrida.');
-            const aviso = data.alreadyRanToday
-                ? '\n\nOJO: este pase ya había corrido hoy. No se cobrará doble a nadie (candado de 1 cobro/día); solo alcanzará a clientes que hayan quedado pendientes.'
-                : '';
-            alert(`Corrida ${nombre} iniciada. Puede tardar unos minutos; el resumen de aquí abajo se irá actualizando solo.${aviso}`);
-            // Refrescar el resumen cada 20s durante ~3 minutos mientras corre en el servidor.
-            if (refreshTimer) clearInterval(refreshTimer);
-            let n = 0;
-            refreshTimer = setInterval(async () => {
-                await cargarUltimaCorrida();
-                if (++n >= 9) { clearInterval(refreshTimer); refreshTimer = null; }
-            }, 20000);
+            window.cancelarPreview();
+            alert(`Corrida ${nombrePase(pass)} iniciada. Abajo verás el avance y los logs en vivo.`);
+            iniciarLogsEnVivo();
         } catch (e) {
             console.error('Error al iniciar corrida manual:', e);
             alert('Error: ' + e.message);
         } finally {
-            btnM.disabled = false; btnT.disabled = false;
+            btnConf.disabled = false;
         }
     };
+
+    // Refresca resumen + logs cada 6s mientras el servidor reporte enCurso (máx ~5 min).
+    function iniciarLogsEnVivo() {
+        if (refreshTimer) clearInterval(refreshTimer);
+        let ticks = 0, quietas = 0;
+        cargarUltimaCorrida();
+        refreshTimer = setInterval(async () => {
+            const enCurso = await cargarUltimaCorrida();
+            quietas = enCurso ? 0 : quietas + 1;
+            if (quietas >= 2 || ++ticks >= 50) { clearInterval(refreshTimer); refreshTimer = null; }
+        }, 6000);
+    }
 
     window.guardarCobranzaAuto = async () => {
         try {

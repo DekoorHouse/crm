@@ -9813,6 +9813,22 @@ router.get('/cobranza/buscar-pedidos', async (req, res) => {
     }
 });
 
+// VISTA PREVIA de un pase de cobranza (botones de la página): devuelve la lista de
+// candidatos y qué les pasaría (cobrar/cancelar/vencer/esperar/saltar con motivo),
+// SIN enviar nada ni cambiar nada. Puede tardar unos segundos (lee la conversación
+// de cada candidato a cobro para aplicar las mismas guardias del cobro real).
+router.post('/cobranza/auto/preview', async (req, res) => {
+    try {
+        const pass = (req.body && req.body.pass === 'tarde') ? 'tarde' : 'manana';
+        const { previewCobranzaSweep } = require('./cobranza/cobranzaScheduler');
+        const preview = await previewCobranzaSweep(pass);
+        res.json({ success: true, ...preview });
+    } catch (error) {
+        console.error('Error en vista previa de cobranza:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // Correr un pase de la cobranza automática A MANO (botones de la página de cobranza).
 // Dispara el MISMO sweep del scheduler con force:true (corre aunque el interruptor esté
 // apagado — sirve para testear), respetando TODAS las reglas: candados de 1 cobro/día por
