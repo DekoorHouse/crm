@@ -18,6 +18,19 @@ Las hojas de lamparas son de **350x330 mm** con todo alineado **arriba-izquierda
 Scripts junto a esta skill: `infinito.vbs`, `gen-corazones.vbs`, `gen-grabado.js`,
 `upload-drive.js`, plantillas en `plantillas/`.
 
+**REGLA DE ORO (Chris, 2026-07-18, a raiz de DH13569): un diseno que el cliente NO ha
+aprobado (especiales del Modo 3 y variantes, grabados Modo 4, o cualquier hoja hecha a mano
+de un pedido SIN mockup aprobado) NO se sube a Drive ni se le cambia el estatus al pedido.**
+El flujo correcto al terminar el diseno es mandar el PREVIO y esperar la autorizacion:
+
+    node "C:\Users\chris\Documents\crm\scripts\send-design-approval.js" --dh 13569 --cdr "<ruta.cdr>" --svg "<ruta.svg>"
+
+Eso genera la captura AL DERECHO (client-preview.vbs), la manda por WhatsApp al cliente,
+deja el SVG *staged* (`designApproval.stagedSvgLocalPath`, status='pending') y activa el
+clasificador: cuando el cliente responda que si, el `svg-corte-worker` sube el SVG a Drive
+y cambia el estatus SOLO. Los unicos disenos que se suben directo a Drive son los del
+worker Modo 2, porque su mockup ya fue aprobado por el cliente antes de pagar.
+
 ## Modo 2: lampara infinito (nombres + fecha)
 
 Producto: lampara con globos de corazon (corte rojo), simbolo infinito con dos nombres
@@ -46,7 +59,8 @@ lampara y se juntan 2 en una hoja); solo va 1 cuando ya no hay mas pedidos que d
    Lo esperado en el SVG/PNG final: diseno VERTICAL pegado arriba-izquierda, textos EN ESPEJO
    (ilegibles al derecho), globos hacia la derecha, bases a la izquierda; con 2 pedidos el
    orden de arriba a abajo es nombre4, nombre3, nombre2, nombre1. Nada encimado.
-4. Subir el SVG a Drive y reportar con el link.
+4. Subir el SVG a Drive y reportar con el link — SOLO si el pedido ya tiene mockup aprobado
+   por el cliente (lo normal en Modo 2); si no lo tiene, aplica la REGLA DE ORO (previo primero).
 
 ## Modo 3: lampara de 4 corazones ("Plantilla Corazones para Claude")
 
@@ -69,7 +83,8 @@ funcionan como placeholders detectados por CONTENIDO). No confundir con "Plantil
    vertical; el grabado va ESPEJEADO porque el laser graba por atras). Flags: `/svg` (SVG laser),
    `/png` (revision), `/save` (.cdr editable al derecho), `/close` (cierra el doc),
    `/extrasize:N` (pt del texto adicional, default 18).
-3. Verificar el PNG (diseno EN ESPEJO, nada encimado) y subir el SVG a Drive (ver abajo).
+3. Verificar el PNG (diseno EN ESPEJO, nada encimado) y **mandar el previo de aprobacion**
+   (REGLA DE ORO de arriba): NO subir a Drive ni tocar el estatus hasta que el cliente apruebe.
 
 Receta por si hay que recolocar a mano: nombre izq. centro **(72.0, 274.2) mm 62.4 pt**; nombre der.
 **(152.9, 274.2) 62.4 pt**; fecha **(112.3, 247.4) 23.5 pt**; todo negro, fuente **Rows of Sunflowers**;
@@ -88,6 +103,20 @@ el corazon grande de arriba queda como "corona" (vacio). Centros verificados en 
 ~**(39, 268)**, todos 46pt (nombre de 2 palabras a 2 renglones, p. ej. "Angel"/"Gael", ~40pt), silueta
 blanca **2.8 mm**. Se arma copiando `DH13528-4corazones-v2.cdr`, borrando sus textos y poniendo los
 nuevos (ver `scratchpad/build-13517.vbs`).
+
+**Variante PAREJA + hijos (2 nombres en el infinito + hijos sobre corazones)** — p. ej. DH13569
+"Roberto, Laishaa, Katarhin e Iris | 19-Julio-2024" (papas + 2 hijas). La pareja va NORMAL en los
+loops del infinito y la fecha abajo (igual que el Modo 3 estandar), y cada hijo va **centrado en un
+corazon** con silueta blanca: 1er hijo en el corazon **FRONTAL-CENTRO**, 2o en el **DERECHO** (como
+Gael/Uriel de DH13528; el grande de arriba y el izquierdo quedan vacios). Centros verificados en la
+plantilla tabloide (2026-07-18): frontal-centro **(104.4, 327.5) mm**, derecho **(160.5, 334.5) mm**,
+ambos **46 pt**. La silueta = el MISMO texto duplicado ATRAS con relleno blanco + contorno blanco de
+**2.8 mm** (crear primero la silueta, encima el texto negro). OJO: en la plantilla los 4 corazones son
+4 curvas combinadas con el MISMO bbox (x 38.6-188.9, y 297.3-389.8) — no se puede sacar el centro de
+cada corazon leyendo shapes; usar estos centros y verificar con PNG al derecho (escala px/mm =
+ancho_png / 157.5, origen x=33.6, y=391.6 hacia abajo). Script listo para copiar/adaptar:
+`build-13569-pareja-2hijas.vbs` (junto a esta skill; acepta `kx ky ix iy` como args para ajustar
+centros y regenera todo: reemplazos, siluetas, curvas, espejo, PNGs de revision y SVG).
 
 ## Modo 4: imagen para GRABADO RASTER (foto del cliente -> WaveSpeed)
 
@@ -113,6 +142,11 @@ va DENTRO de la lampara con el pipeline de Corel (como el panda/toronja) y luego
 de color**: si el laser necesita lo contrario (negro sobre blanco), invertir el PNG (sharp `.negate()`).
 
 ## Subida a Drive (carpeta "SVG Corte", id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`)
+
+**OJO: subir SOLO disenos ya autorizados por el cliente** (mockup aprobado o previo de
+aprobacion contestado) — ver la REGLA DE ORO de arriba. Todo lo que cae en esta carpeta
+se considera listo para cortar. El Apps Script solo sube (no puede borrar): si algo se
+sube por error, hay que borrarlo A MANO en Drive y avisar al usuario.
 
 **Via principal** (rapida, sin costo de contexto; setup YA HECHO el 2026-07-16):
 
@@ -180,6 +214,10 @@ candado el worker re-cortó 9 pedidos ya enviados el 2026-07-16 (corrida de las 
   region/indices acotados y propiedades baratas (pos/tam/texto).
 - El documento de produccion del usuario ("Plantillas Corazones.cdr") es intocable: no
   guardarlo, no cerrarlo, no mutarle shapes. Trabajar siempre en copias.
+- `Outline.SetProperties <ancho>` NO aplica el ancho en v23 (falla silencioso bajo On Error
+  y el texto queda SIN silueta): para contornos por codigo usar asignaciones directas —
+  `s.Outline.Width = 2.8` (unidades del doc) + `s.Outline.Color.RGBAssign 255,255,255` +
+  `s.Outline.LineJoin = 1` (redondeado) — y confirmar con `WScript.Echo s.Outline.Width`.
 - Corel reusa la instancia abierta con `CreateObject`; cerrar docs de trabajo sin prompt:
   `doc.Dirty = False : doc.Close`.
 - Si Corel no esta abierto y algo falla al conectar: pedir al usuario abrirlo y reintentar.
