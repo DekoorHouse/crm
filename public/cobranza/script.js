@@ -160,6 +160,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (r.tarde) pases.push(['tarde', r.tarde]);
             if (!pases.length && (r.enviados != null || r.error)) pases.push(['corrida', r]);
 
+            // Hora legible (MX) en que terminó un pase, a partir de finishedAt (Timestamp).
+            const horaFin = (p) => {
+                try {
+                    if (!p.finishedAt || typeof p.finishedAt.toDate !== 'function') return '';
+                    return p.finishedAt.toDate().toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+                } catch (_) { return ''; }
+            };
             const tot = { enviados: 0, cancelados: 0, vencidos: 0, saltados: 0, esperando: 0, errores: 0 };
             const errs = [];
             const porPase = [];
@@ -167,7 +174,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 for (const k of Object.keys(tot)) tot[k] += Number(p[k]) || 0;
                 if (p.error) errs.push(`${nombre}: ${p.error}`);
                 if (p.enCurso) algunoEnCurso = true;
-                porPase.push(`${nombre}: ${p.enviados || 0} enviado(s)${p.enCurso ? ' ⏳ corriendo…' : ''}`);
+                const fin = horaFin(p);
+                porPase.push(`${nombre}: ${p.enviados || 0} enviado(s)${p.enCurso ? ' ⏳ corriendo…' : (fin ? ` ✅ terminada ${fin}` : '')}`);
             }
             const errHtml = errs.length ? ` &middot; <span style="color:#dc2626;">⚠ ${errs.map(esc).join(' | ')}</span>` : '';
             box.innerHTML = `<i class="fas fa-history"></i> <b>&Uacute;ltima corrida (${esc(r.date)}):</b> ` +
@@ -180,7 +188,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const parts = [];
                 for (const [nombre, p] of pases) {
                     if (!Array.isArray(p.detalle) || !p.detalle.length) continue;
-                    parts.push(`<div style="font-weight:700; margin-top:4px;">Pase ${esc(nombre)}${p.enCurso ? ' — ⏳ corriendo…' : ''} · ${p.enviados || 0} enviados de ${p.candidatos || 0} candidatos</div>`);
+                    const finTxt = p.enCurso ? ' — ⏳ corriendo…' : (horaFin(p) ? ` — ✅ terminada ${esc(horaFin(p))}` : '');
+                    parts.push(`<div style="font-weight:700; margin-top:4px;">Pase ${esc(nombre)}${finTxt} · ${p.enviados || 0} enviados de ${p.candidatos || 0} candidatos</div>`);
                     for (const d of p.detalle) {
                         parts.push(`<div>• <b>${esc(d.pedidos || '')}</b> ${esc(d.contactId || '')} — ${esc(d.resultado || '')}</div>`);
                     }
