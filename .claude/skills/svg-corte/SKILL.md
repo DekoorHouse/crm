@@ -75,6 +75,20 @@ Receta por si hay que recolocar a mano: nombre izq. centro **(72.0, 274.2) mm 62
 **(152.9, 274.2) 62.4 pt**; fecha **(112.3, 247.4) 23.5 pt**; todo negro, fuente **Rows of Sunflowers**;
 diseno centrado en X≈112.3. (Verificado end-to-end con DH13523 el 2026-07-17.)
 
+**REGLA (Chris, 2026-07-17): los nombres que van SOBRE los corazones van SIEMPRE centrados en cada
+corazon** (para que se vea lo mas uniforme posible), con silueta blanca para resaltar sobre la malla.
+
+**Variante FAMILIA — 4 nombres (esposa/mama + hijos, SIN pareja)** — p. ej. DH13517 "Carmen, Eder,
+Hugo, Angel Gael | 20-Julio-2026": la honoree (esposa/mama) va en el **loop IZQUIERDO** del infinito
+y la **fecha en el loop DERECHO** (arriba de los 3 corazoncitos decorativos), NO abajo — un solo
+nombre centrado en el infinito choca con el cruce grueso. Los hijos van **uno por corazon, centrados**;
+el corazon grande de arriba queda como "corona" (vacio). Centros verificados en la base
+`DH13528-4corazones-v2.cdr` (hoja 350x330): loop izq. nombre ~**(39, 214) 65pt**, loop der. fecha
+~**(124, 215) 25pt**; corazones — frente-centro ~**(73, 266)**, derecho ~**(120, 267)**, izquierdo
+~**(39, 268)**, todos 46pt (nombre de 2 palabras a 2 renglones, p. ej. "Angel"/"Gael", ~40pt), silueta
+blanca **2.8 mm**. Se arma copiando `DH13528-4corazones-v2.cdr`, borrando sus textos y poniendo los
+nuevos (ver `scratchpad/build-13517.vbs`).
+
 ## Modo 4: imagen para GRABADO RASTER (foto del cliente -> WaveSpeed)
 
 Cuando el cliente pide **grabar una imagen/foto** (una foto de pareja, mascota, etc.). Convierte la
