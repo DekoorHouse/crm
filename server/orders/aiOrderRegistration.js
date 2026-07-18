@@ -262,6 +262,22 @@ async function alertAdmin(text) {
     }
 }
 
+// Bitácora de fallas del registro automático (colección ai_order_failures) — nunca lanza.
+// Antes las fallas solo iban al log de Render y a un WhatsApp del admin (que no se guarda),
+// así que eran imposibles de auditar después. Aquí queda contacto, motivo y fecha.
+async function logFailure(contactId, name, motivo) {
+    try {
+        await db.collection('ai_order_failures').add({
+            contactId,
+            name: name || null,
+            motivo: String(motivo || 'desconocido').slice(0, 500),
+            at: admin.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (e) {
+        console.warn('[AI_ORDER] No se pudo guardar la falla en ai_order_failures:', e.message);
+    }
+}
+
 /**
  * Punto de entrada desde services.js cuando la IA emite /registrar.
  * Devuelve el número de pedido ("DH####") si se registró, o null si no
@@ -299,6 +315,7 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             await new Promise(r => setTimeout(r, IN_FLIGHT_RETRY_DELAY_MS));
             claimed = await claimInFlight();
             if (!claimed) {
+                await logFailure(contactId, name, 'otro registro en vuelo (candado ocupado tras reintento)');
                 await alertAdmin(`⚠️ *La IA no pudo procesar un /registrar de ${name} (${contactId})*: otro registro seguía en curso. Revisa su chat y su pedido en el CRM por si quedó algo sin aplicar.`);
                 return null;
             }
@@ -355,6 +372,7 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             const editable = r.registeredByAI === true && r.aiReviewStatus === 'pending' && (estActual === 'Sin estatus' || estActual === 'Esperando anticipo');
             if (!editable) {
                 console.warn(`[AI_ORDER] ${contactId} confirmó un cambio pero ${rNum} ya no es editable (${r.vendedor || 'manual'}, ${r.estatus}, review: ${r.aiReviewStatus || '-'}). Se avisa al admin.`);
+                await logFailure(contactId, name, `cambio_no_aplicado: ${rNum} ya no es editable (${r.estatus}${r.registeredByAI ? ', IA' : ', manual'})`);
                 await alertAdmin(`⚠️ *El cliente cambió/confirmó un pedido, pero ya existe ${rNum} reciente* (${r.estatus || 'Sin estatus'}${r.registeredByAI ? ', registrado por IA' : ', registrado manual'}${r.aiReviewStatus === 'approved' ? ', ya revisado' : ''}).\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nLo que el cliente confirmó ahora:\n${itemsTxt}\nTotal: $${extraction.total}\n\nRevisa el chat y edita/registra tú desde el CRM. La IA no creó ni modificó nada.`);
                 return null;
             }
@@ -418,10 +436,12 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
         return `DH${orderNumber}`;
     } catch (e) {
         console.warn(`[AI_ORDER] No se pudo registrar automáticamente el pedido de ${contactId}: ${e.message}. Cae al flujo manual (Pendientes IA).`);
+        await logFailure(contactId, name, e.message);
         // Fallback: dejar al contacto en "Pendientes IA" (flujo manual de siempre) y avisar.
         try {
             await db.collection('contacts_whatsapp').doc(contactId).update({
                 status: 'pendientes_ia',
+                pendientesIaAt: admin.firestore.FieldValue.serverTimestamp(),
                 lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
             });
         } catch (updErr) {

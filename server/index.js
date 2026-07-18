@@ -26,6 +26,7 @@ const { startSpendCapAlertScheduler } = require('./meta/spendCapAlertScheduler')
 const { startMockupAutoScheduler } = require('./mockups/mockupAutoScheduler');
 const { startCobranzaScheduler } = require('./cobranza/cobranzaScheduler');
 const { startDesignApprovalPoller } = require('./design/designApprovalPoller');
+const { startPendientesIaWatchdog } = require('./orders/pendientesIaWatchdog');
 const orderFollowupRouter = require('./leads/orderFollowupRoutes');
 const scheduledReminderRouter = require('./leads/scheduledReminderRoutes');
 const path = require('path');
@@ -539,6 +540,8 @@ const server = app.listen(PORT, () => {
   // Red de seguridad de aprobaciones de diseño (cada 2 min): procesa respuestas del cliente que el
   // timer en memoria (frágil ante reinicios de Render) no atendió. Independiente de botActive.
   startDesignApprovalPoller();
+  // Vigilante de Pendientes IA (cada 30 min): avisa ventas cerradas que llevan >1 h sin pedido registrado
+  startPendientesIaWatchdog();
   // Conectar bridge TCP a MeerK40t
   laserBridge.connect();
 });

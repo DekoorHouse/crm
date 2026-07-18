@@ -3021,6 +3021,9 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // Venta cerrada: a Pendientes IA para que el equipo registre el pedido. La IA
             // sigue en etapa de VENTA acompañando al cliente mientras se fabrica su pedido.
             updateData.status = 'pendientes_ia';
+            // Sello de entrada a la cola: el vigilante (orders/pendientesIaWatchdog) avisa si
+            // pasa >1h aquí sin que exista un pedido (cierre que se quedó sin registrar).
+            updateData.pendientesIaAt = admin.firestore.FieldValue.serverTimestamp();
             console.log(`[AI] Venta cerrada para ${contactId}. Moviendo a Pendientes IA; la IA sigue en etapa de venta (la post-venta arranca con /cuatro).`);
         }
 
@@ -3033,6 +3036,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // Etapa 2 apagada (kill-switch): comportamiento anterior, se desactiva el bot.
             updateData.botActive = false;
             updateData.status = 'pendientes_ia';
+            updateData.pendientesIaAt = admin.firestore.FieldValue.serverTimestamp();
             console.log(`[AI] Desactivación automática activada para ${contactId} por comando o frase clave. Moviendo a Pendientes IA.`);
         }
 
@@ -3069,7 +3073,16 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // require perezoso para evitar ciclo de módulos (aiOrderRegistration requiere services).
         // /anticipopagado implica registrar también (si aún no existe el pedido) y luego pasarlo a
         // Fabricar: el anticipo del especial ya se validó, así que arranca la fabricación.
-        if (registerOrderCmd || anticipoPaidCmd) {
+        // Respaldo anti-fuga: si la IA cerró la venta (frase "ya registramos tu pedido" o /final)
+        // pero OLVIDÓ emitir /registrar, se intenta el registro automático igual — el cliente ya
+        // oyó que su pedido quedó registrado y sin esto se queda en la cola sin pedido (caso real
+        // 5216471109101). registerOrderFromAI valida todo y no-opea si el registro está apagado;
+        // /esperaanticipo se excluye: ahí la venta aún NO debe registrarse (falta el anticipo).
+        const registroImplied = saleClosed && !isPostVenta && !registerOrderCmd && !esperaAnticipoCmd && !anticipoPaidCmd;
+        if (registroImplied) {
+            console.log(`[AI_ORDER] Cierre sin /registrar detectado para ${contactId}; se intenta el registro automático de respaldo.`);
+        }
+        if (registerOrderCmd || anticipoPaidCmd || registroImplied) {
             // Anexar la respuesta del TURNO ACTUAL al transcript: conversationHistory se arma
             // ANTES de generar, así que sin esto el extractor no vería un resumen/cierre emitido
             // en este mismo turno (y las confirmaciones por nota de voz perderían su contexto).
