@@ -24,7 +24,13 @@ de un pedido SIN mockup aprobado) NO se sube a Drive ni se le cambia el estatus 
 
 **Y ANTES del previo (Chris, 2026-07-18, tras DH13588): NO mandarle imagenes al cliente sin
 autorizacion de Chris.** Al terminar el diseno, ensenarle a Chris la captura EN EL CHAT y
-esperar su OK explicito; SOLO entonces mandar el previo al cliente:
+esperar su OK explicito; SOLO entonces mandar el previo al cliente.
+
+**Y para esa revision (Chris, 2026-07-18): dejar SIEMPRE el documento abierto en CorelDRAW**
+— en corridas manuales de la skill NO usar `/close` ni cerrar el doc por codigo: Chris revisa
+(y a veces retoca) la pieza directo en Corel, ademas de ver la captura en el chat. `/close`
+queda SOLO para el worker automatico. Si un script ya lo cerro, reabrir el `.cdr` guardado
+(`corel.OpenDocument`) antes de reportar. Comando del previo:
 
     node "C:\Users\chris\Documents\crm\scripts\send-design-approval.js" --dh 13569 --cdr "<ruta.cdr>" --svg "<ruta.svg>"
 
@@ -94,7 +100,8 @@ Cuando el usuario diga "plantilla 1" / "plantilla 2", se refiere a esta distinci
    nombre pasa de 52 mm o la fecha de 50 mm), crea el texto adicional bajo la fecha (~18 pt),
    convierte a curvas y con **/mirror** aplica la orientacion de produccion (rotar -90 + espejo
    vertical; el grabado va ESPEJEADO porque el laser graba por atras). Flags: `/svg` (SVG laser),
-   `/png` (revision), `/save` (.cdr editable al derecho), `/close` (cierra el doc),
+   `/png` (revision), `/save` (.cdr editable al derecho), `/close` (cierra el doc — SOLO para
+   automatizacion; en corridas manuales NO pasarlo, Chris revisa en Corel),
    `/extrasize:N` (pt del texto adicional, default 18).
 3. Verificar el PNG (diseno EN ESPEJO, nada encimado) y **mandar el previo de aprobacion**
    (REGLA DE ORO de arriba): NO subir a Drive ni tocar el estatus hasta que el cliente apruebe.
