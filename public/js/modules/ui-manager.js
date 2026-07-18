@@ -3751,26 +3751,57 @@ function renderTagsDistributionChart(data) {
 // "arriba" cuando esa media carga y empuja el contenido. Aquí re-hacemos scroll al fondo tras cada
 // carga de media (con límite de ~1.5s y solo si seguimos cerca del fondo, para no jalar al usuario
 // si subió a leer el historial).
-function scrollMessagesToBottom(container) {
+function scrollMessagesToBottom(container, opts = {}) {
     if (!container) return;
+    // force = carga inicial de la conversación: el operador acaba de abrir el chat y NO ha
+    // hecho scroll, así que lo pegamos al fondo REAL pase lo que pase mientras cargan las
+    // imágenes/videos (que crecen y empujan el contenido). Sin esto, en el celular las
+    // imágenes pasan por el proxy firmado, cargan tarde, empujan la conversación hacia abajo
+    // y el chat se queda "a la mitad" / arriba en lugar del último mensaje.
+    const force = opts.force === true;
     const toBottom = () => { container.scrollTop = container.scrollHeight; };
     const toBottomIfNear = () => {
         if ((container.scrollHeight - container.scrollTop - container.clientHeight) < container.clientHeight * 1.5) toBottom();
     };
+    // En la carga inicial forzamos SIEMPRE al fondo (el usuario no ha leído historial todavía);
+    // en actualizaciones en vivo respetamos si el usuario subió a leer (solo si está cerca).
+    const settle = force ? toBottom : toBottomIfNear;
+
     toBottom();
     requestAnimationFrame(toBottom);
     setTimeout(toBottom, 120); // tras el primer layout
-    // 5s: las imágenes del chat pasan por el proxy firmado y en el celular tardan más de 1.5s;
-    // si el deadline vence antes de que carguen, el chat se queda a media conversación.
-    const deadline = Date.now() + 5000;
+
+    // 8s: las imágenes del chat pasan por el proxy firmado y en el celular tardan varios
+    // segundos; si el deadline vence antes de que carguen, el chat se queda a media conversación.
+    const deadline = Date.now() + 8000;
+
+    if (force) {
+        // Mantenemos el chat pegado al fondo mientras carga la media, hasta que el operador
+        // toque/scrollee para leer historial (touchmove/wheel = intención real; el 'scroll' que
+        // dispara nuestro propio toBottom NO cuenta) o venza el deadline.
+        let userScrolled = false;
+        const stop = () => { userScrolled = true; cleanup(); };
+        const cleanup = () => {
+            clearInterval(pin);
+            container.removeEventListener('wheel', stop);
+            container.removeEventListener('touchmove', stop);
+        };
+        container.addEventListener('wheel', stop, { passive: true });
+        container.addEventListener('touchmove', stop, { passive: true });
+        const pin = setInterval(() => {
+            if (userScrolled || Date.now() > deadline) { cleanup(); return; }
+            toBottom();
+        }, 100);
+    }
+
     container.querySelectorAll('img, video').forEach(el => {
         if (el.complete) return;
-        const onready = () => { if (Date.now() <= deadline) toBottomIfNear(); };
+        const onready = () => { if (Date.now() <= deadline) settle(); };
         el.addEventListener('load', onready, { once: true });
         el.addEventListener('loadeddata', onready, { once: true });
         el.addEventListener('error', onready, { once: true });
     });
-    setTimeout(toBottomIfNear, 500);
+    setTimeout(settle, 500);
 }
 
 function renderMessages(options = {}) {
@@ -3797,7 +3828,11 @@ function renderMessages(options = {}) {
     
     // Calculamos si el usuario está en el fondo ANTES de actualizar el contenido
     const isAtBottom = messagesContainer ? (messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 150) : true;
-    const isInitialLoad = messagesContainer && messagesContainer.scrollHeight === 0;
+    // Primera pintada de la conversación: messages-content estaba vacío antes de este render.
+    // Señal fiable de "abrí el chat" (los updates en vivo ya tienen burbujas). scrollHeight===0
+    // no basta porque el contenedor recién creado ya trae padding/altura y nunca da 0.
+    const isFirstPaint = contentContainer.children.length === 0;
+    const isInitialLoad = isFirstPaint || (messagesContainer && messagesContainer.scrollHeight === 0);
 
     // Guardamos la altura del scroll ANTES de insertar los mensajes viejos
     const previousScrollHeight = messagesContainer ? messagesContainer.scrollHeight : 0;
@@ -3816,9 +3851,11 @@ function renderMessages(options = {}) {
             messagesContainer.scrollTop = options.scrollTop;
         } else if (options.scrollToBottom !== false) {
             // Comportamiento de scroll condicional:
-            // Scroll al final solo si ya estaba en el fondo o si es la carga inicial
+            // Scroll al final solo si ya estaba en el fondo o si es la carga inicial.
+            // En la carga inicial (primera pintada del chat) forzamos el pegado al fondo
+            // mientras carga la media, para que abra en el último mensaje y no a la mitad.
             if (isAtBottom || isInitialLoad) {
-                scrollMessagesToBottom(messagesContainer);
+                scrollMessagesToBottom(messagesContainer, { force: isFirstPaint });
             }
         }
     }
