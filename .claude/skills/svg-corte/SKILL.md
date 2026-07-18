@@ -71,6 +71,16 @@ Chris; DEBE conservar sus 3 textos de ejemplo **"Romario" / "Romina" / "13-Agost
 funcionan como placeholders detectados por CONTENIDO). No confundir con "Plantillas Corazones.cdr"
 (doc de produccion intocable).
 
+**Nomenclatura (Chris, 2026-07-18) — la lampara de 4 corazones tiene DOS variantes:**
+- **"Plantilla 1"** = infinito/corazones en **LINEA AZUL, SIN malla** (azul = tercera pasada;
+  los corazones van vacios, solo los dibuja la silueta). De esta variante aun NO hay plantilla
+  limpia para Claude — si el usuario pide "plantilla 1", pedirle el archivo base o extraer uno
+  (mismo procedimiento de extraccion que las plantillas de infinito). Ejemplo visto: diseno
+  Fong Kee / Miranda (2026-07-18).
+- **"Plantilla 2"** = la de **MALLA** (corazones 3D grabados en negro) = `Plantilla Corazones
+  para Claude.cdr`; es la que usa `gen-corazones.vbs` y todo lo documentado en este Modo 3.
+Cuando el usuario diga "plantilla 1" / "plantilla 2", se refiere a esta distincion.
+
 1. **Datos**: nombre izquierdo, nombre derecho, fecha y — opcional — un **texto adicional** (p. ej.
    el campo "Especial" del pedido, tipo "Aniversario No. 27") que va CENTRADO **debajo de la fecha**.
 2. Ejecutar:
