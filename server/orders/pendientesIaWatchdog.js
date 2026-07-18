@@ -42,35 +42,48 @@ async function runPendientesIaCheckOnce() {
             const alertedMs = c.pendientesIaAlertedAt && c.pendientesIaAlertedAt.toDate ? c.pendientesIaAlertedAt.toDate().getTime() : 0;
             if (alertedMs && (now - alertedMs) < REALERT_MS) continue;
 
-            // ¿Se creó un pedido alrededor de su entrada a la cola (2 h antes o después)?
-            // Entonces NO es un cierre perdido: es un cambio pendiente de revisión (tiene DH)
-            // o el registro sí ocurrió y la etiqueta quedó por otra razón. Sin query compuesta
-            // (contactId + createdAt requeriría índice): un contacto tiene pocos pedidos.
-            const pedidosSnap = await db.collection('pedidos').where('contactId', '==', doc.id).get();
-            const tienePedidoReciente = pedidosSnap.docs.some(p => {
-                const ca = p.data().createdAt;
-                return ca && ca.toDate && ca.toDate().getTime() >= (refMs - 2 * 60 * 60 * 1000);
-            });
-            if (tienePedidoReciente) continue;
+            // Clasificar: si el contacto tiene ALGÚN pedido en el CRM, lo atorado es un CAMBIO
+            // pendiente de aplicar sobre ese pedido; si no tiene ninguno, es el caso grave:
+            // venta cerrada sin registrar. Sin query compuesta (contactId + createdAt
+            // requeriría índice nuevo): un contacto tiene pocos pedidos, se filtra en memoria.
+            const pedidosSnap = await db.collection('pedidos').where('contactId', '==', doc.id).limit(5).get();
+            const ultimoDH = pedidosSnap.docs
+                .map(p => p.data())
+                .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))[0];
 
-            stuck.push({ ref: doc.ref, name: c.name || doc.id, id: doc.id, hrs: ((now - refMs) / 3600000).toFixed(1) });
+            stuck.push({
+                ref: doc.ref,
+                name: c.name || doc.id,
+                id: doc.id,
+                hrs: ((now - refMs) / 3600000).toFixed(1),
+                pedido: ultimoDH ? `DH${ultimoDH.consecutiveOrderNumber} (${ultimoDH.estatus || 'Sin estatus'})` : null
+            });
         }
 
         if (stuck.length === 0) return { revisados: snap.size, atorados: 0 };
 
-        const lines = stuck.map(s => `• ${s.name} — ${s.id} (${s.hrs} h en la cola)`).join('\n');
+        const sinPedido = stuck.filter(s => !s.pedido);
+        const conPedido = stuck.filter(s => s.pedido);
+        let text = '⏰ *Cola Pendientes IA con más de 1 h sin resolver*\n';
+        if (sinPedido.length) {
+            text += `\n*Ventas cerradas SIN pedido registrado* (la IA les dijo "ya registramos tu pedido" y el pedido NO existe — regístralos desde su chat):\n`
+                + sinPedido.map(s => `• ${s.name} — ${s.id} (${s.hrs} h)`).join('\n') + '\n';
+        }
+        if (conPedido.length) {
+            text += `\n*Cambios confirmados por el cliente pendientes de aplicar* (ya tienen pedido; revisa y aplica el cambio):\n`
+                + conPedido.map(s => `• ${s.name} — ${s.id} (${s.hrs} h) → ${s.pedido}`).join('\n') + '\n';
+        }
+        text += '\nMientras sigan en la cola no avanzan a diseño/foto/cobranza.';
         try {
             const { sendAdvancedWhatsAppMessage } = require('../services'); // perezoso: evita ciclo de módulos
-            await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, {
-                text: `⏰ *Ventas cerradas SIN pedido registrado*\n\nA estos clientes la IA les dijo "ya registramos tu pedido", pero el pedido NO existe en el CRM:\n\n${lines}\n\nRegístralos manualmente desde su chat (el resumen confirmado está en la conversación). Mientras no se registren, no hay diseño, ni foto, ni cobranza.`
-            });
+            await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
         } catch (e) {
             console.warn('[PENDIENTES_IA] No se pudo enviar la alerta al admin:', e.message);
         }
         for (const s of stuck) {
             await s.ref.update({ pendientesIaAlertedAt: admin.firestore.FieldValue.serverTimestamp() }).catch(() => {});
         }
-        console.log(`[PENDIENTES_IA] Alerta enviada al admin: ${stuck.length} contacto(s) con venta cerrada sin pedido.`);
+        console.log(`[PENDIENTES_IA] Alerta enviada al admin: ${sinPedido.length} sin pedido, ${conPedido.length} con cambio pendiente.`);
         return { revisados: snap.size, atorados: stuck.length };
     } catch (e) {
         console.error('[PENDIENTES_IA] Error en el vigilante:', e.message);
