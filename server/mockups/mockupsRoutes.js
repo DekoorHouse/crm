@@ -45,7 +45,21 @@ async function savePreview(orderId, image, prompt, meta = {}) {
         };
         if (meta.secondRefUrl) entry.secondRefUrl = meta.secondRefUrl;   // 2ª referencia usada (diseño/subida)
         const i = previews.findIndex(p => p.blockId === blockId);
-        if (i >= 0) previews[i] = entry; else previews.push(entry);
+        if (i >= 0) {
+            previews[i] = entry;
+        } else {
+            // Anti-DUPLICADO: si ya existe un preview con el MISMO diseño (misma plantilla y mismos
+            // campos —nombres/fecha—), es una regeneración accidental con blockId nuevo (p. ej. la
+            // lista se re-renderizó a mitad de la generación, o se recargó la página antes de
+            // persistir el primer preview). Se reemplaza ese en vez de agregar uno idéntico. Los
+            // previews con datos DISTINTOS (variantes reales) sí conviven; para reintentar el MISMO
+            // diseño está el botón "Regenerar" (reusa el blockId). NO se compara secondRefUrl: es
+            // una imagen que se sube nueva en cada generación aunque el diseño sea idéntico.
+            const sameDesign = (a, b) => (a.templateId || '') === (b.templateId || '')
+                && JSON.stringify(a.fields || {}) === JSON.stringify(b.fields || {});
+            const dup = previews.findIndex(p => sameDesign(p, entry));
+            if (dup >= 0) previews[dup] = entry; else previews.push(entry);
+        }
         await ref.set({ orderId: String(orderId), previews }, { merge: true });
         // Verificación de layout por visión (fire-and-forget): guarda cómo quedaron los textos
         // grabados renglón por renglón — la "verdad" que luego reproduce el diseño de corte.
