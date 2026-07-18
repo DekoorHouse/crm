@@ -8,19 +8,118 @@
  *   node scripts/prompt-tool.js set <target> <archivo.txt>   # RESPALDA el actual y lo reemplaza
  *   node scripts/prompt-tool.js backups [target]             # lista respaldos (colección prompt_backups)
  *   node scripts/prompt-tool.js restore <backupId>           # restaura un respaldo (respaldando el actual)
+ *   node scripts/prompt-tool.js export                       # vuelca TODOS los prompts a prompts/ (espejo versionado)
  *
- * target: bot | postventa | dept:<departmentId> | ad:<adId>
+ * target: bot | postventa | cobranza | catalogo | dept:<departmentId> | ad:<adId>
  */
 const admin = require('firebase-admin');
 const fs = require('fs');
+const path = require('path');
 const { db } = require('../server/config');
+
+const PROMPTS_DIR = path.join(__dirname, '..', 'prompts');
 
 function resolveTarget(target) {
     if (target === 'bot') return { ref: db.collection('crm_settings').doc('bot'), field: 'instructions', label: 'Instrucciones del Bot (ventas)' };
     if (target === 'postventa') return { ref: db.collection('crm_settings').doc('postventa'), field: 'instructions', label: 'Instrucciones de Post-Venta' };
+    if (target === 'cobranza') return { ref: db.collection('crm_settings').doc('bot_cobranza'), field: 'instructions', label: 'Instrucciones de Cobranza' };
+    if (target === 'catalogo') return { ref: db.collection('crm_settings').doc('ai_order_registration'), field: 'catalogText', label: 'Catálogo del registro automático de pedidos' };
     if (target.startsWith('dept:')) return { ref: db.collection('ai_department_prompts').doc(target.slice(5)), field: 'prompt', label: `Prompt del departamento ${target.slice(5)}` };
     if (target.startsWith('ad:')) return { adId: target.slice(3), field: 'prompt', label: `Prompt del anuncio ${target.slice(3)}` };
     return null;
+}
+
+function slugify(s) {
+    return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'sin-nombre';
+}
+
+// Escribe un prompt como archivo del repo (UTF-8, saltos \n, newline final).
+function writePromptFile(relPath, content) {
+    const full = path.join(PROMPTS_DIR, relPath);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, String(content || '').replace(/\r\n/g, '\n').trim() + '\n', 'utf8');
+    return relPath.replace(/\\/g, '/');
+}
+
+// Borra los .md de una subcarpeta que ya no correspondan a un doc vivo en Firestore.
+function cleanOrphans(subdir, keepBasenames) {
+    const dir = path.join(PROMPTS_DIR, subdir);
+    if (!fs.existsSync(dir)) return;
+    for (const f of fs.readdirSync(dir)) {
+        if (f.endsWith('.md') && !keepBasenames.has(f)) {
+            fs.unlinkSync(path.join(dir, f));
+            console.log(`   (borrado huérfano: prompts/${subdir}/${f})`);
+        }
+    }
+}
+
+// Espejo en prompts/ del target recién editado con `set` (best-effort; no rompe el flujo).
+async function syncExportedFile(targetStr, value) {
+    try {
+        if (targetStr === 'bot') return writePromptFile('bot.md', value);
+        if (targetStr === 'postventa') return writePromptFile('postventa.md', value);
+        if (targetStr === 'cobranza') return writePromptFile('cobranza.md', value);
+        if (targetStr === 'catalogo') return writePromptFile('registro-pedidos-catalogo.md', value);
+        if (targetStr.startsWith('dept:')) {
+            const id = targetStr.slice(5);
+            let name = id;
+            try { const d = await db.collection('departments').doc(id).get(); if (d.exists && d.data().name) name = d.data().name; } catch (e) { /* solo afecta el nombre del archivo */ }
+            return writePromptFile(path.join('departamentos', `${slugify(name)}--${id}.md`), value);
+        }
+        if (targetStr.startsWith('ad:')) return writePromptFile(path.join('anuncios', `${targetStr.slice(3)}.md`), value);
+    } catch (e) {
+        console.warn('   (no se pudo actualizar el espejo en prompts/:', e.message + ')');
+    }
+    return null;
+}
+
+async function exportAll() {
+    const written = [];
+
+    for (const [target, file] of [['bot', 'bot.md'], ['postventa', 'postventa.md'], ['cobranza', 'cobranza.md'], ['catalogo', 'registro-pedidos-catalogo.md']]) {
+        const { value } = await readCurrent(resolveTarget(target));
+        if (value && value.trim()) written.push(writePromptFile(file, value));
+        else console.log(`   (sin contenido en Firestore para "${target}"; no se escribió ${file})`);
+    }
+
+    const deptNames = {};
+    try { (await db.collection('departments').get()).docs.forEach(d => { deptNames[d.id] = d.data().name || ''; }); } catch (e) { /* sin nombres, se usa el id */ }
+    const keepDept = new Set();
+    for (const doc of (await db.collection('ai_department_prompts').get()).docs) {
+        const prompt = (doc.data().prompt || '').trim();
+        if (!prompt) continue;
+        const base = `${slugify(deptNames[doc.id] || doc.id)}--${doc.id}.md`;
+        keepDept.add(base);
+        written.push(writePromptFile(path.join('departamentos', base), prompt));
+    }
+    cleanOrphans('departamentos', keepDept);
+
+    const keepAds = new Set();
+    for (const doc of (await db.collection('ai_ad_prompts').get()).docs) {
+        const d = doc.data();
+        if (!d.adId || !(d.prompt || '').trim()) continue;
+        const base = `${d.adId}.md`;
+        keepAds.add(base);
+        written.push(writePromptFile(path.join('anuncios', base), d.prompt));
+    }
+    cleanOrphans('anuncios', keepAds);
+
+    // Solo lectura: compilados con el MISMO formato que arma buildStaticContext (services.js).
+    const kb = (await db.collection('ai_knowledge_base').get()).docs
+        .map(doc => `- ${doc.data().topic}: ${doc.data().answer}`)
+        .sort((a, b) => a.localeCompare(b, 'es'));
+    written.push(writePromptFile('conocimiento.md', kb.join('\n') || '(vacío)'));
+
+    const qr = (await db.collection('quick_replies').get()).docs
+        .filter(doc => doc.data().message)
+        .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
+        .sort((a, b) => a.localeCompare(b, 'es'));
+    written.push(writePromptFile('respuestas-rapidas.md', qr.join('\n') || '(vacío)'));
+
+    console.log(`✅ Exportados ${written.length} archivos a prompts/:`);
+    for (const f of written) console.log(`   prompts/${f}`);
+    console.log('Recuerda commitear la carpeta prompts/ para versionar este snapshot.');
 }
 
 async function getDocRef(t) {
@@ -71,6 +170,13 @@ async function main() {
         console.log(`✅ ${t.label} actualizado (${(current || '').length} → ${newValue.length} chars).`);
         console.log(`   Respaldo del anterior: prompt_backups/${backupId}`);
         console.log('   El cambio aplica de inmediato en las próximas respuestas del bot.');
+        const mirrored = await syncExportedFile(arg1, newValue);
+        if (mirrored) console.log(`   Espejo del repo actualizado: prompts/${mirrored} (recuerda commitear).`);
+        return;
+    }
+
+    if (cmd === 'export') {
+        await exportAll();
         return;
     }
 
@@ -100,7 +206,7 @@ async function main() {
         return;
     }
 
-    console.log('Uso:\n  node scripts/prompt-tool.js get <bot|postventa|dept:<id>|ad:<adId>>\n  node scripts/prompt-tool.js set <target> <archivo.txt>\n  node scripts/prompt-tool.js backups [target]\n  node scripts/prompt-tool.js restore <backupId>');
+    console.log('Uso:\n  node scripts/prompt-tool.js get <bot|postventa|cobranza|catalogo|dept:<id>|ad:<adId>>\n  node scripts/prompt-tool.js set <target> <archivo.txt>\n  node scripts/prompt-tool.js backups [target]\n  node scripts/prompt-tool.js restore <backupId>\n  node scripts/prompt-tool.js export   # vuelca todos los prompts a prompts/');
 }
 
 main().then(() => process.exit(0)).catch(e => { console.error('ERROR:', e.message); process.exit(1); });

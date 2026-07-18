@@ -1,0 +1,3 @@
+# Los prompts de Andrea se espejean byte a byte contra Firestore (ver prompts/README.md):
+# forzar LF para que el archivo en disco coincida con lo que sube/baja prompt-tool.js.
+prompts/** text eol=lf
