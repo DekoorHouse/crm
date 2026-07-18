@@ -16,6 +16,7 @@ Const PH_FE = "13-Agosto-1992"
 Const MAX_W_NOMBRE = 52     ' mm — margen antes de reducir (Romario mide ~46mm)
 Const MAX_W_FECHA = 50      ' mm — (13-Agosto-1992 mide ~37mm)
 Const ALINEACION_CENTRO = 3 ' cdrCenterAlignment
+Const INTERLINEADO_2L = 60  ' % altura caracter — interlineado de renglones apilados (Chris, 2026-07-18)
 
 Dim args, fileBase, extraText, extraSize
 Set args = WScript.Arguments.Unnamed
@@ -182,6 +183,9 @@ Sub ReplaceByContent(doc, phText, valor, maxW)
                     On Error Resume Next
                     s.Text.Story.Alignment = ALINEACION_CENTRO
                     On Error GoTo 0
+                    ' Interlineado compacto 60% altura caracter (regla Chris 2026-07-18),
+                    ' asignacion directa y sin On Error para que un fallo se note
+                    s.Text.Story.LineSpacing = INTERLINEADO_2L
                 End If
                 s.CenterX = cx : s.CenterY = cy
                 w = s.SizeWidth
