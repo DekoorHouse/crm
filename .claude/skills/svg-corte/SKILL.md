@@ -148,13 +148,25 @@ foto en una imagen lista para **grabado laser raster**: **rellenos blancos, fond
 trama (halftone) y alto detalle**. Usa **WaveSpeed (GPT Image 2 Edit)**; la llave vive SOLO en Render,
 por eso la skill llama al endpoint del servidor, no directo.
 
-    node "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\gen-grabado.js" --img "<foto.jpg | http...>" [--corazon] [--extra "..."] [--out "<ruta.png>"] [--res 1k|2k] [--aspect 1:1|2:3|3:2]
+    node "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\gen-grabado.js" --img "<foto.jpg | http...>" [--corazon] [--extra "..."] [--out "<ruta.png>"] [--res 1k|2k] [--aspect 1:1|2:3|3:2] [--model seedream]
 
 - `--img` foto de entrada (ruta local -> se sube sola, o URL publica).
 - `--corazon` cuando el grabado va en el **modelo de corazones**: le manda a WaveSpeed la silueta
   `referencias/corazon-forma.png` para que el grabado salga **con forma de corazon** (todo lo de fuera
   del corazon queda negro). Sin la bandera sale en el encuadre normal de la foto.
 - `--extra "..."` instrucciones extra al modelo; `--out` ruta del PNG (default `Documents\SVG-Corte\grabado-<stamp>.png`).
+- `--model seedream` fuerza usar **Seedream 5.0 Pro** desde el arranque (salta GPT Image 2).
+
+**FALLBACK Seedream 5 Pro (regla Chris, 2026-07-18)**: WaveSpeed usa **GPT Image 2** por default, pero
+ese modelo **RECHAZA** fotos que marca como contenido **sensible** (mucha piel/torso, íntimas) o con
+**derechos de autor** (`status='failed'`, error tipo "Content flagged as potentially sensitive"). Cuando
+eso pasa, `gen-grabado.js` **reintenta solo con Seedream 5.0 Pro** (`bytedance/seedream-v5.0-pro/edit`,
+que es más permisivo) — no hay que hacer nada manual. El switch de modelo vive en
+`server/mockups/wavespeedClient.js` (`MODEL_ENDPOINTS`, misma API de submit/poll para ambos; Seedream usa
+NOMBRES de aspecto, no ratios) y se activa pasando `model` a `POST /api/mockups/engrave-submit`. **OJO:
+esto corre contra el servidor de Render**, así que los cambios de servidor deben estar **desplegados**
+(push a main) para que el fallback funcione. Nota aparte: el poller de `gen-grabado.js` tolera blips de
+red (un `fetch` fallido reintenta, no aborta) — el job sigue vivo en el servidor.
 
 Flujo interno: sube la(s) imagen(es) a URL publica (`POST /api/mockups/upload-image`) -> `POST
 /api/mockups/engrave-submit {imageUrl, shapeImageUrl?}` (arma el prompt de grabado y manda a WaveSpeed)

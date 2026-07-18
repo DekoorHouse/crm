@@ -405,15 +405,19 @@ router.post('/engrave-submit', asyncHandler(async (req, res) => {
     const prompt = buildEngravePrompt(!!shapeImageUrl, req.body.extraPrompt);
     const images = shapeImageUrl ? [imageUrl, shapeImageUrl] : [imageUrl];
 
+    // model: 'gpt-image-2' (default) o 'seedream' (Seedream 5.0 Pro) — el fallback cuando GPT
+    // Image 2 rechaza por contenido sensible / derechos de autor. El poller es el mismo.
+    const model = req.body.model === 'seedream' ? 'seedream' : 'gpt-image-2';
     const wave = require('./wavespeedClient');
     const { predictionId } = await wave.submitEdit(prompt, images, {
         aspectRatio,
         resolution: req.body.resolution || '1k',
         quality: req.body.quality || 'high',
+        model,
     });
     // Reusa el poller /generate-status/:jobId (descarga + galería). Sin orderId -> no toca pedidos.
     await db.collection('mockup_jobs').doc(predictionId).set({
-        prompt, aspectRatio, kind: 'grabado', createdAt: new Date().toISOString(),
+        prompt, aspectRatio, kind: 'grabado', model, createdAt: new Date().toISOString(),
     });
     res.json({ success: true, jobId: predictionId, prompt });
 }));

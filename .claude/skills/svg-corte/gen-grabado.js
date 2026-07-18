@@ -9,9 +9,14 @@
  * (POST /api/mockups/engrave-submit -> jobId; GET /api/mockups/generate-status/:jobId para el
  * resultado). Corre LOCAL. Guarda el PNG resultante en Documents\SVG-Corte\.
  *
+ * FALLBACK (regla Chris 2026-07-18): si GPT Image 2 rechaza generar por CONTENIDO SENSIBLE o
+ * DERECHOS DE AUTOR, reintenta solo con Seedream 5.0 Pro (bytedance/seedream-v5.0-pro/edit).
+ * `--model seedream` fuerza arrancar directo con Seedream (se salta GPT Image 2 y el fallback).
+ *
  * Uso:
  *   node .claude/skills/svg-corte/gen-grabado.js --img "<ruta.jpg | http...>" [--corazon]
  *        [--extra "instruccion adicional"] [--out "<ruta.png>"] [--res 1k|2k]
+ *        [--aspect 1:1|2:3|3:2] [--model seedream]
  *
  * Éxito = última línea `OK <ruta-png>` (+ `URL <galeria>`).
  */
@@ -50,6 +55,44 @@ async function toPublicUrl(imgArg) {
     return uploadLocal(imgArg);
 }
 
+// Nombre bonito del modelo para los logs.
+const MODEL_LABEL = m => (m === 'seedream' ? 'Seedream 5 Pro' : 'WaveSpeed GPT Image 2');
+// Errores de WaveSpeed que disparan el FALLBACK a Seedream 5 Pro (contenido sensible / derechos de autor).
+const FALLBACK_RE = /sensitiv|sensible|copyright|derechos de autor|content policy|flagged|moderation|not allowed|safety/i;
+
+// Envía la tarea de grabado con el modelo indicado y devuelve el jobId.
+async function submitEngrave(imageUrl, shapeImageUrl, model) {
+    const submit = await (await fetch(`${API}/api/mockups/engrave-submit`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            imageUrl, shapeImageUrl,
+            extraPrompt: (typeof arg('extra') === 'string' ? arg('extra') : ''),
+            resolution: (typeof arg('res') === 'string' ? arg('res') : '1k'),
+            // Corazón siempre cuadrado; foto suelta respeta --aspect (default 1:1) para no recortar de más.
+            aspectRatio: shapeImageUrl ? '1:1' : (typeof arg('aspect') === 'string' ? arg('aspect') : '1:1'),
+            model,
+        }),
+    })).json();
+    if (!submit.success || !submit.jobId) throw new Error('engrave-submit falló: ' + JSON.stringify(submit));
+    return submit.jobId;
+}
+
+// Polla el job hasta terminar (~hasta 6.5 min). TOLERA blips de red (un fetch fallido NO aborta:
+// el job sigue vivo en el servidor). Devuelve { image } al completar o { error } si el modelo falló.
+async function pollJob(jobId) {
+    for (let i = 0; i < 130; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        let st;
+        try {
+            st = await (await fetch(`${API}/api/mockups/generate-status/${jobId}`)).json();
+        } catch (_) { process.stdout.write('x'); continue; }  // error de red transitorio: reintentar
+        if (st.status === 'failed') return { error: st.error || '?' };
+        if (st.status === 'completed' && st.image) return { image: st.image };
+        if (i % 5 === 0) process.stdout.write('.');
+    }
+    return { error: 'Tiempo agotado esperando a WaveSpeed.' };
+}
+
 (async () => {
     const img = arg('img');
     if (!img || img === true) { console.error('Falta --img "<ruta o url de la foto>"'); process.exit(1); }
@@ -64,31 +107,26 @@ async function toPublicUrl(imgArg) {
         console.log('Forma: corazón');
     }
 
-    // 2) Enviar la tarea de grabado
-    const submit = await (await fetch(`${API}/api/mockups/engrave-submit`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            imageUrl, shapeImageUrl,
-            extraPrompt: (typeof arg('extra') === 'string' ? arg('extra') : ''),
-            resolution: (typeof arg('res') === 'string' ? arg('res') : '1k'),
-            // Corazón siempre cuadrado; foto suelta respeta --aspect (default 1:1) para no recortar de más.
-            aspectRatio: shapeImageUrl ? '1:1' : (typeof arg('aspect') === 'string' ? arg('aspect') : '1:1'),
-        }),
-    })).json();
-    if (!submit.success || !submit.jobId) throw new Error('engrave-submit falló: ' + JSON.stringify(submit));
-    console.log('Job: ' + submit.jobId + ' — generando (WaveSpeed GPT Image 2)…');
-
-    // 3) Poll hasta terminar (~hasta 6.5 min)
-    let out = null;
-    for (let i = 0; i < 130; i++) {
-        await new Promise(r => setTimeout(r, 3000));
-        const st = await (await fetch(`${API}/api/mockups/generate-status/${submit.jobId}`)).json();
-        if (st.status === 'failed') throw new Error('WaveSpeed falló: ' + (st.error || '?'));
-        if (st.status === 'completed' && st.image) { out = st.image; break; }
-        if (i % 5 === 0) process.stdout.write('.');
-    }
+    // 2) Enviar la tarea de grabado. `--model seedream` fuerza el modelo; si no, arranca con GPT Image 2.
+    const forced = (typeof arg('model') === 'string') ? arg('model') : null;
+    let model = forced || 'gpt-image-2';
+    let jobId = await submitEngrave(imageUrl, shapeImageUrl, model);
+    console.log(`Job: ${jobId} — generando (${MODEL_LABEL(model)})…`);
+    let res = await pollJob(jobId);
     process.stdout.write('\n');
-    if (!out) throw new Error('Tiempo agotado esperando a WaveSpeed.');
+
+    // 3) FALLBACK: si GPT Image 2 rechaza por contenido sensible / derechos de autor,
+    //    reintentar con Seedream 5 Pro (regla Chris 2026-07-18). Solo si no se forzó modelo.
+    if (res.error && !forced && model !== 'seedream' && FALLBACK_RE.test(res.error)) {
+        console.log(`${MODEL_LABEL(model)} rechazó: "${res.error}". Reintentando con Seedream 5 Pro…`);
+        model = 'seedream';
+        jobId = await submitEngrave(imageUrl, shapeImageUrl, model);
+        console.log(`Job: ${jobId} — generando (${MODEL_LABEL(model)})…`);
+        res = await pollJob(jobId);
+        process.stdout.write('\n');
+    }
+    if (res.error) throw new Error(`${MODEL_LABEL(model)} falló: ${res.error}`);
+    const out = res.image;
 
     // 4) Descargar el resultado (webp de galería) y guardarlo como PNG
     const src = out.fullUrl || out.thumbUrl;

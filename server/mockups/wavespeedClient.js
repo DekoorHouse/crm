@@ -13,7 +13,18 @@
 // ===================================================================
 const axios = require('axios');
 
-const SUBMIT_URL = 'https://api.wavespeed.ai/api/v3/openai/gpt-image-2/edit';
+// Modelos de edición soportados. El default es GPT Image 2; `seedream` (Seedream 5.0 Pro)
+// es el FALLBACK cuando GPT Image 2 rechaza generar por contenido sensible o derechos de autor
+// (regla Chris 2026-07-18). Ambos comparten el mismo poller /predictions/{id}/result y la
+// misma forma de outputs; solo difieren en la URL de submit y en un par de campos del body.
+const MODEL_ENDPOINTS = {
+    'gpt-image-2': 'https://api.wavespeed.ai/api/v3/openai/gpt-image-2/edit',
+    'seedream': 'https://api.wavespeed.ai/api/v3/bytedance/seedream-v5.0-pro/edit',
+};
+const DEFAULT_MODEL = 'gpt-image-2';
+// Seedream usa NOMBRES de aspecto (no ratios como GPT Image 2); mapeo desde los ratios del resto del código.
+const SEEDREAM_ASPECT = { '1:1': 'square', '2:3': 'portrait', '3:2': 'landscape', '9:16': 'tall', '16:9': 'wide' };
+
 const RESULT_URL = (id) => `https://api.wavespeed.ai/api/v3/predictions/${id}/result`;
 const REQUEST_TIMEOUT_MS = 30000;
 
@@ -53,13 +64,18 @@ async function submitEdit(prompt, imageUrls, opts = {}) {
         throw new Error('Se requiere al menos una imagen base (URL pública).');
     }
 
-    const { aspectRatio = '1:1', resolution = '1k', quality = 'high' } = opts;
+    const { aspectRatio = '1:1', resolution = '1k', quality = 'high', model = DEFAULT_MODEL } = opts;
+    const submitUrl = MODEL_ENDPOINTS[model] || MODEL_ENDPOINTS[DEFAULT_MODEL];
     const headers = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
-    const submitBody = { images: imageUrls, prompt, aspect_ratio: aspectRatio, resolution, quality };
+    // GPT Image 2 y Seedream comparten images/prompt/resolution; difieren en el aspecto (ratio vs. nombre)
+    // y en que Seedream no lleva `quality`.
+    const submitBody = model === 'seedream'
+        ? { images: imageUrls, prompt, aspect_ratio: SEEDREAM_ASPECT[aspectRatio] || 'square', resolution, output_format: 'png' }
+        : { images: imageUrls, prompt, aspect_ratio: aspectRatio, resolution, quality };
 
     let submit;
     try {
-        submit = await axios.post(SUBMIT_URL, submitBody, { headers, timeout: REQUEST_TIMEOUT_MS });
+        submit = await axios.post(submitUrl, submitBody, { headers, timeout: REQUEST_TIMEOUT_MS });
     } catch (err) {
         const detail = err.response ? JSON.stringify(err.response.data) : err.message;
         throw new Error(`WaveSpeed submit error ${err.response?.status || ''}: ${detail}`);
@@ -84,7 +100,7 @@ async function fetchResult(predictionId) {
     const pd = poll.data?.data || poll.data || {};
     const raw = getStatus(pd);
     const status = ['completed', 'succeeded', 'success', 'ready', 'done', 'finished'].includes(raw) ? 'completed'
-        : ['failed', 'error', 'canceled', 'cancelled'].includes(raw) ? 'failed'
+        : ['failed', 'error', 'canceled', 'cancelled', 'timeout'].includes(raw) ? 'failed'
         : 'processing';
     return { status, rawStatus: raw, outputs: extractOutputs(pd), error: pd.error || '' };
 }
