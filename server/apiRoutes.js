@@ -8327,11 +8327,13 @@ router.post('/envios/crear-guia', async (req, res) => {
         const docId = b.manualId || b.docId || null;
         let docRef = null;
         let contactIdNotif = b.contactId || null; // para avisar al cliente por WhatsApp al crear la guía
+        let currentEstatus = null; // estatus ANTES de la guía (para no pisar Cancelado/Devuelto al pasar a Pagado)
         if (docId) {
             docRef = db.collection(col).doc(docId);
             const snap = await docRef.get();
             if (!snap.exists) return res.status(404).json({ success: false, message: 'El pedido o la línea no existe.' });
             const dd = snap.data() || {};
+            currentEstatus = dd.estatus || null;
             // Preferir el id de contacto WhatsApp; si el pedido/línea no lo tiene, caer al teléfono
             // (convención del CRM: contactId || telefono es el id del doc de contacto).
             contactIdNotif = dd.contactId || dd.telefono || contactIdNotif;
@@ -8384,7 +8386,12 @@ router.post('/envios/crear-guia', async (req, res) => {
         // Persistir la guía. CRÍTICO: si falla, la guía YA se creó/cobró -> devolverla igual para no perderla.
         if (docRef) {
             try {
-                await docRef.set({ guiaEnvio }, { merge: true });
+                // Al generar la guía el cliente recibe su número de rastreo (notifyGuiaToCustomer, abajo):
+                // el pedido queda TERMINADO, así que pasa a "Pagado" (bucket de completados). Solo pedidos
+                // reales (no envios_manuales) y sin pisar un estatus terminal (Cancelado/Devuelto).
+                const guiaUpdate = { guiaEnvio };
+                if (col === 'pedidos' && !/cancel|devol/i.test(String(currentEstatus || ''))) guiaUpdate.estatus = 'Pagado';
+                await docRef.set(guiaUpdate, { merge: true });
             } catch (e3) {
                 console.error('[GUIA] CRÍTICO: guía creada/cobrada pero NO persistida:', guia, e3.message);
                 return res.status(500).json({ success: false, persistError: true, guia, numOrden, tracking, pdfPath, labelUrl, message: 'La guía se creó y cobró, pero no se pudo guardar en el CRM. Anota el número de guía.' });
@@ -8450,7 +8457,11 @@ router.post('/envios/attach-guia', async (req, res) => {
             tracking,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         };
-        await docRef.set({ guiaEnvio }, { merge: true });
+        // La guía (aunque se haya hecho manual en T1) implica que el pedido ya se envió: pásalo a
+        // "Pagado" (bucket de completados), salvo envios_manuales o estatus terminal (Cancelado/Devuelto).
+        const guiaUpdate = { guiaEnvio };
+        if (col === 'pedidos' && !/cancel|devol/i.test(String(dd.estatus || ''))) guiaUpdate.estatus = 'Pagado';
+        await docRef.set(guiaUpdate, { merge: true });
         res.json({ success: true, guia, docId });
     } catch (e) {
         console.error('[GUIA] attach-guia:', e.message);
