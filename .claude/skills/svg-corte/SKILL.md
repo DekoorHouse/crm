@@ -162,8 +162,9 @@ ese modelo **RECHAZA** fotos que marca como contenido **sensible** (mucha piel/t
 **derechos de autor** (`status='failed'`, error tipo "Content flagged as potentially sensitive"). Cuando
 eso pasa, `gen-grabado.js` **reintenta solo con Seedream 5.0 Pro** (`bytedance/seedream-v5.0-pro/edit`,
 que es más permisivo) — no hay que hacer nada manual. El switch de modelo vive en
-`server/mockups/wavespeedClient.js` (`MODEL_ENDPOINTS`, misma API de submit/poll para ambos; Seedream usa
-NOMBRES de aspecto, no ratios) y se activa pasando `model` a `POST /api/mockups/engrave-submit`. **OJO:
+`server/mockups/wavespeedClient.js` (`MODEL_ENDPOINTS`, misma API de submit/poll para ambos; ambos usan
+los MISMOS ratios de aspecto "1:1"/"2:3"/"3:2" — Seedream rechaza nombres tipo "square", solo lleva
+`output_format` en vez de `quality`) y se activa pasando `model` a `POST /api/mockups/engrave-submit`. **OJO:
 esto corre contra el servidor de Render**, así que los cambios de servidor deben estar **desplegados**
 (push a main) para que el fallback funcione. Nota aparte: el poller de `gen-grabado.js` tolera blips de
 red (un `fetch` fallido reintenta, no aborta) — el job sigue vivo en el servidor.

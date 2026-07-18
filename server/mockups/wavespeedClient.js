@@ -22,8 +22,9 @@ const MODEL_ENDPOINTS = {
     'seedream': 'https://api.wavespeed.ai/api/v3/bytedance/seedream-v5.0-pro/edit',
 };
 const DEFAULT_MODEL = 'gpt-image-2';
-// Seedream usa NOMBRES de aspecto (no ratios como GPT Image 2); mapeo desde los ratios del resto del código.
-const SEEDREAM_ASPECT = { '1:1': 'square', '2:3': 'portrait', '3:2': 'landscape', '9:16': 'tall', '16:9': 'wide' };
+// Ambos modelos aceptan los MISMOS ratios de aspecto ("1:1", "2:3", "3:2", ...). Verificado con
+// Seedream 2026-07-18: rechaza nombres tipo "square" (error 400), exige el ratio. Difieren solo en
+// que Seedream lleva `output_format` en vez de `quality`.
 
 const RESULT_URL = (id) => `https://api.wavespeed.ai/api/v3/predictions/${id}/result`;
 const REQUEST_TIMEOUT_MS = 30000;
@@ -70,7 +71,7 @@ async function submitEdit(prompt, imageUrls, opts = {}) {
     // GPT Image 2 y Seedream comparten images/prompt/resolution; difieren en el aspecto (ratio vs. nombre)
     // y en que Seedream no lleva `quality`.
     const submitBody = model === 'seedream'
-        ? { images: imageUrls, prompt, aspect_ratio: SEEDREAM_ASPECT[aspectRatio] || 'square', resolution, output_format: 'png' }
+        ? { images: imageUrls, prompt, aspect_ratio: aspectRatio, resolution, output_format: 'png' }
         : { images: imageUrls, prompt, aspect_ratio: aspectRatio, resolution, quality };
 
     let submit;
