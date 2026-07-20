@@ -563,6 +563,19 @@ router.post('/piloto-config', asyncHandler(async (req, res) => {
     res.json({ success: true, enabled });
 }));
 
+// --- Prueba A/B de la RI (mensaje inicial): switch desde la sección Mockup ---
+router.get('/ri-test-config', asyncHandler(async (req, res) => {
+    const doc = await db.collection('crm_settings').doc('ri_test').get();
+    res.json({ success: true, enabled: !!(doc.exists && doc.data().enabled === true) });
+}));
+
+router.post('/ri-test-config', asyncHandler(async (req, res) => {
+    const enabled = req.body.enabled === true;
+    await db.collection('crm_settings').doc('ri_test').set({ enabled }, { merge: true });
+    console.log(`[RI_TEST] Switch ${enabled ? 'ENCENDIDO 🅰️' : 'APAGADO'} desde la sección Mockup.`);
+    res.json({ success: true, enabled });
+}));
+
 // POST /api/mockups/auto-run — dispara YA una corrida de auto-generación (p.ej. tras recargar
 // saldo en WaveSpeed). NO espera a que termine (puede tardar minutos): arranca en segundo plano y
 // responde de inmediato. Fuerza la corrida aunque el toggle de auto-generar esté apagado y usa un

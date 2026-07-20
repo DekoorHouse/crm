@@ -802,6 +802,8 @@ router.post('/', async (req, res) => {
             // Piloto preview (docs/plan-preview-diseno.md): grupo A/B del contacto,
             // sellado aquí para que la RI y el resto del flujo lo conozcan.
             let pilotoGroup = null;
+            // Prueba A/B de la RI (server/orders/riTest.js): experimento independiente.
+            let riTestGroup = null;
             if (message.referral?.source_type === 'ad' && message.referral.source_id) {
                 const adId = message.referral.source_id;
                 console.log(`[ROUTING] Verificando reglas para Ad ID: ${adId}`);
@@ -825,6 +827,12 @@ router.post('/', async (req, res) => {
                                 contactRef, phone: from, departmentId: ruleData.targetDepartmentId, isNewContact,
                             });
                         } catch (e) { console.warn('[PILOTO] Sellado de grupo falló (se continúa):', e.message); }
+                        // Prueba A/B de la RI (experimento independiente; no-op si está apagado).
+                        try {
+                            riTestGroup = await require('./orders/riTest').maybeAssignRiTestGroup({
+                                contactRef, phone: from, departmentId: ruleData.targetDepartmentId, isNewContact,
+                            });
+                        } catch (e) { console.warn('[RI_TEST] Sellado de grupo falló (se continúa):', e.message); }
                     }
                     
                     // --- SINCRONIZAR IA CON EL DEPARTAMENTO DEL ANUNCIO ---
@@ -1018,6 +1026,17 @@ router.post('/', async (req, res) => {
                         try {
                             const piloto = require('./orders/pilotoPreview');
                             if ((await piloto.getPilotoConfig()).enabled) riText = piloto.applyRiVariant(riText);
+                        } catch (_) {}
+                    }
+                    // Prueba A/B de la RI: al grupo A se le REEMPLAZA todo el texto por la RI
+                    // nueva (se conserva la imagen del anuncio). Mutuamente excluyente con el
+                    // piloto preview en la práctica (solo uno de los dos switches encendido).
+                    const grupoRiTest = riTestGroup || (contactDoc.exists ? contactDoc.data().riTest : null) || null;
+                    if (grupoRiTest === 'A') {
+                        try {
+                            const riTest = require('./orders/riTest');
+                            const cfg = await riTest.getRiTestConfig();
+                            if (cfg.enabled) riText = cfg.message;
                         } catch (_) {}
                     }
                     // Solo cuenta como "respondido" si el envío a Meta tuvo éxito: si falla,

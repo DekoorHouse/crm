@@ -185,6 +185,7 @@ async function mkLoadAutoConfig() {
         if (el) el.checked = d.autoGenerate !== false;
     } catch (_) { /* noop */ }
     mkLoadPilotoConfig();
+    mkLoadRiTestConfig();
 }
 
 // Toggle del piloto preview A/B (docs/plan-preview-diseno.md).
@@ -205,6 +206,37 @@ async function mkTogglePiloto(checked) {
     try {
         await mkFetchJson('/api/mockups/piloto-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked }) });
         mkToast(checked ? 'Piloto preview ENCENDIDO ⚡ (aplica en ~1 min a conversaciones nuevas)' : 'Piloto preview apagado — todo vuelve al flujo normal', 'success');
+    } catch (e) {
+        mkToast('No se pudo cambiar: ' + e.message, 'error');
+        revertir();
+    }
+}
+
+// Toggle de la prueba A/B de la RI (mensaje inicial). Experimento independiente.
+async function mkLoadRiTestConfig() {
+    try {
+        const d = await mkFetchJson('/api/mockups/ri-test-config');
+        const el = document.getElementById('mk-ritest-toggle');
+        if (el) el.checked = d.enabled === true;
+    } catch (_) { /* noop */ }
+}
+
+async function mkToggleRiTest(checked) {
+    const revertir = () => { const el = document.getElementById('mk-ritest-toggle'); if (el) el.checked = !checked; };
+    if (checked) {
+        // Guardia: no correr los dos experimentos de RI a la vez (se confunden las lecturas).
+        try {
+            const p = await mkFetchJson('/api/mockups/piloto-config');
+            if (p && p.enabled) { mkToast('Apaga primero el Piloto preview ⚡: no se pueden correr los dos a la vez.', 'error'); revertir(); return; }
+        } catch (_) {}
+        if (!confirm('¿Encender la prueba A/B de la RI?\n\nLas conversaciones NUEVAS de corazones se repartirán por teléfono (par = grupo A recibe el mensaje inicial NUEVO). El resto del flujo es el NORMAL. Los contactos del grupo A se marcan con 🅰️ RI en la lista de chats.')) {
+            revertir();
+            return;
+        }
+    }
+    try {
+        await mkFetchJson('/api/mockups/ri-test-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked }) });
+        mkToast(checked ? 'Prueba de RI ENCENDIDA 🅰️ (aplica en ~1 min a conversaciones nuevas)' : 'Prueba de RI apagada — todos vuelven a la RI original', 'success');
     } catch (e) {
         mkToast('No se pudo cambiar: ' + e.message, 'error');
         revertir();

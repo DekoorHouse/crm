@@ -174,6 +174,22 @@ async function createOrder({
         console.warn('[PILOTO] Herencia de grupo al pedido falló (no fatal):', pilotoErr.message);
     }
 
+    // Prueba A/B de la RI: el pedido hereda el grupo riTest del contacto (mismo
+    // criterio de elegibilidad). Independiente del piloto preview. Best-effort.
+    try {
+        const riTest = require('./riTest');
+        if ((await riTest.getRiTestConfig()).enabled) {
+            const cSnap = await contactRef.get();
+            const grupo = cSnap.exists ? cSnap.data().riTest : null;
+            if ((grupo === 'A' || grupo === 'B') && riTest.orderEligible(normalizedItems)) {
+                await newOrderRef.update({ riTest: grupo });
+                console.log(`[RI_TEST] Pedido DH${newOrderNumber} heredó el grupo ${grupo} del contacto ${contactId}.`);
+            }
+        }
+    } catch (riErr) {
+        console.warn('[RI_TEST] Herencia de grupo al pedido falló (no fatal):', riErr.message);
+    }
+
     // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
     const contactUpdate = {
         lastOrderNumber: newOrderNumber,
