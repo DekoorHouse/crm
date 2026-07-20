@@ -116,9 +116,22 @@ puede ser manual; lo importante es que el estado quede visible.)
   (validar), clientes con `botActive: false`.
 - Fuera de horario de revisión (definir, ej. 10 pm-8 am): el mockup espera y la alerta sale a primera
   hora — el SLA se mide igual y ese subgrupo se puede analizar aparte.
-- La cobranza automática NO cambia: el grupo A entra a "Foto enviada" antes, así que sus cobros 1-4
-  simplemente arrancan antes. Vigilar que no se sienta acoso (el cobro 1 vespertino del mismo día puede
-  quedar muy pegado al preview — considerar saltar el cobro 1 si `previewEnviadoAt` < 6 h antes).
+- **Cobranza del grupo A: misma secuencia, otro lenguaje** (corregido 19-jul con observación de Alex).
+  Los A se quedan en el ciclo normal (cobros días 0-2-5-9, cancelación día 10) para que la comparación
+  sea justa y la limpieza del día 10 siga funcionando — pero sus mensajes NO pueden decir "tu pedido ya
+  está terminado / ya te enviamos la foto" (a ellos se les mandó el DISEÑO y su lámpara aún no se
+  fabrica). Implementación: en `cobranzaScheduler`, si el contacto es grupo A, anexar a las
+  instrucciones (junto al `buildAttemptContext`) una nota: "PILOTO PREVIEW: a este cliente se le envió
+  el DISEÑO de su lámpara para aprobarlo, NO la foto del producto terminado (aún no se fabrica). Cobra
+  con ese encuadre: su diseño está listo y apartado; al pagar, entra a producción HOY. NUNCA digas que
+  su lámpara ya está terminada o esperándolo." La escalada de intensidad (recordatorio → última llamada)
+  se conserva igual.
+  ⚠️ Caso especial: las plantillas cobro1-4 de ventana de 24h CERRADA son texto fijo aprobado por Meta.
+  Al implementar, revisar su texto: si hablan de "pedido terminado", los A con ventana cerrada SE SALTAN
+  la plantilla ese día (se reintenta cuando la ventana abra; si el piloto gana, se crean variantes
+  aprobadas). Registrar cuántas veces pasa para saber si distorsiona.
+- Vigilar que la cobranza no se sienta acoso en los A: el cobro 1 vespertino puede quedar muy pegado al
+  preview — saltar el cobro 1 si `previewEnviadoAt` fue hace < 6 h (propuesto: sí).
 - Si el cliente reporta error en el preview: se corrige y se re-envía sin fricción (es pre-pago, ventaja
   del modelo). Si algo sale mal en general: `enabled: false` y todo vuelve al flujo actual.
 
