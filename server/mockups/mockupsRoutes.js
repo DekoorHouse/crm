@@ -558,7 +558,11 @@ router.get('/piloto-config', asyncHandler(async (req, res) => {
 
 router.post('/piloto-config', asyncHandler(async (req, res) => {
     const enabled = req.body.enabled === true;
-    await db.collection('crm_settings').doc('piloto_preview').set({ enabled }, { merge: true });
+    // Sella la hora del cambio para saber SIEMPRE la ventana exacta del experimento.
+    const stamp = admin.firestore.FieldValue.serverTimestamp();
+    const payload = { enabled, lastToggleAt: stamp };
+    payload[enabled ? 'enabledAt' : 'disabledAt'] = stamp;
+    await db.collection('crm_settings').doc('piloto_preview').set(payload, { merge: true });
     console.log(`[PILOTO] Switch ${enabled ? 'ENCENDIDO ⚡' : 'APAGADO'} desde la sección Mockup.`);
     res.json({ success: true, enabled });
 }));
@@ -571,7 +575,11 @@ router.get('/ri-test-config', asyncHandler(async (req, res) => {
 
 router.post('/ri-test-config', asyncHandler(async (req, res) => {
     const enabled = req.body.enabled === true;
-    await db.collection('crm_settings').doc('ri_test').set({ enabled }, { merge: true });
+    // Sella la hora del cambio para saber SIEMPRE la ventana exacta del experimento.
+    const stamp = admin.firestore.FieldValue.serverTimestamp();
+    const payload = { enabled, lastToggleAt: stamp };
+    payload[enabled ? 'enabledAt' : 'disabledAt'] = stamp;
+    await db.collection('crm_settings').doc('ri_test').set(payload, { merge: true });
     console.log(`[RI_TEST] Switch ${enabled ? 'ENCENDIDO 🅰️' : 'APAGADO'} desde la sección Mockup.`);
     res.json({ success: true, enabled });
 }));
