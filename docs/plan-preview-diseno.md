@@ -24,8 +24,14 @@ Secundarias: tiempo registro→pago, % pagados en <4 h, tasa de cancelación.
    especiales, canal anticipo ($300), pedidos de 5+ piezas, otros productos. Esos siguen el flujo actual.
 2. **Revisión:** EXPRESS con SLA — un humano aprueba cada mockup antes de enviarse. Meta: **< 1 hora**
    desde el registro. Con alerta push por WhatsApp al revisor en cuanto el mockup esté generado.
-3. **Medición:** A/B 50/50 — pedidos alternados entre flujo nuevo (grupo A) y flujo actual (grupo B),
-   1-2 semanas. Asignación por paridad de `consecutiveOrderNumber` (par = A, impar = B).
+3. **Medición:** A/B 50/50 — pero por CONVERSACIÓN, no por pedido (corregido el 19-jul con observación
+   de Alex: el encuadre "pagas al ver la foto terminada" nace desde la RI y los atajos de la conversación;
+   partir en el registro dejaría al grupo A con una promesa y otra entrega). Asignación por paridad del
+   ÚLTIMO DÍGITO DEL TELÉFONO del contacto (par = A, non = B) al entrar la conversación a un departamento
+   elegible: estable, determinista, ~50/50 y auditable. El grupo se sella en el CONTACTO y el pedido lo
+   hereda. El grupo A vive la narrativa del preview DESDE la conversación (ver piezas abajo); el B no
+   cambia en nada. Bonus: así el experimento mide el MODELO completo ("apruebas tu diseño y pagas" vs
+   "pagas al ver tu foto terminada") de conversación a pago — que es la métrica de negocio real.
 4. **Cobro:** preview + cobro JUNTOS en el mismo momento. Encuadre: *"Así va a quedar la tuya — apruébala
    y con tu pago hoy mismo entra a producción"* + datos de pago. (Base: la quick reply `previa` existente.)
 
@@ -47,9 +53,25 @@ puede ser manual; lo importante es que el estado quede visible.)
 
 - **Switch y config:** `crm_settings/piloto_preview` → `{ enabled, revisores: [tels], horarioRevision }`.
   Apagado = todo sigue igual (rollback instantáneo).
-- **Asignación A/B:** al crear pedido elegible (corazones estándar, ver exclusiones), sellar en el pedido
-  `pilotoPreview: 'A' | 'B'` según paridad del `consecutiveOrderNumber`. Elegibilidad: producto
-  "Lámpara de corazones", 1-4 piezas, sin marca de especial/anticipo.
+- **Asignación A/B (nivel CONVERSACIÓN):** cuando un contacto entra/está en un departamento elegible
+  (corazones estándar) y el piloto está encendido, sellar `contact.pilotoPreview: 'A' | 'B'` por paridad
+  del último dígito de su teléfono (par = A, non = B). Sellar UNA sola vez (si ya tiene grupo, no se
+  cambia). Al registrar su pedido, el pedido hereda el grupo. Pedidos no elegibles (especial, anticipo,
+  5+ piezas) salen del piloto aunque el contacto tenga grupo.
+- **Narrativa del grupo A durante la CONVERSACIÓN** (el B no se toca):
+  1. **RI variante:** la línea "📸 Pagas al ver la foto del trabajo terminado antes de enviar" cambia a
+     "📸 Te mandamos el diseño EXACTO de tu lámpara para que lo apruebes — pagas ya que lo veas y te
+     encante". Implementación: en el webhook, al elegir el mensaje del ad, usar la variante si el
+     teléfono es par (mensajes-ads con campo alterno o reemplazo de línea).
+  2. **Atajo /tttp** (variante de /ttt para el grupo A): en lugar de "Mañana te enviaremos la foto de tu
+     pedido personalizado…", decir "En cuanto confirmes tu pedido, EN MINUTOS te mandamos el diseño de
+     cómo va a quedar para que lo apruebes y realices tu pago ✨ El ENVÍO ES GRATIS por DHL…". Se crea
+     como quick reply nueva.
+  3. **Nota de prompt para Andrea (solo contactos A):** inyectar en el contexto dinámico (como las notas
+     de cobertura/fecha ya existentes): "PILOTO PREVIEW: a este cliente NO le hables de 'foto del trabajo
+     terminado'. El flujo con él es: al confirmar su pedido le mandamos en minutos el DISEÑO exacto de su
+     lámpara; lo aprueba, paga y entra a producción hoy mismo. Usa /tttp en lugar de /ttt.". Nada más
+     cambia en el prompt global (el caché de contexto no se invalida: la nota va en la parte dinámica).
 - **Generación:** ya existe (`server/mockups/mockupAutoScheduler.js`, cada 10 min, "SOLO genera, no envía").
   Revisar si se puede disparar la generación inmediata al registrar (en vez de esperar el ciclo de 10 min).
 - **Alerta de revisión:** cuando el mockup del grupo A esté listo → WhatsApp al revisor (mismo mecanismo
@@ -67,13 +89,23 @@ puede ser manual; lo importante es que el estado quede visible.)
 - **Prompt de Andrea (ajuste mínimo):** en venta con pedido registrado, si el cliente responde al preview:
   aceptación → cobrar/validar comprobante como siempre; cambio → confirmar el dato exacto y avisar al
   equipo (definir comando; evaluar reutilizar el flujo de corrección). NO re-ofrecer el preview repetido.
-- **Medición:** script tipo `scripts/checkpoint-campana-4ads.js` que compare A vs B: tasa de pago a 3/7
-  días, mediana registro→pago, % < 4 h, canceladas. Con ~35-40 registros/día de la campaña, cada grupo
-  junta ~120-140 pedidos por semana — suficiente para detectar +10 puntos de pago en 1-2 semanas.
+- **Medición:** script tipo `scripts/checkpoint-campana-4ads.js` que compare A vs B en TRES niveles:
+  (1) conversación→registro (¿el encuadre preview cierra igual, más o menos?), (2) registro→pago (tasa
+  a 3/7 días, mediana de horas, % < 4 h), y (3) el neto conversación→pago con $ por conversación — la
+  métrica que decide. Con ~350-500 conversaciones/día de la campaña (~175-250 por grupo) y ~35-40
+  registros/día, en 1-2 semanas hay muestra para detectar diferencias de ±2 puntos en cierre y ±10 en pago.
 
 ## Guardrails
 
-- Solo pedidos NUEVOS a partir del arranque (no tocar pedidos en vuelo).
+- Solo conversaciones/pedidos NUEVOS a partir del arranque (no tocar nada en vuelo; contactos con
+  conversación previa al arranque quedan fuera del sellado para no mezclar narrativas).
+- **Riesgo a vigilar #1:** que el encuadre "pagas al aprobar tu diseño" cierre MENOS ventas que "pagas
+  al ver tu foto terminada" (promesa menos contundente contra la desconfianza). Por eso se mide el
+  cierre por grupo desde el día 1 — si A cierra >2 puntos abajo sostenido, se revisa el copy de la RI/tttp
+  antes de concluir nada del pago.
+- **Riesgo a vigilar #2:** que el grupo B se contamine — el equipo, al ver las alertas del A, podría
+  apurar (o descuidar) los B. El corte diario compara el tiempo registro→foto del B contra su histórico
+  (~8 h): si se mueve mucho, el control se ensució.
 - Exclusiones duras: especiales, canal anticipo, 5+ piezas, Messenger/IG si el envío de imagen difiere
   (validar), clientes con `botActive: false`.
 - Fuera de horario de revisión (definir, ej. 10 pm-8 am): el mockup espera y la alerta sale a primera
