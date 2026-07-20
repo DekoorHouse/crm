@@ -244,6 +244,19 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
                     continue;
                 }
 
+                // Piloto preview (grupo A): no cobrar PEGADO al preview — si el preview+cobro
+                // salió hace menos de 6h, el cliente apenas lo tiene enfrente; cobrarle otra
+                // vez el mismo rato se siente acoso. Aplica solo al PRIMER cobro.
+                const esPilotoA = orders.some(o => o.pilotoPreview === 'A');
+                if (esPilotoA && attemptsPrev === 0) {
+                    const previewMs = Math.max(0, ...orders.map(o => (o.previewEnviadoAt && o.previewEnviadoAt.toMillis) ? o.previewEnviadoAt.toMillis() : 0));
+                    if (previewMs && (nowMs - previewMs) < 6 * 60 * 60 * 1000) {
+                        report.saltados++;
+                        pushDetail({ contactId, pedidos: dhList, resultado: 'saltado: su preview+cobro salió hace <6h (piloto preview)' });
+                        continue;
+                    }
+                }
+
                 // Entra (o sigue) en la automatización: sellar firstAt si es su primer día.
                 // El reloj de los 10 días corre desde aquí — es la mejor aproximación a
                 // "desde que se le mandó la foto" (no se guarda esa fecha hoy en día).
@@ -254,9 +267,16 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
                 }
 
                 const cobroNum = attemptsPrev + 1;
+                // Piloto preview (grupo A): cobrar con el encuadre de "diseño aprobado que entra a
+                // producción al pagar" — nunca "tu pedido ya está terminado" (a ellos se les mandó
+                // el DISEÑO; su lámpara aún no se fabrica). Ver orders/pilotoPreview.NOTA_COBRANZA.
+                let notaPiloto = '';
+                if (esPilotoA) {
+                    try { notaPiloto = require('../orders/pilotoPreview').NOTA_COBRANZA; } catch (_) {}
+                }
                 const result = await cobrarContacto({
                     contactId,
-                    instructions: instructions + buildAttemptContext(cobroNum),
+                    instructions: instructions + buildAttemptContext(cobroNum) + notaPiloto,
                     orderNumbers: orders.map(o => o.consecutiveOrderNumber),
                     sameDayFirstTouch: isTarde
                 });

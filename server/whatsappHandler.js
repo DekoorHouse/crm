@@ -799,10 +799,13 @@ router.post('/', async (req, res) => {
 
             // --- INICIO: ENRUTAMIENTO POR DEPARTAMENTO (AD ID) ---
             // Verifica si el mensaje trae referral para asignar el departamento
+            // Piloto preview (docs/plan-preview-diseno.md): grupo A/B del contacto,
+            // sellado aquí para que la RI y el resto del flujo lo conozcan.
+            let pilotoGroup = null;
             if (message.referral?.source_type === 'ad' && message.referral.source_id) {
                 const adId = message.referral.source_id;
                 console.log(`[ROUTING] Verificando reglas para Ad ID: ${adId}`);
-                
+
                 // Buscar si existe una regla para este Ad ID
                 const ruleSnapshot = await db.collection('ad_routing_rules')
                     .where('adIds', 'array-contains', adId)
@@ -815,6 +818,13 @@ router.post('/', async (req, res) => {
                         // Asignar al departamento correspondiente
                         await contactRef.update({ assignedDepartmentId: ruleData.targetDepartmentId });
                         console.log(`[ROUTING] Contacto ${from} asignado al departamento '${ruleData.targetDepartmentId}' por regla: ${ruleData.ruleName || 'Sin nombre'}`);
+                        // Piloto preview: sellar grupo A/B SOLO a conversaciones nuevas del
+                        // departamento elegible (paridad del teléfono; no-op si está apagado).
+                        try {
+                            pilotoGroup = await require('./orders/pilotoPreview').maybeAssignGroup({
+                                contactRef, phone: from, departmentId: ruleData.targetDepartmentId, isNewContact,
+                            });
+                        } catch (e) { console.warn('[PILOTO] Sellado de grupo falló (se continúa):', e.message); }
                     }
                     
                     // --- SINCRONIZAR IA CON EL DEPARTAMENTO DEL ANUNCIO ---
@@ -996,9 +1006,15 @@ router.post('/', async (req, res) => {
                 if (!snapshot.empty) {
                     const adResponseData = snapshot.docs[0].data();
                     console.log(`[AD] Mensaje encontrado para Ad ID ${adId}: "${adResponseData.message || 'Archivo adjunto'}"`);
+                    // Piloto preview: al grupo A se le cambia la línea "pagas al ver la foto del
+                    // trabajo terminado" por la de "diseño para aprobar" (misma RI, una línea).
+                    let riText = adResponseData.message;
+                    if (pilotoGroup === 'A') {
+                        try { riText = require('./orders/pilotoPreview').applyRiVariant(riText); } catch (_) {}
+                    }
                     // Solo cuenta como "respondido" si el envío a Meta tuvo éxito: si falla,
                     // adResponseSent queda false y la IA responde como red de seguridad.
-                    adResponseSent = (await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType })) === true;
+                    adResponseSent = (await sendAutoMessage(contactRef, { text: riText, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType })) === true;
                 } else {
                     console.log(`[AD] No se encontró mensaje específico para Ad ID ${adId}.`);
                 }

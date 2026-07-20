@@ -1,7 +1,14 @@
 # Piloto: preview del diseño + cobro inmediato (en lugar de "foto del trabajo terminado")
 
-**Estado:** planeado — pendiente de implementar. Definido el dom 19-jul-2026 en la noche.
-**Dueño:** Alex. **Implementa:** Claude en sesión dedicada (este documento es el brief completo).
+**Estado:** IMPLEMENTADO con el switch APAGADO (dom 19-jul-2026 en la noche). Nada cambia en
+producción hasta encenderlo: `crm_settings/piloto_preview` → `{ enabled: true }`. Para apagar
+(rollback): `enabled: false`. Corte de resultados: `node scripts/piloto-preview-corte.js`.
+Piezas: server/orders/pilotoPreview.js (helper/textos), whatsappHandler (sellado A/B + RI
+variante), services (nota de venta), createOrderCore (herencia), mockupsRoutes (+/cuatrop en
+send-context, sello previewEnviadoAt en claim-payment, A-primero en /pending), mockupAutoScheduler
+(sello mockupListoAt), cobranzaScheduler (nota A + salto cobro-1 <6h), badge ⚡ en sección Mockup.
+Quick replies /tttp y /cuatrop creadas en Firestore.
+**Dueño:** Alex. **Implementa:** Claude (este documento es el brief completo).
 
 ## La tesis (con evidencia medida, no intuición)
 

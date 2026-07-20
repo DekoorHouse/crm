@@ -158,6 +158,22 @@ async function createOrder({
         console.error(`[ATTRIBUTION] No se pudo escribir atribución para pedido ${newOrderRef.id}:`, attrErr.message);
     }
 
+    // Piloto preview (docs/plan-preview-diseno.md): el pedido hereda el grupo A/B del
+    // contacto SOLO si es corazones estándar (1-4 pzas, sin especiales). Best-effort.
+    try {
+        const piloto = require('./pilotoPreview');
+        if ((await piloto.getPilotoConfig()).enabled) {
+            const cSnap = await contactRef.get();
+            const grupo = cSnap.exists ? cSnap.data().pilotoPreview : null;
+            if ((grupo === 'A' || grupo === 'B') && piloto.orderEligible(normalizedItems)) {
+                await newOrderRef.update({ pilotoPreview: grupo });
+                console.log(`[PILOTO] Pedido DH${newOrderNumber} heredó el grupo ${grupo} del contacto ${contactId}.`);
+            }
+        }
+    } catch (pilotoErr) {
+        console.warn('[PILOTO] Herencia de grupo al pedido falló (no fatal):', pilotoErr.message);
+    }
+
     // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
     const contactUpdate = {
         lastOrderNumber: newOrderNumber,

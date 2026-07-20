@@ -312,6 +312,10 @@ function mkRenderPending() {
         const num = o.consecutiveOrderNumber ? ('DH' + o.consecutiveOrderNumber) : '—';
         const lastMsg = mkFmtLastMsg(o.lastCustomerMsgAt, o.createdAt);
         const lastMsgHtml = lastMsg ? ` · <span class="mk-lastmsg" title="Hora del último mensaje del cliente"><i class="far fa-clock"></i> ${mkEsc(lastMsg)}</span>` : '';
+        // Piloto preview: los del grupo A se marcan con ⚡ (revisar y enviar EN CUANTO se pueda).
+        const pilotoBadge = o.pilotoPreview === 'A'
+            ? '<span title="Piloto preview: revisar y enviar YA (el cliente espera su diseño en minutos)" style="background:#7c3aed;color:#fff;padding:2px 9px;border-radius:10px;font-size:.72rem;font-weight:700;margin-left:6px;white-space:nowrap;">⚡ Preview</span>'
+            : '';
         o._prefill = mkPrefill(mkParseDatos(datos));   // valores sugeridos para el primer bloque
         // Bloques iniciales: uno por preview guardado, o uno vacío.
         const saved = Array.isArray(o.previews) ? o.previews : [];
@@ -324,7 +328,7 @@ function mkRenderPending() {
         <div class="settings-card mk-card" data-order="${mkAttr(o.id)}" data-phone="${mkAttr(o.telefono)}" data-client="${mkAttr(o.clientName)}">
             <div class="mk-card-head">
                 <div>
-                    <span class="mk-order-num" style="cursor:pointer;" title="Ver conversación del cliente" onclick="mkOpenChat('${mkAttr(o.id)}')">${mkEsc(num)} <i class="fas fa-comments" style="font-size:.75em;opacity:.6;"></i></span>
+                    <span class="mk-order-num" style="cursor:pointer;" title="Ver conversación del cliente" onclick="mkOpenChat('${mkAttr(o.id)}')">${mkEsc(num)} <i class="fas fa-comments" style="font-size:.75em;opacity:.6;"></i></span>${pilotoBadge}
                     <span class="mk-client">${mkEsc(o.clientName || 'Sin nombre')}</span>
                     <span class="mk-phone"><i class="fab fa-whatsapp"></i> ${mkEsc(o.telefono || '')}</span>
                 </div>

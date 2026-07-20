@@ -115,6 +115,18 @@ Te dejo la cuenta por escrito para que sea más fácil y puedas copiar y pegar�
 
 🏦*BBVA*
 🤵‍♂️*Christian Morales Villa*
+- cuatrop: ¡Mira cómo va a quedar tu lámpara! 😍 Este es el *diseño exacto* que vamos a grabar ✨
+
+*Apruébalo y con tu pago hoy mismo entra a producción* 🚀 Cuando realices tu pago me confirmas con la foto de tu comprobante 😊
+
+Los datos de envío a tu domicilio los solicitamos al recibir tu pago 📨
+
+¿Gustas que tu pago sea por *TRANSFERENCIA*? 💳
+
+Te dejo la cuenta por escrito para que sea más fácil y puedas copiar y pegar✅
+
+🏦*BBVA*
+🤵‍♂️*Christian Morales Villa*
 - dady-foto-dgo: ¡Hola! 👋 *Última entrega mañana en el transcurso del día!* 🔥
 
 👉 Por solo *$750 pesos*, obtienes:
@@ -468,6 +480,13 @@ Mas tarde te enviamos foto de tu pedido para que puedas *realizar el pago* 😀
 Mañana te enviaremos la foto de tu pedido personalizado para que puedas realizar tu pago y enviarlo.✨
 
 El ENVIO ES GRATIS por DHL ✈️ y *tu pedido llegará en 3 a 5 días hábiles* (sin contar sábados ni domingos) después de que recibamos tu pago y enviemos la guia de envio. 🚛💨
+- tttp: ¡Excelente! 🎉
+
+✅ *¡Ya hemos enviado varias veces a tu zona!* 📦✨
+
+En cuanto confirmes tu pedido, EN MINUTOS te mandamos el *diseño exacto de tu lámpara* para que lo apruebes y realices tu pago ✨
+
+El ENVÍO ES GRATIS por DHL ✈️ y *tu pedido llegará en 3 a 5 días hábiles* (sin contar sábados ni domingos) después de recibir tu pago y enviar la guía. 🚛💨
 - Uni: ¡Hola! 👋* Estamos cerrando el último pedido para entregar el lunes* 🔥
 
 👉 Por solo $750 pesos, obtienes:

@@ -197,8 +197,12 @@ router.get('/pending', asyncHandler(async (req, res) => {
             lastCustomerMsgAt: lastMsgByPhone[phone] || null,
             items: orderItems,
             previews: previewByOrder[o.id] || [],
+            pilotoPreview: o.pilotoPreview || null,   // piloto preview: 'A' se marca/prioriza en la UI
         };
     });
+    // Piloto preview: los del grupo A hasta ARRIBA de la cola (revisión express manual);
+    // el sort es estable, así que dentro de cada grupo se conserva "recientes primero".
+    items.sort((a, b) => Number(b.pilotoPreview === 'A') - Number(a.pilotoPreview === 'A'));
     res.json({ success: true, items });
 }));
 
@@ -454,14 +458,28 @@ router.get('/send-context', asyncHandler(async (req, res) => {
 
     // Respuestas rápidas /cuatro (pedido listo + pago; PUEDE llevar foto) y /bbb (tarjeta).
     // Se devuelven con su media para replicar el envío tal cual lo hace el chat.
-    const qr = { cuatro: null, bbb: null };
+    // Piloto preview: a los contactos del grupo A se les da /cuatrop (encuadre de "diseño
+    // para aprobar") en lugar de /cuatro — el frontend no cambia, solo recibe otro texto.
+    const qr = { cuatro: null, bbb: null, cuatrop: null };
     try {
-        const qrSnap = await db.collection('quick_replies').where('shortcut', 'in', ['cuatro', 'bbb']).get();
+        const qrSnap = await db.collection('quick_replies').where('shortcut', 'in', ['cuatro', 'bbb', 'cuatrop']).get();
         qrSnap.forEach(d => {
             const x = d.data();
             qr[String(x.shortcut || '').toLowerCase()] = { text: x.message || '', fileUrl: x.fileUrl || null, fileType: x.fileType || null };
         });
     } catch (e) { console.error('[mockups] quick_replies:', e.message); }
+
+    let pilotoGroup = null;
+    try {
+        const piloto = require('../orders/pilotoPreview');
+        if ((await piloto.getPilotoConfig()).enabled) {
+            const cSnap = await db.collection('contacts_whatsapp').doc(telefono).get();
+            pilotoGroup = cSnap.exists ? (cSnap.data().pilotoPreview || null) : null;
+            if (pilotoGroup === 'A') {
+                qr.cuatro = qr.cuatrop && qr.cuatrop.text ? qr.cuatrop : { text: piloto.CUATROP_FALLBACK, fileUrl: null, fileType: null };
+            }
+        }
+    } catch (e) { console.warn('[PILOTO] send-context grupo falló (se usa /cuatro normal):', e.message); }
 
     // Ventana de 24h: ¿el último mensaje ENTRANTE (from === telefono) es < 24h?
     let windowOpen = false;
@@ -478,7 +496,7 @@ router.get('/send-context', asyncHandler(async (req, res) => {
         }
     } catch (e) { console.error('[mockups] window check:', e.message); /* ante la duda: cerrada */ }
 
-    res.json({ success: true, windowOpen, cuatro: qr.cuatro, bbb: qr.bbb });
+    res.json({ success: true, windowOpen, cuatro: qr.cuatro, bbb: qr.bbb, pilotoGroup });
 }));
 
 // POST /api/mockups/wa-image — Devuelve una versión JPEG pública de una imagen de la
@@ -552,7 +570,13 @@ router.post('/claim-payment', asyncHandler(async (req, res) => {
         const d = await tx.get(ref);
         if (!d.exists) return false;
         if (d.data().mockupPaymentSentAt) return false;   // ya se envió antes
-        tx.update(ref, { mockupPaymentSentAt: admin.firestore.FieldValue.serverTimestamp() });
+        const update = { mockupPaymentSentAt: admin.firestore.FieldValue.serverTimestamp() };
+        // Piloto preview: sellar el momento en que el preview+cobro sale al cliente
+        // (grupo A). Mide el SLA real y ancla el "no cobrar de nuevo antes de 6h".
+        if (d.data().pilotoPreview === 'A') {
+            update.previewEnviadoAt = admin.firestore.FieldValue.serverTimestamp();
+        }
+        tx.update(ref, update);
         return true;
     });
     res.json({ claimed });

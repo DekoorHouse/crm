@@ -116,6 +116,12 @@ async function generateOne(o, tpl, cfg = {}) {
         }, { merge: true });
         // Verificar por visión cómo quedaron los textos (renglones) y guardarlo en el preview.
         await svc.verifyAndStoreLayout(String(o.id), blockId);
+        // Sello: momento en que el preview quedó LISTO para revisión (mide el SLA del
+        // piloto preview en pedidos A, y es útil como métrica general). Best-effort.
+        try {
+            const { admin } = require('../config');
+            await db.collection('pedidos').doc(String(o.id)).update({ mockupListoAt: admin.firestore.FieldValue.serverTimestamp() });
+        } catch (e) { console.warn('[mockup-auto] no se pudo sellar mockupListoAt:', e.message); }
         console.log('[mockup-auto] ✓ generado DH' + (o.consecutiveOrderNumber || '?'));
         return true;
     } catch (e) {
