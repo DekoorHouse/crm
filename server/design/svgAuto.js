@@ -54,4 +54,62 @@ function isAutoWaiting(o, previews) {
     return svgAutoEligibility(o, previews).eligible;
 }
 
-module.exports = { svgAutoEligibility, isAutoWaiting, SPECIAL_RE, productOf, datosOf };
+// "Sin fecha" (el cliente no quiere fecha) -> se graba en blanco (misma regla que el mockup).
+const SIN_FECHA_RE = /sin\s*fecha|no\s*(lleva|quiere|va|hay)\s*fecha|ninguna\s*fecha/i;
+
+// Saca nombre1/nombre2/fecha del TEXTO de datos del pedido ("Nombres: A y B | Fecha: Z" y variantes),
+// para poder diseñar un pedido forzado que aún NO tiene mockup aprobado (fallback del mockup).
+function parseDatosFields(datos) {
+    const s = String(datos || '').replace(/\r/g, '');
+    let fecha = '';
+    const fm = s.match(/fecha\s*:\s*([^\n|]+)/i);
+    if (fm) fecha = fm[1].split('·')[0].trim();
+    if (!fecha) {
+        // Sin la etiqueta "Fecha:": busca un token con forma de fecha (29-Abril-2026, 24/06/1984…).
+        const dm = s.match(/\d{1,2}\s*[-/]\s*[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s*[-/]\s*\d{2,4}/) || s.match(/\d{1,2}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{2,4}/);
+        if (dm) fecha = dm[0].replace(/\s+/g, '');
+    }
+    let namePart;
+    const nm = s.match(/nombres?\s*:\s*([^\n|]+)/i);
+    namePart = nm ? nm[1] : (s.split(/\n|\|/)[0] || '');
+    namePart = namePart.split('·')[0].replace(/\bfecha\b.*$/i, '').trim();
+    let nombre1 = '', nombre2 = '';
+    const yy = namePart.split(/\s+y\s+|\s*&\s*|\s*\+\s*/i);
+    if (yy.length >= 2) { nombre1 = yy[0].trim(); nombre2 = yy.slice(1).join(' y ').trim(); }
+    return { nombre1, nombre2, fecha };
+}
+
+// Elegibilidad para diseño FORZADO desde el CRM (botón "Diseñar con IA"). Más laxa que la automática:
+// NO exige que el pedido esté en 'Fabricar', ni mockup aprobado, ni layout verificado por visión —
+// porque el usuario CONFIRMA el resultado antes de subir. Solo exige lo que el skill sabe generar:
+// lámpara de corazones, no-especial, con dos nombres (fecha puede ir en blanco si el cliente no la
+// quiere). Fuente de los datos: el mockup aprobado (si hay, da también la imagen de preview) o el
+// texto de datos del pedido. Devuelve { ok, reason, fields, previewUrl }.
+function forcedDesignFields(o, previews) {
+    if (!/corazon/i.test(productOf(o))) return { ok: false, reason: 'not_corazon' };
+    if (SPECIAL_RE.test(datosOf(o))) return { ok: false, reason: 'special' };
+    previews = Array.isArray(previews) ? previews : [];
+    const last = previews.length ? previews[previews.length - 1] : null;
+    let nombre1 = '', nombre2 = '', fecha = '', previewUrl = null;
+    if (last) {
+        previewUrl = last.imageUrl || last.url || null;
+        const f = last.fields || {};
+        const lay = last.layout || null;
+        const conLineas = (vision, plain) => (vision && vision.length ? vision.join('\n') : String(plain || ''));
+        nombre1 = lay ? conLineas(lay.izquierdo, f.nombre1) : String(f.nombre1 || '');
+        nombre2 = lay ? conLineas(lay.derecho, f.nombre2) : String(f.nombre2 || '');
+        fecha = lay ? conLineas(lay.fecha, f.fecha) : String(f.fecha || '');
+    }
+    if (!nombre1 || !nombre2 || !fecha) {
+        const p = parseDatosFields(datosOf(o));
+        nombre1 = nombre1 || p.nombre1;
+        nombre2 = nombre2 || p.nombre2;
+        fecha = fecha || p.fecha;
+    }
+    if (!nombre1 || !nombre2) return { ok: false, reason: 'incomplete_fields' };
+    if (SIN_FECHA_RE.test(fecha)) fecha = '';                                   // "Sin Fecha" -> blanco
+    if (!fecha && !SIN_FECHA_RE.test(datosOf(o))) return { ok: false, reason: 'incomplete_fields' };
+    return { ok: true, reason: 'ok', fields: { nombre1, nombre2, fecha }, previewUrl };
+}
+
+module.exports = { svgAutoEligibility, isAutoWaiting, forcedDesignFields, parseDatosFields, SPECIAL_RE, SIN_FECHA_RE, productOf, datosOf };

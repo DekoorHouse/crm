@@ -7764,7 +7764,7 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 router.get('/design-pending', async (req, res) => {
     try {
         const { reasonsForOrderData } = require('./design/designPending');
-        const { isAutoWaiting } = require('./design/svgAuto');
+        const { isAutoWaiting, SPECIAL_RE, productOf, datosOf } = require('./design/svgAuto');
         const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
 
         // Candidatos (se deduplica por id): pedidos en 'Corregir' (datos/video) + los que tienen
@@ -7809,6 +7809,17 @@ router.get('/design-pending', async (req, res) => {
                 svgCorteUrl: p.svgCorteUrl || null,
                 svgCorteAt: tsToMs(p.svgCorteAt),
                 svgCorteSheetWith: p.svgCorteSheetWith || null,
+                // Diseño FORZADO desde el CRM ("Diseñar con IA"): estado del ciclo cola->staged->aprobado
+                // + imagen de preview y líneas a grabar (para el paso de confirmación antes de subir).
+                iaForce: p.iaForce ? {
+                    status: p.iaForce.status || null,
+                    previewUrl: p.iaForce.previewUrl || null,
+                    lines: p.iaForce.lines || null,
+                    error: p.iaForce.error || null,
+                } : null,
+                // ¿El skill puede diseñar este pedido solo? (lámpara de corazones, no especial). Habilita
+                // el botón "Diseñar con IA"; los demás lo muestran deshabilitado ("requiere diseño manual").
+                iaEligible: /corazon/i.test(productOf(p)) && !SPECIAL_RE.test(datosOf(p)),
                 // Datos de personalización (nombres/fecha): lo que el diseñador necesita a la vista.
                 datos: (Array.isArray(p.items) ? p.items.map(i => i.datosProducto).filter(Boolean).join(' | ') : '') || p.datosProducto || '',
                 ...(extra || {}),
@@ -7953,6 +7964,69 @@ router.post('/design-pending/:orderId/reopen', async (req, res) => {
         res.json({ success: true });
     } catch (e) {
         console.error('[design-pending/reopen] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/design-pending/:orderId/design-ia — FUERZA el diseño con IA (worker local de corte).
+// Pone el pedido en cola (iaForce.status='queued'); en su próxima corrida (≤15 min) el worker de esta
+// PC genera el SVG con CorelDRAW y lo deja STAGED (sin subir a Drive). El CRM muestra el preview y sube
+// a Drive SOLO al confirmar (ia-confirm). Solo lámpara de corazones no-especial (lo que el skill genera).
+router.post('/design-pending/:orderId/design-ia', async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const { productOf, datosOf, SPECIAL_RE } = require('./design/svgAuto');
+        const ref = db.collection('pedidos').doc(orderId);
+        const doc = await ref.get();
+        if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        const p = doc.data();
+        if (!/corazon/i.test(productOf(p))) return res.status(400).json({ success: false, message: 'El skill solo genera lámpara de corazones; este pedido requiere diseño manual.' });
+        if (SPECIAL_RE.test(datosOf(p))) return res.status(400).json({ success: false, message: 'Pedido especial: requiere diseño manual.' });
+        if (p.svgCorteAt) return res.status(400).json({ success: false, message: 'Este pedido ya tiene un SVG de corte.' });
+        await ref.update({
+            iaForce: {
+                status: 'queued',
+                requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+                requestedBy: 'crm',
+            },
+        });
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[design-pending/design-ia] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/design-pending/:orderId/ia-confirm — el usuario confirmó el diseño staged: lo aprueba
+// (iaForce.status='approved') para que el worker lo SUBA a Drive en su próxima corrida.
+router.post('/design-pending/:orderId/ia-confirm', async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const ref = db.collection('pedidos').doc(orderId);
+        const doc = await ref.get();
+        if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        const f = doc.data().iaForce || {};
+        if (f.status !== 'staged') return res.status(400).json({ success: false, message: 'El diseño aún no está listo para subir.' });
+        await ref.update({ 'iaForce.status': 'approved', 'iaForce.approvedAt': admin.firestore.FieldValue.serverTimestamp() });
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[design-pending/ia-confirm] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/design-pending/:orderId/ia-reject — descarta el diseño forzado (borra iaForce). El SVG
+// staged queda en el disco local sin subir; el pedido vuelve a Pendientes manual.
+router.post('/design-pending/:orderId/ia-reject', async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const ref = db.collection('pedidos').doc(orderId);
+        const doc = await ref.get();
+        if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        await ref.update({ iaForce: admin.firestore.FieldValue.delete() });
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[design-pending/ia-reject] error:', e.message);
         res.status(500).json({ success: false, message: e.message });
     }
 });

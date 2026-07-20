@@ -259,6 +259,54 @@ async function reopenDesign(orderId, el) {
 }
 window.reopenDesign = reopenDesign;
 
+// --- "Diseñar con IA": fuerza al worker local (svg-corte) a diseñar el pedido; confirma antes de subir ---
+// Actualiza el estado iaForce en el cache local y re-pinta la fila conservando el scroll (sin re-fetch).
+function _updateIaForceLocal(orderId, iaForce) {
+    const o = (window._designPendingData || []).find(x => x.id === orderId);
+    if (o) o.iaForce = iaForce;
+    const sc = document.getElementById('design-pending-view');
+    const scrollTop = sc ? sc.scrollTop : 0;
+    _paintDesignPending();
+    if (sc) sc.scrollTop = scrollTop;
+}
+
+// Encola el pedido para diseño forzado (queued). Tu PC lo diseña en ≤15 min y lo deja "staged".
+async function designWithIA(orderId, el) {
+    if (el) el.disabled = true;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/design-ia`, { method: 'POST' });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        _updateIaForceLocal(orderId, { status: 'queued' });
+    } catch (e) { if (el) el.disabled = false; alert('No se pudo enviar a diseño con IA: ' + (e.message || e)); }
+}
+window.designWithIA = designWithIA;
+
+// Confirma el diseño staged -> el worker lo sube a Drive (producción) en su próxima corrida.
+async function confirmIAUpload(orderId, el) {
+    if (!confirm('¿Subir el corte a Drive? Esto lo manda a producción (tu PC lo sube en ≤15 min).')) return;
+    if (el) el.disabled = true;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/ia-confirm`, { method: 'POST' });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        _updateIaForceLocal(orderId, { status: 'approved' });
+    } catch (e) { if (el) el.disabled = false; alert('No se pudo confirmar: ' + (e.message || e)); }
+}
+window.confirmIAUpload = confirmIAUpload;
+
+// Descarta el diseño forzado (no se sube nada); el pedido vuelve a Pendientes manual.
+async function rejectIADesign(orderId, el) {
+    if (el) el.disabled = true;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/ia-reject`, { method: 'POST' });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        _updateIaForceLocal(orderId, null);
+    } catch (e) { if (el) el.disabled = false; alert('No se pudo rechazar: ' + (e.message || e)); }
+}
+window.rejectIADesign = rejectIADesign;
+
 // --- Navegación del chat con flechas ← → (sin cerrar el modal), desde Pendientes de Diseño ---
 // Abre el chat de un pedido y activa la navegación por teclado sobre la lista visible.
 async function openDesignPendingChat(orderId) {
@@ -469,6 +517,30 @@ function _paintDesignPending() {
             : isSvgIa
             ? (o.svgIaState === 'designed' ? reopenBtn : '')
             : `<button onclick="markDesignDone('${o.id}', this)" title="Marcar como diseñado y sacar de la lista" style="border:none;background:#16a34a;color:#fff;cursor:pointer;padding:5px 10px;font-size:12px;border-radius:6px;font-weight:700"><i class="fas fa-check" style="margin-right:4px"></i>Diseñado</button>`;
+        // Botón "Diseñar con IA" (solo en Pendientes): fuerza al worker local a diseñar el corazón
+        // infinito (2 nombres + fecha) y pide confirmación antes de subir a Drive. Cambia según el
+        // estado del ciclo: elegible -> botón | en cola | staged (preview + Subir/Rechazar) | subiendo |
+        // error (reintentar). En pedidos no elegibles (especiales / no-corazón) sale deshabilitado.
+        let iaCell = '';
+        if (tab === 'pendientes') {
+            const f = o.iaForce || {};
+            const bb = 'padding:5px 10px;font-size:12px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap';
+            if (f.status === 'approved') {
+                iaCell = `<span title="Tu PC la subirá a Drive en ≤15 min" style="display:inline-flex;align-items:center;gap:4px;background:#0ea5e922;color:#0284c7;border:1px solid #0ea5e966;padding:4px 9px;border-radius:6px;font-size:12px;font-weight:700"><i class="fas fa-cloud-arrow-up"></i>Subiendo…</span>`;
+            } else if (f.status === 'staged') {
+                const linesTxt = f.lines ? [f.lines.nombre1, f.lines.nombre2, f.lines.fecha].filter(Boolean).map(s => String(s).replace(/\n/g, ' ')).join(' · ') : '';
+                const thumb = f.previewUrl ? `<img src="${escapeHtml(f.previewUrl)}" onclick="openImageModal(this.src)" title="Diseño listo — clic para ampliar" style="width:34px;height:34px;object-fit:cover;border-radius:5px;cursor:zoom-in;border:1px solid var(--color-border,#e5e7eb)">` : '';
+                iaCell = `${thumb}<button onclick="confirmIAUpload('${o.id}', this)" title="Subir el corte a Drive (producción): ${escapeHtml(linesTxt)}" style="border:none;background:#16a34a;color:#fff;${bb}"><i class="fas fa-cloud-arrow-up" style="margin-right:4px"></i>Subir a Drive</button><button onclick="rejectIADesign('${o.id}', this)" title="Descartar este diseño de IA (no sube nada)" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;color:#dc2626;${bb}"><i class="fas fa-times"></i></button>`;
+            } else if (f.status === 'queued') {
+                iaCell = `<span title="Tu PC la diseñará en ≤15 min y la dejará lista para confirmar" style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b22;color:#b45309;border:1px solid #f59e0b66;padding:4px 9px;border-radius:6px;font-size:12px;font-weight:700"><i class="fas fa-hourglass-half"></i>En cola IA…</span>`;
+            } else if (f.status === 'error') {
+                iaCell = `<button onclick="designWithIA('${o.id}', this)" title="${escapeHtml(f.error || 'No se pudo diseñar')} — clic para reintentar" style="border:1px solid #dc262666;background:#dc262611;color:#b91c1c;${bb}"><i class="fas fa-triangle-exclamation" style="margin-right:4px"></i>Reintentar IA</button>`;
+            } else if (o.iaEligible) {
+                iaCell = `<button onclick="designWithIA('${o.id}', this)" title="Forzar diseño con IA: tu PC lo diseña y te pide confirmar antes de subir a Drive" style="border:none;background:#7c3aed;color:#fff;${bb}"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px"></i>Diseñar con IA</button>`;
+            } else {
+                iaCell = `<button disabled title="Requiere diseño manual (especial o no es lámpara de corazones)" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;color:#94a3b8;${bb};font-weight:600;opacity:.5;cursor:not-allowed"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px"></i>Diseñar con IA</button>`;
+            }
+        }
         const fecha = tab === 'disenados' ? (o.disenoListoAt || o.svgCorteAt)
             : isSvgIa ? (o.svgIaState === 'waiting' ? o.paidMs : (o.svgCorteAt || o.paidMs))
             : (o.corregirAt || o.comprobanteValidadoAt || o.createdAt);
@@ -496,7 +568,7 @@ function _paintDesignPending() {
             <td style="padding:6px 12px 6px 0;white-space:nowrap">${statusSel}</td>
             <td style="padding:6px 12px 6px 0">${comentarioCell}</td>
             <td style="padding:9px 12px 9px 0;color:#94a3b8;white-space:nowrap">${fechaTxt}</td>
-            <td style="padding:9px 0;text-align:right;white-space:nowrap"><div style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end">${visualCheck}${chatBtn}${actionBtn}</div></td>
+            <td style="padding:9px 0;text-align:right"><div style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end;flex-wrap:wrap;max-width:280px">${iaCell}${visualCheck}${chatBtn}${actionBtn}</div></td>
         </tr>`;
     }).join('');
 

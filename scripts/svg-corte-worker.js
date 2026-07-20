@@ -28,7 +28,7 @@ const { spawnSync } = require('child_process');
 
 const { db, admin } = require('../server/config');
 const { recomputeForContact } = require('../server/design/designPending');
-const { svgAutoEligibility } = require('../server/design/svgAuto');
+const { svgAutoEligibility, forcedDesignFields } = require('../server/design/svgAuto');
 
 const SKILL_DIR = path.join(__dirname, '..', '.claude', 'skills', 'svg-corte');
 const INFINITO_VBS = path.join(SKILL_DIR, 'infinito.vbs');
@@ -119,6 +119,7 @@ async function findCandidates() {
     for (const doc of snap.docs) {
         const o = { id: doc.id, ...doc.data() };
         if (o.disenoListoAt || o.svgCorteAt) continue;                       // ya diseñado / ya tiene SVG
+        if (o.iaForce) continue;                                             // forzado desde el CRM -> lo maneja processForcedDesigns (con confirmación antes de subir)
         // Con guía de envío (o quitado de Envíos) el pedido ya se fabricó/gestionó: cortarlo
         // sería duplicar producción. Misma regla que Pendientes de Diseño (designPending.js).
         if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios) continue;
@@ -255,6 +256,110 @@ async function processApprovedDesigns() {
     }
 }
 
+// Mensaje humano para el motivo por el que un pedido forzado no se pudo diseñar (se muestra en el CRM).
+function forcedErrorMsg(reason) {
+    return {
+        not_corazon: 'No es lámpara de corazones (el skill solo genera corazones).',
+        special: 'Pedido especial: requiere diseño manual.',
+        incomplete_fields: 'Faltan nombres o fecha en los datos del pedido.',
+    }[reason] || ('No elegible: ' + reason);
+}
+
+// Diseños FORZADOS desde el CRM (botón "Diseñar con IA"). Corren SIEMPRE (aunque el kill-switch de
+// auto-generación esté apagado): son una orden explícita del usuario. Dos pasos por corrida:
+//   1) status='approved'  -> el usuario ya confirmó en el CRM: sube el SVG staged a Drive y marca
+//                            el pedido "Diseñado por IA" (igual que el auto, pero con confirmación previa).
+//   2) status='queued'    -> genera el SVG con Corel y lo deja STAGED (NO sube a Drive); guarda la ruta
+//                            local + la imagen de preview (el mockup aprobado) para que el CRM lo muestre.
+async function processForcedDesigns() {
+    // --- Paso 1: subir lo ya aprobado por el usuario ---
+    let appr = { docs: [], empty: true };
+    try { appr = await db.collection('pedidos').where('iaForce.status', '==', 'approved').limit(50).get(); }
+    catch (e) { log('No pude consultar forzados aprobados: ' + e.message); }
+    if (!appr.empty) log(`Forzados aprobados pendientes de subir: ${appr.size}` + (DRY ? ' (DRY RUN)' : ''));
+    for (const doc of appr.docs) {
+        const o = { id: doc.id, ...doc.data() };
+        const f = o.iaForce || {};
+        const dh = dhOf(o);
+        const estatus = String(o.estatus || '').toLowerCase();
+        if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios || /cancel/.test(estatus)) {
+            log(`  ~ ${dh} forzado aprobado pero enviado/cancelado -> no subo`);
+            if (!DRY) await doc.ref.update({ iaForce: admin.firestore.FieldValue.delete() });
+            continue;
+        }
+        if (o.svgCorteAt) { if (!DRY) await doc.ref.update({ iaForce: admin.firestore.FieldValue.delete() }); continue; }
+        const svg = f.svgLocalPath;
+        if (!svg || !fs.existsSync(svg)) {
+            log(`  ~ ${dh} forzado aprobado pero sin SVG staged (${svg || 'null'}) -> reencolo`);
+            if (!DRY) await doc.ref.update({ 'iaForce.status': 'queued', 'iaForce.svgLocalPath': admin.firestore.FieldValue.delete() });
+            continue;
+        }
+        log(`> ${dh} forzado aprobado -> subiendo ${path.basename(svg)}`);
+        if (DRY) continue;
+        try {
+            const up = await uploadToDrive(svg);
+            await doc.ref.update({
+                estatus: NEW_STATUS,
+                svgCorteAt: admin.firestore.FieldValue.serverTimestamp(),
+                svgCorteUrl: up.webViewLink,
+                svgCorteFileName: up.name,
+                svgCorteCdrLocal: f.cdrLocalPath || null,
+                svgCorteBy: 'ia-force',
+                iaForce: admin.firestore.FieldValue.delete(),
+            });
+            try { await recomputeForContact(o.contactId || o.telefono); } catch (_) {}
+            log(`  OK ${dh} -> ${up.webViewLink}`);
+        } catch (e) { log(`  ERROR subiendo forzado ${dh}: ${e.message}`); }
+    }
+
+    // --- Paso 2: generar (stage) los encolados ---
+    let q = { docs: [], empty: true };
+    try { q = await db.collection('pedidos').where('iaForce.status', '==', 'queued').limit(20).get(); }
+    catch (e) { log('No pude consultar forzados en cola: ' + e.message); return; }
+    if (q.empty) return;
+    log(`Forzados en cola para diseño IA: ${q.size}` + (DRY ? ' (DRY RUN)' : ''));
+    for (const doc of q.docs) {
+        const o = { id: doc.id, ...doc.data() };
+        const dh = dhOf(o);
+        const estatus = String(o.estatus || '').toLowerCase();
+        if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios || /cancel/.test(estatus)) {
+            log(`  ~ ${dh} forzado pero enviado/cancelado -> error`);
+            if (!DRY) await doc.ref.update({ 'iaForce.status': 'error', 'iaForce.error': 'El pedido ya se envió o está cancelado.' });
+            continue;
+        }
+        if (o.svgCorteAt) { if (!DRY) await doc.ref.update({ iaForce: admin.firestore.FieldValue.delete() }); continue; }
+        // Campos (nombres/fecha) + imagen de preview: del mockup aprobado si hay; si no, del texto de datos.
+        const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
+        const previews = prev.exists ? (prev.data().previews || []) : [];
+        const ff = forcedDesignFields(o, previews);
+        if (!ff.ok) {
+            log(`  ~ ${dh} forzado no elegible (${ff.reason})`);
+            if (!DRY) await doc.ref.update({ 'iaForce.status': 'error', 'iaForce.error': forcedErrorMsg(ff.reason) });
+            continue;
+        }
+        const nl = s => String(s).replace(/\n/g, '⏎');
+        log(`> ${dh} forzado -> generando ${nl(ff.fields.nombre1)} y ${nl(ff.fields.nombre2)} (${nl(ff.fields.fecha) || 'sin fecha'})`);
+        if (DRY) continue;
+        try {
+            const { svg, cdr } = runCorel(dh, [ff.fields]);
+            await doc.ref.update({
+                'iaForce.status': 'staged',
+                'iaForce.stagedAt': admin.firestore.FieldValue.serverTimestamp(),
+                'iaForce.svgLocalPath': svg,
+                'iaForce.cdrLocalPath': cdr,
+                'iaForce.svgName': path.basename(svg),
+                'iaForce.lines': ff.fields,
+                'iaForce.previewUrl': ff.previewUrl || null,
+                'iaForce.error': admin.firestore.FieldValue.delete(),
+            });
+            log(`  STAGED ${dh} -> ${path.basename(svg)} (espera confirmación en el CRM)`);
+        } catch (e) {
+            log(`  ERROR generando forzado ${dh}: ${e.message}`);
+            try { await doc.ref.update({ 'iaForce.status': 'error', 'iaForce.error': ('No se pudo generar: ' + e.message).slice(0, 300) }); } catch (_) {}
+        }
+    }
+}
+
 async function main() {
     // Lock local para no encimarse con una corrida anterior
     try {
@@ -270,6 +375,10 @@ async function main() {
         // auto-corte esté apagado (son kill-switches independientes: apagar la generación de
         // hojas no debe dejar sin subir un diseño que el cliente ya aprobó).
         await processApprovedDesigns();
+
+        // Diseños FORZADOS desde el CRM (botón "Diseñar con IA") — también independientes del kill-switch:
+        // el usuario pidió explícitamente diseñar ese pedido (con confirmación antes de subir a Drive).
+        await processForcedDesigns();
 
         if (!FORCE && cfg.autoGenerate === false) { log('autoGenerate=false (kill-switch), salgo.'); return; }
 
