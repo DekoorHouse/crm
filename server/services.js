@@ -2914,6 +2914,18 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             return parts.filter(p => p.length > 0);
         });
 
+        // Piloto preview (grupo A): candado DETERMINISTA — si Andrea emitió /ttt pese a la
+        // nota, se cambia a /tttp antes de expandir, para que la narrativa del preview nunca
+        // dependa de que el modelo obedezca. El \b no toca un /tttp ya correcto ("p" es
+        // carácter de palabra, no hay frontera tras "ttt"). Con el switch apagado, no-op.
+        if (!isPostVenta && contactData.pilotoPreview === 'A') {
+            try {
+                if ((await require('./orders/pilotoPreview').getPilotoConfig()).enabled) {
+                    aiMessages = aiMessages.map(m => m.replace(/\/ttt\b/ig, '/tttp'));
+                }
+            } catch (e) { console.warn('[PILOTO] Candado /ttt→/tttp no disponible:', e.message); }
+        }
+
         for (let i = 0; i < aiMessages.length; i++) {
             // Verificar cancelación entre mensajes si hay SPLIT
             if (i > 0) {
