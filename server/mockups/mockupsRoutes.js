@@ -548,6 +548,21 @@ router.post('/auto-config', asyncHandler(async (req, res) => {
     res.json({ success: true, autoGenerate });
 }));
 
+// --- Piloto preview (A/B): switch desde la sección Mockup ---
+// El server cachea la config 60s (orders/pilotoPreview.js), así que el cambio
+// tarda máximo un minuto en aplicar a todos los flujos.
+router.get('/piloto-config', asyncHandler(async (req, res) => {
+    const doc = await db.collection('crm_settings').doc('piloto_preview').get();
+    res.json({ success: true, enabled: !!(doc.exists && doc.data().enabled === true) });
+}));
+
+router.post('/piloto-config', asyncHandler(async (req, res) => {
+    const enabled = req.body.enabled === true;
+    await db.collection('crm_settings').doc('piloto_preview').set({ enabled }, { merge: true });
+    console.log(`[PILOTO] Switch ${enabled ? 'ENCENDIDO ⚡' : 'APAGADO'} desde la sección Mockup.`);
+    res.json({ success: true, enabled });
+}));
+
 // POST /api/mockups/auto-run — dispara YA una corrida de auto-generación (p.ej. tras recargar
 // saldo en WaveSpeed). NO espera a que termine (puede tardar minutos): arranca en segundo plano y
 // responde de inmediato. Fuerza la corrida aunque el toggle de auto-generar esté apagado y usa un

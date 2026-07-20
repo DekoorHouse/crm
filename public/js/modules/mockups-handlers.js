@@ -184,6 +184,31 @@ async function mkLoadAutoConfig() {
         const el = document.getElementById('mk-auto-toggle');
         if (el) el.checked = d.autoGenerate !== false;
     } catch (_) { /* noop */ }
+    mkLoadPilotoConfig();
+}
+
+// Toggle del piloto preview A/B (docs/plan-preview-diseno.md).
+async function mkLoadPilotoConfig() {
+    try {
+        const d = await mkFetchJson('/api/mockups/piloto-config');
+        const el = document.getElementById('mk-piloto-toggle');
+        if (el) el.checked = d.enabled === true;
+    } catch (_) { /* noop */ }
+}
+
+async function mkTogglePiloto(checked) {
+    const revertir = () => { const el = document.getElementById('mk-piloto-toggle'); if (el) el.checked = !checked; };
+    if (checked && !confirm('¿Encender el piloto preview A/B?\n\nLas conversaciones NUEVAS de corazones se repartirán por teléfono (par = grupo A: recibe su diseño en minutos con el cobro). Los pedidos ⚡ aparecerán arriba en esta cola para que los envíes rápido.')) {
+        revertir();
+        return;
+    }
+    try {
+        await mkFetchJson('/api/mockups/piloto-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked }) });
+        mkToast(checked ? 'Piloto preview ENCENDIDO ⚡ (aplica en ~1 min a conversaciones nuevas)' : 'Piloto preview apagado — todo vuelve al flujo normal', 'success');
+    } catch (e) {
+        mkToast('No se pudo cambiar: ' + e.message, 'error');
+        revertir();
+    }
 }
 
 async function mkToggleAuto(checked) {
