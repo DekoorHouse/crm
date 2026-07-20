@@ -108,7 +108,7 @@ async function generateOne(o, tpl, cfg = {}) {
 
         const img = await wave.downloadImage(outputs[0]);
         const saved = await svc.saveToGallery(prompt, tpl.aspectRatio || '1:1', [img],
-            { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, wave.costFor(1));
+            { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, wave.costFor(1, Math.max(0, images.length - 1)));
         const blockId = 'auto' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
         await db.collection('mockup_previews').doc(String(o.id)).set({
             orderId: String(o.id),

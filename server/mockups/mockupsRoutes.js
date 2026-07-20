@@ -321,7 +321,7 @@ router.post('/generate-preview', asyncHandler(async (req, res) => {
     await db.collection('mockup_jobs').doc(predictionId).set({
         prompt, aspectRatio, templateId, orderId: req.body.orderId || null,
         blockId: req.body.blockId || null, fields: fields || {}, secondRefUrl: secondImageUrl || null,
-        createdAt: new Date().toISOString(),
+        inputImages: images.length, createdAt: new Date().toISOString(),
     });
     res.json({ success: true, jobId: predictionId, prompt });
 }));
@@ -343,7 +343,8 @@ router.get('/generate-status/:jobId', asyncHandler(async (req, res) => {
     const jobDoc = await db.collection('mockup_jobs').doc(jobId).get();
     const job = jobDoc.exists ? jobDoc.data() : {};
     const img = await wave.downloadImage(r.outputs[0]);
-    const cost = wave.costFor(1);
+    const extraInputs = Math.max(0, (job.inputImages || 1) - 1);
+    const cost = wave.costFor(1, extraInputs);
     const saved = await svc.saveToGallery(
         job.prompt || 'Preview de lámpara',
         job.aspectRatio || '1:1',
@@ -417,7 +418,7 @@ router.post('/engrave-submit', asyncHandler(async (req, res) => {
     });
     // Reusa el poller /generate-status/:jobId (descarga + galería). Sin orderId -> no toca pedidos.
     await db.collection('mockup_jobs').doc(predictionId).set({
-        prompt, aspectRatio, kind: 'grabado', model, createdAt: new Date().toISOString(),
+        prompt, aspectRatio, kind: 'grabado', model, inputImages: images.length, createdAt: new Date().toISOString(),
     });
     res.json({ success: true, jobId: predictionId, prompt });
 }));

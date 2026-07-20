@@ -29,9 +29,12 @@ const DEFAULT_MODEL = 'gpt-image-2';
 const RESULT_URL = (id) => `https://api.wavespeed.ai/api/v3/predictions/${id}/result`;
 const REQUEST_TIMEOUT_MS = 30000;
 
-// Precio por imagen: WaveSpeed no reporta tokens para GPT Image 2. Estimado
-// configurable (WAVESPEED_COST_PER_IMAGE en Render) para las stats de galería.
-const COST_PER_IMAGE = parseFloat(process.env.WAVESPEED_COST_PER_IMAGE) || 0.04;
+// Precio por imagen: WaveSpeed no reporta tokens para GPT Image 2, así que usamos su tarifa
+// PUBLICADA (configurable con WAVESPEED_COST_PER_IMAGE en Render) para las stats de galería.
+// Producción corre GPT Image 2 Edit a 1K + calidad `high` = $0.23/imagen (tarifa WaveSpeed jul-2026).
+// Cada imagen de referencia EXTRA (la 2ª: el diseño a grabar) suma $0.012.
+const COST_PER_IMAGE = parseFloat(process.env.WAVESPEED_COST_PER_IMAGE) || 0.23;
+const COST_PER_EXTRA_INPUT = parseFloat(process.env.WAVESPEED_COST_PER_EXTRA_INPUT) || 0.012;
 
 const API_KEY = () => process.env.WAVESPEED_API_KEY;
 
@@ -112,10 +115,13 @@ async function downloadImage(url) {
     return { mimeType: resp.headers['content-type'] || 'image/png', base64: Buffer.from(resp.data).toString('base64') };
 }
 
-// Objeto de costo compatible con saveToGallery.
-function costFor(n) {
+// Objeto de costo compatible con saveToGallery. `extraInputImages` = imágenes de referencia
+// ADICIONALES a la base (0 normalmente; 1 cuando va la 2ª referencia con el diseño a grabar).
+function costFor(n, extraInputImages = 0) {
     const imagesCost = COST_PER_IMAGE * n;
-    return { perImage: COST_PER_IMAGE, imagesCost, inputTokenCost: 0, total: imagesCost };
+    const extraInputCost = COST_PER_EXTRA_INPUT * Math.max(0, extraInputImages);
+    const total = imagesCost + extraInputCost;
+    return { perImage: COST_PER_IMAGE, imagesCost, extraInputCost, inputTokenCost: 0, total };
 }
 
-module.exports = { submitEdit, fetchResult, downloadImage, costFor, COST_PER_IMAGE };
+module.exports = { submitEdit, fetchResult, downloadImage, costFor, COST_PER_IMAGE, COST_PER_EXTRA_INPUT };
