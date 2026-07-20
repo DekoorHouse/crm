@@ -972,6 +972,10 @@ const MockupsViewTemplate = () => `
                     <span style="color:#16a34a;font-weight:600;">💲 $950</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-price950-toggle" onchange="mkTogglePrice(950, this.checked)"><span class="slider"></span></label>
                 </span>
+                <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Prueba de ANTICIPO: las conversaciones NUEVAS de corazones se reparten por teléfono (par = grupo A: su pedido se registra SOLO con anticipo de $300 pagado; el resto al ver la foto). Su RI también cambia a la versión anticipo. Un solo experimento a la vez.">
+                    <span style="color:#d97706;font-weight:600;">🪙 Anticipo $300</span>
+                    <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-anticipo-toggle" onchange="mkToggleAnticipo(this.checked)"><span class="slider"></span></label>
+                </span>
                 <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Genera previews solos cada 10 min para pedidos de corazones con solo nombres+fecha. NO envía nada.">
                     <span class="mk-muted">Auto-generar</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-auto-toggle" onchange="mkToggleAuto(this.checked)"><span class="slider"></span></label>
@@ -1656,6 +1660,10 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
     const priceTestBadge = contact.priceTest === 'A'
         ? `<span class="dp-badge" style="background:#16a34a22;color:#16a34a;border:1px solid #16a34a66" title="Prueba de precio (grupo A): cotiza y paga $${contact.priceTestValue || '?'} en todo el flujo">💲 $${contact.priceTestValue || '?'}</span>`
         : '';
+    // Prueba de anticipo: chip 🪙 para el grupo A (su pedido se registra solo con anticipo pagado).
+    const anticipoBadge = contact.anticipoTest === 'A'
+        ? `<span class="dp-badge" style="background:#d9770622;color:#d97706;border:1px solid #d9770666" title="Prueba de anticipo (grupo A): registra su pedido solo con anticipo de $300 pagado; el resto al ver la foto">🪙 $300</span>`
+        : '';
 
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
@@ -1681,7 +1689,7 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
             </div>
             <div class="flex justify-between items-center">
                 <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
-                <div class="dp-badges-wrap">${pilotoBadge}${riTestBadge}${priceTestBadge}${designPendBadges}${orderBadgeHTML}</div>
+                <div class="dp-badges-wrap">${pilotoBadge}${riTestBadge}${priceTestBadge}${anticipoBadge}${designPendBadges}${orderBadgeHTML}</div>
             </div>
         </div>`;
 

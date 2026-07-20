@@ -806,6 +806,8 @@ router.post('/', async (req, res) => {
             let riTestGroup = null;
             // Prueba de precio (server/orders/priceTest.js): experimento independiente.
             let priceTestGroup = null;
+            // Prueba de anticipo (server/orders/anticipoTest.js): experimento independiente.
+            let anticipoTestGroup = null;
             if (message.referral?.source_type === 'ad' && message.referral.source_id) {
                 const adId = message.referral.source_id;
                 console.log(`[ROUTING] Verificando reglas para Ad ID: ${adId}`);
@@ -841,6 +843,12 @@ router.post('/', async (req, res) => {
                                 contactRef, phone: from, departmentId: ruleData.targetDepartmentId, isNewContact,
                             });
                         } catch (e) { console.warn('[PRICE_TEST] Sellado de grupo falló (se continúa):', e.message); }
+                        // Prueba de anticipo ($300 para registrar; no-op si apagado).
+                        try {
+                            anticipoTestGroup = await require('./orders/anticipoTest').maybeAssignAnticipoGroup({
+                                contactRef, phone: from, departmentId: ruleData.targetDepartmentId, isNewContact,
+                            });
+                        } catch (e) { console.warn('[ANTICIPO_TEST] Sellado de grupo falló (se continúa):', e.message); }
                     }
                     
                     // --- SINCRONIZAR IA CON EL DEPARTAMENTO DEL ANUNCIO ---
@@ -1058,6 +1066,15 @@ router.post('/', async (req, res) => {
                                     || (await priceTest.getPriceTestConfig()).price;
                                 riText = priceTest.applyPrice(riText, precio);
                             }
+                        } catch (_) {}
+                    }
+                    // Prueba de anticipo: al grupo A la línea de pago de la RI cambia a la
+                    // versión "aparta con $300" (coherencia de punta a punta con el cobro).
+                    const grupoAnticipo = anticipoTestGroup || (contactDoc.exists ? contactDoc.data().anticipoTest : null) || null;
+                    if (grupoAnticipo === 'A') {
+                        try {
+                            const anticipoTest = require('./orders/anticipoTest');
+                            if ((await anticipoTest.getAnticipoConfig()).enabled) riText = anticipoTest.applyRiVariant(riText);
                         } catch (_) {}
                     }
                     // Solo cuenta como "respondido" si el envío a Meta tuvo éxito: si falla,

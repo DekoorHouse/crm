@@ -228,6 +228,25 @@ async function createOrder({
         console.warn('[PRICE_TEST] Herencia de grupo al pedido falló (no fatal):', priceErr2.message);
     }
 
+    // Prueba de anticipo: el pedido hereda el grupo (para el corte y los chips). En grupo A el
+    // registro implica anticipo YA pagado (Andrea solo registra con comprobante), así que se
+    // sella anticipoCobrado como dato para postventa/cobranza y para medir la caja adelantada.
+    try {
+        const anticipoTest = require('./anticipoTest');
+        if ((await anticipoTest.getAnticipoConfig()).enabled) {
+            const cSnap = await contactRef.get();
+            const grupo = cSnap.exists ? cSnap.data().anticipoTest : null;
+            if ((grupo === 'A' || grupo === 'B') && anticipoTest.orderEligible(normalizedItems)) {
+                const update = { anticipoTest: grupo };
+                if (grupo === 'A') update.anticipoCobrado = anticipoTest.ANTICIPO;
+                await newOrderRef.update(update);
+                console.log(`[ANTICIPO_TEST] Pedido DH${newOrderNumber} heredó el grupo ${grupo} del contacto ${contactId}.`);
+            }
+        }
+    } catch (antErr) {
+        console.warn('[ANTICIPO_TEST] Herencia de grupo al pedido falló (no fatal):', antErr.message);
+    }
+
     // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
     const contactUpdate = {
         lastOrderNumber: newOrderNumber,

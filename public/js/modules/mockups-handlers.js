@@ -187,15 +187,17 @@ async function mkLoadAutoConfig() {
     mkLoadPilotoConfig();
     mkLoadRiTestConfig();
     mkLoadPriceTestConfig();
+    mkLoadAnticipoConfig();
 }
 
 // ¿Hay OTRO experimento encendido? (para no correr dos a la vez — se confunden las lecturas).
-// except: 'piloto' | 'ri' | 'price' — el que se está por encender.
+// except: 'piloto' | 'ri' | 'price' | 'anticipo' — el que se está por encender.
 async function mkOtherExperimentOn(except) {
     try {
         if (except !== 'piloto') { const p = await mkFetchJson('/api/mockups/piloto-config'); if (p && p.enabled) return 'Piloto preview ⚡'; }
         if (except !== 'ri') { const r = await mkFetchJson('/api/mockups/ri-test-config'); if (r && r.enabled) return 'Prueba de RI 🅰️'; }
         if (except !== 'price') { const q = await mkFetchJson('/api/mockups/price-test-config'); if (q && q.enabled) return 'Prueba de precio 💲'; }
+        if (except !== 'anticipo') { const a = await mkFetchJson('/api/mockups/anticipo-test-config'); if (a && a.enabled) return 'Prueba de anticipo 🪙'; }
     } catch (_) {}
     return null;
 }
@@ -285,6 +287,34 @@ async function mkTogglePrice(price, checked) {
     try {
         await mkFetchJson('/api/mockups/price-test-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked, price }) });
         mkToast(checked ? `Prueba de precio $${price} ENCENDIDA 💲 (aplica en ~1 min a conversaciones nuevas)` : 'Prueba de precio apagada — todos vuelven a $750', 'success');
+    } catch (e) {
+        mkToast('No se pudo cambiar: ' + e.message, 'error');
+        revertir();
+    }
+}
+
+// Toggle de la prueba de anticipo ($300 obligatorio para registrar; A/B por teléfono).
+async function mkLoadAnticipoConfig() {
+    try {
+        const d = await mkFetchJson('/api/mockups/anticipo-test-config');
+        const el = document.getElementById('mk-anticipo-toggle');
+        if (el) el.checked = d.enabled === true;
+    } catch (_) { /* noop */ }
+}
+
+async function mkToggleAnticipo(checked) {
+    const revertir = () => { const el = document.getElementById('mk-anticipo-toggle'); if (el) el.checked = !checked; };
+    if (checked) {
+        const otro = await mkOtherExperimentOn('anticipo');
+        if (otro) { mkToast(`Apaga primero: ${otro}. Solo un experimento a la vez.`, 'error'); revertir(); return; }
+        if (!confirm('¿Encender la prueba de anticipo $300?\n\nLas conversaciones NUEVAS de corazones se repartirán por teléfono. Grupo A (par): su RI cambia a "aparta con $300" y su pedido se registra SOLO cuando mande comprobante del anticipo (regla dura — sin anticipo no hay registro). Grupo B: flujo normal.\n\nRecuerda: el canal de anticipo anterior dio 0 pedidos en 40 conversaciones; esta prueba mide eso mismo con grupo de control.')) {
+            revertir();
+            return;
+        }
+    }
+    try {
+        await mkFetchJson('/api/mockups/anticipo-test-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked }) });
+        mkToast(checked ? 'Prueba de anticipo ENCENDIDA 🪙 (aplica en ~1 min a conversaciones nuevas)' : 'Prueba de anticipo apagada — todos vuelven al flujo normal', 'success');
     } catch (e) {
         mkToast('No se pudo cambiar: ' + e.message, 'error');
         revertir();
