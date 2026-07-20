@@ -97,11 +97,14 @@ funcionan como placeholders detectados por CONTENIDO). No confundir con "Plantil
 (doc de produccion intocable).
 
 **Nomenclatura (Chris, 2026-07-18) — la lampara de 4 corazones tiene DOS variantes:**
-- **"Plantilla 1"** = infinito/corazones en **LINEA AZUL, SIN malla** (azul = tercera pasada;
-  los corazones van vacios, solo los dibuja la silueta). De esta variante aun NO hay plantilla
-  limpia para Claude — si el usuario pide "plantilla 1", pedirle el archivo base o extraer uno
-  (mismo procedimiento de extraccion que las plantillas de infinito). Ejemplo visto: diseno
-  Fong Kee / Miranda (2026-07-18).
+- **"Plantilla 1"** = corazones/globos en **LINEA (sin malla)** + infinito azul = **la lampara
+  INFINITO** (`plantillas/plantilla-infinito-1.cdr`, la MISMA del Modo 2). CONFIRMADO 2026-07-20
+  con DH13574-correccion-p1 y DH13498: "plantilla 1" NO necesita extraccion, es la infinito que ya
+  tenemos. Se genera con `infinito.vbs` (2 nombres + fecha), o a mano sobre `plantilla-infinito-1.cdr`
+  para layouts ESPECIALES (p.ej. DH13498: una persona -> nombre en el aro IZQ, fecha en el aro DER,
+  borrando el placeholder FECHA1 central). OJO: el mockup que ve el cliente SIEMPRE sale con malla
+  (asi lo genera el generador de mockups), pero si el pedido se corta en Plantilla 1 el fisico va
+  en linea (sin malla) — es decision de produccion, no discrepancia.
 - **"Plantilla 2"** = la de **MALLA** (corazones 3D grabados en negro) = `Plantilla Corazones
   para Claude.cdr`; es la que usa `gen-corazones.vbs` y todo lo documentado en este Modo 3.
 Cuando el usuario diga "plantilla 1" / "plantilla 2", se refiere a esta distincion.
