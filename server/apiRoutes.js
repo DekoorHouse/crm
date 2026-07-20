@@ -7764,6 +7764,7 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 router.get('/design-pending', async (req, res) => {
     try {
         const { reasonsForOrderData } = require('./design/designPending');
+        const { isAutoWaiting } = require('./design/svgAuto');
         const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
 
         // Candidatos (se deduplica por id): pedidos en 'Corregir' (datos/video) + los que tienen
@@ -7771,7 +7772,21 @@ router.get('/design-pending', async (req, res) => {
         // OJO: NO se jala por estatus 'Pagado' — en este CRM ahí se acumulan miles de pedidos ya
         // terminados; el motor (designPending.js) usa comprobanteValidadoAt como señal de pago.
         const doneMode = req.query.done === '1' || req.query.done === 'true';
-        const mapOrder = (doc, reasons) => {
+        // Pestaña "SVG IA": pedidos que maneja el worker de corte automático — los que ya cortó
+        // (estatus "Diseñado por IA") + los que están EN COLA esperando pareja (Fabricar auto-elegible).
+        const svgIaMode = req.query.svgia === '1' || req.query.svgia === 'true';
+        // Previews de mockup (mockup_previews) en lote -> Map(id -> previews[]). Fuente de verdad de
+        // "ya tiene mockup" y de los datos (nombres/fecha) que el worker necesita para cortar.
+        const previewsFor = async (ids) => {
+            const map = new Map();
+            for (let i = 0; i < ids.length; i += 300) {
+                const refs = ids.slice(i, i + 300).map(id => db.collection('mockup_previews').doc(String(id)));
+                const mdocs = await db.getAll(...refs);
+                mdocs.forEach(md => map.set(md.id, (md.exists && Array.isArray(md.data().previews)) ? md.data().previews : []));
+            }
+            return map;
+        };
+        const mapOrder = (doc, reasons, extra) => {
             const p = doc.data();
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
             return {
@@ -7786,6 +7801,7 @@ router.get('/design-pending', async (req, res) => {
                 reasons,
                 createdAt: tsToMs(p.createdAt),
                 comprobanteValidadoAt: tsToMs(p.comprobanteValidadoAt),
+                confirmedAt: tsToMs(p.confirmedAt),
                 corregirAt: tsToMs(p.corregirAt),
                 disenoListoAt: tsToMs(p.disenoListoAt),
                 comentarioDiseno: p.comentarioDiseno || '',
@@ -7795,11 +7811,29 @@ router.get('/design-pending', async (req, res) => {
                 svgCorteSheetWith: p.svgCorteSheetWith || null,
                 // Datos de personalización (nombres/fecha): lo que el diseñador necesita a la vista.
                 datos: (Array.isArray(p.items) ? p.items.map(i => i.datosProducto).filter(Boolean).join(' | ') : '') || p.datosProducto || '',
+                ...(extra || {}),
             };
         };
 
         let orders = [];
-        if (doneMode) {
+        if (svgIaMode) {
+            // "SVG IA": (a) YA diseñados por el worker (estatus "Diseñado por IA") + (b) EN COLA
+            // esperando pareja (Fabricar auto-elegible, aún sin cortar). Así el equipo ve lo que hace
+            // la IA sin que estorbe en "Pendientes" (que queda solo para diseño manual).
+            const [snapIA, sFab] = await Promise.all([
+                db.collection('pedidos').where('estatus', '==', 'Diseñado por IA').limit(300).get(),
+                db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(1000).get(),
+            ]);
+            snapIA.forEach(doc => orders.push(mapOrder(doc, [], { svgIaState: 'designed' })));
+            // Cola: solo los Fabricar que el worker cortaría (isAutoWaiting = MISMA regla que el worker).
+            const prevMap = await previewsFor(sFab.docs.map(d => d.id));
+            for (const doc of sFab.docs) {
+                const p = doc.data();
+                if (!isAutoWaiting(p, prevMap.get(doc.id))) continue;
+                const paidMs = tsToMs(p.comprobanteValidadoAt) || tsToMs(p.confirmedAt) || tsToMs(p.createdAt);
+                orders.push(mapOrder(doc, [], { svgIaState: 'waiting', paidMs }));
+            }
+        } else if (doneMode) {
             // Lista "Diseñados": los marcados a mano (disenoListoAt) + los diseñados por la IA
             // (estatus "Diseñado por IA" del svg-corte-worker), recientes arriba.
             const [snap, snapIA] = await Promise.all([
@@ -7822,18 +7856,19 @@ router.get('/design-pending', async (req, res) => {
             ]);
             [sSin, sFab, sCor, sProd].forEach(s => s.forEach(d => byId.set(d.id, d)));
 
-            // Para los 'Sin estatus' consultamos mockup_previews (fuente de verdad de "ya tiene mockup",
-            // por si la marca mockupPreviewAt no quedó puesta). Así un pedido con preview NO sale como "falta mockup".
-            const sinIds = sSin.docs.map(d => d.id);
+            // Previews (mockup_previews) de los 'Sin estatus' (fuente de verdad de "ya tiene mockup", por
+            // si la marca mockupPreviewAt no quedó) y de los 'Fabricar' (para saber si el worker los va a
+            // cortar solo). Un solo lote reutilizable.
+            const prevMap = await previewsFor([...new Set([...sSin.docs.map(d => d.id), ...sFab.docs.map(d => d.id)])]);
             const conMockup = new Set();
-            for (let i = 0; i < sinIds.length; i += 300) {
-                const refs = sinIds.slice(i, i + 300).map(id => db.collection('mockup_previews').doc(id));
-                const mdocs = await db.getAll(...refs);
-                mdocs.forEach(md => { if (md.exists && Array.isArray(md.data().previews) && md.data().previews.length) conMockup.add(md.id); });
-            }
+            sSin.docs.forEach(d => { const pv = prevMap.get(d.id); if (pv && pv.length) conMockup.add(d.id); });
             for (const doc of byId.values()) {
-                const reasons = reasonsForOrderData(doc.data(), conMockup.has(doc.id));
+                const p = doc.data();
+                const reasons = reasonsForOrderData(p, conMockup.has(doc.id));
                 if (!reasons.length) continue;
+                // Los que el worker corta solo (Fabricar auto-elegible, esperando pareja) NO son diseño
+                // manual: se muestran en la pestaña "SVG IA", no en Pendientes.
+                if (isAutoWaiting(p, prevMap.get(doc.id))) continue;
                 orders.push(mapOrder(doc, reasons));
             }
         }
@@ -7848,7 +7883,13 @@ router.get('/design-pending', async (req, res) => {
         }
         orders.forEach(o => { const c = infoById.get(o.contactId) || {}; o.clienteName = c.name || o.contactId; o.channel = c.channel || 'whatsapp'; });
 
-        if (doneMode) orders.sort((a, b) => (b.disenoListoAt || b.svgCorteAt || 0) - (a.disenoListoAt || a.svgCorteAt || 0));
+        if (svgIaMode) {
+            // Primero la cola (esperando pareja; más viejo arriba = más cerca de salir), luego los ya
+            // diseñados por IA (recientes arriba).
+            const rank = o => (o.svgIaState === 'waiting' ? 0 : 1);
+            orders.sort((a, b) => rank(a) - rank(b)
+                || (a.svgIaState === 'waiting' ? (a.paidMs || 0) - (b.paidMs || 0) : (b.svgCorteAt || 0) - (a.svgCorteAt || 0)));
+        } else if (doneMode) orders.sort((a, b) => (b.disenoListoAt || b.svgCorteAt || 0) - (a.disenoListoAt || a.svgCorteAt || 0));
         else orders.sort((a, b) => (b.corregirAt || b.comprobanteValidadoAt || b.createdAt || 0) - (a.corregirAt || a.comprobanteValidadoAt || a.createdAt || 0));
 
         res.json({ success: true, total: orders.length, orders: orders.slice(0, 500) });

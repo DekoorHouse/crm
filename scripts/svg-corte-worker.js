@@ -28,6 +28,7 @@ const { spawnSync } = require('child_process');
 
 const { db, admin } = require('../server/config');
 const { recomputeForContact } = require('../server/design/designPending');
+const { svgAutoEligibility } = require('../server/design/svgAuto');
 
 const SKILL_DIR = path.join(__dirname, '..', '.claude', 'skills', 'svg-corte');
 const INFINITO_VBS = path.join(SKILL_DIR, 'infinito.vbs');
@@ -39,8 +40,6 @@ const LOCK_FILE = path.join(os.tmpdir(), 'svg-corte-worker.lock');
 const NEW_STATUS = 'Diseñado por IA';
 const SINGLE_AFTER_HOURS = 12;   // pedido impar: horas de espera antes de salir solo
 const CLAIM_STALE_MIN = 30;      // reclamo (svgCorteStartedAt) más viejo que esto se considera muerto
-// Mismo criterio que el auto-mockup: "algo especial" -> diseño manual.
-const SPECIAL_RE = /foto|imagen|graba|logo|escudo|especial|personaje|mascota|dibuj|dise[nñ]|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
 
 const argv = process.argv.slice(2);
 const DRY = argv.includes('--dry');
@@ -57,8 +56,6 @@ function log(msg) {
 }
 
 const ms = v => { if (!v) return 0; if (v.toMillis) return v.toMillis(); const t = Date.parse(v); return isNaN(t) ? 0 : t; };
-const datosOf = o => (Array.isArray(o.items) ? o.items : []).map(it => it.datosProducto).filter(Boolean).join('\n') || o.datosProducto || o.producto || '';
-const productOf = o => String(o.producto || (o.items && o.items[0] && o.items[0].producto) || '').toLowerCase();
 const dhOf = o => 'DH' + (o.consecutiveOrderNumber || o.id);
 
 // Sube un archivo a Drive vía el Apps Script del usuario (misma vía que upload-drive.js).
@@ -126,34 +123,23 @@ async function findCandidates() {
         // sería duplicar producción. Misma regla que Pendientes de Diseño (designPending.js).
         if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios) continue;
         if (ms(o.svgCorteStartedAt) > staleMs) continue;                     // otro proceso lo está trabajando
-        if (!/corazon/i.test(productOf(o))) continue;                        // solo lámpara de corazones
-        if (SPECIAL_RE.test(datosOf(o))) continue;                           // especial -> manual
         const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
         const previews = prev.exists ? (prev.data().previews || []) : [];
-        if (!previews.length) continue;                                      // sin mockup aprobado -> manual
-        const last = previews[previews.length - 1];
-        const f = last.fields || {};
-        // Layout verificado por visión (mockupsService.verifyAndStoreLayout): los renglones
-        // EXACTOS que el cliente vio en su mockup. Es la fuente de verdad del diseño; si no
-        // existe, se usan los fields (que ya traen '\n' cuando la regla de renglones decidió).
-        const lay = last.layout || null;
-        // Si la visión detectó que lo grabado en el mockup NO coincide con los datos del pedido
-        // (nombre mal escrito por la IA de imagen, nombre faltante, etc.), este pedido requiere
-        // ojos humanos: NO se corta automáticamente ni con los fields ni con lo detectado.
-        if (lay && lay.ok === false) {
-            log(`  ~ ${dhOf(o)} layout del mockup NO coincide con los datos (izq=${JSON.stringify(lay.izquierdo)} der=${JSON.stringify(lay.derecho)}) -> revisión manual`);
-            continue;
-        }
-        const conLineas = (vision, plain) => (vision && vision.length ? vision.join('\n') : String(plain || ''));
-        const nombre1 = lay ? conLineas(lay.izquierdo, f.nombre1) : String(f.nombre1 || '');
-        const nombre2 = lay ? conLineas(lay.derecho, f.nombre2) : String(f.nombre2 || '');
-        const fecha = lay ? conLineas(lay.fecha, f.fecha) : String(f.fecha || '');
-        if (!nombre1 || !nombre2 || !fecha) {                                // datos incompletos -> manual
-            log(`  ~ ${dhOf(o)} tiene mockup pero campos incompletos (n1='${nombre1}' n2='${nombre2}' fecha='${fecha}') -> manual`);
+        // Elegibilidad de CONTENIDO (corazones + no especial + mockup aprobado + layout verificado +
+        // datos completos): fuente de verdad COMPARTIDA con el endpoint /api/design-pending, para que
+        // "lo corta la IA" y "está en Pendientes manual" nunca se contradigan (server/design/svgAuto.js).
+        const el = svgAutoEligibility(o, previews);
+        if (!el.eligible) {
+            if (el.reason === 'layout_mismatch') {
+                const lay = (previews[previews.length - 1] || {}).layout || {};
+                log(`  ~ ${dhOf(o)} layout del mockup NO coincide con los datos (izq=${JSON.stringify(lay.izquierdo)} der=${JSON.stringify(lay.derecho)}) -> revisión manual`);
+            } else if (el.reason === 'incomplete_fields') {
+                log(`  ~ ${dhOf(o)} tiene mockup pero campos incompletos -> manual`);
+            }
             continue;
         }
         const paidMs = ms(o.comprobanteValidadoAt) || ms(o.confirmedAt) || ms(o.createdAt);
-        out.push({ o, fields: { nombre1, nombre2, fecha }, paidMs, layoutVerificado: !!lay });
+        out.push({ o, fields: el.fields, paidMs, layoutVerificado: el.layoutVerificado });
     }
     out.sort((a, b) => a.paidMs - b.paidMs);   // más antiguos primero
     return out;

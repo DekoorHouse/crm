@@ -183,7 +183,7 @@ function DesignPendingViewTemplate() {
             <h1 class="text-2xl font-bold" style="margin:0"><i class="fas fa-palette mr-2" style="color:#6f42c1"></i>Pendientes de Diseño</h1>
             <button onclick="renderDesignPendingView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
         </div>
-        <p class="text-sm text-gray-500 mb-4">Cola de diseño (2 etapas): falta el <b>mockup</b> (Sin estatus sin preview) o falta el <b>corte</b> en Corel al fabricar; más correcciones (datos/video) y segundo producto tras pagar.</p>
+        <p class="text-sm text-gray-500 mb-4"><b>Pendientes</b> = diseño MANUAL (mockup, corte especial, correcciones). <b>SVG IA</b> = lo que corta la IA sola (ya diseñados + en cola esperando pareja). <b>Diseñados ✓</b> = marcados a mano.</p>
         <div id="design-pending-container"></div>
     </div>`;
 }
@@ -198,7 +198,7 @@ async function renderDesignPendingView(silent) {
     const tab = window._designPendingTab || 'pendientes';
     if (!silent) container.innerHTML = '<p class="text-gray-500">Cargando…</p>';
     try {
-        const url = `${API_BASE_URL}/api/design-pending` + (tab === 'disenados' ? '?done=1' : '');
+        const url = `${API_BASE_URL}/api/design-pending` + (tab === 'disenados' ? '?done=1' : tab === 'svgia' ? '?svgia=1' : '');
         const res = await fetch(url);
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
@@ -388,12 +388,15 @@ function _paintDesignPending() {
 
     // Pestañas: Pendientes / Diseñados.
     const tabBtn = (key, label) => `<button onclick="switchDesignPendingTab('${key}')" style="border:none;background:none;padding:8px 4px;margin-right:18px;font-size:.95rem;font-weight:700;cursor:pointer;color:${tab === key ? 'var(--color-primary,#ef4444)' : 'var(--color-text-light,#94a3b8)'};border-bottom:3px solid ${tab === key ? 'var(--color-primary,#ef4444)' : 'transparent'}">${label}</button>`;
-    const tabsBar = `<div style="display:flex;align-items:center;border-bottom:1px solid var(--color-border);margin-bottom:14px">${tabBtn('pendientes', 'Pendientes')}${tabBtn('disenados', 'Diseñados ✓')}</div>`;
+    const tabsBar = `<div style="display:flex;align-items:center;border-bottom:1px solid var(--color-border);margin-bottom:14px">${tabBtn('pendientes', 'Pendientes')}${tabBtn('svgia', 'SVG IA')}${tabBtn('disenados', 'Diseñados ✓')}</div>`;
 
     if (!all.length) {
-        container.innerHTML = tabsBar + (tab === 'disenados'
-            ? '<p class="text-gray-500">Aún no marcas pedidos como diseñados. Usa el botón “✓ Diseñado” en Pendientes.</p>'
-            : '<p class="text-gray-500">🎉 No hay pedidos pendientes de diseño ahora mismo.</p>');
+        const emptyMsg = tab === 'disenados'
+            ? 'Aún no marcas pedidos como diseñados. Usa el botón “✓ Diseñado” en Pendientes.'
+            : tab === 'svgia'
+            ? '🤖 No hay diseños de IA ni pedidos en cola ahora mismo.'
+            : '🎉 No hay pedidos pendientes de diseño ahora mismo.';
+        container.innerHTML = tabsBar + `<p class="text-gray-500">${emptyMsg}</p>`;
         return;
     }
 
@@ -411,6 +414,14 @@ function _paintDesignPending() {
             const col = k === 'all' ? 'var(--color-primary,#ef4444)' : DP_MOTIVOS[k][1];
             return `<button onclick="setDesignPendingFilter('${k}')" style="border:1px solid ${on ? col : 'var(--color-border,#e5e7eb)'};background:${on ? col : 'transparent'};color:${on ? '#fff' : 'var(--color-text,#334155)'};border-radius:999px;padding:5px 14px;font-size:.8rem;cursor:pointer;font-weight:600;white-space:nowrap">${lbl} (${c})</button>`;
         }).join('') + `</div>`;
+    } else if (tab === 'svgia') {
+        // Resumen: cuántos están en cola (esperando pareja) y cuántos ya cortó la IA.
+        const waiting = all.filter(o => o.svgIaState === 'waiting').length;
+        const designed = all.length - waiting;
+        chips = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+            <span style="border:1px solid #0ea5e966;background:#0ea5e922;color:#0ea5e9;border-radius:999px;padding:5px 14px;font-size:.8rem;font-weight:600"><i class="fas fa-clock" style="margin-right:5px"></i>En cola (esperando pareja): ${waiting}</span>
+            <span style="border:1px solid #e83e8c66;background:#e83e8c22;color:#e83e8c;border-radius:999px;padding:5px 14px;font-size:.8rem;font-weight:600"><i class="fas fa-robot" style="margin-right:5px"></i>Diseñados por IA: ${designed}</span>
+        </div>`;
     }
 
     // Lista visible en orden (para navegar el chat con las flechas ← →).
@@ -426,18 +437,41 @@ function _paintDesignPending() {
         const iaBadge = o.svgCorteUrl
             ? `<a href="${escapeHtml(o.svgCorteUrl)}" target="_blank" rel="noopener" title="Diseñado por IA — abrir el SVG en Drive${o.svgCorteSheetWith ? ' (hoja compartida con ' + escapeHtml(o.svgCorteSheetWith) + ')' : ''}" style="display:inline-block;background:#e83e8c22;color:#e83e8c;border:1px solid #e83e8c66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0;text-decoration:none"><i class="fas fa-robot" style="margin-right:3px"></i>Diseñado por IA <i class="fas fa-arrow-up-right-from-square" style="font-size:.55rem;margin-left:2px"></i></a>`
             : '';
-        const motivoCell = (tab === 'disenados'
-            ? (o.disenoListoAt ? `<span style="display:inline-block;background:#16a34a22;color:#16a34a;border:1px solid #16a34a66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px"><i class="fas fa-check" style="margin-right:3px"></i>Diseñado</span>` : '')
-            : (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('')) + iaBadge;
+        const isSvgIa = tab === 'svgia';
+        let motivoCell;
+        if (tab === 'disenados') {
+            motivoCell = (o.disenoListoAt ? `<span style="display:inline-block;background:#16a34a22;color:#16a34a;border:1px solid #16a34a66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px"><i class="fas fa-check" style="margin-right:3px"></i>Diseñado</span>` : '') + iaBadge;
+        } else if (isSvgIa) {
+            if (o.svgIaState === 'waiting') {
+                // En cola de corte automático: aún sin pareja. Sale sola tras 12 h (o al llegar otro corazón).
+                const ageH = o.paidMs ? (Date.now() - o.paidMs) / 36e5 : 0;
+                const ready = ageH >= 12;
+                const col = ready ? '#16a34a' : '#0ea5e9';
+                const ic = ready ? 'fa-circle-check' : 'fa-clock';
+                const txt = ready ? 'Lista · saldrá sola' : `Esperando pareja · ${ageH.toFixed(1)}h/12h`;
+                motivoCell = `<span title="El worker corta 2 corazones por hoja; un pedido solo espera pareja hasta 12 h y luego sale solo." style="display:inline-block;background:${col}22;color:${col};border:1px solid ${col}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap"><i class="fas ${ic}" style="margin-right:3px"></i>${txt}</span>`;
+            } else {
+                motivoCell = iaBadge || `<span style="display:inline-block;background:#e83e8c22;color:#e83e8c;border:1px solid #e83e8c66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px"><i class="fas fa-robot" style="margin-right:3px"></i>Diseñado por IA</span>`;
+            }
+        } else {
+            motivoCell = (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('') + iaBadge;
+        }
         const statusSel = `<select onchange="changeDesignPendingStatus('${o.id}', this.value, this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);width:132px">${ENVIO_STATUS_OPTIONS.map(s => `<option${(o.estatus || 'Sin estatus') === s ? ' selected' : ''}>${s}</option>`).join('')}</select>`;
         const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (usa ← → para el siguiente/anterior pedido)" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:14px"><i class="fas fa-comments"></i></button>` : '';
         // Casilla puramente VISUAL a la izquierda de la burbuja: el diseñador la marca de vista, no
         // guarda nada ni dispara ninguna acción.
         const visualCheck = `<input type="checkbox" title="Marca visual (no guarda nada)" style="width:16px;height:16px;cursor:pointer;accent-color:#16a34a;flex:0 0 auto;margin:0 2px 0 0">`;
+        const reopenBtn = `<button onclick="reopenDesign('${o.id}', this)" title="Regresar a Pendientes (vuelve a 'Fabricar' para rehacerlo a mano)" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;cursor:pointer;color:#334155;padding:4px 10px;font-size:12px;border-radius:6px;font-weight:600"><i class="fas fa-rotate-left" style="margin-right:4px"></i>Regresar</button>`;
+        // Pendientes (manual): botón "Diseñado". Diseñados: "Regresar". SVG IA: "Regresar" solo en los ya
+        // cortados (los que esperan pareja no tienen acción: los maneja el worker).
         const actionBtn = tab === 'disenados'
-            ? `<button onclick="reopenDesign('${o.id}', this)" title="Regresar a Pendientes" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;cursor:pointer;color:#334155;padding:4px 10px;font-size:12px;border-radius:6px;font-weight:600"><i class="fas fa-rotate-left" style="margin-right:4px"></i>Regresar</button>`
+            ? reopenBtn
+            : isSvgIa
+            ? (o.svgIaState === 'designed' ? reopenBtn : '')
             : `<button onclick="markDesignDone('${o.id}', this)" title="Marcar como diseñado y sacar de la lista" style="border:none;background:#16a34a;color:#fff;cursor:pointer;padding:5px 10px;font-size:12px;border-radius:6px;font-weight:700"><i class="fas fa-check" style="margin-right:4px"></i>Diseñado</button>`;
-        const fecha = tab === 'disenados' ? (o.disenoListoAt || o.svgCorteAt) : (o.corregirAt || o.comprobanteValidadoAt || o.createdAt);
+        const fecha = tab === 'disenados' ? (o.disenoListoAt || o.svgCorteAt)
+            : isSvgIa ? (o.svgIaState === 'waiting' ? o.paidMs : (o.svgCorteAt || o.paidMs))
+            : (o.corregirAt || o.comprobanteValidadoAt || o.createdAt);
         const fechaTxt = fecha ? new Date(fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }) : '—';
         const prod = escapeHtml(o.producto || '') + (o.itemCount > 1 ? ` <span style="color:#94a3b8">+${o.itemCount - 1}</span>` : '');
         // Datos del pedido (nombres/fecha) en lugar del nombre de perfil del cliente: es lo que
@@ -472,7 +506,7 @@ function _paintDesignPending() {
           #design-pending-container thead th{position:sticky;top:0;z-index:2;background:var(--color-container-bg,#fff);box-shadow:inset 0 -2px 0 var(--color-border)}
         </style>
         ${chips}
-        <div style="color:#94a3b8;font-size:.8rem;margin-bottom:8px">${tab === 'disenados' ? 'Diseñados' : 'Pendientes'}${totalNote}</div>
+        <div style="color:#94a3b8;font-size:.8rem;margin-bottom:8px">${tab === 'disenados' ? 'Diseñados' : tab === 'svgia' ? 'SVG IA' : 'Pendientes'}${totalNote}</div>
         <div style="overflow:auto">
           <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
             <thead>
@@ -481,10 +515,10 @@ function _paintDesignPending() {
                 <th style="padding:8px 12px 8px 0">Pedido</th>
                 <th style="padding:8px 12px 8px 0">Datos del pedido</th>
                 <th style="padding:8px 12px 8px 0">Producto</th>
-                <th style="padding:8px 12px 8px 0">${tab === 'disenados' ? 'Estado' : 'Motivo'}</th>
+                <th style="padding:8px 12px 8px 0">${tab === 'disenados' ? 'Estado' : tab === 'svgia' ? 'Estado IA' : 'Motivo'}</th>
                 <th style="padding:8px 12px 8px 0">Estatus</th>
                 <th style="padding:8px 12px 8px 0">Comentarios del diseñador</th>
-                <th style="padding:8px 12px 8px 0">${tab === 'disenados' ? 'Diseñado' : 'Desde'}</th>
+                <th style="padding:8px 12px 8px 0">${tab === 'disenados' ? 'Diseñado' : tab === 'svgia' ? 'Fecha' : 'Desde'}</th>
                 <th style="padding:8px 0;text-align:right">Acciones</th>
               </tr>
             </thead>
