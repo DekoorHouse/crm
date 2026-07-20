@@ -452,11 +452,12 @@ function mkOnBlockTemplateChange(blockId) {
 }
 
 function mkResultHtml(orderId, blockId, imgUrl) {
+    // Clic en la imagen (o en "Ampliar") la abre en el modal del CRM (openImageModal), no en pestaña nueva.
     return `
-        <img src="${mkAttr(imgUrl)}" alt="Preview">
+        <img src="${mkAttr(imgUrl)}" alt="Preview" title="Clic para ampliar" onclick="openImageModal(this.src)">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
             <button class="btn btn-primary btn-sm mk-send-btn" onclick="mkSend('${mkAttr(orderId)}','${mkAttr(blockId)}')"><i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp</button>
-            <a class="btn btn-outline btn-sm" href="${mkAttr(imgUrl)}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt mr-2"></i>Abrir</a>
+            <button class="btn btn-outline btn-sm" onclick="openImageModal(this.closest('.mk-result').querySelector('img').src)"><i class="fas fa-expand mr-2"></i>Ampliar</button>
             <button class="btn btn-secondary btn-sm" onclick="mkGenerate('${mkAttr(orderId)}','${mkAttr(blockId)}')"><i class="fas fa-redo mr-2"></i>Regenerar</button>
         </div>`;
 }
@@ -1249,10 +1250,11 @@ function mkPruebasResetPrompt() {
 }
 
 function mkPruebasResultHtml(url) {
+    // Clic en la imagen (o en "Ampliar") la abre en el modal del CRM (openImageModal), no en pestaña nueva.
     return `
-        <img src="${mkAttr(url)}" alt="Mockup">
+        <img src="${mkAttr(url)}" alt="Mockup" title="Clic para ampliar" onclick="openImageModal(this.src)">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
-            <a class="btn btn-outline btn-sm" href="${mkAttr(url)}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt mr-2"></i>Abrir</a>
+            <button class="btn btn-outline btn-sm" onclick="openImageModal(this.closest('.mk-result').querySelector('img').src)"><i class="fas fa-expand mr-2"></i>Ampliar</button>
             <button class="btn btn-secondary btn-sm" onclick="mkPruebasGenerate()"><i class="fas fa-redo mr-2"></i>Regenerar</button>
         </div>`;
 }

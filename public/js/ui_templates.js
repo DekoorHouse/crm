@@ -899,7 +899,8 @@ const MockupsViewTemplate = () => `
             .mk-extra-wrap label{display:block;font-size:.72rem;font-weight:600;color:var(--color-text-light);margin-bottom:3px;text-transform:uppercase;letter-spacing:.02em}
             .mk-extra{width:100%;min-height:44px;resize:vertical;font-size:.85rem}
             .mk-result{border:1px dashed var(--color-border);border-radius:var(--border-radius-md);padding:10px;display:flex;flex-direction:column;gap:10px;min-height:180px;align-items:center;justify-content:center;text-align:center}
-            .mk-result img{max-width:100%;border-radius:8px}
+            .mk-result img{max-width:100%;border-radius:8px;cursor:zoom-in;transition:opacity .15s}
+            .mk-result img:hover{opacity:.9}
             .mk-result-empty{color:var(--color-text-light);font-size:.85rem}
             .mk-spin{width:26px;height:26px;border:3px solid var(--color-border);border-top-color:var(--color-primary);border-radius:50%;animation:mk-rot 1s linear infinite}
             @keyframes mk-rot{to{transform:rotate(360deg)}}
