@@ -20,6 +20,14 @@ Las hojas de lamparas son de **350x330 mm** con todo alineado **arriba-izquierda
 Scripts junto a esta skill: `infinito.vbs`, `gen-corazones.vbs`, `gen-grabado.js`,
 `upload-drive.js`, plantillas en `plantillas/`.
 
+**REGLA DE SEPARACION (Chris, 2026-07-20, a raiz de DH13598): el texto negro (grabado) NUNCA
+debe tocar NINGUNA linea, en especial las AZULES (infinito/corazones/marco) ni la roja de corte.**
+Siempre verificar con el PNG al derecho (y hacer zoom a las zonas apretadas) que cada texto tenga
+aire alrededor. El punto tipico de choque es la FECHA larga del infinito: su extremo cruza la linea
+azul que baja al cruce. Fix ya aplicado en `infinito.vbs` (fechas bajan `DATE_DY=-9` mm al area
+abierta debajo del cruce y su ancho se acota a `MAX_W_FECHA=46` mm). Si un nombre/fecha/nombre-sobre-
+corazon queda pegado a una linea: reducir tamano, mover al area libre, o partir en 2 renglones.
+
 **REGLA DE ORO (Chris, 2026-07-18, a raiz de DH13569): un diseno que el cliente NO ha
 aprobado (especiales del Modo 3 y variantes, grabados Modo 4, o cualquier hoja hecha a mano
 de un pedido SIN mockup aprobado) NO se sube a Drive ni se le cambia el estatus al pedido.**

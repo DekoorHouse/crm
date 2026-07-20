@@ -20,7 +20,9 @@ Const BASE_NOMBRE = 65.2    ' pt — tamano estandar de nombres en produccion (1
 Const BASE_NOMBRE_2L = 44.8 ' pt — nombres a 2 renglones (mismo tamano que produccion manual)
 Const MAX_W_NOMBRE = 52     ' mm — ancho maximo para caber en el aro del infinito
 Const BASE_FECHA = 25.3     ' pt
-Const MAX_W_FECHA = 55      ' mm
+Const MAX_W_FECHA = 46      ' mm — acotado para que fechas largas NO toquen las lineas azules (Chris 2026-07-20)
+Const DATE_DY = -9          ' mm — baja la fecha al area abierta debajo del cruce del infinito; asi no
+                            '      toca las lineas azules del aro (regla: el texto negro nunca toca linea)
 Const ALINEACION_CENTRO = 3 ' cdrCenterAlignment (para textos de varios renglones)
 Const INTERLINEADO_2L = 60  ' % altura caracter — interlineado de renglones apilados (Chris, 2026-07-18)
 
@@ -67,10 +69,7 @@ End If
 cdrPath = outDir & "\" & base & ".cdr"
 svgPath = outDir & "\" & base & ".svg"
 
-' Trabajar SIEMPRE sobre una copia de la plantilla (la plantilla original nunca se toca)
-fso.CopyFile tplPath, cdrPath, True
-
-Dim corel, doc
+Dim corel, doc, od
 On Error Resume Next
 Set corel = CreateObject("CorelDRAW.Application")
 On Error GoTo 0
@@ -80,17 +79,29 @@ If corel Is Nothing Then
     WScript.Quit 1
 End If
 corel.Visible = True
+
+' Cerrar cualquier doc ya abierto con esta ruta: una corrida manual previa deja el .cdr abierto y
+' entonces CopyFile fallaria (archivo bloqueado) o OpenDocument reusaria el doc viejo sin placeholders.
+On Error Resume Next
+For Each od In corel.Documents
+    If StrComp(od.FullFileName, cdrPath, vbTextCompare) = 0 Then od.Dirty = False : od.Close
+Next
+On Error GoTo 0
+
+' Trabajar SIEMPRE sobre una copia de la plantilla (la plantilla original nunca se toca)
+fso.CopyFile tplPath, cdrPath, True
+
 Set doc = corel.OpenDocument(cdrPath)
 doc.Unit = 3 ' mm
 
 ' Reemplazar placeholders (conservando el centro de cada texto y auto-ajustando el ancho)
-ReplaceText doc, "NOMBRE1", args(0), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE
-ReplaceText doc, "NOMBRE2", args(1), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE
-ReplaceText doc, "FECHA1", args(2), BASE_FECHA, BASE_FECHA, MAX_W_FECHA
+ReplaceText doc, "NOMBRE1", args(0), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0
+ReplaceText doc, "NOMBRE2", args(1), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0
+ReplaceText doc, "FECHA1", args(2), BASE_FECHA, BASE_FECHA, MAX_W_FECHA, DATE_DY
 If nArgs = 6 Then
-    ReplaceText doc, "NOMBRE3", args(3), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE
-    ReplaceText doc, "NOMBRE4", args(4), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE
-    ReplaceText doc, "FECHA2", args(5), BASE_FECHA, BASE_FECHA, MAX_W_FECHA
+    ReplaceText doc, "NOMBRE3", args(3), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0
+    ReplaceText doc, "NOMBRE4", args(4), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0
+    ReplaceText doc, "FECHA2", args(5), BASE_FECHA, BASE_FECHA, MAX_W_FECHA, DATE_DY
 End If
 
 ' Guardar el .cdr de trabajo con los textos aun editables (por si quieren retocar a mano)
@@ -168,7 +179,7 @@ If WScript.Arguments.Named.Exists("close") Then doc.Close
 WScript.Echo "OK " & svgPath
 WScript.Echo "CDR " & cdrPath
 
-Sub ReplaceText(doc, ph, valor, baseSize, base2L, maxW)
+Sub ReplaceText(doc, ph, valor, baseSize, base2L, maxW, dyOff)
     Dim s, t, cx, cy, w, found, valor2, multilinea, talla
     ' El token literal \n parte el texto en renglones apilados (vbCr)
     valor2 = Replace(valor, "\n", vbCr)
@@ -179,7 +190,8 @@ Sub ReplaceText(doc, ph, valor, baseSize, base2L, maxW)
         If s.Type = 6 Then
             t = Trim(Replace(Replace(s.Text.Story.Text, vbCr, ""), vbLf, ""))
             If StrComp(t, ph, vbTextCompare) = 0 Then
-                cx = s.CenterX : cy = s.CenterY
+                ' dyOff baja/sube el texto respecto al placeholder (fechas van mas abajo para no tocar lineas)
+                cx = s.CenterX : cy = s.CenterY + dyOff
                 s.Text.Story.Text = valor2
                 s.Text.Story.Size = talla
                 If multilinea Then

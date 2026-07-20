@@ -14,7 +14,8 @@ Const PH_N1 = "Romario"
 Const PH_N2 = "Romina"
 Const PH_FE = "13-Agosto-1992"
 Const MAX_W_NOMBRE = 52     ' mm — margen antes de reducir (Romario mide ~46mm)
-Const MAX_W_FECHA = 50      ' mm — (13-Agosto-1992 mide ~37mm)
+Const MAX_W_FECHA = 46      ' mm — acotado para que fechas largas NO toquen las lineas azules (Chris 2026-07-20)
+Const DATE_DY = -9          ' mm — baja la fecha al area abierta debajo del cruce del infinito (no tocar lineas)
 Const ALINEACION_CENTRO = 3 ' cdrCenterAlignment
 Const INTERLINEADO_2L = 60  ' % altura caracter — interlineado de renglones apilados (Chris, 2026-07-18)
 
@@ -49,23 +50,32 @@ cdrPath = outDir & "\" & base & ".cdr"
 svgPath = outDir & "\" & base & ".svg"
 pngPath = outDir & "\" & base & ".png"
 
-' Copia de trabajo (la plantilla original nunca se toca)
-fso.CopyFile TPL, cdrPath, True
-
-Dim corel, doc
+Dim corel, doc, od
 On Error Resume Next
 Set corel = CreateObject("CorelDRAW.Application")
 On Error GoTo 0
 If IsEmpty(corel) Or (Not IsObject(corel)) Then Set corel = Nothing
 If corel Is Nothing Then WScript.Echo "ERROR: no pude abrir CorelDRAW por COM." : WScript.Quit 1
 corel.Visible = True
+
+' Cerrar cualquier doc ya abierto con esta ruta (una corrida manual previa deja el .cdr abierto;
+' si no, CopyFile fallaria o OpenDocument reusaria el doc viejo sin los textos de ejemplo).
+On Error Resume Next
+For Each od In corel.Documents
+    If StrComp(od.FullFileName, cdrPath, vbTextCompare) = 0 Then od.Dirty = False : od.Close
+Next
+On Error GoTo 0
+
+' Copia de trabajo (la plantilla original nunca se toca)
+fso.CopyFile TPL, cdrPath, True
+
 Set doc = corel.OpenDocument(cdrPath)
 doc.Unit = 3 ' mm
 
 ' Reemplazar los textos de ejemplo por los del pedido (conservando centro y tamano base)
-ReplaceByContent doc, PH_N1, args(0), MAX_W_NOMBRE
-ReplaceByContent doc, PH_N2, args(1), MAX_W_NOMBRE
-ReplaceByContent doc, PH_FE, args(2), MAX_W_FECHA
+ReplaceByContent doc, PH_N1, args(0), MAX_W_NOMBRE, 0
+ReplaceByContent doc, PH_N2, args(1), MAX_W_NOMBRE, 0
+ReplaceByContent doc, PH_FE, args(2), MAX_W_FECHA, DATE_DY
 
 ' Texto adicional (ej. "aniversario no. 27") CENTRADO justo debajo de la fecha.
 ' La plantilla no lo trae: lo creo como texto artistico nuevo, misma fuente/negro que la fecha.
@@ -166,7 +176,7 @@ WScript.Echo "CDR " & cdrPath
 If WScript.Arguments.Named.Exists("png") Then WScript.Echo "PNG " & pngPath
 If WScript.Arguments.Named.Exists("svg") Then WScript.Echo "OK " & svgPath
 
-Sub ReplaceByContent(doc, phText, valor, maxW)
+Sub ReplaceByContent(doc, phText, valor, maxW, dyOff)
     Dim s, t, cx, cy, w, found, valor2, multilinea, baseSize
     valor2 = Replace(valor, "\n", vbCr)
     multilinea = (InStr(valor2, vbCr) > 0)
@@ -175,7 +185,8 @@ Sub ReplaceByContent(doc, phText, valor, maxW)
         If s.Type = 6 Then
             t = Trim(Replace(Replace(s.Text.Story.Text, vbCr, ""), vbLf, ""))
             If StrComp(t, phText, vbTextCompare) = 0 Then
-                cx = s.CenterX : cy = s.CenterY
+                ' dyOff baja/sube el texto respecto al placeholder (fechas van mas abajo para no tocar lineas)
+                cx = s.CenterX : cy = s.CenterY + dyOff
                 baseSize = s.Text.Story.Size
                 s.Text.Story.Text = valor2
                 s.Text.Story.Size = baseSize
