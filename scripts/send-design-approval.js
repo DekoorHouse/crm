@@ -59,8 +59,9 @@ const datosOf = o => (Array.isArray(o.items) ? o.items.map(i => i.datosProducto)
     const wa = await (await fetch(`${API}/api/mockups/wa-image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: up.url }) })).json();
     if (!wa.success || !wa.jpgUrl) { console.error('wa-image falló: ' + JSON.stringify(wa)); process.exit(1); }
 
-    const firstName = (cName || '').split(' ')[0] || '';
-    const msg = `¡Hola${firstName ? ' ' + firstName : ''}! 😊 Antes de fabricar tu lámpara, te comparto el diseño para que lo revises con calma ✨ Confirma que los nombres y las fechas estén correctos:\n${(summary || datosOf(order)).trim()}\n¿Lo aprobamos así o le ajustamos algo? 🙌`;
+    // Saludo SIN nombre: el "name" de WhatsApp suele ser un alias raro (ej. "marcosalva840"),
+    // no el nombre real del cliente, y queda mal en el previo. (Chris, 2026-07-20)
+    const msg = `¡Hola! 😊 Antes de fabricar tu lámpara, te comparto el diseño para que lo revises con calma ✨ Confirma que los nombres y las fechas estén correctos:\n${(summary || datosOf(order)).trim()}\n¿Lo aprobamos así o le ajustamos algo? 🙌`;
     const sent = await (await fetch(`${API}/api/contacts/${contactId}/messages`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: msg, fileUrl: wa.jpgUrl, fileType: 'image/jpeg' }),
