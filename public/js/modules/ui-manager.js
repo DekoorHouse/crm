@@ -307,6 +307,20 @@ async function rejectIADesign(orderId, el) {
 }
 window.rejectIADesign = rejectIADesign;
 
+// --- Marca visual (checkbox) de Pendientes de Diseño: personal, se guarda en localStorage por pedido ---
+// para que sobreviva al refresco (F5). No toca el servidor ni cambia nada del pedido (es solo de vista).
+const DP_VCHECK_KEY = 'dp_visual_checks';
+function _dpVisualChecks() {
+    try { return new Set(JSON.parse(localStorage.getItem(DP_VCHECK_KEY) || '[]')); }
+    catch (_) { return new Set(); }
+}
+function toggleDesignVisualCheck(orderId, el) {
+    const set = _dpVisualChecks();
+    if (el && el.checked) set.add(orderId); else set.delete(orderId);
+    try { localStorage.setItem(DP_VCHECK_KEY, JSON.stringify([...set])); } catch (_) {}
+}
+window.toggleDesignVisualCheck = toggleDesignVisualCheck;
+
 // --- Navegación del chat con flechas ← → (sin cerrar el modal), desde Pendientes de Diseño ---
 // Abre el chat de un pedido y activa la navegación por teclado sobre la lista visible.
 async function openDesignPendingChat(orderId) {
@@ -475,6 +489,7 @@ function _paintDesignPending() {
     // Lista visible en orden (para navegar el chat con las flechas ← →).
     window._designShownOrders = shown;
 
+    const checkedSet = _dpVisualChecks();   // marcas visuales guardadas (localStorage), para restaurarlas
     const rows = shown.map((o, i) => {
         const chan = o.channel === 'instagram' ? '<i class="fab fa-instagram" style="color:#e1306c"></i>'
             : o.channel === 'messenger' ? '<i class="fab fa-facebook-messenger" style="color:#0084ff"></i>'
@@ -508,7 +523,7 @@ function _paintDesignPending() {
         const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (usa ← → para el siguiente/anterior pedido)" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:14px"><i class="fas fa-comments"></i></button>` : '';
         // Casilla puramente VISUAL a la izquierda de la burbuja: el diseñador la marca de vista, no
         // guarda nada ni dispara ninguna acción.
-        const visualCheck = `<input type="checkbox" title="Marca visual (no guarda nada)" style="width:16px;height:16px;cursor:pointer;accent-color:#16a34a;flex:0 0 auto;margin:0 2px 0 0">`;
+        const visualCheck = `<input type="checkbox"${checkedSet.has(o.id) ? ' checked' : ''} data-dp-check="${o.id}" onchange="toggleDesignVisualCheck('${o.id}', this)" title="Marca visual (se guarda en este navegador; sobrevive al refresco)" style="width:16px;height:16px;cursor:pointer;accent-color:#16a34a;flex:0 0 auto;margin:0 2px 0 0">`;
         const reopenBtn = `<button onclick="reopenDesign('${o.id}', this)" title="Regresar a Pendientes (vuelve a 'Fabricar' para rehacerlo a mano)" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;cursor:pointer;color:#334155;padding:4px 10px;font-size:12px;border-radius:6px;font-weight:600"><i class="fas fa-rotate-left" style="margin-right:4px"></i>Regresar</button>`;
         // Pendientes (manual): botón "Diseñado". Diseñados: "Regresar". SVG IA: "Regresar" solo en los ya
         // cortados (los que esperan pareja no tienen acción: los maneja el worker).
