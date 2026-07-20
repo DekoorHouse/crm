@@ -14,8 +14,9 @@ Const PH_N1 = "Romario"
 Const PH_N2 = "Romina"
 Const PH_FE = "13-Agosto-1992"
 Const MAX_W_NOMBRE = 52     ' mm — margen antes de reducir (Romario mide ~46mm)
-Const MAX_W_FECHA = 46      ' mm — acotado para que fechas largas NO toquen las lineas azules (Chris 2026-07-20)
-Const DATE_DY = -9          ' mm — baja la fecha al area abierta debajo del cruce del infinito (no tocar lineas)
+Const MAX_W_FECHA = 50      ' mm — fechas largas legibles pero acotadas (solo afecta a las muy largas)
+Const DATE_DY = -5          ' mm — baja la fecha SOLO lo justo para librar la linea del infinito, quedando arriba
+                            '      de la base (Chris 2026-07-20: pegada al infinito sin tocar; sin pasar la base)
 Const ALINEACION_CENTRO = 3 ' cdrCenterAlignment
 Const INTERLINEADO_2L = 60  ' % altura caracter — interlineado de renglones apilados (Chris, 2026-07-18)
 

@@ -20,9 +20,11 @@ Const BASE_NOMBRE = 65.2    ' pt — tamano estandar de nombres en produccion (1
 Const BASE_NOMBRE_2L = 44.8 ' pt — nombres a 2 renglones (mismo tamano que produccion manual)
 Const MAX_W_NOMBRE = 52     ' mm — ancho maximo para caber en el aro del infinito
 Const BASE_FECHA = 25.3     ' pt
-Const MAX_W_FECHA = 46      ' mm — acotado para que fechas largas NO toquen las lineas azules (Chris 2026-07-20)
-Const DATE_DY = -9          ' mm — baja la fecha al area abierta debajo del cruce del infinito; asi no
-                            '      toca las lineas azules del aro (regla: el texto negro nunca toca linea)
+Const MAX_W_FECHA = 50      ' mm — fechas largas legibles pero acotadas (solo afecta a las muy largas)
+Const DATE_DY = -5          ' mm — baja la fecha SOLO lo justo para librar la linea del infinito (que se
+                            '      ensancha hacia abajo), quedando ARRIBA de la base. Regla Chris 2026-07-20:
+                            '      pegada al infinito pero sin tocarlo, y NO tan abajo que la base la tape
+                            '      (la fecha no debe pasar la linea azul de la base hacia abajo)
 Const ALINEACION_CENTRO = 3 ' cdrCenterAlignment (para textos de varios renglones)
 Const INTERLINEADO_2L = 60  ' % altura caracter — interlineado de renglones apilados (Chris, 2026-07-18)
 
