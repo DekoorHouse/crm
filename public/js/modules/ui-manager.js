@@ -431,6 +431,9 @@ function _paintDesignPending() {
             : (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('')) + iaBadge;
         const statusSel = `<select onchange="changeDesignPendingStatus('${o.id}', this.value, this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);width:132px">${ENVIO_STATUS_OPTIONS.map(s => `<option${(o.estatus || 'Sin estatus') === s ? ' selected' : ''}>${s}</option>`).join('')}</select>`;
         const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (usa ← → para el siguiente/anterior pedido)" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:14px"><i class="fas fa-comments"></i></button>` : '';
+        // Casilla puramente VISUAL a la izquierda de la burbuja: el diseñador la marca de vista, no
+        // guarda nada ni dispara ninguna acción.
+        const visualCheck = `<input type="checkbox" title="Marca visual (no guarda nada)" style="width:16px;height:16px;cursor:pointer;accent-color:#16a34a;flex:0 0 auto;margin:0 2px 0 0">`;
         const actionBtn = tab === 'disenados'
             ? `<button onclick="reopenDesign('${o.id}', this)" title="Regresar a Pendientes" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;cursor:pointer;color:#334155;padding:4px 10px;font-size:12px;border-radius:6px;font-weight:600"><i class="fas fa-rotate-left" style="margin-right:4px"></i>Regresar</button>`
             : `<button onclick="markDesignDone('${o.id}', this)" title="Marcar como diseñado y sacar de la lista" style="border:none;background:#16a34a;color:#fff;cursor:pointer;padding:5px 10px;font-size:12px;border-radius:6px;font-weight:700"><i class="fas fa-check" style="margin-right:4px"></i>Diseñado</button>`;
@@ -459,7 +462,7 @@ function _paintDesignPending() {
             <td style="padding:6px 12px 6px 0;white-space:nowrap">${statusSel}</td>
             <td style="padding:6px 12px 6px 0">${comentarioCell}</td>
             <td style="padding:9px 12px 9px 0;color:#94a3b8;white-space:nowrap">${fechaTxt}</td>
-            <td style="padding:9px 0;text-align:right;white-space:nowrap"><div style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end">${chatBtn}${actionBtn}</div></td>
+            <td style="padding:9px 0;text-align:right;white-space:nowrap"><div style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end">${visualCheck}${chatBtn}${actionBtn}</div></td>
         </tr>`;
     }).join('');
 
