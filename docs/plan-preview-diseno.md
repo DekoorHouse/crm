@@ -22,8 +22,10 @@ Secundarias: tiempo registro→pago, % pagados en <4 h, tasa de cancelación.
 
 1. **Alcance:** SOLO lámparas de corazones estándar (2 nombres + fecha). Quedan FUERA: personalizaciones
    especiales, canal anticipo ($300), pedidos de 5+ piezas, otros productos. Esos siguen el flujo actual.
-2. **Revisión:** EXPRESS con SLA — un humano aprueba cada mockup antes de enviarse. Meta: **< 1 hora**
-   desde el registro. Con alerta push por WhatsApp al revisor en cuanto el mockup esté generado.
+2. **Revisión:** EXPRESS manual, SIN alertas (decidido 19-jul) — Alex revisa y aprueba los mockups del
+   grupo A él mismo durante las pruebas, checando el CRM periódicamente. Meta: **< 1 hora** desde el
+   registro; los sellos `previewListoAt`/`previewEnviadoAt` miden el SLA real logrado. Los pedidos A se
+   distinguen visualmente en el CRM para encontrarlos al instante (ver "Distinción visual" abajo).
 3. **Medición:** A/B 50/50 — pero por CONVERSACIÓN, no por pedido (corregido el 19-jul con observación
    de Alex: el encuadre "pagas al ver la foto terminada" nace desde la RI y los atajos de la conversación;
    partir en el registro dejaría al grupo A con una promesa y otra entrega). Asignación por paridad del
@@ -74,10 +76,14 @@ puede ser manual; lo importante es que el estado quede visible.)
      cambia en el prompt global (el caché de contexto no se invalida: la nota va en la parte dinámica).
 - **Generación:** ya existe (`server/mockups/mockupAutoScheduler.js`, cada 10 min, "SOLO genera, no envía").
   Revisar si se puede disparar la generación inmediata al registrar (en vez de esperar el ciclo de 10 min).
-- **Alerta de revisión:** cuando el mockup del grupo A esté listo → WhatsApp al revisor (mismo mecanismo
-  `alertAdmin`/`sendAdvancedWhatsAppMessage`) con link/preview y el DH. Guardar `previewListoAt`.
-- **Aprobación express:** definir el gesto de aprobación más simple posible (opción MVP: botón en la
-  página de mockups que ya existe; el revisor entra, ve y aprueba). Al aprobar → envío automático.
+- **Distinción visual (sin alertas):** los pedidos del grupo A se marcan para saltar a la vista en las
+  pantallas que Alex ya usa: badge "⚡ Preview" en la fila del pedido (mismo patrón que el resaltado 🤖
+  de los pedidos registrados por IA) en la lista de Pedidos Y en la cola de Mockups; los A se ordenan
+  HASTA ARRIBA de la cola de diseño; si sale barato, un filtro "solo piloto ⚡". Guardar `previewListoAt`
+  cuando el mockup quede generado (con eso se mide cuánto tardó Alex en revisarlo).
+- **Aprobación express:** usar el gesto que YA existe en la página de Mockups para aprobar/enviar
+  (confirmar el flujo actual de esa página al implementar). Al aprobar un pedido A → envío automático
+  del mensaje de preview+cobro (en vez del envío manual de foto de hoy).
 - **Envío:** imagen del mockup + mensaje de preview+cobro (texto abajo) al contacto. Sellar en el pedido
   `previewEnviadoAt` (⚠️ hoy NO se guarda ninguna fecha de foto — este sello además arregla ese hueco de
   medición) y cambiar estatus a **"Foto enviada"** para que la cobranza automática lo tome igual que hoy.
@@ -126,9 +132,10 @@ puede ser manual; lo importante es que el estado quede visible.)
 ## Pendientes de decidir con Alex al implementar
 
 - Texto final del mensaje de preview+cobro (borrador arriba).
-- Quién(es) reciben la alerta de revisión y en qué horario.
 - ¿Saltar el cobro automático 1 si el preview salió hace < 6 h? (propuesto: sí)
-- Gesto de aprobación del revisor (página de mockups vs responder la alerta por WhatsApp).
+- Confirmar el gesto de aprobar/enviar de la página de Mockups (se reutiliza el existente).
+
+Resueltos: revisión manual por Alex sin alertas (19-jul); distinción por badge ⚡ + orden prioritario.
 
 ## Contexto de origen (por si esta sesión no tiene el historial)
 
