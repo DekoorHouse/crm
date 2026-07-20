@@ -1008,9 +1008,17 @@ router.post('/', async (req, res) => {
                     console.log(`[AD] Mensaje encontrado para Ad ID ${adId}: "${adResponseData.message || 'Archivo adjunto'}"`);
                     // Piloto preview: al grupo A se le cambia la línea "pagas al ver la foto del
                     // trabajo terminado" por la de "diseño para aprobar" (misma RI, una línea).
+                    // Cuenta tanto el sellado de ESTE mensaje (pilotoGroup) como uno previo (un A
+                    // que reingresa por otro anuncio conserva su narrativa). Los contactos con
+                    // conversación previa al piloto nunca se sellan → siempre ven el flujo anterior.
+                    // Con el switch apagado, TODOS (incluidos los ya sellados) ven el flujo anterior.
                     let riText = adResponseData.message;
-                    if (pilotoGroup === 'A') {
-                        try { riText = require('./orders/pilotoPreview').applyRiVariant(riText); } catch (_) {}
+                    const grupoRi = pilotoGroup || (contactDoc.exists ? contactDoc.data().pilotoPreview : null) || null;
+                    if (grupoRi === 'A') {
+                        try {
+                            const piloto = require('./orders/pilotoPreview');
+                            if ((await piloto.getPilotoConfig()).enabled) riText = piloto.applyRiVariant(riText);
+                        } catch (_) {}
                     }
                     // Solo cuenta como "respondido" si el envío a Meta tuvo éxito: si falla,
                     // adResponseSent queda false y la IA responde como red de seguridad.
