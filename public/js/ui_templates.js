@@ -1626,6 +1626,12 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
         }).join('')
         : '';
 
+    // Piloto preview: chip ⚡ para contactos del grupo A (flujo nuevo: diseño en minutos +
+    // cobro). Grupo B y no sellados se ven normales. Mismo estilo que los chips de diseño.
+    const pilotoBadge = contact.pilotoPreview === 'A'
+        ? `<span class="dp-badge" style="background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed66" title="Piloto preview (grupo A): recibe su diseño en minutos y paga al aprobarlo">⚡ Preview</span>`
+        : '';
+
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
             <div class="flex justify-between items-center">
@@ -1650,7 +1656,7 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
             </div>
             <div class="flex justify-between items-center">
                 <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
-                <div class="dp-badges-wrap">${designPendBadges}${orderBadgeHTML}</div>
+                <div class="dp-badges-wrap">${pilotoBadge}${designPendBadges}${orderBadgeHTML}</div>
             </div>
         </div>`;
 
