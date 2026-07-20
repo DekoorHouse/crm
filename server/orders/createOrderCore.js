@@ -91,6 +91,29 @@ async function createOrder({
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     const orderCounterRef = db.collection('counters').doc('orders');
 
+    // Prueba de precio: si el contacto es grupo A y el pedido lo registró la IA, forzar el
+    // precio de cada item al variante ($850/$950). Es la red de seguridad para que el TOTAL
+    // registrado (y por ende el cobro y el evento Purchase) use el mismo precio que Andrea le
+    // cotizó al cliente — sin depender de lo que el extractor haya calculado. Solo pisa el
+    // precio de control ($750) para no clobberear un precio que un humano puso a propósito.
+    try {
+        if (extraFields.registeredByAI === true) {
+            const priceTest = require('./priceTest');
+            if ((await priceTest.getPriceTestConfig()).enabled) {
+                const cSnap = await contactRef.get();
+                const precio = cSnap.exists ? priceTest.priceForContact(cSnap.data()) : null;
+                if (precio && priceTest.orderEligible(normalizedItems)) {
+                    for (const it of normalizedItems) {
+                        if (Number(it.precio) === priceTest.CONTROL_PRICE) it.precio = precio;
+                    }
+                    console.log(`[PRICE_TEST] Pedido de ${contactId}: precio forzado a $${precio} por item (grupo A).`);
+                }
+            }
+        }
+    } catch (priceErr) {
+        console.warn('[PRICE_TEST] Override de precio falló (no fatal):', priceErr.message);
+    }
+
     // --- Generar número de pedido consecutivo usando una transacción ---
     const newOrderNumber = await db.runTransaction(async (transaction) => {
         const counterDoc = await transaction.get(orderCounterRef);
@@ -188,6 +211,21 @@ async function createOrder({
         }
     } catch (riErr) {
         console.warn('[RI_TEST] Herencia de grupo al pedido falló (no fatal):', riErr.message);
+    }
+
+    // Prueba de precio: el pedido hereda el grupo y el precio del contacto (para el corte).
+    try {
+        const priceTest = require('./priceTest');
+        if ((await priceTest.getPriceTestConfig()).enabled) {
+            const cSnap = await contactRef.get();
+            const grupo = cSnap.exists ? cSnap.data().priceTest : null;
+            if ((grupo === 'A' || grupo === 'B') && priceTest.orderEligible(normalizedItems)) {
+                await newOrderRef.update({ priceTest: grupo, priceTestValue: cSnap.data().priceTestValue || null });
+                console.log(`[PRICE_TEST] Pedido DH${newOrderNumber} heredó el grupo ${grupo} del contacto ${contactId}.`);
+            }
+        }
+    } catch (priceErr2) {
+        console.warn('[PRICE_TEST] Herencia de grupo al pedido falló (no fatal):', priceErr2.message);
     }
 
     // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)

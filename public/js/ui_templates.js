@@ -964,6 +964,14 @@ const MockupsViewTemplate = () => `
                     <span style="color:#0891b2;font-weight:600;">🅰️ Prueba RI</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-ritest-toggle" onchange="mkToggleRiTest(this.checked)"><span class="slider"></span></label>
                 </span>
+                <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Prueba de PRECIO $850: las conversaciones NUEVAS de corazones se reparten por teléfono (par = grupo A paga $850 en TODO el flujo; non = $750 control). Un solo experimento a la vez.">
+                    <span style="color:#16a34a;font-weight:600;">💲 $850</span>
+                    <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-price850-toggle" onchange="mkTogglePrice(850, this.checked)"><span class="slider"></span></label>
+                </span>
+                <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Prueba de PRECIO $950: las conversaciones NUEVAS de corazones se reparten por teléfono (par = grupo A paga $950 en TODO el flujo; non = $750 control). Un solo experimento a la vez.">
+                    <span style="color:#16a34a;font-weight:600;">💲 $950</span>
+                    <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-price950-toggle" onchange="mkTogglePrice(950, this.checked)"><span class="slider"></span></label>
+                </span>
                 <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Genera previews solos cada 10 min para pedidos de corazones con solo nombres+fecha. NO envía nada.">
                     <span class="mk-muted">Auto-generar</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-auto-toggle" onchange="mkToggleAuto(this.checked)"><span class="slider"></span></label>
@@ -1644,6 +1652,10 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
     const riTestBadge = contact.riTest === 'A'
         ? `<span class="dp-badge" style="background:#0891b222;color:#0891b2;border:1px solid #0891b266" title="Prueba de RI (grupo A): recibió el mensaje inicial nuevo; el resto del flujo es el normal">🅰️ RI</span>`
         : '';
+    // Prueba de precio: chip 💲 para el grupo A (cotiza y paga el precio variante).
+    const priceTestBadge = contact.priceTest === 'A'
+        ? `<span class="dp-badge" style="background:#16a34a22;color:#16a34a;border:1px solid #16a34a66" title="Prueba de precio (grupo A): cotiza y paga $${contact.priceTestValue || '?'} en todo el flujo">💲 $${contact.priceTestValue || '?'}</span>`
+        : '';
 
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
@@ -1669,7 +1681,7 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
             </div>
             <div class="flex justify-between items-center">
                 <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
-                <div class="dp-badges-wrap">${pilotoBadge}${riTestBadge}${designPendBadges}${orderBadgeHTML}</div>
+                <div class="dp-badges-wrap">${pilotoBadge}${riTestBadge}${priceTestBadge}${designPendBadges}${orderBadgeHTML}</div>
             </div>
         </div>`;
 

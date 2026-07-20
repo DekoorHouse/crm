@@ -584,6 +584,24 @@ router.post('/ri-test-config', asyncHandler(async (req, res) => {
     res.json({ success: true, enabled });
 }));
 
+// --- Prueba de PRECIO ($850/$950): switch desde la sección Mockup ---
+router.get('/price-test-config', asyncHandler(async (req, res) => {
+    const doc = await db.collection('crm_settings').doc('price_test').get();
+    const d = doc.exists ? doc.data() : {};
+    res.json({ success: true, enabled: d.enabled === true, price: Number(d.price) || 850 });
+}));
+
+router.post('/price-test-config', asyncHandler(async (req, res) => {
+    const enabled = req.body.enabled === true;
+    const price = [850, 950].includes(Number(req.body.price)) ? Number(req.body.price) : 850;
+    const stamp = admin.firestore.FieldValue.serverTimestamp();
+    const payload = { enabled, price, lastToggleAt: stamp };
+    payload[enabled ? 'enabledAt' : 'disabledAt'] = stamp;
+    await db.collection('crm_settings').doc('price_test').set(payload, { merge: true });
+    console.log(`[PRICE_TEST] Switch ${enabled ? `ENCENDIDO 💲$${price}` : 'APAGADO'} desde la sección Mockup.`);
+    res.json({ success: true, enabled, price });
+}));
+
 // POST /api/mockups/auto-run — dispara YA una corrida de auto-generación (p.ej. tras recargar
 // saldo en WaveSpeed). NO espera a que termine (puede tardar minutos): arranca en segundo plano y
 // responde de inmediato. Fuerza la corrida aunque el toggle de auto-generar esté apagado y usa un

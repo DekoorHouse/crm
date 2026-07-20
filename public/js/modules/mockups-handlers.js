@@ -186,6 +186,18 @@ async function mkLoadAutoConfig() {
     } catch (_) { /* noop */ }
     mkLoadPilotoConfig();
     mkLoadRiTestConfig();
+    mkLoadPriceTestConfig();
+}
+
+// ¿Hay OTRO experimento encendido? (para no correr dos a la vez — se confunden las lecturas).
+// except: 'piloto' | 'ri' | 'price' — el que se está por encender.
+async function mkOtherExperimentOn(except) {
+    try {
+        if (except !== 'piloto') { const p = await mkFetchJson('/api/mockups/piloto-config'); if (p && p.enabled) return 'Piloto preview ⚡'; }
+        if (except !== 'ri') { const r = await mkFetchJson('/api/mockups/ri-test-config'); if (r && r.enabled) return 'Prueba de RI 🅰️'; }
+        if (except !== 'price') { const q = await mkFetchJson('/api/mockups/price-test-config'); if (q && q.enabled) return 'Prueba de precio 💲'; }
+    } catch (_) {}
+    return null;
 }
 
 // Toggle del piloto preview A/B (docs/plan-preview-diseno.md).
@@ -199,9 +211,13 @@ async function mkLoadPilotoConfig() {
 
 async function mkTogglePiloto(checked) {
     const revertir = () => { const el = document.getElementById('mk-piloto-toggle'); if (el) el.checked = !checked; };
-    if (checked && !confirm('¿Encender el piloto preview A/B?\n\nLas conversaciones NUEVAS de corazones se repartirán por teléfono (par = grupo A: recibe su diseño en minutos con el cobro). Los pedidos ⚡ aparecerán arriba en esta cola para que los envíes rápido.')) {
-        revertir();
-        return;
+    if (checked) {
+        const otro = await mkOtherExperimentOn('piloto');
+        if (otro) { mkToast(`Apaga primero: ${otro}. Solo un experimento a la vez.`, 'error'); revertir(); return; }
+        if (!confirm('¿Encender el piloto preview A/B?\n\nLas conversaciones NUEVAS de corazones se repartirán por teléfono (par = grupo A: recibe su diseño en minutos con el cobro). Los pedidos ⚡ aparecerán arriba en esta cola para que los envíes rápido.')) {
+            revertir();
+            return;
+        }
     }
     try {
         await mkFetchJson('/api/mockups/piloto-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked }) });
@@ -224,11 +240,8 @@ async function mkLoadRiTestConfig() {
 async function mkToggleRiTest(checked) {
     const revertir = () => { const el = document.getElementById('mk-ritest-toggle'); if (el) el.checked = !checked; };
     if (checked) {
-        // Guardia: no correr los dos experimentos de RI a la vez (se confunden las lecturas).
-        try {
-            const p = await mkFetchJson('/api/mockups/piloto-config');
-            if (p && p.enabled) { mkToast('Apaga primero el Piloto preview ⚡: no se pueden correr los dos a la vez.', 'error'); revertir(); return; }
-        } catch (_) {}
+        const otro = await mkOtherExperimentOn('ri');
+        if (otro) { mkToast(`Apaga primero: ${otro}. Solo un experimento a la vez.`, 'error'); revertir(); return; }
         if (!confirm('¿Encender la prueba A/B de la RI?\n\nLas conversaciones NUEVAS de corazones se repartirán por teléfono (par = grupo A recibe el mensaje inicial NUEVO). El resto del flujo es el NORMAL. Los contactos del grupo A se marcan con 🅰️ RI en la lista de chats.')) {
             revertir();
             return;
@@ -237,6 +250,41 @@ async function mkToggleRiTest(checked) {
     try {
         await mkFetchJson('/api/mockups/ri-test-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked }) });
         mkToast(checked ? 'Prueba de RI ENCENDIDA 🅰️ (aplica en ~1 min a conversaciones nuevas)' : 'Prueba de RI apagada — todos vuelven a la RI original', 'success');
+    } catch (e) {
+        mkToast('No se pudo cambiar: ' + e.message, 'error');
+        revertir();
+    }
+}
+
+// Toggle de la prueba de precio ($850/$950). Los dos toggles controlan un solo experimento
+// (un precio a la vez): encender uno apaga el otro.
+async function mkLoadPriceTestConfig() {
+    try {
+        const d = await mkFetchJson('/api/mockups/price-test-config');
+        const on = d.enabled === true;
+        const el850 = document.getElementById('mk-price850-toggle');
+        const el950 = document.getElementById('mk-price950-toggle');
+        if (el850) el850.checked = on && Number(d.price) === 850;
+        if (el950) el950.checked = on && Number(d.price) === 950;
+    } catch (_) { /* noop */ }
+}
+
+async function mkTogglePrice(price, checked) {
+    const otroId = price === 850 ? 'mk-price950-toggle' : 'mk-price850-toggle';
+    const selfId = price === 850 ? 'mk-price850-toggle' : 'mk-price950-toggle';
+    const revertir = () => { const el = document.getElementById(selfId); if (el) el.checked = !checked; };
+    if (checked) {
+        const otro = await mkOtherExperimentOn('price');
+        if (otro) { mkToast(`Apaga primero: ${otro}. Solo un experimento a la vez.`, 'error'); revertir(); return; }
+        if (!confirm(`¿Encender la prueba de precio $${price}?\n\nOJO: es un test de precio REAL. Las conversaciones NUEVAS de corazones se repartirán por teléfono: grupo A (par) verá y PAGARÁ $${price} en todo el flujo (RI, cotización, resumen, total y cobro); el resto queda en $750. Un solo precio a la vez.`)) {
+            revertir();
+            return;
+        }
+        const elOtro = document.getElementById(otroId); if (elOtro) elOtro.checked = false;   // radio: apaga el otro precio
+    }
+    try {
+        await mkFetchJson('/api/mockups/price-test-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked, price }) });
+        mkToast(checked ? `Prueba de precio $${price} ENCENDIDA 💲 (aplica en ~1 min a conversaciones nuevas)` : 'Prueba de precio apagada — todos vuelven a $750', 'success');
     } catch (e) {
         mkToast('No se pudo cambiar: ' + e.message, 'error');
         revertir();

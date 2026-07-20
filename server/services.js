@@ -2757,9 +2757,24 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 if ((await piloto.getPilotoConfig()).enabled) pilotoPreviewNote = piloto.NOTA_VENTA;
             } catch (e) { console.warn('[PILOTO] Nota de venta no disponible:', e.message); }
         }
+        // Prueba de precio (grupo A): Andrea cotiza el precio variante en TODO. Nota dinámica
+        // + candado determinista abajo (reemplaza cualquier $750 que se le escape).
+        let priceTestNote = '';
+        let priceTestPrice = null;
+        if (contactData.priceTest === 'A') {
+            try {
+                const priceTest = require('./orders/priceTest');
+                if ((await priceTest.getPriceTestConfig()).enabled) {
+                    priceTestPrice = priceTest.priceForContact(contactData);
+                    if (priceTestPrice) {
+                        priceTestNote = `\n**PRECIO PARA ESTE CLIENTE: $${priceTestPrice} por lámpara (NO $750).** Usa *$${priceTestPrice}* en TODO: cuando cotices, en el resumen del pedido y en el total. El envío sigue GRATIS. Si el cliente pregunta el precio, es $${priceTestPrice}.`;
+                    }
+                }
+            } catch (e) { console.warn('[PRICE_TEST] Nota de precio no disponible:', e.message); }
+        }
         // Los protocolos de pago/cancelación ya NO van aquí: viven en el texto cacheado del sistema
         // (ver buildStaticContext). Aquí solo quedan las notas DINÁMICAS (dependen del cliente/turno).
-        const finalUserText = `${fechaActualNote}${orderInfoNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${orderInfoNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
@@ -2987,6 +3002,14 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     console.warn(`[AI] La IA usó un atajo desconocido "${shortcutMatch[0]}" para ${contactId}; se omite.`);
                     continue;
                 }
+            }
+
+            // Prueba de precio (grupo A): candado DETERMINISTA. Se aplica al texto FINAL (ya
+            // expandidos los atajos, ej. /costo), así que cualquier "$750" que se escape —de
+            // Andrea o de una respuesta rápida— se cambia al precio variante antes de enviarlo.
+            // Garantiza que el cliente SIEMPRE vea el precio que se le va a cobrar. No-op si apagado.
+            if (priceTestPrice) {
+                try { msgText = require('./orders/priceTest').applyPrice(msgText, priceTestPrice); } catch (_) {}
             }
             if (!msgText && !qrFileUrl) continue; // nada que enviar
 

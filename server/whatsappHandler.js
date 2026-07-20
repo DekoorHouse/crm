@@ -804,6 +804,8 @@ router.post('/', async (req, res) => {
             let pilotoGroup = null;
             // Prueba A/B de la RI (server/orders/riTest.js): experimento independiente.
             let riTestGroup = null;
+            // Prueba de precio (server/orders/priceTest.js): experimento independiente.
+            let priceTestGroup = null;
             if (message.referral?.source_type === 'ad' && message.referral.source_id) {
                 const adId = message.referral.source_id;
                 console.log(`[ROUTING] Verificando reglas para Ad ID: ${adId}`);
@@ -833,6 +835,12 @@ router.post('/', async (req, res) => {
                                 contactRef, phone: from, departmentId: ruleData.targetDepartmentId, isNewContact,
                             });
                         } catch (e) { console.warn('[RI_TEST] Sellado de grupo falló (se continúa):', e.message); }
+                        // Prueba de precio ($850/$950; experimento independiente; no-op si apagado).
+                        try {
+                            priceTestGroup = await require('./orders/priceTest').maybeAssignPriceGroup({
+                                contactRef, phone: from, departmentId: ruleData.targetDepartmentId, isNewContact,
+                            });
+                        } catch (e) { console.warn('[PRICE_TEST] Sellado de grupo falló (se continúa):', e.message); }
                     }
                     
                     // --- SINCRONIZAR IA CON EL DEPARTAMENTO DEL ANUNCIO ---
@@ -1037,6 +1045,19 @@ router.post('/', async (req, res) => {
                             const riTest = require('./orders/riTest');
                             const cfg = await riTest.getRiTestConfig();
                             if (cfg.enabled) riText = cfg.message;
+                        } catch (_) {}
+                    }
+                    // Prueba de precio: al grupo A se le cambia el PRECIO en la RI básica
+                    // ($750 → variante). Misma estructura, solo el precio.
+                    const grupoPrice = priceTestGroup || (contactDoc.exists ? contactDoc.data().priceTest : null) || null;
+                    if (grupoPrice === 'A') {
+                        try {
+                            const priceTest = require('./orders/priceTest');
+                            if ((await priceTest.getPriceTestConfig()).enabled) {
+                                const precio = priceTest.priceForContact(contactDoc.exists ? contactDoc.data() : {})
+                                    || (await priceTest.getPriceTestConfig()).price;
+                                riText = priceTest.applyPrice(riText, precio);
+                            }
                         } catch (_) {}
                     }
                     // Solo cuenta como "respondido" si el envío a Meta tuvo éxito: si falla,
