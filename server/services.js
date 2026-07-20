@@ -1596,7 +1596,7 @@ async function markOrderFabricarForContact(contactId, contactData, addressText, 
  *    manda desde el mismo tablero de "Corregir".
  * No re-avisa si el pedido ya estaba en Corregir (idempotente). Fire-and-forget: nunca lanza.
  */
-async function markOrderCorregirForContact(contactId, contactData, clientMessage, reason = 'error') {
+async function markOrderCorregirForContact(contactId, contactData, clientMessage, reason = 'error', conversationText = '') {
     const isVideo = reason === 'video';
     try {
         const orderDoc = await getLatestOrderForContact(contactId);
@@ -1618,12 +1618,53 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Corregir (${isVideo ? 'pide video' : 'reporte de error'}) del cliente (${contactId}).`);
         // Refrescar la bandera "Pendiente de Diseño" del contacto (no bloquear si falla).
         try { await require('./design/designPending').recomputeForContact(contactId); } catch (_) {}
+
+        // Corrección de DATOS (no video): actualizar el datosProducto del pedido en la lista, para que
+        // el equipo de diseño vea el dato correcto y no solo la marca "Corregir". Se re-extrae el pedido
+        // corregido de la conversación con el MISMO extractor de ventas (ya sabe "el cliente cambió X →
+        // devuelve el pedido corregido"). Se PRESERVAN precios/cantidades: una corrección de nombre/fecha
+        // no cambia el precio. Solo con confianza alta y si de verdad cambió; se guarda el valor anterior
+        // y el equipo lo verifica (el pedido queda en "Corregir"). Nunca bloquea la alerta.
+        let datoUpdateNote = '';
+        if (!isVideo && conversationText) {
+            try {
+                const aiOrderReg = require('./orders/aiOrderRegistration');
+                const cfg = await aiOrderReg.getAiOrderConfig();
+                const curDatos = (Array.isArray(orderData.items) && orderData.items.length)
+                    ? (orderData.items.length > 1 ? orderData.items.map(it => it.datosProducto).filter(Boolean).join(' || ') : (orderData.items[0].datosProducto || ''))
+                    : (orderData.datosProducto || '');
+                const extraction = await aiOrderReg.extractOrderFromChat({
+                    conversationText,
+                    name: (contactData && contactData.name) || contactId,
+                    catalogText: cfg.catalogText,
+                    existingOrder: { num: orderNumber, datosProducto: curDatos, precio: orderData.precio }
+                });
+                if (extraction && Array.isArray(extraction.items) && extraction.items.length && extraction.confianza >= 70 && !extraction.esAdicional) {
+                    const { computeOrderMainFields } = require('./orders/createOrderCore');
+                    const { mainDatosProducto } = computeOrderMainFields(extraction.items);
+                    const newDatos = (extraction.items.length > 1 ? mainDatosProducto : extraction.items[0].datosProducto) || '';
+                    if (newDatos.trim() && newDatos.trim() !== String(curDatos).trim()) {
+                        const upd = { datosProducto: newDatos, datosProductoAnterior: curDatos, datoCorregidoAt: admin.firestore.FieldValue.serverTimestamp() };
+                        // Solo si el nº de items coincide, actualiza cada item preservando su precio/cantidad.
+                        if (Array.isArray(orderData.items) && orderData.items.length === extraction.items.length) {
+                            upd.items = orderData.items.map((it, i) => ({ ...it, datosProducto: extraction.items[i].datosProducto || it.datosProducto }));
+                        }
+                        await orderDoc.ref.update(upd);
+                        datoUpdateNote = `\n\n✅ *Dato ya actualizado en la lista* (verifícalo):\n• Antes: ${String(curDatos).slice(0, 180)}\n• Ahora: ${newDatos.slice(0, 180)}`;
+                        console.log(`[POSTVENTA] Pedido ${orderNumber}: datosProducto corregido en la lista (confianza ${extraction.confianza}%).`);
+                    }
+                } else if (extraction) {
+                    datoUpdateNote = `\n\n⚠️ No pude actualizar el dato automáticamente (confianza ${extraction.confianza || 0}%). Corrígelo a mano en la lista de pedidos.`;
+                }
+            } catch (e) { console.warn('[POSTVENTA] No se pudo auto-actualizar el dato del pedido:', e.message); }
+        }
+
         try {
             const name = (contactData && contactData.name) || contactId;
             const req = String(clientMessage || '').trim().slice(0, 300);
             const text = isVideo
                 ? `🎥 *Pedido a CORREGIR — pide VIDEO/FOTO extra*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente pide un video o una foto adicional (ej. otro color de luz) de su producto ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nNO hay que re-fabricar nada: graba/toma lo que pide y envíaselo por el chat. Al mandarlo, regresa el pedido a "Foto enviada" para que siga su cobro.`
-                : `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nRevisa la conversación y corrígelo.`;
+                : `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido${req ? `:\n_"${req}"_` : '.'}${datoUpdateNote}\n\nRevisa la conversación${datoUpdateNote ? '.' : ' y corrígelo.'}`;
             await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
             console.log(`[POSTVENTA] Alerta de ${isVideo ? 'video' : 'corrección'} enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
         } catch (e) {
@@ -3208,7 +3249,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // Reporte de error en el pedido terminado (/corregir): cambiar el pedido a "Corregir" y
         // avisar al admin. Fire-and-forget: nunca debe tumbar la respuesta al cliente.
         if (needsCorrection) {
-            markOrderCorregirForContact(contactId, contactData, messageText)
+            markOrderCorregirForContact(contactId, contactData, messageText, 'error', conversationHistory)
                 .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact falló:', e.message));
         }
 
