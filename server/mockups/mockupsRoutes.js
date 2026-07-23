@@ -482,7 +482,10 @@ router.post('/send', asyncHandler(async (req, res) => {
 router.get('/auto-config', asyncHandler(async (req, res) => {
     const doc = await db.collection('mockup_config').doc('settings').get();
     const data = doc.exists ? doc.data() : {};
-    res.json({ success: true, autoGenerate: data.autoGenerate !== false });   // default: encendida
+    // `scheduler` = los números EFECTIVOS con los que corre (cron, lote automático y lote de
+    // "Generar ahora"), para verificarlos sin entrar al dashboard de Render.
+    const scheduler = require('./mockupAutoScheduler').getSchedulerInfo();
+    res.json({ success: true, autoGenerate: data.autoGenerate !== false, scheduler });   // default: encendida
 }));
 
 router.post('/auto-config', asyncHandler(async (req, res) => {

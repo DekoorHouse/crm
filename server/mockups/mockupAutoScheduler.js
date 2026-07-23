@@ -174,4 +174,15 @@ function startMockupAutoScheduler() {
     console.log('[mockup-auto] Scheduler iniciado. Cron: "' + CRON_SCHEDULE + '", batch ' + BATCH + ', aviso de cuota a ' + ADMIN_PHONE + '.');
 }
 
-module.exports = { startMockupAutoScheduler, runOnce };
+// Configuración EFECTIVA del scheduler (lo que de verdad está corriendo, ya resueltas las env
+// de Render). La expone GET /api/mockups/auto-config para no tener que bucear en el dashboard.
+function getSchedulerInfo() {
+    return {
+        cron: CRON_SCHEDULE,
+        batch: BATCH,
+        forceBatch: FORCE_BATCH,
+        batchFromEnv: !!process.env.MOCKUP_AUTO_BATCH,   // true = lo manda Render, no el código
+    };
+}
+
+module.exports = { startMockupAutoScheduler, runOnce, getSchedulerInfo };
