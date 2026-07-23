@@ -61,9 +61,80 @@ async function toDataUri(href) {
     return null;
 }
 
+// ===================== AUTO-AJUSTE DEL TEXTO (paridad con el editor del navegador) =====================
+// El editor del lienzo (mockups-handlers.js) hace DOS cosas con cada texto que este renderizador debía
+// replicar y no lo hacía —por eso los nombres del automático tocaban el infinito o salían corridos
+// hacia arriba (visto en pedidos reales, jul-2026):
+//   1) Encoge el texto que no cabe DENTRO de su área de límite (limit/limitPath = los lóbulos del
+//      infinito y la caja de la fecha), por bisección, midiendo la tinta real.
+//   2) Ancla el texto por su CENTRO vertical (dominant-baseline central); sin eso el texto se dibuja
+//      desde su base y sube ~40px respecto a donde lo puso el diseñador, invadiendo el trazo.
+const LIMIT_MARGIN = 6;   // mismo margen que MK_LZ_LIMIT_MARGIN del navegador
+
+// Áreas de límite como polígonos en coords del lienzo (rect -> 4 esquinas; trazo a mano -> sus puntos).
+function limitShapesFrom(items) {
+    const shapes = [];
+    for (const it of (items || [])) {
+        if (it.type === 'limit') {
+            shapes.push([{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y }, { x: it.x + it.w, y: it.y + it.h }, { x: it.x, y: it.y + it.h }]);
+        } else if (it.type === 'limitPath' && Array.isArray(it.points) && it.points.length >= 3) {
+            const s = it.scale || 1;
+            shapes.push(it.points.map(p => ({ x: it.x + s * p.x, y: it.y + s * p.y })));
+        }
+    }
+    return shapes;
+}
+
+// ¿El punto está dentro del polígono? (ray casting par/impar) — idéntico al del navegador.
+function pointInPoly(pt, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i], b = poly[j];
+        if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < (b.x - a.x) * (pt.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+}
+
+// Caja de TINTA de un texto (a un tamaño dado) en coords del lienzo, medida con resvg (getBBox).
+// La tinta escala linealmente con el tamaño, así que con UNA medición se prueba cualquier factor.
+function measureInk(text, size, x, y, anchor) {
+    try {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${LZ_W}" height="${LZ_H}"><text x="${x}" y="${y}" font-family="${FONT_FAMILY}" font-size="${size}" text-anchor="${anchor}" dominant-baseline="central">${esc(text)}</text></svg>`;
+        const r = new Resvg(svg, { font: { fontFiles: [FONT_PATH], defaultFontFamily: FONT_FAMILY, loadSystemFonts: false } });
+        return r.getBBox() || null;
+    } catch (_) { return null; }
+}
+
+// Perímetro de la caja del texto escalada por f alrededor del ancla (x,y), crecida un margen M.
+// Igual que mkLzTextBoxPts del navegador: si TODOS estos puntos caen dentro del límite, cabe.
+function textBoxPts(x, y, ink, f, M) {
+    const extL = x - ink.x, extR = ink.x + ink.width - x, extT = y - ink.y, extB = ink.y + ink.height - y;
+    const x0 = x - (extL * f + M), x1 = x + (extR * f + M);
+    const y0 = y - (extT * f + M), y1 = y + (extB * f + M);
+    const pts = []; const N = 6;
+    for (let i = 0; i <= N; i++) { const px = x0 + (x1 - x0) * i / N; pts.push({ x: px, y: y0 }, { x: px, y: y1 }); }
+    for (let i = 1; i < N; i++) { const py = y0 + (y1 - y0) * i / N; pts.push({ x: x0, y: py }, { x: x1, y: py }); }
+    return pts;
+}
+
+// Tamaño de fuente para que el texto quepa dentro de los límites que contienen su ancla (bisección,
+// igual que mkLzComputeSizes del navegador). Sin límites, o si ya cabe al tamaño deseado -> baseSize.
+function fitTextSize(text, baseSize, x, y, anchor, shapes) {
+    if (!shapes.length || !String(text || '').trim()) return baseSize;
+    const inShapes = shapes.filter(poly => pointInPoly({ x, y }, poly));
+    if (!inShapes.length) return baseSize;
+    const ink = measureInk(text, baseSize, x, y, anchor);
+    if (!ink) return baseSize;
+    const fits = (f) => textBoxPts(x, y, ink, f, LIMIT_MARGIN).every(p => inShapes.every(poly => pointInPoly(p, poly)));
+    let f = 1;
+    if (!fits(1)) { let lo = 0, hi = 1; for (let i = 0; i < 22; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; } f = lo; }
+    return Math.max(10, Math.floor(baseSize * f));
+}
+
 // Construye el SVG del diseño del lienzo (imagen de fondo + textos) relleno con los datos del pedido.
-// Los items 'limit'/'limitPath' son solo restricciones de ajuste del frontend: no se dibujan.
+// Los items 'limit'/'limitPath' NO se dibujan: solo acotan el auto-ajuste del texto (ver arriba).
 async function buildLienzoSvg(items, fields) {
+    const shapes = limitShapesFrom(items);
     let inner = `<rect width="${LZ_W}" height="${LZ_H}" fill="#000"/>`;
     for (const it of (items || [])) {
         if (it.type === 'image' && it.href) {
@@ -74,9 +145,10 @@ async function buildLienzoSvg(items, fields) {
         } else if (it.type === 'text') {
             const val = fillText(it, fields);
             if (!val) continue;
-            const size = it.size || it.baseSize || 60;
+            const baseSize = it.baseSize || it.size || 60;
             const anchor = it.align === 'center' ? 'middle' : it.align === 'right' ? 'end' : 'start';
-            inner += `<text x="${it.x}" y="${it.y}" fill="#fff" font-family="${FONT_FAMILY}" font-size="${size}" text-anchor="${anchor}">${esc(val)}</text>`;
+            const size = fitTextSize(val, baseSize, it.x, it.y, anchor, shapes);
+            inner += `<text x="${it.x}" y="${it.y}" fill="#fff" font-family="${FONT_FAMILY}" font-size="${size}" text-anchor="${anchor}" dominant-baseline="central">${esc(val)}</text>`;
         }
     }
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${LZ_W}" height="${LZ_H}" viewBox="0 0 ${LZ_W} ${LZ_H}">${inner}</svg>`;
