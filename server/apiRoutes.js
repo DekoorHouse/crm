@@ -7764,7 +7764,7 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 router.get('/design-pending', async (req, res) => {
     try {
         const { reasonsForOrderData } = require('./design/designPending');
-        const { isAutoWaiting, SPECIAL_RE, productOf, datosOf } = require('./design/svgAuto');
+        const { isAutoWaiting, isVideoAutoWaiting, SPECIAL_RE, productOf, datosOf } = require('./design/svgAuto');
         const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
 
         // Candidatos (se deduplica por id): pedidos en 'Corregir' (datos/video) + los que tienen
@@ -7868,9 +7868,9 @@ router.get('/design-pending', async (req, res) => {
             [sSin, sFab, sCor, sProd].forEach(s => s.forEach(d => byId.set(d.id, d)));
 
             // Previews (mockup_previews) de los 'Sin estatus' (fuente de verdad de "ya tiene mockup", por
-            // si la marca mockupPreviewAt no quedó) y de los 'Fabricar' (para saber si el worker los va a
-            // cortar solo). Un solo lote reutilizable.
-            const prevMap = await previewsFor([...new Set([...sSin.docs.map(d => d.id), ...sFab.docs.map(d => d.id)])]);
+            // si la marca mockupPreviewAt no quedó), de los 'Fabricar' y de los 'Corregir' (para saber si
+            // el worker los va a cortar solo). Un solo lote reutilizable.
+            const prevMap = await previewsFor([...new Set([...sSin.docs.map(d => d.id), ...sFab.docs.map(d => d.id), ...sCor.docs.map(d => d.id)])]);
             const conMockup = new Set();
             sSin.docs.forEach(d => { const pv = prevMap.get(d.id); if (pv && pv.length) conMockup.add(d.id); });
             for (const doc of byId.values()) {
@@ -7880,7 +7880,9 @@ router.get('/design-pending', async (req, res) => {
                 // Los que el worker corta solo (Fabricar auto-elegible, esperando pareja) NO son diseño
                 // manual: se muestran en la pestaña "SVG IA", no en Pendientes.
                 if (isAutoWaiting(p, prevMap.get(doc.id))) continue;
-                orders.push(mapOrder(doc, reasons));
+                // Los 'Corregir' que pidieron VIDEO sí se quedan aquí (el pendiente del video es manual),
+                // pero se marcan para que el diseñador NO los corte a mano: el worker ya los tiene en cola.
+                orders.push(mapOrder(doc, reasons, { autoCutQueued: isVideoAutoWaiting(p, prevMap.get(doc.id)) }));
             }
         }
 

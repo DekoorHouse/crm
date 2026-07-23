@@ -219,7 +219,17 @@ parentId fallara, re-buscar la carpeta: `title = 'SVG Corte' and mimeType = 'app
 ## Automatización (worker local) — ACTIVO (cada 15 min; confirmado 2026-07-17)
 
 `scripts/svg-corte-worker.js` (repo crm) hace el Modo 2 SOLO: pedidos 'Fabricar' con mockup
-aprobado → hoja de 2 → Corel → Drive → estatus "Diseñado por IA". **Fidelidad con el mockup**:
+aprobado → hoja de 2 → Corel → Drive → estatus "Diseñado por IA". **También corta los pedidos
+que PIDEN VIDEO** (Chris, 2026-07-23): un `Corregir` con `corregirMotivo='video'` es un cliente
+que pide video de una lámpara que **nunca se cortó** (lo que vio fue el MOCKUP, la pieza no existe);
+se fabrica para poder grabarla. Misma elegibilidad que un `Fabricar` (mockup aprobado + layout
+verificado), se sube a Drive igual, pero **conserva su estatus `Corregir`** (solo gana
+`svgCorteAt/svgCorteUrl`, `svgCorteBy='svg-worker-video'`) porque el pendiente del video sigue vivo
+hasta que el equipo lo grabe y lo mande. Los `Corregir` de **`datos`** NO se cortan (el dato del
+mockup está mal → manual). En Pendientes salen con la insignia **"Corte IA en cola"** para que el
+diseñador no los corte a mano. Kill-switch propio: `svg_corte_config/settings.videoAutoCut=false`
+(independiente de `autoGenerate`). Lógica en `server/design/svgAuto.js` (`isVideoCorregir`,
+`isVideoAutoWaiting`). **Fidelidad con el mockup**:
 usa `mockup_previews.previews[].layout` (renglones leidos por vision de la imagen que el
 cliente aprobo) como fuente de verdad de los textos; sin eso, los fields (que ya traen `\n`
 si la regla de renglones decidio 2 lineas). **CANDADO anti-re-corte** (commit a779b46d): salta

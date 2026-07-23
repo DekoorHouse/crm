@@ -41,16 +41,40 @@ function svgAutoEligibility(o, previews) {
     return { eligible: true, reason: 'ok', fields: { nombre1, nombre2, fecha }, layoutVerificado: !!lay };
 }
 
+// Candados comunes a cualquier cola de corte automático: ya diseñado (a mano o por IA), ya enviado/
+// gestionado, o con un pendiente MANUAL aparte (2º producto agregado tras pagar -> lo revisa alguien).
+function autoBlocked(o) {
+    return !!(o.disenoListoAt || o.svgCorteAt                                // ya diseñado / ya tiene SVG
+        || (o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios             // ya se envió/gestionó
+        || o.productoAgregadoPostPagoAt);                                    // 2º producto -> manual
+}
+
 // ¿El pedido está EN COLA para el corte automático (Fabricar, aún sin cortar, auto-elegible)? Es el
 // conjunto exacto que el endpoint saca de "Pendientes" manual y muestra en "SVG IA" como
 // "esperando pareja". `previews` = mockup_previews[orderId].previews.
-// Excluye lo que ya no es cola de IA: enviado, ya diseñado (manual o IA), o con un pendiente MANUAL
-// aparte (2º producto agregado tras pagar -> lo revisa una persona).
 function isAutoWaiting(o, previews) {
     if (String(o.estatus || '').trim().toLowerCase() !== 'fabricar') return false;
-    if (o.disenoListoAt || o.svgCorteAt) return false;                       // ya diseñado / ya tiene SVG
-    if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios) return false; // ya se envió/gestionó
-    if (o.productoAgregadoPostPagoAt) return false;                          // 2º producto -> manual
+    if (autoBlocked(o)) return false;
+    return svgAutoEligibility(o, previews).eligible;
+}
+
+// ¿El pedido está en 'Corregir' porque el cliente PIDIÓ UN VIDEO de su lámpara (corregirMotivo
+// 'video'), no porque un dato esté mal? Ese pendiente NO invalida el diseño: lo que el cliente vio
+// fue el MOCKUP, así que la pieza puede no existir todavía.
+function isVideoCorregir(o) {
+    return String(o.estatus || '').trim().toLowerCase() === 'corregir'
+        && String(o.corregirMotivo || '').toLowerCase() === 'video';
+}
+
+// ¿El worker debe cortar este pedido de VIDEO? (Chris, 2026-07-23) El cliente pidió video de una
+// lámpara que nunca se cortó: hay que fabricarla para poder grabarla. El mockup que aprobó sigue
+// siendo la fuente de verdad, así que se corta igual que un 'Fabricar'. Las correcciones de 'datos'
+// NO entran: ahí justamente el dato del mockup está mal y lo revisa una persona.
+// OJO: al cortarlo NO se le cambia el estatus (sigue en 'Corregir'), porque el pendiente del video
+// sigue vivo hasta que el equipo lo grabe y se lo mande.
+function isVideoAutoWaiting(o, previews) {
+    if (!isVideoCorregir(o)) return false;
+    if (autoBlocked(o)) return false;
     return svgAutoEligibility(o, previews).eligible;
 }
 
@@ -112,4 +136,7 @@ function forcedDesignFields(o, previews) {
     return { ok: true, reason: 'ok', fields: { nombre1, nombre2, fecha }, previewUrl };
 }
 
-module.exports = { svgAutoEligibility, isAutoWaiting, forcedDesignFields, parseDatosFields, SPECIAL_RE, SIN_FECHA_RE, productOf, datosOf };
+module.exports = {
+    svgAutoEligibility, isAutoWaiting, isVideoCorregir, isVideoAutoWaiting, forcedDesignFields,
+    parseDatosFields, SPECIAL_RE, SIN_FECHA_RE, productOf, datosOf,
+};

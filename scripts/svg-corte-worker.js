@@ -5,7 +5,9 @@
  * Cada corrida (Task Scheduler cada 15 min):
  *   1. Busca pedidos 'Fabricar' de "Lámpara de corazones" que ya tienen mockup aprobado
  *      (mockup_previews.previews[]), sin nada "especial" (logo/foto → diseño manual),
- *      sin diseñar (sin disenoListoAt) y sin SVG previo (sin svgCorteAt).
+ *      sin diseñar (sin disenoListoAt) y sin SVG previo (sin svgCorteAt). También entran los
+ *      'Corregir' con motivo VIDEO (el cliente pidió video de una lámpara que nunca se cortó:
+ *      lo que vio fue el mockup) — esos conservan su estatus 'Corregir'.
  *   2. Toma nombres/fecha del ÚLTIMO preview (lo que el cliente vio y aprobó).
  *   3. Los empareja de 2 en 2 (más antiguos primero). Un pedido suelto espera pareja;
  *      si lleva más de SINGLE_AFTER_HOURS pagado, sale solo en hoja de 1.
@@ -16,7 +18,8 @@
  *   --dry    solo muestra qué haría, no toca nada
  *   --force  ignora el kill-switch autoGenerate
  *   --max N  máximo de hojas en esta corrida (default 2)
- * Kill-switch: Firestore svg_corte_config/settings { autoGenerate: false }.
+ * Kill-switches: Firestore svg_corte_config/settings { autoGenerate: false } (todo el auto-corte),
+ *                { videoAutoCut: false } (solo los 'Corregir' que pidieron video).
  * Log: Documents\SVG-Corte\worker.log
  */
 'use strict';
@@ -28,7 +31,7 @@ const { spawnSync } = require('child_process');
 
 const { db, admin } = require('../server/config');
 const { recomputeForContact } = require('../server/design/designPending');
-const { svgAutoEligibility, forcedDesignFields } = require('../server/design/svgAuto');
+const { svgAutoEligibility, forcedDesignFields, isVideoCorregir } = require('../server/design/svgAuto');
 
 const SKILL_DIR = path.join(__dirname, '..', '.claude', 'skills', 'svg-corte');
 const INFINITO_VBS = path.join(SKILL_DIR, 'infinito.vbs');
@@ -112,12 +115,29 @@ async function getSettings() {
     } catch (_) { return {}; }
 }
 
-async function findCandidates() {
-    const snap = await db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(800).get();
+// Cola del corte automático. Dos orígenes:
+//   - 'Fabricar'  -> pagó y hay que producir (caso normal).
+//   - 'Corregir' con motivo VIDEO -> el cliente pidió un video de su lámpara y esta NUNCA se cortó:
+//     lo que vio fue el MOCKUP, la pieza todavía no existe (Chris, 2026-07-23). El mockup aprobado
+//     sigue siendo la fuente de verdad, así que se corta igual; el pedido se queda en 'Corregir'
+//     (el pendiente del video sigue vivo). Las correcciones de 'datos' NO entran: ahí el dato del
+//     mockup está mal y lo revisa una persona. Kill-switch propio: settings.videoAutoCut = false.
+async function findCandidates(cfg) {
+    const videoOn = (cfg || {}).videoAutoCut !== false;
+    const [snapFab, snapCor] = await Promise.all([
+        db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(800).get(),
+        videoOn ? db.collection('pedidos').where('estatus', '==', 'Corregir').limit(300).get()
+                : Promise.resolve({ docs: [] }),
+    ]);
+    const queue = [
+        ...snapFab.docs.map(doc => ({ doc, video: false })),
+        ...snapCor.docs.map(doc => ({ doc, video: true })),
+    ];
     const out = [];
     const staleMs = Date.now() - CLAIM_STALE_MIN * 60 * 1000;
-    for (const doc of snap.docs) {
+    for (const { doc, video } of queue) {
         const o = { id: doc.id, ...doc.data() };
+        if (video && !isVideoCorregir(o)) continue;                          // Corregir por 'datos' -> manual
         if (o.disenoListoAt || o.svgCorteAt) continue;                       // ya diseñado / ya tiene SVG
         if (o.iaForce) continue;                                             // forzado desde el CRM -> lo maneja processForcedDesigns (con confirmación antes de subir)
         // Con guía de envío (o quitado de Envíos) el pedido ya se fabricó/gestionó: cortarlo
@@ -140,7 +160,7 @@ async function findCandidates() {
             continue;
         }
         const paidMs = ms(o.comprobanteValidadoAt) || ms(o.confirmedAt) || ms(o.createdAt);
-        out.push({ o, fields: el.fields, paidMs, layoutVerificado: el.layoutVerificado });
+        out.push({ o, fields: el.fields, paidMs, layoutVerificado: el.layoutVerificado, video });
     }
     out.sort((a, b) => a.paidMs - b.paidMs);   // más antiguos primero
     return out;
@@ -175,7 +195,7 @@ async function unclaim(entries) {
 
 async function processSheet(entries) {
     const label = entries.map(e => dhOf(e.o)).join('-');
-    const vis = e => (e.layoutVerificado ? '' : ' [sin visión]');
+    const vis = e => (e.layoutVerificado ? '' : ' [sin visión]') + (e.video ? ' [pide video]' : '');
     log(`> Hoja ${label}: ` + entries.map(e => `${e.fields.nombre1.replace(/\n/g, '⏎')} y ${e.fields.nombre2.replace(/\n/g, '⏎')} (${e.fields.fecha.replace(/\n/g, '⏎')})${vis(e)}`).join(' | '));
     if (DRY) return;
 
@@ -185,16 +205,20 @@ async function processSheet(entries) {
         const up = await uploadToDrive(svg);
         for (const e of entries) {
             const otros = entries.filter(x => x !== e).map(x => dhOf(x.o));
-            await db.collection('pedidos').doc(String(e.o.id)).update({
-                estatus: NEW_STATUS,
+            const upd = {
                 svgCorteAt: admin.firestore.FieldValue.serverTimestamp(),
                 svgCorteUrl: up.webViewLink,
                 svgCorteFileName: up.name,
                 svgCorteCdrLocal: cdr,
                 svgCorteSheetWith: otros.length ? otros.join(',') : null,
-                svgCorteBy: 'svg-worker',
+                svgCorteBy: e.video ? 'svg-worker-video' : 'svg-worker',
                 svgCorteStartedAt: admin.firestore.FieldValue.delete(),
-            });
+            };
+            // Los pedidos que pidieron VIDEO se quedan en 'Corregir': su pendiente no era el diseño
+            // sino el video, y sigue vivo hasta que el equipo lo grabe y lo mande. En la lista se ven
+            // con la insignia "Video" + el link "Diseñado por IA" del SVG.
+            if (!e.video) upd.estatus = NEW_STATUS;
+            await db.collection('pedidos').doc(String(e.o.id)).update(upd);
             try { await recomputeForContact(e.o.contactId || e.o.telefono); } catch (_) {}
         }
         log(`  OK ${label} -> ${up.webViewLink}`);
@@ -382,8 +406,9 @@ async function main() {
 
         if (!FORCE && cfg.autoGenerate === false) { log('autoGenerate=false (kill-switch), salgo.'); return; }
 
-        const candidates = await findCandidates();
-        log(`Candidatos listos para diseño IA: ${candidates.length}` + (DRY ? ' (DRY RUN)' : ''));
+        const candidates = await findCandidates(cfg);
+        const nVideo = candidates.filter(c => c.video).length;
+        log(`Candidatos listos para diseño IA: ${candidates.length}` + (nVideo ? ` (${nVideo} piden video)` : '') + (DRY ? ' (DRY RUN)' : ''));
         const sheets = buildSheets(candidates).slice(0, MAX_SHEETS);
         if (!sheets.length) { log('Nada que generar.'); return; }
 

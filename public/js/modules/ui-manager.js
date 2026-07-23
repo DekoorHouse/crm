@@ -517,7 +517,12 @@ function _paintDesignPending() {
                 motivoCell = iaBadge || `<span style="display:inline-block;background:#e83e8c22;color:#e83e8c;border:1px solid #e83e8c66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px"><i class="fas fa-robot" style="margin-right:3px"></i>Diseñado por IA</span>`;
             }
         } else {
-            motivoCell = (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('') + iaBadge;
+            // "Corte IA en cola": pedido que pidió VIDEO y nunca se cortó — el worker lo corta solo
+            // (≤15 min) y lo sube a Drive; sigue en Pendientes porque falta grabar y mandar el video.
+            const colaBadge = (o.autoCutQueued && !o.svgCorteUrl)
+                ? `<span title="El worker de corte lo va a diseñar y subir a Drive solo (≤15 min). No lo cortes a mano." style="display:inline-block;background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas fa-wand-magic-sparkles" style="margin-right:3px"></i>Corte IA en cola</span>`
+                : '';
+            motivoCell = (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('') + colaBadge + iaBadge;
         }
         const statusSel = `<select onchange="changeDesignPendingStatus('${o.id}', this.value, this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);width:132px">${ENVIO_STATUS_OPTIONS.map(s => `<option${(o.estatus || 'Sin estatus') === s ? ' selected' : ''}>${s}</option>`).join('')}</select>`;
         const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (usa ← → para el siguiente/anterior pedido)" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:14px"><i class="fas fa-comments"></i></button>` : '';
