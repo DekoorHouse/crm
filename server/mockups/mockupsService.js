@@ -2,10 +2,12 @@ const fetch = require('node-fetch');
 const sharp = require('sharp');
 const { db, bucket } = require('../config');
 
-const API_KEY = () => process.env.GOOGLE_AI_IMAGE_KEY;
+// Llave de imágenes: la dedicada si existe, si no la general de Gemini (la misma que ya usa
+// toda la IA del CRM). Así el módulo funciona sin configurar nada extra en Render.
+const API_KEY = () => process.env.GOOGLE_AI_IMAGE_KEY || process.env.GEMINI_API_KEY;
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
-const MODEL_ID = 'gemini-3-pro-image-preview';
-const COST_PER_IMAGE = 0.134;   // 2K resolution
+const MODEL_ID = 'gemini-3-pro-image-preview';   // Nano Banana Pro (el mejor de Gemini escribiendo texto)
+const COST_PER_IMAGE = 0.134;   // 1K y 2K cuestan igual; 4K sube a $0.24
 const INPUT_PER_1M = 2.00;
 const COLLECTION = 'mockups_gallery';
 const STORAGE_DIR = 'mockups';
@@ -13,17 +15,26 @@ const THUMB_WIDTH = 400;
 
 // ===================== IMAGE GENERATION =====================
 
-async function generateImage(prompt, aspectRatio = '1:1', refImages = [], resolution = '2K') {
+// Gemini solo acepta '1K' | '2K' | '4K'. Los llamadores viejos mandaban '1k' (formato WaveSpeed).
+function normResolution(r) {
+    const s = String(r || '').trim().toUpperCase();
+    return ['1K', '2K', '4K'].includes(s) ? s : '2K';
+}
+
+// `maxRefSize` = lado máximo al que se encogen las imágenes de referencia antes de mandarlas.
+// 1024 basta para la foto base de la lámpara y el diseño a grabar; el GRABADO de una foto del
+// cliente sube a 2048 porque ahí sí importa el detalle fino de los rostros.
+async function generateImage(prompt, aspectRatio = '1:1', refImages = [], resolution = '2K', maxRefSize = 1024) {
     const apiKey = API_KEY();
-    if (!apiKey) throw new Error('GOOGLE_AI_IMAGE_KEY no está configurada.');
+    if (!apiKey) throw new Error('Falta GOOGLE_AI_IMAGE_KEY (o GEMINI_API_KEY) para generar imágenes.');
 
     const url = `${BASE_URL}/models/${MODEL_ID}:generateContent?key=${apiKey}`;
 
     const parts = [{ text: prompt }];
     for (const img of refImages) {
-        // Resize a 1024px max para reducir tokens de entrada
+        // Resize para reducir tokens de entrada (nunca agranda).
         const resized = await sharp(Buffer.from(img.base64, 'base64'))
-            .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+            .resize(maxRefSize, maxRefSize, { fit: 'inside', withoutEnlargement: true })
             .webp({ quality: 80 })
             .toBuffer();
         parts.push({
@@ -41,7 +52,7 @@ async function generateImage(prompt, aspectRatio = '1:1', refImages = [], resolu
             contents: [{ parts }],
             generationConfig: {
                 responseModalities: ['TEXT', 'IMAGE'],
-                imageConfig: { aspectRatio, imageSize: resolution },
+                imageConfig: { aspectRatio, imageSize: normResolution(resolution) },
             },
             safetySettings: [
                 { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -227,8 +238,8 @@ async function deleteTemplate(id) {
     await db.collection(TEMPLATES_COLLECTION).doc(id).delete();
 }
 
-// Sube la foto base a Storage como webp PÚBLICO (WaveSpeed y WhatsApp la
-// descargan por URL, así que NO puede ser una URL firmada/privada).
+// Sube la foto base a Storage como webp PÚBLICO (WhatsApp la descarga por URL,
+// así que NO puede ser una URL firmada/privada).
 async function uploadTemplateBaseImage(buffer) {
     const id = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     const webp = await sharp(buffer)
@@ -244,7 +255,7 @@ async function uploadTemplateBaseImage(buffer) {
 
 // Sube una imagen cualquiera (buffer) como webp PÚBLICO y devuelve su URL. La usa la 2ª
 // referencia del preview (diseño generado por código o imagen subida a mano); debe ser
-// pública porque WaveSpeed la descarga por URL del lado servidor (una firmada daría 403).
+// pública porque se vuelve a descargar por URL para mandarla a la IA (una firmada daría 403).
 async function uploadPublicImage(buffer, subdir = 'refs') {
     const id = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     const webp = await sharp(buffer)

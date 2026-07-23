@@ -8046,7 +8046,7 @@ router.post('/design-approval/test-classify', async (req, res) => {
 });
 
 // GET /api/debug/mockup-ref — Renderiza la 2ª referencia ("diseño a grabar") en el servidor y la
-// devuelve como PNG, SIN llamar a WaveSpeed (no gasta créditos). Solo para verificar que
+// devuelve como PNG, SIN llamar a la IA (no gasta créditos). Solo para verificar que
 // @resvg/resvg-js + la fuente manuscrita funcionan en el entorno (Render). Params: n1, n2, f.
 router.get('/debug/mockup-ref', async (req, res) => {
     try {

@@ -236,7 +236,7 @@ router.post('/templates/upload', upload.single('foto'), asyncHandler(async (req,
 
 // POST /api/mockups/upload-image — Subir una imagen cualquiera y devolver su URL pública.
 // La usa la 2ª referencia del preview: el diseño rasterizado por el navegador (PNG) o una
-// imagen que el operador suba a mano. Debe ser pública (WaveSpeed la descarga por URL).
+// imagen que el operador suba a mano. Debe ser pública (se vuelve a descargar por URL).
 router.post('/upload-image', upload.single('file'), asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, error: 'No se envió archivo.' });
     const out = await svc.uploadPublicImage(req.file.buffer, 'refs');
@@ -273,7 +273,7 @@ router.post('/fetch-image', asyncHandler(async (req, res) => {
 
 // POST /api/mockups/generate-preview — Generar preview desde plantilla + campos
 router.post('/generate-preview', asyncHandler(async (req, res) => {
-    const { templateId, fields: rawFields = {}, provider = 'wavespeed', resolution, quality } = req.body;
+    const { templateId, fields: rawFields = {}, resolution } = req.body;
     if (!templateId) return res.status(400).json({ success: false, error: 'Se requiere templateId.' });
 
     const tpl = await svc.getTemplate(templateId);
@@ -302,72 +302,22 @@ router.post('/generate-preview', asyncHandler(async (req, res) => {
         prompt += '\n\nSe adjuntan DOS imágenes: (1) la foto de la lámpara base —NO la modifiques (figura, base, acrílico, color, iluminación y fondo intactos)— y (2) el DISEÑO de referencia que debes grabar en la lámpara. Reproduce el diseño (2) EXACTAMENTE: mismas palabras y ortografía, misma tipografía manuscrita, mismo símbolo y misma composición. Intégralo de forma foto-realista sobre la lámpara ajustando solo tamaño, posición y perspectiva; no inventes ni cambies el texto.';
     }
 
-    // Gemini responde en una sola llamada (rápido) -> síncrono.
-    if (provider === 'gemini') {
-        const refs = [await svc.fetchImageAsBase64(tpl.baseImageUrl)];
-        if (secondImageUrl) refs.push(await svc.fetchImageAsBase64(secondImageUrl));
-        const result = await svc.generateImage(prompt, aspectRatio, refs, resolution || '2K');
-        const saved = await svc.saveToGallery(prompt, aspectRatio, result.images, result.usage, result.cost);
-        await savePreview(req.body.orderId, saved[0], prompt, { blockId: req.body.blockId, templateId, fields, secondRefUrl: secondImageUrl });
-        return res.json({ success: true, image: saved[0], prompt, cost: result.cost });
-    }
-
-    // WaveSpeed (GPT Image 2) puede tardar >90s -> asíncrono: enviamos la tarea
-    // y devolvemos un jobId; el front consulta /generate-status/:jobId.
-    const images = [tpl.baseImageUrl];
-    if (secondImageUrl) images.push(secondImageUrl);
-    const wave = require('./wavespeedClient');
-    const { predictionId } = await wave.submitEdit(prompt, images, {
-        aspectRatio,
-        resolution: resolution || '1k',
-        quality: quality || 'high',
-    });
-    await db.collection('mockup_jobs').doc(predictionId).set({
-        prompt, aspectRatio, templateId, orderId: req.body.orderId || null,
-        blockId: req.body.blockId || null, fields: fields || {}, secondRefUrl: secondImageUrl || null,
-        inputImages: images.length, createdAt: new Date().toISOString(),
-    });
-    res.json({ success: true, jobId: predictionId, prompt });
-}));
-
-// GET /api/mockups/generate-status/:jobId — Avance del preview (WaveSpeed)
-router.get('/generate-status/:jobId', asyncHandler(async (req, res) => {
-    const jobId = req.params.jobId;
-    const wave = require('./wavespeedClient');
-    const r = await wave.fetchResult(jobId);
-
-    if (r.status === 'failed') {
-        return res.json({ success: true, status: 'failed', error: r.error || 'La generación falló.' });
-    }
-    if (r.status !== 'completed' || r.outputs.length === 0) {
-        return res.json({ success: true, status: 'processing' });
-    }
-
-    // Completado: descargar, guardar en galería y limpiar el job.
-    const jobDoc = await db.collection('mockup_jobs').doc(jobId).get();
-    const job = jobDoc.exists ? jobDoc.data() : {};
-    const img = await wave.downloadImage(r.outputs[0]);
-    const extraInputs = Math.max(0, (job.inputImages || 1) - 1);
-    const cost = wave.costFor(1, extraInputs);
-    const saved = await svc.saveToGallery(
-        job.prompt || 'Preview de lámpara',
-        job.aspectRatio || '1:1',
-        [img],
-        { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-        cost
-    );
-    try { await db.collection('mockup_jobs').doc(jobId).delete(); } catch (_) { /* ignore */ }
-    await savePreview(job.orderId, saved[0], job.prompt || '', { blockId: job.blockId, templateId: job.templateId, fields: job.fields, secondRefUrl: job.secondRefUrl });
-
-    res.json({ success: true, status: 'completed', image: saved[0], cost });
+    // Gemini (Nano Banana Pro) responde en una sola llamada (~30s) -> síncrono: la respuesta
+    // ya trae la imagen guardada en galería, sin jobId ni polling.
+    const refs = [await svc.fetchImageAsBase64(tpl.baseImageUrl)];
+    if (secondImageUrl) refs.push(await svc.fetchImageAsBase64(secondImageUrl));
+    const result = await svc.generateImage(prompt, aspectRatio, refs, resolution || '2K');
+    const saved = await svc.saveToGallery(prompt, aspectRatio, result.images, result.usage, result.cost);
+    await savePreview(req.body.orderId, saved[0], prompt, { blockId: req.body.blockId, templateId, fields, secondRefUrl: secondImageUrl });
+    res.json({ success: true, image: saved[0], prompt, cost: result.cost });
 }));
 
 // ===================== GRABADO LÁSER (foto del cliente -> imagen para raster engrave) =====================
 // Convierte una FOTO cualquiera (la que el cliente quiere grabada) en una imagen lista para grabado
 // raster: rellenos BLANCOS, fondo NEGRO, sombreado por TRAMA (halftone) y alto detalle. Si va en el
 // modelo de corazones, se pasa una 2ª imagen con la SILUETA DE CORAZÓN para que el grabado salga con
-// esa forma. Usa WaveSpeed (GPT Image 2 Edit) — mismo flujo async que el preview: este submit
-// devuelve jobId; se consulta con GET /generate-status/:jobId (reusa descarga + galería).
+// esa forma. Usa Gemini (Nano Banana Pro), igual que el preview: síncrono, la respuesta ya trae
+// la imagen guardada en galería.
 const ENGRAVE_PROMPT_BASE = [
     'Convierte la fotografía adjunta en una ILUSTRACIÓN EN BLANCO Y NEGRO lista para GRABADO LÁSER RASTER (raster engrave).',
     'Reglas obligatorias:',
@@ -397,6 +347,7 @@ function buildEngravePrompt(hasShape, extra) {
 }
 
 // POST /api/mockups/engrave-submit — { imageUrl, shapeImageUrl?, extraPrompt?, aspectRatio?, resolution? }
+// Responde { success, image, prompt, cost } YA con el grabado listo (no hay jobId que pollear).
 router.post('/engrave-submit', asyncHandler(async (req, res) => {
     const imageUrl = String(req.body.imageUrl || '').trim();
     const shapeImageUrl = String(req.body.shapeImageUrl || '').trim();
@@ -408,23 +359,15 @@ router.post('/engrave-submit', asyncHandler(async (req, res) => {
     }
     const aspectRatio = String(req.body.aspectRatio || '1:1');
     const prompt = buildEngravePrompt(!!shapeImageUrl, req.body.extraPrompt);
-    const images = shapeImageUrl ? [imageUrl, shapeImageUrl] : [imageUrl];
+    const urls = shapeImageUrl ? [imageUrl, shapeImageUrl] : [imageUrl];
 
-    // model: 'gpt-image-2' (default) o 'seedream' (Seedream 5.0 Pro) — el fallback cuando GPT
-    // Image 2 rechaza por contenido sensible / derechos de autor. El poller es el mismo.
-    const model = req.body.model === 'seedream' ? 'seedream' : 'gpt-image-2';
-    const wave = require('./wavespeedClient');
-    const { predictionId } = await wave.submitEdit(prompt, images, {
-        aspectRatio,
-        resolution: req.body.resolution || '1k',
-        quality: req.body.quality || 'high',
-        model,
-    });
-    // Reusa el poller /generate-status/:jobId (descarga + galería). Sin orderId -> no toca pedidos.
-    await db.collection('mockup_jobs').doc(predictionId).set({
-        prompt, aspectRatio, kind: 'grabado', model, inputImages: images.length, createdAt: new Date().toISOString(),
-    });
-    res.json({ success: true, jobId: predictionId, prompt });
+    const refs = [];
+    for (const u of urls) refs.push(await svc.fetchImageAsBase64(u));
+    // 2048 de entrada: en el grabado el parecido de los rostros depende del detalle que reciba la IA.
+    const result = await svc.generateImage(prompt, aspectRatio, refs, req.body.resolution || '2K', 2048);
+    // Se guarda en la galería (sin orderId -> no toca ningún pedido).
+    const saved = await svc.saveToGallery(prompt, aspectRatio, result.images, result.usage, result.cost);
+    res.json({ success: true, image: saved[0], prompt, cost: result.cost });
 }));
 
 // POST /api/mockups/backfill-layout — verifica por visión los previews SIN `layout` de pedidos
@@ -618,8 +561,8 @@ router.post('/anticipo-test-config', asyncHandler(async (req, res) => {
     res.json({ success: true, enabled });
 }));
 
-// POST /api/mockups/auto-run — dispara YA una corrida de auto-generación (p.ej. tras recargar
-// saldo en WaveSpeed). NO espera a que termine (puede tardar minutos): arranca en segundo plano y
+// POST /api/mockups/auto-run — dispara YA una corrida de auto-generación, sin esperar al cron.
+// NO espera a que termine (puede tardar minutos): arranca en segundo plano y
 // responde de inmediato. Fuerza la corrida aunque el toggle de auto-generar esté apagado y usa un
 // lote grande para vaciar de un jalón los pendientes de corazones (nombres+fecha) sin preview.
 router.post('/auto-run', asyncHandler(async (req, res) => {

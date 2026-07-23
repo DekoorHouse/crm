@@ -2,8 +2,8 @@
 // Sección "Mockup" del CRM
 // -------------------------------------------------------------------
 // Lista los pedidos "Sin estatus", genera un preview de la lámpara con
-// los datos del cliente (cambia SOLO nombres/fecha vía WaveSpeed GPT
-// Image 2) y lo envía por WhatsApp para su aprobación.
+// los datos del cliente (cambia SOLO nombres/fecha vía Gemini Nano
+// Banana Pro) y lo envía por WhatsApp para su aprobación.
 // Funciones globales con prefijo mk* (el CRM no usa imports/módulos ES).
 // Endpoints backend: /api/mockups/pending, /templates*, /generate-preview, /send
 // ===================================================================
@@ -42,7 +42,7 @@ const MK_DESIGN_SEED = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
 // envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
 // refFiles: 2ª referencia subida a mano por bloque (blockId -> File). pruebas: estado del
 // banco de pruebas (pestaña "Pruebas").
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, lzPickByTemplate: {}, lzHydrated: {}, pruebas: { provider: 'wavespeed', values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, lzPickByTemplate: {}, lzHydrated: {}, pruebas: { values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
 
 // Cache (promesa) del data-URI de la fuente manuscrita, para embeberla en el SVG al rasterizar.
 let mkFontDataUrlPromise = null;
@@ -338,7 +338,7 @@ async function mkReload() {
 }
 
 // "Generar ahora": dispara YA una corrida de auto-generación en el servidor (corazones con
-// nombres+fecha, sin preview). Ideal tras recargar saldo en WaveSpeed. El servidor responde de
+// nombres+fecha, sin preview). El servidor responde de
 // inmediato y sigue generando en segundo plano; refrescamos la lista de forma escalonada para que
 // los previews vayan apareciendo solos, sin tener que darle a Actualizar a mano.
 async function mkRunAutoNow(btn) {
@@ -457,8 +457,8 @@ function mkRenderPending() {
         // Garantiza un id ÚNICO por bloque (el scheduler pudo guardar varios como 'auto').
         const uniqId = (want) => { let id = want || mkNewBlockId(); while (mkUsedBlockIds.has(id)) id = mkNewBlockId(); mkUsedBlockIds.add(id); return id; };
         const blocks = saved.length
-            ? saved.map(pv => { const id = uniqId(pv.blockId); pv.blockId = id; return { id, templateId: pv.templateId, provider: 'wavespeed', values: mkMergeValues(o._prefill, pv.fields), previewUrl: pv.imageUrl }; })
-            : [{ id: uniqId(), templateId: mkAutoTemplate(producto), provider: 'wavespeed', values: o._prefill, previewUrl: '' }];
+            ? saved.map(pv => { const id = uniqId(pv.blockId); pv.blockId = id; return { id, templateId: pv.templateId, values: mkMergeValues(o._prefill, pv.fields), previewUrl: pv.imageUrl }; })
+            : [{ id: uniqId(), templateId: mkAutoTemplate(producto), values: o._prefill, previewUrl: '' }];
         return `
         <div class="settings-card mk-card" data-order="${mkAttr(o.id)}" data-phone="${mkAttr(o.telefono)}" data-client="${mkAttr(o.clientName)}">
             <div class="mk-card-head">
@@ -525,7 +525,6 @@ function mkNewBlockId() {
 function mkBlockHtml(order, block, n) {
     const producto = order.producto || (order.items?.[0]?.producto || '');
     const tplId = block.templateId || mkAutoTemplate(producto);
-    const provider = block.provider || 'wavespeed';
     const preview = block.previewUrl || mkState.results[block.id];
     return `
     <div class="mk-block" data-order="${mkAttr(order.id)}" data-block="${mkAttr(block.id)}">
@@ -536,11 +535,7 @@ function mkBlockHtml(order, block, n) {
         <div class="mk-block-body">
             <div>
                 <div class="mk-inputs">
-                    <div><label>Plantilla</label><select class="mk-tpl" onchange="mkOnBlockTemplateChange('${mkAttr(block.id)}')">${mkTemplateOptionsSel(tplId)}</select></div>
-                    <div><label>Modelo</label><select class="mk-provider">
-                        <option value="wavespeed"${provider === 'wavespeed' ? ' selected' : ''}>GPT Image 2 (WaveSpeed)</option>
-                        <option value="gemini"${provider === 'gemini' ? ' selected' : ''}>Nano Banana (Gemini)</option>
-                    </select></div>
+                    <div class="mk-full"><label>Plantilla</label><select class="mk-tpl" onchange="mkOnBlockTemplateChange('${mkAttr(block.id)}')">${mkTemplateOptionsSel(tplId)}</select></div>
                 </div>
                 <div class="mk-fields mk-inputs" style="margin-top:8px;">${mkFieldsHtml(mkTemplateFieldDefs(tplId), block.values)}</div>
                 ${mkRef2Html(block.id, !!(mkGetTemplate(tplId) && mkGetTemplate(tplId).designSvg), tplId)}
@@ -564,7 +559,7 @@ function mkAddBlock(orderId) {
     const order = mkState.pending.find(o => o.id === orderId);
     if (!cont || !order) return;
     const n = cont.querySelectorAll('.mk-block').length + 1;
-    const block = { id: mkNewBlockId(), templateId: mkAutoTemplate(order.producto || ''), provider: 'wavespeed', values: {}, previewUrl: '' };
+    const block = { id: mkNewBlockId(), templateId: mkAutoTemplate(order.producto || ''), values: {}, previewUrl: '' };
     cont.insertAdjacentHTML('beforeend', mkBlockHtml(order, block, n));
 }
 
@@ -607,7 +602,6 @@ async function mkGenerate(orderId, blockId) {
     const box = document.getElementById('mk-result-' + blockId);
     const btn = block.querySelector('.mk-gen-btn');
     const templateId = block.querySelector('.mk-tpl').value;
-    const provider = block.querySelector('.mk-provider').value;
     if (!templateId) { mkToast('Selecciona una plantilla.', 'error'); return; }
 
     // Campos del bloque (capitalizar los que sean nombres, aunque el cliente los escriba mal).
@@ -627,7 +621,6 @@ async function mkGenerate(orderId, blockId) {
     // guarda con un blockId huérfano, creando un preview DOBLE. Ver el guard en mkLoadPending.
     mkState.busyGen = (mkState.busyGen || 0) + 1;
     const setBox = (msg) => { if (box) box.innerHTML = `<div class="mk-spin"></div><div class="mk-result-empty">${mkEsc(msg)}</div>`; };
-    const setProgress = (pct) => { if (box) box.innerHTML = `<div class="mk-progress"><div class="mk-progress-bar"><div class="mk-progress-fill" style="width:${pct}%"></div></div><div class="mk-result-empty">Generando… ${pct}%</div></div>`; };
 
     try {
         // 2ª referencia (diseño generado por código o imagen subida): se resuelve y sube ANTES
@@ -635,8 +628,8 @@ async function mkGenerate(orderId, blockId) {
         setBox('Preparando diseño…');
         const secondImageUrl = await mkResolveSecondRef(block, templateId, fields);
 
-        setBox('Enviando a la IA…');
-        const url = await mkRunGeneration({ templateId, provider, fields, extraPrompt, orderId, blockId, secondImageUrl }, setProgress);
+        setBox('Generando con la IA… (unos 30 seg)');
+        const url = await mkRunGeneration({ templateId, fields, extraPrompt, orderId, blockId, secondImageUrl });
 
         mkState.results[blockId] = url;
         if (box) box.innerHTML = mkResultHtml(orderId, blockId, url);
@@ -649,9 +642,10 @@ async function mkGenerate(orderId, blockId) {
     }
 }
 
-// Llamada de red compartida (Pendientes y Pruebas): POST /generate-preview y espera la imagen
-// (Gemini síncrono o WaveSpeed asíncrono con polling). Devuelve la URL o lanza error.
-async function mkRunGeneration(payload, setProgress) {
+// Llamada de red compartida (Pendientes y Pruebas): POST /generate-preview y espera la imagen.
+// Gemini responde en una sola llamada (~30s), así que la respuesta ya trae la imagen guardada.
+// Devuelve la URL o lanza error.
+async function mkRunGeneration(payload) {
     const body = Object.assign({}, payload);
     if (!body.secondImageUrl) delete body.secondImageUrl;
     const data = await mkFetchJson('/api/mockups/generate-preview', {
@@ -659,35 +653,9 @@ async function mkRunGeneration(payload, setProgress) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
-    let url;
-    if (data.image) url = data.image.fullUrl || data.image.thumbUrl;   // Gemini (síncrono)
-    else if (data.jobId) url = await mkPollJob(data.jobId, setProgress); // WaveSpeed (asíncrono)
+    const url = data.image && (data.image.fullUrl || data.image.thumbUrl);
     if (!url) throw new Error('No se recibió la imagen generada.');
     return url;
-}
-
-// Polling del preview asíncrono (WaveSpeed). Devuelve la URL o lanza error.
-async function mkPollJob(jobId, setProgress) {
-    const started = Date.now();
-    const MAX_MS = 6 * 60 * 1000;   // hasta 6 min (GPT Image 2 a veces se satura)
-    const EST_MS = 150 * 1000;      // GPT Image 2 tarda ~2.5 min: base para el % estimado
-    const INTERVAL = 3000;
-    // Progreso estimado por tiempo (WaveSpeed no da % real); topado en 95% hasta terminar.
-    const tick = () => setProgress(Math.min(95, Math.max(1, Math.round(((Date.now() - started) / EST_MS) * 100))));
-    while (Date.now() - started < MAX_MS) {
-        await new Promise(r => setTimeout(r, INTERVAL));
-        let st;
-        try {
-            st = await mkFetchJson('/api/mockups/generate-status/' + encodeURIComponent(jobId));
-        } catch (e) {
-            tick();   // un fallo puntual no aborta
-            continue;
-        }
-        if (st.status === 'completed') return st.image && (st.image.fullUrl || st.image.thumbUrl);
-        if (st.status === 'failed') throw new Error(st.error || 'La generación falló.');
-        tick();
-    }
-    throw new Error('La generación tardó demasiado (más de 6 min). Intenta de nuevo.');
 }
 
 async function mkSend(orderId, blockId) {
@@ -1245,11 +1213,7 @@ function mkRenderPruebas() {
         <div class="mk-block-body">
             <div>
                 <div class="mk-inputs">
-                    <div><label>Plantilla</label><select id="mk-pr-tpl" onchange="mkPruebasTplChange()">${mkTemplateOptionsSel(tplId)}</select></div>
-                    <div><label>Modelo</label><select id="mk-pr-provider">
-                        <option value="wavespeed"${P.provider === 'wavespeed' ? ' selected' : ''}>GPT Image 2 (WaveSpeed)</option>
-                        <option value="gemini"${P.provider === 'gemini' ? ' selected' : ''}>Nano Banana (Gemini)</option>
-                    </select></div>
+                    <div class="mk-full"><label>Plantilla</label><select id="mk-pr-tpl" onchange="mkPruebasTplChange()">${mkTemplateOptionsSel(tplId)}</select></div>
                 </div>
                 <div class="mk-fields mk-inputs" id="mk-pr-fields" style="margin-top:8px;">${mkFieldsHtml(mkTemplateFieldDefs(tplId), P.values)}</div>
                 <div class="mk-ref2" style="margin-top:12px;" ondragover="event.preventDefault()" ondrop="mkPruebasOnDrop(event)" onmousedown="mkSetRefPasteTarget('__pruebas__')">
@@ -1300,13 +1264,12 @@ function mkRenderPruebas() {
     mkLzMount();   // lienzo de diseño (su estado vive en mkState.lienzo y sobrevive re-render)
 }
 
-// Guarda lo escrito (campos/modelo/extra) antes de un re-render de la pestaña.
+// Guarda lo escrito (campos/extra) antes de un re-render de la pestaña.
 function mkPruebasCapture() {
     const P = mkState.pruebas;
     const v = {};
     document.querySelectorAll('#mk-pr-fields .mk-fld').forEach(i => { v[i.dataset.key] = i.value; });
     P.values = v;
-    const prov = document.getElementById('mk-pr-provider'); if (prov) P.provider = prov.value;
     const ex = document.getElementById('mk-pr-extra'); if (ex) P.extra = ex.value;
     // Conserva la edición del prompt (por plantilla) para que sobreviva a los re-render.
     const tid = document.getElementById('mk-pr-tpl'); const pt = document.getElementById('mk-pr-prompt');
@@ -1400,9 +1363,8 @@ function mkPruebasResultHtml(url) {
 
 async function mkPruebasGenerate() {
     const tplId = document.getElementById('mk-pr-tpl').value;
-    const provider = document.getElementById('mk-pr-provider').value;
     const P = mkState.pruebas;
-    P.templateId = tplId; P.provider = provider;
+    P.templateId = tplId;
     if (!tplId) { mkToast('Selecciona una plantilla.', 'error'); return; }
 
     const scope = document.getElementById('mk-pr-fields');
@@ -1419,7 +1381,6 @@ async function mkPruebasGenerate() {
     const btn = document.getElementById('mk-pr-gen');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generando…'; }
     const setBox = (msg) => { if (box) box.innerHTML = `<div class="mk-spin"></div><div class="mk-result-empty">${mkEsc(msg)}</div>`; };
-    const setProgress = (pct) => { if (box) box.innerHTML = `<div class="mk-progress"><div class="mk-progress-bar"><div class="mk-progress-fill" style="width:${pct}%"></div></div><div class="mk-result-empty">Generando… ${pct}%</div></div>`; };
 
     try {
         setBox('Preparando diseño…');
@@ -1431,8 +1392,8 @@ async function mkPruebasGenerate() {
             if (tpl && tpl.designSvg) { const { blob } = await mkRasterizeDesign(tpl.designSvg, fields); secondImageUrl = await mkUploadRefImage(blob, 'design.png'); }
         }
 
-        setBox('Enviando a la IA…');
-        const url = await mkRunGeneration({ templateId: tplId, provider, fields, extraPrompt, promptTemplate, orderId: null, blockId: 'prueba', secondImageUrl }, setProgress);
+        setBox('Generando con la IA… (unos 30 seg)');
+        const url = await mkRunGeneration({ templateId: tplId, fields, extraPrompt, promptTemplate, orderId: null, blockId: 'prueba', secondImageUrl });
         P.resultUrl = url;
         if (box) box.innerHTML = mkPruebasResultHtml(url);
     } catch (e) {

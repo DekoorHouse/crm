@@ -7,20 +7,21 @@
  *   - No tengan ya un preview generado.
  * El preview queda en la sección Mockup para que el operador lo revise y envíe.
  *
- * Si WaveSpeed se queda SIN SALDO, avisa por WhatsApp al ADMIN_ALERT_PHONE (dedupe 6h).
+ * Si Gemini se queda sin cuota/facturación, avisa por WhatsApp al ADMIN_ALERT_PHONE (dedupe 6h).
  * Se puede apagar con mockup_config/settings.autoGenerate = false.
  */
 const cron = require('node-cron');
 const { db } = require('../config');
 const svc = require('./mockupsService');
-const wave = require('./wavespeedClient');
 
 const CRON_SCHEDULE = process.env.MOCKUP_AUTO_CRON || '*/10 * * * *';   // cada 10 min
 const BATCH = parseInt(process.env.MOCKUP_AUTO_BATCH || '4', 10);       // máx por corrida automática (costo/tiempo)
 const FORCE_BATCH = parseInt(process.env.MOCKUP_AUTO_FORCE_BATCH || '25', 10); // máx en corrida MANUAL ("Generar ahora")
 const ADMIN_PHONE = process.env.ADMIN_ALERT_PHONE || '5216182297167';
-const POLL_INTERVAL_MS = 3000;
-const MAX_POLL = 130;   // ~6.5 min de espera server-side por imagen
+
+// Errores de Gemini que significan "no hay con qué generar" (cuota agotada, facturación
+// caída o llave inválida): no tiene caso seguir con el resto del lote, mejor avisar.
+const NO_QUOTA_RE = /quota|RESOURCE_EXHAUSTED|billing|API[ _]key|PERMISSION_DENIED|error 4(01|03|29)/i;
 
 // Palabras que indican "algo especial" -> NO auto-generar (queda para revisión manual).
 const SPECIAL_RE = /foto|imagen|graba|logo|escudo|especial|personaje|mascota|dibuj|dise[nñ]|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
@@ -55,11 +56,11 @@ async function alertNoBalance() {
     try {
         const { sendAdvancedWhatsAppMessage } = require('../services');
         await sendAdvancedWhatsAppMessage(ADMIN_PHONE, {
-            text: '⚠️ Mockup automático: WaveSpeed se quedó SIN SALDO. Recarga en wavespeed.ai para seguir generando previews de lámparas.',
+            text: '⚠️ Mockup automático: Gemini no está generando imágenes (cuota agotada o problema de facturación). Revisa la cuenta de Google AI Studio para seguir generando previews de lámparas.',
         });
         await db.collection('mockup_config').doc('settings').set({ lastBalanceAlert: new Date().toISOString() }, { merge: true });
-        console.log('[mockup-auto] ⚠️ Aviso de saldo enviado a', ADMIN_PHONE);
-    } catch (e) { console.error('[mockup-auto] no se pudo avisar del saldo:', e.message); }
+        console.log('[mockup-auto] ⚠️ Aviso de cuota enviado a', ADMIN_PHONE);
+    } catch (e) { console.error('[mockup-auto] no se pudo avisar de la cuota:', e.message); }
 }
 
 // Genera un preview y lo guarda como preview del pedido. Devuelve true | false | 'no-balance'.
@@ -74,41 +75,35 @@ async function generateOne(o, tpl, cfg = {}) {
         let prompt = svc.buildPromptFromTemplate(tpl.promptTemplate, fields);
         if (!prompt) return false;
 
-        // 2ª referencia ("diseño a grabar") renderizada en el SERVIDOR (@resvg + fuente manuscrita):
-        // se la mandamos a la IA para que grabe EXACTAMENTE ese diseño (nombres/fecha/símbolo), igual
-        // que el camino manual. Si falla o la plantilla no tiene diseño, se genera sin ella.
-        const images = [tpl.baseImageUrl];
+        // Referencia (1) = la foto base. Referencia (2) = el "diseño a grabar" renderizado en el
+        // SERVIDOR (@resvg + fuente manuscrita), para que la IA grabe EXACTAMENTE ese diseño
+        // (nombres/fecha/símbolo), igual que el camino manual. Si falla o la plantilla no tiene
+        // diseño, se genera sin ella. El PNG recién renderizado se le pasa a Gemini tal cual, pero
+        // igual se sube a Storage porque su URL se guarda en el preview y la usa el diseño de corte.
+        const refs = [await svc.fetchImageAsBase64(tpl.baseImageUrl)];
         let secondRefUrl = null;
         try {
             const rr = require('./refRenderer');
             const refPng = await rr.renderReferenceForTemplate(tpl, fields);
             if (refPng) {
                 secondRefUrl = (await svc.uploadPublicImage(refPng, 'refs-auto')).url;
-                images.push(secondRefUrl);
+                refs.push({ mimeType: 'image/png', base64: refPng.toString('base64') });
                 prompt += rr.SECOND_REF_PROMPT;
             }
         } catch (e) { console.warn('[mockup-auto] referencia falló (sigo sin ella):', e.message); }
 
-        let submit;
+        const aspectRatio = tpl.aspectRatio || '1:1';
+        let result;
         try {
-            submit = await wave.submitEdit(prompt, images, { aspectRatio: tpl.aspectRatio || '1:1', resolution: '1k', quality: 'high' });
+            result = await svc.generateImage(prompt, aspectRatio, refs, '2K');
         } catch (e) {
-            if (/balance|insufficient|top.?up|saldo|402|payment|fund/i.test(e.message)) return 'no-balance';
+            // Sin cuota -> corta el lote y avisa. Cualquier otro error (p. ej. el modelo se negó
+            // a generar este diseño) lo atrapa el catch de abajo y sigue con el siguiente pedido.
+            if (NO_QUOTA_RE.test(e.message)) return 'no-balance';
             throw e;
         }
 
-        let outputs = submit.outputs || [];
-        for (let i = 0; !outputs.length && i < MAX_POLL; i++) {
-            await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-            const r = await wave.fetchResult(submit.predictionId);
-            if (r.status === 'completed') { outputs = r.outputs; break; }
-            if (r.status === 'failed') return false;
-        }
-        if (!outputs.length) return false;   // timeout
-
-        const img = await wave.downloadImage(outputs[0]);
-        const saved = await svc.saveToGallery(prompt, tpl.aspectRatio || '1:1', [img],
-            { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, wave.costFor(1, Math.max(0, images.length - 1)));
+        const saved = await svc.saveToGallery(prompt, aspectRatio, result.images, result.usage, result.cost);
         const blockId = 'auto' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
         await db.collection('mockup_previews').doc(String(o.id)).set({
             orderId: String(o.id),
