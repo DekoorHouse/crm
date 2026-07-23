@@ -7764,7 +7764,8 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 router.get('/design-pending', async (req, res) => {
     try {
         const { reasonsForOrderData } = require('./design/designPending');
-        const { isAutoWaiting, isVideoAutoWaiting, SPECIAL_RE, productOf, datosOf } = require('./design/svgAuto');
+        const { isAutoWaiting, isVideoAutoWaiting, svgAutoEligibility, SPECIAL_RE, productOf, datosOf } = require('./design/svgAuto');
+        const { decideNameLines } = require('./mockups/nameLayout');
         const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
 
         // Candidatos (se deduplica por id): pedidos en 'Corregir' (datos/video) + los que tienen
@@ -7826,6 +7827,29 @@ router.get('/design-pending', async (req, res) => {
             };
         };
 
+        // Motivo por el que el worker NO cortó solo este pedido (la visión detectó que el mockup que
+        // aprobó el cliente NO coincide con los datos, o un renglón quedó vacío): alimenta el badge
+        // "Revisar" + el preview del mockup enviado al cliente vs lo pedido, renglón por renglón. Solo
+        // se arma para pedidos que fallaron la verificación de visión; los demás -> null (sin badge).
+        const lines = (s) => String(s || '').split('\n').map(x => x.trim()).filter(Boolean);
+        const buildReviewInfo = (p, previews) => {
+            const elig = svgAutoEligibility(p, previews);
+            if (elig.reason !== 'layout_mismatch' && elig.reason !== 'incomplete_fields') return null;
+            const pv = Array.isArray(previews) ? previews : [];
+            const last = pv.length ? pv[pv.length - 1] : null;
+            const lay = (last && last.layout) || null;
+            const f = (last && last.fields) || {};
+            return {
+                reason: elig.reason,
+                mockupUrl: last ? (last.imageUrl || last.url || null) : null,
+                campos: [
+                    { campo: 'Nombre izq.', pedido: decideNameLines(f.nombre1 || ''), grabado: (lay && lay.izquierdo) || [], ok: lay ? lay.okNombre1 !== false : null },
+                    { campo: 'Nombre der.', pedido: decideNameLines(f.nombre2 || ''), grabado: (lay && lay.derecho) || [], ok: lay ? lay.okNombre2 !== false : null },
+                    { campo: 'Fecha', pedido: lines(f.fecha), grabado: (lay && lay.fecha) || [], ok: lay ? lay.okFecha !== false : null },
+                ],
+            };
+        };
+
         let orders = [];
         if (svgIaMode) {
             // "SVG IA": (a) YA diseñados por el worker (estatus "Diseñado por IA") + (b) EN COLA
@@ -7884,7 +7908,10 @@ router.get('/design-pending', async (req, res) => {
                 // pero se marcan para que el diseñador NO los corte a mano: el worker ya los tiene en cola.
                 // Si ya hay un iaForce en curso (Chris lo forzó a mano) NO se marca: ese pedido ya muestra
                 // su propia UI de "Diseñar con IA" (thumbnail + Subir a Drive) y no está en la cola automática.
-                orders.push(mapOrder(doc, reasons, { autoCutQueued: !p.iaForce && isVideoAutoWaiting(p, prevMap.get(doc.id)) }));
+                orders.push(mapOrder(doc, reasons, {
+                    autoCutQueued: !p.iaForce && isVideoAutoWaiting(p, prevMap.get(doc.id)),
+                    reviewInfo: buildReviewInfo(p, prevMap.get(doc.id)),
+                }));
             }
         }
 

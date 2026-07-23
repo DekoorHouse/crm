@@ -522,7 +522,13 @@ function _paintDesignPending() {
             const colaBadge = (o.autoCutQueued && !o.svgCorteUrl)
                 ? `<span title="El worker de corte lo va a diseñar y subir a Drive solo (≤15 min). No lo cortes a mano." style="display:inline-block;background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas fa-wand-magic-sparkles" style="margin-right:3px"></i>Corte IA en cola</span>`
                 : '';
-            motivoCell = (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('') + colaBadge + iaBadge;
+            // "Revisar": el worker NO cortó solo este pedido porque la visión detectó que el mockup que
+            // aprobó el cliente no coincide con los datos (o falta un renglón). Clic -> preview del mockup
+            // + comparación renglón por renglón (o.reviewInfo lo trae el endpoint /api/design-pending).
+            const reviewBadge = o.reviewInfo
+                ? `<button onclick="openDesignReview('${o.id}')" title="El diseño que se le mandó al cliente NO coincide con los datos del pedido — clic para revisar qué falló" style="display:inline-block;background:#dc262622;color:#dc2626;border:1px solid #dc262666;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0;cursor:pointer"><i class="fas fa-triangle-exclamation" style="margin-right:3px"></i>Revisar</button>`
+                : '';
+            motivoCell = reviewBadge + (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;margin:1px 2px 1px 0"><i class="fas ${m[2]}" style="margin-right:3px"></i>${m[0]}</span>` : ''; }).join('') + colaBadge + iaBadge;
         }
         const statusSel = `<select onchange="changeDesignPendingStatus('${o.id}', this.value, this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);width:132px">${ENVIO_STATUS_OPTIONS.map(s => `<option${(o.estatus || 'Sin estatus') === s ? ' selected' : ''}>${s}</option>`).join('')}</select>`;
         const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (usa ← → para el siguiente/anterior pedido)" style="border:none;background:transparent;cursor:pointer;color:#0ea5e9;padding:4px 8px;font-size:14px"><i class="fas fa-comments"></i></button>` : '';
@@ -618,6 +624,73 @@ function _paintDesignPending() {
           </table>
         </div>`;
 }
+
+// Modal "Revisar": para un pedido que el worker mandó a diseño manual porque la visión detectó que el
+// mockup que aprobó el cliente NO coincide con los datos del pedido. Muestra ese mockup (lo que se le
+// mandó al cliente) junto a la comparación renglón por renglón — pedido vs grabado — con los renglones
+// que NO coinciden resaltados en rojo. Los datos vienen en o.reviewInfo (endpoint /api/design-pending).
+function openDesignReview(orderId) {
+    const o = (window._designPendingData || []).find(x => x.id === orderId);
+    if (!o || !o.reviewInfo) return;
+    const ri = o.reviewInfo;
+    const linesHtml = (arr) => (arr && arr.length) ? arr.map(escapeHtml).join('<br>') : '<span style="color:#94a3b8">—</span>';
+    const rows = (ri.campos || []).map(c => {
+        const bad = c.ok === false;
+        const icon = c.ok === false ? '<i class="fas fa-times" style="color:#dc2626"></i>'
+            : c.ok === true ? '<i class="fas fa-check" style="color:#16a34a"></i>' : '';
+        return `<tr style="background:${bad ? '#dc262611' : 'transparent'};border-bottom:1px solid var(--color-border,#e5e7eb)">
+            <td style="padding:8px 10px;font-weight:700;white-space:nowrap">${escapeHtml(c.campo)}</td>
+            <td style="padding:8px 10px">${linesHtml(c.pedido)}</td>
+            <td style="padding:8px 10px">${linesHtml(c.grabado)}</td>
+            <td style="padding:8px 10px;text-align:center">${icon}</td>
+        </tr>`;
+    }).join('');
+    const reasonTxt = ri.reason === 'incomplete_fields'
+        ? 'Faltan datos para cortar: un renglón quedó vacío.'
+        : 'Lo grabado en el mockup que aprobó el cliente NO coincide con los datos del pedido.';
+    const img = ri.mockupUrl
+        ? `<img src="${escapeHtml(ri.mockupUrl)}" onclick="openImageModal(this.src)" title="Mockup enviado al cliente — clic para ampliar" style="max-width:100%;max-height:360px;border-radius:8px;cursor:zoom-in;border:1px solid var(--color-border,#e5e7eb)">`
+        : '<p style="color:#94a3b8">No hay imagen de mockup guardada para este pedido.</p>';
+    const overlay = document.createElement('div');
+    overlay.id = 'design-review-overlay';
+    overlay.onclick = (e) => { if (e.target === overlay) closeDesignReview(); };
+    // z-index 11000: por DEBAJO del modal de imagen (12000), para que "ampliar" salga encima.
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:11000;display:flex;align-items:center;justify-content:center;padding:16px';
+    overlay.innerHTML = `<div style="background:var(--color-container-bg,#fff);color:var(--color-text,#334155);border-radius:12px;max-width:780px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+        <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--color-border,#e5e7eb)">
+            <i class="fas fa-triangle-exclamation" style="color:#dc2626;font-size:1.1rem"></i>
+            <div style="font-weight:800;font-size:1.05rem">Revisar diseño — ${escapeHtml(o.orderNumber || '')}</div>
+            <button onclick="closeDesignReview()" title="Cerrar" style="margin-left:auto;border:none;background:transparent;font-size:1.4rem;cursor:pointer;color:#94a3b8;line-height:1">&times;</button>
+        </div>
+        <div style="padding:16px 18px">
+            <p style="margin:0 0 14px;color:#b91c1c;font-weight:600;font-size:.9rem">${reasonTxt}</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;align-items:start">
+                <div>
+                    <div style="font-size:.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Lo que se le mandó al cliente</div>
+                    ${img}
+                </div>
+                <div>
+                    <div style="font-size:.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Comparación</div>
+                    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+                        <thead><tr style="text-align:left;color:#94a3b8;border-bottom:2px solid var(--color-border,#e5e7eb)">
+                            <th style="padding:6px 10px"></th><th style="padding:6px 10px">Pedido</th><th style="padding:6px 10px">Grabado</th><th style="padding:6px 10px"></th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                    <p style="margin:12px 0 0;font-size:.78rem;color:#94a3b8;line-height:1.4">Si el <b>dato del pedido</b> está mal, corrígelo. Si el <b>mockup</b> salió mal, regéneralo y vuelve a mandarlo. Luego corta a mano o usa “Diseñar con IA”.</p>
+                </div>
+            </div>
+        </div>
+    </div>`;
+    document.body.appendChild(overlay);
+}
+window.openDesignReview = openDesignReview;
+
+function closeDesignReview() {
+    const el = document.getElementById('design-review-overlay');
+    if (el) el.remove();
+}
+window.closeDesignReview = closeDesignReview;
 
 // Guarda la nota interna del diseñador (onblur). No re-pinta la tabla; solo avisa con un borde verde.
 async function changeDesignComentario(orderId, el) {
