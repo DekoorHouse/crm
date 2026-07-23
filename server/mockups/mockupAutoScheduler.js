@@ -15,7 +15,10 @@ const { db } = require('../config');
 const svc = require('./mockupsService');
 
 const CRON_SCHEDULE = process.env.MOCKUP_AUTO_CRON || '*/10 * * * *';   // cada 10 min
-const BATCH = parseInt(process.env.MOCKUP_AUTO_BATCH || '4', 10);       // máx por corrida automática (costo/tiempo)
+// Máx por corrida automática. Se generan en SERIE, así que el tope lo marca la ventana entre
+// corridas: con Gemini (~27 s/imagen) 15 tardan ~7 min y caben en los 10 min sin encimarse.
+// (Eran 4 cuando corría con WaveSpeed a ~2.5 min por imagen.) Costo: ~$0.135 por preview.
+const BATCH = parseInt(process.env.MOCKUP_AUTO_BATCH || '15', 10);
 const FORCE_BATCH = parseInt(process.env.MOCKUP_AUTO_FORCE_BATCH || '25', 10); // máx en corrida MANUAL ("Generar ahora")
 const ADMIN_PHONE = process.env.ADMIN_ALERT_PHONE || '5216182297167';
 
@@ -168,7 +171,7 @@ async function runOnce(opts) {
 function startMockupAutoScheduler() {
     if (task) return;
     task = cron.schedule(CRON_SCHEDULE, runOnce);
-    console.log('[mockup-auto] Scheduler iniciado. Cron: "' + CRON_SCHEDULE + '", batch ' + BATCH + ', aviso saldo a ' + ADMIN_PHONE + '.');
+    console.log('[mockup-auto] Scheduler iniciado. Cron: "' + CRON_SCHEDULE + '", batch ' + BATCH + ', aviso de cuota a ' + ADMIN_PHONE + '.');
 }
 
 module.exports = { startMockupAutoScheduler, runOnce };
