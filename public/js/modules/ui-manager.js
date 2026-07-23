@@ -628,11 +628,16 @@ function _paintDesignPending() {
 // Modal "Revisar": para un pedido que el worker mandó a diseño manual porque la visión detectó que el
 // mockup que aprobó el cliente NO coincide con los datos del pedido. Muestra ese mockup (lo que se le
 // mandó al cliente) junto a la comparación renglón por renglón — pedido vs grabado — con los renglones
-// que NO coinciden resaltados en rojo. Los datos vienen en o.reviewInfo (endpoint /api/design-pending).
+// que NO coinciden resaltados en rojo. Debajo, la sección "Diseño de corte de la skill" deja generar el
+// corte (flujo iaForce = "Diseñar con IA"), VER el PNG legible que produjo la skill, y CORREGIR los
+// textos/renglones para regenerarlo. Los datos vienen en o.reviewInfo + o.iaForce (/api/design-pending).
 function openDesignReview(orderId) {
+    closeDesignReview();   // evita overlays duplicados al re-renderizar
     const o = (window._designPendingData || []).find(x => x.id === orderId);
     if (!o || !o.reviewInfo) return;
     const ri = o.reviewInfo;
+    const cap = 'font-size:.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px';
+    const btn = 'padding:6px 12px;font-size:.82rem;border-radius:6px;font-weight:700;cursor:pointer';
     const linesHtml = (arr) => (arr && arr.length) ? arr.map(escapeHtml).join('<br>') : '<span style="color:#94a3b8">—</span>';
     const rows = (ri.campos || []).map(c => {
         const bad = c.ok === false;
@@ -648,37 +653,79 @@ function openDesignReview(orderId) {
     const reasonTxt = ri.reason === 'incomplete_fields'
         ? 'Faltan datos para cortar: un renglón quedó vacío.'
         : 'Lo grabado en el mockup que aprobó el cliente NO coincide con los datos del pedido.';
-    const img = ri.mockupUrl
-        ? `<img src="${escapeHtml(ri.mockupUrl)}" onclick="openImageModal(this.src)" title="Mockup enviado al cliente — clic para ampliar" style="max-width:100%;max-height:360px;border-radius:8px;cursor:zoom-in;border:1px solid var(--color-border,#e5e7eb)">`
+    const mockImg = ri.mockupUrl
+        ? `<img src="${escapeHtml(ri.mockupUrl)}" onclick="openImageModal(this.src)" title="Mockup enviado al cliente — clic para ampliar" style="max-width:100%;max-height:320px;border-radius:8px;cursor:zoom-in;border:1px solid var(--color-border,#e5e7eb)">`
         : '<p style="color:#94a3b8">No hay imagen de mockup guardada para este pedido.</p>';
+
+    // --- Sección "Diseño de corte de la skill" (flujo iaForce; tu PC lo procesa en ≤15 min) ---
+    const fa = o.iaForce || null;
+    const st = fa && fa.status;
+    let corteBody;
+    if (!fa) {
+        corteBody = `<p style="margin:0 0 10px;color:#64748b;font-size:.86rem">Aún no has generado el corte de este pedido.</p>
+            <button onclick="designReviewGenerate('${o.id}', this)" style="border:none;background:#7c3aed;color:#fff;${btn}"><i class="fas fa-wand-magic-sparkles" style="margin-right:5px"></i>Generar corte para revisar</button>
+            <p style="margin:10px 0 0;font-size:.78rem;color:#94a3b8">Tu PC lo diseña en ≤15 min respetando lo que vio el cliente. Luego dale “Actualizar”.</p>`;
+    } else if (st === 'queued') {
+        corteBody = `<p style="margin:0;color:#b45309;font-weight:600;font-size:.88rem"><i class="fas fa-hourglass-half" style="margin-right:6px"></i>En cola — tu PC lo genera en ≤15 min. Dale “Actualizar” en un rato.</p>`;
+    } else if (st === 'error') {
+        corteBody = `<p style="margin:0 0 10px;color:#b91c1c;font-weight:600;font-size:.88rem"><i class="fas fa-triangle-exclamation" style="margin-right:6px"></i>${escapeHtml(fa.error || 'No se pudo generar el corte.')}</p>
+            <button onclick="designReviewGenerate('${o.id}', this)" style="border:1px solid #dc262666;background:#dc262611;color:#b91c1c;${btn}"><i class="fas fa-rotate-right" style="margin-right:5px"></i>Reintentar</button>`;
+    } else {
+        // staged o approved: muestra el corte (PNG al derecho) + (si staged) el form de corrección.
+        const corteImg = fa.cortePreviewUrl
+            ? `<img src="${escapeHtml(fa.cortePreviewUrl)}" onclick="openImageModal(this.src)" title="Diseño de corte (al derecho) — clic para ampliar" style="max-width:100%;max-height:320px;border-radius:8px;cursor:zoom-in;border:1px solid var(--color-border,#e5e7eb)">`
+            : '<p style="color:#94a3b8">El corte se generó pero sin preview visible.</p>';
+        const lines = fa.lines || {};
+        const taStyle = 'width:100%;min-height:42px;font-size:.84rem;line-height:1.35;padding:6px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155);resize:vertical;font-family:inherit';
+        const tArea = (k, lbl) => `<div><div style="${cap};margin-bottom:3px">${lbl}</div><textarea id="dr-edit-${k}" style="${taStyle}">${escapeHtml(String(lines[k] == null ? '' : lines[k]))}</textarea></div>`;
+        const rightCol = st === 'approved'
+            ? `<p style="margin:0;color:#0284c7;font-weight:700;font-size:.88rem"><i class="fas fa-cloud-arrow-up" style="margin-right:6px"></i>Subiendo a Drive… (tu PC lo sube en ≤15 min)</p>`
+            : `<div style="display:flex;flex-direction:column;gap:8px">
+                ${tArea('nombre1', 'Nombre izq.')}
+                ${tArea('nombre2', 'Nombre der.')}
+                ${tArea('fecha', 'Fecha')}
+                <p style="margin:2px 0 0;font-size:.76rem;color:#94a3b8">Un renglón por línea: pon Enter para partir un nombre en 2 renglones (igual que el mockup).</p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+                    <button onclick="designReviewSaveEdit('${o.id}', this)" style="border:none;background:#7c3aed;color:#fff;${btn}"><i class="fas fa-rotate" style="margin-right:5px"></i>Corregir y regenerar</button>
+                    <button onclick="designReviewConfirm('${o.id}', this)" style="border:none;background:#16a34a;color:#fff;${btn}"><i class="fas fa-cloud-arrow-up" style="margin-right:5px"></i>Subir a Drive</button>
+                    <button onclick="designReviewDiscard('${o.id}', this)" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;color:#dc2626;${btn}">Descartar</button>
+                </div>
+              </div>`;
+        corteBody = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;align-items:start">
+            <div><div style="${cap}">Corte de la skill (al derecho)</div>${corteImg}</div>
+            <div>${rightCol}</div>
+        </div>`;
+    }
+
     const overlay = document.createElement('div');
     overlay.id = 'design-review-overlay';
     overlay.onclick = (e) => { if (e.target === overlay) closeDesignReview(); };
     // z-index 11000: por DEBAJO del modal de imagen (12000), para que "ampliar" salga encima.
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:11000;display:flex;align-items:center;justify-content:center;padding:16px';
-    overlay.innerHTML = `<div style="background:var(--color-container-bg,#fff);color:var(--color-text,#334155);border-radius:12px;max-width:780px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)">
-        <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--color-border,#e5e7eb)">
+    overlay.innerHTML = `<div style="background:var(--color-container-bg,#fff);color:var(--color-text,#334155);border-radius:12px;max-width:820px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+        <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--color-border,#e5e7eb);position:sticky;top:0;background:var(--color-container-bg,#fff);z-index:1">
             <i class="fas fa-triangle-exclamation" style="color:#dc2626;font-size:1.1rem"></i>
             <div style="font-weight:800;font-size:1.05rem">Revisar diseño — ${escapeHtml(o.orderNumber || '')}</div>
-            <button onclick="closeDesignReview()" title="Cerrar" style="margin-left:auto;border:none;background:transparent;font-size:1.4rem;cursor:pointer;color:#94a3b8;line-height:1">&times;</button>
+            <button onclick="designReviewRefresh('${o.id}', this)" title="Actualizar (ver si tu PC ya generó el corte)" style="margin-left:auto;border:1px solid var(--color-border,#e5e7eb);background:transparent;color:#334155;padding:5px 10px;border-radius:6px;font-size:.8rem;font-weight:600;cursor:pointer"><i class="fas fa-rotate" style="margin-right:5px"></i>Actualizar</button>
+            <button onclick="closeDesignReview()" title="Cerrar" style="border:none;background:transparent;font-size:1.4rem;cursor:pointer;color:#94a3b8;line-height:1">&times;</button>
         </div>
         <div style="padding:16px 18px">
             <p style="margin:0 0 14px;color:#b91c1c;font-weight:600;font-size:.9rem">${reasonTxt}</p>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;align-items:start">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;align-items:start">
+                <div><div style="${cap}">Lo que se le mandó al cliente (mockup)</div>${mockImg}</div>
                 <div>
-                    <div style="font-size:.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Lo que se le mandó al cliente</div>
-                    ${img}
-                </div>
-                <div>
-                    <div style="font-size:.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Comparación</div>
+                    <div style="${cap}">Comparación</div>
                     <table style="width:100%;border-collapse:collapse;font-size:.82rem">
                         <thead><tr style="text-align:left;color:#94a3b8;border-bottom:2px solid var(--color-border,#e5e7eb)">
                             <th style="padding:6px 10px"></th><th style="padding:6px 10px">Pedido</th><th style="padding:6px 10px">Grabado</th><th style="padding:6px 10px"></th>
                         </tr></thead>
                         <tbody>${rows}</tbody>
                     </table>
-                    <p style="margin:12px 0 0;font-size:.78rem;color:#94a3b8;line-height:1.4">Si el <b>dato del pedido</b> está mal, corrígelo. Si el <b>mockup</b> salió mal, regéneralo y vuelve a mandarlo. Luego corta a mano o usa “Diseñar con IA”.</p>
                 </div>
+            </div>
+            <div style="margin:20px 0 0;padding-top:16px;border-top:1px solid var(--color-border,#e5e7eb)">
+                <div style="${cap};font-size:.8rem;color:#334155;margin-bottom:10px"><i class="fas fa-scissors" style="margin-right:6px;color:#7c3aed"></i>Diseño de corte de la skill</div>
+                ${corteBody}
             </div>
         </div>
     </div>`;
@@ -691,6 +738,60 @@ function closeDesignReview() {
     if (el) el.remove();
 }
 window.closeDesignReview = closeDesignReview;
+
+// --- Acciones del modal "Revisar" sobre el diseño de corte (flujo iaForce; tu PC lo procesa ≤15 min) ---
+async function _designReviewPost(orderId, path, body, btn) {
+    if (btn) btn.disabled = true;
+    const opt = { method: 'POST' };
+    if (body) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
+    const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/${path}`, opt);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.success) { if (btn) btn.disabled = false; throw new Error(d.message || ('HTTP ' + res.status)); }
+    return d;
+}
+// Refleja el nuevo iaForce en el cache local, re-pinta la tabla de fondo y re-renderiza el modal.
+function _designReviewApply(orderId, iaForce) {
+    const o = (window._designPendingData || []).find(x => x.id === orderId);
+    if (o) o.iaForce = iaForce;
+    _paintDesignPending();
+    openDesignReview(orderId);
+}
+async function designReviewGenerate(orderId, btn) {
+    try { await _designReviewPost(orderId, 'design-ia', null, btn); _designReviewApply(orderId, { status: 'queued' }); }
+    catch (e) { alert('No se pudo generar: ' + (e.message || e)); }
+}
+window.designReviewGenerate = designReviewGenerate;
+async function designReviewSaveEdit(orderId, btn) {
+    const g = (k) => { const el = document.getElementById('dr-edit-' + k); return el ? el.value : ''; };
+    const body = { nombre1: g('nombre1'), nombre2: g('nombre2'), fecha: g('fecha') };
+    if (!body.nombre1.trim() || !body.nombre2.trim()) { alert('Se requieren los dos nombres.'); return; }
+    try { await _designReviewPost(orderId, 'ia-edit', body, btn); _designReviewApply(orderId, { status: 'queued', lines: body }); }
+    catch (e) { alert('No se pudo corregir: ' + (e.message || e)); }
+}
+window.designReviewSaveEdit = designReviewSaveEdit;
+async function designReviewConfirm(orderId, btn) {
+    if (!confirm('¿Subir este corte a Drive? Lo manda a producción (tu PC lo sube en ≤15 min).')) return;
+    try {
+        await _designReviewPost(orderId, 'ia-confirm', null, btn);
+        const o = (window._designPendingData || []).find(x => x.id === orderId);
+        _designReviewApply(orderId, { ...((o && o.iaForce) || {}), status: 'approved' });
+    } catch (e) { alert('No se pudo subir: ' + (e.message || e)); }
+}
+window.designReviewConfirm = designReviewConfirm;
+async function designReviewDiscard(orderId, btn) {
+    if (!confirm('¿Descartar este diseño de corte? No se sube nada.')) return;
+    try { await _designReviewPost(orderId, 'ia-reject', null, btn); _designReviewApply(orderId, null); }
+    catch (e) { alert('No se pudo descartar: ' + (e.message || e)); }
+}
+window.designReviewDiscard = designReviewDiscard;
+async function designReviewRefresh(orderId, btn) {
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-rotate fa-spin"></i>'; }
+    await renderDesignPendingView(true);
+    const still = (window._designPendingData || []).find(x => x.id === orderId);
+    if (still && still.reviewInfo) openDesignReview(orderId);
+    else closeDesignReview();
+}
+window.designReviewRefresh = designReviewRefresh;
 
 // Guarda la nota interna del diseñador (onblur). No re-pinta la tabla; solo avisa con un borde verde.
 async function changeDesignComentario(orderId, el) {

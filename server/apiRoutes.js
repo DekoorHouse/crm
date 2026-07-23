@@ -7815,6 +7815,8 @@ router.get('/design-pending', async (req, res) => {
                 iaForce: p.iaForce ? {
                     status: p.iaForce.status || null,
                     previewUrl: p.iaForce.previewUrl || null,
+                    cortePreviewUrl: p.iaForce.cortePreviewUrl || null,   // PNG legible del corte que hizo la skill
+                    mockupUrl: p.iaForce.mockupUrl || null,               // el mockup que aprobó el cliente
                     lines: p.iaForce.lines || null,
                     error: p.iaForce.error || null,
                 } : null,
@@ -8058,6 +8060,45 @@ router.post('/design-pending/:orderId/ia-reject', async (req, res) => {
         res.json({ success: true });
     } catch (e) {
         console.error('[design-pending/ia-reject] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/design-pending/:orderId/ia-edit — CORREGIR el diseño de corte de la skill: el operador
+// ajustó los textos/renglones (nombre1/nombre2/fecha) en el modal "Revisar". Guarda el override y
+// RE-ENCOLA (iaForce.status='queued') para que el worker regenere el corte con esos textos y lo deje
+// staged con un preview nuevo. Cada renglón va en su propia línea ('\n' = nombre en 2 renglones, para
+// reproducir lo que el cliente vio). Solo lámpara de corazones no-especial (lo que el skill genera).
+router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const { productOf, datosOf, SPECIAL_RE } = require('./design/svgAuto');
+        const ref = db.collection('pedidos').doc(orderId);
+        const doc = await ref.get();
+        if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        const p = doc.data();
+        if (!/corazon/i.test(productOf(p))) return res.status(400).json({ success: false, message: 'El skill solo genera lámpara de corazones; este pedido requiere diseño manual.' });
+        if (SPECIAL_RE.test(datosOf(p))) return res.status(400).json({ success: false, message: 'Pedido especial: requiere diseño manual.' });
+        if (p.svgCorteAt) return res.status(400).json({ success: false, message: 'Este pedido ya tiene un SVG de corte.' });
+        // Normaliza cada campo a renglones limpios (una línea por renglón, sin vacíos ni espacios de sobra).
+        const clean = (s) => String(s == null ? '' : s).replace(/\r/g, '').split('\n').map(x => x.trim()).filter(Boolean).join('\n');
+        const nombre1 = clean(req.body && req.body.nombre1);
+        const nombre2 = clean(req.body && req.body.nombre2);
+        const fecha = clean(req.body && req.body.fecha);
+        if (!nombre1 || !nombre2) return res.status(400).json({ success: false, message: 'Se requieren los dos nombres.' });
+        await ref.update({
+            'iaForce.status': 'queued',
+            'iaForce.overrideLines': { nombre1, nombre2, fecha },
+            'iaForce.requestedAt': admin.firestore.FieldValue.serverTimestamp(),
+            'iaForce.requestedBy': 'crm-edit',
+            'iaForce.error': admin.firestore.FieldValue.delete(),
+            // Limpia el staged viejo: el CRM no debe mostrar el preview anterior mientras se regenera.
+            'iaForce.cortePreviewUrl': admin.firestore.FieldValue.delete(),
+            'iaForce.svgLocalPath': admin.firestore.FieldValue.delete(),
+        });
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[design-pending/ia-edit] error:', e.message);
         res.status(500).json({ success: false, message: e.message });
     }
 });

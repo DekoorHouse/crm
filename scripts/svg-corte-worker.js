@@ -32,9 +32,11 @@ const { spawnSync } = require('child_process');
 const { db, admin } = require('../server/config');
 const { recomputeForContact } = require('../server/design/designPending');
 const { svgAutoEligibility, forcedDesignFields, isVideoCorregir } = require('../server/design/svgAuto');
+const { uploadPublicImage } = require('../server/mockups/mockupsService');
 
 const SKILL_DIR = path.join(__dirname, '..', '.claude', 'skills', 'svg-corte');
 const INFINITO_VBS = path.join(SKILL_DIR, 'infinito.vbs');
+const CLIENT_PREVIEW_VBS = path.join(SKILL_DIR, 'client-preview.vbs');
 const WEBAPP = JSON.parse(fs.readFileSync(path.join(SKILL_DIR, 'drive-webapp.json'), 'utf8'));
 const OUT_DIR = path.join(os.homedir(), 'Documents', 'SVG-Corte');
 const LOG_FILE = path.join(OUT_DIR, 'worker.log');
@@ -106,6 +108,28 @@ function runCorel(label, fields) {
     if (r.status !== 0) throw new Error('infinito.vbs fallo (exit ' + r.status + '): ' + out.trim().slice(0, 300));
     if (!fs.existsSync(svg)) throw new Error('infinito.vbs termino sin crear ' + svg + '. Salida: ' + out.trim().slice(0, 300));
     return { svg, cdr };
+}
+
+// Genera un PNG AL DERECHO (legible) del corte desde el .cdr guardado (que infinito.vbs deja en
+// orientacion natural) con client-preview.vbs, y lo sube a Storage como imagen publica. Devuelve la
+// URL (o null si algo falla — el corte NO depende de esto). Es "el diseno que hizo la skill" que el
+// CRM muestra en el modal "Revisar" para comparar contra el mockup que aprobo el cliente.
+async function makeCortePreview(cdr, label) {
+    try {
+        if (!cdr || !fs.existsSync(cdr)) return null;
+        const png = path.join(OUT_DIR, slugAscii(String(label) + '-corte-' + stampNow()) + '.png');
+        const r = spawnSync('cscript', ['//nologo', CLIENT_PREVIEW_VBS, cdr, png], { encoding: 'utf8', timeout: 3 * 60 * 1000, windowsHide: true });
+        if (r.status !== 0 || !fs.existsSync(png)) {
+            log('  ~ no se pudo generar el PNG de corte: ' + ((r.stdout || '') + (r.stderr || '')).trim().slice(0, 200));
+            return null;
+        }
+        const { url } = await uploadPublicImage(fs.readFileSync(png), 'corte-preview');
+        try { fs.unlinkSync(png); } catch (_) {}
+        return url;
+    } catch (e) {
+        log('  ~ makeCortePreview fallo: ' + e.message);
+        return null;
+    }
 }
 
 async function getSettings() {
@@ -361,22 +385,34 @@ async function processForcedDesigns() {
             if (!DRY) await doc.ref.update({ 'iaForce.status': 'error', 'iaForce.error': forcedErrorMsg(ff.reason) });
             continue;
         }
+        // Correccion manual desde el CRM (boton "Corregir"): si el operador edito los textos/renglones,
+        // esos MANDAN sobre lo que leyo la vision (el corte debe quedar como el operador lo aprobo). El
+        // '\n' de un renglon partido viaja literal en el string del override.
+        const ov = (o.iaForce || {}).overrideLines || null;
+        const fields = ov ? {
+            nombre1: String(ov.nombre1 != null ? ov.nombre1 : ff.fields.nombre1),
+            nombre2: String(ov.nombre2 != null ? ov.nombre2 : ff.fields.nombre2),
+            fecha: String(ov.fecha != null ? ov.fecha : ff.fields.fecha),
+        } : ff.fields;
         const nl = s => String(s).replace(/\n/g, '⏎');
-        log(`> ${dh} forzado -> generando ${nl(ff.fields.nombre1)} y ${nl(ff.fields.nombre2)} (${nl(ff.fields.fecha) || 'sin fecha'})`);
+        log(`> ${dh} forzado -> generando ${nl(fields.nombre1)} y ${nl(fields.nombre2)} (${nl(fields.fecha) || 'sin fecha'})${ov ? ' [corregido]' : ''}`);
         if (DRY) continue;
         try {
-            const { svg, cdr } = runCorel(dh, [ff.fields]);
+            const { svg, cdr } = runCorel(dh, [fields]);
+            const cortePreviewUrl = await makeCortePreview(cdr, dh);   // PNG legible del corte -> Storage
             await doc.ref.update({
                 'iaForce.status': 'staged',
                 'iaForce.stagedAt': admin.firestore.FieldValue.serverTimestamp(),
                 'iaForce.svgLocalPath': svg,
                 'iaForce.cdrLocalPath': cdr,
                 'iaForce.svgName': path.basename(svg),
-                'iaForce.lines': ff.fields,
-                'iaForce.previewUrl': ff.previewUrl || null,
+                'iaForce.lines': fields,
+                'iaForce.mockupUrl': ff.previewUrl || null,                        // lo que aprobo el cliente
+                'iaForce.cortePreviewUrl': cortePreviewUrl || null,                // el corte que hizo la skill
+                'iaForce.previewUrl': cortePreviewUrl || ff.previewUrl || null,    // compat fila: ahora muestra el corte
                 'iaForce.error': admin.firestore.FieldValue.delete(),
             });
-            log(`  STAGED ${dh} -> ${path.basename(svg)} (espera confirmación en el CRM)`);
+            log(`  STAGED ${dh} -> ${path.basename(svg)}${cortePreviewUrl ? ' (+preview)' : ''} (espera confirmación en el CRM)`);
         } catch (e) {
             log(`  ERROR generando forzado ${dh}: ${e.message}`);
             try { await doc.ref.update({ 'iaForce.status': 'error', 'iaForce.error': ('No se pudo generar: ' + e.message).slice(0, 300) }); } catch (_) {}
