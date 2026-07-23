@@ -7882,7 +7882,9 @@ router.get('/design-pending', async (req, res) => {
                 if (isAutoWaiting(p, prevMap.get(doc.id))) continue;
                 // Los 'Corregir' que pidieron VIDEO sí se quedan aquí (el pendiente del video es manual),
                 // pero se marcan para que el diseñador NO los corte a mano: el worker ya los tiene en cola.
-                orders.push(mapOrder(doc, reasons, { autoCutQueued: isVideoAutoWaiting(p, prevMap.get(doc.id)) }));
+                // Si ya hay un iaForce en curso (Chris lo forzó a mano) NO se marca: ese pedido ya muestra
+                // su propia UI de "Diseñar con IA" (thumbnail + Subir a Drive) y no está en la cola automática.
+                orders.push(mapOrder(doc, reasons, { autoCutQueued: !p.iaForce && isVideoAutoWaiting(p, prevMap.get(doc.id)) }));
             }
         }
 
