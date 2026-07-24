@@ -218,6 +218,7 @@ window.renderDesignPendingView = renderDesignPendingView;
 // estatus del pedido ni dispara ningún efecto (inventario/Meta/mensajes). La posición persiste por pedido.
 const DP_BOARD_COLS = [
     ['pendientes', 'Pendientes', '#6f42c1'],
+    ['hacer_mockup', 'Hacer Mockup', '#14b8a6'],
     ['esperando_confirmacion', 'Esperando confirmación', '#0ea5e9'],
     ['esperando_pago', 'Esperando pago', '#f59e0b'],
     ['disenado', 'Diseñado', '#16a34a'],

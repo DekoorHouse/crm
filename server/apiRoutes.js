@@ -7930,7 +7930,7 @@ router.get('/design-pending', async (req, res) => {
             // aunque ya no sean "pendientes" (p.ej. Diseñado/Terminado), para que la tarjeta no desaparezca.
             if (boardMode) {
                 const already = new Set(orders.map(o => o.id));
-                const movedCols = ['esperando_confirmacion', 'esperando_pago', 'disenado', 'terminado'];
+                const movedCols = ['hacer_mockup', 'esperando_confirmacion', 'esperando_pago', 'disenado', 'terminado'];
                 const movedSnap = await db.collection('pedidos').where('disenoBoardCol', 'in', movedCols).limit(500).get();
                 movedSnap.forEach(doc => { if (!already.has(doc.id)) orders.push(mapOrder(doc, [])); });
             }
@@ -8129,7 +8129,7 @@ router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
 router.post('/design-pending/:orderId/board-col', async (req, res) => {
     const { orderId } = req.params;
     const col = String((req.body && req.body.col) || '').trim();
-    const VALID = ['pendientes', 'esperando_confirmacion', 'esperando_pago', 'disenado', 'terminado'];
+    const VALID = ['pendientes', 'hacer_mockup', 'esperando_confirmacion', 'esperando_pago', 'disenado', 'terminado'];
     if (!VALID.includes(col)) return res.status(400).json({ success: false, message: 'Columna inválida.' });
     try {
         const ref = db.collection('pedidos').doc(orderId);
