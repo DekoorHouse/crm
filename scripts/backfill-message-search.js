@@ -22,6 +22,8 @@ const DRY = argv.includes('--dry');
 const RESET = argv.includes('--reset');
 const DAYS = (() => { const i = argv.indexOf('--days'); return i >= 0 ? Math.max(1, parseInt(argv[i + 1], 10) || 90) : 90; })();
 const PAGE = 300;   // contactos por página
+const CONC = (() => { const i = argv.indexOf('--conc'); return i >= 0 ? Math.max(1, parseInt(argv[i + 1], 10) || 10) : 10; })();
+const limit = require('p-limit')(CONC);
 
 const STATE = db.collection('crm_settings').doc('messageSearchBackfill');
 const toMs = v => (v && typeof v.toMillis === 'function' ? v.toMillis() : (v && v._seconds ? v._seconds * 1000 : 0));
@@ -46,7 +48,10 @@ const toMs = v => (v && typeof v.toMillis === 'function' ? v.toMillis() : (v && 
             .get();
         if (snap.empty) break;
 
-        for (const c of snap.docs) {
+        // Los contactos se procesan EN PARALELO (limitado): de uno en uno, cada consulta a la
+        // subcolección cuesta ~230 ms y el backfill tardaba horas. El cursor avanza por página
+        // (todos los de la página quedan listos antes de guardarlo), así sigue siendo reanudable.
+        await Promise.all(snap.docs.map(c => limit(async () => {
             const msgs = await c.ref.collection('messages')
                 .where('timestamp', '>=', cutoff)
                 .orderBy('timestamp', 'asc')
@@ -67,8 +72,9 @@ const toMs = v => (v && typeof v.toMillis === 'function' ? v.toMillis() : (v && 
             }
             if (pending) await writer.commit();
             totals.contacts++;
-            cursorMs = toMs(c.data().lastMessageTimestamp) || cursorMs;
-        }
+        })));
+        // La página viene ordenada ASC por lastMessageTimestamp: el último es el más nuevo.
+        cursorMs = toMs(snap.docs[snap.docs.length - 1].data().lastMessageTimestamp) || cursorMs;
 
         const mins = ((Date.now() - started) / 60000).toFixed(1);
         console.log(`[BACKFILL] ${totals.contacts} contactos · ${totals.scanned} mensajes revisados · ${totals.indexed} indexados · ${mins} min`);
