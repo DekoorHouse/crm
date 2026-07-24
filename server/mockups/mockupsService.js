@@ -243,6 +243,7 @@ async function deleteTemplate(id) {
 async function uploadTemplateBaseImage(buffer) {
     const id = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     const webp = await sharp(buffer)
+        .rotate()   // auto-orienta según EXIF (las fotos de celular vienen giradas 90°); debe ir ANTES del resize
         .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 90 })
         .toBuffer();
@@ -259,6 +260,7 @@ async function uploadTemplateBaseImage(buffer) {
 async function uploadPublicImage(buffer, subdir = 'refs') {
     const id = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     const webp = await sharp(buffer)
+        .rotate()   // auto-orienta según EXIF (fotos de celular giradas 90°); debe ir ANTES del resize
         .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 90 })
         .toBuffer();
