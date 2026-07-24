@@ -195,16 +195,16 @@ async function renderDesignPendingView(silent) {
     if (!container) return;
     const sc = document.getElementById('design-pending-view');
     const scrollTop = (silent && sc) ? sc.scrollTop : 0;
-    const tab = window._designPendingTab || 'pendientes';
+    const tab = window._designPendingTab || 'tablero';
     if (!silent) container.innerHTML = '<p class="text-gray-500">Cargando…</p>';
     try {
-        const url = `${API_BASE_URL}/api/design-pending` + (tab === 'disenados' ? '?done=1' : tab === 'svgia' ? '?svgia=1' : '');
+        const url = `${API_BASE_URL}/api/design-pending` + (tab === 'disenados' ? '?done=1' : tab === 'svgia' ? '?svgia=1' : tab === 'tablero' ? '?board=1' : '');
         const res = await fetch(url);
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
         window._designPendingData = data.orders || [];
         window._designPendingTotal = data.total != null ? data.total : window._designPendingData.length;
-        _paintDesignPending();
+        if (tab === 'tablero') _paintDesignBoard(); else _paintDesignPending();
         if (silent && sc) sc.scrollTop = scrollTop;
     } catch (e) {
         container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los datos: ${escapeHtml(e.message || String(e))}</p>
@@ -212,6 +212,172 @@ async function renderDesignPendingView(silent) {
     }
 }
 window.renderDesignPendingView = renderDesignPendingView;
+
+// ===== TABLERO Kanban (drag & drop) de Pendientes de Diseño ==============================
+// 5 columnas. Arrastrar una tarjeta SOLO la mueve de columna (guarda disenoBoardCol); NO cambia el
+// estatus del pedido ni dispara ningún efecto (inventario/Meta/mensajes). La posición persiste por pedido.
+const DP_BOARD_COLS = [
+    ['pendientes', 'Pendientes', '#6f42c1'],
+    ['esperando_confirmacion', 'Esperando confirmación', '#0ea5e9'],
+    ['esperando_pago', 'Esperando pago', '#f59e0b'],
+    ['disenado', 'Diseñado', '#16a34a'],
+    ['terminado', 'Terminado', '#64748b'],
+];
+
+// Barra de pestañas compartida por la tabla y el tablero (para poder cambiar entre vistas).
+function _dpTabsBar(tab) {
+    const b = (key, label) => `<button onclick="switchDesignPendingTab('${key}')" style="border:none;background:none;padding:8px 4px;margin-right:18px;font-size:.95rem;font-weight:700;cursor:pointer;color:${tab === key ? 'var(--color-primary,#ef4444)' : 'var(--color-text-light,#94a3b8)'};border-bottom:3px solid ${tab === key ? 'var(--color-primary,#ef4444)' : 'transparent'}">${label}</button>`;
+    return `<div style="display:flex;align-items:center;border-bottom:1px solid var(--color-border);margin-bottom:14px">${b('tablero', 'Tablero')}${b('pendientes', 'Pendientes')}${b('svgia', 'SVG IA')}${b('disenados', 'Diseñados ✓')}</div>`;
+}
+
+const DP_BOARD_CSS = `
+<style>
+.dp-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px;align-items:flex-start}
+.dp-col{flex:1 1 0;min-width:250px;max-width:360px;background:var(--color-subtle-bg,#f8fafc);border:1px solid var(--color-border,#e5e7eb);border-radius:10px;display:flex;flex-direction:column}
+.dp-col-head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px}
+.dp-col-title{font-weight:800;font-size:.8rem}
+.dp-col-count{background:var(--color-border,#e5e7eb);color:var(--color-text,#334155);font-size:.7rem;font-weight:700;border-radius:999px;padding:1px 8px}
+.dp-col-list{flex:1;min-height:120px;padding:8px;display:flex;flex-direction:column;gap:8px}
+.dp-card{background:var(--color-container-bg,#fff);border:1px solid var(--color-border,#e5e7eb);border-radius:8px;padding:8px 9px;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.dp-card:active{cursor:grabbing}
+.dp-card-ghost{opacity:.35}
+.dp-card-drag{box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.dp-card-top{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px}
+.dp-card-num{font-weight:800;color:var(--color-primary);cursor:pointer;font-size:.85rem}
+.dp-card-actions{display:flex;align-items:center;gap:6px}
+.dp-icon-btn{border:none;background:transparent;color:#0ea5e9;cursor:pointer;font-size:14px;padding:2px}
+.dp-card-datos{font-weight:600;font-size:.8rem;line-height:1.25;margin-bottom:2px}
+.dp-card-prod{font-size:.72rem;color:var(--color-text-light,#94a3b8);margin-bottom:4px}
+.dp-card-motivos{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:2px}
+.dp-ia-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:4px}
+.dp-card-note{width:100%;min-height:30px;max-height:90px;font-size:11.5px;line-height:1.3;padding:4px 6px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;resize:vertical;background:var(--color-surface,#fff);color:var(--color-text,#334155);margin-top:5px}
+</style>`;
+
+// Botones/estado de "Diseñar con IA" en una tarjeta (mismos estados que la tabla, en versión compacta).
+function dpIaControls(o) {
+    const f = o.iaForce || {};
+    const bb = 'padding:4px 8px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap;border:none';
+    if (f.status === 'approved') return `<span style="display:inline-flex;align-items:center;gap:4px;background:#0ea5e922;color:#0284c7;border:1px solid #0ea5e966;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700"><i class="fas fa-cloud-arrow-up"></i>Subiendo…</span>`;
+    if (f.status === 'staged') {
+        const thumb = f.previewUrl ? `<img src="${escapeHtml(f.previewUrl)}" onclick="openImageModal(this.src)" title="Diseño listo — clic para ampliar" style="width:30px;height:30px;object-fit:cover;border-radius:5px;cursor:zoom-in;border:1px solid var(--color-border,#e5e7eb)">` : '';
+        return `${thumb}<button onclick="confirmIAUpload('${o.id}', this)" title="Subir el corte a Drive (producción)" style="background:#16a34a;color:#fff;${bb}"><i class="fas fa-cloud-arrow-up" style="margin-right:3px"></i>Subir</button><button onclick="rejectIADesign('${o.id}', this)" title="Descartar este diseño de IA (no sube nada)" style="background:transparent;color:#dc2626;border:1px solid var(--color-border,#e5e7eb);${bb}"><i class="fas fa-times"></i></button>`;
+    }
+    if (f.status === 'queued') return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b22;color:#b45309;border:1px solid #f59e0b66;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700"><i class="fas fa-hourglass-half"></i>En cola IA…</span>`;
+    if (f.status === 'error') return `<button onclick="designWithIA('${o.id}', this)" title="${escapeHtml(f.error || 'Error')} — clic para reintentar" style="background:#dc262611;color:#b91c1c;border:1px solid #dc262666;${bb}"><i class="fas fa-triangle-exclamation" style="margin-right:3px"></i>Reintentar IA</button>`;
+    if (o.boardCol === 'pendientes' && o.iaEligible) return `<button onclick="designWithIA('${o.id}', this)" title="Forzar diseño con IA: tu PC lo diseña y pide confirmar antes de subir" style="background:#7c3aed;color:#fff;${bb}"><i class="fas fa-wand-magic-sparkles" style="margin-right:3px"></i>Diseñar con IA</button>`;
+    return '';
+}
+
+// HTML de una tarjeta del tablero (compacta: nº, datos, producto, motivos, IA, nota; + chat y check).
+function dpBoardCard(o, checkedSet) {
+    const chan = o.channel === 'instagram' ? '<i class="fab fa-instagram" style="color:#e1306c"></i>'
+        : o.channel === 'messenger' ? '<i class="fab fa-facebook-messenger" style="color:#0084ff"></i>'
+        : '<i class="fab fa-whatsapp" style="color:#25d366"></i>';
+    const datosCompactos = String(o.datos || '')
+        .replace(/nombres?\s*:\s*/i, '').replace(/\s*\|\s*fecha\s*:\s*/i, ' · ')
+        .replace(/\s*\|\s*/g, ' · ').replace(/\s*\n\s*/g, ' · ').trim();
+    const datosTxt = datosCompactos || (o.clienteName || '');
+    const motivos = (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:5px;white-space:nowrap"><i class="fas ${m[2]}" style="margin-right:2px"></i>${m[0]}</span>` : ''; }).join('');
+    const iaBadge = o.svgCorteUrl ? `<a href="${escapeHtml(o.svgCorteUrl)}" target="_blank" rel="noopener" title="Diseñado por IA — abrir el SVG en Drive" style="display:inline-block;background:#e83e8c22;color:#e83e8c;border:1px solid #e83e8c66;font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:5px;text-decoration:none"><i class="fas fa-robot"></i> IA</a>` : '';
+    const chk = `<input type="checkbox"${checkedSet && checkedSet.has(o.id) ? ' checked' : ''} data-dp-check="${o.id}" onchange="toggleDesignVisualCheck('${o.id}', this)" title="Marca visual (se guarda en este navegador)" style="width:15px;height:15px;cursor:pointer;accent-color:#16a34a">`;
+    const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (← → para navegar)" class="dp-icon-btn"><i class="fas fa-comments"></i></button>` : '';
+    const ia = dpIaControls(o);
+    return `<div class="dp-card" data-order="${escapeHtml(o.id)}">
+        <div class="dp-card-top">
+            <span class="dp-card-num" onclick="copyDesignOrderNumber(this,'${escapeHtml(o.orderNumber)}')" title="Clic para copiar el número">${escapeHtml(o.orderNumber)}</span>
+            <span class="dp-card-actions">${chk}${chatBtn}</span>
+        </div>
+        <div class="dp-card-datos" title="Cliente: ${escapeHtml(o.clienteName || '')} — ${escapeHtml(o.datos || '')}">${chan} ${escapeHtml(datosTxt)}</div>
+        <div class="dp-card-prod">${escapeHtml(o.producto || '')}${o.itemCount > 1 ? ' <span style="color:#94a3b8">+' + (o.itemCount - 1) + '</span>' : ''}</div>
+        ${(motivos || iaBadge) ? `<div class="dp-card-motivos">${motivos}${iaBadge}</div>` : ''}
+        ${ia ? `<div class="dp-ia-row">${ia}</div>` : ''}
+        <textarea class="dp-card-note" data-dp-comment="${o.id}" onblur="changeDesignComentario('${o.id}', this)" placeholder="Nota interna…" title="Notas del diseñador (solo para el equipo)">${escapeHtml(o.comentarioDiseno || '')}</textarea>
+    </div>`;
+}
+
+// Pinta el tablero de 5 columnas desde window._designPendingData (agrupado por boardCol).
+function _paintDesignBoard() {
+    const container = document.getElementById('design-pending-container');
+    if (!container) return;
+    const all = window._designPendingData || [];
+    const byCol = {}; DP_BOARD_COLS.forEach(([k]) => byCol[k] = []);
+    for (const o of all) { const c = byCol[o.boardCol] ? o.boardCol : 'pendientes'; byCol[c].push(o); }
+    window._designShownOrders = DP_BOARD_COLS.flatMap(([k]) => byCol[k]);   // orden plano para ← →
+    const checkedSet = _dpVisualChecks();
+    const cols = DP_BOARD_COLS.map(([key, label, color]) => {
+        const cards = byCol[key].map(o => dpBoardCard(o, checkedSet)).join('');
+        return `<div class="dp-col">
+            <div class="dp-col-head" style="border-top:3px solid ${color};border-radius:10px 10px 0 0">
+                <span class="dp-col-title" style="color:${color}">${label}</span>
+                <span class="dp-col-count">${byCol[key].length}</span>
+            </div>
+            <div class="dp-col-list" data-col="${key}" id="dp-col-${key}">${cards}</div>
+        </div>`;
+    }).join('');
+    container.innerHTML = DP_BOARD_CSS + _dpTabsBar('tablero') + `<div class="dp-board">${cols}</div>`;
+    _dpInitSortable();
+}
+
+// Inicializa SortableJS en cada columna (drag entre columnas). Excluye los controles interactivos
+// (textarea/botones/checkbox/enlaces) para que se puedan usar sin iniciar un arrastre.
+function _dpInitSortable() {
+    if (typeof Sortable === 'undefined') return;
+    (window._dpSortables || []).forEach(s => { try { s.destroy(); } catch (_) {} });
+    window._dpSortables = [];
+    DP_BOARD_COLS.forEach(([key]) => {
+        const el = document.getElementById('dp-col-' + key);
+        if (!el) return;
+        window._dpSortables.push(new Sortable(el, {
+            group: 'dp-board',
+            animation: 150,
+            draggable: '.dp-card',
+            ghostClass: 'dp-card-ghost',
+            dragClass: 'dp-card-drag',
+            filter: '.dp-card-note, button, input, a, img, .dp-card-num',
+            preventOnFilter: false,
+            onEnd: (evt) => {
+                const orderId = evt.item.getAttribute('data-order');
+                const toCol = evt.to.getAttribute('data-col');
+                const fromCol = evt.from.getAttribute('data-col');
+                if (orderId && toCol && toCol !== fromCol) dpMoveCard(orderId, toCol, fromCol);
+                else _dpUpdateColCounts();   // reordenó dentro de la misma columna
+            },
+        }));
+    });
+}
+
+// Refresca contadores de columna y el orden plano (para las flechas del chat) desde el DOM.
+function _dpUpdateColCounts() {
+    const flat = [];
+    DP_BOARD_COLS.forEach(([key]) => {
+        const list = document.getElementById('dp-col-' + key);
+        if (!list) return;
+        const cards = list.querySelectorAll('.dp-card');
+        const head = list.previousElementSibling && list.previousElementSibling.querySelector('.dp-col-count');
+        if (head) head.textContent = cards.length;
+        cards.forEach(c => { const o = (window._designPendingData || []).find(x => x.id === c.getAttribute('data-order')); if (o) flat.push(o); });
+    });
+    window._designShownOrders = flat;
+}
+
+// Persiste el movimiento de una tarjeta (optimista: el DOM ya lo movió Sortable). Revierte si falla.
+async function dpMoveCard(orderId, col, fromCol) {
+    const o = (window._designPendingData || []).find(x => x.id === orderId);
+    if (o) o.boardCol = col;
+    _dpUpdateColCounts();
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/board-col`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ col }),
+        });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+    } catch (e) {
+        if (o) o.boardCol = fromCol || 'pendientes';
+        alert('No se pudo mover la tarjeta: ' + (e.message || e));
+        _paintDesignBoard();   // re-render: restaura la posición real
+    }
+}
+window.dpMoveCard = dpMoveCard;
 
 function setDesignPendingFilter(f) { window._designPendingFilter = f; _paintDesignPending(); }
 window.setDesignPendingFilter = setDesignPendingFilter;
@@ -471,12 +637,13 @@ document.addEventListener('keydown', (e) => {
 function _paintDesignPending() {
     const container = document.getElementById('design-pending-container');
     if (!container) return;
-    const tab = window._designPendingTab || 'pendientes';
+    const tab = window._designPendingTab || 'tablero';
+    // El tablero Kanban tiene su propio pintor; delegar aquí hace que cualquier re-pintado
+    // (acciones de IA, etc.) respete la vista activa sin romper la tabla.
+    if (tab === 'tablero') { _paintDesignBoard(); return; }
     const all = window._designPendingData || [];
 
-    // Pestañas: Pendientes / Diseñados.
-    const tabBtn = (key, label) => `<button onclick="switchDesignPendingTab('${key}')" style="border:none;background:none;padding:8px 4px;margin-right:18px;font-size:.95rem;font-weight:700;cursor:pointer;color:${tab === key ? 'var(--color-primary,#ef4444)' : 'var(--color-text-light,#94a3b8)'};border-bottom:3px solid ${tab === key ? 'var(--color-primary,#ef4444)' : 'transparent'}">${label}</button>`;
-    const tabsBar = `<div style="display:flex;align-items:center;border-bottom:1px solid var(--color-border);margin-bottom:14px">${tabBtn('pendientes', 'Pendientes')}${tabBtn('svgia', 'SVG IA')}${tabBtn('disenados', 'Diseñados ✓')}</div>`;
+    const tabsBar = _dpTabsBar(tab);
 
     if (!all.length) {
         const emptyMsg = tab === 'disenados'

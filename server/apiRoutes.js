@@ -7776,6 +7776,9 @@ router.get('/design-pending', async (req, res) => {
         // Pestaña "SVG IA": pedidos que maneja el worker de corte automático — los que ya cortó
         // (estatus "Diseñado por IA") + los que están EN COLA esperando pareja (Fabricar auto-elegible).
         const svgIaMode = req.query.svgia === '1' || req.query.svgia === 'true';
+        // Tablero (Kanban): además de los pendientes, incluye los pedidos que el diseñador MOVIÓ a mano
+        // a otra columna (disenoBoardCol), para que la posición de cada tarjeta persista.
+        const boardMode = req.query.board === '1' || req.query.board === 'true';
         // Previews de mockup (mockup_previews) en lote -> Map(id -> previews[]). Fuente de verdad de
         // "ya tiene mockup" y de los datos (nombres/fecha) que el worker necesita para cortar.
         const previewsFor = async (ids) => {
@@ -7826,6 +7829,9 @@ router.get('/design-pending', async (req, res) => {
                 iaEligible: /corazon/i.test(productOf(p)) && !SPECIAL_RE.test(datosOf(p)),
                 // ¿Se empujó a mano a la cola de Mockup ("A Mockup")? Pinta el estado del botón.
                 mockupForce: !!p.mockupForce,
+                // Columna del TABLERO Kanban donde el diseñador puso la tarjeta a mano (solo visual, no
+                // cambia el estatus). Sin asignar -> 'pendientes' (columna por defecto).
+                boardCol: p.disenoBoardCol || 'pendientes',
                 // Datos de personalización (nombres/fecha): lo que el diseñador necesita a la vista.
                 datos: (Array.isArray(p.items) ? p.items.map(i => i.datosProducto).filter(Boolean).join(' | ') : '') || p.datosProducto || '',
                 ...(extra || {}),
@@ -7917,6 +7923,15 @@ router.get('/design-pending', async (req, res) => {
                     autoCutQueued: !p.iaForce && isVideoAutoWaiting(p, prevMap.get(doc.id)),
                     reviewInfo: buildReviewInfo(p, prevMap.get(doc.id)),
                 }));
+            }
+
+            // Tablero: suma los pedidos que el diseñador movió a mano a otra columna (disenoBoardCol),
+            // aunque ya no sean "pendientes" (p.ej. Diseñado/Terminado), para que la tarjeta no desaparezca.
+            if (boardMode) {
+                const already = new Set(orders.map(o => o.id));
+                const movedCols = ['esperando_confirmacion', 'esperando_pago', 'disenado', 'terminado'];
+                const movedSnap = await db.collection('pedidos').where('disenoBoardCol', 'in', movedCols).limit(500).get();
+                movedSnap.forEach(doc => { if (!already.has(doc.id)) orders.push(mapOrder(doc, [])); });
             }
         }
 
@@ -8102,6 +8117,31 @@ router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
         res.json({ success: true });
     } catch (e) {
         console.error('[design-pending/ia-edit] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/design-pending/:orderId/board-col — mueve la tarjeta del TABLERO Kanban a otra columna.
+// Es SOLO visual: guarda disenoBoardCol en el pedido; NO cambia el estatus real ni dispara ningún
+// efecto (inventario, evento Meta, mensajes al cliente). Columna 'pendientes' -> borra la marca
+// (la tarjeta vuelve a derivarse de la lógica normal de pendientes).
+router.post('/design-pending/:orderId/board-col', async (req, res) => {
+    const { orderId } = req.params;
+    const col = String((req.body && req.body.col) || '').trim();
+    const VALID = ['pendientes', 'esperando_confirmacion', 'esperando_pago', 'disenado', 'terminado'];
+    if (!VALID.includes(col)) return res.status(400).json({ success: false, message: 'Columna inválida.' });
+    try {
+        const ref = db.collection('pedidos').doc(orderId);
+        const doc = await ref.get();
+        if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        if (col === 'pendientes') {
+            await ref.update({ disenoBoardCol: admin.firestore.FieldValue.delete(), disenoBoardColAt: admin.firestore.FieldValue.delete() });
+        } else {
+            await ref.update({ disenoBoardCol: col, disenoBoardColAt: admin.firestore.FieldValue.serverTimestamp() });
+        }
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[design-pending/board-col] error:', e.message);
         res.status(500).json({ success: false, message: e.message });
     }
 });
