@@ -232,12 +232,12 @@ function _dpTabsBar(tab) {
 
 const DP_BOARD_CSS = `
 <style>
-.dp-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px;align-items:flex-start}
-.dp-col{flex:1 1 0;min-width:250px;max-width:360px;background:var(--color-subtle-bg,#f8fafc);border:1px solid var(--color-border,#e5e7eb);border-radius:10px;display:flex;flex-direction:column}
-.dp-col-head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px}
+.dp-board{display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;padding-bottom:4px;align-items:stretch}
+.dp-col{flex:1 1 0;min-width:250px;max-width:360px;background:var(--color-subtle-bg,#f8fafc);border:1px solid var(--color-border,#e5e7eb);border-radius:10px;display:flex;flex-direction:column;min-height:0}
+.dp-col-head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;flex-shrink:0}
 .dp-col-title{font-weight:800;font-size:.8rem}
 .dp-col-count{background:var(--color-border,#e5e7eb);color:var(--color-text,#334155);font-size:.7rem;font-weight:700;border-radius:999px;padding:1px 8px}
-.dp-col-list{flex:1;min-height:120px;padding:8px;display:flex;flex-direction:column;gap:8px}
+.dp-col-list{flex:1;min-height:0;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
 .dp-card{background:var(--color-container-bg,#fff);border:1px solid var(--color-border,#e5e7eb);border-radius:8px;padding:8px 9px;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .dp-card:active{cursor:grabbing}
 .dp-card-ghost{opacity:.35}
@@ -316,6 +316,21 @@ function _paintDesignBoard() {
     }).join('');
     container.innerHTML = DP_BOARD_CSS + _dpTabsBar('tablero') + `<div class="dp-board">${cols}</div>`;
     _dpInitSortable();
+    _dpFitBoardHeight();
+    // Re-ajusta el alto del tablero al cambiar el tamaño de la ventana (una sola vez).
+    if (!window._dpBoardResizeBound) {
+        window._dpBoardResizeBound = true;
+        window.addEventListener('resize', () => _dpFitBoardHeight());
+    }
+}
+
+// El tablero ocupa desde su tope hasta el fondo de la ventana: así los encabezados quedan FIJOS
+// arriba y cada columna hace su propio scroll (sin perder de vista a qué columna se arrastra).
+function _dpFitBoardHeight() {
+    const board = document.querySelector('#design-pending-container .dp-board');
+    if (!board) return;
+    const top = board.getBoundingClientRect().top;
+    board.style.height = Math.max(320, window.innerHeight - top - 16) + 'px';
 }
 
 // Inicializa SortableJS en cada columna (drag entre columnas). Excluye los controles interactivos
