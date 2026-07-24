@@ -1664,6 +1664,12 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
     const anticipoBadge = contact.anticipoTest === 'A'
         ? `<span class="dp-badge" style="background:#d9770622;color:#d97706;border:1px solid #d9770666" title="Prueba de anticipo (grupo A): registra su pedido solo con anticipo de $300 pagado; el resto al ver la foto">🪙 $300</span>`
         : '';
+    // NECESITA ATENCIÓN: la IA no pudo ayudar (/equipo) o está apagada y el cliente escribió.
+    // La fila se fija arriba (sort en chat-handlers) y parpadea azul navy (.needs-attention en style.css).
+    const attnClass = contact.needsAttention === true ? 'needs-attention' : '';
+    const attnBadge = contact.needsAttention === true
+        ? `<span class="dp-badge attn-badge" title="Necesita atención humana: ${contact.needsAttentionReason === 'ai_off' ? 'la IA está apagada y el cliente escribió' : 'el cliente pidió algo que la IA no puede dar'}">🔵 Atender</span>`
+        : '';
 
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
@@ -1689,7 +1695,7 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
             </div>
             <div class="flex justify-between items-center">
                 <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
-                <div class="dp-badges-wrap">${pilotoBadge}${riTestBadge}${priceTestBadge}${anticipoBadge}${designPendBadges}${orderBadgeHTML}</div>
+                <div class="dp-badges-wrap">${attnBadge}${pilotoBadge}${riTestBadge}${priceTestBadge}${anticipoBadge}${designPendBadges}${orderBadgeHTML}</div>
             </div>
         </div>`;
 
@@ -1697,7 +1703,7 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
     const aiActive = contact.botActive === true;
     const aiClass = aiActive ? 'ai-active' : '';
 
-    return `<div ${onClickAction} class="contact-item flex items-center p-1.5 cursor-pointer ${isSelected ? 'selected' : ''} ${aiClass}" data-contact-id="${contact.id}" ${itemStyle}>
+    return `<div ${onClickAction} class="contact-item flex items-center p-1.5 cursor-pointer ${isSelected ? 'selected' : ''} ${aiClass} ${attnClass}" data-contact-id="${contact.id}" ${itemStyle}>
                 ${UserIcon(contact)}
                 ${mainContent}
             </div>`;
@@ -2403,6 +2409,7 @@ const ChatWindowTemplate = (contact) => {
                 <h2 class="text-base font-semibold cursor-pointer truncate" style="color: var(--color-text);" onclick="openContactDetails()">${contact.name}</h2>
             </div>
             <div class="chat-header-badges">
+                ${contact.needsAttention === true ? `<button class="attn-clear-btn" onclick="handleMarkAttended(event, '${contact.id}')" title="Marcar como atendida (quita lo urgente y el parpadeo). También se quita sola si respondes o enciendes la IA.">✔ Atendido</button>` : ''}
                 ${HeaderTagControlTemplate(contact)}
                 ${postVentaBadge}
                 <span id="order-pending-host" class="flex-shrink-0">${OrderPendingBadge(contact)}</span>

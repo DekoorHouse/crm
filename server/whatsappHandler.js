@@ -1148,6 +1148,16 @@ router.post('/', async (req, res) => {
                 triggerAutoReplyAI(message, contactRef, updatedContactData, delay).catch(err => {
                     console.error('[WEBHOOK] Error asíncrono en respuesta de IA:', err);
                 });
+            } else if (!isNewContact && !adResponseSent && updatedContactData.botActive !== true) {
+                // IA APAGADA + el cliente está escribiendo: la IA no va a responder, así que marca la
+                // conversación para ATENCIÓN humana (en el CRM se fija arriba y parpadea azul navy).
+                // Se limpia cuando un humano responde, enciende la IA o le da "Atendido"; se re-marca
+                // en cada mensaje nuevo del cliente (para que no se pierda). "Se nos olvida verlo".
+                contactRef.update({
+                    needsAttention: true,
+                    needsAttentionReason: 'ai_off',
+                    needsAttentionAt: admin.firestore.FieldValue.serverTimestamp()
+                }).catch(e => console.warn('[ATENCION] no se pudo marcar (IA apagada):', e.message));
             }
 
         // Handle status updates (message sent, delivered, read)

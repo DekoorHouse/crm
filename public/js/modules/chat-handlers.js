@@ -34,6 +34,26 @@ function scheduleContactListRender() {
 }
 window.scheduleContactListRender = scheduleContactListRender;
 
+// --- ATENCIÓN URGENTE: limpiar el estado "necesita atención" de una conversación. ---
+// Se llama cuando un humano RESPONDE, ENCIENDE la IA, o le da clic a "Atendido".
+async function clearNeedsAttention(contactId) {
+    if (!contactId) return;
+    const c = state.contacts.find(x => x.id === contactId);
+    if (c && c.needsAttention !== true) return; // ya está limpio, no hagas nada
+    if (c) { c.needsAttention = false; c.needsAttentionReason = null; } // optimista: quita el parpadeo ya
+    scheduleContactListRender();
+    try {
+        await db.collection('contacts_whatsapp').doc(contactId).update({ needsAttention: false, needsAttentionReason: null });
+    } catch (e) { console.warn('[ATENCION] no se pudo limpiar:', e.message); }
+}
+window.clearNeedsAttention = clearNeedsAttention;
+// Botón "Atendido" (en la cabecera del chat): quita lo urgente sin tener que responder.
+function handleMarkAttended(event, contactId) {
+    if (event) event.stopPropagation();
+    clearNeedsAttention(contactId || state.selectedContactId);
+}
+window.handleMarkAttended = handleMarkAttended;
+
 // CORREGIDO: Ahora aplica filtros de departamento y oculta el mensaje de "Cargando..."
 function handleSearchContacts() {
     // --- INICIO DE LA MODIFICACIÓN: Filtro por Departamentos del Usuario ---
@@ -117,8 +137,13 @@ function handleSearchContacts() {
         contactsToRender = contactsToRender.filter(c => Array.isArray(c.adSourceIds) && c.adSourceIds.some(id => selAds.has(id)));
     }
     } // fin del bloque de filtros de la UI (se salta durante la búsqueda para no ocultar resultados)
-    // Siempre ordenar por fecha descendente antes de renderizar
-    contactsToRender.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
+    // Ordenar: las conversaciones que NECESITAN ATENCIÓN (IA no pudo / IA apagada y el cliente
+    // escribe) van FIJADAS arriba (parpadean navy); el resto por fecha descendente.
+    contactsToRender.sort((a, b) => {
+        const au = a.needsAttention === true ? 1 : 0, bu = b.needsAttention === true ? 1 : 0;
+        if (au !== bu) return bu - au;
+        return (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0);
+    });
     // --------------------------------------------------------------------
 
     const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
@@ -1495,6 +1520,10 @@ async function handleSendMessage(event) {
 
     if (!text && filesToSend.length === 0 && !remoteFileToSend) return;
 
+    // El operador respondió = conversación ATENDIDA: quita lo urgente (parpadeo navy). Si el cliente
+    // vuelve a escribir con la IA apagada, el webhook la re-marca. Fire-and-forget.
+    clearNeedsAttention(currentContactId);
+
     // Instagram y Messenger no tienen ventana de 24h
     const selectedContact = state.contacts.find(c => c.id === state.selectedContactId);
     const isExpired = (selectedContact && (selectedContact.channel === 'messenger' || selectedContact.channel === 'instagram')) ? false : state.isSessionExpired;
@@ -2790,7 +2819,9 @@ async function handleBotToggle(contactId, isActive) {
         const contactIndex = state.contacts.findIndex(c => c.id === contactId);
         if (contactIndex > -1) {
             state.contacts[contactIndex].botActive = isActive;
-            
+            // Encender la IA = la conversación ya va a ser atendida por la IA: quita lo urgente.
+            if (isActive) clearNeedsAttention(contactId);
+
             // Refrescar lista de contactos para ver el aro pulsante/icono
             scheduleContactListRender();
             

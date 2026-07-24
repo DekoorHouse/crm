@@ -3301,3 +3301,43 @@ body.dark-mode .chat-back-btn-mobile:active {
     }
 }
 
+
+/* =================================================================== */
+/* ATENCIÓN URGENTE: IA no pudo ayudar (/equipo) o IA apagada y el      */
+/* cliente escribió. La fila se fija arriba (sort en chat-handlers) y   */
+/* PARPADEA azul navy para que no se olvide atenderla.                  */
+/* =================================================================== */
+@keyframes attn-navy-blink {
+    0%, 100% { background-color: rgba(30, 58, 138, 0.08); }
+    50%      { background-color: rgba(30, 58, 138, 0.34); }
+}
+.contact-item.needs-attention {
+    animation: attn-navy-blink 1.1s ease-in-out infinite;
+    border-left: 4px solid #1e3a8a; /* navy sólido: visible aun sin el parpadeo */
+}
+/* Al estar seleccionada no parpadea (ya la estás viendo), pero se marca navy. */
+.contact-item.needs-attention.selected {
+    animation: none;
+    background-color: rgba(30, 58, 138, 0.20);
+}
+/* Chip "🔵 Atender" en la fila: pastilla navy sólida. */
+.dp-badge.attn-badge {
+    background: #1e3a8a !important;
+    color: #fff !important;
+    border: 1px solid #1e3a8a !important;
+    font-weight: 700;
+}
+/* Botón "✔ Atendido" en la cabecera del chat. */
+.attn-clear-btn {
+    background: #1e3a8a;
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 3px 11px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    margin-right: 4px;
+}
+.attn-clear-btn:hover { background: #172554; }

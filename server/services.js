@@ -3309,6 +3309,14 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         if (humanHelpNeeded) {
             alertAdminHumanNeeded(contactId, contactData, messageText)
                 .catch(e => console.warn('[AI] alertAdminHumanNeeded falló:', e.message));
+            // Además, marca la conversación para ATENCIÓN humana en el CRM (se fija arriba de la lista
+            // y parpadea azul navy): el cliente pidió algo que la IA no puede dar. Se limpia cuando un
+            // humano responde / enciende la IA / da "Atendido". Fire-and-forget.
+            contactRef.update({
+                needsAttention: true,
+                needsAttentionReason: 'equipo',
+                needsAttentionAt: admin.firestore.FieldValue.serverTimestamp()
+            }).catch(e => console.warn('[ATENCION] no se pudo marcar (/equipo):', e.message));
         }
 
         // Datos de envío completos (/datoscompletos): pasar el pedido a "Fabricar" y avisar a Rosario
