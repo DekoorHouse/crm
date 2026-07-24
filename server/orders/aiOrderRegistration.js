@@ -94,7 +94,14 @@ function _parseFechaTexto(txt) {
 function normalizarFechaEnDatos(datos) {
     if (!datos || typeof datos !== 'string' || !/fecha\s*:/i.test(datos)) return datos;
     return datos.replace(/(fecha\s*:\s*)([^|]+?)(\s*)(?=\||$)/i, (m, label, valor, trail) => {
-        const norm = _parseFechaTexto(valor.trim());
+        const v = valor.trim();
+        // Si el "dato del centro" trae DOS o más fechas o una conjunción/rango (ej. "04/10 & 18/04",
+        // "18 de abril y 4 de octubre"), NO lo normalices: _parseFechaTexto asume UNA sola fecha y lo
+        // mancharía (de "04/10 & 18/04" saca "04-Octubre-18": toma 04=día, 10=mes, 18=año y tira la 2ª
+        // fecha). En esos casos déjalo TAL CUAL como lo confirmó el cliente (caso real DH13901).
+        const dateGroups = (v.match(/\d{1,2}\s*[\/\-.]\s*\d{1,2}/g) || []).length;
+        if (dateGroups >= 2 || /[&+]|\by\b/i.test(v)) return m;
+        const norm = _parseFechaTexto(v);
         return norm ? (label + norm + trail) : m;
     });
 }
