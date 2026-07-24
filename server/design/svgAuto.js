@@ -7,9 +7,18 @@
 // Si estas dos difieren, un pedido saldría como "manual" aunque el worker lo vaya a cortar (o al
 // revés) — exactamente el problema que esta separación resuelve. Por eso vive en un solo lugar.
 
-// "Algo especial" (foto/logo/grabado/frase/dibujo/…) -> diseño MANUAL, no lo toca la IA.
-// Mismo criterio que el auto-mockup (mockupsService) y el que tenía el worker inline.
+// "Algo especial" (foto/logo/grabado/frase/dibujo/…) -> diseño MANUAL, no lo toca la IA AUTOMÁTICA.
+// Mismo criterio que el auto-mockup (mockupsService) y el que tenía el worker inline. Lo usa el corte
+// AUTOMÁTICO (svgAutoEligibility), que es conservador: cualquier "Especial:" lo manda a revisión humana.
 const SPECIAL_RE = /foto|imagen|graba|logo|escudo|especial|personaje|mascota|dibuj|dise[nñ]|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
+
+// Subconjunto de "especial" que el botón "Diseñar con IA" (infinito de 2 nombres + fecha) NO puede
+// resolver ni forzándolo: requiere grabar una IMAGEN (foto/logo/dibujo/escudo/…) o texto que NO es el
+// par de nombres (frase/leyenda/texto adicional). Esos SIEMPRE van a diseño manual (o al Modo 4 de
+// grabado). En cambio "Especial: recoger en tienda" o "…sin la 'y' en medio" NO caen aquí: son 2
+// nombres + una aclaración, y la IA los diseña bien (el usuario confirma antes de subir a Drive).
+// Por eso NO incluye las palabras genéricas 'especial' ni 'diseño' (Chris, 2026-07-24).
+const MANUAL_SPECIAL_RE = /foto|imagen|graba|logo|escudo|personaje|mascota|dibuj|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
 
 const productOf = o => String(o.producto || (o.items && o.items[0] && o.items[0].producto) || '').toLowerCase();
 const datosOf = o => (Array.isArray(o.items) ? o.items : []).map(it => it.datosProducto).filter(Boolean).join('\n') || o.datosProducto || o.producto || '';
@@ -116,7 +125,9 @@ function parseDatosFields(datos) {
 // texto de datos del pedido. Devuelve { ok, reason, fields, previewUrl }.
 function forcedDesignFields(o, previews) {
     if (!/corazon/i.test(productOf(o))) return { ok: false, reason: 'not_corazon' };
-    if (SPECIAL_RE.test(datosOf(o))) return { ok: false, reason: 'special' };
+    // FORZADO (botón): más laxo que el automático. Solo bloquea los especiales que la IA de infinito
+    // realmente NO puede (imagen/foto/frase/…); "Especial: recoger en tienda" o "…sin la 'y'" pasan.
+    if (MANUAL_SPECIAL_RE.test(datosOf(o))) return { ok: false, reason: 'special' };
     previews = Array.isArray(previews) ? previews : [];
     const last = previews.length ? previews[previews.length - 1] : null;
     let nombre1 = '', nombre2 = '', fecha = '', previewUrl = null;
@@ -144,5 +155,5 @@ function forcedDesignFields(o, previews) {
 
 module.exports = {
     svgAutoEligibility, isAutoWaiting, isVideoCorregir, isVideoAutoWaiting, forcedDesignFields,
-    parseDatosFields, SPECIAL_RE, SIN_FECHA_RE, productOf, datosOf,
+    parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, SIN_FECHA_RE, productOf, datosOf,
 };

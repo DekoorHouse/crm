@@ -308,7 +308,7 @@ async function processApprovedDesigns() {
 function forcedErrorMsg(reason) {
     return {
         not_corazon: 'No es lámpara de corazones (el skill solo genera corazones).',
-        special: 'Pedido especial: requiere diseño manual.',
+        special: 'Lleva una imagen/foto o texto extra para grabar: requiere diseño manual.',
         incomplete_fields: 'Faltan nombres o fecha en los datos del pedido.',
     }[reason] || ('No elegible: ' + reason);
 }

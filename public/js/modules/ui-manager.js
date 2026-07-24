@@ -772,7 +772,7 @@ function _paintDesignPending() {
             } else if (o.iaEligible) {
                 iaCell = `<button onclick="designWithIA('${o.id}', this)" title="Forzar diseño con IA: tu PC lo diseña y te pide confirmar antes de subir a Drive" style="border:none;background:#7c3aed;color:#fff;${bb}"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px"></i>Diseñar con IA</button>`;
             } else {
-                iaCell = `<button disabled title="Requiere diseño manual (especial o no es lámpara de corazones)" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;color:#94a3b8;${bb};font-weight:600;opacity:.5;cursor:not-allowed"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px"></i>Diseñar con IA</button>`;
+                iaCell = `<button disabled title="Requiere diseño manual (lleva foto/imagen o texto extra para grabar, o no es lámpara de corazones)" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;color:#94a3b8;${bb};font-weight:600;opacity:.5;cursor:not-allowed"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px"></i>Diseñar con IA</button>`;
             }
         }
         // Botón "A Mockup" (solo Pendientes): empuja el pedido a la sección Mockup para generarle un
