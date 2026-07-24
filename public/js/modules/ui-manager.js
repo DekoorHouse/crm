@@ -269,6 +269,15 @@ function dpIaControls(o) {
     return '';
 }
 
+// Botón "A Mockup" de una tarjeta del tablero (mismos 3 estados que la tabla): empuja el pedido a la
+// sección Mockup para generarle un preview, SIN cambiar su estatus.
+function dpMockupBtn(o) {
+    const mb = 'padding:4px 8px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap';
+    if (o.mockupForce) return `<button onclick="sendOrderToMockup('${o.id}', false, this)" title="Quitar este pedido de la cola de Mockup (no cambia su estatus)" style="border:1px solid #6f42c166;background:#6f42c122;color:#6f42c1;${mb}"><i class="fas fa-image" style="margin-right:3px"></i>En Mockup ✓</button>`;
+    if ((o.estatus || 'Sin estatus') === 'Sin estatus') return `<span title="Ya aparece en la sección Mockup (está 'Sin estatus')" style="display:inline-flex;align-items:center;gap:3px;color:#94a3b8;font-size:11px;font-weight:600;white-space:nowrap"><i class="fas fa-image"></i>En Mockup</span>`;
+    return `<button onclick="sendOrderToMockup('${o.id}', true, this)" title="Mandar este pedido a la sección Mockup para generarle un preview (no cambia su estatus)" style="border:1px solid #6f42c1;background:transparent;color:#6f42c1;${mb}"><i class="fas fa-image" style="margin-right:3px"></i>A Mockup</button>`;
+}
+
 // HTML de una tarjeta del tablero (compacta: nº, datos, producto, motivos, IA, nota; + chat y check).
 function dpBoardCard(o, checkedSet) {
     const chan = o.channel === 'instagram' ? '<i class="fab fa-instagram" style="color:#e1306c"></i>'
@@ -283,6 +292,7 @@ function dpBoardCard(o, checkedSet) {
     const chk = `<input type="checkbox"${checkedSet && checkedSet.has(o.id) ? ' checked' : ''} data-dp-check="${o.id}" onchange="toggleDesignVisualCheck('${o.id}', this)" title="Marca visual (se guarda en este navegador)" style="width:15px;height:15px;cursor:pointer;accent-color:#16a34a">`;
     const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (← → para navegar)" class="dp-icon-btn"><i class="fas fa-comments"></i></button>` : '';
     const ia = dpIaControls(o);
+    const mockupBtn = dpMockupBtn(o);
     return `<div class="dp-card" data-order="${escapeHtml(o.id)}">
         <div class="dp-card-top">
             <span class="dp-card-num" onclick="copyDesignOrderNumber(this,'${escapeHtml(o.orderNumber)}')" title="Clic para copiar el número">${escapeHtml(o.orderNumber)}</span>
@@ -291,7 +301,7 @@ function dpBoardCard(o, checkedSet) {
         <div class="dp-card-datos" title="Cliente: ${escapeHtml(o.clienteName || '')} — ${escapeHtml(o.datos || '')}">${chan} ${escapeHtml(datosTxt)}</div>
         <div class="dp-card-prod">${escapeHtml(o.producto || '')}${o.itemCount > 1 ? ' <span style="color:#94a3b8">+' + (o.itemCount - 1) + '</span>' : ''}</div>
         ${(motivos || iaBadge) ? `<div class="dp-card-motivos">${motivos}${iaBadge}</div>` : ''}
-        ${ia ? `<div class="dp-ia-row">${ia}</div>` : ''}
+        ${(ia || mockupBtn) ? `<div class="dp-ia-row">${ia}${mockupBtn}</div>` : ''}
         <textarea class="dp-card-note" data-dp-comment="${o.id}" onblur="changeDesignComentario('${o.id}', this)" placeholder="Nota interna…" title="Notas del diseñador (solo para el equipo)">${escapeHtml(o.comentarioDiseno || '')}</textarea>
     </div>`;
 }
