@@ -96,14 +96,17 @@ fso.CopyFile tplPath, cdrPath, True
 Set doc = corel.OpenDocument(cdrPath)
 doc.Unit = 3 ' mm
 
-' Reemplazar placeholders (conservando el centro de cada texto y auto-ajustando el ancho)
-ReplaceText doc, "NOMBRE1", args(0), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0
-ReplaceText doc, "NOMBRE2", args(1), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0
-ReplaceText doc, "FECHA1", args(2), BASE_FECHA, BASE_FECHA, MAX_W_FECHA, DATE_DY
+' Reemplazar placeholders (conservando el centro de cada texto y auto-ajustando el ancho).
+' El ultimo argumento (esNombre) activa la normalizacion de NOMBRE: inicial mayuscula + espacio
+' tras punto (la fecha NO se normaliza). Es una red de seguridad: aunque el worker ya manda los
+' nombres normalizados, una corrida manual con datos crudos ("l.angel") tambien queda bien.
+ReplaceText doc, "NOMBRE1", args(0), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0, True
+ReplaceText doc, "NOMBRE2", args(1), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0, True
+ReplaceText doc, "FECHA1", args(2), BASE_FECHA, BASE_FECHA, MAX_W_FECHA, DATE_DY, False
 If nArgs = 6 Then
-    ReplaceText doc, "NOMBRE3", args(3), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0
-    ReplaceText doc, "NOMBRE4", args(4), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0
-    ReplaceText doc, "FECHA2", args(5), BASE_FECHA, BASE_FECHA, MAX_W_FECHA, DATE_DY
+    ReplaceText doc, "NOMBRE3", args(3), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0, True
+    ReplaceText doc, "NOMBRE4", args(4), BASE_NOMBRE, BASE_NOMBRE_2L, MAX_W_NOMBRE, 0, True
+    ReplaceText doc, "FECHA2", args(5), BASE_FECHA, BASE_FECHA, MAX_W_FECHA, DATE_DY, False
 End If
 
 ' Guardar el .cdr de trabajo con los textos aun editables (por si quieren retocar a mano)
@@ -181,10 +184,13 @@ If WScript.Arguments.Named.Exists("close") Then doc.Close
 WScript.Echo "OK " & svgPath
 WScript.Echo "CDR " & cdrPath
 
-Sub ReplaceText(doc, ph, valor, baseSize, base2L, maxW, dyOff)
+Sub ReplaceText(doc, ph, valor, baseSize, base2L, maxW, dyOff, esNombre)
     Dim s, t, cx, cy, w, found, valor2, multilinea, talla
     ' El token literal \n parte el texto en renglones apilados (vbCr)
     valor2 = Replace(valor, "\n", vbCr)
+    ' Normalizar nombres (inicial mayuscula + espacio tras punto) DESPUES de armar los renglones, para
+    ' que cada renglon se capitalice. La fecha se graba tal cual (esNombre=False).
+    If esNombre Then valor2 = NormalizarNombre(valor2)
     multilinea = (InStr(valor2, vbCr) > 0)
     If multilinea Then talla = base2L Else talla = baseSize
     found = False
@@ -230,6 +236,38 @@ Function Slug(t)
         r = r & c
     Next
     Slug = r
+End Function
+
+' Normaliza un NOMBRE para grabar: inicial mayuscula en cada palabra (aunque el cliente lo escriba
+' en minuscula) e inserta un espacio tras un punto pegado a una letra ("L.Angel" -> "L. Angel").
+' Preserva los saltos de renglon (vbCr). Misma regla que server/mockups/nameLayout.js (Chris 2026-07-24).
+Function NormalizarNombre(txt)
+    Dim i, c, nx, tmp, out, upNext
+    ' 1) Espacio tras un punto pegado a una letra.
+    tmp = ""
+    For i = 1 To Len(txt)
+        c = Mid(txt, i, 1)
+        tmp = tmp & c
+        If c = "." Then
+            nx = Mid(txt, i + 1, 1)
+            If nx <> "" And nx <> " " And nx <> vbCr And nx <> vbLf And nx <> vbTab Then tmp = tmp & " "
+        End If
+    Next
+    ' 2) Inicial mayuscula de cada palabra; el resto en minuscula. Separadores: espacio, punto,
+    '    guion, apostrofe y salto de renglon (vbCr/vbLf).
+    out = ""
+    upNext = True
+    For i = 1 To Len(tmp)
+        c = Mid(tmp, i, 1)
+        If c = " " Or c = "." Or c = "-" Or c = "'" Or c = vbCr Or c = vbLf Or c = vbTab Then
+            out = out & c
+            upNext = True
+        Else
+            If upNext Then out = out & UCase(c) Else out = out & LCase(c)
+            upNext = False
+        End If
+    Next
+    NormalizarNombre = out
 End Function
 
 Function Pad2(n)

@@ -355,8 +355,10 @@ function buildPromptFromTemplate(promptTemplate, fields = {}) {
 // Parseo backend de los datos del pedido (espejo de mkParseDatos del frontend): separa
 // nombre1/nombre2 y la fecha (por la etiqueta "Fecha:" o por fecha numérica). Lo usa el
 // scheduler de auto-generación.
+// Inicial mayúscula + espacio tras punto. Delega en la regla COMPARTIDA con el corte (nameLayout),
+// para que el mockup y la lámpara salgan con el mismo nombre (ver titleCaseName).
 function mkTitleCase(s) {
-    return String(s || '').toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+    return require('./nameLayout').titleCaseName(s);
 }
 // ¿El valor de fecha es en realidad "sin fecha" (el cliente NO quiere fecha)? -> tratarlo como VACÍO
 // para que el mockup NO grabe "Sin Fecha" ni nada en el lugar de la fecha; la casilla queda en blanco.

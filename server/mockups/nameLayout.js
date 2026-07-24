@@ -12,6 +12,21 @@
 
 const MAX_SINGLE = 9; // caracteres; "Rosa María" (10) se parte, "Ana Luz" (7) no
 
+// Normaliza un nombre para grabar/mostrar: inicial mayúscula en CADA palabra (aunque el cliente lo
+// escriba en minúscula) e inserta un espacio tras un punto pegado a una letra ("L.Angel" -> "L. Angel").
+// Preserva los saltos de renglón '\n' de los nombres a 2 líneas. Regla de negocio (Chris, 2026-07-24):
+// en las lámparas los nombres SIEMPRE llevan inicial mayúscula y el texto tras un punto va separado.
+// Compartida por el MOCKUP y el CORTE para que la pieza salga igual que lo que el cliente vio.
+function titleCaseName(s) {
+    let t = String(s == null ? '' : s);
+    if (!t.trim()) return t;
+    t = t.replace(/\.(?=\p{L})/gu, '. ');                            // espacio tras punto pegado a letra
+    t = t.replace(/[^\S\n]+/g, ' ').replace(/ *\n */g, '\n').trim(); // colapsa espacios, respeta '\n'
+    // Inicial mayúscula tras inicio, espacio, '\n', apóstrofe, guión o punto; el resto en minúscula
+    // ("jesús" -> "Jesús", "MARIA" -> "Maria"). \p{L} + flag u para manejar acentos.
+    return t.toLowerCase().replace(/(^|[\s'.\-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+}
+
 // Devuelve los renglones decididos para un nombre: ["Rosa", "María"] o ["Héctor"].
 function decideNameLines(nombre) {
     const raw = String(nombre || '');
@@ -57,4 +72,4 @@ function sameLines(expected, detected) {
     return e.every((line, i) => line === d[i]);
 }
 
-module.exports = { decideNameLines, applyNameLayout, sameLines, MAX_SINGLE };
+module.exports = { decideNameLines, applyNameLayout, sameLines, titleCaseName, MAX_SINGLE };

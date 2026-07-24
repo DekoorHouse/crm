@@ -14,6 +14,11 @@ const SPECIAL_RE = /foto|imagen|graba|logo|escudo|especial|personaje|mascota|dib
 const productOf = o => String(o.producto || (o.items && o.items[0] && o.items[0].producto) || '').toLowerCase();
 const datosOf = o => (Array.isArray(o.items) ? o.items : []).map(it => it.datosProducto).filter(Boolean).join('\n') || o.datosProducto || o.producto || '';
 
+// Regla COMPARTIDA de capitalización de nombres (inicial mayúscula + espacio tras punto), la MISMA
+// que usa el mockup. Los nombres que se graban SIEMPRE pasan por aquí, vengan de la visión o del
+// texto del pedido, así el cliente lo escriba en minúscula o pegue "L.Angel" (Chris, 2026-07-24).
+const { titleCaseName } = require('../mockups/nameLayout');
+
 // ¿Este pedido lo puede diseñar SOLO el worker (lámpara de corazones estándar, con mockup aprobado y
 // layout verificado por visión)? `previews` = mockup_previews[orderId].previews (array; [] si no hay).
 // Devuelve { eligible, reason, fields, layoutVerificado }. `reason` explica el NO (para logs/UI):
@@ -34,9 +39,9 @@ function svgAutoEligibility(o, previews) {
     // escrito por la IA de imagen, faltante, etc.) -> requiere ojos humanos, no se corta automático.
     if (lay && lay.ok === false) return { eligible: false, reason: 'layout_mismatch' };
     const conLineas = (vision, plain) => (vision && vision.length ? vision.join('\n') : String(plain || ''));
-    const nombre1 = lay ? conLineas(lay.izquierdo, f.nombre1) : String(f.nombre1 || '');
-    const nombre2 = lay ? conLineas(lay.derecho, f.nombre2) : String(f.nombre2 || '');
-    const fecha = lay ? conLineas(lay.fecha, f.fecha) : String(f.fecha || '');
+    const nombre1 = titleCaseName(lay ? conLineas(lay.izquierdo, f.nombre1) : String(f.nombre1 || ''));
+    const nombre2 = titleCaseName(lay ? conLineas(lay.derecho, f.nombre2) : String(f.nombre2 || ''));
+    const fecha = lay ? conLineas(lay.fecha, f.fecha) : String(f.fecha || '');   // la fecha NO se title-casea
     if (!nombre1 || !nombre2 || !fecha) return { eligible: false, reason: 'incomplete_fields' };
     return { eligible: true, reason: 'ok', fields: { nombre1, nombre2, fecha }, layoutVerificado: !!lay };
 }
@@ -100,7 +105,7 @@ function parseDatosFields(datos) {
     let nombre1 = '', nombre2 = '';
     const yy = namePart.split(/\s+y\s+|\s*&\s*|\s*\+\s*/i);
     if (yy.length >= 2) { nombre1 = yy[0].trim(); nombre2 = yy.slice(1).join(' y ').trim(); }
-    return { nombre1, nombre2, fecha };
+    return { nombre1: titleCaseName(nombre1), nombre2: titleCaseName(nombre2), fecha };
 }
 
 // Elegibilidad para diseño FORZADO desde el CRM (botón "Diseñar con IA"). Más laxa que la automática:
@@ -133,7 +138,8 @@ function forcedDesignFields(o, previews) {
     if (!nombre1 || !nombre2) return { ok: false, reason: 'incomplete_fields' };
     if (SIN_FECHA_RE.test(fecha)) fecha = '';                                   // "Sin Fecha" -> blanco
     if (!fecha && !SIN_FECHA_RE.test(datosOf(o))) return { ok: false, reason: 'incomplete_fields' };
-    return { ok: true, reason: 'ok', fields: { nombre1, nombre2, fecha }, previewUrl };
+    // Normalizar SIEMPRE los nombres (venga de visión o del texto): inicial mayúscula + espacio tras punto.
+    return { ok: true, reason: 'ok', fields: { nombre1: titleCaseName(nombre1), nombre2: titleCaseName(nombre2), fecha }, previewUrl };
 }
 
 module.exports = {

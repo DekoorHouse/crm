@@ -74,9 +74,11 @@ Set doc = corel.OpenDocument(cdrPath)
 doc.Unit = 3 ' mm
 
 ' Reemplazar los textos de ejemplo por los del pedido (conservando centro y tamano base)
-ReplaceByContent doc, PH_N1, args(0), MAX_W_NOMBRE, 0
-ReplaceByContent doc, PH_N2, args(1), MAX_W_NOMBRE, 0
-ReplaceByContent doc, PH_FE, args(2), MAX_W_FECHA, DATE_DY
+' El ultimo argumento (esNombre) normaliza NOMBRES: inicial mayuscula + espacio tras punto (la
+' fecha se graba tal cual). Misma regla que infinito.vbs / server/mockups/nameLayout.js.
+ReplaceByContent doc, PH_N1, args(0), MAX_W_NOMBRE, 0, True
+ReplaceByContent doc, PH_N2, args(1), MAX_W_NOMBRE, 0, True
+ReplaceByContent doc, PH_FE, args(2), MAX_W_FECHA, DATE_DY, False
 
 ' Texto adicional (ej. "aniversario no. 27") CENTRADO justo debajo de la fecha.
 ' La plantilla no lo trae: lo creo como texto artistico nuevo, misma fuente/negro que la fecha.
@@ -177,9 +179,11 @@ WScript.Echo "CDR " & cdrPath
 If WScript.Arguments.Named.Exists("png") Then WScript.Echo "PNG " & pngPath
 If WScript.Arguments.Named.Exists("svg") Then WScript.Echo "OK " & svgPath
 
-Sub ReplaceByContent(doc, phText, valor, maxW, dyOff)
+Sub ReplaceByContent(doc, phText, valor, maxW, dyOff, esNombre)
     Dim s, t, cx, cy, w, found, valor2, multilinea, baseSize
     valor2 = Replace(valor, "\n", vbCr)
+    ' Normaliza nombres (inicial mayuscula + espacio tras punto) tras armar los renglones; fecha no.
+    If esNombre Then valor2 = NormalizarNombre(valor2)
     multilinea = (InStr(valor2, vbCr) > 0)
     found = False
     For Each s In doc.ActivePage.Shapes
@@ -226,4 +230,33 @@ End Function
 
 Function Pad2(n)
     Pad2 = Right("0" & n, 2)
+End Function
+
+' Normaliza un NOMBRE para grabar: inicial mayuscula en cada palabra (aunque el cliente lo escriba en
+' minuscula) + espacio tras un punto pegado a una letra ("L.Angel" -> "L. Angel"). Preserva vbCr.
+' Misma regla que infinito.vbs y server/mockups/nameLayout.js (Chris 2026-07-24).
+Function NormalizarNombre(txt)
+    Dim i, c, nx, tmp, out, upNext
+    tmp = ""
+    For i = 1 To Len(txt)
+        c = Mid(txt, i, 1)
+        tmp = tmp & c
+        If c = "." Then
+            nx = Mid(txt, i + 1, 1)
+            If nx <> "" And nx <> " " And nx <> vbCr And nx <> vbLf And nx <> vbTab Then tmp = tmp & " "
+        End If
+    Next
+    out = ""
+    upNext = True
+    For i = 1 To Len(tmp)
+        c = Mid(tmp, i, 1)
+        If c = " " Or c = "." Or c = "-" Or c = "'" Or c = vbCr Or c = vbLf Or c = vbTab Then
+            out = out & c
+            upNext = True
+        Else
+            If upNext Then out = out & UCase(c) Else out = out & LCase(c)
+            upNext = False
+        End If
+    Next
+    NormalizarNombre = out
 End Function

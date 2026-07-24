@@ -17,6 +17,14 @@ Skill verificada en esta maquina con CorelDRAW 2021 (v23). Convenciones del nego
 Las hojas de lamparas son de **350x330 mm** con todo alineado **arriba-izquierda**.
 **Textos apilados (salto de linea): interlineado = 60% de altura de caracter** (Chris,
 2026-07-18; en Corel es Parrafo → interlineado en "% altura caracter").
+**NOMBRES: inicial mayuscula SIEMPRE + espacio tras punto** (Chris, 2026-07-24, a raiz de DH13875
+"jesús" y DH13913 "L.Angel"): aunque el cliente escriba en minuscula o pegue el texto tras un punto,
+cada nombre se graba con inicial mayuscula en cada palabra y con un espacio tras el punto
+("jesús"→"Jesús", "L.Angel"→"L. Angel"). La fecha NO se toca. Regla canonica en
+`server/mockups/nameLayout.js` (`titleCaseName`), COMPARTIDA por el mockup y el corte
+(`server/design/svgAuto.js` la aplica en visión y en el parseo de datos). Red de seguridad en los
+`.vbs` (`NormalizarNombre` en `infinito.vbs` y `gen-corazones.vbs`, solo a placeholders de NOMBRE):
+aunque una corrida manual pase datos crudos, la pieza sale bien. Idempotente en ambas capas.
 Scripts junto a esta skill: `infinito.vbs`, `gen-corazones.vbs`, `gen-grabado.js`,
 `upload-drive.js`, plantillas en `plantillas/`.
 
