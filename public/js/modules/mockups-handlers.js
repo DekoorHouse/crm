@@ -1039,6 +1039,15 @@ async function mkResolveSecondRef(block, templateId, fields) {
         return await mkUploadRefImage(blob, 'design-lienzo.png');
     }
     const tpl = mkGetTemplate(templateId);
+    // "— usar el de la plantilla —": si la plantilla tiene un DISEÑO DEL LIENZO ligado (designId), úsalo
+    // SIEMPRE como 2ª referencia, sin depender de que el menú esté pre-seleccionado. Así las plantillas
+    // de corazones generan su grabado de forma garantizada. Si el diseño no está cargado, cae al designSvg.
+    if (tpl && tpl.designId) {
+        try {
+            const { blob } = await mkRasterizeLzDesignBlob(tpl.designId, fields);
+            return await mkUploadRefImage(blob, 'design-lienzo.png');
+        } catch (_) { /* diseño no disponible: cae al designSvg / sin referencia */ }
+    }
     const useDesign = block.querySelector('.mk-usedesign');
     if (tpl && tpl.designSvg && (!useDesign || useDesign.checked)) {
         const { blob } = await mkRasterizeDesign(tpl.designSvg, fields);
