@@ -95,11 +95,21 @@ function pointInPoly(pt, poly) {
     return inside;
 }
 
+// Cuerpo de un <text>: una línea (esc) o varios renglones apilados (tspans centrados en y) cuando el
+// valor trae saltos de línea (Enter = nombre a 2 renglones). Se usa igual para MEDIR y para DIBUJAR,
+// así el auto-ajuste ve la caja multilínea real (medirlo como una sola línea lo achicaría de más).
+const TEXT_LH = 1.15;
+function textBody(text, x) {
+    const lines = String(text == null ? '' : text).split('\n').map(s => s.trim()).filter(Boolean);
+    if (lines.length <= 1) return esc(lines[0] || '');
+    return lines.map((ln, i) => `<tspan x="${x}" dy="${i === 0 ? (-((lines.length - 1) * TEXT_LH) / 2) : TEXT_LH}em">${esc(ln)}</tspan>`).join('');
+}
+
 // Caja de TINTA de un texto (a un tamaño dado) en coords del lienzo, medida con resvg (getBBox).
 // La tinta escala linealmente con el tamaño, así que con UNA medición se prueba cualquier factor.
 function measureInk(text, size, x, y, anchor) {
     try {
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${LZ_W}" height="${LZ_H}"><text x="${x}" y="${y}" font-family="${FONT_FAMILY}" font-size="${size}" text-anchor="${anchor}" dominant-baseline="central">${esc(text)}</text></svg>`;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${LZ_W}" height="${LZ_H}"><text x="${x}" y="${y}" font-family="${FONT_FAMILY}" font-size="${size}" text-anchor="${anchor}" dominant-baseline="central">${textBody(text, x)}</text></svg>`;
         const r = new Resvg(svg, { font: { fontFiles: [FONT_PATH], defaultFontFamily: FONT_FAMILY, loadSystemFonts: false } });
         return r.getBBox() || null;
     } catch (_) { return null; }
@@ -148,7 +158,7 @@ async function buildLienzoSvg(items, fields) {
             const baseSize = it.baseSize || it.size || 60;
             const anchor = it.align === 'center' ? 'middle' : it.align === 'right' ? 'end' : 'start';
             const size = fitTextSize(val, baseSize, it.x, it.y, anchor, shapes);
-            inner += `<text x="${it.x}" y="${it.y}" fill="#fff" font-family="${FONT_FAMILY}" font-size="${size}" text-anchor="${anchor}" dominant-baseline="central">${esc(val)}</text>`;
+            inner += `<text x="${it.x}" y="${it.y}" fill="#fff" font-family="${FONT_FAMILY}" font-size="${size}" text-anchor="${anchor}" dominant-baseline="central">${textBody(val, it.x)}</text>`;
         }
     }
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${LZ_W}" height="${LZ_H}" viewBox="0 0 ${LZ_W} ${LZ_H}">${inner}</svg>`;

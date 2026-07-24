@@ -412,10 +412,16 @@ function mkTemplateFieldDefs(templateId) {
 function mkFieldsHtml(defs, values) {
     return defs.map(f => {
         const v = (values && values[f.key] != null) ? values[f.key] : '';
-        // La fecha se muestra como área de texto: permite Enter para grabar varias fechas
-        // (una debajo de la otra). El backend detecta los saltos de línea y se lo indica a la IA.
-        if (f.key === 'fecha') {
-            return `<div><label>${mkEsc(f.label)}</label><textarea class="mk-fld" data-key="fecha" rows="2" style="resize:vertical;min-height:38px;" title="Puedes usar Enter para poner varias fechas, una debajo de la otra">${mkEsc(v)}</textarea></div>`;
+        // La fecha y los NOMBRES se muestran como área de texto: permiten Enter para grabar el texto
+        // en varios renglones (un nombre largo en 2 líneas, o dos fechas apiladas). El backend detecta
+        // los saltos de línea y se lo indica a la IA, y la 2ª referencia los apila también.
+        const esFecha = f.key === 'fecha';
+        const esNombre = /nombre/i.test(f.key);
+        if (esFecha || esNombre) {
+            const title = esFecha
+                ? 'Puedes usar Enter para poner varias fechas, una debajo de la otra'
+                : 'Puedes usar Enter para partir el nombre en dos renglones (se graba en 2 líneas)';
+            return `<div><label>${mkEsc(f.label)}</label><textarea class="mk-fld" data-key="${mkAttr(f.key)}" rows="${esFecha ? 2 : 1}" style="resize:vertical;min-height:38px;" title="${mkAttr(title)}">${mkEsc(v)}</textarea></div>`;
         }
         return `<div><label>${mkEsc(f.label)}</label><input type="text" class="mk-fld" data-key="${mkAttr(f.key)}" value="${mkAttr(v)}"></div>`;
     }).join('');
@@ -862,6 +868,7 @@ function mkEnsureDesignFontLoaded() {
 const MK_2L_RATIO = 0.69;        // proporción 2 renglones (44.8/65.2 de producción)
 const MK_MAXW_NOMBRE = 0.24;     // ancho máx de un nombre, como fracción del viewBox
 const MK_MAXW_OTROS = 0.32;      // ancho máx de fecha/otros textos
+const MK_LZ_LH = 1.15;           // interlineado (em) de textos a varios renglones (medir + render)
 function mkLayoutDesignSvg(svg, fields = {}) {
     try {
         const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
@@ -1585,7 +1592,12 @@ function mkLzItemsMarkupFrom(items, forExport) {
         if (it.type === 'text') {
             const fam = it.font === 'arial' ? 'Arial, Helvetica, sans-serif' : "'Rows of Sunflowers'";
             const anchor = it.align === 'left' ? 'start' : (it.align === 'right' ? 'end' : 'middle');
-            return `<text data-lz="${it.id}" x="${it.x}" y="${it.y}" fill="#ffffff" font-family="${fam}" font-size="${it.size}" text-anchor="${anchor}" dominant-baseline="central">${mkXmlEsc(it.text)}</text>`;
+            // Enter en el texto -> renglones apilados (tspans) centrados verticalmente en it.y.
+            const lines = String(it.text || '').split('\n').map(s => s.trim()).filter(Boolean);
+            const body = lines.length > 1
+                ? lines.map((ln, i) => `<tspan x="${it.x}" dy="${i === 0 ? (-((lines.length - 1) * MK_LZ_LH) / 2) : MK_LZ_LH}em">${mkXmlEsc(ln)}</tspan>`).join('')
+                : mkXmlEsc(it.text);
+            return `<text data-lz="${it.id}" x="${it.x}" y="${it.y}" fill="#ffffff" font-family="${fam}" font-size="${it.size}" text-anchor="${anchor}" dominant-baseline="central">${body}</text>`;
         }
         if (it.type === 'image') {
             return `<image data-lz="${it.id}" x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" href="${it.href}" preserveAspectRatio="xMidYMid meet"></image>`;
@@ -1876,6 +1888,20 @@ function mkLzInkBBox(it, size) {
     ctx.font = `${size}px ${it.font === 'arial' ? 'Arial, Helvetica, sans-serif' : "'Rows of Sunflowers'"}`;
     ctx.textAlign = it.align === 'left' ? 'left' : (it.align === 'right' ? 'right' : 'center');
     ctx.textBaseline = 'alphabetic';
+    // Texto en varios renglones (Enter): la caja es el ancho del renglón MÁS ancho y la altura de
+    // todos los renglones apilados (interlineado MK_LZ_LH), centrada en it.y. Así los límites (el aro
+    // del infinito) ajustan bien un nombre a 2 líneas (medirlo como una sola línea lo achicaría de más).
+    const _lines = String(it.text || '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (_lines.length > 1) {
+        let left = 0, right = 0;
+        for (const ln of _lines) {
+            const mm = ctx.measureText(ln);
+            left = Math.max(left, mm.actualBoundingBoxLeft != null ? mm.actualBoundingBoxLeft : mm.width / 2);
+            right = Math.max(right, mm.actualBoundingBoxRight != null ? mm.actualBoundingBoxRight : mm.width / 2);
+        }
+        const totalH = size * MK_LZ_LH * _lines.length;
+        return { x: it.x - left, y: it.y - totalH / 2, w: left + right, h: totalH };
+    }
     const m = ctx.measureText(it.text || '');
     const left = m.actualBoundingBoxLeft != null ? m.actualBoundingBoxLeft : m.width / 2;
     const right = m.actualBoundingBoxRight != null ? m.actualBoundingBoxRight : m.width / 2;
