@@ -352,6 +352,7 @@ async function processForcedDesigns() {
                 svgCorteUrl: up.webViewLink,
                 svgCorteFileName: up.name,
                 svgCorteCdrLocal: f.cdrLocalPath || null,
+                svgCortePreviewUrl: f.cortePreviewUrl || null,   // PNG legible del corte, para verlo luego en el CRM
                 svgCorteBy: 'ia-force',
                 iaForce: admin.firestore.FieldValue.delete(),
             });
