@@ -7808,6 +7808,7 @@ router.get('/design-pending', async (req, res) => {
                 comentarioDiseno: p.comentarioDiseno || '',
                 // Diseño automático (svg-corte-worker): link a la hoja SVG en Drive y compañero de hoja.
                 svgCorteUrl: p.svgCorteUrl || null,
+                svgCortePreviewUrl: p.svgCortePreviewUrl || null,   // PNG legible de un corte ya subido (si se guardó)
                 svgCorteAt: tsToMs(p.svgCorteAt),
                 svgCorteSheetWith: p.svgCorteSheetWith || null,
                 // Diseño FORZADO desde el CRM ("Diseñar con IA"): estado del ciclo cola->staged->aprobado
@@ -7823,6 +7824,8 @@ router.get('/design-pending', async (req, res) => {
                 // ¿El skill puede diseñar este pedido solo? (lámpara de corazones, no especial). Habilita
                 // el botón "Diseñar con IA"; los demás lo muestran deshabilitado ("requiere diseño manual").
                 iaEligible: /corazon/i.test(productOf(p)) && !SPECIAL_RE.test(datosOf(p)),
+                // ¿Se empujó a mano a la cola de Mockup ("A Mockup")? Pinta el estado del botón.
+                mockupForce: !!p.mockupForce,
                 // Datos de personalización (nombres/fecha): lo que el diseñador necesita a la vista.
                 datos: (Array.isArray(p.items) ? p.items.map(i => i.datosProducto).filter(Boolean).join(' | ') : '') || p.datosProducto || '',
                 ...(extra || {}),

@@ -133,13 +133,22 @@ router.get('/batch/:id', asyncHandler(async (req, res) => {
 // Se sobre-trae por fecha y se filtra en código para incluir también los
 // documentos antiguos que NO tienen el campo `estatus` (default = 'Sin estatus').
 router.get('/pending', asyncHandler(async (req, res) => {
-    // TODOS los pedidos "Sin estatus" (sin ventana por fecha, para no perder ninguno).
-    // Nota: orderBy('createdAt') excluiría los docs que no tengan ese campo, así que
-    // filtramos por estatus (índice automático) y ordenamos por fecha en código.
-    const snap = await db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get();
-    const pend = snap.docs
+    // La cola son (a) TODOS los pedidos "Sin estatus" + (b) los EMPUJADOS a mano desde Pendientes
+    // de Diseño (mockupForce == true), que pueden estar en cualquier estatus (Fabricar/Corregir…).
+    // Nota: orderBy('createdAt') excluiría los docs sin ese campo, así que filtramos por estatus /
+    // marca (índice automático) y ordenamos por fecha en código. Dedup por id (un "Sin estatus"
+    // podría además traer la marca).
+    const [snap, snapForce] = await Promise.all([
+        db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get(),
+        db.collection('pedidos').where('mockupForce', '==', true).limit(300).get(),
+    ]);
+    const byId = new Map();
+    snap.docs.forEach(d => byId.set(d.id, d));
+    snapForce.docs.forEach(d => byId.set(d.id, d));
+    const pend = [...byId.values()]
         .map(d => ({ id: d.id, ...d.data() }))
-        .filter(o => o.mockupHidden !== true)   // pedidos ocultados manualmente de la lista de mockups
+        // mockupHidden oculta un "Sin estatus"; un pedido EMPUJADO (mockupForce) siempre se muestra.
+        .filter(o => o.mockupForce === true || o.mockupHidden !== true)
         .sort((a, b) => {
             const ta = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
             const tb = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
@@ -198,12 +207,29 @@ router.get('/pending', asyncHandler(async (req, res) => {
             items: orderItems,
             previews: previewByOrder[o.id] || [],
             pilotoPreview: o.pilotoPreview || null,   // piloto preview: 'A' se marca/prioriza en la UI
+            // Empujado a mano desde Pendientes de Diseño (badge + "Quitar" limpia la marca, no oculta).
+            forcedToMockup: o.mockupForce === true,
+            estatus: o.estatus || 'Sin estatus',
         };
     });
     // Piloto preview: los del grupo A hasta ARRIBA de la cola (revisión express manual);
     // el sort es estable, así que dentro de cada grupo se conserva "recientes primero".
     items.sort((a, b) => Number(b.pilotoPreview === 'A') - Number(a.pilotoPreview === 'A'));
     res.json({ success: true, items });
+}));
+
+// POST /api/mockups/force-order — Empuja (o quita) un pedido a la cola de Mockup desde Pendientes de
+// Diseño. NO toca el estatus (el pedido puede estar 'Fabricar'/'Corregir' y seguir en su flujo); solo
+// pone/quita la marca `mockupForce`, que hace que /pending lo incluya. Body: { orderId, enabled }.
+router.post('/force-order', asyncHandler(async (req, res) => {
+    const orderId = String(req.body.orderId || '').trim();
+    if (!orderId) return res.status(400).json({ success: false, error: 'Falta orderId.' });
+    const enabled = req.body.enabled !== false;   // default: empujar
+    const ref = db.collection('pedidos').doc(orderId);
+    if (!(await ref.get()).exists) return res.status(404).json({ success: false, error: 'Pedido no encontrado.' });
+    // Al empujar, también levanta mockupHidden por si el pedido se había ocultado antes.
+    await ref.update(enabled ? { mockupForce: true, mockupHidden: false } : { mockupForce: false });
+    res.json({ success: true, enabled });
 }));
 
 // --- Plantillas de mockup (diseños de lámpara) ---

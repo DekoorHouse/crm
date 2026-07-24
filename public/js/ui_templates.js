@@ -953,7 +953,7 @@ const MockupsViewTemplate = () => `
         <div class="view-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
             <div>
                 <h1>Mockup</h1>
-                <p class="text-sm text-gray-500 mt-1">Genera un preview de la lámpara con los datos del cliente y envíaselo por WhatsApp para que lo apruebe. Los pendientes salen de los pedidos <b>Sin estatus</b>.</p>
+                <p class="text-sm text-gray-500 mt-1">Genera un preview de la lámpara con los datos del cliente y envíaselo por WhatsApp para que lo apruebe. Los pendientes salen de los pedidos <b>Sin estatus</b> y de los que mandas aquí con <b>“A Mockup”</b> desde Pendientes de Diseño.</p>
             </div>
             <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
                 <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Piloto A/B del preview: las conversaciones NUEVAS de corazones se reparten por teléfono (par = grupo A). El grupo A recibe su diseño en minutos con el cobro. Apagarlo regresa TODO al flujo normal al instante.">

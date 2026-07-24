@@ -105,9 +105,20 @@ function mkOpenChat(orderId) {
 async function mkHideOrder(orderId) {
     const ok = await showConfirmModal('¿Quitar este pedido de la lista de Mockups?<br><span style="display:block;margin-top:6px;color:var(--color-text-light,#64748b);font-size:12.5px">El pedido NO se borra; solo deja de aparecer aquí.</span>', { icon: 'fa-eye-slash', confirmText: 'Quitar' });
     if (!ok) return;
+    // Un pedido EMPUJADO desde Pendientes de Diseño (mockupForce) está aquí por esa marca, no por ser
+    // 'Sin estatus'; ponerle mockupHidden no lo sacaría. Se quita limpiando mockupForce (sigue en
+    // Pendientes de Diseño, con su estatus intacto). Los normales 'Sin estatus' se ocultan como antes.
+    const o = mkState.pending.find(x => x.id === orderId);
     try {
-        await db.collection('pedidos').doc(orderId).update({ mockupHidden: true });
-        mkState.pending = mkState.pending.filter(o => o.id !== orderId);
+        if (o && o.forcedToMockup) {
+            await mkFetchJson('/api/mockups/force-order', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId, enabled: false }),
+            });
+        } else {
+            await db.collection('pedidos').doc(orderId).update({ mockupHidden: true });
+        }
+        mkState.pending = mkState.pending.filter(x => x.id !== orderId);
         mkRenderPending();
         mkToast('Pedido quitado de la lista.', 'success');
     } catch (e) { mkToast('No se pudo quitar: ' + e.message, 'error'); }
@@ -451,6 +462,11 @@ function mkRenderPending() {
         const pilotoBadge = o.pilotoPreview === 'A'
             ? '<span title="Piloto preview: revisar y enviar YA (el cliente espera su diseño en minutos)" style="background:#7c3aed;color:#fff;padding:2px 9px;border-radius:10px;font-size:.72rem;font-weight:700;margin-left:6px;white-space:nowrap;">⚡ Preview</span>'
             : '';
+        // Empujado a mano desde Pendientes de Diseño: no es 'Sin estatus'; se avisa su estatus real
+        // para que el operador sepa que el pedido ya está en otro punto del flujo (p.ej. Fabricar).
+        const forceBadge = o.forcedToMockup
+            ? `<span title="Enviado a Mockup desde Pendientes de Diseño. Estatus real del pedido: ${mkAttr(o.estatus || '')}. No cambia al generar el preview." style="background:#6f42c122;color:#6f42c1;border:1px solid #6f42c166;padding:2px 9px;border-radius:10px;font-size:.72rem;font-weight:700;margin-left:6px;white-space:nowrap;"><i class="fas fa-palette" style="margin-right:3px;"></i>Desde Diseño${o.estatus && o.estatus !== 'Sin estatus' ? ' · ' + mkEsc(o.estatus) : ''}</span>`
+            : '';
         o._prefill = mkPrefill(mkParseDatos(datos));   // valores sugeridos para el primer bloque
         // Bloques iniciales: uno por preview guardado, o uno vacío.
         const saved = Array.isArray(o.previews) ? o.previews : [];
@@ -463,7 +479,7 @@ function mkRenderPending() {
         <div class="settings-card mk-card" data-order="${mkAttr(o.id)}" data-phone="${mkAttr(o.telefono)}" data-client="${mkAttr(o.clientName)}">
             <div class="mk-card-head">
                 <div>
-                    <span class="mk-order-num" style="cursor:pointer;" title="Ver conversación del cliente" onclick="mkOpenChat('${mkAttr(o.id)}')">${mkEsc(num)} <i class="fas fa-comments" style="font-size:.75em;opacity:.6;"></i></span>${pilotoBadge}
+                    <span class="mk-order-num" style="cursor:pointer;" title="Ver conversación del cliente" onclick="mkOpenChat('${mkAttr(o.id)}')">${mkEsc(num)} <i class="fas fa-comments" style="font-size:.75em;opacity:.6;"></i></span>${pilotoBadge}${forceBadge}
                     <span class="mk-client">${mkEsc(o.clientName || 'Sin nombre')}</span>
                     <span class="mk-phone"><i class="fab fa-whatsapp"></i> ${mkEsc(o.telefono || '')}</span>
                 </div>

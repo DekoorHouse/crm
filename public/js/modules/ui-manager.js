@@ -307,6 +307,32 @@ async function rejectIADesign(orderId, el) {
 }
 window.rejectIADesign = rejectIADesign;
 
+// --- "A Mockup": empuja (o quita) el pedido a la cola de la sección Mockup para generarle un preview,
+// SIN cambiar su estatus (sigue en Fabricar/Corregir y sigue aquí en Pendientes de Diseño). Actualiza el
+// cache local y re-pinta la fila conservando el scroll (sin re-fetch). ---
+async function sendOrderToMockup(orderId, enabled, el) {
+    if (el) el.disabled = true;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/mockups/force-order`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, enabled }),
+        });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.error || d.message || ('HTTP ' + res.status));
+        const o = (window._designPendingData || []).find(x => x.id === orderId);
+        if (o) o.mockupForce = !!enabled;
+        const sc = document.getElementById('design-pending-view');
+        const scrollTop = sc ? sc.scrollTop : 0;
+        _paintDesignPending();
+        if (sc) sc.scrollTop = scrollTop;
+        if (typeof showToast === 'function') showToast(enabled ? 'Pedido enviado a Mockup ✅ — genérale el preview en la sección Mockup' : 'Pedido quitado de la cola de Mockup', enabled ? 'success' : 'info');
+    } catch (e) {
+        if (el) el.disabled = false;
+        alert('No se pudo ' + (enabled ? 'enviar a Mockup' : 'quitar de Mockup') + ': ' + (e.message || e));
+    }
+}
+window.sendOrderToMockup = sendOrderToMockup;
+
 // --- Marca visual (checkbox) de Pendientes de Diseño: personal, se guarda en localStorage por pedido ---
 // para que sobreviva al refresco (F5). No toca el servidor ni cambia nada del pedido (es solo de vista).
 const DP_VCHECK_KEY = 'dp_visual_checks';
@@ -567,6 +593,20 @@ function _paintDesignPending() {
                 iaCell = `<button disabled title="Requiere diseño manual (especial o no es lámpara de corazones)" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;color:#94a3b8;${bb};font-weight:600;opacity:.5;cursor:not-allowed"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px"></i>Diseñar con IA</button>`;
             }
         }
+        // Botón "A Mockup" (solo Pendientes): empuja el pedido a la sección Mockup para generarle un
+        // preview, SIN cambiar su estatus (sigue en Fabricar/Corregir y sigue aquí). Tres estados:
+        // ya empujado (quitar) · ya está en Mockup por ser 'Sin estatus' (chip informativo) · empujar.
+        let mockupBtn = '';
+        if (tab === 'pendientes') {
+            const mb = 'padding:5px 10px;font-size:12px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap';
+            if (o.mockupForce) {
+                mockupBtn = `<button onclick="sendOrderToMockup('${o.id}', false, this)" title="Quitar este pedido de la cola de Mockup (no cambia su estatus)" style="border:1px solid #6f42c166;background:#6f42c122;color:#6f42c1;${mb}"><i class="fas fa-image" style="margin-right:4px"></i>En Mockup ✓</button>`;
+            } else if ((o.estatus || 'Sin estatus') === 'Sin estatus') {
+                mockupBtn = `<span title="Ya aparece en la sección Mockup (está 'Sin estatus')" style="display:inline-flex;align-items:center;gap:4px;color:#94a3b8;font-size:11.5px;font-weight:600;white-space:nowrap"><i class="fas fa-image"></i>En Mockup</span>`;
+            } else {
+                mockupBtn = `<button onclick="sendOrderToMockup('${o.id}', true, this)" title="Mandar este pedido a la sección Mockup para generarle un preview (no cambia su estatus)" style="border:1px solid #6f42c1;background:transparent;color:#6f42c1;${mb}"><i class="fas fa-image" style="margin-right:4px"></i>A Mockup</button>`;
+            }
+        }
         const fecha = tab === 'disenados' ? (o.disenoListoAt || o.svgCorteAt)
             : isSvgIa ? (o.svgIaState === 'waiting' ? o.paidMs : (o.svgCorteAt || o.paidMs))
             : (o.corregirAt || o.comprobanteValidadoAt || o.createdAt);
@@ -594,7 +634,7 @@ function _paintDesignPending() {
             <td style="padding:6px 12px 6px 0;white-space:nowrap">${statusSel}</td>
             <td style="padding:6px 12px 6px 0">${comentarioCell}</td>
             <td style="padding:9px 12px 9px 0;color:#94a3b8;white-space:nowrap">${fechaTxt}</td>
-            <td style="padding:9px 0;text-align:right"><div style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end;flex-wrap:wrap;max-width:280px">${iaCell}${visualCheck}${chatBtn}${actionBtn}</div></td>
+            <td style="padding:9px 0;text-align:right"><div style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end;flex-wrap:wrap;max-width:320px">${iaCell}${mockupBtn}${visualCheck}${chatBtn}${actionBtn}</div></td>
         </tr>`;
     }).join('');
 
@@ -661,7 +701,16 @@ function openDesignReview(orderId) {
     const fa = o.iaForce || null;
     const st = fa && fa.status;
     let corteBody;
-    if (!fa) {
+    if (o.svgCorteUrl && !fa) {
+        // Ya cortado (worker auto o "Diseñar con IA"): el corte existe en Drive. Muestra el PNG legible
+        // si se guardó (cortes desde 2026-07-23); los anteriores solo tienen el SVG en Drive.
+        const pngHtml = o.svgCortePreviewUrl
+            ? `<img src="${escapeHtml(o.svgCortePreviewUrl)}" onclick="openImageModal(this.src)" title="Corte generado (al derecho) — clic para ampliar" style="max-width:100%;max-height:320px;border-radius:8px;cursor:zoom-in;border:1px solid var(--color-border,#e5e7eb);display:block;margin-bottom:10px">`
+            : `<p style="margin:0 0 10px;color:#64748b;font-size:.84rem">Este corte se generó antes de que guardáramos el PNG legible, así que solo está el archivo SVG en Drive.</p>`;
+        corteBody = `<p style="margin:0 0 10px;color:#16a34a;font-weight:600;font-size:.88rem"><i class="fas fa-check" style="margin-right:6px"></i>Este pedido ya tiene corte generado.</p>
+            ${pngHtml}
+            <a href="${escapeHtml(o.svgCorteUrl)}" target="_blank" rel="noopener" style="display:inline-block;border:1px solid #0ea5e966;background:#0ea5e911;color:#0284c7;${btn};text-decoration:none"><i class="fas fa-arrow-up-right-from-square" style="margin-right:5px"></i>Ver SVG en Drive</a>`;
+    } else if (!fa) {
         corteBody = `<p style="margin:0 0 10px;color:#64748b;font-size:.86rem">Aún no has generado el corte de este pedido.</p>
             <button onclick="designReviewGenerate('${o.id}', this)" style="border:none;background:#7c3aed;color:#fff;${btn}"><i class="fas fa-wand-magic-sparkles" style="margin-right:5px"></i>Generar corte para revisar</button>
             <p style="margin:10px 0 0;font-size:.78rem;color:#94a3b8">Tu PC lo diseña en ≤15 min respetando lo que vio el cliente. Luego dale “Actualizar”.</p>`;
