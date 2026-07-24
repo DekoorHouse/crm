@@ -4437,7 +4437,11 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             lastMessage: messageToSave.text,
             lastMessageTimestamp: messageToSave.timestamp,
             unreadCount: 0,
-            aiNextRun: admin.firestore.FieldValue.delete()
+            aiNextRun: admin.firestore.FieldValue.delete(),
+            // Último mensaje mandado por una PERSONA desde el CRM (este endpoint NO lo usa la IA:
+            // sus mensajes llevan isAutoReply). Con lastClientMsgAt permite saber si el cliente
+            // respondió a lo que YO le mandé (p.ej. un diseño) -> burbuja en Pendientes de Diseño.
+            lastHumanMsgAt: messageToSave.timestamp
         };
         // Releer el contacto AHORA (no usar el snapshot del inicio del request): si una
         // generación arrancó mientras enviábamos a Meta, aiStatus ya dice 'generating'
@@ -7942,9 +7946,28 @@ router.get('/design-pending', async (req, res) => {
         for (let i = 0; i < ids.length; i += 300) {
             const refs = ids.slice(i, i + 300).map(id => db.collection('contacts_whatsapp').doc(String(id)));
             const docs = await db.getAll(...refs);
-            docs.forEach(d => { if (d.exists) infoById.set(d.id, { name: d.data().name || null, channel: d.data().channel || 'whatsapp' }); });
+            docs.forEach(d => {
+                if (!d.exists) return;
+                const c = d.data();
+                infoById.set(d.id, {
+                    name: c.name || null,
+                    channel: c.channel || 'whatsapp',
+                    // Para la burbuja "el cliente te respondió": último mensaje del cliente vs. último
+                    // mandado por una PERSONA desde el CRM (la IA no toca lastHumanMsgAt).
+                    lastClientMsgAt: tsToMs(c.lastClientMsgAt),
+                    lastHumanMsgAt: tsToMs(c.lastHumanMsgAt),
+                });
+            });
         }
-        orders.forEach(o => { const c = infoById.get(o.contactId) || {}; o.clienteName = c.name || o.contactId; o.channel = c.channel || 'whatsapp'; });
+        orders.forEach(o => {
+            const c = infoById.get(o.contactId) || {};
+            o.clienteName = c.name || o.contactId;
+            o.channel = c.channel || 'whatsapp';
+            // El cliente escribió DESPUÉS de lo último que yo (persona) le mandé. Si nunca le he
+            // escrito a mano (sin lastHumanMsgAt) no cuenta: esa conversación la lleva la IA.
+            o.clienteRespondio = !!(c.lastHumanMsgAt && c.lastClientMsgAt && c.lastClientMsgAt > c.lastHumanMsgAt);
+            o.clienteRespondioAt = o.clienteRespondio ? c.lastClientMsgAt : null;
+        });
 
         if (svgIaMode) {
             // Primero la cola (esperando pareja; más viejo arriba = más cerca de salir), luego los ya

@@ -246,6 +246,9 @@ const DP_BOARD_CSS = `
 .dp-card-top{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px}
 .dp-card-num{font-weight:800;color:var(--color-primary);cursor:pointer;font-size:.85rem}
 .dp-card-actions{display:flex;align-items:center;gap:6px}
+/* Burbuja "el cliente te respondió" (a TI, no a la IA): pulsa para que salte a la vista. */
+.dp-resp{display:inline-flex;align-items:center;gap:3px;background:#16a34a;color:#fff;border:none;border-radius:999px;padding:2px 7px;font-size:10.5px;font-weight:800;cursor:pointer;line-height:1.5;animation:dpPulse 2s infinite}
+@keyframes dpPulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.55)}70%{box-shadow:0 0 0 6px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
 .dp-icon-btn{border:none;background:transparent;color:#0ea5e9;cursor:pointer;font-size:14px;padding:2px}
 .dp-card-datos{font-weight:600;font-size:.8rem;line-height:1.25;margin-bottom:2px}
 .dp-card-prod{font-size:.72rem;color:var(--color-text-light,#94a3b8);margin-bottom:4px}
@@ -267,6 +270,16 @@ function dpIaControls(o) {
     if (f.status === 'error') return `<button onclick="designWithIA('${o.id}', this)" title="${escapeHtml(f.error || 'Error')} — clic para reintentar" style="background:#dc262611;color:#b91c1c;border:1px solid #dc262666;${bb}"><i class="fas fa-triangle-exclamation" style="margin-right:3px"></i>Reintentar IA</button>`;
     if (o.boardCol === 'pendientes' && o.iaEligible) return `<button onclick="designWithIA('${o.id}', this)" title="Forzar diseño con IA: tu PC lo diseña y pide confirmar antes de subir" style="background:#7c3aed;color:#fff;${bb}"><i class="fas fa-wand-magic-sparkles" style="margin-right:3px"></i>Diseñar con IA</button>`;
     return '';
+}
+
+// "hace 5 min" / "hace 3 h" / "hace 2 d" a partir de un timestamp en ms (para tooltips del tablero).
+function dpHaceTxt(ms) {
+    const min = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    if (min < 1) return 'hace un momento';
+    if (min < 60) return `hace ${min} min`;
+    const h = Math.round(min / 60);
+    if (h < 24) return `hace ${h} h`;
+    return `hace ${Math.round(h / 24)} d`;
 }
 
 // Botón "A Mockup" de una tarjeta del tablero (mismos 3 estados que la tabla): empuja el pedido a la
@@ -291,12 +304,17 @@ function dpBoardCard(o, checkedSet) {
     const iaBadge = o.svgCorteUrl ? `<a href="${escapeHtml(o.svgCorteUrl)}" target="_blank" rel="noopener" title="Diseñado por IA — abrir el SVG en Drive" style="display:inline-block;background:#e83e8c22;color:#e83e8c;border:1px solid #e83e8c66;font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:5px;text-decoration:none"><i class="fas fa-robot"></i> IA</a>` : '';
     const chk = `<input type="checkbox"${checkedSet && checkedSet.has(o.id) ? ' checked' : ''} data-dp-check="${o.id}" onchange="toggleDesignVisualCheck('${o.id}', this)" title="Marca visual (se guarda en este navegador)" style="width:15px;height:15px;cursor:pointer;accent-color:#16a34a">`;
     const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (← → para navegar)" class="dp-icon-btn"><i class="fas fa-comments"></i></button>` : '';
+    // Burbuja: el cliente escribió DESPUÉS de lo último que le mandé YO (no la IA) — p.ej. respondió
+    // al diseño que le envié. Desaparece cuando le vuelvo a escribir. Clic = abrir el chat.
+    const respBubble = (o.clienteRespondio && o.contactId)
+        ? `<button onclick="openDesignPendingChat('${o.id}')" title="El cliente te respondió${o.clienteRespondioAt ? ' ' + dpHaceTxt(o.clienteRespondioAt) : ''} — clic para ver el chat" class="dp-resp"><i class="fas fa-reply"></i>Te respondió</button>`
+        : '';
     const ia = dpIaControls(o);
     const mockupBtn = dpMockupBtn(o);
     return `<div class="dp-card" data-order="${escapeHtml(o.id)}">
         <div class="dp-card-top">
             <span class="dp-card-num" onclick="copyDesignOrderNumber(this,'${escapeHtml(o.orderNumber)}')" title="Clic para copiar el número">${escapeHtml(o.orderNumber)}</span>
-            <span class="dp-card-actions">${chk}${chatBtn}</span>
+            <span class="dp-card-actions">${respBubble}${chk}${chatBtn}</span>
         </div>
         <div class="dp-card-datos" title="Cliente: ${escapeHtml(o.clienteName || '')} — ${escapeHtml(o.datos || '')}">${chan} ${escapeHtml(datosTxt)}</div>
         <div class="dp-card-prod">${escapeHtml(o.producto || '')}${o.itemCount > 1 ? ' <span style="color:#94a3b8">+' + (o.itemCount - 1) + '</span>' : ''}</div>

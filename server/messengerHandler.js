@@ -595,14 +595,16 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
             profileImageUrl: profile.profileImageUrl,
             lastMessage: messageData.text,
             lastMessageTimestamp: messageData.timestamp,
-            unreadCount: 1
+            unreadCount: 1,
+            lastClientMsgAt: messageData.timestamp   // ver whatsappHandler: burbuja "te respondió"
         };
         if (profile.username) contactUpdateData.igUsername = profile.username;
     } else {
         contactUpdateData = {
             lastMessage: messageData.text,
             lastMessageTimestamp: messageData.timestamp,
-            unreadCount: admin.firestore.FieldValue.increment(1)
+            unreadCount: admin.firestore.FieldValue.increment(1),
+            lastClientMsgAt: messageData.timestamp   // ver whatsappHandler: burbuja "te respondió"
         };
 
         // Auto-reparación de nombre: si el contacto se creó cuando faltaban permisos,
@@ -953,7 +955,8 @@ async function handlePostback(senderPsid, postback, eventTimestamp) {
     await contactRef.update({
         lastMessage: messageData.text,
         lastMessageTimestamp: messageData.timestamp,
-        unreadCount: admin.firestore.FieldValue.increment(1)
+        unreadCount: admin.firestore.FieldValue.increment(1),
+        lastClientMsgAt: messageData.timestamp   // ver whatsappHandler: burbuja "te respondió"
     });
     const contactData = contactDoc.data();
     if (contactData.botActive) {

@@ -705,7 +705,11 @@ router.post('/', async (req, res) => {
                 wa_id: contactInfo.wa_id, // WhatsApp ID
                 lastMessage: messageData.text, // Preview text
                 lastMessageTimestamp: messageData.timestamp, // Use message timestamp
-                unreadCount: admin.firestore.FieldValue.increment(1) // Increment unread count
+                unreadCount: admin.firestore.FieldValue.increment(1), // Increment unread count
+                // Último mensaje DEL CLIENTE. Junto con lastHumanMsgAt (que se pone al enviar a mano
+                // desde el CRM) permite saber si el cliente respondió a lo último que mandó una PERSONA
+                // (no la IA) -> burbuja de "te respondió" en el tablero de Pendientes de Diseño.
+                lastClientMsgAt: messageData.timestamp
             };
 
             // Si el chat está en revisión de diseño, también incrementar designUnreadCount
