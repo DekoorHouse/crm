@@ -1277,25 +1277,37 @@ async function sendPurchaseEventOnFabricar(orderId, orderData, oldStatusLower) {
  * Devuelve el pedido MÁS RECIENTE del contacto (doc snapshot) o null. Los pedidos guardan
  * el teléfono tanto en `telefono` como en `contactId`; se consultan ambos por seguridad.
  */
-async function getLatestOrderForContact(contactId) {
+/**
+ * Lee TODOS los pedidos del contacto (por `telefono` y por `contactId`) y devuelve el MÁS RECIENTE
+ * junto con cuántos NO cancelados tiene. El conteo sale gratis del mismo barrido y sirve para saber
+ * si es un comprador RECURRENTE de verdad: `purchaseStatus:'completed'` NO sirve para eso porque se
+ * pone cuando el pedido ACTUAL pasa a "Fabricar" — con su PRIMER pedido el contacto ya queda
+ * 'completed' y la IA lo trataba como recurrente ("¿a la misma dirección de la vez pasada?" a alguien
+ * que compra por primera vez: casos DH13807 y DH13765).
+ */
+async function getOrdersInfoForContact(contactId) {
     try {
         const seen = new Map();
         for (const field of ['telefono', 'contactId']) {
             const snap = await db.collection('pedidos').where(field, '==', contactId).get();
             snap.forEach(doc => seen.set(doc.id, doc));
         }
-        if (seen.size === 0) return null;
-        let best = null, bestMs = -1;
+        let best = null, bestMs = -1, nonCancelled = 0;
         for (const doc of seen.values()) {
             const d = doc.data();
+            if (!/cancel/i.test(String(d.estatus || ''))) nonCancelled++;
             const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
             if (ms >= bestMs) { bestMs = ms; best = doc; }
         }
-        return best;
+        return { latest: best, nonCancelled, total: seen.size };
     } catch (e) {
-        console.warn('[POSTVENTA] No se pudo obtener el último pedido para', contactId, e.message);
-        return null;
+        console.warn('[POSTVENTA] No se pudieron leer los pedidos de', contactId, e.message);
+        return { latest: null, nonCancelled: 0, total: 0 };
     }
+}
+
+async function getLatestOrderForContact(contactId) {
+    return (await getOrdersInfoForContact(contactId)).latest;
 }
 
 /**
@@ -2735,8 +2747,18 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             let trackingNote = '';
             let shippingFormNote = '';
             let lastOrderDoc = null;
+            let isRepeatBuyer = false;   // ≥2 pedidos NO cancelados = ya nos compró antes de verdad
+            let hasActiveOrder = false;  // pedido reciente en curso (no cancelado/entregado/devuelto)
             try {
-                lastOrderDoc = await getLatestOrderForContact(contactId);
+                const info = await getOrdersInfoForContact(contactId);
+                lastOrderDoc = info.latest;
+                isRepeatBuyer = info.nonCancelled >= 2;
+                if (lastOrderDoc) {
+                    const d = lastOrderDoc.data();
+                    const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
+                    const reciente = ms && (Date.now() - ms) <= 45 * 24 * 60 * 60 * 1000;
+                    hasActiveOrder = !!reciente && !/cancel|entregad|devol/i.test(String(d.estatus || ''));
+                }
             } catch (e) {
                 console.warn('[AI] No se pudo leer el pedido registrado para', contactId, e.message);
             }
@@ -2793,7 +2815,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     }
                 } catch (e) { console.warn('[AI] Nota de rastreo falló:', e.message); }
             }
-            return { orderInfoNote, trackingNote, shippingFormNote };
+            return { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder };
         })();
 
         // Fecha/hora actual de México para que la IA calcule bien los tiempos de entrega. Sin esto el
@@ -2816,7 +2838,8 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // implica cobrar antes: /cuatro sigue gateando el cobro PROACTIVO; esto solo maneja un pago
         // que el cliente ya hizo. El guard de markComprobanteValidadoAndSendForm evita mandar el
         // formulario de un pedido cancelado/entregado.
-        const paymentPhaseActive = isPostVenta || contactData.purchaseStatus === 'registered';
+        // (se recalcula abajo, en cuanto se sabe si el contacto tiene un pedido ACTIVO)
+        let paymentPhaseActive = isPostVenta || contactData.purchaseStatus === 'registered';
 
         // NOTA: el protocolo de datos de envío, el de comprobante y el comando de cancelación
         // se anexan ahora al texto CACHEADO del sistema (ver CANCEL_COMMAND_NOTE /
@@ -2828,14 +2851,22 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // Esperar las tres tareas de red juntas (arrancaron arriba y corrieron en paralelo).
         const [mediaBundle, coberturaNote, orderNotes] = await Promise.all([mediaWorkPromise, coberturaPromise, orderNotesPromise]);
         const { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote } = mediaBundle;
-        const { orderInfoNote, trackingNote, shippingFormNote } = orderNotes;
+        const { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder } = orderNotes;
 
-        // Cliente RECURRENTE en etapa de venta: ya le hemos enviado antes (purchaseStatus
-        // 'completed' se pone cuando su pedido anterior pasó a Fabricar tras pagar). En una
-        // segunda compra NO se vuelve a checar cobertura de entrada: se pregunta si va a la
-        // misma dirección, y solo si es OTRA se pide el CP (pedido del dueño, 02-jul-2026).
+        // Fase de pago/envío: además de post-venta y del pedido recién registrado, cuenta tener un
+        // PEDIDO ACTIVO (reciente y no cancelado/entregado). Sin esto, un contacto cuyo pedido ya
+        // avanzó a "Fabricar" quedaba en purchaseStatus 'completed' (≠ 'registered') y se quedaba SIN
+        // el protocolo del formulario ni el comando /comprobante: la IA improvisaba y le pedía los
+        // datos de envío POR TEXTO (caso DH13807). El formulario es SIEMPRE la vía preferida.
+        paymentPhaseActive = paymentPhaseActive || hasActiveOrder;
+
+        // Cliente RECURRENTE en etapa de venta: solo si de verdad tiene ≥2 pedidos no cancelados.
+        // ANTES se usaba purchaseStatus === 'completed', que se pone cuando el pedido ACTUAL pasa a
+        // "Fabricar" — así que a un cliente PRIMERIZO le preguntaba "¿a la misma dirección de la vez
+        // pasada?" (casos DH13807 y DH13765, ambos primera compra). En una segunda compra real NO se
+        // vuelve a checar cobertura: se pregunta si va a la misma dirección (pedido del dueño, 02-jul-2026).
         let repeatBuyerNote = '';
-        if (!isPostVenta && contactData.purchaseStatus === 'completed') {
+        if (!isPostVenta && isRepeatBuyer) {
             repeatBuyerNote = `\n\n**Cliente RECURRENTE (ya le hemos enviado pedidos antes):**\nNO le pidas código postal ni cheques cobertura de entrada. Pregúntale si su nuevo pedido va a la MISMA dirección de la vez pasada. Si dice que SÍ: la cobertura ya está comprobada (cuenta como cumplido el requisito de CP) — continúa el cierre normal sin pedir CP. Solo si dice que es OTRA dirección, pide el código postal de 5 dígitos y checa cobertura como siempre.`;
         }
 
