@@ -12,6 +12,8 @@ const ChatViewTemplate = () => `
                     <i class="fas fa-times-circle"></i>
                 </button>
             </div>
+            <!-- Resumen de la búsqueda DENTRO de las conversaciones (+ "Ver más": sigue hacia atrás en el tiempo) -->
+            <div id="msg-search-bar" style="display:none;padding:6px 10px;border-bottom:1px solid var(--color-border);background:var(--color-subtle-bg,#f8fafc);font-size:.78rem;color:var(--color-text-light,#64748b);align-items:center;gap:8px"></div>
             <div id="tag-filters-container" class="p-2 flex flex-wrap gap-2 justify-center border-b border-[var(--color-border)] bg-[var(--color-container-bg)] items-center"></div>
             <div id="contacts-loading" class="p-4 text-center text-gray-400">Cargando contactos...</div>
             <div id="contacts-list" class="flex-1 overflow-y-auto" style="position:relative;">

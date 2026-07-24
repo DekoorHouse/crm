@@ -534,19 +534,29 @@ async function fetchMoreContacts() {
 async function searchContactsAPI(query) {
     // Si la búsqueda está vacía, cargar la lista inicial paginada
     if (!query) {
+        _msgSearchReset();
         fetchInitialContacts();
         return;
     }
 
     try {
-        // Realizar petición a la API de búsqueda
-        const response = await fetch(`${API_BASE_URL}/api/contacts/search?query=${encodeURIComponent(query)}`);
+        // Dos búsquedas EN PARALELO: (1) la de siempre (pedido/teléfono/nombre del contacto) y
+        // (2) la nueva DENTRO de las conversaciones (texto de los mensajes, vía índice de palabras).
+        const [response, msgData] = await Promise.all([
+            fetch(`${API_BASE_URL}/api/contacts/search?query=${encodeURIComponent(query)}`),
+            fetch(`${API_BASE_URL}/api/messages/search?query=${encodeURIComponent(query)}`)
+                .then(r => r.json()).catch(() => null),
+        ]);
         if (!response.ok) throw new Error('Error en la búsqueda.');
 
         const data = await response.json();
 
-        // Procesar timestamps y actualizar estado con los resultados
-        state.contacts = processContacts(data.contacts);
+        // Estado de la búsqueda en conversaciones (para "Ver más" y la barra de resumen).
+        _msgSearchState.query = query;
+        _msgSearchState.results = (msgData && msgData.success) ? (msgData.results || []) : [];
+        _msgSearchState.nextBefore = (msgData && msgData.success) ? (msgData.nextBefore || null) : null;
+
+        state.contacts = processContacts(_mergeMsgSearch(data.contacts || []));
 
         // Desactivar paginación durante la búsqueda
         state.pagination.hasMore = false;
@@ -554,11 +564,71 @@ async function searchContactsAPI(query) {
 
         // Re-renderizar la lista
         scheduleContactListRender();
+        _renderMsgSearchBar();
     } catch (error) {
         console.error(error);
         showError(error.message);
     }
 }
+
+// --- Búsqueda DENTRO de las conversaciones -------------------------------------------------------
+// Los contactos que coincidieron por el TEXTO de un mensaje se mezclan en la misma lista de chats
+// (así se pintan y se abren igual que cualquier otro), y su vista previa muestra el fragmento hallado.
+const _msgSearchState = { query: '', results: [], nextBefore: null, loading: false };
+
+function _msgSearchReset() {
+    _msgSearchState.query = ''; _msgSearchState.results = []; _msgSearchState.nextBefore = null;
+    _renderMsgSearchBar();
+}
+
+// Une los contactos del texto encontrado con los de la búsqueda normal (sin duplicar).
+function _mergeMsgSearch(contactList) {
+    const out = contactList.slice();
+    const seen = new Set(out.map(c => c.id));
+    for (const r of _msgSearchState.results) {
+        if (!r.contact || seen.has(r.contact.id)) continue;
+        seen.add(r.contact.id);
+        // La vista previa muestra el fragmento que coincidió (no el último mensaje del chat).
+        out.push({ ...r.contact, lastMessage: '🔎 ' + String(r.text || '').replace(/\s+/g, ' ').slice(0, 120), _msgMatch: true });
+    }
+    return out;
+}
+
+// Barra bajo el buscador: cuántos salieron del texto de las conversaciones + "Ver más" (sigue
+// buscando hacia atrás en el tiempo desde donde se quedó).
+function _renderMsgSearchBar() {
+    const bar = document.getElementById('msg-search-bar');
+    if (!bar) return;
+    const s = _msgSearchState;
+    if (!s.query) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+    bar.style.display = 'flex';
+    const n = s.results.length;
+    const txt = n ? `<i class="fas fa-comments" style="margin-right:5px"></i>${n} chat${n === 1 ? '' : 's'} con ese texto`
+                  : `<i class="fas fa-comments" style="margin-right:5px"></i>Sin coincidencias en el texto de los chats`;
+    const more = s.nextBefore
+        ? `<button onclick="loadMoreMsgSearch()" ${s.loading ? 'disabled' : ''} style="margin-left:auto;border:1px solid var(--color-border,#e5e7eb);background:transparent;color:var(--color-primary);border-radius:6px;padding:3px 9px;font-size:.75rem;font-weight:700;cursor:pointer">${s.loading ? 'Buscando…' : 'Ver más atrás'}</button>`
+        : '';
+    bar.innerHTML = `<span>${txt}</span>${more}`;
+}
+
+// "Ver más": continúa la búsqueda desde el cursor (mensajes más antiguos) y suma los resultados.
+async function loadMoreMsgSearch() {
+    const s = _msgSearchState;
+    if (!s.query || !s.nextBefore || s.loading) return;
+    s.loading = true; _renderMsgSearchBar();
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/messages/search?query=${encodeURIComponent(s.query)}&before=${s.nextBefore}`).then(x => x.json());
+        if (r && r.success) {
+            const seen = new Set(s.results.map(x => x.contactId));
+            s.results = s.results.concat((r.results || []).filter(x => !seen.has(x.contactId)));
+            s.nextBefore = r.nextBefore || null;
+            state.contacts = processContacts(_mergeMsgSearch(state.contacts.filter(c => !c._msgMatch)));
+            scheduleContactListRender();
+        }
+    } catch (e) { console.warn('[búsqueda en chats] ver más:', e.message); }
+    finally { s.loading = false; _renderMsgSearchBar(); }
+}
+window.loadMoreMsgSearch = loadMoreMsgSearch;
 
 // --- LISTENER PARA ACTUALIZACIONES EN TIEMPO REAL ---
 /**

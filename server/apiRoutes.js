@@ -3884,6 +3884,26 @@ router.put('/contacts/:contactId/transfer', async (req, res) => {
     }
 });
 
+// --- GET /api/messages/search — busca TEXTO dentro de las conversaciones -------------------------
+// Usa el índice de palabras (campo `st` de cada mensaje) que mantiene server/search/messageSearch.js,
+// así la búsqueda es una consulta indexada y no un escaneo de cientos de miles de mensajes.
+// Params: query (obligatorio), limit, before (ms, para "Ver más" = seguir hacia atrás en el tiempo).
+// Devuelve un resultado por CONTACTO (su mensaje más reciente que coincide) + nextBefore (cursor).
+router.get('/messages/search', async (req, res) => {
+    const query = String(req.query.query || '').trim();
+    if (!query) return res.status(400).json({ success: false, message: 'Se requiere un término de búsqueda.' });
+    try {
+        const { searchMessages } = require('./search/messageSearch');
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 25));
+        const beforeMs = req.query.before ? parseInt(req.query.before, 10) : null;
+        const r = await searchMessages(query, { limit, beforeMs: beforeMs || null });
+        res.json({ success: true, ...r });
+    } catch (e) {
+        console.error('[messages/search] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // --- Endpoint GET /api/contacts/search (Búsqueda de contactos) ---
 router.get('/contacts/search', async (req, res) => {
     const { query } = req.query;
