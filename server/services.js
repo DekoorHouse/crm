@@ -971,7 +971,10 @@ const COMPROBANTE_COMMAND_NOTE = `\n\n**Comprobante de pago y formulario de env�
 - Cuando el cliente te MANDE su comprobante de pago (imagen o PDF) y verifiques que es GENUINO (el destino y el monto coinciden con lo esperado), responde ÚNICAMENTE con el comando /comprobante (SOLO eso, sin ningún otro texto ni saludo). NO escribas tú la confirmación, NO le pidas los datos de envío por texto y NO le mandes ningún enlace: al recibir /comprobante, el SISTEMA le manda automáticamente el mensaje de confirmación ("ya validamos tu pago") junto con el formulario de envío. Emítelo UNA sola vez por pedido.
 - MUY IMPORTANTE: si YA validaste el comprobante antes en esta conversación (ya se le envió el formulario de envío, aunque el comprobante siga viéndose en el chat), NO vuelvas a emitir /comprobante. En los turnos siguientes responde NORMALMENTE a lo que el cliente diga (dudas, datos, etc.); reenviar el formulario en cada turno lo satura.
 - Si el comprobante es sospechoso o NO coincide, usa /sospechoso (NO /comprobante). Si el cliente solo dice que "ya pagó" pero todavía NO ha mandado el comprobante, pídeselo con amabilidad (NO emitas /comprobante).
-- Cuando el cliente te confirme que YA LLENÓ su formulario de envío (por ejemplo: "ya llené el formulario", "listo, ya mandé mis datos"), responde ÚNICAMENTE con /pagado (solo eso, sin ningún otro texto).`;
+- Cuando el cliente te confirme que YA LLENÓ su formulario de envío (por ejemplo: "ya llené el formulario", "listo, ya mandé mis datos"), NO le creas de entrada: **VERIFICA primero** la nota del sistema "Datos de envío del pedido DHxxxx" que viene en este mismo turno.
+   · Si esa nota dice que sus datos YA ESTÁN CAPTURADOS, responde ÚNICAMENTE con /pagado (solo eso, sin ningún otro texto).
+   · Si dice que NO aparecen en el sistema, NO emitas /pagado: agradécele, dile que sus datos todavía no nos llegan y pásale de nuevo el enlace del formulario para que lo llene otra vez.
+   · Si NO viene ninguna nota de datos de envío en el turno, tampoco emitas /pagado: significa que aún no se ha validado su pago (no le hemos mandado formulario). Atiende lo que corresponda a su pago.`;
 
 /**
  * Construye el texto estático del sistema (instrucciones + conocimiento + respuestas rápidas).
@@ -1291,6 +1294,35 @@ async function getLatestOrderForContact(contactId) {
         return best;
     } catch (e) {
         console.warn('[POSTVENTA] No se pudo obtener el último pedido para', contactId, e.message);
+        return null;
+    }
+}
+
+/**
+ * ¿Ya llegaron los DATOS DE ENVÍO (formulario /datos-estafeta) de un pedido? Devuelve el registro
+ * de `datos_envio` más reciente de ese pedido, o null si el cliente todavía no lo ha llenado.
+ * El formulario guarda `numeroPedido` tal cual viene en la URL ("DH13041") y la edición manual del
+ * CRM usa el mismo formato, pero se consultan también los dígitos sueltos por si algún registro
+ * viejo se guardó sin el prefijo. Nunca lanza.
+ */
+async function getShippingDataForOrder(orderNumber) {
+    const digits = String(orderNumber || '').replace(/\D/g, '');
+    if (!digits) return null;
+    try {
+        const snap = await db.collection('datos_envio')
+            .where('numeroPedido', 'in', [`DH${digits}`, `dh${digits}`, digits, Number(digits)])
+            .get();
+        if (snap.empty) return null;
+        // El más reciente (sin índice compuesto: se ordena en memoria, igual que en /api/envios).
+        let best = null, bestMs = -1;
+        snap.forEach(doc => {
+            const d = doc.data();
+            const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
+            if (ms >= bestMs) { bestMs = ms; best = { id: doc.id, ...d }; }
+        });
+        return best;
+    } catch (e) {
+        console.warn('[ENVIOS] No se pudieron leer los datos de envío de', orderNumber, e.message);
         return null;
     }
 }
@@ -2657,21 +2689,30 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     if (ops.length) {
                         const top = ops.slice(0, 4).map(o => `${o.paq} ${o.serv} $${o.costo.toFixed(2)}${o.dias ? ` (~${o.dias}d)` : ''}`).join(' · ');
                         // Umbral de envío: SERVIMOS la zona (envío GRATIS, nosotros pagamos la guía) solo si
-                        // existe una paquetería que llegue por <= este monto. Antes se miraba solo DHL y arriba
-                        // del umbral se le COBRABA el envío al cliente; ahora, por decisión del negocio, la zona
-                        // cara se DECLINA con /lamento — pero SOLO si NINGUNA paquetería (DHL/FedEx/Paquetexpress)
-                        // baja del umbral, porque la guía se genera con la más barata (modal de guías del CRM).
+                        // **DHL** llega por <= este monto. Regla del negocio (24-jul-2026): la decisión la toma
+                        // ÚNICAMENTE DHL, que es la paquetería con la que generamos la guía. Antes bastaba con
+                        // que CUALQUIER paquetería bajara del umbral, y eso prometía cobertura en zonas a las
+                        // que DHL no llega (o cobra de más). Ahora: sin tarifa DHL <= umbral -> se DECLINA con
+                        // /lamento, aunque otra paquetería salga más barata.
                         const UMBRAL_ENVIO = Number(process.env.MAX_ENVIO_SERVIBLE || 200);
-                        // ops ya viene ordenado ascendente -> ops[0] = la paquetería MÁS BARATA (cualquiera). El
-                        // costo DHL se conserva solo para el log (DHL en T1 = "EXPRESS/ECONOMY ... DOMESTIC").
-                        const dhlOps = ops.filter(o => /dhl|domestic/i.test(`${o.paq || ''} ${o.serv || ''}`));
+                        // ops ya viene ordenado ascendente -> el primer DHL es el DHL MÁS BARATO. En T1 la
+                        // paquetería viene en `clave` ("DHL", "FEDEX", "ESTAFETA"…) y el servicio en `servicio`
+                        // ("EXPRESS DOMESTIC", "ECONOMY DOMESTIC"…). Se busca "dhl" en ambos: "domestic" NO
+                        // sirve como señal (otras paqueterías también usan esa palabra y daría un falso DHL).
+                        const dhlOps = ops.filter(o => /dhl/i.test(`${o.paq || ''} ${o.serv || ''}`));
                         const dhlCosto = dhlOps.length ? dhlOps[0].costo : null;
-                        const minCosto = ops[0].costo;
-                        console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops, más barata ${ops[0].paq} $${minCosto}${dhlCosto != null ? `, DHL $${dhlCosto}` : ', sin DHL'} vs umbral $${UMBRAL_ENVIO} -> ${minCosto <= UMBRAL_ENVIO ? 'SERVIR' : 'LAMENTO'}`);
-                        if (minCosto <= UMBRAL_ENVIO) {
-                            coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real de paqueterías vía T1, desde Durango):** SÍ hay cobertura a domicilio y el envío al cliente es GRATIS (nosotros pagamos la guía). Opciones (referencia interna de costo, NO para el cliente): ${top}. NO le cobres envío ni le menciones estos montos; úsalos solo para saber que sí llegamos y a qué costo. Sigue el flujo normal de cobertura (responde "/ttt" y luego "/qqq"). Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
+                        const servible = dhlCosto != null && dhlCosto <= UMBRAL_ENVIO;
+                        // Las claves van al log: si un día T1 renombra "DHL", aquí se vería que se está
+                        // declinando todo por no reconocer la paquetería (y no por falta de cobertura real).
+                        const claves = [...new Set(ops.map(o => o.paq).filter(Boolean))].join(', ') || '¿?';
+                        console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops (${claves}), DHL ${dhlCosto != null ? `$${dhlCosto}` : 'SIN TARIFA'} vs umbral $${UMBRAL_ENVIO} -> ${servible ? 'SERVIR' : 'LAMENTO'}`);
+                        if (servible) {
+                            coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real de DHL vía T1, desde Durango):** SÍ hay cobertura a domicilio (DHL llega por $${dhlCosto.toFixed(2)}) y el envío al cliente es GRATIS (nosotros pagamos la guía). Opciones (referencia interna de costo, NO para el cliente): ${top}. NO le cobres envío ni le menciones estos montos; úsalos solo para saber que sí llegamos y a qué costo. Sigue el flujo normal de cobertura (responde "/ttt" y luego "/qqq"). Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
                         } else {
-                            coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real vía T1, desde Durango):** esta zona NO es viable para nosotros — la paquetería MÁS BARATA (${ops[0].paq}) cuesta $${minCosto.toFixed(2)}, por arriba de nuestro límite de $${UMBRAL_ENVIO}. En este caso NO tomamos el pedido: responde ÚNICAMENTE con "/lamento" (en su propio renglón, sólo eso, sin ningún texto adicional). NO le menciones al cliente el costo del envío ni ningún monto; el mensaje de /lamento ya le explica con amabilidad e invita a dar otro código postal de otra zona. (Referencia interna de opciones: ${top}.) Aplica esto SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
+                            const motivo = dhlCosto == null
+                                ? `DHL NO cotiza esa zona (las demás paqueterías no cuentan para esta decisión)`
+                                : `DHL cuesta $${dhlCosto.toFixed(2)}, por arriba de nuestro límite de $${UMBRAL_ENVIO}`;
+                            coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real vía T1, desde Durango):** NO tenemos cobertura en esa zona — ${motivo}. En este caso NO tomamos el pedido: responde ÚNICAMENTE con "/lamento" (en su propio renglón, sólo eso, sin ningún texto adicional). NO le menciones al cliente el costo del envío ni ningún monto; el mensaje de /lamento ya le explica con amabilidad e invita a dar otro código postal de otra zona. (Referencia interna de opciones: ${top}.) Aplica esto SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
                         }
                     } else {
                         console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: sin tarifas (posible zona sin cobertura o CP inválido)`);
@@ -2684,13 +2725,15 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             return coberturaNote;
         })();
 
-        // (C) Pedido REGISTRADO (orderInfoNote) + RASTREO del envío (trackingNote). Ambos parten del
-        // MISMO pedido más reciente, que ahora se lee UNA sola vez (antes getLatestOrderForContact se
-        // llamaba dos veces). orderInfoNote es la fuente de verdad del TOTAL; el rastreo solo se arma
-        // si el cliente pregunta por él y su pedido ya tiene guía DHL.
+        // (C) Pedido REGISTRADO (orderInfoNote) + FORMULARIO de datos de envío (shippingFormNote) +
+        // RASTREO del envío (trackingNote). Los tres parten del MISMO pedido más reciente, que ahora se
+        // lee UNA sola vez (antes getLatestOrderForContact se llamaba dos veces). orderInfoNote es la
+        // fuente de verdad del TOTAL; el rastreo solo se arma si el cliente pregunta por él y su pedido
+        // ya tiene guía DHL.
         const orderNotesPromise = (async () => {
             let orderInfoNote = '';
             let trackingNote = '';
+            let shippingFormNote = '';
             let lastOrderDoc = null;
             try {
                 lastOrderDoc = await getLatestOrderForContact(contactId);
@@ -2708,6 +2751,25 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : '(sin número)';
                     const datos = String(o.datosProducto || '').replace(/\s+/g, ' ').trim().slice(0, 200);
                     orderInfoNote = `\n\n**Pedido REGISTRADO en el sistema:**\n${num} — Producto: ${o.producto || '-'} — TOTAL registrado: ${o.precio != null ? `$${o.precio}` : 'no registrado'} — Estatus: ${o.estatus || '-'}${datos ? ` — Datos: ${datos}` : ''}.\nPara el precio/total del pedido usa este ORDEN DE PRIORIDAD: 1) si un humano del equipo acordó en la conversación un total DISTINTO (descuento o ajuste), ese acuerdo MANDA — respétalo y no lo "corrijas" al del sistema; 2) si no hay un acuerdo distinto en el chat, usa el TOTAL registrado de arriba; 3) NUNCA lo calcules con promociones generales. Si hay conflicto y no queda claro cuál aplica, no afirmes ninguno: di que lo confirmas y escribe /equipo en su propio mensaje. Si el cliente quiere algo distinto a lo registrado (otra cantidad u otro modelo), aclara antes de dar totales. El estatus del pedido es SOLO informativo: NUNCA anuncies por tu cuenta que el pedido "ya está listo" ni inicies el cobro — eso lo hace el equipo humano cuando manda la foto del trabajo terminado.`;
+                }
+            }
+            // --- ¿YA LLENÓ el formulario de datos de envío? ---
+            // El cliente dice "ya llené el formulario" y la IA lo daba por cierto (emitía /pagado) sin
+            // comprobar nada; si en realidad no lo llenó (o lo abandonó a medias), el pedido se quedaba
+            // sin datos y nadie se enteraba. Aquí se consulta la colección `datos_envio` por su número
+            // de pedido y se le dice a la IA el hecho DURO. Solo se consulta cuando el formulario ya se
+            // le mandó (comprobanteValidadoAt) — no en cada turno de cualquier conversación.
+            if (lastOrderDoc) {
+                const o = lastOrderDoc.data();
+                const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : null;
+                if (num && o.comprobanteValidadoAt) {
+                    const de = await getShippingDataForOrder(num);
+                    const formUrl = `${APP_BASE_URL}/datos-estafeta/${num}`;
+                    if (de) {
+                        shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS en el sistema** (a nombre de ${de.nombreCompleto || 'el cliente'}). Si el cliente te confirma que llenó el formulario, respóndele ÚNICAMENTE con /pagado. NO le pidas que lo llene otra vez ni le mandes el enlace de nuevo.`;
+                    } else {
+                        shippingFormNote = `\n\n**Datos de envío del pedido ${num}: NO aparecen en el sistema** (el formulario NO se ha llenado, o quedó a medias). Si el cliente dice que YA lo llenó, NO lo des por hecho y NO emitas /pagado: agradécele, dile con amabilidad que sus datos todavía no nos llegaron (a veces el formulario no alcanza a guardarse) y pídele que por favor lo llene otra vez en este enlace, asegurándose de tocar el botón de enviar hasta el final: ${formUrl} — Este dato es del SISTEMA y manda sobre lo que diga el cliente.`;
+                    }
                 }
             }
             // --- Rastreo del envío: cuando el cliente pregunta "¿dónde va mi pedido?" y su pedido ya
@@ -2731,7 +2793,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     }
                 } catch (e) { console.warn('[AI] Nota de rastreo falló:', e.message); }
             }
-            return { orderInfoNote, trackingNote };
+            return { orderInfoNote, trackingNote, shippingFormNote };
         })();
 
         // Fecha/hora actual de México para que la IA calcule bien los tiempos de entrega. Sin esto el
@@ -2766,7 +2828,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // Esperar las tres tareas de red juntas (arrancaron arriba y corrieron en paralelo).
         const [mediaBundle, coberturaNote, orderNotes] = await Promise.all([mediaWorkPromise, coberturaPromise, orderNotesPromise]);
         const { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote } = mediaBundle;
-        const { orderInfoNote, trackingNote } = orderNotes;
+        const { orderInfoNote, trackingNote, shippingFormNote } = orderNotes;
 
         // Cliente RECURRENTE en etapa de venta: ya le hemos enviado antes (purchaseStatus
         // 'completed' se pone cuando su pedido anterior pasó a Fabricar tras pagar). En una
@@ -2824,7 +2886,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         }
         // Los protocolos de pago/cancelación ya NO van aquí: viven en el texto cacheado del sistema
         // (ver buildStaticContext). Aquí solo quedan las notas DINÁMICAS (dependen del cliente/turno).
-        const finalUserText = `${fechaActualNote}${orderInfoNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${orderInfoNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
@@ -3013,7 +3075,28 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // a su contenido real (texto + archivo) en vez de mandar el atajo crudo al cliente.
             let qrFileUrl = null, qrFileType = null;
             const shortcutMatch = msgText.match(/^\/(.+)$/); // permite atajos con espacios ("/mas modelos")
-            if (shortcutMatch) {
+
+            // CANDADO de /pagado: ese atajo confirma "llenaste correctamente el formulario", y la IA
+            // lo emitía con solo que el cliente DIJERA que ya lo llenó. Antes de mandarlo, se verifica
+            // contra `datos_envio` que los datos del pedido REALMENTE estén capturados; si no están,
+            // no se confirma nada: se le pide que vuelva a llenar el formulario (con su enlace).
+            // La nota shippingFormNote ya se lo advierte a la IA; esto es la red de seguridad dura.
+            let skipShortcutExpansion = false;
+            if (shortcutMatch && /^pagado$/i.test(shortcutMatch[1].trim())) {
+                // getLatestOrderForContact (no getLastOrderNumberForContact): consulta `telefono` Y
+                // `contactId`, así el candado también aplica en Messenger/Instagram.
+                const lastOrder = await getLatestOrderForContact(contactId);
+                const lastOrderNum = lastOrder && lastOrder.data().consecutiveOrderNumber;
+                const orderNumber = lastOrderNum != null ? `DH${lastOrderNum}` : null;
+                const de = orderNumber ? await getShippingDataForOrder(orderNumber) : null;
+                if (orderNumber && !de) {
+                    console.warn(`[ENVIOS] ${contactId} dijo que llenó el formulario, pero ${orderNumber} NO tiene datos en datos_envio; se le pide de nuevo (no se manda /pagado).`);
+                    msgText = `¡Gracias! 🙌 Solo que tus datos de envío todavía no nos llegan al sistema 😕 A veces el formulario no alcanza a guardarse.\n\n¿Me haces el favor de llenarlo otra vez aquí? 👇 (tu número de pedido ya viene cargado)\n${APP_BASE_URL}/datos-estafeta/${orderNumber}\n\nAsegúrate de tocar el botón de enviar hasta el final ✅ En cuanto me lleguen, preparamos tu envío 📦✨`;
+                    skipShortcutExpansion = true; // el texto ya quedó resuelto: no expandir el atajo
+                }
+            }
+
+            if (shortcutMatch && !skipShortcutExpansion) {
                 const qr = await findQuickReplyByShortcut(shortcutMatch[1]);
                 if (qr) {
                     msgText = qr.message || '';
