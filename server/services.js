@@ -1233,6 +1233,11 @@ const SHIPPING_NOTIFY_PHONE = process.env.ROSARIO_PHONE || '5216181441382';
 // {{1}}=nº de pedido, {{2}}=nombre del cliente, {{3}}=datos de envío (aplanados a una línea).
 const SHIPPING_READY_TEMPLATE = process.env.SHIPPING_READY_TEMPLATE || 'datos_envio_listos';
 
+// Departamento del flujo de anticipo ("Lamparas Corazon anticipo"). Ahí el pedido entra a
+// "Fabricar" con solo el APARTADO cobrado ($300 de $750), así que el Purchase automático le
+// reportaría a Meta una venta completa que todavía no ocurrió. Ver markOrderFabricarForContact.
+const DEPT_ANTICIPO = 'r6VSzBKpxDxygazz1qdr';
+
 // Lee de crm_settings/general cuándo enviar el evento Purchase a Meta: 'registration'
 // (al registrar el pedido) o 'fabricar' (al pasar a estatus "Fabricar", valor por defecto).
 // Movido desde apiRoutes.js para poder reutilizarlo también en la IA de post-venta. Nunca lanza.
@@ -1622,8 +1627,18 @@ async function markOrderFabricarForContact(contactId, contactData, addressText, 
         console.error('[CROWN] Error al marcar compra completada (Fabricar por IA):', crownErr.message);
     }
 
-    // 4) Evento Purchase a Meta (idempotente por metaPurchaseSentAt)
-    await sendPurchaseEventOnFabricar(orderId, { ...orderData, estatus: 'Fabricar' }, oldStatus);
+    // 4) Evento Purchase a Meta (idempotente por metaPurchaseSentAt). EXCEPCIÓN: en el depto de
+    // anticipo NO se manda automáticamente, porque aquí se llega con solo el apartado pagado
+    // ($300 de $750) y reportarle a Meta una compra completa optimizaría la campaña con dinero
+    // que todavía no se cobró. Se lee el departmentId sellado en el pedido, con respaldo en el
+    // contacto para los pedidos viejos registrados antes de que se sellara. Un cambio MANUAL de
+    // estatus desde el CRM sí manda el evento (ese pasa por apiRoutes, no por aquí).
+    const deptPedido = orderData.departmentId || (contactData && contactData.assignedDepartmentId) || null;
+    if (deptPedido === DEPT_ANTICIPO) {
+        console.log(`[META EVENT] Pedido ${orderNumber} es del depto de anticipo: NO se manda Purchase por el anticipo (solo se cobró el apartado).`);
+    } else {
+        await sendPurchaseEventOnFabricar(orderId, { ...orderData, estatus: 'Fabricar' }, oldStatus);
+    }
 
     // 5) Avisar a Rosario para que haga la guía. Se OMITE cuando el pedido pasa a Fabricar por el
     // ANTICIPO de un especial (skipShippingNotify): ahí apenas arranca la fabricación, todavía falta
