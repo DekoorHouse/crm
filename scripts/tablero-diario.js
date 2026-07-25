@@ -38,7 +38,8 @@ const ESTATUS_PAGADO = ['Pagado', 'Enviado', 'Entregado'];
 const ESTATUS_FABRICADO = ['Fabricar', 'Corregir', 'Foto enviada', 'Mns Amenazador', 'Esperando pago', ...ESTATUS_PAGADO];
 
 const DEPT_ANTICIPO = 'r6VSzBKpxDxygazz1qdr';   // "Lamparas Corazon anticipo"
-const MADURACION_DIAS = 8;        // 90% de los que pagan, pagan antes del día 8
+const MADURACION_DIAS = 8;        // flujo normal: 90% de los que pagan, pagan antes del día 8
+const MADURACION_ANTICIPO = 1;    // flujo anticipo: liquidan el mismo día o al siguiente (medido)
 
 const TZ = '-06:00';              // CDMX (sin horario de verano desde 2022)
 const dayKey = d => new Date(d.getTime() - 6 * 3600 * 1000).toISOString().slice(0, 10);
@@ -70,11 +71,19 @@ const pad = (s, n, left = false) => left ? String(s).padStart(n) : String(s).pad
         const estatus = d.estatus || 'Sin estatus';
         pedidos.push({
             contactId: d.contactId,
+            creado,
+            departmentId: String(d.departmentId || ''),   // sello del momento del registro
+            anticipoCobrado: Number(d.anticipoCobrado) || 0,
             dia: dayKey(creado),
             edadDias: (Date.now() - creado.getTime()) / 86400000,
             precio: Number(d.precio) || 0,
             estatus,
-            cobrado: ESTATUS_PAGADO.includes(estatus),
+            // Cobrado = liquidó TODO. `comprobanteValidadoAt` es la señal dura (la pone el
+            // flujo /comprobante al validar el pago y mandar el formulario de envío); el
+            // estatus "Pagado" es el respaldo para los pedidos viejos. Hace falta el primero
+            // porque en el flujo de anticipo el estatus se queda en la etapa de producción
+            // ("Fabricar", "Diseñado por IA") aunque el cliente ya haya liquidado.
+            cobrado: !!d.comprobanteValidadoAt || ESTATUS_PAGADO.includes(estatus),
             fabricado: ESTATUS_FABRICADO.includes(estatus),
             cancelado: estatus === 'Cancelado',
             eventoMeta: !!d.metaPurchaseSentAt,
@@ -82,17 +91,43 @@ const pad = (s, n, left = false) => left ? String(s).padStart(n) : String(s).pad
         if (d.contactId) contactIds.add(d.contactId);
     }
 
-    // ---------- 2. Departamento de cada contacto (los pedidos no lo guardan) --
+    // ---------- 2. ¿Qué pedidos son del flujo de anticipo? -------------------
+    // Regla: cuenta si el pedido se REGISTRÓ estando ya en el depto de anticipo
+    // (o sea, con anticipo cobrado). No basta con que el contacto esté hoy en ese
+    // depto: los contactos se reasignan al reescribir desde otro anuncio, y un
+    // cliente del flujo viejo que ya tenía pedido acaba contaminando la cuenta.
+    // Desde 24-jul-2026 el pedido trae el sello `departmentId`; para los de antes
+    // se cae al historial de anuncios del contacto (el pedido debe ser POSTERIOR
+    // a que el contacto viera por primera vez el anuncio de anticipo).
     const deptDe = new Map();
+    const anticipoDesde = new Map();
     const ids = [...contactIds];
     for (let i = 0; i < ids.length; i += 300) {
         const refs = ids.slice(i, i + 300).map(id => db.collection('contacts_whatsapp').doc(id));
         const docs = await db.getAll(...refs);
         for (const d of docs) {
-            if (d.exists) deptDe.set(d.id, String(d.data().assignedDepartmentId || ''));
+            if (!d.exists) continue;
+            const x = d.data();
+            deptDe.set(d.id, String(x.assignedDepartmentId || ''));
+            const hist = Array.isArray(x.adReferralHistory) ? x.adReferralHistory : [];
+            const ant = hist.find(a => a && /anticipo/i.test(String(a.ad_name || '')));
+            if (ant && ant.firstSeenAt && ant.firstSeenAt.toDate) anticipoDesde.set(d.id, ant.firstSeenAt.toDate());
         }
     }
-    for (const p of pedidos) p.esAnticipo = deptDe.get(p.contactId) === DEPT_ANTICIPO;
+    let legacyDescartados = 0;
+    for (const p of pedidos) {
+        if (p.departmentId) {                       // sellado: la verdad exacta
+            p.esAnticipo = p.departmentId === DEPT_ANTICIPO;
+            continue;
+        }
+        if (deptDe.get(p.contactId) !== DEPT_ANTICIPO) { p.esAnticipo = false; continue; }
+        const desde = anticipoDesde.get(p.contactId);
+        p.esAnticipo = !desde || p.creado >= desde;  // sin sello: ¿el pedido es posterior al flujo?
+        if (!p.esAnticipo) legacyDescartados++;
+    }
+    if (legacyDescartados) {
+        console.log(`\n(${legacyDescartados} pedido(s) del depto descartado(s): se registraron ANTES de que el cliente entrara al flujo de anticipo.)`);
+    }
 
     // ---------- 3. Conversaciones nuevas desde anuncio, por día -------------
     const convDia = {}, convDiaAnt = {};
@@ -192,9 +227,10 @@ const pad = (s, n, left = false) => left ? String(s).padStart(n) : String(s).pad
         pad(totOtros, 7, true));
 
     // ---------- 6. Embudo real y fuga de conversiones a Meta ----------------
-    const maduros = pedidos.filter(p => p.edadDias >= MADURACION_DIAS);
-    const madAnt = maduros.filter(p => p.esAnticipo);
-    const madNor = maduros.filter(p => !p.esAnticipo);
+    // El flujo de anticipo madura mucho más rápido (liquidan en horas, no en días),
+    // así que exigirle los 8 días del flujo normal lo haría ver como 0/0 para siempre.
+    const madAnt = pedidos.filter(p => p.esAnticipo && p.edadDias >= MADURACION_ANTICIPO);
+    const madNor = pedidos.filter(p => !p.esAnticipo && p.edadDias >= MADURACION_DIAS);
 
     const cruz = {};
     for (const p of madNor) {
@@ -218,10 +254,18 @@ const pad = (s, n, left = false) => left ? String(s).padStart(n) : String(s).pad
 
     // ---------- 7. Tasas de pago -------------------------------------------
     const tasa = arr => arr.length ? arr.filter(p => p.cobrado).length / arr.length : null;
-    const tAnt = tasa(madAnt), tNor = tasa(madNor);
-    console.log(`\n=== ¿CUÁNTOS PAGAN? (solo maduros) ===`);
-    console.log(`Flujo ANTICIPO: ${madAnt.filter(p => p.cobrado).length}/${madAnt.length} completaron el resto → ${tAnt == null ? 'SIN MUESTRA' : pct(madAnt.filter(p => p.cobrado).length, madAnt.length)}`);
-    console.log(`Flujo NORMAL:   ${cobradosNor.length}/${madNor.length} pagaron → ${tNor == null ? '—' : pct(cobradosNor.length, madNor.length)}`);
+    const tNor = tasa(madNor);
+    // Para el anticipo se cuentan TODOS (no solo los maduros): con muestra chica es más
+    // informativo ver cuántos liquidaron y qué tan frescos son los que faltan.
+    const todosAnt = pedidos.filter(p => p.esAnticipo);
+    const antLiq = todosAnt.filter(p => p.cobrado);
+    const tAnt = todosAnt.length >= 3 ? antLiq.length / todosAnt.length : null;
+    console.log(`\n=== ¿CUÁNTOS PAGAN? ===`);
+    console.log(`Flujo ANTICIPO: ${antLiq.length}/${todosAnt.length} ya liquidaron los $${PRECIO - ANTICIPO} restantes → ${todosAnt.length ? pct(antLiq.length, todosAnt.length) : '—'}`);
+    for (const p of todosAnt.filter(x => !x.cobrado)) {
+        console.log(`   ⏳ pendiente: registrado hace ${p.edadDias < 1 ? (p.edadDias * 24).toFixed(0) + ' h' : p.edadDias.toFixed(1) + ' días'} (estatus: ${p.estatus})`);
+    }
+    console.log(`Flujo NORMAL:   ${cobradosNor.length}/${madNor.length} pagaron (maduros ≥${MADURACION_DIAS} días) → ${tNor == null ? '—' : pct(cobradosNor.length, madNor.length)}`);
 
     // ---------- 8. Economía unitaria y techo de gasto -----------------------
     const margenAnt = t => t * MARGEN_LIBRE + (1 - t) * (ANTICIPO - COSTO_SIN_ENVIO);
@@ -253,6 +297,11 @@ const pad = (s, n, left = false) => left ? String(s).padStart(n) : String(s).pad
         console.log(netoAnt > netoNor
             ? `✅ El anticipo gana: ${money(netoAnt - netoNor)} más por cada 100 conversaciones (+${((netoAnt / netoNor - 1) * 100).toFixed(0)}%).`
             : `❌ El flujo normal sigue ganando por ${money(netoNor - netoAnt)} por cada 100 conversaciones.`);
+        // La regla de decisión: a qué conversión empata el anticipo al flujo normal.
+        const equilibrio = (tasaNor * mN) / mA;
+        console.log(`\n▶ REGLA DE DECISIÓN: el anticipo empata al flujo normal en ${(equilibrio * 100).toFixed(1)}% de conversación→anticipo.`);
+        console.log(`  Medido ahora: ${(tasaAnt * 100).toFixed(1)}% ${tasaAnt >= equilibrio ? '→ ✅ arriba del empate' : '→ ⚠️ abajo del empate (pero ojo con la madurez del tráfico de hoy)'}`);
+        console.log(`  Vigila ESE número. Si se asienta arriba de ${(equilibrio * 100).toFixed(1)}%, migra todo el tráfico; si abajo, el anticipo cuesta más de lo que adelanta.`);
     }
 
     // ---------- 9. Camino a la meta ----------------------------------------

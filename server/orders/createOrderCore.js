@@ -8,6 +8,12 @@
  */
 const { db, admin, bucket } = require('../config');
 
+// Departamento del flujo de anticipo ("Lamparas Corazon anticipo"). Registrar un
+// pedido ahí implica que el anticipo YA se cobró: su prompt prohíbe emitir
+// /registrar sin haber visto el comprobante.
+const DEPT_ANTICIPO = 'r6VSzBKpxDxygazz1qdr';
+const MONTO_ANTICIPO = 300;
+
 /**
  * Normaliza los productos al formato canónico [{producto, cantidad, precio, datosProducto}].
  * Acepta el array `items` o los campos legacy (producto/precio/datosProducto sueltos).
@@ -245,6 +251,27 @@ async function createOrder({
         }
     } catch (antErr) {
         console.warn('[ANTICIPO_TEST] Herencia de grupo al pedido falló (no fatal):', antErr.message);
+    }
+
+    // Departamento EN EL QUE SE REGISTRÓ el pedido. El departamento vive en el
+    // contacto y se reasigna cada vez que el cliente reescribe desde otro anuncio,
+    // así que leerlo después miente: un cliente del flujo viejo que ya tenía su
+    // pedido puede aparecer días después en el depto de anticipo y contaminar la
+    // métrica (pasó con DH13800). Sellarlo aquí lo deja fijo en el momento correcto.
+    // En el depto de anticipo, registrar = anticipo ya cobrado, así que se sella el monto.
+    try {
+        const cSnap = await contactRef.get();
+        const deptId = cSnap.exists ? String(cSnap.data().assignedDepartmentId || '') : '';
+        if (deptId) {
+            const update = { departmentId: deptId };
+            if (deptId === DEPT_ANTICIPO && !nuevoPedido.anticipoCobrado) {
+                update.anticipoCobrado = MONTO_ANTICIPO;
+                console.log(`[ANTICIPO] Pedido DH${newOrderNumber} registrado en el depto de anticipo: se sella anticipoCobrado=$${MONTO_ANTICIPO}.`);
+            }
+            await newOrderRef.update(update);
+        }
+    } catch (deptErr) {
+        console.warn('[ORDERS] Sellado de departamento al pedido falló (no fatal):', deptErr.message);
     }
 
     // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
