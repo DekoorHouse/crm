@@ -1657,14 +1657,25 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         const orderData = orderDoc.data();
         const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : `(pedido ${orderDoc.id})`;
         if (String(orderData.estatus || '').toLowerCase() === 'corregir') {
+            // Aunque no se repita el aviso, sí se deja el sello de "pidió video" para las métricas.
+            if (isVideo && !orderData.videoRequestedAt) {
+                await orderDoc.ref.update({ videoRequestedAt: admin.firestore.FieldValue.serverTimestamp() })
+                    .catch(e => console.warn('[POSTVENTA] No se pudo sellar videoRequestedAt:', e.message));
+            }
             console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Corregir; no se repite el aviso.`);
             return null;
         }
-        await orderDoc.ref.update({
+        const corregirUpdate = {
             estatus: 'Corregir',
             corregirAt: admin.firestore.FieldValue.serverTimestamp(),
             corregirMotivo: isVideo ? 'video' : 'datos',   // separa "quiere video" de "dato mal" para Pendientes de Diseño
-        });
+        };
+        // Sello PERMANENTE de "este cliente pidió video". corregirMotivo se sobrescribe si después
+        // reporta un dato mal, así que la métrica de "piden video → ¿pagan?" necesita su propio campo.
+        if (isVideo && !orderData.videoRequestedAt) {
+            corregirUpdate.videoRequestedAt = admin.firestore.FieldValue.serverTimestamp();
+        }
+        await orderDoc.ref.update(corregirUpdate);
         console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Corregir (${isVideo ? 'pide video' : 'reporte de error'}) del cliente (${contactId}).`);
         // Refrescar la bandera "Pendiente de Diseño" del contacto (no bloquear si falla).
         try { await require('./design/designPending').recomputeForContact(contactId); } catch (_) {}
@@ -1723,6 +1734,29 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         return orderNumber;
     } catch (e) {
         console.warn('[POSTVENTA] markOrderCorregirForContact falló:', e.message);
+        return null;
+    }
+}
+
+/**
+ * Sella en el pedido el momento en que le mandamos al cliente su pedido TERMINADO (la respuesta
+ * rápida /cuatro: foto + datos de pago) desde el CHAT. El módulo Mockup ya sella lo suyo en
+ * `mockupPaymentSentAt`; este campo cubre el otro camino, el manual.
+ *
+ * Es el punto de arranque del reloj de cobro, así que de él dependen dos métricas del panel
+ * Negocio: "¿en cuántas horas pagan?" y "¿cuántos no responden a la foto?". Idempotente (solo
+ * escribe la primera vez) y fire-and-forget: nunca lanza.
+ */
+async function stampPedidoListoEnviado(contactId) {
+    try {
+        const orderDoc = await getLatestOrderForContact(contactId);
+        if (!orderDoc) return null;
+        const d = orderDoc.data();
+        if (d.pedidoListoEnviadoAt || d.mockupPaymentSentAt) return null; // ya sellado
+        await orderDoc.ref.update({ pedidoListoEnviadoAt: admin.firestore.FieldValue.serverTimestamp() });
+        return orderDoc.id;
+    } catch (e) {
+        console.warn('[METRICAS] No se pudo sellar pedidoListoEnviadoAt de', contactId, e.message);
         return null;
     }
 }
@@ -3712,6 +3746,7 @@ module.exports = {
     notifyGuiaToCustomer,
     markComprobanteValidadoAndSendForm,
     markOrderCorregirForContact,
+    stampPedidoListoEnviado,
     compressVideoToLimit
 };
 

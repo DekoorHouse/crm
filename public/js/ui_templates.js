@@ -1433,8 +1433,14 @@ const AIChatSimulatorViewTemplate = () => `
 const MetricsViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">
-            <h1>Métricas de Mensajes</h1>
+            <h1>Métricas</h1>
+            <span class="text-xs" style="color:var(--color-text-light)"><i class="fas fa-lock mr-1"></i>Sección oculta · Ctrl+Alt+M</span>
         </div>
+
+        <!-- Panel "Negocio": las métricas del negocio (metrics-negocio.js) -->
+        ${typeof BusinessMetricsTemplate === 'function' ? BusinessMetricsTemplate() : ''}
+
+        <h2 class="bm-title" style="margin-bottom:1rem"><i class="fas fa-envelope-open-text"></i> Mensajes y anuncios</h2>
         <div id="metrics-loading" class="text-center p-8">
             <i class="fas fa-spinner fa-spin text-4xl text-gray-400"></i>
             <p class="mt-4 text-gray-600">Cargando datos generales...</p>

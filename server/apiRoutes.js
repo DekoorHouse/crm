@@ -4486,6 +4486,12 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                 contactUpdateData.aiStage = 'postventa';
             }
         }
+        // Sello para las métricas de cobro: arranca el reloj de "¿en cuántas horas paga?".
+        // Fire-and-forget para no retrasar la respuesta del chat.
+        if (isCuatroCommand) {
+            const { stampPedidoListoEnviado } = require('./services');
+            stampPedidoListoEnviado(contactId).catch(() => {});
+        }
         // /corazon: encender la IA del contacto. No dispara respuesta inmediata (el último mensaje es
         // saliente); la IA contestará el próximo mensaje del cliente.
         if (isCorazonCommand) { contactUpdateData.botActive = true; console.log(`[CORAZON] IA activada (whatsapp) para ${contactId}.`); }

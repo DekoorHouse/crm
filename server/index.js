@@ -70,6 +70,8 @@ app.use('/api/reminders', scheduledReminderRouter);
 app.use('/api/repartos-mty', repartosMtyRouter);
 app.use('/api/repartos-dgo', repartosDgoRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
+// Panel "Negocio" de la sección Métricas (conversaciones nuevas, embudo, ventanas de pago…)
+app.use('/api/business-metrics', require('./metrics/businessMetrics').router);
 
 // --- Facebook Login for Business (OAuth para App Review) ---
 app.use('/auth/facebook', require('./facebookAuth'));

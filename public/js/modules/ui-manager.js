@@ -149,6 +149,17 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// --- Atajo SECRETO de Métricas: Ctrl+Alt+M ---------------------------------------------------
+// La sección Métricas ya no aparece en el menú lateral (es información sensible del negocio).
+// Solo se abre con esta combinación. Se usa e.code ('KeyM') en lugar de e.key porque con Alt
+// presionado algunos teclados/navegadores reportan un carácter distinto en e.key ('µ', 'Dead'…).
+document.addEventListener('keydown', (e) => {
+    if (!e.ctrlKey || !e.altKey || e.shiftKey) return;
+    if (e.code !== 'KeyM' && String(e.key).toLowerCase() !== 'm') return;
+    e.preventDefault();
+    if (typeof navigateTo === 'function') navigateTo('metricas');
+});
+
 // Sección "Envíos": tabla de pedidos con comprobante validado. Cada dato de envío va en su propia
 // columna y se copia al hacer clic en la celda. Lee GET /api/envios.
 // Estatus de pedido (mismos valores que en Pedidos). Cambiar a "Fabricar" dispara el evento Meta.
@@ -4060,6 +4071,9 @@ window.handleDeleteKnowledge = handleDeleteKnowledge;
 // Renderiza la vista de métricas, incluyendo gráficas y la nueva sección de Ad IDs
 async function renderMetricsView() {
     if (state.activeView !== 'metricas') return;
+
+    // Panel "Negocio" (metrics-negocio.js): carga sus propios datos, no bloquea lo de abajo.
+    if (typeof initBusinessMetrics === 'function') initBusinessMetrics();
 
     const loadingEl = document.getElementById('metrics-loading');
     const contentEl = document.getElementById('metrics-content');
