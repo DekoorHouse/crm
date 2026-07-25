@@ -1234,7 +1234,7 @@ const SHIPPING_NOTIFY_PHONE = process.env.ROSARIO_PHONE || '5216181441382';
 const SHIPPING_READY_TEMPLATE = process.env.SHIPPING_READY_TEMPLATE || 'datos_envio_listos';
 
 // Departamento del flujo de anticipo ("Lamparas Corazon anticipo"). Ahí el pedido entra a
-// "Fabricar" con solo el APARTADO cobrado ($300 de $750), así que el Purchase automático le
+// "Fabricar" con solo el APARTADO cobrado ($100 de $750), así que el Purchase automático le
 // reportaría a Meta una venta completa que todavía no ocurrió. Ver markOrderFabricarForContact.
 const DEPT_ANTICIPO = 'r6VSzBKpxDxygazz1qdr';
 
@@ -1629,7 +1629,7 @@ async function markOrderFabricarForContact(contactId, contactData, addressText, 
 
     // 4) Evento Purchase a Meta (idempotente por metaPurchaseSentAt). EXCEPCIÓN: en el depto de
     // anticipo NO se manda automáticamente, porque aquí se llega con solo el apartado pagado
-    // ($300 de $750) y reportarle a Meta una compra completa optimizaría la campaña con dinero
+    // ($100 de $750) y reportarle a Meta una compra completa optimizaría la campaña con dinero
     // que todavía no se cobró. Se lee el departmentId sellado en el pedido, con respaldo en el
     // contacto para los pedidos viejos registrados antes de que se sellara. Un cambio MANUAL de
     // estatus desde el CRM sí manda el evento (ese pasa por apiRoutes, no por aquí).

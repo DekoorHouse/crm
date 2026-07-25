@@ -12,7 +12,10 @@ const { db, admin, bucket } = require('../config');
 // pedido ahí implica que el anticipo YA se cobró: su prompt prohíbe emitir
 // /registrar sin haber visto el comprobante.
 const DEPT_ANTICIPO = 'r6VSzBKpxDxygazz1qdr';
-const MONTO_ANTICIPO = 300;
+// Lo que se cobra para apartar en ese departamento. Debe ir igual que el prompt del depto
+// (hoy: $100 para apartar + $650 al ver la foto): se sella en anticipoCobrado y de ahí sale
+// la caja adelantada del tablero, así que si no coincide la métrica miente.
+const MONTO_ANTICIPO = 100;
 
 /**
  * Normaliza los productos al formato canónico [{producto, cantidad, precio, datosProducto}].
