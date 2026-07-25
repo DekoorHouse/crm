@@ -20,9 +20,18 @@
 const { db, admin } = require('../config');
 const { groupForPhone, orderEligible } = require('./pilotoPreview');
 
-const DEFAULT_DEPTS = ['39mmdwkqkp28M2dqwRzT'];   // Lámparas corazón
+const DEFAULT_DEPTS = ['39mmdwkqkp28M2dqwRzT'];       // Lámparas corazón
+const DEPT_ANTICIPO = 'r6VSzBKpxDxygazz1qdr';          // "Lamparas Corazon anticipo"
 const CONTROL_PRICE = 750;
 const VALID_PRICES = [850, 950];
+
+// En el flujo de anticipo el APARTADO no se mueve con el precio: siguen siendo $300.
+// Lo que cambia es el RESTANTE ($950 − $300 = $650). Si no se ajusta, Andrea cotiza
+// "$950, apartas con $300 y restan $450" — cuentas que no cuadran y el cliente lo nota.
+const ANTICIPO = 300;
+const CONTROL_REMAINDER = 450;                          // $750 − $300
+const remainderFor = price => (Number(price) || CONTROL_PRICE) - ANTICIPO;
+const isAnticipoDept = departmentId => String(departmentId || '') === DEPT_ANTICIPO;
 
 let cache = { at: 0, cfg: null };
 
@@ -80,9 +89,21 @@ function priceForContact(contactData) {
 // Reemplaza el precio de control ($750) por el variante en un texto (RI, quick reply
 // expandida, o mensaje libre de Andrea). Solo toca "$750" (con signo) para no pisar
 // códigos postales, cantidades, etc. Idempotente.
-function applyPrice(text, price) {
+function applyPrice(text, price, { anticipo = false } = {}) {
     if (!text || !price || price === CONTROL_PRICE) return text;
-    return String(text).replace(/\$\s?750\b/g, '$' + price);
+    let out = String(text).replace(/\$\s?750\b/g, '$' + price);
+    // Flujo de anticipo: el apartado se queda en $300 y el restante sube con el precio.
+    if (anticipo) out = out.replace(/\$\s?450\b/g, '$' + remainderFor(price));
+    return out;
+}
+
+// Nota dinámica para Andrea. La aritmética vive aquí (un solo lugar) para que la nota,
+// el candado de texto y el total del pedido no puedan desalinearse.
+function noteFor(price, { anticipo = false } = {}) {
+    if (!price) return '';
+    const base = `\n**PRECIO PARA ESTE CLIENTE: $${price} por lámpara (NO $${CONTROL_PRICE}).** Usa *$${price}* en TODO: cuando cotices, en el resumen del pedido y en el total. El envío sigue GRATIS. Si el cliente pregunta el precio, es $${price}.`;
+    if (!anticipo) return base;
+    return base + ` El APARTADO sigue siendo de *$${ANTICIPO}* (no cambia), así que el RESTANTE que paga al ver la foto es de *$${remainderFor(price)}*, NO $${CONTROL_REMAINDER}. Repite siempre esta cuenta: $${price} = $${ANTICIPO} de apartado + $${remainderFor(price)} restantes.`;
 }
 
 module.exports = {
@@ -90,7 +111,13 @@ module.exports = {
     maybeAssignPriceGroup,
     priceForContact,
     applyPrice,
+    noteFor,
     orderEligible,
+    isAnticipoDept,
+    remainderFor,
     CONTROL_PRICE,
     VALID_PRICES,
+    DEFAULT_DEPTS,
+    DEPT_ANTICIPO,
+    ANTICIPO,
 };

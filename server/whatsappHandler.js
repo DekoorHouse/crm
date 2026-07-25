@@ -1068,7 +1068,10 @@ router.post('/', async (req, res) => {
                             if ((await priceTest.getPriceTestConfig()).enabled) {
                                 const precio = priceTest.priceForContact(contactDoc.exists ? contactDoc.data() : {})
                                     || (await priceTest.getPriceTestConfig()).price;
-                                riText = priceTest.applyPrice(riText, precio);
+                                // En el depto de anticipo la RI trae los tres montos ($750 total,
+                                // $300 apartado, $450 restante): hay que ajustar también el restante.
+                                const esAnticipo = priceTest.isAnticipoDept(updatedContactData.assignedDepartmentId);
+                                riText = priceTest.applyPrice(riText, precio, { anticipo: esAnticipo });
                             }
                         } catch (_) {}
                     }

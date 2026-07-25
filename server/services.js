@@ -2901,13 +2901,15 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // + candado determinista abajo (reemplaza cualquier $750 que se le escape).
         let priceTestNote = '';
         let priceTestPrice = null;
+        let priceTestAnticipo = false;   // ¿el cliente está en el flujo de apartado con $300?
         if (contactData.priceTest === 'A') {
             try {
                 const priceTest = require('./orders/priceTest');
                 if ((await priceTest.getPriceTestConfig()).enabled) {
                     priceTestPrice = priceTest.priceForContact(contactData);
                     if (priceTestPrice) {
-                        priceTestNote = `\n**PRECIO PARA ESTE CLIENTE: $${priceTestPrice} por lámpara (NO $750).** Usa *$${priceTestPrice}* en TODO: cuando cotices, en el resumen del pedido y en el total. El envío sigue GRATIS. Si el cliente pregunta el precio, es $${priceTestPrice}.`;
+                        priceTestAnticipo = priceTest.isAnticipoDept(contactData.assignedDepartmentId);
+                        priceTestNote = priceTest.noteFor(priceTestPrice, { anticipo: priceTestAnticipo });
                     }
                 }
             } catch (e) { console.warn('[PRICE_TEST] Nota de precio no disponible:', e.message); }
@@ -3178,8 +3180,9 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // expandidos los atajos, ej. /costo), así que cualquier "$750" que se escape —de
             // Andrea o de una respuesta rápida— se cambia al precio variante antes de enviarlo.
             // Garantiza que el cliente SIEMPRE vea el precio que se le va a cobrar. No-op si apagado.
+            // En el flujo de anticipo también corrige el RESTANTE ($450 → precio − $300).
             if (priceTestPrice) {
-                try { msgText = require('./orders/priceTest').applyPrice(msgText, priceTestPrice); } catch (_) {}
+                try { msgText = require('./orders/priceTest').applyPrice(msgText, priceTestPrice, { anticipo: priceTestAnticipo }); } catch (_) {}
             }
             if (!msgText && !qrFileUrl) continue; // nada que enviar
 

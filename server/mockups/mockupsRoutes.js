@@ -560,18 +560,28 @@ router.post('/ri-test-config', asyncHandler(async (req, res) => {
 router.get('/price-test-config', asyncHandler(async (req, res) => {
     const doc = await db.collection('crm_settings').doc('price_test').get();
     const d = doc.exists ? doc.data() : {};
-    res.json({ success: true, enabled: d.enabled === true, price: Number(d.price) || 850 });
+    res.json({
+        success: true,
+        enabled: d.enabled === true,
+        price: Number(d.price) || 850,
+        scope: d.scope === 'anticipo' ? 'anticipo' : 'corazones',
+    });
 }));
 
 router.post('/price-test-config', asyncHandler(async (req, res) => {
     const enabled = req.body.enabled === true;
     const price = [850, 950].includes(Number(req.body.price)) ? Number(req.body.price) : 850;
+    // scope: 'anticipo' limita la prueba al depto "Lamparas Corazon anticipo" (ahí el
+    // apartado sigue en $300 y sube el restante); cualquier otro valor = Lámparas corazón.
+    const priceTest = require('../orders/priceTest');
+    const scope = req.body.scope === 'anticipo' ? 'anticipo' : 'corazones';
+    const departmentIds = scope === 'anticipo' ? [priceTest.DEPT_ANTICIPO] : priceTest.DEFAULT_DEPTS;
     const stamp = admin.firestore.FieldValue.serverTimestamp();
-    const payload = { enabled, price, lastToggleAt: stamp };
+    const payload = { enabled, price, scope, departmentIds, lastToggleAt: stamp };
     payload[enabled ? 'enabledAt' : 'disabledAt'] = stamp;
     await db.collection('crm_settings').doc('price_test').set(payload, { merge: true });
-    console.log(`[PRICE_TEST] Switch ${enabled ? `ENCENDIDO 💲$${price}` : 'APAGADO'} desde la sección Mockup.`);
-    res.json({ success: true, enabled, price });
+    console.log(`[PRICE_TEST] Switch ${enabled ? `ENCENDIDO 💲$${price} (${scope})` : 'APAGADO'} desde la sección Mockup.`);
+    res.json({ success: true, enabled, price, scope });
 }));
 
 // --- Prueba de ANTICIPO ($300 para registrar): switch desde la sección Mockup ---

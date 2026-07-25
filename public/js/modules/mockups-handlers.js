@@ -269,35 +269,49 @@ async function mkToggleRiTest(checked) {
     }
 }
 
-// Toggle de la prueba de precio ($850/$950). Los dos toggles controlan un solo experimento
-// (un precio a la vez): encender uno apaga el otro.
+// Toggles de la prueba de precio. Los TRES controlan un solo experimento (un precio y un
+// departamento a la vez): encender uno apaga los otros dos.
+//   $850 / $950        → Lámparas corazón (scope 'corazones')
+//   $950 anticipo      → SOLO el depto de anticipos (scope 'anticipo'): apartado $300, resto $650
+const MK_PRICE_TOGGLES = [
+    { id: 'mk-price850-toggle', price: 850, scope: 'corazones' },
+    { id: 'mk-price950-toggle', price: 950, scope: 'corazones' },
+    { id: 'mk-price950ant-toggle', price: 950, scope: 'anticipo' },
+];
+
 async function mkLoadPriceTestConfig() {
     try {
         const d = await mkFetchJson('/api/mockups/price-test-config');
         const on = d.enabled === true;
-        const el850 = document.getElementById('mk-price850-toggle');
-        const el950 = document.getElementById('mk-price950-toggle');
-        if (el850) el850.checked = on && Number(d.price) === 850;
-        if (el950) el950.checked = on && Number(d.price) === 950;
+        const scope = d.scope === 'anticipo' ? 'anticipo' : 'corazones';
+        for (const t of MK_PRICE_TOGGLES) {
+            const el = document.getElementById(t.id);
+            if (el) el.checked = on && Number(d.price) === t.price && scope === t.scope;
+        }
     } catch (_) { /* noop */ }
 }
 
-async function mkTogglePrice(price, checked) {
-    const otroId = price === 850 ? 'mk-price950-toggle' : 'mk-price850-toggle';
-    const selfId = price === 850 ? 'mk-price850-toggle' : 'mk-price950-toggle';
-    const revertir = () => { const el = document.getElementById(selfId); if (el) el.checked = !checked; };
+async function mkTogglePrice(price, checked, scope = 'corazones') {
+    const self = MK_PRICE_TOGGLES.find(t => t.price === price && t.scope === scope) || MK_PRICE_TOGGLES[0];
+    const revertir = () => { const el = document.getElementById(self.id); if (el) el.checked = !checked; };
+    const esAnticipo = scope === 'anticipo';
     if (checked) {
         const otro = await mkOtherExperimentOn('price');
         if (otro) { mkToast(`Apaga primero: ${otro}. Solo un experimento a la vez.`, 'error'); revertir(); return; }
-        if (!confirm(`¿Encender la prueba de precio $${price}?\n\nOJO: es un test de precio REAL. Las conversaciones NUEVAS de corazones se repartirán por teléfono: grupo A (par) verá y PAGARÁ $${price} en todo el flujo (RI, cotización, resumen, total y cobro); el resto queda en $750. Un solo precio a la vez.`)) {
-            revertir();
-            return;
+        const aviso = esAnticipo
+            ? `¿Encender la prueba de precio $${price} SOLO en el departamento de anticipos?\n\nOJO: es un test de precio REAL. Las conversaciones NUEVAS de ese depto se repartirán por teléfono: grupo A (par) verá y PAGARÁ $${price}; el resto queda en $750.\n\nEl apartado NO cambia (sigue en $300) y el restante sube a $${price - 300}. Las lámparas de corazones normales no se tocan.`
+            : `¿Encender la prueba de precio $${price}?\n\nOJO: es un test de precio REAL. Las conversaciones NUEVAS de corazones se repartirán por teléfono: grupo A (par) verá y PAGARÁ $${price} en todo el flujo (RI, cotización, resumen, total y cobro); el resto queda en $750. Un solo precio a la vez.`;
+        if (!confirm(aviso)) { revertir(); return; }
+        // radio: apaga los otros toggles de precio
+        for (const t of MK_PRICE_TOGGLES) {
+            if (t.id === self.id) continue;
+            const el = document.getElementById(t.id); if (el) el.checked = false;
         }
-        const elOtro = document.getElementById(otroId); if (elOtro) elOtro.checked = false;   // radio: apaga el otro precio
     }
     try {
-        await mkFetchJson('/api/mockups/price-test-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked, price }) });
-        mkToast(checked ? `Prueba de precio $${price} ENCENDIDA 💲 (aplica en ~1 min a conversaciones nuevas)` : 'Prueba de precio apagada — todos vuelven a $750', 'success');
+        await mkFetchJson('/api/mockups/price-test-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked, price, scope }) });
+        const donde = esAnticipo ? ' en el depto de anticipos (apartado $300 + resto $' + (price - 300) + ')' : '';
+        mkToast(checked ? `Prueba de precio $${price} ENCENDIDA 💲${donde} (aplica en ~1 min a conversaciones nuevas)` : 'Prueba de precio apagada — todos vuelven a $750', 'success');
     } catch (e) {
         mkToast('No se pudo cambiar: ' + e.message, 'error');
         revertir();

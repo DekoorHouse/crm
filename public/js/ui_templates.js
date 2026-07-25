@@ -974,6 +974,10 @@ const MockupsViewTemplate = () => `
                     <span style="color:#16a34a;font-weight:600;">💲 $950</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-price950-toggle" onchange="mkTogglePrice(950, this.checked)"><span class="slider"></span></label>
                 </span>
+                <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Prueba de PRECIO $950 SOLO en el departamento de anticipos: las conversaciones NUEVAS de ese depto se reparten por teléfono (par = grupo A paga $950; non = $750 control). El apartado sigue en $300 y el restante sube a $650. Un solo experimento a la vez.">
+                    <span style="color:#16a34a;font-weight:600;">💲 $950 anticipo</span>
+                    <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-price950ant-toggle" onchange="mkTogglePrice(950, this.checked, 'anticipo')"><span class="slider"></span></label>
+                </span>
                 <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Prueba de ANTICIPO: las conversaciones NUEVAS de corazones se reparten por teléfono (par = grupo A: su pedido se registra SOLO con anticipo de $300 pagado; el resto al ver la foto). Su RI también cambia a la versión anticipo. Un solo experimento a la vez.">
                     <span style="color:#d97706;font-weight:600;">🪙 Anticipo $300</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-anticipo-toggle" onchange="mkToggleAnticipo(this.checked)"><span class="slider"></span></label>
