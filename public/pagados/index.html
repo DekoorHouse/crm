@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pedidos y evento Purchase - Dekoor</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/pagados/style.css?v=1">
+</head>
+<body>
+
+<div id="loading-overlay">
+    <div class="loading-box">
+        <img src="/favicon.png" class="loading-logo" alt="Cargando...">
+    </div>
+</div>
+
+<div class="main-container">
+    <div class="content-box">
+        <div class="page-header">
+            <h1><i class="fas fa-receipt"></i> Pedidos y evento Purchase</h1>
+            <div class="header-actions">
+                <button id="btnExportCSV" class="btn btn-secondary" title="Exportar CSV"><i class="fas fa-file-csv"></i> Exportar</button>
+                <button id="btnRecargar" class="btn btn-secondary" title="Recargar"><i class="fas fa-sync-alt"></i></button>
+            </div>
+        </div>
+        <p class="page-subtitle">
+            Los pedidos se listan por su fecha de registro (hora de CDMX). El evento Purchase se marca con
+            <code>metaPurchaseSentAt</code>: se dispara al entrar al estatus "Fabricar", así que un pedido cobrado
+            puede aparecer sin evento.
+        </p>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="label">Pedidos</div>
+                <div class="value" id="statTotal">0</div>
+                <div class="hint" id="statRango">&nbsp;</div>
+            </div>
+            <div class="stat-card ok">
+                <div class="label"><i class="fas fa-check"></i> Con evento</div>
+                <div class="value" id="statConEvento">0</div>
+                <div class="hint" id="statConEventoPct">&nbsp;</div>
+            </div>
+            <div class="stat-card warn">
+                <div class="label"><i class="fas fa-triangle-exclamation"></i> Sin evento</div>
+                <div class="value" id="statSinEvento">0</div>
+                <div class="hint" id="statSinEventoPct">&nbsp;</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Monto a pagar (suma)</div>
+                <div class="value" id="statMonto">$0</div>
+                <div class="hint">de los pedidos mostrados</div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label>Atajos de fecha</label>
+                <div class="chips" id="chipsFecha">
+                    <button data-preset="hoy">Hoy</button>
+                    <button data-preset="ayer">Ayer</button>
+                    <button data-preset="7">7 días</button>
+                    <button data-preset="30" class="active">30 días</button>
+                    <button data-preset="90">90 días</button>
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <label>Rango de fechas</label>
+                <div class="filter-row">
+                    <input type="date" id="fDesde" aria-label="Desde">
+                    <span>→</span>
+                    <input type="date" id="fHasta" aria-label="Hasta">
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <label>Evento a Meta</label>
+                <div class="segmented" id="segEvento">
+                    <button data-evento="todos" class="active">Todos</button>
+                    <button data-evento="si">Ya mandó</button>
+                    <button data-evento="no">No mandó</button>
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <label for="fEstatus">Estatus</label>
+                <select id="fEstatus">
+                    <option value="">Todos</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="fBusqueda">Buscar pedido</label>
+                <input type="search" id="fBusqueda" placeholder="DH13950 o producto">
+            </div>
+        </div>
+
+        <div class="notice" id="noticeTruncado">
+            <i class="fas fa-triangle-exclamation"></i>
+            <span id="noticeTruncadoTexto"></span>
+        </div>
+
+        <div class="table-wrapper">
+            <table class="table" id="tablaPedidos">
+                <thead>
+                    <tr>
+                        <th data-sort="consecutivo">No. Pedido <span class="arrow">↕</span></th>
+                        <th data-sort="precio">Monto a pagar <span class="arrow">↕</span></th>
+                        <th data-sort="producto">Producto <span class="arrow">↕</span></th>
+                        <th data-sort="estatus">Estatus <span class="arrow">↕</span></th>
+                        <th data-sort="registradoAt">Registrado <span class="arrow">↕</span></th>
+                        <th data-sort="evento">Evento Meta <span class="arrow">↕</span></th>
+                        <th data-sort="metaPurchaseSentAt">Fecha del evento <span class="arrow">↕</span></th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTabla">
+                    <tr><td colspan="7" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando datos...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="/js/auth-guard.js"></script>
+<script src="/env-config.js"></script>
+<script type="module" src="/pagados/script.js?v=1"></script>
+
+</body>
+</html>

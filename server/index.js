@@ -10,6 +10,7 @@ const mockupsRouter = require('./mockups/mockupsRoutes');
 const mercadopagoRouter = require('./mercadopago/mercadopagoRoutes');
 const transferenciasRouter = require('./transferencias/transferenciasRoutes');
 const carritosRouter = require('./carritos/carritosRoutes');
+const pagadosRouter = require('./pagados/pagadosRoutes');
 const leadsRouter = require('./leads/leadReactivationRoutes');
 const repartosMtyRouter = require('./repartos/repartosRoutes');
 const repartosDgoRouter = require('./repartos/dgoRoutes');
@@ -64,6 +65,7 @@ app.use('/api/mockups', mockupsRouter);
 app.use('/api/mercadopago', mercadopagoRouter);
 app.use('/api/pagos/transferencia', transferenciasRouter);
 app.use('/api/carritos-abandonados', carritosRouter);
+app.use('/api/pagados', pagadosRouter);
 app.use('/api/leads', leadsRouter);
 app.use('/api/order-followup', orderFollowupRouter);
 app.use('/api/reminders', scheduledReminderRouter);
@@ -386,6 +388,10 @@ app.get('/laser', (req, res) => {
 
 app.get('/envios', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'envios', 'index.html'));
+});
+
+app.get('/pagados', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'pagados', 'index.html'));
 });
 
 app.get('/referencias', (req, res) => {

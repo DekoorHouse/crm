@@ -16,6 +16,7 @@ Disallow: /laser/
 Disallow: /meta/
 Disallow: /meta-config/
 Disallow: /mockups/
+Disallow: /pagados/
 Disallow: /ads/
 Disallow: /autopost/
 Disallow: /ps/
