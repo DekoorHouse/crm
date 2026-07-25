@@ -727,15 +727,32 @@ async function mkSend(orderId, blockId) {
         const ctx = await mkFetchJson('/api/mockups/send-context?telefono=' + encodeURIComponent(telefono));
 
         if (!ctx.windowOpen) {
-            // Conversación cerrada (+24h): solo se puede plantilla. Avisar una vez por pedido.
+            // Conversación cerrada (+24h): WhatsApp solo permite plantilla. Se manda la plantilla y los
+            // mensajes del pedido quedan EN COLA (status:'queued'): en cuanto el cliente responda, el
+            // webhook los envía SOLO (sendQueuedMessages), sin tener que volver aquí a darle Enviar.
             if (!mkState.noticeSent[orderId]) {
                 setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Enviando aviso…', true);
                 await mkSendChat(telefono, { template: MK_CLOSED_TEMPLATE });
                 mkState.noticeSent[orderId] = true;
-                await mkAfterSend(orderId, telefono, false);   // IA encendida; estatus sin cambiar
             }
-            mkToast('Conversación cerrada: se avisó al cliente con la plantilla. Cuando responda, dale Enviar y va la foto.', 'success');
-            setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar foto (cuando responda)', false);
+            // MISMO orden y candados que con la ventana abierta: primero el pago (una sola vez por
+            // pedido, candado atómico en el servidor) y luego la foto.
+            let claimed = false;
+            try { const r = await mkFetchJson('/api/mockups/claim-payment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) }); claimed = !!(r && r.claimed); } catch (_) {}
+            if (claimed) {
+                if (ctx.cuatro && (ctx.cuatro.text || ctx.cuatro.fileUrl)) await mkQueueChat(telefono, mkQrBody(ctx.cuatro));
+                if (ctx.bbb && (ctx.bbb.text || ctx.bbb.fileUrl)) await mkQueueChat(telefono, mkQrBody(ctx.bbb));
+                mkState.paymentSent[orderId] = true;
+            }
+            setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Dejando en cola…', true);
+            const waQ = await mkFetchJson('/api/mockups/wa-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: imageUrl }) });
+            await mkQueueChat(telefono, { fileUrl: waQ.jpgUrl, fileType: 'image/jpeg' });
+
+            // Se marca como enviado (IA post-venta + estatus): el pedido YA quedó despachado, así no
+            // vuelve a salir en la fila de mockups ni se encola dos veces la misma foto.
+            await mkAfterSend(orderId, telefono, true);
+            mkToast('Conversación cerrada: se mandó la plantilla y su pedido quedó EN COLA. Cuando responda, la foto se le envía sola ✅', 'success');
+            setBtn('<i class="fas fa-clock mr-2"></i>En cola', true);
             return;
         }
 
@@ -776,6 +793,16 @@ function mkSendChat(telefono, body) {
 }
 
 // Body para el endpoint del chat a partir de una respuesta rápida (texto y/o imagen).
+// Igual que mkSendChat pero DEJANDO EL MENSAJE EN COLA (ventana de 24h cerrada): se guarda con
+// status:'queued' y el webhook lo envía en cuanto el cliente responda. Caduca a los 7 días.
+function mkQueueChat(telefono, body) {
+    return mkFetchJson('/api/contacts/' + encodeURIComponent(telefono) + '/queue-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+}
+
 function mkQrBody(qr) {
     const body = {};
     if (qr.text) body.text = qr.text;
