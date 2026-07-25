@@ -384,7 +384,13 @@ router.post('/engrave-submit', asyncHandler(async (req, res) => {
         return res.status(400).json({ success: false, error: 'shapeImageUrl debe ser una URL pública.' });
     }
     const aspectRatio = String(req.body.aspectRatio || '1:1');
-    const prompt = buildEngravePrompt(!!shapeImageUrl, req.body.extraPrompt);
+    // promptOverride: reemplaza POR COMPLETO el prompt de grabado. Para transformaciones distintas al
+    // halftone raster — p.ej. convertir el MOCKUP de una lámpara a blanco y negro para PowerClip
+    // (modo "nube"/infantil): todo lo iluminado a negro, fondo blanco, sin el círculo de corte. Si no
+    // viene, se usa el prompt de grabado raster de siempre (comportamiento por defecto intacto).
+    const promptOverride = (typeof req.body.promptOverride === 'string' && req.body.promptOverride.trim())
+        ? req.body.promptOverride.trim() : null;
+    const prompt = promptOverride || buildEngravePrompt(!!shapeImageUrl, req.body.extraPrompt);
     const urls = shapeImageUrl ? [imageUrl, shapeImageUrl] : [imageUrl];
 
     const refs = [];
