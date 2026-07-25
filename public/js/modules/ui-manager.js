@@ -494,7 +494,7 @@ window.designWithIA = designWithIA;
 
 // Confirma el diseño staged -> el worker lo sube a Drive (producción) en su próxima corrida.
 async function confirmIAUpload(orderId, el) {
-    if (!confirm('¿Subir el corte a Drive? Esto lo manda a producción (tu PC lo sube en ≤15 min).')) return;
+    if (!await showConfirmModal('¿Subir el corte a Drive? Esto lo manda a producción (tu PC lo sube en ≤15 min).', { icon: 'fa-cloud-arrow-up', confirmText: 'Subir a Drive' })) return;
     if (el) el.disabled = true;
     try {
         const res = await fetch(`${API_BASE_URL}/api/design-pending/${orderId}/ia-confirm`, { method: 'POST' });
@@ -1030,7 +1030,7 @@ async function designReviewSaveEdit(orderId, btn) {
 }
 window.designReviewSaveEdit = designReviewSaveEdit;
 async function designReviewConfirm(orderId, btn) {
-    if (!confirm('¿Subir este corte a Drive? Lo manda a producción (tu PC lo sube en ≤15 min).')) return;
+    if (!await showConfirmModal('¿Subir este corte a Drive? Lo manda a producción (tu PC lo sube en ≤15 min).', { icon: 'fa-cloud-arrow-up', confirmText: 'Subir a Drive' })) return;
     try {
         await _designReviewPost(orderId, 'ia-confirm', null, btn);
         const o = (window._designPendingData || []).find(x => x.id === orderId);
@@ -1039,7 +1039,7 @@ async function designReviewConfirm(orderId, btn) {
 }
 window.designReviewConfirm = designReviewConfirm;
 async function designReviewDiscard(orderId, btn) {
-    if (!confirm('¿Descartar este diseño de corte? No se sube nada.')) return;
+    if (!await showConfirmModal('¿Descartar este diseño de corte? No se sube nada.', { icon: 'warning', confirmText: 'Descartar', danger: true })) return;
     try { await _designReviewPost(orderId, 'ia-reject', null, btn); _designReviewApply(orderId, null); }
     catch (e) { alert('No se pudo descartar: ' + (e.message || e)); }
 }

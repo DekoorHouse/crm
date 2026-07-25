@@ -35,10 +35,19 @@ function showConfirmModal(message, { icon = 'help', confirmText = 'Aceptar', can
             </div>`;
         overlay.appendChild(card);
         document.body.appendChild(overlay);
-        function close(val) { overlay.remove(); resolve(val); }
-        card.querySelector('#_cm_ok').addEventListener('click', () => close(true));
+        const okBtn = card.querySelector('#_cm_ok');
+        // Teclado: Enter = Aceptar (el botón OK queda enfocado), Escape = Cancelar. Así un solo
+        // Enter confirma sin tener que hacer clic (agiliza acciones repetitivas como "Subir a Drive").
+        const onKey = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); close(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); close(false); }
+        };
+        function close(val) { document.removeEventListener('keydown', onKey); overlay.remove(); resolve(val); }
+        okBtn.addEventListener('click', () => close(true));
         card.querySelector('#_cm_cancel').addEventListener('click', () => close(false));
         overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+        document.addEventListener('keydown', onKey);
+        okBtn.focus();   // Aceptar enfocado por defecto
     });
 }
 

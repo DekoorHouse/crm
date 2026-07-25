@@ -33,7 +33,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
 
     <!-- Estilos Personalizados -->
-    <link rel="stylesheet" href="style.css?v=46">
+    <link rel="stylesheet" href="style.css?v=47">
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest-crm.json">
@@ -159,10 +159,8 @@
                         <i class="fas fa-tags"></i>
                         <span class="sidebar-text">Etiquetas</span>
                     </a>
-                    <a onclick="navigateTo('metricas')" data-view="metricas" class="nav-item">
-                        <i class="fas fa-chart-line"></i>
-                        <span class="sidebar-text">Métricas</span>
-                    </a>
+                    <!-- Métricas: sección OCULTA a propósito. Se abre con el atajo secreto
+                         Ctrl+Alt+M (ver el listener en js/modules/ui-manager.js). -->
                     <a onclick="navigateTo('ajustes')" data-view="ajustes" class="nav-item">
                         <i class="fas fa-cog"></i>
                         <span class="sidebar-text">Ajustes Generales</span>
@@ -571,14 +569,15 @@
     <script src="js/modules/firebase-init.js"></script>
     <script src="js/modules/state.js?v=14"></script>
     <script src="js/modules/utils.js?v=2"></script>
-    <script src="js/ui_templates.js?v=78"></script>
+    <script src="js/ui_templates.js?v=79"></script>
     <script src="js/modules/api-service.js?v=16"></script>
     <script src="js/modules/difusion-handlers.js"></script>
-    <script src="js/modules/ui-manager.js?v=83"></script>
+    <script src="js/modules/ui-manager.js?v=85"></script>
+    <script src="js/modules/metrics-negocio.js?v=1"></script>
     <script src="js/modules/mockups-handlers.js?v=66"></script>
     <script src="js/modules/virtual-scroll.js?v=2"></script>
     <script src="js/modules/chat-handlers.js?v=37"></script>
-    <script src="js/modules/feature-handlers.js?v=20"></script>
+    <script src="js/modules/feature-handlers.js?v=21"></script>
     <script src="js/modules/main.js?v=6"></script>
     <script src="js/modules/back-gesture.js?v=2"></script>
     <script src="js/modules/auth.js?v=5"></script>
