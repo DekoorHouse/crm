@@ -2,8 +2,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const API_BASE_URL = window.API_BASE_URL || '';
 
     const cuerpoTabla = document.getElementById('cuerpoTabla');
-    const fDesde = document.getElementById('fDesde');
-    const fHasta = document.getElementById('fHasta');
     const fEstatus = document.getElementById('fEstatus');
     const fBusqueda = document.getElementById('fBusqueda');
     const chipsFecha = document.getElementById('chipsFecha');
@@ -15,8 +13,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // no en UTC, para que un pedido de la noche no se vaya al día siguiente.
     const dayKey = d => new Date(d.getTime() - 6 * 3600 * 1000).toISOString().slice(0, 10);
     const HOY = dayKey(new Date());
-    const restaDias = (key, n) => dayKey(new Date(new Date(`${key}T00:00:00.000-06:00`).getTime() - n * 86400000));
 
+    // De aquí para abajo las fechas se manejan como strings YYYY-MM-DD y la aritmética
+    // se hace en UTC: son días de calendario, así que el huso no debe entrar a jugar.
+    const parseKey = k => { const [y, m, d] = k.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+    const keyOf = d => d.toISOString().slice(0, 10);
+    const restaDias = (k, n) => keyOf(new Date(parseKey(k).getTime() - n * 86400000));
+    const primerDiaMes = k => { const d = parseKey(k); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)); };
+    const sumaMeses = (f, n) => new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() + n, 1));
+    const fmtDia = k => parseKey(k).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+    let rango = { desde: restaDias(HOY, 29), hasta: HOY };
     let pedidos = [];
     let filtroEvento = 'todos';
     let orden = { campo: 'registradoAt', dir: -1 };
@@ -25,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
     ));
     const money = n => '$' + Number(n || 0).toLocaleString('es-MX', { maximumFractionDigits: 0 });
-    const pct = (a, b) => b ? `${(a / b * 100).toFixed(1)}% del total` : ' ';
+    const pct = (a, b, sufijo) => b ? `${(a / b * 100).toFixed(1)}% ${sufijo}` : ' ';
 
     function fmtFecha(iso) {
         if (!iso) return '—';
@@ -51,11 +58,137 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span class="badge" style="background:${bg};color:${color}">${escapeHtml(estatus)}</span>`;
     }
 
+    // =====================================================================
+    // Calendario propio: el <input type="date"> nativo no se puede tematizar
+    // ni hacer selección de rango, así que se arma a mano.
+    // =====================================================================
+    const MESES_VISIBLES = 2;   // dos meses a la vista para elegir rangos sin navegar
+
+    const dp = {
+        panel: document.getElementById('dpPanel'),
+        trigger: document.getElementById('dpTrigger'),
+        label: document.getElementById('dpLabel'),
+        grids: document.getElementById('dpGrids'),
+        hint: document.getElementById('dpHint'),
+        prev: document.getElementById('dpPrev'),
+        next: document.getElementById('dpNext'),
+        base: primerDiaMes(HOY),    // mes de la derecha
+        sel: { desde: null, hasta: null },
+        hover: null,
+        abierto: false
+    };
+
+    function pintarEtiqueta() {
+        dp.label.textContent = rango.desde === rango.hasta
+            ? fmtDia(rango.desde)
+            : `${fmtDia(rango.desde)} → ${fmtDia(rango.hasta)}`;
+    }
+
+    function calendarioDeMes(mes) {
+        const y = mes.getUTCFullYear(), m = mes.getUTCMonth();
+        const celdas = [];
+        const offset = (mes.getUTCDay() + 6) % 7;   // la semana arranca en lunes
+        for (let i = 0; i < offset; i++) celdas.push('<span class="dp-day vacio"></span>');
+        const ultimo = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+        for (let d = 1; d <= ultimo; d++) {
+            const key = keyOf(new Date(Date.UTC(y, m, d)));
+            // No hay pedidos en el futuro: esos días no se pueden elegir.
+            const futuro = key > HOY;
+            celdas.push(`<button type="button" class="dp-day" data-key="${key}"${futuro ? ' disabled' : ''}>${d}</button>`);
+        }
+        const cal = document.createElement('div');
+        cal.className = 'dp-cal';
+        cal.innerHTML = `
+            <div class="dp-caption">${mes.toLocaleDateString('es-MX', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</div>
+            <div class="dp-week"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+            <div class="dp-days">${celdas.join('')}</div>`;
+        return cal;
+    }
+
+    function construirGrids() {
+        dp.grids.innerHTML = '';
+        for (let i = MESES_VISIBLES - 1; i >= 0; i--) dp.grids.appendChild(calendarioDeMes(sumaMeses(dp.base, -i)));
+        dp.next.disabled = dp.base.getTime() >= primerDiaMes(HOY).getTime();
+        pintarDias();
+    }
+
+    // Solo cambia clases sobre los botones ya pintados (se llama en cada hover).
+    function pintarDias() {
+        let a = dp.sel.desde, b = dp.sel.hasta;
+        if (a && !b && dp.hover) [a, b] = [a, dp.hover].sort();
+        dp.grids.querySelectorAll('.dp-day[data-key]').forEach(btn => {
+            const k = btn.dataset.key;
+            btn.classList.toggle('hoy', k === HOY);
+            btn.classList.toggle('inicio', k === a);
+            btn.classList.toggle('fin', !!b && k === b);
+            btn.classList.toggle('rango', !!a && !!b && k > a && k < b);
+        });
+    }
+
+    function abrirPanel() {
+        // Se arranca mostrando el rango vigente; el primer clic empieza una selección nueva.
+        dp.sel = { desde: rango.desde, hasta: rango.hasta };
+        dp.hover = null;
+        dp.base = primerDiaMes(rango.hasta);
+        dp.abierto = true;
+        dp.panel.hidden = false;
+        dp.trigger.setAttribute('aria-expanded', 'true');
+        dp.hint.textContent = 'Elige el primer día del rango';
+        construirGrids();
+    }
+
+    function cerrarPanel() {
+        dp.abierto = false;
+        dp.panel.hidden = true;
+        dp.trigger.setAttribute('aria-expanded', 'false');
+    }
+
+    function elegirDia(key) {
+        if (dp.sel.desde && !dp.sel.hasta) {
+            // Segundo clic: cierra el rango. Ordenar los dos strings alcanza (YYYY-MM-DD).
+            const [a, b] = [dp.sel.desde, key].sort();
+            dp.sel = { desde: a, hasta: b };
+            rango = { desde: a, hasta: b };
+            dp.hover = null;
+            pintarEtiqueta();
+            chipsFecha.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+            cerrarPanel();
+            cargar();
+        } else {
+            dp.sel = { desde: key, hasta: null };
+            dp.hint.textContent = 'Ahora elige el último día (el mismo para ver un solo día)';
+            pintarDias();
+        }
+    }
+
+    dp.trigger.addEventListener('click', () => dp.abierto ? cerrarPanel() : abrirPanel());
+    dp.prev.addEventListener('click', () => { dp.base = sumaMeses(dp.base, -1); construirGrids(); });
+    dp.next.addEventListener('click', () => { dp.base = sumaMeses(dp.base, 1); construirGrids(); });
+
+    dp.grids.addEventListener('click', e => {
+        const btn = e.target.closest('.dp-day[data-key]');
+        if (btn && !btn.disabled) elegirDia(btn.dataset.key);
+    });
+
+    dp.grids.addEventListener('mouseover', e => {
+        const btn = e.target.closest('.dp-day[data-key]');
+        if (!btn || btn.disabled || !dp.sel.desde || dp.sel.hasta) return;
+        dp.hover = btn.dataset.key;
+        pintarDias();
+    });
+
+    document.addEventListener('click', e => {
+        if (dp.abierto && !e.target.closest('#datePicker')) cerrarPanel();
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && dp.abierto) cerrarPanel();
+    });
+
     // --- Carga (el rango de fechas es lo único que se consulta al servidor) ---
     async function cargar() {
         cuerpoTabla.innerHTML = '<tr><td colspan="7" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando datos...</td></tr>';
         try {
-            const qs = new URLSearchParams({ desde: fDesde.value, hasta: fHasta.value });
+            const qs = new URLSearchParams({ desde: rango.desde, hasta: rango.hasta });
             const response = await fetch(`${API_BASE_URL}/api/pagados/pedidos?${qs}`);
             const result = await response.json();
             if (!response.ok || !result.success) throw new Error(result.message || 'Error al obtener los datos.');
@@ -124,15 +257,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function render() {
         const filas = ordenar(filtrar());
-        const conEvento = filas.filter(p => p.metaPurchaseSentAt).length;
+        const conEvento = filas.filter(p => p.metaPurchaseSentAt);
         const monto = filas.reduce((s, p) => s + p.precio, 0);
+        const montoEvento = conEvento.reduce((s, p) => s + p.precio, 0);
 
         document.getElementById('statTotal').textContent = filas.length.toLocaleString('es-MX');
-        document.getElementById('statRango').textContent = `${fDesde.value} → ${fHasta.value}`;
-        document.getElementById('statConEvento').textContent = conEvento.toLocaleString('es-MX');
-        document.getElementById('statConEventoPct').textContent = pct(conEvento, filas.length);
-        document.getElementById('statSinEvento').textContent = (filas.length - conEvento).toLocaleString('es-MX');
-        document.getElementById('statSinEventoPct').textContent = pct(filas.length - conEvento, filas.length);
+        document.getElementById('statRango').textContent = `${rango.desde} → ${rango.hasta}`;
+        document.getElementById('statConEvento').textContent = conEvento.length.toLocaleString('es-MX');
+        document.getElementById('statConEventoPct').textContent = pct(conEvento.length, filas.length, 'del total');
+        document.getElementById('statSinEvento').textContent = (filas.length - conEvento.length).toLocaleString('es-MX');
+        document.getElementById('statSinEventoPct').textContent = pct(filas.length - conEvento.length, filas.length, 'del total');
+        document.getElementById('statMontoEvento').textContent = money(montoEvento);
+        document.getElementById('statMontoEventoPct').textContent = pct(montoEvento, monto, 'del monto');
         document.getElementById('statMonto').textContent = money(monto);
 
         document.querySelectorAll('#tablaPedidos thead th[data-sort]').forEach(th => {
@@ -159,11 +295,12 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    // --- Filtros de fecha (cambiar el rango vuelve a consultar) ---
+    // --- Atajos de fecha (cambiar el rango vuelve a consultar) ---
     function aplicarPreset(preset) {
-        if (preset === 'hoy') { fDesde.value = HOY; fHasta.value = HOY; }
-        else if (preset === 'ayer') { const a = restaDias(HOY, 1); fDesde.value = a; fHasta.value = a; }
-        else { fDesde.value = restaDias(HOY, Number(preset) - 1); fHasta.value = HOY; }
+        if (preset === 'hoy') rango = { desde: HOY, hasta: HOY };
+        else if (preset === 'ayer') { const a = restaDias(HOY, 1); rango = { desde: a, hasta: a }; }
+        else rango = { desde: restaDias(HOY, Number(preset) - 1), hasta: HOY };
+        pintarEtiqueta();
     }
 
     chipsFecha.addEventListener('click', e => {
@@ -173,16 +310,6 @@ document.addEventListener('DOMContentLoaded', () => {
         aplicarPreset(btn.dataset.preset);
         cargar();
     });
-
-    [fDesde, fHasta].forEach(input => input.addEventListener('change', () => {
-        if (!fDesde.value || !fHasta.value) return;
-        if (fDesde.value > fHasta.value) {
-            // Un rango invertido no devuelve nada: se empareja el otro extremo.
-            if (input === fDesde) fHasta.value = fDesde.value; else fDesde.value = fHasta.value;
-        }
-        chipsFecha.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-        cargar();
-    }));
 
     // --- Filtros locales (instantáneos, sin volver al servidor) ---
     segEvento.addEventListener('click', e => {
@@ -228,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `pedidos_${fDesde.value}_${fHasta.value}.csv`;
+        link.download = `pedidos_${rango.desde}_${rango.hasta}.csv`;
         link.click();
     });
 

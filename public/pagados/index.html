@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/pagados/style.css?v=1">
+    <link rel="stylesheet" href="/pagados/style.css?v=3">
 </head>
 <body>
 
@@ -50,6 +50,11 @@
                 <div class="value" id="statSinEvento">0</div>
                 <div class="hint" id="statSinEventoPct">&nbsp;</div>
             </div>
+            <div class="stat-card ok">
+                <div class="label"><i class="fas fa-paper-plane"></i> Monto con evento</div>
+                <div class="value" id="statMontoEvento">$0</div>
+                <div class="hint" id="statMontoEventoPct">&nbsp;</div>
+            </div>
             <div class="stat-card">
                 <div class="label">Monto a pagar (suma)</div>
                 <div class="value" id="statMonto">$0</div>
@@ -71,10 +76,20 @@
 
             <div class="filter-group">
                 <label>Rango de fechas</label>
-                <div class="filter-row">
-                    <input type="date" id="fDesde" aria-label="Desde">
-                    <span>→</span>
-                    <input type="date" id="fHasta" aria-label="Hasta">
+                <div class="datepicker" id="datePicker">
+                    <button type="button" class="dp-trigger" id="dpTrigger" aria-haspopup="dialog" aria-expanded="false">
+                        <i class="fas fa-calendar-days"></i>
+                        <span id="dpLabel">—</span>
+                        <i class="fas fa-chevron-down dp-caret"></i>
+                    </button>
+                    <div class="dp-panel" id="dpPanel" role="dialog" aria-label="Elegir rango de fechas" hidden>
+                        <div class="dp-bar">
+                            <button type="button" class="dp-nav" id="dpPrev" aria-label="Mes anterior"><i class="fas fa-chevron-left"></i></button>
+                            <button type="button" class="dp-nav" id="dpNext" aria-label="Mes siguiente"><i class="fas fa-chevron-right"></i></button>
+                        </div>
+                        <div class="dp-grids" id="dpGrids"></div>
+                        <div class="dp-foot"><span id="dpHint"></span></div>
+                    </div>
                 </div>
             </div>
 
@@ -130,7 +145,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="/js/auth-guard.js"></script>
 <script src="/env-config.js"></script>
-<script type="module" src="/pagados/script.js?v=1"></script>
+<script type="module" src="/pagados/script.js?v=3"></script>
 
 </body>
 </html>
