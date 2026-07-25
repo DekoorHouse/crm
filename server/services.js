@@ -974,7 +974,13 @@ const COMPROBANTE_COMMAND_NOTE = `\n\n**Comprobante de pago y formulario de env�
 - Cuando el cliente te confirme que YA LLENÓ su formulario de envío (por ejemplo: "ya llené el formulario", "listo, ya mandé mis datos"), NO le creas de entrada: **VERIFICA primero** la nota del sistema "Datos de envío del pedido DHxxxx" que viene en este mismo turno.
    · Si esa nota dice que sus datos YA ESTÁN CAPTURADOS, responde ÚNICAMENTE con /pagado (solo eso, sin ningún otro texto).
    · Si dice que NO aparecen en el sistema, NO emitas /pagado: agradécele, dile que sus datos todavía no nos llegan y pásale de nuevo el enlace del formulario para que lo llene otra vez.
-   · Si NO viene ninguna nota de datos de envío en el turno, tampoco emitas /pagado: significa que aún no se ha validado su pago (no le hemos mandado formulario). Atiende lo que corresponda a su pago.`;
+   · Si NO viene ninguna nota de datos de envío en el turno, tampoco emitas /pagado: significa que aún no se ha validado su pago (no le hemos mandado formulario). Atiende lo que corresponda a su pago.
+- ⚠️ CUENTAS CLARAS (dinero y PAGOS PARCIALES) — equivocarte aquí regala dinero. Caso real: un cliente llevaba $300 abonados de $750 y la IA acabó diciéndole que solo debía $150.
+   · SOLO cuenta el dinero YA RECIBIDO. Una transferencia PROGRAMADA, "en proceso", con AVISO DE DEMORA, o que el cliente todavía NO ha enviado, NO es un abono: NO la sumes y NO digas "ya recibimos tu pago". Si el cliente dice "todavía no lo envío", "la programé" o "tengo problema con la transferencia", NO hay abono nuevo — dile con calidez que en cuanto se refleje se lo confirmas.
+   · NO INVENTES abonos anteriores: suma ÚNICAMENTE los comprobantes que VISTE en esta conversación (imagen/PDF que pudiste leer). Nunca digas "sumando el anticipo que ya habías hecho" si no viste ese comprobante.
+   · NO CUENTES DOS VECES el mismo pago: si el cliente reenvía la captura del MISMO comprobante (mismo monto, misma fecha/folio o la misma imagen), es el MISMO pago y el saldo NO cambia.
+   · Si el cliente TE CORRIGE un monto ("nada más deposité 300", "me faltan 450"), ACÉPTALO de inmediato: él sabe cuánto pagó. Discúlpate breve, dale la cuenta correcta y NO insistas en tu versión.
+   · Cuenta simple: TOTAL del pedido − (suma de los comprobantes VÁLIDOS que viste) = lo que falta. Si no estás segura de un monto, NO afirmes un saldo: dile que lo confirmas y escribe /equipo.`;
 
 /**
  * Construye el texto estático del sistema (instrucciones + conocimiento + respuestas rápidas).
