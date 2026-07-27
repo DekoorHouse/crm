@@ -155,8 +155,10 @@ function mkParseDatos(text) {
         .replace(/fecha\s*:\s*[^|\n]*/ig, ' ')
         .replace(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/g, ' ')
         .replace(/nombres?\s*:/ig, ' ').replace(/para\s*:/ig, ' ').replace(/personajes?\s*:/ig, ' ');
+    // Separadores de nombres: " y " y también " e " (conjunción española antes de i/hi:
+    // "Imelda e Isaías"), además de &, +, |, coma, salto de línea y " and ".
     const parts = rest
-        .split(/\s+y\s+|\s*&\s*|\s*\+\s*|\s*\|\s*|,|\n|\s+and\s+/i)
+        .split(/\s+[ye]\s+|\s*&\s*|\s*\+\s*|\s*\|\s*|,|\n|\s+and\s+/i)
         .map(clean)
         .filter(Boolean);
     return { nombre1: mkTitleCase(parts[0] || ''), nombre2: mkTitleCase(parts[1] || ''), fecha: clean(fecha), personalizacion: raw };
