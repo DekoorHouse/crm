@@ -23,6 +23,13 @@ const MANUAL_SPECIAL_RE = /foto|imagen|graba|logo|escudo|personaje|mascota|dibuj
 const productOf = o => String(o.producto || (o.items && o.items[0] && o.items[0].producto) || '').toLowerCase();
 const datosOf = o => (Array.isArray(o.items) ? o.items : []).map(it => it.datosProducto).filter(Boolean).join('\n') || o.datosProducto || o.producto || '';
 
+// Quita acentos para comparaciones robustas ("Corazón" -> "Corazon").
+const sinAcentos = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+// ¿Es una lámpara de corazones? TOLERA acentos y singular/plural: el regex simple /corazon/ NO matchea
+// "corazón" (con ó) y por eso un producto llamado "Corazón" se colaba como 'not_corazon' (DH13047,
+// 2026-07-27). Única fuente de verdad de "esto lo hace la skill de corazones".
+const isCorazon = o => /corazon/i.test(sinAcentos(productOf(o)));
+
 // Regla COMPARTIDA de capitalización de nombres (inicial mayúscula + espacio tras punto), la MISMA
 // que usa el mockup. Los nombres que se graban SIEMPRE pasan por aquí, vengan de la visión o del
 // texto del pedido, así el cliente lo escriba en minúscula o pegue "L.Angel" (Chris, 2026-07-24).
@@ -35,7 +42,7 @@ const { titleCaseName } = require('../mockups/nameLayout');
 // NO evalúa disenoListoAt / svgCorteAt / claim / shipped ni el estatus: eso lo decide cada caller
 // (el worker salta los ya trabajados o en proceso; el endpoint separa "ya diseñado" de "en cola").
 function svgAutoEligibility(o, previews) {
-    if (!/corazon/i.test(productOf(o))) return { eligible: false, reason: 'not_corazon' };
+    if (!isCorazon(o)) return { eligible: false, reason: 'not_corazon' };
     if (SPECIAL_RE.test(datosOf(o))) return { eligible: false, reason: 'special' };
     previews = Array.isArray(previews) ? previews : [];
     if (!previews.length) return { eligible: false, reason: 'no_mockup' };
@@ -99,20 +106,30 @@ const SIN_FECHA_RE = /sin\s*fecha|no\s*(lleva|quiere|va|hay)\s*fecha|ninguna\s*f
 // para poder diseñar un pedido forzado que aún NO tiene mockup aprobado (fallback del mockup).
 function parseDatosFields(datos) {
     const s = String(datos || '').replace(/\r/g, '');
-    let fecha = '';
+    let fecha = '', dm = null;
     const fm = s.match(/fecha\s*:\s*([^\n|]+)/i);
     if (fm) fecha = fm[1].split('·')[0].trim();
     if (!fecha) {
-        // Sin la etiqueta "Fecha:": busca un token con forma de fecha (29-Abril-2026, 24/06/1984…).
-        const dm = s.match(/\d{1,2}\s*[-/]\s*[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s*[-/]\s*\d{2,4}/) || s.match(/\d{1,2}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{2,4}/);
-        if (dm) fecha = dm[0].replace(/\s+/g, '');
+        // Sin la etiqueta "Fecha:": busca un token con forma de fecha. Formatos soportados: con guiones/
+        // slash (29-Abril-2026, 24/06/1984) y con ESPACIOS + mes en palabra ("6 agosto 2026", "6 de
+        // agosto de 2026" — DH13047, que antes quedaba sin fecha -> 'incomplete_fields').
+        dm = s.match(/\d{1,2}\s*[-/]\s*[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s*[-/]\s*\d{2,4}/)
+          || s.match(/\d{1,2}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{2,4}/)
+          || s.match(/\d{1,2}\s+(?:de\s+)?[A-Za-zÁÉÍÓÚáéíóúÑñ]{3,}\s+(?:de\s+)?\d{2,4}/i);
+        // Normaliza: pega los guiones/slash ("6 - agosto - 2026" -> "6-agosto-2026") y colapsa espacios.
+        if (dm) fecha = dm[0].replace(/\s*([-/])\s*/g, '$1').replace(/\s+/g, ' ').trim();
     }
     let namePart;
     const nm = s.match(/nombres?\s*:\s*([^\n|]+)/i);
     namePart = nm ? nm[1] : (s.split(/\n|\|/)[0] || '');
     namePart = namePart.split('·')[0].replace(/\bfecha\b.*$/i, '').trim();
+    // Si la fecha venía EMBEBIDA con los nombres (sin etiqueta), quitarla para que no se cuele en nombre2
+    // ("Luis y Sarahí 6 agosto 2026" -> nombre2="Sarahí", no "Sarahí 6 agosto 2026").
+    if (dm && !nm) namePart = namePart.replace(dm[0], ' ').replace(/\s+/g, ' ').trim();
     let nombre1 = '', nombre2 = '';
-    const yy = namePart.split(/\s+y\s+|\s*&\s*|\s*\+\s*/i);
+    // Separadores de pareja: "y", la conjunción española "e" (antes de i/hi: "Alison e Ivan", "Gustavo
+    // e Isabel" — sin esto quedaban como un solo nombre y el pedido salía 'incomplete_fields'), "&", "+".
+    const yy = namePart.split(/\s+y\s+|\s+e\s+|\s*&\s*|\s*\+\s*/i);
     if (yy.length >= 2) { nombre1 = yy[0].trim(); nombre2 = yy.slice(1).join(' y ').trim(); }
     return { nombre1: titleCaseName(nombre1), nombre2: titleCaseName(nombre2), fecha };
 }
@@ -124,7 +141,7 @@ function parseDatosFields(datos) {
 // quiere). Fuente de los datos: el mockup aprobado (si hay, da también la imagen de preview) o el
 // texto de datos del pedido. Devuelve { ok, reason, fields, previewUrl }.
 function forcedDesignFields(o, previews) {
-    if (!/corazon/i.test(productOf(o))) return { ok: false, reason: 'not_corazon' };
+    if (!isCorazon(o)) return { ok: false, reason: 'not_corazon' };
     // FORZADO (botón): más laxo que el automático. Solo bloquea los especiales que la IA de infinito
     // realmente NO puede (imagen/foto/frase/…); "Especial: recoger en tienda" o "…sin la 'y'" pasan.
     if (MANUAL_SPECIAL_RE.test(datosOf(o))) return { ok: false, reason: 'special' };
@@ -155,5 +172,5 @@ function forcedDesignFields(o, previews) {
 
 module.exports = {
     svgAutoEligibility, isAutoWaiting, isVideoCorregir, isVideoAutoWaiting, forcedDesignFields,
-    parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, SIN_FECHA_RE, productOf, datosOf,
+    parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, SIN_FECHA_RE, productOf, datosOf, isCorazon,
 };

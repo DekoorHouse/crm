@@ -7794,7 +7794,7 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 router.get('/design-pending', async (req, res) => {
     try {
         const { reasonsForOrderData } = require('./design/designPending');
-        const { isAutoWaiting, isVideoAutoWaiting, svgAutoEligibility, MANUAL_SPECIAL_RE, productOf, datosOf } = require('./design/svgAuto');
+        const { isAutoWaiting, isVideoAutoWaiting, svgAutoEligibility, MANUAL_SPECIAL_RE, isCorazon, datosOf } = require('./design/svgAuto');
         const { decideNameLines } = require('./mockups/nameLayout');
         const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
 
@@ -7857,7 +7857,7 @@ router.get('/design-pending', async (req, res) => {
                 // ¿La IA puede diseñar este pedido? Lámpara de corazones cuyo "especial" NO sea una imagen/
                 // foto/frase para grabar (MANUAL_SPECIAL_RE): esos requieren diseño manual o Modo 4. Un
                 // "Especial: recoger en tienda" o "…sin la 'y'" SÍ es elegible. Habilita "Diseñar con IA".
-                iaEligible: /corazon/i.test(productOf(p)) && !MANUAL_SPECIAL_RE.test(datosOf(p)),
+                iaEligible: isCorazon(p) && !MANUAL_SPECIAL_RE.test(datosOf(p)),
                 // ¿Se empujó a mano a la cola de Mockup ("A Mockup")? Pinta el estado del botón.
                 mockupForce: !!p.mockupForce,
                 // Columna del TABLERO Kanban donde el diseñador puso la tarjeta a mano (solo visual, no
@@ -8076,12 +8076,12 @@ router.post('/design-pending/:orderId/reopen', async (req, res) => {
 router.post('/design-pending/:orderId/design-ia', async (req, res) => {
     const { orderId } = req.params;
     try {
-        const { productOf, datosOf, MANUAL_SPECIAL_RE } = require('./design/svgAuto');
+        const { isCorazon, datosOf, MANUAL_SPECIAL_RE } = require('./design/svgAuto');
         const ref = db.collection('pedidos').doc(orderId);
         const doc = await ref.get();
         if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
         const p = doc.data();
-        if (!/corazon/i.test(productOf(p))) return res.status(400).json({ success: false, message: 'El skill solo genera lámpara de corazones; este pedido requiere diseño manual.' });
+        if (!isCorazon(p)) return res.status(400).json({ success: false, message: 'El skill solo genera lámpara de corazones; este pedido requiere diseño manual.' });
         if (MANUAL_SPECIAL_RE.test(datosOf(p))) return res.status(400).json({ success: false, message: 'Lleva una imagen/foto o texto extra para grabar: requiere diseño manual.' });
         if (p.svgCorteAt) return res.status(400).json({ success: false, message: 'Este pedido ya tiene un SVG de corte.' });
         await ref.update({
@@ -8140,12 +8140,12 @@ router.post('/design-pending/:orderId/ia-reject', async (req, res) => {
 router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
     const { orderId } = req.params;
     try {
-        const { productOf, datosOf, MANUAL_SPECIAL_RE } = require('./design/svgAuto');
+        const { isCorazon, datosOf, MANUAL_SPECIAL_RE } = require('./design/svgAuto');
         const ref = db.collection('pedidos').doc(orderId);
         const doc = await ref.get();
         if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
         const p = doc.data();
-        if (!/corazon/i.test(productOf(p))) return res.status(400).json({ success: false, message: 'El skill solo genera lámpara de corazones; este pedido requiere diseño manual.' });
+        if (!isCorazon(p)) return res.status(400).json({ success: false, message: 'El skill solo genera lámpara de corazones; este pedido requiere diseño manual.' });
         if (MANUAL_SPECIAL_RE.test(datosOf(p))) return res.status(400).json({ success: false, message: 'Lleva una imagen/foto o texto extra para grabar: requiere diseño manual.' });
         if (p.svgCorteAt) return res.status(400).json({ success: false, message: 'Este pedido ya tiene un SVG de corte.' });
         // Normaliza cada campo a renglones limpios (una línea por renglón, sin vacíos ni espacios de sobra).
