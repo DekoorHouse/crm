@@ -53,7 +53,19 @@ async function uploadLocal(file) {
     if (!img || img === true) { console.error('Falta --img "<url o ruta>"'); process.exit(1); }
     fs.mkdirSync(OUT_DIR, { recursive: true });
     const imageUrl = /^https?:\/\//.test(img) ? img : await uploadLocal(img);
-    const aspectRatio = (typeof arg('aspect') === 'string' ? arg('aspect') : '1:1');
+
+    // ASPECTO: debe ser DISTINTO al de la imagen de entrada. Verificado el 2026-07-27 con 3 variantes
+    // sobre el mismo mockup: si entrada y salida tienen el MISMO aspecto, Gemini toma el atajo de
+    // "recolorear" la foto y se queda la base de la lámpara, la mesa y el libro (inservible para
+    // láser); si difieren, se ve obligado a REDIBUJAR y sale el diseño aislado. Recortar el disco NO
+    // lo arregla (variante recorte+1:1 siguió fallando); lo que manda es el cambio de aspecto.
+    const srcBuf = Buffer.from(await (await fetch(imageUrl)).arrayBuffer());
+    const meta = await sharp(srcBuf).metadata();
+    const srcRatio = meta.width / meta.height;
+    const esCuadrada = srcRatio > 0.92 && srcRatio < 1.08;
+    const aspectRatio = (typeof arg('aspect') === 'string') ? arg('aspect') : (esCuadrada ? '3:4' : '1:1');
+    console.log(`entrada ${meta.width}x${meta.height} (${srcRatio.toFixed(2)}) -> salida ${aspectRatio}`);
+
     const extra = (typeof arg('extra') === 'string' ? arg('extra') : '');
     const promptOverride = extra ? PROMPT + '\n' + extra : PROMPT;
 
@@ -73,8 +85,19 @@ async function uploadLocal(file) {
     // PowerClip sin tener que invertir dentro de Corel (el contenido de un PowerClip no es accesible por
     // COM). Pasar --keep-wob para conservar blanco-sobre-negro.
     const inv = !process.argv.includes('--keep-wob');
-    await (inv ? sharp(bytes).negate({ alpha: false }) : sharp(bytes)).png().toFile(outPath);
-    console.log('color: ' + (inv ? 'negro sobre blanco (invertido para laser)' : 'blanco sobre negro'));
+    let pipe = inv ? sharp(bytes).negate({ alpha: false }) : sharp(bytes);
+    // RECORTE de los márgenes: Gemini deja mucho blanco alrededor (y descentrado). El PowerClip de
+    // Corel escala "a rellenar" el marco, así que un margen sobrante encoge y descuadra el diseño.
+    // Se recorta al bounding box real del dibujo. Pasar --no-trim para conservar el lienzo completo.
+    if (!process.argv.includes('--no-trim')) {
+        try {
+            const trimmed = await pipe.png().toBuffer();
+            pipe = sharp(await sharp(trimmed).trim({ background: inv ? '#ffffff' : '#000000', threshold: 12 }).png().toBuffer());
+        } catch (e) { console.log('  ~ no se pudo recortar el margen (' + e.message + '), se deja completo'); }
+    }
+    await pipe.png().toFile(outPath);
+    const fin = await sharp(outPath).metadata();
+    console.log(`color: ${inv ? 'negro sobre blanco (para laser)' : 'blanco sobre negro'}  final ${fin.width}x${fin.height}`);
     console.log('URL ' + src);
     console.log('OK ' + outPath);
     console.log(usedOverride ? 'DEPLOY_OK' : 'DEPLOY_PENDIENTE (el server aún usa el prompt de grabado; reintenta en 1-2 min)');
