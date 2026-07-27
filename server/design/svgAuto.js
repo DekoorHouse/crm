@@ -37,7 +37,29 @@ const isCorazon = o => /corazon/i.test(sinAcentos(productOf(o)));
 // Regla COMPARTIDA de capitalización de nombres (inicial mayúscula + espacio tras punto), la MISMA
 // que usa el mockup. Los nombres que se graban SIEMPRE pasan por aquí, vengan de la visión o del
 // texto del pedido, así el cliente lo escriba en minúscula o pegue "L.Angel" (Chris, 2026-07-24).
-const { titleCaseName } = require('../mockups/nameLayout');
+// applyNameLayout re-decide los renglones (1 o 2 líneas) cuando cortamos desde el texto del pedido.
+const { titleCaseName, applyNameLayout } = require('../mockups/nameLayout');
+
+// Milisegundos de un valor de fecha en cualquier forma (Timestamp de Firestore, {_seconds}, ISO, nº).
+const tsMs = v => !v ? 0 : (v.toMillis ? v.toMillis() : (v._seconds ? v._seconds * 1000 : (typeof v === 'number' ? v : (Date.parse(v) || 0))));
+
+// ¿El cliente CORRIGIÓ sus datos DESPUÉS de generar este mockup? Entonces el mockup quedó OBSOLETO
+// (tiene la fecha/nombre viejos) y NO debe usarse como fuente de verdad para el corte: los datos
+// corregidos viven en `datosProducto`. Caso DH13941 (Chris, 2026-07-27): el cliente cambió la fecha
+// 25->26-Julio y pagó, pero el mockup —creado antes— seguía con el 25; el SVG se cortaría con el 25.
+function mockupObsoletoPorCorreccion(o, mockup) {
+    const corr = tsMs(o && o.datoCorregidoAt);
+    return corr > 0 && corr > tsMs(mockup && mockup.createdAt);
+}
+
+// Fields (nombre1/nombre2/fecha) desde el TEXTO de datos ACTUAL del pedido, con los renglones
+// recalculados por la regla de negocio (applyNameLayout). Se usa cuando no hay mockup usable o cuando
+// quedó obsoleto por una corrección posterior. Los nombres salen ya title-cased de parseDatosFields.
+function fieldsFromDatos(o) {
+    const p = parseDatosFields(datosOf(o));
+    const wl = applyNameLayout({ nombre1: p.nombre1, nombre2: p.nombre2 });
+    return { nombre1: wl.nombre1 || '', nombre2: wl.nombre2 || '', fecha: p.fecha };
+}
 
 // ¿Este pedido lo puede diseñar SOLO el worker (lámpara de corazones estándar, con mockup aprobado y
 // layout verificado por visión)? `previews` = mockup_previews[orderId].previews (array; [] si no hay).
@@ -51,6 +73,13 @@ function svgAutoEligibility(o, previews) {
     previews = Array.isArray(previews) ? previews : [];
     if (!previews.length) return { eligible: false, reason: 'no_mockup' };
     const last = previews[previews.length - 1];
+    // Corrección posterior al mockup -> el mockup tiene datos viejos: cortar con los datos ACTUALES del
+    // pedido (DH13941: el cliente cambió la fecha tras aprobar el mockup y pagó).
+    if (mockupObsoletoPorCorreccion(o, last)) {
+        const ff = fieldsFromDatos(o);
+        if (!ff.nombre1 || !ff.nombre2 || !ff.fecha) return { eligible: false, reason: 'incomplete_fields' };
+        return { eligible: true, reason: 'ok', fields: ff, layoutVerificado: false };
+    }
     const f = last.fields || {};
     // Layout verificado por visión (mockupsService.verifyAndStoreLayout): los renglones EXACTOS que el
     // cliente vio en su mockup. Es la fuente de verdad del diseño; si no existe, se usan los fields.
@@ -151,8 +180,11 @@ function forcedDesignFields(o, previews) {
     if (MANUAL_SPECIAL_RE.test(datosOf(o))) return { ok: false, reason: 'special' };
     previews = Array.isArray(previews) ? previews : [];
     const last = previews.length ? previews[previews.length - 1] : null;
+    // Si el cliente corrigió sus datos DESPUÉS del mockup, NO usar el mockup (tiene datos viejos): se
+    // corta con los datos ACTUALES del pedido (DH13941: cambió la fecha 25->26 tras aprobar el mockup).
+    const usarMockup = last && !mockupObsoletoPorCorreccion(o, last);
     let nombre1 = '', nombre2 = '', fecha = '', previewUrl = null;
-    if (last) {
+    if (usarMockup) {
         previewUrl = last.imageUrl || last.url || null;
         const f = last.fields || {};
         const lay = last.layout || null;
@@ -162,10 +194,11 @@ function forcedDesignFields(o, previews) {
         fecha = lay ? conLineas(lay.fecha, f.fecha) : String(f.fecha || '');
     }
     if (!nombre1 || !nombre2 || !fecha) {
-        const p = parseDatosFields(datosOf(o));
-        nombre1 = nombre1 || p.nombre1;
-        nombre2 = nombre2 || p.nombre2;
-        fecha = fecha || p.fecha;
+        // Fallback (sin mockup usable o mockup obsoleto): datos ACTUALES del pedido, con renglones recalculados.
+        const ff = fieldsFromDatos(o);
+        nombre1 = nombre1 || ff.nombre1;
+        nombre2 = nombre2 || ff.nombre2;
+        fecha = fecha || ff.fecha;
     }
     if (!nombre1 || !nombre2) return { ok: false, reason: 'incomplete_fields' };
     if (SIN_FECHA_RE.test(fecha)) fecha = '';                                   // "Sin Fecha" -> blanco
