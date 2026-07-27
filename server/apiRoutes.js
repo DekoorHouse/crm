@@ -8251,13 +8251,45 @@ router.get('/debug/mockup-ref', async (req, res) => {
     }
 });
 
+// Cuántos pedidos recientes (por fecha de comprobante validado) trae Envíos con el documento
+// completo. Los más viejos solo entran si siguen sin guía (ver el barrido de abajo).
+const ENVIOS_RECIENTES = 300;
+
 router.get('/envios', async (_req, res) => {
     try {
-        const [pedidosSnap, datosSnap, manualSnap] = await Promise.all([
-            db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(300).get(),
+        const [recientesSnap, datosSnap, manualSnap] = await Promise.all([
+            db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(ENVIOS_RECIENTES).get(),
             db.collection('datos_envio').get(),
             db.collection('envios_manuales').orderBy('createdAt', 'desc').limit(300).get(),
         ]);
+
+        // Más allá de la ventana reciente se barre TODO lo viejo, pero leyendo solo dos campos
+        // (.select), para rescatar los que siguen SIN GUÍA. Antes esto era un limit(300) seco: al
+        // entrar un pedido nuevo salía el más viejo, así que un pendiente que se atorara acababa
+        // desapareciendo de la lista sin avisar. Los viejos que ya tienen guía sí se omiten (son
+        // historial) y se informan en `omitidos` para que el contador no aparente ser el total.
+        let atrasadosDocs = [];
+        let omitidos = 0;
+        if (recientesSnap.size === ENVIOS_RECIENTES) {
+            const viejosSnap = await db.collection('pedidos')
+                .orderBy('comprobanteValidadoAt', 'desc')
+                .startAfter(recientesSnap.docs[recientesSnap.size - 1])
+                .select('guiaEnvio.guia', 'ocultoDeEnvios')
+                .get();
+            const pendientesRefs = viejosSnap.docs
+                .filter(d => {
+                    const x = d.data();
+                    return !(x.guiaEnvio && x.guiaEnvio.guia) && x.ocultoDeEnvios !== true;
+                })
+                .map(d => d.ref);
+            omitidos = viejosSnap.size - pendientesRefs.length;
+            // Solo de los rescatados se traen los documentos completos (normalmente son cero).
+            for (let i = 0; i < pendientesRefs.length; i += 300) {
+                const chunk = pendientesRefs.slice(i, i + 300);
+                atrasadosDocs.push(...await db.getAll(...chunk));
+            }
+        }
+        const pedidosDocs = [...recientesSnap.docs, ...atrasadosDocs];
 
         // Mapa numeroPedido (solo dígitos) -> datos de envío MÁS RECIENTES.
         const norm = (v) => String(v || '').replace(/\D/g, '');
@@ -8275,7 +8307,7 @@ router.get('/envios', async (_req, res) => {
         });
 
         const pedidosByNum = new Map(); // nº de pedido (dígitos) -> { id, estatus } para enlazar líneas manuales a su pedido
-        const envios = pedidosSnap.docs.map(doc => {
+        const envios = pedidosDocs.map(doc => {
             const p = doc.data();
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
             if (num != null) pedidosByNum.set(String(num), { id: doc.id, estatus: p.estatus || null });
@@ -8353,7 +8385,7 @@ router.get('/envios', async (_req, res) => {
         });
 
         // Manuales primero (recién agregadas), luego los pedidos con comprobante validado.
-        res.json({ success: true, envios: [...manuales, ...envios] });
+        res.json({ success: true, envios: [...manuales, ...envios], omitidos });
     } catch (error) {
         console.error('[ENVIOS] Error en GET /envios:', error.message);
         res.status(500).json({ success: false, message: 'Error al cargar los envíos.', error: error.message });

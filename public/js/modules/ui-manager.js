@@ -1214,6 +1214,7 @@ async function renderEnviosView() {
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
         window._enviosData = data.envios || []; // para los handlers de cotizar/crear guía
+        window._enviosOmitidos = Number(data.omitidos) || 0; // envíos viejos ya despachados que no se traen
         _paintEnvios();
     } catch (e) {
         container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los envíos: ${escapeHtml(e.message || String(e))}</p>
@@ -1358,7 +1359,7 @@ function _paintEnvios() {
                 <tbody>${rows || '<tr><td colspan="15" style="padding:16px 0;color:#94a3b8">No hay envíos en este filtro.</td></tr>'}</tbody>
               </table>
             </div>
-            <p class="text-xs text-gray-400 mt-3">${shown.length} de ${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''} · ${pendCount} pendiente(s) de guía · ${guiaCount} con guía.</p>`;
+            <p class="text-xs text-gray-400 mt-3">${shown.length} de ${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''} · ${pendCount} pendiente(s) de guía · ${guiaCount} con guía${(window._enviosOmitidos || 0) ? ` · ${window._enviosOmitidos} envío(s) viejo(s) ya despachado(s) no se muestran` : ''}.</p>`;
     requestAnimationFrame(_ajustarAltoEnvios); // scroll dentro de la tabla: barra horizontal visible + header sticky
 }
 window._paintEnvios = _paintEnvios;
