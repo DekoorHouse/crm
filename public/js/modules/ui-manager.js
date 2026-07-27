@@ -164,12 +164,60 @@ function abrirMetricas() {
 }
 window.abrirMetricas = abrirMetricas;
 
-// 1) Teclado. En captura y sobre window para que ningún otro handler pueda ganarle. Se compara
-// e.code ('KeyM') además de e.key porque con Alt presionado varios teclados/navegadores reportan
-// otro carácter en e.key ('µ', 'Dead'…); en teclados latinos Ctrl+Alt es además AltGr.
+// 1) Teclado. El atajo es CONFIGURABLE porque no todas las combinaciones llegan al navegador:
+// depende de la distribución del teclado (en teclados latinos Ctrl+Alt es AltGr), de extensiones
+// y de programas que se apropian de combinaciones globales. Ctrl+Alt+M es el default; desde el
+// propio panel de Métricas se puede grabar otra (se guarda en localStorage de ese navegador).
+const METRICAS_ATAJO_KEY = 'crm_metricas_atajo';
+const METRICAS_ATAJO_DEFAULT = { ctrl: true, alt: true, shift: false, meta: false, code: 'KeyM' };
+
+function getMetricasAtajo() {
+    try {
+        const raw = localStorage.getItem(METRICAS_ATAJO_KEY);
+        if (!raw) return METRICAS_ATAJO_DEFAULT;
+        const sc = JSON.parse(raw);
+        return sc && sc.code ? sc : METRICAS_ATAJO_DEFAULT;
+    } catch (_) { return METRICAS_ATAJO_DEFAULT; }
+}
+function setMetricasAtajo(sc) {
+    try {
+        if (sc) localStorage.setItem(METRICAS_ATAJO_KEY, JSON.stringify(sc));
+        else localStorage.removeItem(METRICAS_ATAJO_KEY);
+    } catch (_) {}
+}
+/** "Ctrl+Alt+M" a partir de un atajo (o de un evento de teclado). */
+function formatMetricasAtajo(sc) {
+    if (!sc) return '—';
+    const partes = [];
+    if (sc.ctrl) partes.push('Ctrl');
+    if (sc.alt) partes.push('Alt');
+    if (sc.shift) partes.push('Shift');
+    if (sc.meta) partes.push('Win');
+    const code = String(sc.code || '');
+    partes.push(code.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ') || '?');
+    return partes.join('+');
+}
+/** Convierte un evento de teclado al formato de atajo (ignora las teclas modificadoras solas). */
+function atajoDesdeEvento(e) {
+    if (['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'ShiftLeft', 'ShiftRight',
+         'MetaLeft', 'MetaRight', 'AltGraph'].includes(e.code)) return null;
+    return { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey, code: e.code };
+}
+window.getMetricasAtajo = getMetricasAtajo;
+window.setMetricasAtajo = setMetricasAtajo;
+window.formatMetricasAtajo = formatMetricasAtajo;
+window.atajoDesdeEvento = atajoDesdeEvento;
+window.METRICAS_ATAJO_DEFAULT = METRICAS_ATAJO_DEFAULT;
+
+// En captura y sobre window para que ningún otro handler de la app pueda ganarle.
 window.addEventListener('keydown', (e) => {
-    if (!e.ctrlKey || !e.altKey || e.shiftKey) return;
-    if (e.code !== 'KeyM' && String(e.key).toLowerCase() !== 'm') return;
+    if (window._grabandoAtajoMetricas) return;   // el panel está grabando una combinación nueva
+    const sc = getMetricasAtajo();
+    if (!!e.ctrlKey !== !!sc.ctrl || !!e.altKey !== !!sc.alt) return;
+    if (!!e.shiftKey !== !!sc.shift || !!e.metaKey !== !!sc.meta) return;
+    // e.code (posición física) en vez de e.key: con Alt presionado varios teclados reportan otro
+    // carácter en e.key ('µ', 'Dead'…).
+    if (e.code !== sc.code) return;
     e.preventDefault();
     abrirMetricas();
 }, true);

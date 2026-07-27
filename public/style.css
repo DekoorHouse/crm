@@ -1349,6 +1349,13 @@ body.dark-mode .reply-thumbnail { background-color: #414868; }
 .bm-kpi-sub { font-size: .8rem; color: var(--color-text); margin-top: 2px; }
 .bm-kpi-foot { font-size: .75rem; color: var(--color-text-light); margin-top: 4px; }
 
+.bm-atajo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .78rem; color: var(--color-text-light); margin-bottom: 1rem; padding-bottom: .8rem; border-bottom: 1px solid var(--color-border); }
+.bm-atajo b { color: var(--color-text); }
+.bm-atajo i { margin-right: 4px; }
+.bm-atajo-rec { color: var(--color-primary); font-weight: 600; }
+.bm-atajo-eco { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .74rem; opacity: .85; }
+.bm-atajo-ok { color: var(--color-success); font-weight: 600; }
+
 .bm-warn { background: rgba(180, 83, 9, .10); border: 1px solid rgba(180, 83, 9, .28); color: var(--color-text); border-radius: 10px; padding: 10px 14px; font-size: .8rem; line-height: 1.5; margin-bottom: 1rem; }
 .bm-warn i { color: #b45309; margin-right: 6px; }
 body.dark-mode .bm-warn { background: rgba(224, 175, 104, .12); border-color: rgba(224, 175, 104, .3); }

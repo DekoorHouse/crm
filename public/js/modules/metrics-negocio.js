@@ -50,6 +50,7 @@ function BusinessMetricsTemplate() {
                 <button class="btn btn-primary btn-sm" id="bm-refresh" title="Recalcular"><i class="fas fa-rotate"></i></button>
             </div>
         </div>
+        <div class="bm-atajo" id="bm-atajo"></div>
         <div id="bm-body">
             <div class="bm-loading"><i class="fas fa-spinner fa-spin"></i> Calculando métricas del negocio…</div>
         </div>
@@ -387,6 +388,53 @@ function bmDrawCharts(d) {
     }
 }
 
+// ===== Selector del atajo de teclado ========================================================
+// No todas las combinaciones llegan al navegador (distribución del teclado, extensiones,
+// programas que se apropian de combinaciones globales). En vez de adivinar cuál sí pasa, aquí
+// se graba la que el usuario quiera y se ve EN VIVO lo que el navegador reporta: si al presionar
+// una combinación no aparece nada, esa combinación no llega y hay que elegir otra.
+function bmPintarAtajo(msg) {
+    const el = document.getElementById('bm-atajo');
+    if (!el) return;
+    const actual = formatMetricasAtajo(getMetricasAtajo());
+    const grabando = !!window._grabandoAtajoMetricas;
+    el.innerHTML = grabando
+        ? `<span class="bm-atajo-rec"><i class="fas fa-keyboard"></i> Presiona la combinación que quieras…</span>
+           <span class="bm-atajo-eco">${msg || 'esperando…'}</span>
+           <button class="btn btn-subtle btn-sm" data-atajo="cancelar">Cancelar</button>`
+        : `<span><i class="fas fa-keyboard"></i> Atajo para abrir Métricas: <b>${escapeHtml(actual)}</b></span>
+           <button class="btn btn-subtle btn-sm" data-atajo="cambiar">Cambiar</button>
+           ${actual !== formatMetricasAtajo(window.METRICAS_ATAJO_DEFAULT)
+                ? '<button class="btn btn-subtle btn-sm" data-atajo="restaurar">Restaurar Ctrl+Alt+M</button>' : ''}
+           <span class="bm-atajo-eco">También abre con <b>#metricas</b> en la URL o 5 clics en el logo.</span>`;
+}
+
+function bmGrabarAtajo(activar) {
+    window._grabandoAtajoMetricas = !!activar;
+    if (activar && !window._bmAtajoListener) {
+        // En captura: así se ve la tecla aunque otro handler la consuma después.
+        window._bmAtajoListener = (e) => {
+            if (!window._grabandoAtajoMetricas) return;
+            if (e.code === 'Escape') { bmGrabarAtajo(false); bmPintarAtajo(); return; }
+            const sc = atajoDesdeEvento(e);
+            if (!sc) { bmPintarAtajo('recibiendo modificadores…'); return; } // solo Ctrl/Alt/Shift
+            e.preventDefault();
+            e.stopPropagation();
+            setMetricasAtajo(sc);
+            bmGrabarAtajo(false);
+            bmPintarAtajo();
+            mostrarToastAtajo(`Atajo guardado: ${formatMetricasAtajo(sc)}`);
+        };
+        window.addEventListener('keydown', window._bmAtajoListener, true);
+    }
+    bmPintarAtajo();
+}
+
+function mostrarToastAtajo(txt) {
+    const el = document.getElementById('bm-atajo');
+    if (el) el.insertAdjacentHTML('beforeend', `<span class="bm-atajo-ok"><i class="fas fa-check"></i> ${escapeHtml(txt)}</span>`);
+}
+
 // ===== Eventos del panel ====================================================================
 function initBusinessMetrics() {
     const panel = document.querySelector('.bm-panel');
@@ -399,8 +447,17 @@ function initBusinessMetrics() {
             renderBusinessMetrics();
             return;
         }
-        if (e.target.closest('#bm-refresh')) renderBusinessMetrics(true);
+        if (e.target.closest('#bm-refresh')) { renderBusinessMetrics(true); return; }
+
+        const atajoBtn = e.target.closest('[data-atajo]');
+        if (atajoBtn) {
+            const accion = atajoBtn.dataset.atajo;
+            if (accion === 'cambiar') bmGrabarAtajo(true);
+            else if (accion === 'cancelar') bmGrabarAtajo(false);
+            else if (accion === 'restaurar') { setMetricasAtajo(null); bmPintarAtajo(); }
+        }
     });
+    bmPintarAtajo();
 
     // Si el usuario cambia el tema con el panel abierto, repintar para que los colores de las
     // gráficas y los números cambien con él (una sola vez por sesión).
