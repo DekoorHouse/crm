@@ -42,7 +42,7 @@ const MK_DESIGN_SEED = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
 // envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
 // refFiles: 2ª referencia subida a mano por bloque (blockId -> File). pruebas: estado del
 // banco de pruebas (pestaña "Pruebas").
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, lzPickByTemplate: {}, lzHydrated: {}, pruebas: { values: {}, resultUrl: '', refFile: null, promptEdits: {} }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, lzPickByTemplate: {}, lzHydrated: {}, pruebas: { values: {}, resultUrl: '', refFile: null, promptEdits: {}, provider: 'gemini' }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
 
 // Cache (promesa) del data-URI de la fuente manuscrita, para embeberla en el SVG al rasterizar.
 let mkFontDataUrlPromise = null;
@@ -693,6 +693,8 @@ async function mkRunGeneration(payload) {
     });
     const url = data.image && (data.image.fullUrl || data.image.thumbUrl);
     if (!url) throw new Error('No se recibió la imagen generada.');
+    // Motor y costo de la última generación (los muestra el banco de pruebas para comparar).
+    mkState.lastGen = { provider: data.provider || '', model: data.model || '', cost: data.cost || null };
     return url;
 }
 
@@ -1292,6 +1294,10 @@ function mkRenderPruebas() {
             <div>
                 <div class="mk-inputs">
                     <div class="mk-full"><label>Plantilla</label><select id="mk-pr-tpl" onchange="mkPruebasTplChange()">${mkTemplateOptionsSel(tplId)}</select></div>
+                    <div class="mk-full"><label>Motor de IA</label><select id="mk-pr-provider">
+                        <option value="gemini" ${P.provider !== 'openai' ? 'selected' : ''}>Gemini · Nano Banana Pro (producción)</option>
+                        <option value="openai" ${P.provider === 'openai' ? 'selected' : ''}>ChatGPT · gpt-image-1 (prueba)</option>
+                    </select></div>
                 </div>
                 <div class="mk-fields mk-inputs" id="mk-pr-fields" style="margin-top:8px;">${mkFieldsHtml(mkTemplateFieldDefs(tplId), P.values)}</div>
                 <div class="mk-ref2" style="margin-top:12px;" ondragover="event.preventDefault()" ondrop="mkPruebasOnDrop(event)" onmousedown="mkSetRefPasteTarget('__pruebas__')">
@@ -1349,6 +1355,7 @@ function mkPruebasCapture() {
     document.querySelectorAll('#mk-pr-fields .mk-fld').forEach(i => { v[i.dataset.key] = i.value; });
     P.values = v;
     const ex = document.getElementById('mk-pr-extra'); if (ex) P.extra = ex.value;
+    const pv = document.getElementById('mk-pr-provider'); if (pv) P.provider = pv.value;
     // Conserva la edición del prompt (por plantilla) para que sobreviva a los re-render.
     const tid = document.getElementById('mk-pr-tpl'); const pt = document.getElementById('mk-pr-prompt');
     if (tid && pt) P.promptEdits[tid.value] = pt.value;
@@ -1429,14 +1436,20 @@ function mkPruebasResetPrompt() {
     mkToast('Prompt restablecido al de la plantilla.', 'info');
 }
 
-function mkPruebasResultHtml(url) {
+function mkPruebasResultHtml(url, meta) {
+    // Pie con el motor que la generó y lo que costó, para comparar Gemini vs ChatGPT.
+    const m = meta || mkState.pruebas.resultMeta;
+    const foot = (m && m.provider)
+        ? `<small class="mk-muted">${m.provider === 'openai' ? 'ChatGPT' : 'Gemini'}${m.model ? ' · ' + mkEsc(m.model) : ''}${m.cost ? ' · $' + Number(m.cost.total || 0).toFixed(3) : ''}</small>`
+        : '';
     // Clic en la imagen (o en "Ampliar") la abre en el modal del CRM (openImageModal), no en pestaña nueva.
     return `
         <img src="${mkAttr(url)}" alt="Mockup" title="Clic para ampliar" onclick="openImageModal(this.src)">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
             <button class="btn btn-outline btn-sm" onclick="openImageModal(this.closest('.mk-result').querySelector('img').src)"><i class="fas fa-expand mr-2"></i>Ampliar</button>
             <button class="btn btn-secondary btn-sm" onclick="mkPruebasGenerate()"><i class="fas fa-redo mr-2"></i>Regenerar</button>
-        </div>`;
+        </div>
+        ${foot}`;
 }
 
 async function mkPruebasGenerate() {
@@ -1454,6 +1467,8 @@ async function mkPruebasGenerate() {
     // Prompt editado en el banco de pruebas (override; no se guarda salvo con "Guardar prompt").
     const promptTemplate = (document.getElementById('mk-pr-prompt')?.value || '');
     P.promptEdits[tplId] = promptTemplate;
+    const provider = (document.getElementById('mk-pr-provider')?.value || 'gemini');
+    P.provider = provider;
 
     const box = document.getElementById('mk-pr-result');
     const btn = document.getElementById('mk-pr-gen');
@@ -1470,10 +1485,11 @@ async function mkPruebasGenerate() {
             if (tpl && tpl.designSvg) { const { blob } = await mkRasterizeDesign(tpl.designSvg, fields); secondImageUrl = await mkUploadRefImage(blob, 'design.png'); }
         }
 
-        setBox('Generando con la IA… (unos 30 seg)');
-        const url = await mkRunGeneration({ templateId: tplId, fields, extraPrompt, promptTemplate, orderId: null, blockId: 'prueba', secondImageUrl });
+        setBox(provider === 'openai' ? 'Generando con ChatGPT… (1-2 min)' : 'Generando con la IA… (unos 30 seg)');
+        const url = await mkRunGeneration({ templateId: tplId, fields, extraPrompt, promptTemplate, orderId: null, blockId: 'prueba', secondImageUrl, provider });
         P.resultUrl = url;
-        if (box) box.innerHTML = mkPruebasResultHtml(url);
+        P.resultMeta = mkState.lastGen || null;
+        if (box) box.innerHTML = mkPruebasResultHtml(url, P.resultMeta);
     } catch (e) {
         if (box) box.innerHTML = `<div class="mk-result-empty" style="color:#dc2626;">${mkEsc(e.message)}</div>`;
         mkToast('Error al generar: ' + e.message, 'error');

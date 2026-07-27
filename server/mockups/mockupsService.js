@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const FormData = require('form-data');
 const sharp = require('sharp');
 const { db, bucket } = require('../config');
 
@@ -9,6 +10,12 @@ const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const MODEL_ID = 'gemini-3-pro-image-preview';   // Nano Banana Pro (el mejor de Gemini escribiendo texto)
 const COST_PER_IMAGE = 0.134;   // 1K y 2K cuestan igual; 4K sube a $0.24
 const INPUT_PER_1M = 2.00;
+
+// --- OpenAI (ChatGPT) como motor alternativo, en pruebas ---
+const OPENAI_URL = 'https://api.openai.com/v1/images/edits';
+const OPENAI_MODEL = () => process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
+// Precio por 1M de tokens (gpt-image-1): texto de entrada / imagen de entrada / imagen de salida.
+const OA_PRICE = { textIn: 5, imageIn: 10, imageOut: 40 };
 const COLLECTION = 'mockups_gallery';
 const STORAGE_DIR = 'mockups';
 const THUMB_WIDTH = 400;
@@ -24,7 +31,18 @@ function normResolution(r) {
 // `maxRefSize` = lado máximo al que se encogen las imágenes de referencia antes de mandarlas.
 // 1024 basta para la foto base de la lámpara y el diseño a grabar; el GRABADO de una foto del
 // cliente sube a 2048 porque ahí sí importa el detalle fino de los rostros.
-async function generateImage(prompt, aspectRatio = '1:1', refImages = [], resolution = '2K', maxRefSize = 1024) {
+// Punto de entrada único. `provider` elige el motor: 'gemini' (producción) u 'openai'
+// (ChatGPT / gpt-image-1, en pruebas). Si no se pasa, manda la env MOCKUP_IMAGE_PROVIDER
+// y, en su defecto, Gemini — el comportamiento de siempre.
+async function generateImage(prompt, aspectRatio = '1:1', refImages = [], resolution = '2K', maxRefSize = 1024, provider = null) {
+    const p = String(provider || process.env.MOCKUP_IMAGE_PROVIDER || 'gemini').toLowerCase();
+    if (['openai', 'chatgpt', 'gpt', 'gpt-image-1'].includes(p)) {
+        return generateImageOpenAI(prompt, aspectRatio, refImages, null, maxRefSize);
+    }
+    return generateImageGemini(prompt, aspectRatio, refImages, resolution, maxRefSize);
+}
+
+async function generateImageGemini(prompt, aspectRatio = '1:1', refImages = [], resolution = '2K', maxRefSize = 1024) {
     const apiKey = API_KEY();
     if (!apiKey) throw new Error('Falta GOOGLE_AI_IMAGE_KEY (o GEMINI_API_KEY) para generar imágenes.');
 
@@ -95,9 +113,87 @@ async function generateImage(prompt, aspectRatio = '1:1', refImages = [], resolu
     const imagesCost = COST_PER_IMAGE * images.length;
 
     return {
+        provider: 'gemini',
+        model: MODEL_ID,
         images,
         usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
         cost: { perImage: COST_PER_IMAGE, imagesCost, inputTokenCost, total: inputTokenCost + imagesCost },
+    };
+}
+
+// --- OpenAI: /v1/images/edits con gpt-image-1 ---------------------------------
+// Mismo contrato que la ruta Gemini (entra prompt + imágenes de referencia, sale
+// { images:[{mimeType,base64}], usage, cost }) para que saveToGallery no cambie.
+// Diferencias de la API: es multipart (no JSON), no acepta "aspect ratio" sino 3 tamaños
+// fijos, y siempre devuelve base64 (nunca URL).
+
+// Mapea el aspecto de la plantilla ('3:4', '1:1'…) al tamaño más cercano de OpenAI.
+function openaiSize(aspectRatio) {
+    const [w, h] = String(aspectRatio || '1:1').split(':').map(Number);
+    if (!w || !h) return '1024x1024';
+    const r = w / h;
+    if (r < 0.9) return '1024x1536';   // vertical (3:4, 2:3, 9:16…)
+    if (r > 1.1) return '1536x1024';   // horizontal
+    return '1024x1024';
+}
+
+async function generateImageOpenAI(prompt, aspectRatio = '1:1', refImages = [], quality = null, maxRefSize = 1024) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('Falta OPENAI_API_KEY para generar imágenes con ChatGPT.');
+    if (!refImages.length) throw new Error('El motor de ChatGPT edita imágenes: se requiere al menos la imagen base.');
+
+    const form = new FormData();
+    form.append('model', OPENAI_MODEL());
+    form.append('prompt', prompt);
+    form.append('size', openaiSize(aspectRatio));
+    form.append('quality', quality || process.env.OPENAI_IMAGE_QUALITY || 'high');
+    // input_fidelity=high: conserva los detalles finos de las imágenes de entrada (la lámpara,
+    // los rostros). Sin esto gpt-image-1 tiende a RE-DIBUJAR la foto en vez de editarla.
+    form.append('input_fidelity', 'high');
+    form.append('n', '1');
+    // Varias referencias = varios campos `image[]` (la 1ª es la que edita, el resto son guía).
+    for (let i = 0; i < refImages.length; i++) {
+        const png = await sharp(Buffer.from(refImages[i].base64, 'base64'))
+            .resize(maxRefSize, maxRefSize, { fit: 'inside', withoutEnlargement: true })
+            .png()
+            .toBuffer();
+        form.append('image[]', png, { filename: `ref${i}.png`, contentType: 'image/png' });
+    }
+
+    const res = await fetch(OPENAI_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
+        body: form,
+    });
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`OpenAI Image API error ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    const images = (data.data || [])
+        .filter(d => d && d.b64_json)
+        .map(d => ({ mimeType: 'image/png', base64: d.b64_json }));
+    if (!images.length) throw new Error('OpenAI no devolvió ninguna imagen.');
+
+    // Costo real a partir de los tokens que reporta la API (no hay precio fijo por imagen:
+    // depende de la calidad, el tamaño y de cuánta imagen de entrada se mandó).
+    const usage = data.usage || {};
+    const det = usage.input_tokens_details || {};
+    const inputTokens = usage.input_tokens || 0;
+    const outputTokens = usage.output_tokens || 0;
+    const textIn = (det.text_tokens != null) ? det.text_tokens : inputTokens;
+    const imageIn = det.image_tokens || 0;
+    const inputTokenCost = (textIn * OA_PRICE.textIn + imageIn * OA_PRICE.imageIn) / 1_000_000;
+    const imagesCost = (outputTokens * OA_PRICE.imageOut) / 1_000_000;
+
+    return {
+        provider: 'openai',
+        model: OPENAI_MODEL(),
+        images,
+        usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
+        cost: { perImage: imagesCost / images.length, imagesCost, inputTokenCost, total: inputTokenCost + imagesCost },
     };
 }
 
@@ -502,7 +598,8 @@ async function verifyAndStoreLayout(orderId, blockId) {
 }
 
 module.exports = {
-    generateImage, saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch,
+    generateImage, generateImageGemini, generateImageOpenAI,
+    saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch,
     listTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate,
     listDesigns, createDesign, updateDesign, deleteDesign, fetchOwnImageAsBase64,
     uploadTemplateBaseImage, uploadPublicImage, buildPromptFromTemplate, fetchImageAsBase64, ensureJpeg, parseDatos,

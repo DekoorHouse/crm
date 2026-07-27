@@ -332,10 +332,11 @@ router.post('/generate-preview', asyncHandler(async (req, res) => {
     // ya trae la imagen guardada en galería, sin jobId ni polling.
     const refs = [await svc.fetchImageAsBase64(tpl.baseImageUrl)];
     if (secondImageUrl) refs.push(await svc.fetchImageAsBase64(secondImageUrl));
-    const result = await svc.generateImage(prompt, aspectRatio, refs, resolution || '2K');
+    // `provider` (opcional): 'gemini' (default, producción) u 'openai' para probar ChatGPT.
+    const result = await svc.generateImage(prompt, aspectRatio, refs, resolution || '2K', 1024, req.body.provider);
     const saved = await svc.saveToGallery(prompt, aspectRatio, result.images, result.usage, result.cost);
     await savePreview(req.body.orderId, saved[0], prompt, { blockId: req.body.blockId, templateId, fields, secondRefUrl: secondImageUrl });
-    res.json({ success: true, image: saved[0], prompt, cost: result.cost });
+    res.json({ success: true, image: saved[0], prompt, cost: result.cost, provider: result.provider, model: result.model });
 }));
 
 // ===================== GRABADO LÁSER (foto del cliente -> imagen para raster engrave) =====================
@@ -396,10 +397,10 @@ router.post('/engrave-submit', asyncHandler(async (req, res) => {
     const refs = [];
     for (const u of urls) refs.push(await svc.fetchImageAsBase64(u));
     // 2048 de entrada: en el grabado el parecido de los rostros depende del detalle que reciba la IA.
-    const result = await svc.generateImage(prompt, aspectRatio, refs, req.body.resolution || '2K', 2048);
+    const result = await svc.generateImage(prompt, aspectRatio, refs, req.body.resolution || '2K', 2048, req.body.provider);
     // Se guarda en la galería (sin orderId -> no toca ningún pedido).
     const saved = await svc.saveToGallery(prompt, aspectRatio, result.images, result.usage, result.cost);
-    res.json({ success: true, image: saved[0], prompt, cost: result.cost });
+    res.json({ success: true, image: saved[0], prompt, cost: result.cost, provider: result.provider, model: result.model });
 }));
 
 // POST /api/mockups/backfill-layout — verifica por visión los previews SIN `layout` de pedidos
