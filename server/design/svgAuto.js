@@ -12,13 +12,17 @@
 // AUTOMÁTICO (svgAutoEligibility), que es conservador: cualquier "Especial:" lo manda a revisión humana.
 const SPECIAL_RE = /foto|imagen|graba|logo|escudo|especial|personaje|mascota|dibuj|dise[nñ]|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
 
-// Subconjunto de "especial" que el botón "Diseñar con IA" (infinito de 2 nombres + fecha) NO puede
-// resolver ni forzándolo: requiere grabar una IMAGEN (foto/logo/dibujo/escudo/…) o texto que NO es el
-// par de nombres (frase/leyenda/texto adicional). Esos SIEMPRE van a diseño manual (o al Modo 4 de
-// grabado). En cambio "Especial: recoger en tienda" o "…sin la 'y' en medio" NO caen aquí: son 2
-// nombres + una aclaración, y la IA los diseña bien (el usuario confirma antes de subir a Drive).
-// Por eso NO incluye las palabras genéricas 'especial' ni 'diseño' (Chris, 2026-07-24).
-const MANUAL_SPECIAL_RE = /foto|imagen|graba|logo|escudo|personaje|mascota|dibuj|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
+// Subconjunto de "especial" que el botón "Diseñar con IA" NO puede resolver ni forzándolo: requiere
+// grabar una IMAGEN (foto/logo/dibujo/escudo/símbolo…) que la lámpara infinito no lleva. Esos SIEMPRE
+// van a diseño manual o al Modo 4 de grabado.
+// NO incluye 'frase'/'leyenda' (Chris, 2026-07-27): al ver los mockups de DH13922/DH13603 se confirmó
+// que una frase corta ("Te amo") la grabó el mockup EN EL LUGAR DE LA FECHA, y el infinito.vbs ya graba
+// cualquier texto libre ahí (como "Forever"). Por eso una lámpara "con frase" con mockup aprobado SÍ es
+// elegible para el botón: se corta usando el layout del mockup (la frase ya viene como su "fecha"). Si
+// el mockup NO incorporó la frase (p.ej. la pidieron ADEMÁS de la fecha, DH13603), el corte saldrá sin
+// ella y el usuario lo verá en el preview antes de subir -> rehace el mockup con la frase o lo hace a
+// mano. Tampoco incluye 'especial'/'diseño' genéricos.
+const MANUAL_SPECIAL_RE = /foto|imagen|graba|logo|escudo|personaje|mascota|dibuj|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
 
 const productOf = o => String(o.producto || (o.items && o.items[0] && o.items[0].producto) || '').toLowerCase();
 const datosOf = o => (Array.isArray(o.items) ? o.items : []).map(it => it.datosProducto).filter(Boolean).join('\n') || o.datosProducto || o.producto || '';
