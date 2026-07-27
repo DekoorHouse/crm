@@ -68,7 +68,13 @@ async function uploadLocal(file) {
     const src = r.image.fullUrl || r.image.thumbUrl;
     const bytes = Buffer.from(await (await fetch(src)).arrayBuffer());
     const outPath = (typeof arg('out') === 'string' ? arg('out') : path.join(OUT_DIR, `lampara-bn-${stamp()}.png`));
-    await sharp(bytes).png().toFile(outPath);
+    // El láser graba NEGRO sobre BLANCO, así que se INVIERTE el resultado de Gemini (que sale blanco
+    // sobre negro) con .negate(): el diseño queda en negro y el fondo en blanco, listo para pegar en el
+    // PowerClip sin tener que invertir dentro de Corel (el contenido de un PowerClip no es accesible por
+    // COM). Pasar --keep-wob para conservar blanco-sobre-negro.
+    const inv = !process.argv.includes('--keep-wob');
+    await (inv ? sharp(bytes).negate({ alpha: false }) : sharp(bytes)).png().toFile(outPath);
+    console.log('color: ' + (inv ? 'negro sobre blanco (invertido para laser)' : 'blanco sobre negro'));
     console.log('URL ' + src);
     console.log('OK ' + outPath);
     console.log(usedOverride ? 'DEPLOY_OK' : 'DEPLOY_PENDIENTE (el server aún usa el prompt de grabado; reintenta en 1-2 min)');
