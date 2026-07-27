@@ -10,7 +10,11 @@ function startApp() {
     // --- FIN DE LA SOLUCIÓN ---
 
     // Forzar la navegación a la vista de chats para asegurar la carga inicial.
-    navigateTo('chats', true); 
+    navigateTo('chats', true);
+
+    // Si entraron con .../#metricas, abrir la sección oculta de Métricas (ver ui-manager.js).
+    if (typeof checkMetricasHash === 'function') checkMetricasHash();
+
 
     // Start all data listeners
     fetchAllUsers(); // Carga todos los usuarios del sistema

@@ -149,15 +149,48 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// --- Atajo SECRETO de Métricas: Ctrl+Alt+M ---------------------------------------------------
-// La sección Métricas ya no aparece en el menú lateral (es información sensible del negocio).
-// Solo se abre con esta combinación. Se usa e.code ('KeyM') en lugar de e.key porque con Alt
-// presionado algunos teclados/navegadores reportan un carácter distinto en e.key ('µ', 'Dead'…).
-document.addEventListener('keydown', (e) => {
+// --- Entradas SECRETAS a Métricas ------------------------------------------------------------
+// La sección Métricas no aparece en el menú lateral (es información sensible del negocio).
+// Hay tres formas de abrirla, para que nunca dependa de una sola:
+//   1. Ctrl+Alt+M
+//   2. La URL .../#metricas  (sirve en celular y en la app instalada, donde no hay teclado;
+//      el hash se borra en cuanto abre, para no dejarlo en la barra de direcciones)
+//   3. 5 clics seguidos en el logo "Dekoor" del encabezado
+function abrirMetricas() {
+    if (typeof navigateTo !== 'function') return false;
+    if (!document.getElementById('main-view-container')) return false; // la app aún no arranca
+    navigateTo('metricas', true);
+    return true;
+}
+window.abrirMetricas = abrirMetricas;
+
+// 1) Teclado. En captura y sobre window para que ningún otro handler pueda ganarle. Se compara
+// e.code ('KeyM') además de e.key porque con Alt presionado varios teclados/navegadores reportan
+// otro carácter en e.key ('µ', 'Dead'…); en teclados latinos Ctrl+Alt es además AltGr.
+window.addEventListener('keydown', (e) => {
     if (!e.ctrlKey || !e.altKey || e.shiftKey) return;
     if (e.code !== 'KeyM' && String(e.key).toLowerCase() !== 'm') return;
     e.preventDefault();
-    if (typeof navigateTo === 'function') navigateTo('metricas');
+    abrirMetricas();
+}, true);
+
+// 2) Hash en la URL (#metricas). Se revisa al cambiar el hash y al arrancar la app (main.js).
+function checkMetricasHash() {
+    if (String(location.hash).toLowerCase() !== '#metricas') return;
+    if (!abrirMetricas()) return;
+    history.replaceState(null, '', location.pathname + location.search);
+}
+window.checkMetricasHash = checkMetricasHash;
+window.addEventListener('hashchange', checkMetricasHash);
+
+// 3) 5 clics en el logo del encabezado (sin teclado, funciona en la PWA del celular).
+document.addEventListener('click', (e) => {
+    if (!e.target.closest || !e.target.closest('.header-logo')) return;
+    const ahora = Date.now();
+    if (ahora - (window._logoClickAt || 0) > 1200) window._logoClicks = 0;
+    window._logoClickAt = ahora;
+    window._logoClicks = (window._logoClicks || 0) + 1;
+    if (window._logoClicks >= 5) { window._logoClicks = 0; abrirMetricas(); }
 });
 
 // Sección "Envíos": tabla de pedidos con comprobante validado. Cada dato de envío va en su propia
