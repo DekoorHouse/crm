@@ -21,7 +21,9 @@
  * Opciones:
  *   --template <id|nombre>  Plantilla de Firestore (mockup_templates). Toma su imagen base y su prompt.
  *   --base <url|archivo>    Imagen base a editar (si no usas --template).
- *   --ref  <url|archivo>    2ª referencia opcional (el diseño a grabar).
+ *   --ref  <url|archivo>    2ª referencia a mano (el diseño a grabar).
+ *   --sin-diseno            NO mandar el diseño a grabar como 2ª referencia (por default SÍ se manda,
+ *                           renderizado igual que en producción, si la plantilla tiene diseño).
  *   --prompt "..."          Prompt a mano (sustituye al de la plantilla).
  *   --n1 --n2 --fecha       Valores de los placeholders {nombre1} {nombre2} {fecha}.
  *   --quality low|medium|high   Calidad de OpenAI (default: high). Baja = más barato.
@@ -66,11 +68,12 @@ async function loadImage(src) {
     let baseSrc = arg('base');
     let promptTemplate = arg('prompt');
     let aspectRatio = arg('aspect', '1:1');
+    let tpl = null;
 
     const tplArg = arg('template');
     if (tplArg) {
         const q = tplArg.toLowerCase();
-        const tpl = templates.find(t => t.id === tplArg) || templates.find(t => (t.nombre || '').toLowerCase().includes(q));
+        tpl = templates.find(t => t.id === tplArg) || templates.find(t => (t.nombre || '').toLowerCase().includes(q));
         if (!tpl) throw new Error(`No encontré la plantilla "${tplArg}". Corre --list para ver las que hay.`);
         console.log(`Plantilla: ${tpl.nombre} (${tpl.id})`);
         baseSrc = baseSrc || tpl.baseImageUrl;
@@ -82,14 +85,28 @@ async function loadImage(src) {
     if (!promptTemplate) throw new Error('Falta el prompt: usa --template <nombre> o --prompt "...".');
 
     const fields = { nombre1: arg('n1', ''), nombre2: arg('n2', ''), fecha: arg('fecha', '') };
-    const prompt = svc.buildPromptFromTemplate(promptTemplate, fields);
+    let prompt = svc.buildPromptFromTemplate(promptTemplate, fields);
 
-    // Imágenes de referencia: la base y, opcionalmente, el diseño a grabar.
+    // Imágenes de referencia: (1) la foto base y (2) el DISEÑO a grabar. La 2ª es la que hace que
+    // la IA escriba los nombres/fecha correctos y en la fuente manuscrita; producción SIEMPRE la
+    // manda, así que aquí también va por default (mismo render del servidor: @resvg + la fuente).
     const refs = [await loadImage(baseSrc)];
     const refSrc = arg('ref');
     if (refSrc) {
         refs.push(await loadImage(refSrc));
-        console.log('2ª referencia:', refSrc);
+        console.log('2ª referencia (archivo):', refSrc);
+    } else if (tpl && !flag('sin-diseno')) {
+        const rr = require('../server/mockups/refRenderer');
+        const refPng = await rr.renderReferenceForTemplate(tpl, fields);
+        if (refPng) {
+            refs.push({ mimeType: 'image/png', base64: refPng.toString('base64') });
+            prompt += rr.SECOND_REF_PROMPT;
+            const refOut = path.join(os.tmpdir(), `mockup-ref-${Date.now()}.png`);
+            fs.writeFileSync(refOut, refPng);
+            console.log('2ª referencia (diseño renderizado):', refOut);
+        } else {
+            console.log('2ª referencia: la plantilla no tiene diseño, se genera sin ella.');
+        }
     }
 
     console.log(`\nMotor: ${USE_GEMINI ? 'Gemini (gemini-3-pro-image-preview)' : 'OpenAI (' + (process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1') + ')'}`);
