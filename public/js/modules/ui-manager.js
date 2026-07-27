@@ -2253,12 +2253,14 @@ function toggleDeptDropdown(event) {
     const willOpen = menu.classList.contains('hidden');
     if (!willOpen) { closeDeptDropdown(); return; }
     menu.classList.remove('hidden');
-    positionFilterDropdown(menu);
     deptFilterPending = new Set(getDepartmentFilterIds().map(String));
     const search = document.getElementById('dept-filter-search');
     if (search) search.value = '';
+    // Pintar la lista ANTES de posicionar: positionFilterDropdown mide el alto real del
+    // menú, y con la lista vacía lo mediría casi en cero y lo dejaría comprimido.
     renderDeptDropdownList('');
     updateDeptApplyLabel();
+    positionFilterDropdown(menu);
     setTimeout(() => document.addEventListener('click', closeDeptDropdownOnOutside), 0);
     setTimeout(() => { const s = document.getElementById('dept-filter-search'); if (s) s.focus(); }, 30);
 }
@@ -2310,6 +2312,9 @@ function renderDeptDropdownList(filterStr) {
 
 function filterDeptOptions(value) {
     renderDeptDropdownList(value);
+    // Buscar cambia cuántas opciones hay, así que el menú se vuelve a medir.
+    const menu = document.getElementById('dept-dropdown-menu');
+    if (menu && !menu.classList.contains('hidden')) positionFilterDropdown(menu);
 }
 
 function toggleDeptPending(id, checked) {
@@ -2365,7 +2370,6 @@ function toggleAdDropdown(event) {
     const willOpen = menu.classList.contains('hidden');
     if (!willOpen) { closeAdDropdown(); return; }
     menu.classList.remove('hidden');
-    positionFilterDropdown(menu);
     adFilterPending = new Set((state.adIdFilters || []).map(String));
     const search = document.getElementById('ad-filter-search');
     if (search) search.value = '';
@@ -2373,9 +2377,12 @@ function toggleAdDropdown(event) {
     const loadPromise = (typeof fetchAdsList === 'function') ? fetchAdsList() : Promise.resolve();
     renderAdDropdownList('');
     updateAdApplyLabel();
+    // Posicionar SIEMPRE con la lista ya pintada, si no se mide vacía y queda comprimido.
+    positionFilterDropdown(menu);
     loadPromise.then(() => {
         const s = document.getElementById('ad-filter-search');
         renderAdDropdownList(s ? s.value : '');
+        if (!menu.classList.contains('hidden')) positionFilterDropdown(menu);
     });
     setTimeout(() => document.addEventListener('click', closeAdDropdownOnOutside), 0);
     setTimeout(() => { const s = document.getElementById('ad-filter-search'); if (s) s.focus(); }, 30);
@@ -2427,6 +2434,9 @@ function renderAdDropdownList(filterStr) {
 
 function filterAdOptions(value) {
     renderAdDropdownList(value);
+    // Buscar cambia cuántas opciones hay, así que el menú se vuelve a medir.
+    const menu = document.getElementById('ad-dropdown-menu');
+    if (menu && !menu.classList.contains('hidden')) positionFilterDropdown(menu);
 }
 
 function toggleAdPending(id, checked) {
