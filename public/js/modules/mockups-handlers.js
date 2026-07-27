@@ -819,9 +819,12 @@ async function mkAfterSend(orderId, telefono, photoSent) {
     } catch (e) { console.error('[mockups] activar IA:', e.message); }
     if (photoSent) {
         try {
-            await db.collection('pedidos').doc(orderId).update({ estatus: 'Foto enviada' });
+            // mockupForce:false ADEMÁS del estatus. Un pedido empujado con "A Mockup" se lista SIEMPRE
+            // (mockupsRoutes /pending trae todos los mockupForce, sea cual sea su estatus), así que sin
+            // limpiar la marca seguía apareciendo aunque ya se le hubiera mandado la foto (caso DH13919).
+            await db.collection('pedidos').doc(orderId).update({ estatus: 'Foto enviada', mockupForce: false });
             const o = mkState.pending.find(x => x.id === orderId);
-            if (o) o.estatus = 'Foto enviada';
+            if (o) { o.estatus = 'Foto enviada'; o.mockupForce = false; o.forcedToMockup = false; }
         } catch (e) { console.error('[mockups] estatus Foto enviada:', e.message); }
     }
 }
