@@ -2666,6 +2666,53 @@ async function openConversationPreview(event, contactId, fallbackContact) {
     await loadMorePreviewMessages();
 }
 
+// Envía un mensaje desde el MODAL de conversación (Mockup, Rescate IA, etc.) sin tener que ir al chat.
+// Usa el MISMO endpoint que el chat del CRM: queda registrado, cuenta como mensaje de una PERSONA
+// (no de la IA) y cancela el temporizador de respuesta automática.
+async function sendPreviewMessage(event) {
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    const input = document.getElementById('preview-message-input');
+    const btn = document.getElementById('preview-send-btn');
+    const errBox = document.getElementById('preview-send-error');
+    const text = (input && input.value || '').trim();
+    if (!text || !previewState || !previewState.contactId) return;
+    if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+    if (input) input.disabled = true;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/contacts/${encodeURIComponent(previewState.contactId)}/messages`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || d.success === false) throw new Error(d.message || d.error || ('HTTP ' + res.status));
+        if (input) input.value = '';
+        _appendPreviewSentMessage(text);
+    } catch (e) {
+        // Causa típica: ventana de 24h cerrada (WhatsApp solo permite plantilla).
+        if (errBox) { errBox.textContent = 'No se pudo enviar: ' + (e.message || e); errBox.style.display = 'block'; }
+        else alert('No se pudo enviar: ' + (e.message || e));
+    } finally {
+        if (input) { input.disabled = false; input.focus(); }
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i>'; }
+    }
+}
+window.sendPreviewMessage = sendPreviewMessage;
+
+// Pinta el mensaje recién enviado al final del modal (MessageBubbleTemplate decide "enviado" según
+// state.selectedContactId, así que se fija temporalmente, igual que al cargar la conversación).
+function _appendPreviewSentMessage(text) {
+    const contentDiv = document.getElementById('preview-messages-content');
+    const container = document.getElementById('preview-messages-container');
+    if (!contentDiv) return;
+    const msg = { from: 'me', text, status: 'sent', timestamp: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 } };
+    const original = state.selectedContactId;
+    state.selectedContactId = previewState.contactId;
+    try { contentDiv.insertAdjacentHTML('beforeend', MessageBubbleTemplate(msg)); }
+    finally { state.selectedContactId = original; }
+    if (previewState.messages) previewState.messages.push(msg);
+    if (container) container.scrollTop = container.scrollHeight;
+}
+
 async function loadMorePreviewMessages() {
     if (previewState.isLoading || !previewState.hasMore) return;
 

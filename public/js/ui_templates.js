@@ -2916,6 +2916,17 @@ const ConversationPreviewModalTemplate = (contact) => `
                      </div>
                     <div id="preview-messages-content"></div>
                 </main>
+                <!-- Responder SIN salir del modal (mismo endpoint que el chat: cuenta como mensaje MÍO,
+                     apaga el temporizador de la IA y queda registrado en la conversación). -->
+                <footer style="flex-shrink:0;padding:8px;border-top:1px solid var(--color-border)">
+                    <form onsubmit="sendPreviewMessage(event)" style="display:flex;gap:8px;align-items:center">
+                        <input id="preview-message-input" type="text" autocomplete="off" placeholder="Escribe un mensaje…"
+                            style="flex:1;min-width:0;padding:9px 12px;border:1px solid var(--color-border,#e5e7eb);border-radius:8px;background:var(--color-surface,#fff);color:var(--color-text,#334155);font-size:.9rem">
+                        <button type="submit" id="preview-send-btn" title="Enviar"
+                            style="border:none;background:var(--color-primary,#ef4444);color:#fff;width:38px;height:38px;border-radius:50%;cursor:pointer;flex-shrink:0"><i class="fas fa-paper-plane"></i></button>
+                    </form>
+                    <div id="preview-send-error" style="display:none;color:#b91c1c;font-size:.75rem;margin-top:5px"></div>
+                </footer>
             </div>
         </div>
     </div>
