@@ -1,4 +1,4 @@
-import type { Order, OrderFilters } from "./types";
+import type { DesgloseResponse, Order, OrderFilters } from "./types";
 
 interface OrdersResponse {
   success: boolean;
@@ -13,14 +13,19 @@ interface TodayResponse {
   orders: Order[];
 }
 
-function buildApiUrl(filters: OrderFilters, startAfterId?: string | null): string {
+function buildFilterParams(filters: OrderFilters): URLSearchParams {
   const params = new URLSearchParams();
-  params.set("limit", "50");
   if (filters.producto) params.set("producto", filters.producto);
   if (filters.estatus) params.set("estatus", filters.estatus);
   if (filters.dateFilter) params.set("dateFilter", filters.dateFilter);
   if (filters.customStart) params.set("customStart", String(filters.customStart));
   if (filters.customEnd) params.set("customEnd", String(filters.customEnd));
+  return params;
+}
+
+function buildApiUrl(filters: OrderFilters, startAfterId?: string | null): string {
+  const params = buildFilterParams(filters);
+  params.set("limit", "50");
   if (startAfterId) params.set("startAfterId", startAfterId);
   return `/api/orders/list?${params.toString()}`;
 }
@@ -45,16 +50,21 @@ export async function fetchTodayOrders(): Promise<TodayResponse> {
 export async function fetchOrderCount(
   filters: OrderFilters
 ): Promise<number> {
-  const params = new URLSearchParams();
-  if (filters.producto) params.set("producto", filters.producto);
-  if (filters.estatus) params.set("estatus", filters.estatus);
-  if (filters.dateFilter) params.set("dateFilter", filters.dateFilter);
-  if (filters.customStart) params.set("customStart", String(filters.customStart));
-  if (filters.customEnd) params.set("customEnd", String(filters.customEnd));
+  const params = buildFilterParams(filters);
   const response = await fetch(`/api/orders/count?${params.toString()}`);
   const data = await response.json();
   if (!data.success) throw new Error(data.message || "Error counting orders");
   return data.count;
+}
+
+export async function fetchDesglose(
+  filters: OrderFilters
+): Promise<DesgloseResponse> {
+  const params = buildFilterParams(filters);
+  const response = await fetch(`/api/orders/desglose?${params.toString()}`);
+  const data = await response.json();
+  if (!data.success) throw new Error(data.message || "Error al obtener el desglose");
+  return data;
 }
 
 export async function changeOrderStatus(

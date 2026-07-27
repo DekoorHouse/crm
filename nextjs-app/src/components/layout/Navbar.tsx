@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import ThemeMenu from "@/components/layout/ThemeMenu";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { signOut } from "@/lib/firebase/auth";
@@ -61,6 +62,15 @@ export default function Navbar({ viewMode, onViewModeChange, onNewOrder, onExpor
             Kanban
           </button>
         </div>
+
+        {/* Desglose por producto */}
+        <Link
+          href="/pedidos/desglose"
+          className="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-all"
+          title="Desglose por producto"
+        >
+          <span className="material-symbols-outlined">bar_chart</span>
+        </Link>
 
         {/* Export CSV */}
         {onExport && (

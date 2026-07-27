@@ -35,6 +35,23 @@ export interface OrderFilters {
   customEnd?: number | null;
 }
 
+export interface ProductoDesglose {
+  producto: string;
+  piezas: number;
+  pedidos: number;
+  monto: number;
+  porEstatus: Record<string, number>;
+}
+
+export interface DesgloseResponse {
+  productos: ProductoDesglose[];
+  totalPiezas: number;
+  totalPedidos: number;
+  totalMonto: number;
+  truncado: boolean;
+  max: number;
+}
+
 export interface PaginationState {
   lastVisibleId: string | null;
   hasMore: boolean;

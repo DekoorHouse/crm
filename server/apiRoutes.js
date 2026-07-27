@@ -22,6 +22,7 @@ const PRICES = require('./prices');
 const { sendConversionEvent, messagingContactInfo, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer, compressVideoToLimit } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
+const { agregarPorProducto } = require('./orders/desgloseProductos');
 const { calcularReporte } = require('./inventario/inventarioReporte');
 const { ejecutarReporteDiario } = require('./inventario/inventarioScheduler');
 const { runScheduledMessagesSweep } = require('./scheduledMessages/scheduledMessagesScheduler');
@@ -938,6 +939,46 @@ async function generateDailySnapshot(dateISO) {
     };
 }
 
+/**
+ * Aplica el rango de fechas del filtro a una query de `pedidos`, en hora de México.
+ * Lo comparten /orders/list, /orders/count y /orders/desglose: si el criterio se
+ * separa entre ellos, el desglose deja de cuadrar con la tabla que lo originó.
+ */
+function applyOrdersDateFilter(query, { dateFilter, customStart, customEnd }) {
+    if (dateFilter === 'personalizado' && customStart && customEnd) {
+        return query
+            .where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(Number(customStart)))
+            .where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(Number(customEnd)));
+    }
+    if (!dateFilter) return query;
+
+    const mexicoDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    let startDate, endDate;
+
+    if (dateFilter === 'hoy') {
+        startDate = new Date(mexicoDate + 'T00:00:00-06:00');
+        endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
+    } else if (dateFilter === 'ayer') {
+        const yesterday = new Date(mexicoDate + 'T00:00:00-06:00');
+        yesterday.setDate(yesterday.getDate() - 1);
+        startDate = yesterday;
+        endDate = new Date(mexicoDate + 'T00:00:00-06:00');
+    } else if (dateFilter === 'este-mes') {
+        startDate = new Date(mexicoDate.substring(0, 7) + '-01T00:00:00-06:00');
+        endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
+    } else if (dateFilter === 'ultimos-10-dias') {
+        const tenDaysAgo = new Date(mexicoDate + 'T00:00:00-06:00');
+        tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+        startDate = tenDaysAgo;
+        endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
+    }
+
+    if (!startDate || !endDate) return query;
+    return query
+        .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(startDate))
+        .where('createdAt', '<', admin.firestore.Timestamp.fromDate(endDate));
+}
+
 // --- Endpoint GET /api/orders/list (Pedidos paginados con cursor) ---
 router.get('/orders/list', async (req, res) => {
     try {
@@ -949,39 +990,7 @@ router.get('/orders/list', async (req, res) => {
         if (producto) query = query.where('producto', '==', producto);
         if (estatus) query = query.where('estatus', '==', estatus);
 
-        // Date range filtering
-        const getMexicoDate = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-
-        if (dateFilter === 'personalizado' && customStart && customEnd) {
-            query = query.where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(Number(customStart)));
-            query = query.where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(Number(customEnd)));
-        } else if (dateFilter) {
-            const mexicoDate = getMexicoDate();
-            let startDate, endDate;
-
-            if (dateFilter === 'hoy') {
-                startDate = new Date(mexicoDate + 'T00:00:00-06:00');
-                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
-            } else if (dateFilter === 'ayer') {
-                const yesterday = new Date(mexicoDate + 'T00:00:00-06:00');
-                yesterday.setDate(yesterday.getDate() - 1);
-                startDate = yesterday;
-                endDate = new Date(mexicoDate + 'T00:00:00-06:00');
-            } else if (dateFilter === 'este-mes') {
-                startDate = new Date(mexicoDate.substring(0, 7) + '-01T00:00:00-06:00');
-                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
-            } else if (dateFilter === 'ultimos-10-dias') {
-                const tenDaysAgo = new Date(mexicoDate + 'T00:00:00-06:00');
-                tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-                startDate = tenDaysAgo;
-                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
-            }
-
-            if (startDate && endDate) {
-                query = query.where('createdAt', '>=', admin.firestore.Timestamp.fromDate(startDate));
-                query = query.where('createdAt', '<', admin.firestore.Timestamp.fromDate(endDate));
-            }
-        }
+        query = applyOrdersDateFilter(query, { dateFilter, customStart, customEnd });
 
         query = query.orderBy('createdAt', 'desc');
 
@@ -1043,44 +1052,52 @@ router.get('/orders/count', async (req, res) => {
         if (producto) query = query.where('producto', '==', producto);
         if (estatus) query = query.where('estatus', '==', estatus);
 
-        const getMexicoDate = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-
-        if (dateFilter === 'personalizado' && customStart && customEnd) {
-            query = query.where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(Number(customStart)));
-            query = query.where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(Number(customEnd)));
-        } else if (dateFilter) {
-            const mexicoDate = getMexicoDate();
-            let startDate, endDate;
-
-            if (dateFilter === 'hoy') {
-                startDate = new Date(mexicoDate + 'T00:00:00-06:00');
-                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
-            } else if (dateFilter === 'ayer') {
-                const yesterday = new Date(mexicoDate + 'T00:00:00-06:00');
-                yesterday.setDate(yesterday.getDate() - 1);
-                startDate = yesterday;
-                endDate = new Date(mexicoDate + 'T00:00:00-06:00');
-            } else if (dateFilter === 'este-mes') {
-                startDate = new Date(mexicoDate.substring(0, 7) + '-01T00:00:00-06:00');
-                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
-            } else if (dateFilter === 'ultimos-10-dias') {
-                const tenDaysAgo = new Date(mexicoDate + 'T00:00:00-06:00');
-                tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-                startDate = tenDaysAgo;
-                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
-            }
-
-            if (startDate && endDate) {
-                query = query.where('createdAt', '>=', admin.firestore.Timestamp.fromDate(startDate));
-                query = query.where('createdAt', '<', admin.firestore.Timestamp.fromDate(endDate));
-            }
-        }
+        query = applyOrdersDateFilter(query, { dateFilter, customStart, customEnd });
 
         const snapshot = await query.count().get();
         res.status(200).json({ success: true, count: snapshot.data().count });
     } catch (error) {
         console.error("Error counting orders:", error);
         res.status(500).json({ success: false, message: 'Error al contar pedidos.', error: error.message });
+    }
+});
+
+// --- Endpoint GET /api/orders/desglose (Piezas por producto dentro del filtro) ---
+// Alimenta /pedidos/desglose. Agrega del lado del servidor porque el front tendría
+// que paginar de 50 en 50 para llegar al mismo total, y con "este mes" eso son
+// decenas de peticiones para un puñado de números.
+const DESGLOSE_MAX_PEDIDOS = 4000;
+
+router.get('/orders/desglose', async (req, res) => {
+    try {
+        const { producto, estatus, dateFilter, customStart, customEnd } = req.query;
+
+        let query = db.collection('pedidos');
+
+        if (producto) query = query.where('producto', '==', producto);
+        if (estatus) query = query.where('estatus', '==', estatus);
+
+        query = applyOrdersDateFilter(query, { dateFilter, customStart, customEnd });
+
+        const snapshot = await query
+            .orderBy('createdAt', 'desc')
+            .limit(DESGLOSE_MAX_PEDIDOS + 1)
+            .get();
+
+        const truncado = snapshot.docs.length > DESGLOSE_MAX_PEDIDOS;
+        const docs = truncado ? snapshot.docs.slice(0, DESGLOSE_MAX_PEDIDOS) : snapshot.docs;
+
+        const desglose = agregarPorProducto(docs.map(doc => doc.data()));
+
+        res.status(200).json({
+            success: true,
+            ...desglose,
+            truncado,
+            max: DESGLOSE_MAX_PEDIDOS
+        });
+    } catch (error) {
+        console.error("Error armando el desglose por producto:", error);
+        res.status(500).json({ success: false, message: 'Error al obtener el desglose.', error: error.message });
     }
 });
 

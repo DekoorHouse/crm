@@ -328,6 +328,9 @@ app.get('/pedidos-new/login', (req, res) => res.redirect('/login'));
 app.get('/pedidos', (req, res) => {
     res.sendFile(path.join(nextjsDir, 'pedidos.html'));
 });
+app.get('/pedidos/desglose', (req, res) => {
+    res.sendFile(path.join(nextjsDir, 'pedidos', 'desglose.html'));
+});
 app.get('/login', (req, res) => {
     res.sendFile(path.join(nextjsDir, 'login.html'));
 });
