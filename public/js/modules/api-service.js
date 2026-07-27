@@ -177,8 +177,9 @@ async function fetchInitialContacts() {
         const profile = state.currentUserProfile;
 
         // Si hay un filtro de departamento activo en la UI, este tiene prioridad.
-        if (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') {
-            departmentIdParam = state.activeDepartmentFilter;
+        // Puede traer varios IDs: la API los acepta separados por coma.
+        if (getDepartmentFilterParam()) {
+            departmentIdParam = getDepartmentFilterParam();
         }
         // Si no hay filtro activo, y el usuario NO es admin, se filtra por sus departamentos.
         else if (profile && profile.role !== 'admin') {
@@ -258,8 +259,8 @@ async function fetchPendingAiCount() {
         const profile = state.currentUserProfile;
 
         // Prioridad: 1. Filtro activo en UI. 2. Departamentos del usuario (si no es admin).
-        if (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') {
-            departmentIdParam = state.activeDepartmentFilter;
+        if (getDepartmentFilterParam()) {
+            departmentIdParam = getDepartmentFilterParam();
         } else if (profile && profile.role !== 'admin') {
             if (profile.assignedDepartments && profile.assignedDepartments.length > 0) {
                 departmentIdParam = profile.assignedDepartments.join(',');
@@ -326,8 +327,12 @@ function listenForPendingAiCount() {
     let query = db.collection('contacts_whatsapp').where('status', '==', 'pendientes_ia');
 
     // Mantenemos la lógica de filtrado por departamentos para que el conteo sea veraz para el usuario
-    if (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') {
-        query = query.where('assignedDepartmentId', '==', state.activeDepartmentFilter);
+    const deptFilterIds = getDepartmentFilterIds();
+    if (deptFilterIds.length === 1) {
+        query = query.where('assignedDepartmentId', '==', deptFilterIds[0]);
+    } else if (deptFilterIds.length > 1) {
+        // 'in' de Firestore admite hasta 10 valores; el filtro ya viene recortado a ese tope.
+        query = query.where('assignedDepartmentId', 'in', deptFilterIds);
     } else if (profile && profile.role !== 'admin') {
         if (profile.assignedDepartments && profile.assignedDepartments.length > 0) {
             // Un agente solo ve el conteo de sus departamentos asignados (límite de 10 para Firestore 'in')
@@ -455,8 +460,9 @@ async function fetchMoreContacts() {
         const profile = state.currentUserProfile;
 
         // Si hay un filtro de departamento activo en la UI, este tiene prioridad.
-        if (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') {
-            departmentIdParam = state.activeDepartmentFilter;
+        // Puede traer varios IDs: la API los acepta separados por coma.
+        if (getDepartmentFilterParam()) {
+            departmentIdParam = getDepartmentFilterParam();
         }
         // Si no hay filtro activo, y el usuario NO es admin, se filtra por sus departamentos.
         else if (profile && profile.role !== 'admin') {
@@ -667,11 +673,8 @@ function listenForContactUpdates() {
             } 
             // Si hay perfil y es admin, ve todo (o lo filtrado por UI)
             else if (profile.role === 'admin') {
-                isAllowed = true;
-                if (state.activeDepartmentFilter !== 'all' && updatedContactData.assignedDepartmentId !== state.activeDepartmentFilter) {
-                    isAllowed = false;
-                }
-            } 
+                isAllowed = contactMatchesDepartmentFilter(updatedContactData);
+            }
             // Si es agente normal
             else { 
                 const userDepartments = new Set(profile.assignedDepartments || []);

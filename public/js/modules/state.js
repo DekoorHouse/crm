@@ -104,7 +104,7 @@ let state = {
     adRoutingRules: [], // Reglas de enrutamiento Ad ID -> Depto
     currentUserProfile: null, // Perfil del usuario actual (incluye assignedDepartments y role)
     allUsers: [], // Lista de todos los usuarios del sistema
-    activeDepartmentFilter: 'all', // Filtro de departamento activo en la lista de chats
+    activeDepartmentFilters: [], // IDs de departamento activos en la lista de chats (vacío = todos)
     pendingAiCount: 0, // Conteo global de chats pendientes de IA
     unreadTotalCount: 0, // Conteo global de chats no leídos (para el badge de "No leídos")
 
@@ -146,6 +146,31 @@ let unsubscribeMessagesListener = null,
     unsubscribeCampanasListener = null,
     unsubscribePedidosCampanaListener = null,
     unsubscribeProductsListener = null;
+
+// --- Filtro de departamentos de la lista de chats ---
+// Firestore topa el operador 'in' a 10 valores y el servidor recorta a 10 sin avisar,
+// así que el selector no deja marcar más: si no, el filtro mentiría en silencio.
+const MAX_DEPARTMENT_FILTERS = 10;
+
+/** IDs de departamento marcados en el filtro. Vacío = todos. */
+function getDepartmentFilterIds() {
+    return Array.isArray(state.activeDepartmentFilters)
+        ? state.activeDepartmentFilters.filter(Boolean)
+        : [];
+}
+
+/** Los mismos IDs como parámetro para la API (coma) o null si no hay filtro. */
+function getDepartmentFilterParam() {
+    const ids = getDepartmentFilterIds();
+    return ids.length ? ids.join(',') : null;
+}
+
+/** ¿El contacto cae dentro del filtro de departamentos activo? */
+function contactMatchesDepartmentFilter(contact) {
+    const ids = getDepartmentFilterIds();
+    if (!ids.length) return true;
+    return ids.includes(contact && contact.assignedDepartmentId);
+}
 
 // --- Instancias de Gráficas (Chart.js) ---
 let dailyMessagesChart = null; // Gráfica de mensajes diarios (general)

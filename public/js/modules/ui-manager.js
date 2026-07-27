@@ -2104,22 +2104,30 @@ function renderTagFilters() {
         availableDepts = availableDepts.filter(d => allowed.has(d.id));
     }
     if (availableDepts.length > 0) {
-        const activeDept = state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all'
-            ? availableDepts.find(d => d.id === state.activeDepartmentFilter)
-            : null;
-        let deptItems = `<button class="tag-dropdown-item ${!activeDept ? 'active' : ''}" onclick="setDepartmentFilter('all'); closeDeptDropdown();">Todos los departamentos</button>`;
-        availableDepts.forEach(d => {
-            const dot = d.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${d.color};margin-right:6px;vertical-align:middle;"></span>` : '';
-            deptItems += `<button class="tag-dropdown-item ${state.activeDepartmentFilter === d.id ? 'active' : ''}" onclick="setDepartmentFilter('${d.id}'); closeDeptDropdown();">${dot}${d.name || 'Sin nombre'}</button>`;
-        });
+        // Selector MULTI-departamento (mismo patrón que el de anuncios: buscador + casillas +
+        // "Aplicar"), para poder ver varios departamentos juntos en una sola lista.
+        deptFilterOptions = availableDepts;
+        const selectedDepts = getDepartmentFilterIds();
+        const deptLabel = selectedDepts.length === 0
+            ? '<i class="fas fa-sitemap"></i>'
+            : (selectedDepts.length === 1
+                ? `<i class="fas fa-sitemap text-xs mr-1"></i>${escapeHtml((availableDepts.find(d => d.id === selectedDepts[0]) || {}).name || 'Departamento')}`
+                : `<i class="fas fa-sitemap text-xs mr-1"></i>${selectedDepts.length} departamentos`);
         // Separador Canal | Departamento
         buttonsHtml += `<span class="filter-sep" aria-hidden="true"></span>`;
         buttonsHtml += `<div class="tag-dropdown-wrapper">
-            <button class="filter-btn tag-dropdown-toggle ${activeDept ? 'active' : ''}" onclick="toggleDeptDropdown(event)" title="Filtrar por departamento">
-                ${activeDept ? `<i class="fas fa-sitemap text-xs mr-1"></i>${activeDept.name}` : '<i class="fas fa-sitemap"></i>'}
+            <button class="filter-btn tag-dropdown-toggle ${selectedDepts.length ? 'active' : ''}" onclick="toggleDeptDropdown(event)" title="Filtrar por departamento(s)">
+                ${deptLabel}
             </button>
-            <div id="dept-dropdown-menu" class="tag-dropdown-menu hidden">
-                ${deptItems}
+            <div id="dept-dropdown-menu" class="tag-dropdown-menu dept-dropdown-menu hidden">
+                <div class="ad-dropdown-head">
+                    <input id="dept-filter-search" type="text" class="ad-filter-search" placeholder="Buscar departamento…" oninput="filterDeptOptions(this.value)" onclick="event.stopPropagation()">
+                </div>
+                <div id="dept-dropdown-list" class="ad-dropdown-list"></div>
+                <div class="ad-dropdown-foot">
+                    <button class="ad-foot-btn" onclick="clearDepartmentFilters()">Limpiar</button>
+                    <button id="dept-apply-btn" class="ad-foot-btn primary" onclick="applyPendingDeptFilters()">Aplicar</button>
+                </div>
             </div>
         </div>`;
     }
@@ -2146,34 +2154,55 @@ function renderTagFilters() {
 }
 
 // Posiciona un menú desplegable de la barra de filtros al abrirlo.
-// En MÓVIL la barra (#tag-filters-container) tiene scroll horizontal
-// (overflow-x:auto + overflow-y:hidden), lo que RECORTA cualquier menú abierto
-// en position:absolute y lo deja invisible. Por eso, en móvil, lo fijamos a la
-// pantalla (position:fixed) para que escape del recorte. En escritorio limpiamos
-// los estilos y manda el CSS (position:absolute).
+// Se fija a la pantalla (position:fixed) en CUALQUIER ancho, por dos motivos distintos:
+//  - En MÓVIL la barra (#tag-filters-container) tiene overflow-x:auto + overflow-y:hidden,
+//    que RECORTA un menú en position:absolute y lo deja invisible.
+//  - En ESCRITORIO la barra ya ocupa varias filas de chips, así que el botón queda muy
+//    abajo; con el max-height del CSS (relativo al viewport) el menú se salía de la
+//    pantalla por abajo y los últimos departamentos quedaban inalcanzables, porque la
+//    página no scrollea y el scroll interno del menú también caía fuera de la vista.
+// Midiendo el hueco real que hay debajo del botón, el menú siempre cabe en pantalla y
+// scrollea por dentro; si abajo no queda espacio suficiente, se abre hacia arriba.
 function positionFilterDropdown(menu) {
     if (!menu) return;
     const wrapper = menu.closest('.tag-dropdown-wrapper');
     const btn = wrapper ? wrapper.querySelector('.tag-dropdown-toggle') : null;
-    if (!btn || window.innerWidth > 768) {
-        menu.style.position = '';
-        menu.style.top = '';
-        menu.style.left = '';
-        menu.style.right = '';
-        menu.style.maxWidth = '';
-        menu.style.maxHeight = '';
-        return;
-    }
+    if (!btn) return;
+
     const rect = btn.getBoundingClientRect();
     const gap = 6, margin = 8;
+
     menu.style.position = 'fixed';
     menu.style.right = 'auto';
     menu.style.maxWidth = (window.innerWidth - margin * 2) + 'px';
-    menu.style.top = (rect.bottom + gap) + 'px';
-    // El selector de anuncios maneja su propio scroll interno (.ad-dropdown-list).
-    if (!menu.classList.contains('ad-dropdown-menu')) {
-        menu.style.maxHeight = (window.innerHeight - rect.bottom - gap - margin) + 'px';
+
+    // Los menús con cabecera/pie fijos (anuncios, departamentos) scrollean en su lista
+    // interna, así que el tope de altura va en esa lista y no en el contenedor.
+    const lista = menu.querySelector('.ad-dropdown-list');
+    // Altura que el menú querría ocupar, sin el tope de la vez anterior.
+    if (lista) lista.style.maxHeight = ''; else menu.style.maxHeight = '';
+    const altoNatural = menu.offsetHeight;
+    const cabeceraYPie = lista ? menu.offsetHeight - lista.offsetHeight : 0;
+
+    const huecoAbajo = window.innerHeight - rect.bottom - gap - margin;
+    const huecoArriba = rect.top - gap - margin;
+    // Hacia abajo si cabe completo; si no, hacia el lado que tenga más espacio.
+    const haciaArriba = altoNatural > huecoAbajo && huecoArriba > huecoAbajo;
+    const alturaFinal = Math.min(altoNatural, Math.max(haciaArriba ? huecoArriba : huecoAbajo, 120));
+
+    if (lista) {
+        lista.style.maxHeight = Math.max(80, alturaFinal - cabeceraYPie) + 'px';
+    } else {
+        menu.style.maxHeight = alturaFinal + 'px';
     }
+
+    // Tope final: pase lo que pase con las alturas, el menú no queda fuera de la pantalla.
+    // Si el espacio es tan poco que tiene que encimarse al botón, mejor encimado que inalcanzable.
+    const alto = menu.offsetHeight;
+    let top = haciaArriba ? (rect.top - gap - alto) : (rect.bottom + gap);
+    top = Math.max(margin, Math.min(top, window.innerHeight - alto - margin));
+    menu.style.top = top + 'px';
+
     // Alinear el borde derecho del menú con el del botón, sin salirse de pantalla.
     const menuWidth = menu.offsetWidth || 200;
     let left = rect.right - menuWidth;
@@ -2209,33 +2238,119 @@ function closeTagDropdownOnOutside(e) {
     }
 }
 
-// --- Dropdown de filtro por Departamento ---
+// --- Dropdown de filtro por Departamento (selector multi con buscador) ---
+// Igual que el de anuncios: la selección queda "pendiente" mientras el panel está
+// abierto y se confirma con "Aplicar", para no recargar la lista en cada casilla.
+let deptFilterPending = new Set();
+let deptFilterOptions = []; // departamentos visibles para el usuario (los pinta renderTagFilters)
+
 function toggleDeptDropdown(event) {
     event.stopPropagation();
     const menu = document.getElementById('dept-dropdown-menu');
     if (!menu) return;
     closeTagDropdown(); // cerrar el de etiquetas si estaba abierto
-    menu.classList.toggle('hidden');
-    if (!menu.classList.contains('hidden')) {
-        positionFilterDropdown(menu);
-        setTimeout(() => {
-            document.addEventListener('click', closeDeptDropdownOnOutside, { once: true });
-        }, 0);
-    }
+    if (typeof closeAdDropdown === 'function') closeAdDropdown();
+    const willOpen = menu.classList.contains('hidden');
+    if (!willOpen) { closeDeptDropdown(); return; }
+    menu.classList.remove('hidden');
+    positionFilterDropdown(menu);
+    deptFilterPending = new Set(getDepartmentFilterIds().map(String));
+    const search = document.getElementById('dept-filter-search');
+    if (search) search.value = '';
+    renderDeptDropdownList('');
+    updateDeptApplyLabel();
+    setTimeout(() => document.addEventListener('click', closeDeptDropdownOnOutside), 0);
+    setTimeout(() => { const s = document.getElementById('dept-filter-search'); if (s) s.focus(); }, 30);
 }
 
 function closeDeptDropdown() {
     const menu = document.getElementById('dept-dropdown-menu');
     if (menu) menu.classList.add('hidden');
+    document.removeEventListener('click', closeDeptDropdownOnOutside);
 }
 
 function closeDeptDropdownOnOutside(e) {
     const menu = document.getElementById('dept-dropdown-menu');
     const wrapper = menu ? menu.closest('.tag-dropdown-wrapper') : null;
-    if (wrapper && !wrapper.contains(e.target)) {
+    if (!wrapper || !wrapper.contains(e.target)) {
         closeDeptDropdown();
     }
 }
+
+function renderDeptDropdownList(filterStr) {
+    const listEl = document.getElementById('dept-dropdown-list');
+    if (!listEl) return;
+    const depts = Array.isArray(deptFilterOptions) ? deptFilterOptions : [];
+    if (!depts.length) {
+        listEl.innerHTML = `<div class="ad-empty">No hay departamentos disponibles.</div>`;
+        return;
+    }
+    const q = (filterStr || '').trim().toLowerCase();
+    const filtered = q ? depts.filter(d => (d.name || '').toLowerCase().includes(q)) : depts;
+    if (!filtered.length) {
+        listEl.innerHTML = `<div class="ad-empty">Sin coincidencias</div>`;
+        return;
+    }
+    // Al llegar al tope, las casillas sin marcar se deshabilitan (Firestore no acepta más).
+    const enTope = deptFilterPending.size >= MAX_DEPARTMENT_FILTERS;
+    listEl.innerHTML = filtered.map(d => {
+        const id = String(d.id);
+        const marcado = deptFilterPending.has(id);
+        const dot = d.color
+            ? `<span class="dept-dot" style="background:${escapeHtml(d.color)}"></span>`
+            : '';
+        const bloqueado = (!marcado && enTope) ? 'disabled' : '';
+        const titulo = bloqueado ? ` title="Máximo ${MAX_DEPARTMENT_FILTERS} departamentos a la vez"` : '';
+        return `<label class="ad-option ${bloqueado ? 'ad-option-disabled' : ''}"${titulo}>
+            <input type="checkbox" data-dept-id="${escapeHtml(id)}" ${marcado ? 'checked' : ''} ${bloqueado} onchange="toggleDeptPending(this.dataset.deptId, this.checked)">
+            <span class="ad-option-name">${dot}${escapeHtml(d.name || 'Sin nombre')}</span>
+        </label>`;
+    }).join('');
+}
+
+function filterDeptOptions(value) {
+    renderDeptDropdownList(value);
+}
+
+function toggleDeptPending(id, checked) {
+    id = String(id);
+    if (checked) {
+        if (deptFilterPending.size >= MAX_DEPARTMENT_FILTERS) return;
+        deptFilterPending.add(id);
+    } else {
+        deptFilterPending.delete(id);
+    }
+    // Repintar para habilitar/deshabilitar el resto cuando se toca el tope.
+    const search = document.getElementById('dept-filter-search');
+    renderDeptDropdownList(search ? search.value : '');
+    updateDeptApplyLabel();
+}
+
+function updateDeptApplyLabel() {
+    const btn = document.getElementById('dept-apply-btn');
+    if (btn) {
+        const n = deptFilterPending.size;
+        btn.textContent = n > 0 ? `Aplicar (${n})` : 'Aplicar';
+    }
+}
+
+function applyPendingDeptFilters() {
+    closeDeptDropdown();
+    setDepartmentFilters(Array.from(deptFilterPending));
+}
+
+/** "Limpiar": quita el filtro y muestra todos los departamentos. */
+function clearDepartmentFilters() {
+    deptFilterPending = new Set();
+    closeDeptDropdown();
+    setDepartmentFilters([]);
+}
+
+window.toggleDeptDropdown = toggleDeptDropdown;
+window.filterDeptOptions = filterDeptOptions;
+window.toggleDeptPending = toggleDeptPending;
+window.applyPendingDeptFilters = applyPendingDeptFilters;
+window.clearDepartmentFilters = clearDepartmentFilters;
 
 // --- Dropdown de filtro por Anuncio (selector multi con buscador) ---
 // La selección queda "pendiente" mientras el panel está abierto; se confirma con "Aplicar".
@@ -2590,8 +2705,8 @@ async function loadDepartmentCounts() {
  * comportamiento que elegir el departamento en el filtro de Chats).
  */
 function enterDepartment(deptId) {
-    // Forzar el filtro a ESTE departamento (sin togglear a "todos").
-    state.activeDepartmentFilter = deptId || 'all';
+    // Forzar el filtro a ESTE departamento (reemplaza la selección, no la suma).
+    state.activeDepartmentFilters = deptId ? [deptId] : [];
     navigateTo('chats', true);
     // Traer del servidor los chats de ese departamento (no usar solo la caché).
     state.contacts = [];

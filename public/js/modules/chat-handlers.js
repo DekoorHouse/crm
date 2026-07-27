@@ -97,9 +97,9 @@ function handleSearchContacts() {
     // --- NUEVO: Filtro de Departamento activo (selección en la UI) ---
     // Se aplica en CADA render para que los chats que llegan en tiempo real desde
     // OTRO departamento no se cuelen en la lista mientras hay un filtro activo.
-    // Coincide con la semántica del filtro del servidor: where('assignedDepartmentId', '==', filtro).
-    if (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') {
-        contactsToRender = contactsToRender.filter(c => c.assignedDepartmentId === state.activeDepartmentFilter);
+    // Coincide con la semántica del filtro del servidor: where('assignedDepartmentId', 'in', filtros).
+    if (getDepartmentFilterIds().length) {
+        contactsToRender = contactsToRender.filter(contactMatchesDepartmentFilter);
     }
 
     // --- Archivados: la vista "Archivados" muestra solo archivados; el resto los oculta. ---
@@ -1991,15 +1991,19 @@ function clearAdFilters() {
 }
 window.clearAdFilters = clearAdFilters;
 
-function setDepartmentFilter(deptId) {
-    // Si se vuelve a elegir el mismo departamento, regresar a "todos"
-    state.activeDepartmentFilter = (state.activeDepartmentFilter === deptId) ? 'all' : (deptId || 'all');
+/**
+ * Aplica el filtro por departamento(s). Recibe la lista completa de IDs marcados
+ * (vacía = todos). Se recorta al máximo que aguanta el operador 'in' de Firestore.
+ */
+function setDepartmentFilters(deptIds) {
+    const ids = Array.isArray(deptIds) ? deptIds.filter(Boolean) : [];
+    state.activeDepartmentFilters = [...new Set(ids)].slice(0, MAX_DEPARTMENT_FILTERS);
     state.archivedOnly = false; // salir de la vista Archivados (evita combinar filtros sin índice)
     renderTagFilters();
     state.contacts = [];
     fetchInitialContacts();
 }
-window.setDepartmentFilter = setDepartmentFilter;
+window.setDepartmentFilters = setDepartmentFilters;
 
 async function handleDesignToggle(contactId, inDesign) {
     try {
