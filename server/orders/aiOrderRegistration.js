@@ -35,6 +35,10 @@ const ADMIN_VERIFY_PHONE = process.env.ADMIN_VERIFY_PHONE || '5216182297167';
 const IN_FLIGHT_STALE_MS = 3 * 60 * 1000;
 const IN_FLIGHT_RETRY_DELAY_MS = 95 * 1000;
 
+// Intentos del extractor antes de rendirse y caer al flujo manual (ver extractOrderDetailed).
+const EXTRACTOR_INTENTOS = 2;
+const EXTRACTOR_REINTENTO_MS = 1500;
+
 // Si el último pedido NO cancelado del contacto tiene menos de esto, un nuevo /registrar
 // se trata como CAMBIO de ese pedido (actualizar/avisar) salvo que el extractor determine
 // que es un pedido ADICIONAL independiente (esAdicional=true). Caso real que motivó esto:
@@ -191,33 +195,8 @@ Reglas:
  * @returns {Promise<{listo:boolean, items:Array, esAdicional:boolean, total:number, confianza:number, faltante:string}|null>}
  *          null si la IA falla o el JSON no se pudo interpretar.
  */
-async function extractOrderFromChat({ conversationText, name, catalogText, existingOrder = null }) {
-    if (!conversationText || !conversationText.trim()) return null;
-
-    // require perezoso para evitar ciclo de módulos services <-> aiOrderRegistration
-    const { generateGeminiResponse } = require('../services');
-
-    const existingOrderNote = existingOrder ? `
-PEDIDO YA REGISTRADO en el sistema para este cliente: ${existingOrder.num} — ${String(existingOrder.datosProducto || '').replace(/\s+/g, ' ').slice(0, 300)} — Total registrado: $${existingOrder.precio}.
-Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelve el pedido COMPLETO como debe quedar al final (todos sus items, esAdicional=false). Si el cliente pidió OTRO pedido independiente además de aquel, devuelve SOLO los productos nuevos (esAdicional=true).
-` : '';
-
-    const prompt = `Cliente: ${name || 'desconocido'}\n\nConversación (más antiguo arriba):\n${conversationText}\n\nDevuelve solo el JSON.`;
-
-    let res;
-    try {
-        res = await generateGeminiResponse(prompt, [], buildExtractorSystemInstruction(catalogText, existingOrderNote));
-    } catch (e) {
-        console.warn('[AI_ORDER] Extracción falló:', e.message);
-        return null;
-    }
-
-    // Registrar uso de tokens etiquetado como 'registro_pedido' (extracción de datos del pedido
-    // por IA). El helper mantiene los totales y añade el desglose por fuente.
-    require('../aiUsage').logAiUsage('registro_pedido', res).catch(() => {});
-
-    const parsed = parseClassifierJson(res.text);
-    if (!parsed || typeof parsed !== 'object') return null;
+/** Normaliza y sanea la salida cruda del extractor. */
+function saneaExtraccion(parsed) {
     // Saneo: los datos de personalización vienen VERBATIM del cliente y acaban en innerHTML
     // de varias vistas del CRM; sin esto un "nombre" como <img onerror=...> sería XSS almacenado.
     // Los topes (items/cantidad) acotan alucinaciones del extractor: una lámpara personalizada
@@ -241,6 +220,74 @@ Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelv
         confianza: Math.max(0, Math.min(100, Number(parsed.confianza) || 0)),
         faltante: typeof parsed.faltante === 'string' ? parsed.faltante.trim().slice(0, 300) : ''
     };
+}
+
+/**
+ * Extrae el pedido de la conversación. Devuelve { extraction, motivo }: si `extraction`
+ * viene null, `motivo` dice POR QUÉ.
+ *
+ * Los dos modos de falla (la API de Gemini tronó / el modelo respondió algo que no es JSON)
+ * se registraban antes con el MISMO texto —"el extractor no devolvió un JSON válido"—, así
+ * que la bitácora no permitía distinguirlos sin los logs del servidor.
+ *
+ * Además reintenta una vez: estas fallas son transitorias (la conversación ya está completa
+ * y al segundo intento sale). Sin el reintento, un tropiezo suelto del modelo dejaba la venta
+ * cerrada SIN pedido y al cliente creyendo que ya estaba registrado — caso real de Flaco Avila
+ * (5216391483947), que hubo que capturar a mano como DH14004. Dos intentos (~30 s) caben de
+ * sobra dentro de IN_FLIGHT_STALE_MS (3 min).
+ */
+async function extractOrderDetailed({ conversationText, name, catalogText, existingOrder = null }) {
+    if (!conversationText || !conversationText.trim()) {
+        return { extraction: null, motivo: 'la conversación llegó vacía' };
+    }
+
+    // require perezoso para evitar ciclo de módulos services <-> aiOrderRegistration
+    const { generateGeminiResponse } = require('../services');
+
+    const existingOrderNote = existingOrder ? `
+PEDIDO YA REGISTRADO en el sistema para este cliente: ${existingOrder.num} — ${String(existingOrder.datosProducto || '').replace(/\s+/g, ' ').slice(0, 300)} — Total registrado: $${existingOrder.precio}.
+Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelve el pedido COMPLETO como debe quedar al final (todos sus items, esAdicional=false). Si el cliente pidió OTRO pedido independiente además de aquel, devuelve SOLO los productos nuevos (esAdicional=true).
+` : '';
+
+    const prompt = `Cliente: ${name || 'desconocido'}\n\nConversación (más antiguo arriba):\n${conversationText}\n\nDevuelve solo el JSON.`;
+    const systemInstruction = buildExtractorSystemInstruction(catalogText, existingOrderNote);
+
+    let motivo = 'el extractor no devolvió nada';
+    for (let intento = 1; intento <= EXTRACTOR_INTENTOS; intento++) {
+        let res;
+        try {
+            res = await generateGeminiResponse(prompt, [], systemInstruction);
+        } catch (e) {
+            motivo = `la API de Gemini falló (${e.message})`;
+            console.warn(`[AI_ORDER] Extracción intento ${intento}/${EXTRACTOR_INTENTOS}: ${motivo}`);
+            if (intento < EXTRACTOR_INTENTOS) await new Promise(r => setTimeout(r, EXTRACTOR_REINTENTO_MS));
+            continue;
+        }
+
+        // Registrar uso de tokens etiquetado como 'registro_pedido' (extracción de datos del pedido
+        // por IA). El helper mantiene los totales y añade el desglose por fuente.
+        require('../aiUsage').logAiUsage('registro_pedido', res).catch(() => {});
+
+        const parsed = parseClassifierJson(res.text);
+        if (parsed && typeof parsed === 'object') {
+            if (intento > 1) console.log(`[AI_ORDER] Extracción resuelta en el intento ${intento}.`);
+            return { extraction: saneaExtraccion(parsed), motivo: null };
+        }
+
+        // Se guarda un pedazo de lo que respondió: sin esto no hay manera de saber si el modelo
+        // se puso a conversar, devolvió el JSON partido o contestó vacío.
+        const eco = String(res.text || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+        motivo = `el modelo respondió algo que no es JSON (${eco || 'respuesta vacía'})`;
+        console.warn(`[AI_ORDER] Extracción intento ${intento}/${EXTRACTOR_INTENTOS}: ${motivo}`);
+        if (intento < EXTRACTOR_INTENTOS) await new Promise(r => setTimeout(r, EXTRACTOR_REINTENTO_MS));
+    }
+
+    return { extraction: null, motivo };
+}
+
+/** Igual que extractOrderDetailed pero devolviendo solo la extracción (o null). */
+async function extractOrderFromChat(args) {
+    return (await extractOrderDetailed(args)).extraction;
 }
 
 /**
@@ -329,7 +376,7 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             }
         }
 
-        const extraction = await extractOrderFromChat({
+        const { extraction, motivo: motivoExtraccion } = await extractOrderDetailed({
             conversationText,
             name,
             catalogText: cfg.catalogText,
@@ -342,7 +389,7 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             } : null).catch(() => null)
         });
 
-        if (!extraction) throw new Error('el extractor no devolvió un JSON válido');
+        if (!extraction) throw new Error(motivoExtraccion || 'el extractor no devolvió nada');
         if (!extraction.listo) throw new Error(`el extractor no lo ve listo: ${extraction.faltante || 'sin motivo'}`);
         if (extraction.items.length === 0) throw new Error('el extractor no devolvió productos');
         if (extraction.items.some(it => !(it.precio > 0))) throw new Error('hay productos sin precio');
@@ -470,6 +517,8 @@ module.exports = {
     getAiOrderConfig,
     buildRegistrationRule,
     extractOrderFromChat,
+    extractOrderDetailed,
+    saneaExtraccion,
     registerOrderFromAI,
     DEFAULT_CONFIG
 };
