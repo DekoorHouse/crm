@@ -521,9 +521,20 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-// --- INICIO DEL SERVIDOR ---
-const server = app.listen(PORT, () => {
-  console.log(`Servidor escuchando en el puerto ${PORT}`);
+// --- SCHEDULERS ---
+// OJO: estos schedulers ESCRIBEN en Firestore (marcan intentos, mandan WhatsApp, indexan).
+// Corriendo en local contra la BD de producción duplican el trabajo del servidor de Render
+// y pueden corromper datos: p.ej. carritosScheduler sube `recoveryAttempts` aunque el envío
+// falle por no haber WHATSAPP_TOKEN, y a los 3 intentos marca el carrito como
+// 'message_failed' para siempre. Por eso van apagados salvo que estemos en Render.
+//
+//   ENABLE_SCHEDULERS=true|false  → manda siempre, en cualquier entorno.
+//   Sin esa variable              → se encienden solo si detectamos Render.
+const SCHEDULERS_ENABLED = process.env.ENABLE_SCHEDULERS
+  ? /^(1|true|yes|on)$/i.test(process.env.ENABLE_SCHEDULERS.trim())
+  : Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.RENDER_EXTERNAL_URL);
+
+function startSchedulers() {
   // Iniciar scheduler de auto-publicacion Google Photos -> Facebook
   startScheduler();
   // Iniciar scheduler de WhatsApp Group
@@ -557,6 +568,19 @@ const server = app.listen(PORT, () => {
   startMessageSearchIndexer();
   // Vigilante de Pendientes IA (cada 30 min): avisa ventas cerradas que llevan >1 h sin pedido registrado
   startPendientesIaWatchdog();
+}
+
+// --- INICIO DEL SERVIDOR ---
+const server = app.listen(PORT, () => {
+  console.log(`Servidor escuchando en el puerto ${PORT}`);
+  if (SCHEDULERS_ENABLED) {
+    startSchedulers();
+  } else {
+    console.log('[SCHEDULERS] DESACTIVADOS. La API y el CRM funcionan normal, pero no se ejecutan');
+    console.log('[SCHEDULERS] tareas programadas (carritos, cobranza, digests, indexador, etc.).');
+    console.log('[SCHEDULERS] Esto evita escribir en la BD de produccion desde una copia local.');
+    console.log('[SCHEDULERS] Para encenderlos: ENABLE_SCHEDULERS=true');
+  }
   // Conectar bridge TCP a MeerK40t
   laserBridge.connect();
 });
