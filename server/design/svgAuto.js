@@ -27,6 +27,29 @@ const MANUAL_SPECIAL_RE = /foto|imagen|graba|logo|escudo|personaje|mascota|dibuj
 const productOf = o => String(o.producto || (o.items && o.items[0] && o.items[0].producto) || '').toLowerCase();
 const datosOf = o => (Array.isArray(o.items) ? o.items : []).map(it => it.datosProducto).filter(Boolean).join('\n') || o.datosProducto || o.producto || '';
 
+// Notas de LOGÍSTICA/pago que la gente escribe en el campo "Especial" del pedido pero que NO cambian
+// el diseño de la lámpara ("Envío exprés DHL", "Recoger en oficinas", "Tarjeta: ..."). Sin esto, la
+// sola ETIQUETA "Especial:" hacía match con SPECIAL_RE y CUALQUIER pedido con ese campo lleno quedaba
+// fuera del corte automático aunque no tuviera nada especial en el diseño (caso DH13973, 2026-07-27).
+// Se exige que la nota EMPIECE con una de estas palabras: si trae además algo de diseño (foto, frase,
+// grabado...), SPECIAL_RE lo detecta igual y el pedido sigue siendo manual.
+const ESPECIAL_LOGISTICA_RE = /^\W*(env[ií]os?|expr[eé]s|dhl|estafeta|paqueter|recoger|ocurre|sucursal|entrega|domicilio|urgente|factura|tarjeta)\b/i;
+
+// ¿El pedido lleva algo ESPECIAL que obliga a diseño manual? Evalúa el VALOR del campo "Especial",
+// no su etiqueta, y descarta las notas de logística.
+function esEspecial(o) {
+    const datos = String(datosOf(o) || '');
+    const m = /especial\s*:\s*([^|\n]+)/i.exec(datos);
+    if (m) {
+        const valor = m[1].trim();
+        // Nota de logística y sin ninguna palabra de diseño -> NO es especial
+        if (ESPECIAL_LOGISTICA_RE.test(valor) && !SPECIAL_RE.test(valor)) {
+            return SPECIAL_RE.test(datos.replace(/especial\s*:[^|\n]*/gi, ' '));
+        }
+    }
+    return SPECIAL_RE.test(datos);
+}
+
 // Quita acentos para comparaciones robustas ("Corazón" -> "Corazon").
 const sinAcentos = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
 // ¿Es una lámpara de corazones? TOLERA acentos y singular/plural: el regex simple /corazon/ NO matchea
@@ -69,7 +92,7 @@ function fieldsFromDatos(o) {
 // (el worker salta los ya trabajados o en proceso; el endpoint separa "ya diseñado" de "en cola").
 function svgAutoEligibility(o, previews) {
     if (!isCorazon(o)) return { eligible: false, reason: 'not_corazon' };
-    if (SPECIAL_RE.test(datosOf(o))) return { eligible: false, reason: 'special' };
+    if (esEspecial(o)) return { eligible: false, reason: 'special' };
     previews = Array.isArray(previews) ? previews : [];
     if (!previews.length) return { eligible: false, reason: 'no_mockup' };
     const last = previews[previews.length - 1];
@@ -209,5 +232,5 @@ function forcedDesignFields(o, previews) {
 
 module.exports = {
     svgAutoEligibility, isAutoWaiting, isVideoCorregir, isVideoAutoWaiting, forcedDesignFields,
-    parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, SIN_FECHA_RE, productOf, datosOf, isCorazon,
+    parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, esEspecial, SIN_FECHA_RE, productOf, datosOf, isCorazon,
 };

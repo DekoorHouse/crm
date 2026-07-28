@@ -26,7 +26,26 @@ const DONE = new Set([
     'cancelado', 'entregado', 'devolución', 'devolucion', 'mns amenazador',
 ]);
 
-const REASONS = ['mockup', 'fabricar', 'datos', 'video', 'segundo_producto'];
+const REASONS = ['mockup', 'fabricar', 'corte', 'datos', 'video', 'segundo_producto'];
+
+// --- Motivo 'corte': el HUECO por el que se colaban pedidos sin diseñar (detectado 2026-07-27) -----
+// Al VALIDAR el pago el pedido pasa a 'Pagado' (NO a 'Fabricar'), y si además se le generó la guía por
+// adelantado (aquí se sacan antes de fabricar) quedaba fuera de TODAS las colas: el worker lo saltaba
+// por el candado anti-re-corte de la guía, y esta lista tampoco lo mostraba porque 'Pagado' no era un
+// bucket. Resultado: 153 pedidos pagados y sin diseñar, invisibles. Ahora un pedido PAGADO y sin
+// diseñar es pendiente de corte AUNQUE ya tenga guía.
+// El corte de fecha evita volcar el histórico (127 de esos 153 ya se fabricaron a mano hace semanas);
+// es una fecha FIJA, no una ventana móvil, para que ningún pedido nuevo vuelva a desaparecer solo.
+const CORTE_DESDE_MS = Date.parse('2026-07-17T00:00:00Z');
+
+const _ms = t => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : 0);
+
+// ¿Pedido con pago validado que sigue SIN diseño de corte? (no mira el estatus ni la guía a propósito)
+function faltaCorte(d) {
+    if (d.svgCorteAt) return false;                       // ya tiene su SVG de corte
+    const pago = _ms(d.comprobanteValidadoAt);
+    return !!pago && pago >= CORTE_DESDE_MS;
+}
 
 // Evalúa los motivos de "pendiente de diseño" sobre los datos de UN pedido (puede ser []).
 // hasMockup (opcional): si el caller ya consultó mockup_previews, lo pasa para no depender de la marca.
@@ -55,6 +74,10 @@ function reasonsForOrderData(d, hasMockup) {
             reasons.push('mockup');
         }
     }
+    // Red de seguridad: pagado y sin diseñar sigue siendo un pendiente aunque su estatus sea 'Pagado'
+    // y aunque ya tenga guía (ver CORTE_DESDE_MS arriba). Solo si ningún otro motivo lo cubre ya.
+    if (!reasons.length && faltaCorte(d)) reasons.push('corte');
+
     if (d.productoAgregadoPostPagoAt) reasons.push('segundo_producto');
 
     return reasons;
