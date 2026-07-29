@@ -1326,7 +1326,8 @@ async function getOrdersInfoForContact(contactId) {
             if (!/cancel/i.test(String(d.estatus || ''))) nonCancelled++;
             const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
             if (ms >= bestMs) { bestMs = ms; best = doc; }
-            if (ms && (Date.now() - ms) <= ACTIVE_WINDOW_MS && !/cancel|entregad|devol/i.test(String(d.estatus || ''))) {
+            const yaEnviado = !!(d.guiaEnvio && d.guiaEnvio.guia); // con guía = ya salió, no pide dirección
+            if (ms && (Date.now() - ms) <= ACTIVE_WINDOW_MS && !yaEnviado && !/cancel|entregad|devol/i.test(String(d.estatus || ''))) {
                 active.push({ doc, ms });
             }
         }
