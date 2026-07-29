@@ -1,5 +1,5 @@
-// === Ideas / Pizarra de post-its ===
-// Lecturas: listener de Firestore en la coleccion `crm_ideas` (ver page.tsx).
+// === Ideas / Pizarra personal de post-its (/ideas, fuera del CRM) ===
+// Lecturas: listener de Firestore en la coleccion `ideas` (ver app/ideas/page.tsx).
 // Escrituras: endpoints Express /api/ideas (firebase-admin), igual que /api/tags.
 
 export interface Idea {
@@ -8,6 +8,8 @@ export interface Idea {
   color: string;
   x: number;
   y: number;
+  w: number;
+  h: number;
   rotation: number;
   z: number;
 }

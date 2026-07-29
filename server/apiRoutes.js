@@ -6759,16 +6759,19 @@ router.delete('/tags', async (req, res) => {
 });
 
 
-// --- Endpoints para Ideas / Pizarra de post-its (/api/ideas) ---
+// --- Endpoints para Ideas / Pizarra personal de post-its (/api/ideas) ---
+// La pizarra vive en /ideas (fuera del CRM). Coleccion Firestore: `ideas`.
 // POST (Crear)
 router.post('/ideas', async (req, res) => {
-    const { text = '', color = '#FEF08A', x = 40, y = 40, rotation = 0, z = 1 } = req.body || {};
+    const { text = '', color = '#FEF08A', x = 40, y = 40, w = 176, h = 176, rotation = 0, z = 1 } = req.body || {};
     try {
-        const ref = await db.collection('crm_ideas').add({
+        const ref = await db.collection('ideas').add({
             text: String(text),
             color: String(color),
             x: Number(x) || 0,
             y: Number(y) || 0,
+            w: Number(w) || 176,
+            h: Number(h) || 176,
             rotation: Number(rotation) || 0,
             z: Number(z) || 1,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -6780,7 +6783,7 @@ router.post('/ideas', async (req, res) => {
     }
 });
 
-// PUT (Actualizar una idea: texto, color y/o posicion)
+// PUT (Actualizar una idea: texto, color, posicion y/o tamano)
 router.put('/ideas/:id', async (req, res) => {
     const { id } = req.params;
     const update = {};
@@ -6788,6 +6791,8 @@ router.put('/ideas/:id', async (req, res) => {
     if (req.body.color !== undefined) update.color = String(req.body.color);
     if (req.body.x !== undefined) update.x = Number(req.body.x) || 0;
     if (req.body.y !== undefined) update.y = Number(req.body.y) || 0;
+    if (req.body.w !== undefined) update.w = Number(req.body.w) || 176;
+    if (req.body.h !== undefined) update.h = Number(req.body.h) || 176;
     if (req.body.rotation !== undefined) update.rotation = Number(req.body.rotation) || 0;
     if (req.body.z !== undefined) update.z = Number(req.body.z) || 1;
     if (Object.keys(update).length === 0) {
@@ -6795,7 +6800,7 @@ router.put('/ideas/:id', async (req, res) => {
     }
     update.updatedAt = admin.firestore.FieldValue.serverTimestamp();
     try {
-        await db.collection('crm_ideas').doc(id).update(update);
+        await db.collection('ideas').doc(id).update(update);
         res.status(200).json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error al actualizar la idea.' });
@@ -6805,7 +6810,7 @@ router.put('/ideas/:id', async (req, res) => {
 // DELETE (Borrar una idea)
 router.delete('/ideas/:id', async (req, res) => {
     try {
-        await db.collection('crm_ideas').doc(req.params.id).delete();
+        await db.collection('ideas').doc(req.params.id).delete();
         res.status(200).json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error al eliminar la idea.' });

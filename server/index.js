@@ -340,7 +340,7 @@ app.get('/crm', (req, res) => {
     res.sendFile(path.join(nextjsDir, 'crm.html'));
 });
 const crmSections = [
-    'chats', 'ideas', 'departamentos', 'reglas-ads', 'etiquetas',
+    'chats', 'departamentos', 'reglas-ads', 'etiquetas',
     'mensajes-ads', 'respuestas-rapidas', 'entrenamiento-ia',
     'simulador-ia', 'ajustes', 'carritos-abandonados', 'rentabilidad',
     'campanas'
@@ -349,6 +349,14 @@ crmSections.forEach(section => {
     app.get(`/crm/${section}`, (req, res) => {
         res.sendFile(path.join(nextjsDir, 'crm', `${section}.html`));
     });
+});
+
+// Ideas — pizarra personal de post-its (independiente del CRM)
+app.get('/ideas', (req, res) => {
+    res.sendFile(path.join(nextjsDir, 'ideas.html'));
+});
+app.get('/crm/ideas', (req, res) => {
+    res.redirect(301, '/ideas');
 });
 
 // --- RUTAS PARA SERVIR LA APLICACIÓN FRONTEND ---

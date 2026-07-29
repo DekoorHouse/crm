@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Manrope } from "next/font/google";
+import { Plus_Jakarta_Sans, Manrope, Caveat } from "next/font/google";
 import AuthProvider from "@/components/layout/AuthProvider";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 import { Toaster } from "react-hot-toast";
@@ -29,6 +29,13 @@ const manrope = Manrope({
   weight: ["400", "500", "600", "700"],
 });
 
+// Fuente manuscrita para la pizarra de Ideas (/ideas).
+const caveat = Caveat({
+  subsets: ["latin"],
+  variable: "--font-note",
+  weight: ["400", "500", "600", "700"],
+});
+
 export const metadata: Metadata = {
   title: "Dekoor CRM - Gestión de Pedidos",
   description: "Sistema de gestión de pedidos para Dekoor",
@@ -42,7 +49,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${plusJakarta.variable} ${manrope.variable} h-full`}
+      className={`${plusJakarta.variable} ${manrope.variable} ${caveat.variable} h-full`}
       suppressHydrationWarning
     >
       <head>

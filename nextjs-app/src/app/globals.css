@@ -385,6 +385,7 @@
 
   --font-headline: "Plus Jakarta Sans", sans-serif;
   --font-body: "Manrope", sans-serif;
+  --font-note: "Caveat", "Segoe Print", cursive;
 }
 
 /* ============================================================ */
@@ -473,4 +474,39 @@ h1, h2, h3, h4, h5, h6 {
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--color-outline-variant), transparent);
   opacity: 0.2;
+}
+
+/* ============================================================ */
+/* IDEAS — pizarra personal de post-its (/ideas)                */
+/* ============================================================ */
+
+/* Lienzo punteado que se adapta al tema activo */
+.ideas-board {
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color-on-surface) 9%, transparent) 1.2px,
+    transparent 1.2px
+  );
+  background-size: 26px 26px;
+}
+
+/* Papel del post-it: brillo superior + sombreado inferior derecho */
+.idea-paper {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 22%),
+    linear-gradient(160deg, rgba(0, 0, 0, 0) 68%, rgba(0, 0, 0, 0.08) 100%);
+}
+
+/* Doblez de la esquina inferior derecha (también es el grip de resize) */
+.idea-fold::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 20px 20px;
+  border-color: transparent transparent rgba(0, 0, 0, 0.13) transparent;
+  pointer-events: none;
 }
