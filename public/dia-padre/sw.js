@@ -1,5 +1,5 @@
 /* Service Worker · DeKoor Día del Padre 2026 · scope /dia-padre/ */
-const CACHE = 'dia-padre-v1';
+const CACHE = 'dia-padre-v2';
 
 // Shell propio + íconos + SDK de Firebase (versionado → seguro cachear para uso offline).
 const PRECACHE = [

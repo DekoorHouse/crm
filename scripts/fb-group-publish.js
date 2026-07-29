@@ -14,7 +14,12 @@ const path = require('path');
 const os = require('os');
 
 // --- Configuracion ---
+// .env de la raíz del repo (para WORKER_API_KEY); si dotenv no está disponible seguimos con process.env.
+try { require('dotenv').config({ path: path.join(__dirname, '..', '.env') }); } catch (e) { /* opcional */ }
 const SERVER_URL = process.env.FBG_SERVER_URL || 'https://app.dekoormx.com';
+// Llave del middleware de auth de /api (server/apiAuth.js): en modo enforce el servidor pide esta llave.
+const WORKER_KEY = process.env.WORKER_API_KEY || '';
+const workerHeaders = (extra = {}) => (WORKER_KEY ? { 'x-worker-key': WORKER_KEY, ...extra } : extra);
 const CHROME_PATH = process.env.FBG_CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const CHROME_USER_DATA = process.env.FBG_CHROME_USER_DATA || path.join(os.homedir(), 'AppData/Local/Google/Chrome/User Data');
 const CHROME_PROFILE = process.env.FBG_CHROME_PROFILE || 'Profile 1';
@@ -47,7 +52,7 @@ async function generateCaption(imagePath) {
 
     const res = await fetch(`${SERVER_URL}/api/fb-group/generate-caption`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: workerHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ image: base64, mimeType: mimeMap[ext] || 'image/jpeg' })
     });
     const data = await res.json();
@@ -295,7 +300,7 @@ async function reportPublished(filename, caption) {
     try {
         const res = await fetch(`${SERVER_URL}/api/fb-group/mark-published`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: workerHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ filename, caption })
         });
         const data = await res.json();

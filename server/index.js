@@ -1,5 +1,6 @@
 const { app, admin } = require('./config');
 const { router: whatsappRouter } = require('./whatsappHandler');
+const { apiAuth, API_AUTH_MODE } = require('./apiAuth');
 const apiRouter = require('./apiRoutes');
 const autoPostRouter = require('./autopost/autoPostRoutes');
 const waGroupRouter = require('./autopost/whatsappGroupRoutes');
@@ -54,6 +55,14 @@ app.get('/env-config.js', (req, res) => {
 window.GOOGLE_MAPS_KEY = "${process.env.GOOGLE_MAPS_KEY || ''}";`);
 });
 
+// --- AUTENTICACIÓN DE /api (server/apiAuth.js) ---
+// Debe montarse ANTES de todos los routers /api. cookieParser va primero para que
+// el middleware pueda aceptar la cookie __session del panel /admon.
+app.use(cookieParser());
+app.use(apiAuth);
+// El frontend consulta el modo para decidir si exige login (pública a propósito).
+app.get('/api/auth/mode', (req, res) => res.json({ mode: API_AUTH_MODE }));
+
 // IMPORTANTE: Definir el router de la API antes que los archivos estáticos
 app.use('/api', apiRouter);
 app.use('/api/autopost', autoPostRouter);
@@ -77,9 +86,6 @@ app.use('/api/business-metrics', require('./metrics/businessMetrics').router);
 
 // --- Facebook Login for Business (OAuth para App Review) ---
 app.use('/auth/facebook', require('./facebookAuth'));
-
-// --- COOKIE PARSER ---
-app.use(cookieParser());
 
 // --- SESSION AUTH PARA /admon/ ---
 // Único email autorizado para el panel admon. Cualquier otro usuario es rechazado.

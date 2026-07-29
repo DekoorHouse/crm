@@ -69,7 +69,9 @@ app.use('/api/', (req, res, next) => {
     requestCounter.count++;
     next();
 });
-app.get('/api/traffic-stats', (req, res) => {
+// Esta ruta se registra antes del app.use(apiAuth) de index.js, así que lleva el
+// middleware pegado (require perezoso: apiAuth necesita firebase-admin ya inicializado).
+app.get('/api/traffic-stats', (req, res, next) => require('./apiAuth').apiAuth(req, res, next), (req, res) => {
     const elapsed = Math.round((Date.now() - requestCounter.windowStart) / 1000);
     const remaining = Math.max(0, 15 * 60 - elapsed);
     res.json({

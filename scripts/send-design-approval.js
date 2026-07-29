@@ -19,6 +19,10 @@ const { spawnSync } = require('child_process');
 const { db, admin } = require('../server/config');
 
 const API = process.env.CRM_API || 'https://crm-rzon.onrender.com';
+// Llave del middleware de auth de /api (server/apiAuth.js): con el middleware en modo
+// enforce, estos POST responden 401 si no va la llave. Vive en el .env de la raíz.
+const WORKER_KEY = process.env.WORKER_API_KEY || '';
+const workerHeaders = (extra = {}) => (WORKER_KEY ? { 'x-worker-key': WORKER_KEY, ...extra } : extra);
 const CLIENT_PREVIEW_VBS = path.join(__dirname, '..', '.claude', 'skills', 'svg-corte', 'client-preview.vbs');
 
 function arg(name) {
@@ -54,16 +58,16 @@ const datosOf = o => (Array.isArray(o.items) ? o.items.map(i => i.datosProducto)
     // 2) Subir + convertir a JPEG (WhatsApp rechaza WebP) + enviar
     const fd = new FormData();
     fd.append('file', new Blob([fs.readFileSync(png)], { type: 'image/png' }), path.basename(png));
-    const up = await (await fetch(`${API}/api/mockups/upload-image`, { method: 'POST', body: fd })).json();
+    const up = await (await fetch(`${API}/api/mockups/upload-image`, { method: 'POST', headers: workerHeaders(), body: fd })).json();
     if (!up.success || !up.url) { console.error('upload-image falló: ' + JSON.stringify(up)); process.exit(1); }
-    const wa = await (await fetch(`${API}/api/mockups/wa-image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: up.url }) })).json();
+    const wa = await (await fetch(`${API}/api/mockups/wa-image`, { method: 'POST', headers: workerHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ url: up.url }) })).json();
     if (!wa.success || !wa.jpgUrl) { console.error('wa-image falló: ' + JSON.stringify(wa)); process.exit(1); }
 
     // Saludo SIN nombre: el "name" de WhatsApp suele ser un alias raro (ej. "marcosalva840"),
     // no el nombre real del cliente, y queda mal en el previo. (Chris, 2026-07-20)
     const msg = `¡Hola! 😊 Antes de fabricar tu lámpara, te comparto el diseño para que lo revises con calma ✨ Confirma que los nombres y las fechas estén correctos:\n${(summary || datosOf(order)).trim()}\n¿Lo aprobamos así o le ajustamos algo? 🙌`;
     const sent = await (await fetch(`${API}/api/contacts/${contactId}/messages`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: workerHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ text: msg, fileUrl: wa.jpgUrl, fileType: 'image/jpeg' }),
     })).json();
     if (sent.success === false) { console.error('envío falló: ' + JSON.stringify(sent)); process.exit(1); }

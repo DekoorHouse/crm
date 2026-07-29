@@ -13,6 +13,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+// Gancho para auth-fetch.js: Firebase modular, no existe el global `firebase`.
+window.__API_AUTH_GET_TOKEN__ = () => (auth.currentUser ? auth.currentUser.getIdToken() : Promise.resolve(null));
 
 const $ = (id) => document.getElementById(id);
 

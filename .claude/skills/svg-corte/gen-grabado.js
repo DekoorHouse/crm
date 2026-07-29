@@ -22,7 +22,13 @@ const path = require('path');
 const os = require('os');
 const sharp = require('sharp');
 
+// .env de la raíz del repo (para WORKER_API_KEY); si dotenv no está disponible seguimos con process.env.
+try { require('dotenv').config({ path: path.join(__dirname, '..', '..', '..', '.env') }); } catch (e) { /* opcional */ }
+
 const API = process.env.CRM_API || 'https://crm-rzon.onrender.com';
+// Llave del middleware de auth de /api (server/apiAuth.js): en modo enforce el servidor pide esta llave.
+const WORKER_KEY = process.env.WORKER_API_KEY || '';
+const workerHeaders = (extra = {}) => (WORKER_KEY ? { 'x-worker-key': WORKER_KEY, ...extra } : extra);
 const HEART_REF = path.join(__dirname, 'referencias', 'corazon-forma.png');
 const OUT_DIR = path.join(os.homedir(), 'Documents', 'SVG-Corte');
 
@@ -40,7 +46,7 @@ async function uploadLocal(file) {
     const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
     const fd = new FormData();
     fd.append('file', new Blob([buf], { type: mime }), path.basename(file));
-    const r = await (await fetch(`${API}/api/mockups/upload-image`, { method: 'POST', body: fd })).json();
+    const r = await (await fetch(`${API}/api/mockups/upload-image`, { method: 'POST', headers: workerHeaders(), body: fd })).json();
     if (!r.success || !r.url) throw new Error('upload-image falló: ' + JSON.stringify(r));
     return r.url;
 }
@@ -54,7 +60,7 @@ async function toPublicUrl(imgArg) {
 // Genera el grabado. El endpoint es SÍNCRONO: responde ya con la imagen (tarda ~30-60 s).
 async function submitEngrave(imageUrl, shapeImageUrl) {
     const r = await (await fetch(`${API}/api/mockups/engrave-submit`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: workerHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
             imageUrl, shapeImageUrl,
             extraPrompt: (typeof arg('extra') === 'string' ? arg('extra') : ''),

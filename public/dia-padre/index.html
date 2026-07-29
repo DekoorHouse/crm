@@ -195,6 +195,7 @@ tr.row-done .cin.wide{text-decoration:line-through}
 <div id="toast" class="toast">✓ Guardado</div>
 <input type="file" id="importFile" accept="application/json,.json" hidden>
 
+<script src="/js/auth-fetch.js?v=1"></script>
 <script type="module">
 "use strict";
 
@@ -856,6 +857,8 @@ async function initAuth(){
     ]);
     const app=appMod.initializeApp(FIRE);
     const auth=authMod.getAuth(app);
+    // Gancho para auth-fetch.js (Firebase modular, no hay global `firebase`).
+    window.__API_AUTH_GET_TOKEN__=()=>(auth.currentUser?auth.currentUser.getIdToken():Promise.resolve(null));
     const loginSec=$('seccionLogin'), appSec=$('seccionApp'), err=$('loginError');
     $('loginForm').addEventListener('submit', async e=>{
       e.preventDefault(); err.textContent='';

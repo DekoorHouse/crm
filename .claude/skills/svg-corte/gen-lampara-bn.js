@@ -17,7 +17,13 @@ const path = require('path');
 const os = require('os');
 const sharp = require('sharp');
 
+// .env de la raíz del repo (para WORKER_API_KEY); si dotenv no está disponible seguimos con process.env.
+try { require('dotenv').config({ path: path.join(__dirname, '..', '..', '..', '.env') }); } catch (e) { /* opcional */ }
+
 const API = process.env.CRM_API || 'https://crm-rzon.onrender.com';
+// Llave del middleware de auth de /api (server/apiAuth.js): en modo enforce el servidor pide esta llave.
+const WORKER_KEY = process.env.WORKER_API_KEY || '';
+const workerHeaders = (extra = {}) => (WORKER_KEY ? { 'x-worker-key': WORKER_KEY, ...extra } : extra);
 const OUT_DIR = path.join(os.homedir(), 'Documents', 'SVG-Corte');
 
 // Prompt para convertir el MOCKUP de lámpara a grabado raster: BLANCO sobre NEGRO (Chris 2026-07-25;
@@ -43,7 +49,7 @@ async function uploadLocal(file) {
     const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
     const fd = new FormData();
     fd.append('file', new Blob([buf], { type: mime }), path.basename(file));
-    const r = await (await fetch(`${API}/api/mockups/upload-image`, { method: 'POST', body: fd })).json();
+    const r = await (await fetch(`${API}/api/mockups/upload-image`, { method: 'POST', headers: workerHeaders(), body: fd })).json();
     if (!r.success || !r.url) throw new Error('upload-image falló: ' + JSON.stringify(r));
     return r.url;
 }
@@ -71,7 +77,7 @@ async function uploadLocal(file) {
 
     console.log('Generando B/N con Gemini… (30-60 s)  aspect=' + aspectRatio);
     const r = await (await fetch(`${API}/api/mockups/engrave-submit`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: workerHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ imageUrl, promptOverride, resolution: '2k', aspectRatio }),
     })).json();
     if (!r.success || !r.image) throw new Error('engrave-submit falló: ' + (r.error || JSON.stringify(r)));
