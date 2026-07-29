@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 // SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendConversionEvent
 const { db, admin, bucket } = require('./config');
-const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent, transcribeIncomingAudioMessage, markOrderCorregirForContact } = require('./services');
+const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent, transcribeIncomingAudioMessage, markOrderCorregirForContact, markOrderFabricarForContact } = require('./services');
 const { armLeadFollowup } = require('./leads/leadReactivationScheduler');
 const { armOrderFollowup } = require('./leads/orderFollowupScheduler');
 const { markOrderFollowupReplied } = require('./leads/orderFollowupMetrics');
@@ -1008,6 +1008,24 @@ router.post('/', async (req, res) => {
                     console.log(`[POSTVENTA] ${from} pide video de su producto → marcando su pedido a "Corregir".`);
                     markOrderCorregirForContact(from, updatedContactData, body, 'video')
                         .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact (video) falló:', e.message));
+                }
+
+                // --- Cliente PIDE FOTO DEL REVERSO de la lámpara → pasar el pedido a "Fabricar" ---
+                // Parecido a cuando piden video, PERO aquí la lámpara todavía no existe (solo se envió el
+                // mockup): para fotografiar la parte de atrás real hay que fabricarla. Se mueve el pedido a
+                // "Fabricar" para meterlo a la cola de producción, PERO sin contar la venta (countSale=false):
+                // el cliente aún no paga, así que no se reporta a Meta ni se descuenta inventario hasta que
+                // valide su comprobante. Va en el webhook para que funcione aunque un humano lleve el chat.
+                // Kill-switch: crm_settings/general.fotoReversoToFabricarActive = false.
+                const fotoReversoActive = !(generalSettingsDoc.exists && generalSettingsDoc.data().fotoReversoToFabricarActive === false);
+                // Pide ver/foto + de la parte de ATRÁS/reverso/trasera de la lámpara.
+                const wantsPhoto = /(foto|fotito|im[aá]gen|manda|mandas|mande|env[ií]|enseñ|muestr|ver c[oó]mo|c[oó]mo (se ve|queda|luce)|puedo ver|quiero ver|me ense|checar)/i.test(body);
+                const backSide = /(revers|parte de atr[aá]s|lado de atr[aá]s|parte trasera|por detr[aá]s|de atr[aá]s|por atr[aá]s|atr[aá]s de la l[aá]mpara|detr[aá]s de la l[aá]mpara|de la parte de atr[aá]s)/i.test(body);
+                const alreadyGotBackPhoto = /(gracias por (la|esa|tu) (foto|imagen)|ya (la |lo )?vi|ya me lleg|ya la recib|qued[oó] (bien|perfect))/i.test(body);
+                if (fotoReversoActive && wantsPhoto && backSide && !alreadyGotBackPhoto) {
+                    console.log(`[POSTVENTA] ${from} pide FOTO DEL REVERSO → pasando su pedido a "Fabricar" (sin contar venta).`);
+                    markOrderFabricarForContact(from, updatedContactData, null, { countSale: false, clientMessage: body })
+                        .catch(e => console.warn('[POSTVENTA] markOrderFabricarForContact (foto reverso) falló:', e.message));
                 }
             }
 

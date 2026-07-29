@@ -1609,7 +1609,13 @@ async function notifyShippingDataReady(orderNumber, contactData, addressText) {
  * Purchase a Meta — y avisa a Rosario para que genere la guía. Idempotente (no repite si ya estaba
  * en Fabricar). Devuelve el número de pedido marcado, o null si no había pedido / ya estaba.
  */
-async function markOrderFabricarForContact(contactId, contactData, addressText, { skipShippingNotify = false } = {}) {
+async function markOrderFabricarForContact(contactId, contactData, addressText, { skipShippingNotify = false, countSale = true, clientMessage = null } = {}) {
+    // countSale=false: mover a "Fabricar" como SEÑAL DE PRODUCCIÓN sin contar la venta. Lo usa el caso
+    // "el cliente pide FOTO DEL REVERSO de la lámpara" (parecido a cuando piden video, pero aquí la
+    // lámpara aún NO existe: hay que fabricarla para fotografiarla). Como el cliente TODAVÍA NO PAGA,
+    // NO se reporta la venta a Meta, NO se descuenta inventario ni se marca compra completada; eso se
+    // hace cuando pague de verdad (valide su comprobante). Se deja el flag `fabricarSinVenta` para que
+    // el flujo normal de pago sí cuente la venta después, aunque el pedido ya esté en "Fabricar".
     const orderDoc = await getLatestOrderForContact(contactId);
     if (!orderDoc) {
         console.warn(`[POSTVENTA] ${contactId} confirmó datos pero no tiene pedido registrado; no se cambia estatus ni se avisa a Rosario.`);
@@ -1619,17 +1625,55 @@ async function markOrderFabricarForContact(contactId, contactData, addressText, 
     const orderData = orderDoc.data();
     const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : `(pedido ${orderId})`;
     const oldStatus = (orderData.estatus || 'Sin estatus').toLowerCase();
+    const yaEnFabricar = oldStatus.includes('fabricar');
+    const fabricarSinVenta = !!orderData.fabricarSinVenta; // llegó a Fabricar por foto-reverso, sin contar venta
 
-    if (oldStatus.includes('fabricar')) {
+    // --- Rama LIGERA: foto del reverso (no cuenta la venta) ---
+    if (!countSale) {
+        if (/cancel|entregad|devol/i.test(oldStatus)) {
+            console.log(`[POSTVENTA] Pedido ${orderNumber} está "${orderData.estatus}"; no se pasa a Fabricar por foto de reverso.`);
+            return null;
+        }
+        if (!yaEnFabricar) {
+            await orderDoc.ref.update({
+                estatus: 'Fabricar',
+                fabricarSinVenta: true, // la venta NO se ha contado: se contará al validar el pago
+                fotoReversoSolicitadaAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderId}) → Fabricar por FOTO DE REVERSO (SIN contar venta; ${contactId}).`);
+            try { await require('./design/designPending').recomputeForContact(contactId); } catch (_) {}
+        } else {
+            console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Fabricar; no se repite (foto de reverso).`);
+        }
+        // Aviso al equipo para que fabrique la lámpara y le tome la foto del reverso.
+        try {
+            const name = (contactData && contactData.name) || contactId;
+            const req = String(clientMessage || '').trim().slice(0, 300);
+            const text = `📸 *Pedido a FABRICAR — pide FOTO DEL REVERSO*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente pide una foto de la *parte de atrás* de su lámpara${req ? `:\n_"${req}"_` : '.'}\n\nHay que FABRICAR la lámpara para tomarle la foto del reverso y enviársela. El pedido ya pasó a "Fabricar", pero NO se contó como venta: se registra cuando el cliente pague (valide su comprobante).`;
+            await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
+            console.log(`[POSTVENTA] Alerta de FOTO DE REVERSO enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
+        } catch (e) {
+            console.warn('[POSTVENTA] No se pudo alertar al admin (foto de reverso):', e.message);
+        }
+        return orderNumber;
+    }
+
+    // --- Flujo NORMAL de venta confirmada (countSale=true) ---
+    // Solo se salta si YA está en Fabricar Y la venta YA se contó. Si llegó a Fabricar por foto-reverso
+    // (fabricarSinVenta), NO se salta: hay que contar la venta ahora (Meta, inventario, corona, guía).
+    if (yaEnFabricar && !fabricarSinVenta) {
         console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Fabricar; no se repite.`);
         return null;
     }
 
-    // 1) Cambiar estatus a Fabricar (+ confirmedAt la primera vez)
-    const updatePayload = { estatus: 'Fabricar' };
+    // 1) Cambiar estatus a Fabricar (+ confirmedAt la primera vez). Si venía de foto-reverso, ya está
+    // en Fabricar: solo se limpia el flag y se sella confirmedAt.
+    const updatePayload = {};
+    if (!yaEnFabricar) updatePayload.estatus = 'Fabricar';
+    if (fabricarSinVenta) updatePayload.fabricarSinVenta = admin.firestore.FieldValue.delete(); // ya se cuenta la venta
     if (!orderData.confirmedAt) updatePayload.confirmedAt = admin.firestore.FieldValue.serverTimestamp();
-    await orderDoc.ref.update(updatePayload);
-    console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderId}) → Fabricar (${contactId})${skipShippingNotify ? ' [por anticipo — sin aviso de guía]' : ' por datos de envío completos'}.`);
+    if (Object.keys(updatePayload).length) await orderDoc.ref.update(updatePayload);
+    console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderId}) → Fabricar (${contactId})${skipShippingNotify ? ' [por anticipo — sin aviso de guía]' : ' por datos de envío completos'}${fabricarSinVenta ? ' [ya estaba en Fabricar por foto-reverso; ahora se cuenta la venta]' : ''}.`);
 
     // 2) Descuento de inventario (idempotente)
     try {
@@ -1660,7 +1704,11 @@ async function markOrderFabricarForContact(contactId, contactData, addressText, 
     if (deptPedido === DEPT_ANTICIPO) {
         console.log(`[META EVENT] Pedido ${orderNumber} es del depto de anticipo: NO se manda Purchase por el anticipo (solo se cobró el apartado).`);
     } else {
-        await sendPurchaseEventOnFabricar(orderId, { ...orderData, estatus: 'Fabricar' }, oldStatus);
+        // Si el pedido llegó a Fabricar por foto-reverso (fabricarSinVenta), su oldStatus ya es
+        // "fabricar" y el guard de sendPurchaseEventOnFabricar lo bloquearía; se pasa '' para que
+        // dispare el Purchase REAL ahora que sí se pagó (la idempotencia por metaPurchaseSentAt evita
+        // dobles envíos). En cualquier otro caso se pasa el oldStatus verdadero.
+        await sendPurchaseEventOnFabricar(orderId, { ...orderData, estatus: 'Fabricar' }, fabricarSinVenta ? '' : oldStatus);
     }
 
     // 5) Avisar a Rosario para que haga la guía. Se OMITE cuando el pedido pasa a Fabricar por el
@@ -3916,6 +3964,7 @@ module.exports = {
     notifyGuiaToCustomer,
     markComprobanteValidadoAndSendForm,
     markOrderCorregirForContact,
+    markOrderFabricarForContact,
     stampPedidoListoEnviado,
     compressVideoToLimit
 };
