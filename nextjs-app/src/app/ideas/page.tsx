@@ -877,7 +877,10 @@ export default function IdeasPage() {
       </div>
 
       {/* Barra inferior: categorías + zoom + acciones del tablero */}
-      <div className="flex items-center gap-2 px-4 md:px-6 pt-2.5 pb-3 flex-shrink-0">
+      <div
+        className="flex items-center gap-2 px-4 md:px-6 pt-2.5 flex-shrink-0"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
         <ColorLegend
           legend={legend}
           counts={countByColor}

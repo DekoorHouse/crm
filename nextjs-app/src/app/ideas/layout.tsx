@@ -6,5 +6,7 @@ export const metadata: Metadata = {
 };
 
 export default function IdeasLayout({ children }: { children: React.ReactNode }) {
-  return <div className="h-screen overflow-hidden bg-background">{children}</div>;
+  // h-dvh (no h-screen): en móvil, 100vh incluye la zona tras la barra del
+  // navegador y cortaba la barra inferior de acciones.
+  return <div className="h-dvh overflow-hidden bg-background">{children}</div>;
 }
