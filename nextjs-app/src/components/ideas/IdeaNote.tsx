@@ -207,8 +207,9 @@ export default function IdeaNote({
         style={{ backgroundColor: note.color }}
       />
 
-      {/* Controles (aparecen al hover; siempre visibles en pantallas táctiles) */}
-      <div className="absolute -top-2 -right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity">
+      {/* Controles (aparecen al hover; siempre visibles en pantallas táctiles).
+          z-20: por encima del contenido de la nota, si no el texto tapa los taps. */}
+      <div className="absolute -top-2.5 -right-2.5 z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity">
         {/* Color */}
         <button
           data-no-drag
@@ -217,33 +218,35 @@ export default function IdeaNote({
             setArmedDelete(false);
           }}
           title="Cambiar color"
-          className="w-6 h-6 rounded-full bg-white/95 shadow flex items-center justify-center text-gray-600 hover:text-gray-900"
+          className="w-7 h-7 rounded-full bg-white/95 shadow flex items-center justify-center text-gray-600 hover:text-gray-900"
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 15 }}>palette</span>
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>palette</span>
         </button>
         {/* Eliminar: primer clic arma, segundo confirma */}
         <button
           data-no-drag
           onClick={handleDeleteClick}
           title={armedDelete ? "Clic de nuevo para borrar" : "Eliminar"}
-          className={`h-6 rounded-full shadow flex items-center justify-center transition-all ${
+          className={`h-7 rounded-full shadow flex items-center justify-center transition-all ${
             armedDelete
               ? "bg-red-500 text-white px-2 gap-0.5"
-              : "w-6 bg-white/95 text-gray-600 hover:text-red-600"
+              : "w-7 bg-white/95 text-gray-600 hover:text-red-600"
           }`}
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
             {armedDelete ? "delete_forever" : "close"}
           </span>
           {armedDelete && <span className="text-[10px] font-bold leading-none">¿Borrar?</span>}
         </button>
       </div>
 
-      {/* Paleta de colores */}
+      {/* Paleta de colores (debajo de los botones si la nota esta pegada al borde superior) */}
       {showColors && (
         <div
           data-no-drag
-          className="absolute -top-12 left-1/2 -translate-x-1/2 grid grid-cols-4 gap-1.5 bg-white rounded-2xl shadow-lg px-2.5 py-2 z-10"
+          className={`absolute left-1/2 -translate-x-1/2 grid grid-cols-4 gap-2 bg-white rounded-2xl shadow-lg px-3 py-2.5 z-30 ${
+            note.y < 64 ? "top-8" : "-top-14"
+          }`}
         >
           {IDEA_COLORS.map((c) => (
             <button
@@ -254,7 +257,7 @@ export default function IdeaNote({
                 setShowColors(false);
               }}
               title={c}
-              className={`w-5 h-5 rounded-full border transition-transform hover:scale-110 ${
+              className={`w-6 h-6 rounded-full border transition-transform hover:scale-110 ${
                 c === note.color ? "border-gray-700 ring-2 ring-gray-300" : "border-black/10"
               }`}
               style={{ backgroundColor: c }}
