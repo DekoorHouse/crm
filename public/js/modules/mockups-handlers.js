@@ -16,6 +16,10 @@ const MK_SEED_PROMPT = 'Edita esta foto de la lámpara. NO modifiques la lámpar
 // (sin variables ni header de imagen): avisa "tu foto está lista, respóndenos".
 const MK_CLOSED_TEMPLATE = { name: 'foto_lista', language: 'es' };
 
+// Messenger no tiene plantillas: fuera de las 24 h se usa un "mensaje de utilidad" (message tag
+// POST_PURCHASE_UPDATE, permitido por Meta para actualizaciones post-compra). Este es su texto.
+const MK_CLOSED_NOTICE_FB = '¡Hola! 👋 Ya está lista la foto de tu pedido ✨ Respóndenos por aquí y te la enviamos enseguida.';
+
 // Ruta de la fuente manuscrita "Rows of Sunflowers" (ya vive en el editor). Se usa para
 // rasterizar el diseño de referencia (2ª imagen) con el mismo tipo de letra del producto.
 const MK_DESIGN_FONT_URL = '/editor/fonts/RowsOfSunflowers.ttf';
@@ -734,10 +738,24 @@ async function mkSend(orderId, blockId) {
             // Conversación cerrada (+24h): WhatsApp solo permite plantilla. Se manda la plantilla y los
             // mensajes del pedido quedan EN COLA (status:'queued'): en cuanto el cliente responda, el
             // webhook los envía SOLO (sendQueuedMessages), sin tener que volver aquí a darle Enviar.
+            // El aviso para reabrir la conversación depende del CANAL: WhatsApp usa una plantilla
+            // aprobada; Messenger un "mensaje de utilidad" (message tag POST_PURCHASE_UPDATE), que es
+            // lo que Meta permite fuera de 24h. En Instagram no hay equivalente: solo se deja la cola.
+            const canal = ctx.channel || 'whatsapp';
             if (!mkState.noticeSent[orderId]) {
                 setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Enviando aviso…', true);
-                await mkSendChat(telefono, { template: MK_CLOSED_TEMPLATE });
-                mkState.noticeSent[orderId] = true;
+                if (canal === 'messenger') {
+                    await mkFetchJson('/api/contacts/' + encodeURIComponent(telefono) + '/utility-message', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: MK_CLOSED_NOTICE_FB, tag: 'POST_PURCHASE_UPDATE' }),
+                    });
+                    mkState.noticeSent[orderId] = true;
+                } else if (canal === 'instagram') {
+                    mkToast('Instagram no permite escribir después de 24 h: su pedido queda en cola y saldrá en cuanto el cliente escriba.', 'info');
+                } else {
+                    await mkSendChat(telefono, { template: MK_CLOSED_TEMPLATE });
+                    mkState.noticeSent[orderId] = true;
+                }
             }
             // MISMO orden y candados que con la ventana abierta: primero el pago (una sola vez por
             // pedido, candado atómico en el servidor) y luego la foto.
@@ -755,7 +773,10 @@ async function mkSend(orderId, blockId) {
             // Se marca como enviado (IA post-venta + estatus): el pedido YA quedó despachado, así no
             // vuelve a salir en la fila de mockups ni se encola dos veces la misma foto.
             await mkAfterSend(orderId, telefono, true);
-            mkToast('Conversación cerrada: se mandó la plantilla y su pedido quedó EN COLA. Cuando responda, la foto se le envía sola ✅', 'success');
+            const avisoTxt = canal === 'messenger' ? 'se le mandó un aviso por Messenger'
+                : canal === 'instagram' ? 'Instagram no permite avisar fuera de 24 h'
+                : 'se mandó la plantilla';
+            mkToast(`Conversación cerrada: ${avisoTxt} y su pedido quedó EN COLA. Cuando responda, la foto se le envía sola ✅`, 'success');
             setBtn('<i class="fas fa-clock mr-2"></i>En cola', true);
             return;
         }

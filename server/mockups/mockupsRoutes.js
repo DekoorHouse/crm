@@ -472,7 +472,16 @@ router.get('/send-context', asyncHandler(async (req, res) => {
         }
     } catch (e) { console.error('[mockups] window check:', e.message); /* ante la duda: cerrada */ }
 
-    res.json({ success: true, windowOpen, cuatro: qr.cuatro, bbb: qr.bbb, pilotoGroup });
+    // Canal del contacto: con la ventana CERRADA cada canal se reabre distinto — WhatsApp con una
+    // plantilla aprobada, Messenger con un mensaje de utilidad (message tag). Sin esto el CRM mandaba
+    // siempre la plantilla de WhatsApp y en Messenger fallaba ("Se requiere texto o un archivo").
+    let channel = 'whatsapp';
+    try {
+        const cs = await db.collection('contacts_whatsapp').doc(telefono).get();
+        if (cs.exists) channel = cs.data().channel || 'whatsapp';
+    } catch (_) {}
+
+    res.json({ success: true, windowOpen, channel, cuatro: qr.cuatro, bbb: qr.bbb, pilotoGroup });
 }));
 
 // POST /api/mockups/wa-image — Devuelve una versión JPEG pública de una imagen de la

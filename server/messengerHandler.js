@@ -793,6 +793,17 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
         return;
     }
 
+    // Mensajes EN COLA (status:'queued'): lo que quedó pendiente porque la ventana de 24h estaba
+    // cerrada (p.ej. la foto del mockup) se envía AHORA que el cliente respondió. Igual que en
+    // WhatsApp, si la cola salió la IA NO contesta encima.
+    try {
+        const { sendQueuedMessages } = require('./whatsappHandler');
+        if (typeof sendQueuedMessages === 'function' && await sendQueuedMessages(contactId)) {
+            console.log(`[${logPrefix} QUEUE] Cola enviada a ${contactId}; se omite la respuesta de la IA.`);
+            return;
+        }
+    } catch (e) { console.warn(`[${logPrefix} QUEUE] No se pudo procesar la cola:`, e.message); }
+
     // AI auto-reply
     if (updatedContactData.botActive) {
         const incomingMsg = { type: 'text', text: { body: messageData.text } };

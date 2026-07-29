@@ -193,6 +193,14 @@ async function sendQueuedMessages(contactId) {
 
         console.log(`[QUEUE] Se encontraron ${snapshot.docs.length} mensajes en cola para ${contactId}. Enviando...`);
 
+        // El canal decide POR DÓNDE sale la cola: WhatsApp o Messenger/Instagram. Antes siempre se
+        // usaba la API de WhatsApp, así que una cola de un contacto de Messenger nunca se entregaba.
+        const cDoc = await contactRef.get();
+        const cData = cDoc.exists ? cDoc.data() : {};
+        const channel = cData.channel || 'whatsapp';
+        const isMeta = channel === 'messenger' || channel === 'instagram';
+        const recipientId = isMeta ? (cData.psid || cData.igsid || String(contactId).replace(/^(fb_|ig_)/, '')) : null;
+
         const batch = db.batch();
         let lastMessageText = '';
 
@@ -214,13 +222,24 @@ async function sendQueuedMessages(contactId) {
             }
 
             try {
-                // Use the shared send function
-                const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, {
-                    text: queuedMessage.text,
-                    fileUrl: queuedMessage.fileUrl,
-                    fileType: queuedMessage.fileType,
-                    reply_to_wamid: queuedMessage.context?.id
-                });
+                // Use the shared send function (por el canal que corresponda)
+                let sentMessageData;
+                if (isMeta) {
+                    const r = await sendMessengerMessage(recipientId, {
+                        text: queuedMessage.text,
+                        fileUrl: queuedMessage.fileUrl,
+                        fileType: queuedMessage.fileType,
+                        channel,
+                    });
+                    sentMessageData = { id: (r && r.messages && r.messages[0] && r.messages[0].id) || null, textForDb: queuedMessage.text || '' };
+                } else {
+                    sentMessageData = await sendAdvancedWhatsAppMessage(contactId, {
+                        text: queuedMessage.text,
+                        fileUrl: queuedMessage.fileUrl,
+                        fileType: queuedMessage.fileType,
+                        reply_to_wamid: queuedMessage.context?.id
+                    });
+                }
 
                 batch.update(doc.ref, {
                     status: 'sent',
@@ -1333,4 +1352,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 });
 
 
-module.exports = { router };
+// sendQueuedMessages se exporta para que el webhook de Messenger/Instagram también vacíe la cola
+// cuando el cliente responde (antes solo lo hacía WhatsApp y esas colas nunca se entregaban).
+module.exports = { router, sendQueuedMessages };
