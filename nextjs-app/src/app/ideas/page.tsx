@@ -63,6 +63,7 @@ export default function IdeasPage() {
   const [notes, setNotes] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [colorFilter, setColorFilter] = useState<string | null>(null);
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
@@ -70,6 +71,9 @@ export default function IdeasPage() {
   const [fondo, setFondo] = useState("puntos");
   const [fondoOpen, setFondoOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
+  // Espacio "explorado": el lienzo crece al panear hacia los bordes, no solo al empujar notas.
+  const [exploredW, setExploredW] = useState(0);
+  const [exploredH, setExploredH] = useState(0);
   const [dictatingId, setDictatingId] = useState<string | null>(null);
   const [speechOk, setSpeechOk] = useState(false);
   const [repaso, setRepaso] = useState<{ open: boolean; loading: boolean; data: RepasoResult | null }>({
@@ -89,6 +93,8 @@ export default function IdeasPage() {
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const zoomRef = useRef(1);
   const pendingScrollRef = useRef<{ left: number; top: number } | null>(null);
+  const contentWRef = useRef(0);
+  const contentHRef = useRef(0);
 
   // Pizarra personal: requiere sesion (misma cuenta que el resto de la app).
   useEffect(() => {
@@ -142,9 +148,10 @@ export default function IdeasPage() {
           });
         });
         setLoading(false);
-        // Nota recien creada: entrar en modo edicion cuando aparezca.
+        // Nota recien creada: seleccionarla y entrar en modo edicion cuando aparezca.
         if (newIdRef.current && remote.some((n) => n.id === newIdRef.current)) {
           setEditingId(newIdRef.current);
+          setSelectedId(newIdRef.current);
           newIdRef.current = null;
         }
       },
@@ -281,16 +288,40 @@ export default function IdeasPage() {
     };
   }, [authLoading, user, applyZoom]);
 
-  // El lienzo crece hacia la derecha y hacia abajo cuando empujas notas a los bordes.
+  // El lienzo crece al empujar notas a los bordes Y al panear hacia ellos (espacio explorado).
   const contentW = useMemo(() => {
     const needed = notes.reduce((m, n) => Math.max(m, n.x + n.w + 60), 0);
-    return Math.min(BOARD_MAX_W, Math.max(viewSize.w / zoom, needed));
-  }, [notes, viewSize.w, zoom]);
+    return Math.min(BOARD_MAX_W, Math.max(viewSize.w / zoom, needed, exploredW));
+  }, [notes, viewSize.w, zoom, exploredW]);
 
   const contentH = useMemo(() => {
     const needed = notes.reduce((m, n) => Math.max(m, n.y + n.h + 60), 0);
-    return Math.min(BOARD_MAX_H, Math.max(viewSize.h / zoom, needed));
-  }, [notes, viewSize.h, zoom]);
+    return Math.min(BOARD_MAX_H, Math.max(viewSize.h / zoom, needed, exploredH));
+  }, [notes, viewSize.h, zoom, exploredH]);
+
+  useEffect(() => {
+    contentWRef.current = contentW;
+    contentHRef.current = contentH;
+  }, [contentW, contentH]);
+
+  // Al scrollear cerca del borde derecho/inferior, extender la hoja un tramo más.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const GROW = 400; // px lógicos que se agregan por "jalón"
+    const EDGE = 60; // qué tan cerca del borde (px de pantalla) dispara el crecimiento
+    const onScroll = () => {
+      const z = zoomRef.current;
+      if (scroller.scrollLeft + scroller.clientWidth >= contentWRef.current * z - EDGE) {
+        setExploredW((w) => Math.min(BOARD_MAX_W, Math.max(w, contentWRef.current) + GROW));
+      }
+      if (scroller.scrollTop + scroller.clientHeight >= contentHRef.current * z - EDGE) {
+        setExploredH((h) => Math.min(BOARD_MAX_H, Math.max(h, contentHRef.current) + GROW));
+      }
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, [authLoading, user]);
 
   const maxZ = notes.reduce((m, n) => Math.max(m, n.z), 0);
 
@@ -302,6 +333,13 @@ export default function IdeasPage() {
   );
   const visibleCount = notes.filter((n) => !isDimmed(n)).length;
   const filtering = q !== "" || colorFilter !== null;
+
+  // Conteo de notas por color para la lista de categorías.
+  const countByColor = useMemo(() => {
+    const acc: Record<string, number> = {};
+    for (const n of notes) acc[n.color] = (acc[n.color] || 0) + 1;
+    return acc;
+  }, [notes]);
 
   // La idea mas olvidada del mural pide atencion con un halo sutil.
   const echo = useMemo(() => {
@@ -381,12 +419,17 @@ export default function IdeasPage() {
     [handleAdd]
   );
 
-  // Atajo: N crea una nota nueva.
+  // Atajos: N crea una nota nueva; Escape deselecciona.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== "n" || e.metaKey || e.ctrlKey || e.altKey) return;
       const el = document.activeElement as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      if (e.key === "Escape" && !typing) {
+        setSelectedId(null);
+        return;
+      }
+      if (e.key.toLowerCase() !== "n" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (typing) return;
       e.preventDefault();
       handleAdd();
     };
@@ -495,6 +538,7 @@ export default function IdeasPage() {
   }, []);
 
   const handleFocus = useCallback((id: string) => {
+    setSelectedId(id);
     setNotes((prev) => {
       const top = prev.reduce((m, n) => Math.max(m, n.z), 0);
       const current = prev.find((n) => n.id === id);
@@ -606,6 +650,9 @@ export default function IdeasPage() {
         return m ? { ...n, x: m.x, y: m.y, rotation: m.rotation } : n;
       })
     );
+    // Ordenar también recoge el espacio explorado de más.
+    setExploredW(0);
+    setExploredH(0);
     scroller.scrollTo({ top: 0, left: 0, behavior: "smooth" });
     try {
       await Promise.all(moves.map((m) => updateIdea(m.id, { x: m.x, y: m.y, rotation: m.rotation })));
@@ -733,6 +780,10 @@ export default function IdeasPage() {
           <div
             ref={boardRef}
             onDoubleClick={handleBoardDoubleClick}
+            onPointerDown={(e) => {
+              // Tocar el fondo del lienzo deselecciona la nota activa.
+              if (e.target === e.currentTarget) setSelectedId(null);
+            }}
             className={`ideas-board-${fondo} relative`}
             style={{
               width: contentW,
@@ -771,9 +822,13 @@ export default function IdeasPage() {
                   zoom={zoom}
                   editing={editingId === note.id}
                   dimmed={isDimmed(note)}
+                  selected={selectedId === note.id}
                   echoDays={echo && echo.id === note.id && !filtering ? echo.dias : null}
                   justBorn={initialIdsRef.current !== null && !initialIdsRef.current.has(note.id)}
-                  onStartEdit={setEditingId}
+                  onStartEdit={(id) => {
+                    setEditingId(id);
+                    setSelectedId(id);
+                  }}
                   onEndEdit={handleEndEdit}
                   onMove={handleMove}
                   onPersistPosition={handlePersistPosition}
@@ -790,14 +845,16 @@ export default function IdeasPage() {
         </div>
       </div>
 
-      {/* Barra inferior: leyenda de colores + zoom + acciones del tablero */}
+      {/* Barra inferior: categorías + zoom + acciones del tablero */}
       <div className="flex items-center gap-2 px-4 md:px-6 pt-2.5 pb-3 flex-shrink-0">
         <ColorLegend
           legend={legend}
+          counts={countByColor}
           activeColor={colorFilter}
           onToggleFilter={(hex) => setColorFilter((cur) => (cur === hex ? null : hex))}
           onRename={handleRenameColor}
         />
+        <div className="flex-1" />
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* Zoom */}
           <div className="hidden sm:flex items-center gap-0.5 mr-1">

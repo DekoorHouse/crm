@@ -36,6 +36,8 @@ interface IdeaNoteProps {
   zoom: number;
   editing: boolean;
   dimmed: boolean;
+  /** La nota esta seleccionada: muestra sus controles (en touch es la única forma de verlos). */
+  selected: boolean;
   /** Días sin tocar la nota cuando es "la más olvidada" del mural; null si no aplica. */
   echoDays: number | null;
   /** true solo para notas creadas después de la carga inicial (animación de entrada). */
@@ -59,6 +61,7 @@ export default function IdeaNote({
   zoom,
   editing,
   dimmed,
+  selected,
   echoDays,
   justBorn,
   onStartEdit,
@@ -105,6 +108,14 @@ export default function IdeaNote({
       if (armTimer.current) clearTimeout(armTimer.current);
     };
   }, []);
+
+  // Al deseleccionar, cerrar paleta y desarmar el borrado.
+  useEffect(() => {
+    if (!selected) {
+      setShowColors(false);
+      setArmedDelete(false);
+    }
+  }, [selected]);
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (editing) return;
@@ -213,7 +224,7 @@ export default function IdeaNote({
       onDoubleClick={() => !editing && onStartEdit(note.id)}
       className={`group absolute select-none rounded-[3px] ${justBorn ? "idea-pop" : ""} ${
         echoDays !== null && !interacting && !editing ? "idea-echo" : ""
-      }`}
+      } ${selected && !editing ? "outline-solid outline-2 outline-offset-2 outline-primary/40" : ""}`}
       style={{
         left: note.x,
         top: note.y,
@@ -251,9 +262,15 @@ export default function IdeaNote({
         </div>
       )}
 
-      {/* Controles (aparecen al hover; siempre visibles en pantallas táctiles).
+      {/* Controles: visibles solo con la nota seleccionada (en desktop tambien al hover).
           z-20: por encima del contenido de la nota, si no el texto tapa los taps. */}
-      <div className="absolute -top-2.5 -right-2.5 z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity">
+      <div
+        className={`absolute -top-2.5 -right-2.5 z-20 flex items-center gap-1 transition-opacity ${
+          selected
+            ? "opacity-100"
+            : "opacity-0 pointer-events-none pointer-fine:group-hover:opacity-100 pointer-fine:group-hover:pointer-events-auto"
+        }`}
+      >
         {/* Desarrollar con IA (solo si la nota tiene texto) */}
         {note.text.trim() !== "" && (
           <button
