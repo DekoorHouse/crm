@@ -235,6 +235,19 @@ async function fetchInitialContacts() {
             state.pagination.hasMore = data.contacts.length > 0 && data.lastVisibleId !== null;
         }
 
+        // ATENCIÓN URGENTE: en la vista por defecto (sin filtro), trae TODAS las conversaciones
+        // marcadas como urgentes (needsAttention) aunque sean viejas y no entren en la primera página,
+        // y las fusiona para que se fijen arriba. Sin esto, al abrir una ventana nueva las urgentes
+        // viejas "desaparecían" (seguían marcadas en la BD, solo no se cargaban). Se salta si hay algún
+        // filtro activo (ese filtro manda) y respeta el departamento del agente.
+        const sinFiltro = !tag && !state.unreadOnly && !state.archivedOnly && !state.purchaseFilter
+            && !state.designReviewFilter && !state.designPendingFilter && !state.aiOffFilter
+            && !state.channelFilter && !(Array.isArray(state.adIdFilters) && state.adIdFilters.length);
+        if (sinFiltro) {
+            try { await mergeNeedsAttentionContacts(departmentIdParam); }
+            catch (e) { console.warn('[ATENCION] no se pudieron cargar las urgentes:', e.message); }
+        }
+
         // Renderiza la lista de contactos en la UI
         scheduleContactListRender();
     } catch (error) {
@@ -247,6 +260,20 @@ async function fetchInitialContacts() {
     } finally {
         if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; // Ocultar carga (éxito o error)
     }
+}
+
+// Trae TODAS las conversaciones urgentes (needsAttention) y las fusiona en state.contacts sin
+// duplicar. No pagina (es un conjunto acotado que hay que atender). departmentIdParam: si el agente
+// no es admin, restringe a sus departamentos (igual que la carga normal).
+async function mergeNeedsAttentionContacts(departmentIdParam) {
+    let url = `${API_BASE_URL}/api/contacts?needsAttention=true`;
+    if (departmentIdParam) url += `&departmentId=${departmentIdParam}`;
+    const r = await fetch(url);
+    const d = await r.json().catch(() => null);
+    if (!r.ok || !d || !d.success || !Array.isArray(d.contacts)) return;
+    const have = new Set((state.contacts || []).map(c => c.id));
+    const extra = processContacts(d.contacts).filter(c => !have.has(c.id));
+    if (extra.length) state.contacts = (state.contacts || []).concat(extra);
 }
 
 /**

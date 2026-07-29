@@ -3788,6 +3788,13 @@ router.get('/contacts', async (req, res) => {
             query = query.where('archived', '==', true);
         }
 
+        // ATENCIÓN URGENTE: trae TODAS las conversaciones marcadas needsAttention, no solo las de la
+        // primera página por recencia. Sin esto, una ventana recién abierta solo mostraba las urgentes
+        // recientes y las viejas "desaparecían" (parecía que se perdieron; en realidad seguían marcadas).
+        if (req.query.needsAttention === 'true') {
+            query = query.where('needsAttention', '==', true);
+        }
+
         // Aplicar filtro de canal (whatsapp, messenger, instagram)
         if (req.query.channel) {
             query = query.where('channel', '==', req.query.channel);
@@ -3842,10 +3849,13 @@ router.get('/contacts', async (req, res) => {
         }
 
         // Ordenar por último mensaje y limitar resultados
-        const noLimit = req.query.unreadOnly === 'true';
+        const noLimit = req.query.unreadOnly === 'true' || req.query.needsAttention === 'true';
         if (req.query.unreadOnly === 'true') {
             // Firestore requiere ordenar primero por el campo de la desigualdad (unreadCount > 0)
             query = query.orderBy('unreadCount', 'desc').orderBy('lastMessageTimestamp', 'desc');
+        } else if (req.query.needsAttention === 'true') {
+            // Todas las urgentes, recientes arriba (sin límite: es un conjunto acotado que hay que atender).
+            query = query.orderBy('lastMessageTimestamp', 'desc');
         } else {
             // purchaseStatus usa igualdad, permite orderBy timestamp + limit + paginación normal
             query = query.orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
