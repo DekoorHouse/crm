@@ -1697,6 +1697,14 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
             // Aunque no se repita el aviso, sí se deja el sello de "pidió video" para las métricas.
             const upd = {};
             if (isVideo && !orderData.videoRequestedAt) upd.videoRequestedAt = admin.firestore.FieldValue.serverTimestamp();
+            // La ÚLTIMA petición manda sobre el motivo (decisión de Chris): si el pedido estaba en
+            // 'Corregir' por datos y ahora pide video (o al revés), el badge de Pendientes de Diseño
+            // muestra lo último que pidió, que es lo que hay que atender.
+            upd.corregirMotivo = isVideo ? 'video' : 'datos';
+            // Queja de DATOS abierta: se sella para que el corte AUTOMÁTICO no toque este pedido
+            // aunque el motivo pase después a 'video' (si no, se cortaría con el dato que el cliente
+            // dijo que estaba mal). Se considera resuelta cuando datoCorregidoAt es posterior.
+            if (!isVideo) upd.datosReportadoAt = admin.firestore.FieldValue.serverTimestamp();
             // Y SIEMPRE se refresca la fecha del último pendiente: el pedido ya estaba en 'Corregir', así
             // que ni corregirAt ni videoRequestedAt cambian y el tablero de Diseño no tenía cómo saber
             // que el cliente volvió a pedir algo (caso DH13817: pidió OTRO video con la tarjeta ya en
@@ -1718,6 +1726,9 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         if (isVideo && !orderData.videoRequestedAt) {
             corregirUpdate.videoRequestedAt = admin.firestore.FieldValue.serverTimestamp();
         }
+        // Queja de DATOS abierta (ver el mismo sello arriba): protege del corte automático hasta que
+        // alguien corrija el dato (datoCorregidoAt posterior).
+        if (!isVideo) corregirUpdate.datosReportadoAt = admin.firestore.FieldValue.serverTimestamp();
         await orderDoc.ref.update(corregirUpdate);
         console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Corregir (${isVideo ? 'pide video' : 'reporte de error'}) del cliente (${contactId}).`);
         // Refrescar la bandera "Pendiente de Diseño" del contacto (no bloquear si falla).

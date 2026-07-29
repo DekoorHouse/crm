@@ -152,7 +152,17 @@ function isVideoCorregir(o) {
 function isVideoAutoWaiting(o, previews) {
     if (!isVideoCorregir(o)) return false;
     if (autoBlocked(o)) return false;
+    if (quejaDeDatosAbierta(o)) return false;   // un dato sigue mal: no se corta solo (ver abajo)
     return svgAutoEligibility(o, previews).eligible;
+}
+
+// ¿El cliente reportó un DATO MAL que nadie ha corregido todavía? Desde que la ÚLTIMA petición manda
+// sobre `corregirMotivo` (Chris, 2026-07-29), un pedido con un dato mal puede quedar marcado como
+// 'video' si el cliente pide un video después. Sin este candado el worker lo cortaría solo usando el
+// mockup con el dato que el propio cliente dijo que estaba mal. Se libera al corregir el dato.
+function quejaDeDatosAbierta(o) {
+    const rep = tsMs(o && o.datosReportadoAt);
+    return rep > 0 && rep > tsMs(o && o.datoCorregidoAt);
 }
 
 // "Sin fecha" (el cliente no quiere fecha) -> se graba en blanco (misma regla que el mockup).
