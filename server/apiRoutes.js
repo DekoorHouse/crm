@@ -25,6 +25,7 @@ const { descontarInventarioPorPedido } = require('./inventario/inventarioService
 const { agregarPorProducto } = require('./orders/desgloseProductos');
 const { calcularReporte } = require('./inventario/inventarioReporte');
 const { ejecutarReporteDiario } = require('./inventario/inventarioScheduler');
+const { registrarEntrada, registrarConteoFisico, listarMovimientos } = require('./inventario/inventarioEntradas');
 const { runScheduledMessagesSweep } = require('./scheduledMessages/scheduledMessagesScheduler');
 
 const router = express.Router();
@@ -7974,7 +7975,7 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 // motivos + nombre/canal del cliente. La lista de la sección "Pendientes de Diseño" del CRM la usa.
 router.get('/design-pending', async (req, res) => {
     try {
-        const { reasonsForOrderData } = require('./design/designPending');
+        const { reasonsForOrderData, pendienteRenovadoMs } = require('./design/designPending');
         const { isAutoWaiting, isVideoAutoWaiting, svgAutoEligibility, MANUAL_SPECIAL_RE, isCorazon, datosOf } = require('./design/svgAuto');
         const { decideNameLines } = require('./mockups/nameLayout');
         const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
@@ -8043,7 +8044,15 @@ router.get('/design-pending', async (req, res) => {
                 mockupForce: !!p.mockupForce,
                 // Columna del TABLERO Kanban donde el diseñador puso la tarjeta a mano (solo visual, no
                 // cambia el estatus). Sin asignar -> 'pendientes' (columna por defecto).
-                boardCol: p.disenoBoardCol || 'pendientes',
+                // REACTIVACIÓN: si el cliente pidió algo DESPUÉS de que se movió la tarjeta (p.ej. otro
+                // video), la columna manual ya no vale y la tarjeta regresa sola a Pendientes — si no,
+                // un pedido parado en "Terminado" se quedaba ahí para siempre (caso DH13817).
+                boardCol: (() => {
+                    if (!p.disenoBoardCol) return 'pendientes';
+                    const movidaMs = tsToMs(p.disenoBoardColAt);
+                    if (!movidaMs) return p.disenoBoardCol;                  // sin fecha: se respeta lo que puso el usuario
+                    return pendienteRenovadoMs(p) > movidaMs ? 'pendientes' : p.disenoBoardCol;
+                })(),
                 // Datos de personalización (nombres/fecha): lo que el diseñador necesita a la vista.
                 datos: (Array.isArray(p.items) ? p.items.map(i => i.datosProducto).filter(Boolean).join(' | ') : '') || p.datosProducto || '',
                 ...(extra || {}),
@@ -12530,6 +12539,27 @@ router.get('/config/prices', (_req, res) => {
 // INVENTARIO
 // ============================================
 
+/**
+ * Exige un ID token de Firebase válido.
+ *
+ * Se aplica sólo a los endpoints que modifican stock. El resto de /api no
+ * valida identidad (sólo hay rate limiting), y no quería ampliar esa superficie
+ * con rutas nuevas capaces de alterar el inventario desde fuera.
+ */
+async function requiereAuth(req, res, next) {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    if (!token) {
+        return res.status(401).json({ success: false, message: 'Falta token de sesión' });
+    }
+    try {
+        req.usuario = await admin.auth().verifyIdToken(token);
+        next();
+    } catch {
+        res.status(401).json({ success: false, message: 'Sesión inválida o expirada' });
+    }
+}
+
 // GET /api/inventario/reporte - Reporte de inventario actual (consumido por la pantalla web)
 router.get('/inventario/reporte', async (req, res) => {
     try {
@@ -12541,6 +12571,50 @@ router.get('/inventario/reporte', async (req, res) => {
         res.json({ success: true, reporte });
     } catch (err) {
         console.error('[INVENTARIO] Error en /reporte:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// POST /api/inventario/entrada - Registrar material comprado (suma al stock)
+router.post('/inventario/entrada', requiereAuth, async (req, res) => {
+    try {
+        const { materialId, unidades, paquetes, costoTotal, proveedor, factura, nota, usuario } = req.body || {};
+        if (!materialId) {
+            return res.status(400).json({ success: false, message: 'Falta materialId' });
+        }
+        const result = await registrarEntrada({
+            materialId, unidades, paquetes, costoTotal, proveedor, factura, nota, usuario
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        console.error('[INVENTARIO] Error en /entrada:', err.message);
+        res.status(400).json({ success: false, message: err.message });
+    }
+});
+
+// POST /api/inventario/conteo - Fijar el stock al valor contado físicamente
+router.post('/inventario/conteo', requiereAuth, async (req, res) => {
+    try {
+        const { materialId, stockReal, nota, usuario } = req.body || {};
+        if (!materialId) {
+            return res.status(400).json({ success: false, message: 'Falta materialId' });
+        }
+        const result = await registrarConteoFisico({ materialId, stockReal, nota, usuario });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        console.error('[INVENTARIO] Error en /conteo:', err.message);
+        res.status(400).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/inventario/movimientos - Kardex (historial de entradas/salidas/ajustes)
+router.get('/inventario/movimientos', requiereAuth, async (req, res) => {
+    try {
+        const { tipo, materialId, limite } = req.query;
+        const movimientos = await listarMovimientos({ tipo, materialId, limite });
+        res.json({ success: true, movimientos });
+    } catch (err) {
+        console.error('[INVENTARIO] Error en /movimientos:', err.message);
         res.status(500).json({ success: false, message: err.message });
     }
 });

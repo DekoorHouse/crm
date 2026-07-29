@@ -47,12 +47,27 @@ function faltaCorte(d) {
     return !!pago && pago >= CORTE_DESDE_MS;
 }
 
+// Fecha del ÚLTIMO pendiente que se le generó al pedido. Sirve para saber si una marca manual
+// ("✓ Diseñado", o la tarjeta movida a Terminado en el tablero) ya quedó VIEJA porque después el
+// cliente volvió a pedir algo. Sin esto, marcar un pedido como terminado lo silenciaba para siempre.
+function pendienteRenovadoMs(d) {
+    if (!d) return 0;
+    return Math.max(
+        _ms(d.pendienteDisenoAt),          // se refresca en CADA petición (aunque ya estuviera en Corregir)
+        _ms(d.corregirAt),                 // corrección / video pedidos
+        _ms(d.videoRequestedAt),
+        _ms(d.productoAgregadoPostPagoAt), // 2º producto tras pagar
+        _ms(d.comprobanteValidadoAt),      // pagó -> falta corte
+    );
+}
+
 // Evalúa los motivos de "pendiente de diseño" sobre los datos de UN pedido (puede ser []).
 // hasMockup (opcional): si el caller ya consultó mockup_previews, lo pasa para no depender de la marca.
 function reasonsForOrderData(d, hasMockup) {
     if (!d) return [];
-    // Marcado a mano como "ya diseñado" desde el tablero (botón ✓ Diseñado) -> fuera de pendientes.
-    if (d.disenoListoAt) return [];
+    // Marcado a mano como "ya diseñado" desde el tablero (botón ✓ Diseñado) -> fuera de pendientes,
+    // SALVO que después de marcarlo el cliente haya pedido algo nuevo (ahí la marca ya no vale).
+    if (d.disenoListoAt && _ms(d.disenoListoAt) >= pendienteRenovadoMs(d)) return [];
     const estatus = String(d.estatus || 'Sin estatus').trim().toLowerCase();
     if (DONE.has(estatus)) return [];
 
@@ -164,4 +179,4 @@ async function markPreviewSent(contactId) {
     }
 }
 
-module.exports = { recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, orderHasMockup, REASONS, DONE };
+module.exports = { recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, pendienteRenovadoMs, orderHasMockup, REASONS, DONE };

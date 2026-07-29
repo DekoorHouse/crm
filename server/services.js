@@ -1148,8 +1148,20 @@ const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://app.dekoormx.com').re
  * Devuelve el número de pedido (DHxxxx), o null si el contacto no tiene pedido registrado.
  * Nunca lanza: atrapa y loguea sus errores.
  */
-async function markComprobanteValidadoAndSendForm(contactId, contactData = {}, { force = false } = {}) {
-    const orderDoc = await getLatestOrderForContact(contactId);
+async function markComprobanteValidadoAndSendForm(contactId, contactData = {}, { force = false, orderNumber: targetOrderNumber = null } = {}) {
+    // targetOrderNumber (ej. "DH13870" o 13870): manda el formulario de UN pedido concreto en vez del
+    // más reciente. Lo usa el comando /formulario DHxxxx cuando el cliente tiene VARIOS pedidos en
+    // curso que van a direcciones distintas y cada uno necesita el suyo.
+    let orderDoc = null;
+    if (targetOrderNumber != null) {
+        const wanted = Number(String(targetOrderNumber).replace(/\D/g, ''));
+        if (Number.isFinite(wanted) && wanted > 0) {
+            const info = await getOrdersInfoForContact(contactId);
+            orderDoc = (info.active || []).find(d => d.data().consecutiveOrderNumber === wanted) || null;
+            if (!orderDoc) console.warn(`[ENVIOS] ${contactId}: DH${wanted} no está entre sus pedidos vigentes; se usa el más reciente.`);
+        }
+    }
+    if (!orderDoc) orderDoc = await getLatestOrderForContact(contactId);
     if (!orderDoc) {
         console.warn(`[ENVIOS] ${contactId} validó comprobante pero no tiene pedido registrado; no se envía el formulario.`);
         return null;
@@ -1304,16 +1316,25 @@ async function getOrdersInfoForContact(contactId) {
             snap.forEach(doc => seen.set(doc.id, doc));
         }
         let best = null, bestMs = -1, nonCancelled = 0;
+        // Pedidos VIGENTES: recientes (45 días) y no terminales. Un contacto puede traer DOS en curso
+        // (ej. Antonio Méndez: corazones + infantil), y cada uno necesita SU propio formulario de envío
+        // si van a direcciones distintas — el formulario lleva el nº de pedido precargado.
+        const ACTIVE_WINDOW_MS = 45 * 24 * 60 * 60 * 1000;
+        const active = [];
         for (const doc of seen.values()) {
             const d = doc.data();
             if (!/cancel/i.test(String(d.estatus || ''))) nonCancelled++;
             const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
             if (ms >= bestMs) { bestMs = ms; best = doc; }
+            if (ms && (Date.now() - ms) <= ACTIVE_WINDOW_MS && !/cancel|entregad|devol/i.test(String(d.estatus || ''))) {
+                active.push({ doc, ms });
+            }
         }
-        return { latest: best, nonCancelled, total: seen.size };
+        active.sort((a, b) => b.ms - a.ms); // más reciente primero
+        return { latest: best, nonCancelled, total: seen.size, active: active.map(a => a.doc) };
     } catch (e) {
         console.warn('[POSTVENTA] No se pudieron leer los pedidos de', contactId, e.message);
-        return { latest: null, nonCancelled: 0, total: 0 };
+        return { latest: null, nonCancelled: 0, total: 0, active: [] };
     }
 }
 
@@ -1673,11 +1694,17 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : `(pedido ${orderDoc.id})`;
         if (String(orderData.estatus || '').toLowerCase() === 'corregir') {
             // Aunque no se repita el aviso, sí se deja el sello de "pidió video" para las métricas.
-            if (isVideo && !orderData.videoRequestedAt) {
-                await orderDoc.ref.update({ videoRequestedAt: admin.firestore.FieldValue.serverTimestamp() })
-                    .catch(e => console.warn('[POSTVENTA] No se pudo sellar videoRequestedAt:', e.message));
-            }
-            console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Corregir; no se repite el aviso.`);
+            const upd = {};
+            if (isVideo && !orderData.videoRequestedAt) upd.videoRequestedAt = admin.firestore.FieldValue.serverTimestamp();
+            // Y SIEMPRE se refresca la fecha del último pendiente: el pedido ya estaba en 'Corregir', así
+            // que ni corregirAt ni videoRequestedAt cambian y el tablero de Diseño no tenía cómo saber
+            // que el cliente volvió a pedir algo (caso DH13817: pidió OTRO video con la tarjeta ya en
+            // "Terminado" y se quedó ahí). Con este sello la tarjeta se reactiva sola a Pendientes.
+            upd.pendienteDisenoAt = admin.firestore.FieldValue.serverTimestamp();
+            await orderDoc.ref.update(upd)
+                .catch(e => console.warn('[POSTVENTA] No se pudo sellar el pendiente:', e.message));
+            try { await require('./design/designPending').recomputeForContact(contactId); } catch (_) {}
+            console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Corregir; no se repite el aviso (pendiente renovado).`);
             return null;
         }
         const corregirUpdate = {
@@ -2804,6 +2831,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             let lastOrderDoc = null;
             let isRepeatBuyer = false;   // ≥2 pedidos NO cancelados = ya nos compró antes de verdad
             let hasActiveOrder = false;  // pedido reciente en curso (no cancelado/entregado/devuelto)
+            let multiOrderNote = '';     // 2+ pedidos EN CURSO a la vez: pueden ir a direcciones distintas
             try {
                 const info = await getOrdersInfoForContact(contactId);
                 lastOrderDoc = info.latest;
@@ -2813,6 +2841,20 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
                     const reciente = ms && (Date.now() - ms) <= 45 * 24 * 60 * 60 * 1000;
                     hasActiveOrder = !!reciente && !/cancel|entregad|devol/i.test(String(d.estatus || ''));
+                }
+                // VARIOS PEDIDOS EN CURSO: el formulario de envío lleva el número de pedido precargado,
+                // así que cada pedido necesita el SUYO si van a direcciones distintas. Sin esta nota la
+                // IA solo "veía" el pedido más reciente y el otro se quedaba sin dirección (caso real:
+                // Antonio Méndez, corazones DH14028 + spiderman DH13870 a domicilios diferentes).
+                const activos = Array.isArray(info.active) ? info.active : [];
+                if (activos.length >= 2) {
+                    const lista = activos.map(doc => {
+                        const d = doc.data();
+                        const num = d.consecutiveOrderNumber != null ? `DH${d.consecutiveOrderNumber}` : '(sin número)';
+                        const datos = String(d.datosProducto || '').replace(/\s+/g, ' ').trim().slice(0, 90);
+                        return `• *${num}* — ${d.producto || 'pedido'}${datos ? ` (${datos})` : ''} — estatus: ${d.estatus || 'Sin estatus'}`;
+                    }).join('\n');
+                    multiOrderNote = `\n\n**⚠️ ESTE CLIENTE TIENE ${activos.length} PEDIDOS EN CURSO AL MISMO TIEMPO:**\n${lista}\nTrátalos SIEMPRE por separado y nómbralos por su número para no confundirlos. ANTES de pedir los datos de envío, pregúntale si TODOS van a la MISMA dirección o a direcciones distintas. Si van a direcciones DISTINTAS, cada pedido necesita su PROPIO formulario (el enlace lleva el número de pedido precargado): NO uses un solo formulario para los dos. Cuando toque mandar el formulario de un pedido en concreto, escribe el comando /formulario seguido de su número (ej. "/formulario ${activos[0].data().consecutiveOrderNumber != null ? 'DH' + activos[0].data().consecutiveOrderNumber : 'DHxxxx'}") en su propio renglón, una vez por pedido; el sistema le manda el enlace correcto de cada uno. Ojo con el pago: cada pedido se cobra por separado, no mezcles sus totales.`;
                 }
             } catch (e) {
                 console.warn('[AI] No se pudo leer el pedido registrado para', contactId, e.message);
@@ -2870,7 +2912,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     }
                 } catch (e) { console.warn('[AI] Nota de rastreo falló:', e.message); }
             }
-            return { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder };
+            return { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote };
         })();
 
         // Fecha/hora actual de México para que la IA calcule bien los tiempos de entrega. Sin esto el
@@ -2906,7 +2948,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // Esperar las tres tareas de red juntas (arrancaron arriba y corrieron en paralelo).
         const [mediaBundle, coberturaNote, orderNotes] = await Promise.all([mediaWorkPromise, coberturaPromise, orderNotesPromise]);
         const { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote } = mediaBundle;
-        const { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder } = orderNotes;
+        const { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote } = orderNotes;
 
         // Fase de pago/envío: además de post-venta y del pedido recién registrado, cuenta tener un
         // PEDIDO ACTIVO (reciente y no cancelado/entregado). Sin esto, un contacto cuyo pedido ya
@@ -2974,7 +3016,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         }
         // Los protocolos de pago/cancelación ya NO van aquí: viven en el texto cacheado del sistema
         // (ver buildStaticContext). Aquí solo quedan las notas DINÁMICAS (dependen del cliente/turno).
-        const finalUserText = `${fechaActualNote}${orderInfoNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
@@ -3093,6 +3135,14 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // pedido ESPECIAL: el anticipo es lo que arranca la fabricación, así que el pedido pasa a
         // "Fabricar" (registrándolo antes si hace falta). Ver el manejo después del loop.
         const anticipoPaidCmd = !isPostVenta && /\/anticipopagado\b/i.test(aiResponse);
+        // La IA emite "/formulario DHxxxx" cuando el cliente tiene VARIOS pedidos en curso que van a
+        // direcciones DISTINTAS: cada pedido necesita SU propio formulario (el enlace lleva el número
+        // de pedido precargado). Se capturan todos los números que pida en el turno, sin repetir.
+        const formularioPedidos = [...new Set(
+            (aiResponse.match(/\/formulario\s*:?\s*(?:DH)?\s*(\d{4,6})/gi) || [])
+                .map(m => (m.match(/(\d{4,6})/) || [])[1])
+                .filter(Boolean)
+        )];
 
         // --- ¿El cliente mandó un COMPROBANTE RECIENTE? (candado anti-pago-inventado) ---
         // Un comprobante real llega JUSTO antes de que se confirme el pago. Exigir que la imagen/PDF
@@ -3126,7 +3176,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
         // (anuncia pedido LISTO + datos de pago); la IA no puede saber si el pedido físico
         // ya está terminado, así que jamás debe enviarlo ni expandirlo.
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').trim()).filter(m => m.length > 0);
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').replace(/\/formulario\s*:?\s*(?:DH)?\s*\d{4,6}/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -3490,6 +3540,20 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 alertAdminHumanNeeded(contactId, contactData, 'La IA intentó validar un pago SIN comprobante (el cliente no mandó imagen/captura). NO se marcó como pagado; revisa el pago antes de continuar.')
                     .catch(() => {});
             }
+        }
+
+        // /formulario DHxxxx: manda el formulario de UN pedido concreto. Sirve cuando el cliente tiene
+        // VARIOS pedidos en curso a direcciones distintas: cada uno necesita el suyo (el enlace lleva
+        // su número precargado). Se mandan en serie, separados, para que no se encimen los mensajes.
+        if (formularioPedidos.length > 0) {
+            (async () => {
+                for (const num of formularioPedidos) {
+                    await markComprobanteValidadoAndSendForm(contactId, contactData, { orderNumber: num, force: true })
+                        .catch(e => console.warn(`[ENVIOS] formulario de DH${num} falló:`, e.message));
+                    await new Promise(r => setTimeout(r, 1200));
+                }
+                console.log(`[ENVIOS] ${contactId}: formulario(s) enviado(s) para ${formularioPedidos.map(n => 'DH' + n).join(', ')}.`);
+            })().catch(() => {});
         }
 
         // --- VIGILANTE DE PAGOS: la IA AFIRMÓ por texto que recibió/validó un pago. ---
