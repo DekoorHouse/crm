@@ -234,7 +234,10 @@ export default function IdeasPage() {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     const pointers = new Map<number, { x: number; y: number }>();
-    let pinch: { d0: number; z0: number } | null = null;
+    // midX/midY: punto medio del gesto (relativo al scroller) del evento ANTERIOR.
+    // Anclar el punto lógico que estaba bajo ese midpoint al midpoint NUEVO produce
+    // pan + zoom combinados: mover los dos dedos juntos panea, separarlos hace zoom.
+    let pinch: { d0: number; z0: number; midX: number; midY: number } | null = null;
 
     const onDown = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
@@ -243,7 +246,13 @@ export default function IdeasPage() {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
-        pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y), z0: zoomRef.current };
+        const rect = scroller.getBoundingClientRect();
+        pinch = {
+          d0: Math.hypot(a.x - b.x, a.y - b.y),
+          z0: zoomRef.current,
+          midX: (a.x + b.x) / 2 - rect.left,
+          midY: (a.y + b.y) / 2 - rect.top,
+        };
       }
     };
     const onMove = (e: PointerEvent) => {
@@ -252,8 +261,30 @@ export default function IdeasPage() {
       if (pinch && pointers.size >= 2) {
         const [a, b] = [...pointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d > 0 && pinch.d0 > 0) {
-          applyZoom(pinch.z0 * (d / pinch.d0), (a.x + b.x) / 2, (a.y + b.y) / 2);
+        const rect = scroller.getBoundingClientRect();
+        const midX = (a.x + b.x) / 2 - rect.left;
+        const midY = (a.y + b.y) / 2 - rect.top;
+        const zPrev = zoomRef.current;
+        const zNew =
+          d > 0 && pinch.d0 > 0
+            ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, pinch.z0 * (d / pinch.d0)))
+            : zPrev;
+        // Punto lógico que estaba bajo el midpoint anterior…
+        const px = (scroller.scrollLeft + pinch.midX) / zPrev;
+        const py = (scroller.scrollTop + pinch.midY) / zPrev;
+        // …se pega al midpoint nuevo con el zoom nuevo.
+        const newLeft = px * zNew - midX;
+        const newTop = py * zNew - midY;
+        pinch.midX = midX;
+        pinch.midY = midY;
+        if (zNew !== zPrev) {
+          zoomRef.current = zNew;
+          pendingScrollRef.current = { left: newLeft, top: newTop };
+          setZoom(zNew);
+        } else {
+          // Solo pan (misma distancia entre dedos, o zoom en su tope).
+          scroller.scrollLeft = newLeft;
+          scroller.scrollTop = newTop;
         }
       }
     };
