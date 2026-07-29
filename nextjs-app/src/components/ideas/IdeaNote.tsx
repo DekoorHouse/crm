@@ -32,6 +32,8 @@ function idHash(id: string): number {
 interface IdeaNoteProps {
   note: Idea;
   boundsRef: RefObject<HTMLDivElement | null>;
+  /** Zoom actual del lienzo: los eventos de pointer llegan en px de pantalla y se dividen entre esto. */
+  zoom: number;
   editing: boolean;
   dimmed: boolean;
   /** Días sin tocar la nota cuando es "la más olvidada" del mural; null si no aplica. */
@@ -54,6 +56,7 @@ interface IdeaNoteProps {
 export default function IdeaNote({
   note,
   boundsRef,
+  zoom,
   editing,
   dimmed,
   echoDays,
@@ -111,8 +114,8 @@ export default function IdeaNote({
     if (!bounds) return;
     const rect = bounds.getBoundingClientRect();
     offset.current = {
-      dx: e.clientX - rect.left - note.x,
-      dy: e.clientY - rect.top - note.y,
+      dx: (e.clientX - rect.left) / zoom - note.x,
+      dy: (e.clientY - rect.top) / zoom - note.y,
     };
     posRef.current = { x: note.x, y: note.y };
     setDragging(true);
@@ -126,10 +129,10 @@ export default function IdeaNote({
     const bounds = boundsRef.current;
     if (!bounds) return;
     const rect = bounds.getBoundingClientRect();
-    let nx = e.clientX - rect.left - offset.current.dx;
-    let ny = e.clientY - rect.top - offset.current.dy;
-    nx = Math.max(0, Math.min(nx, rect.width - note.w));
-    ny = Math.max(0, Math.min(ny, rect.height - note.h));
+    let nx = (e.clientX - rect.left) / zoom - offset.current.dx;
+    let ny = (e.clientY - rect.top) / zoom - offset.current.dy;
+    nx = Math.max(0, Math.min(nx, rect.width / zoom - note.w));
+    ny = Math.max(0, Math.min(ny, rect.height / zoom - note.h));
     posRef.current = { x: nx, y: ny };
     onMove(note.id, nx, ny);
   }
@@ -156,10 +159,10 @@ export default function IdeaNote({
     const bounds = boundsRef.current;
     if (!bounds) return;
     const rect = bounds.getBoundingClientRect();
-    let w = e.clientX - rect.left - note.x;
-    let h = e.clientY - rect.top - note.y;
-    w = Math.max(MIN_NOTE_SIZE, Math.min(w, MAX_NOTE_SIZE, rect.width - note.x));
-    h = Math.max(MIN_NOTE_SIZE, Math.min(h, MAX_NOTE_SIZE, rect.height - note.y));
+    let w = (e.clientX - rect.left) / zoom - note.x;
+    let h = (e.clientY - rect.top) / zoom - note.y;
+    w = Math.max(MIN_NOTE_SIZE, Math.min(w, MAX_NOTE_SIZE, rect.width / zoom - note.x));
+    h = Math.max(MIN_NOTE_SIZE, Math.min(h, MAX_NOTE_SIZE, rect.height / zoom - note.y));
     w = Math.round(w);
     h = Math.round(h);
     sizeRef.current = { w, h };
@@ -202,6 +205,7 @@ export default function IdeaNote({
 
   return (
     <div
+      data-idea-note=""
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

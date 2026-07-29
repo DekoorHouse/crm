@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, onSnapshot, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
@@ -21,9 +21,12 @@ import ColorLegend from "@/components/ideas/ColorLegend";
 import RepasoSheet from "@/components/ideas/RepasoSheet";
 import toast from "react-hot-toast";
 
+const BOARD_MAX_W = 4000; // tope de crecimiento horizontal del lienzo
 const BOARD_MAX_H = 4000; // tope de crecimiento vertical del lienzo
 const BOARD_PAD = 20;
 const ECHO_MIN_DAYS = 3; // a partir de cuántos días una idea "olvidada" pide atención
+const ZOOM_MIN = 0.35;
+const ZOOM_MAX = 2.5;
 
 const FONDOS = [
   { id: "puntos", label: "Puntos" },
@@ -66,6 +69,7 @@ export default function IdeasPage() {
   const [legend, setLegend] = useState<Record<string, string>>({});
   const [fondo, setFondo] = useState("puntos");
   const [fondoOpen, setFondoOpen] = useState(false);
+  const [zoom, setZoom] = useState(1);
   const [dictatingId, setDictatingId] = useState<string | null>(null);
   const [speechOk, setSpeechOk] = useState(false);
   const [repaso, setRepaso] = useState<{ open: boolean; loading: boolean; data: RepasoResult | null }>({
@@ -83,6 +87,8 @@ export default function IdeasPage() {
   const initialIdsRef = useRef<Set<string> | null>(null);
   const autoCreatedRef = useRef(false);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
+  const zoomRef = useRef(1);
+  const pendingScrollRef = useRef<{ left: number; top: number } | null>(null);
 
   // Pizarra personal: requiere sesion (misma cuenta que el resto de la app).
   useEffect(() => {
@@ -159,7 +165,7 @@ export default function IdeasPage() {
     return () => unsub();
   }, [user]);
 
-  // Medir el viewport del lienzo (para centrar notas nuevas y crecer hacia abajo).
+  // Medir el viewport del lienzo (para centrar notas nuevas y crecer el lienzo).
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -170,11 +176,121 @@ export default function IdeasPage() {
     return () => ro.disconnect();
   }, [authLoading, user]);
 
-  // El lienzo crece hacia abajo cuando empujas notas al fondo.
+  // --- Zoom del lienzo (pellizco con dos dedos, Ctrl+rueda, botones) ---
+  const applyZoom = useCallback((target: number, clientX: number, clientY: number) => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const z0 = zoomRef.current;
+    const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, target));
+    if (z === z0) return;
+    const rect = scroller.getBoundingClientRect();
+    // Punto lógico bajo el foco (dedos/cursor) que debe quedarse quieto al escalar.
+    const px = (scroller.scrollLeft + clientX - rect.left) / z0;
+    const py = (scroller.scrollTop + clientY - rect.top) / z0;
+    zoomRef.current = z;
+    pendingScrollRef.current = {
+      left: px * z - (clientX - rect.left),
+      top: py * z - (clientY - rect.top),
+    };
+    setZoom(z);
+  }, []);
+
+  // El ajuste de scroll se aplica despues de que el DOM tome el nuevo tamano (sin brinco).
+  useLayoutEffect(() => {
+    const p = pendingScrollRef.current;
+    const scroller = scrollerRef.current;
+    if (p && scroller) {
+      scroller.scrollLeft = p.left;
+      scroller.scrollTop = p.top;
+      pendingScrollRef.current = null;
+    }
+  }, [zoom]);
+
+  const zoomFromCenter = useCallback(
+    (factor: number) => {
+      const scroller = scrollerRef.current;
+      if (!scroller) return;
+      const rect = scroller.getBoundingClientRect();
+      applyZoom(zoomRef.current * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    },
+    [applyZoom]
+  );
+
+  const resetZoom = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const rect = scroller.getBoundingClientRect();
+    applyZoom(1, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  }, [applyZoom]);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const pointers = new Map<number, { x: number; y: number }>();
+    let pinch: { d0: number; z0: number } | null = null;
+
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType !== "touch") return;
+      // Un dedo sobre una nota es arrastre de nota, no pellizco.
+      if ((e.target as HTMLElement).closest("[data-idea-note]")) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y), z0: zoomRef.current };
+      }
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && pointers.size >= 2) {
+        const [a, b] = [...pointers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d > 0 && pinch.d0 > 0) {
+          applyZoom(pinch.z0 * (d / pinch.d0), (a.x + b.x) / 2, (a.y + b.y) / 2);
+        }
+      }
+    };
+    const onUp = (e: PointerEvent) => {
+      pointers.delete(e.pointerId);
+      if (pointers.size < 2) pinch = null;
+    };
+    // Con dos dedos bloqueamos el pan nativo para que el pellizco sea nuestro.
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length >= 2) e.preventDefault();
+    };
+    // Ctrl+rueda (y pellizco de trackpad, que llega como ctrl+wheel) hace zoom en desktop.
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      applyZoom(zoomRef.current * Math.pow(2, -e.deltaY / 400), e.clientX, e.clientY);
+    };
+
+    scroller.addEventListener("pointerdown", onDown);
+    scroller.addEventListener("pointermove", onMove);
+    scroller.addEventListener("pointerup", onUp);
+    scroller.addEventListener("pointercancel", onUp);
+    scroller.addEventListener("touchmove", onTouchMove, { passive: false });
+    scroller.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      scroller.removeEventListener("pointerdown", onDown);
+      scroller.removeEventListener("pointermove", onMove);
+      scroller.removeEventListener("pointerup", onUp);
+      scroller.removeEventListener("pointercancel", onUp);
+      scroller.removeEventListener("touchmove", onTouchMove);
+      scroller.removeEventListener("wheel", onWheel);
+    };
+  }, [authLoading, user, applyZoom]);
+
+  // El lienzo crece hacia la derecha y hacia abajo cuando empujas notas a los bordes.
+  const contentW = useMemo(() => {
+    const needed = notes.reduce((m, n) => Math.max(m, n.x + n.w + 60), 0);
+    return Math.min(BOARD_MAX_W, Math.max(viewSize.w / zoom, needed));
+  }, [notes, viewSize.w, zoom]);
+
   const contentH = useMemo(() => {
     const needed = notes.reduce((m, n) => Math.max(m, n.y + n.h + 60), 0);
-    return Math.min(BOARD_MAX_H, Math.max(viewSize.h, needed));
-  }, [notes, viewSize.h]);
+    return Math.min(BOARD_MAX_H, Math.max(viewSize.h / zoom, needed));
+  }, [notes, viewSize.h, zoom]);
 
   const maxZ = notes.reduce((m, n) => Math.max(m, n.z), 0);
 
@@ -203,15 +319,18 @@ export default function IdeasPage() {
   const handleAdd = useCallback(
     async (atX?: number, atY?: number, opts?: { edit?: boolean }): Promise<string | null> => {
       const scroller = scrollerRef.current;
-      const w = scroller?.clientWidth ?? 800;
-      const h = scroller?.clientHeight ?? 600;
-      const scrollTop = scroller?.scrollTop ?? 0;
+      const z = zoomRef.current;
+      // Viewport visible en coordenadas lógicas del lienzo.
+      const w = (scroller?.clientWidth ?? 800) / z;
+      const h = (scroller?.clientHeight ?? 600) / z;
+      const sx = (scroller?.scrollLeft ?? 0) / z;
+      const sy = (scroller?.scrollTop ?? 0) / z;
       const rand = (spread: number) => Math.round(Math.random() * spread - spread / 2);
       // Sin coordenadas: centrado en la parte visible del lienzo, con algo de azar.
-      let x = atX ?? Math.round(w / 2 - NOTE_SIZE / 2 + rand(140));
-      let y = atY ?? Math.round(scrollTop + h / 2.6 + rand(120));
-      x = Math.max(0, Math.min(w - NOTE_SIZE - 8, x));
-      y = Math.max(0, Math.min(Math.max(contentH, h) - NOTE_SIZE - 8, y));
+      let x = atX ?? Math.round(sx + w / 2 - NOTE_SIZE / 2 + rand(140));
+      let y = atY ?? Math.round(sy + h / 2.6 + rand(120));
+      x = Math.max(0, Math.min(Math.max(contentW, sx + w) - NOTE_SIZE - 8, x));
+      y = Math.max(0, Math.min(Math.max(contentH, sy + h) - NOTE_SIZE - 8, y));
       const rotation = rand(8); // entre -4 y 4 grados aprox.
       try {
         const id = await createIdea({
@@ -231,7 +350,7 @@ export default function IdeasPage() {
         return null;
       }
     },
-    [maxZ, contentH, colorFilter]
+    [maxZ, contentW, contentH, colorFilter]
   );
 
   // ?nueva=1 (acceso directo de la PWA): abrir creando una nota.
@@ -253,9 +372,10 @@ export default function IdeasPage() {
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (e.target !== e.currentTarget) return;
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const z = zoomRef.current;
       handleAdd(
-        Math.round(e.clientX - rect.left - NOTE_SIZE / 2),
-        Math.round(e.clientY - rect.top - NOTE_SIZE / 2)
+        Math.round((e.clientX - rect.left) / z - NOTE_SIZE / 2),
+        Math.round((e.clientY - rect.top) / z - NOTE_SIZE / 2)
       );
     },
     [handleAdd]
@@ -458,7 +578,7 @@ export default function IdeasPage() {
   const handleArrange = useCallback(async () => {
     const scroller = scrollerRef.current;
     if (!scroller || notes.length === 0) return;
-    const W = scroller.clientWidth;
+    const W = scroller.clientWidth / zoomRef.current;
     const GAP = 18;
     const sorted = [...notes].sort((a, b) => a.y - b.y || a.x - b.x);
     let cx = BOARD_PAD;
@@ -486,7 +606,7 @@ export default function IdeasPage() {
         return m ? { ...n, x: m.x, y: m.y, rotation: m.rotation } : n;
       })
     );
-    scroller.scrollTo({ top: 0, behavior: "smooth" });
+    scroller.scrollTo({ top: 0, left: 0, behavior: "smooth" });
     try {
       await Promise.all(moves.map((m) => updateIdea(m.id, { x: m.x, y: m.y, rotation: m.rotation })));
       toast.success("Pizarra ordenada");
@@ -528,7 +648,7 @@ export default function IdeasPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 md:px-6 pt-4 pb-2 flex-shrink-0">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 md:px-6 pt-4 pb-2.5 flex-shrink-0">
         <div className="flex items-center gap-3 mr-auto">
           <div
             className="w-9 h-9 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0"
@@ -602,8 +722,76 @@ export default function IdeasPage() {
         </div>
       </header>
 
-      {/* Leyenda de colores + acciones del tablero */}
-      <div className="flex items-center gap-2 px-4 md:px-6 pb-2.5 flex-shrink-0">
+      {/* Lienzo (crece a la derecha y hacia abajo; pellizca para hacer zoom) */}
+      <div
+        ref={scrollerRef}
+        className="relative flex-1 mx-3 md:mx-6 rounded-2xl border border-outline-variant/20 overflow-auto bg-surface-container-lowest"
+        style={{ touchAction: "pan-x pan-y" }}
+      >
+        {/* Sizer: reserva el área scrolleable ya escalada */}
+        <div style={{ width: Math.round(contentW * zoom), height: Math.round(contentH * zoom) }}>
+          <div
+            ref={boardRef}
+            onDoubleClick={handleBoardDoubleClick}
+            className={`ideas-board-${fondo} relative`}
+            style={{
+              width: contentW,
+              height: contentH,
+              transform: `scale(${zoom})`,
+              transformOrigin: "0 0",
+            }}
+          >
+            {loading ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : notes.length === 0 ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-6">
+                <div
+                  className="w-24 h-24 rounded-md shadow-lg flex items-center justify-center mb-5"
+                  style={{ backgroundColor: DEFAULT_IDEA_COLOR, transform: "rotate(-5deg)" }}
+                >
+                  <span className="material-symbols-outlined text-gray-700/60" style={{ fontSize: 44 }}>
+                    lightbulb
+                  </span>
+                </div>
+                <p className="text-base font-semibold text-on-surface mb-1">Tu pizarra esta vacia</p>
+                <p className="text-sm text-on-surface-variant max-w-xs">
+                  Toca <span className="font-semibold">“Nueva idea”</span>, pulsa{" "}
+                  <kbd className="px-1.5 py-0.5 rounded bg-surface-container text-xs font-bold">N</kbd>, dicta
+                  con el micrófono o haz doble clic en el lienzo.
+                </p>
+              </div>
+            ) : (
+              notes.map((note) => (
+                <IdeaNote
+                  key={note.id}
+                  note={note}
+                  boundsRef={boardRef}
+                  zoom={zoom}
+                  editing={editingId === note.id}
+                  dimmed={isDimmed(note)}
+                  echoDays={echo && echo.id === note.id && !filtering ? echo.dias : null}
+                  justBorn={initialIdsRef.current !== null && !initialIdsRef.current.has(note.id)}
+                  onStartEdit={setEditingId}
+                  onEndEdit={handleEndEdit}
+                  onMove={handleMove}
+                  onPersistPosition={handlePersistPosition}
+                  onResize={handleResize}
+                  onPersistSize={handlePersistSize}
+                  onChangeColor={handleChangeColor}
+                  onDelete={handleDelete}
+                  onFocus={handleFocus}
+                  onDevelop={handleDevelop}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Barra inferior: leyenda de colores + zoom + acciones del tablero */}
+      <div className="flex items-center gap-2 px-4 md:px-6 pt-2.5 pb-3 flex-shrink-0">
         <ColorLegend
           legend={legend}
           activeColor={colorFilter}
@@ -611,6 +799,40 @@ export default function IdeasPage() {
           onRename={handleRenameColor}
         />
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Zoom */}
+          <div className="hidden sm:flex items-center gap-0.5 mr-1">
+            <button
+              onClick={() => zoomFromCenter(1 / 1.25)}
+              title="Alejar"
+              className="w-8 h-8 rounded-full border border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low flex items-center justify-center transition-all"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 17 }}>remove</span>
+            </button>
+            <button
+              onClick={resetZoom}
+              title="Restablecer zoom"
+              className="h-8 px-2 rounded-full text-xs font-bold text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all min-w-12"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              onClick={() => zoomFromCenter(1.25)}
+              title="Acercar"
+              className="w-8 h-8 rounded-full border border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low flex items-center justify-center transition-all"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 17 }}>add</span>
+            </button>
+          </div>
+          {/* En móvil: chip de zoom solo cuando no está al 100% (pellizca para ajustar) */}
+          {zoom !== 1 && (
+            <button
+              onClick={resetZoom}
+              title="Restablecer zoom"
+              className="sm:hidden h-8 px-2.5 rounded-full bg-surface-container text-xs font-bold text-on-surface transition-all"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+          )}
           {/* Fondo */}
           <div className="relative">
             <button
@@ -621,7 +843,7 @@ export default function IdeasPage() {
               <span className="material-symbols-outlined" style={{ fontSize: 17 }}>texture</span>
             </button>
             {fondoOpen && (
-              <div className="absolute right-0 top-10 z-50 bg-surface-container-lowest border border-outline-variant/25 rounded-2xl shadow-xl p-2 flex gap-2">
+              <div className="absolute right-0 bottom-10 z-50 bg-surface-container-lowest border border-outline-variant/25 rounded-2xl shadow-xl p-2 flex gap-2">
                 {FONDOS.map((f) => (
                   <button
                     key={f.id}
@@ -663,64 +885,6 @@ export default function IdeasPage() {
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>auto_awesome</span>
             <span className="hidden md:inline">Repaso</span>
           </button>
-        </div>
-      </div>
-
-      {/* Lienzo (scrollea hacia abajo cuando empujas notas al fondo) */}
-      <div
-        ref={scrollerRef}
-        className="relative flex-1 mx-3 md:mx-6 mb-3 md:mb-6 rounded-2xl border border-outline-variant/20 overflow-y-auto overflow-x-hidden bg-surface-container-lowest"
-      >
-        <div
-          ref={boardRef}
-          onDoubleClick={handleBoardDoubleClick}
-          className={`ideas-board-${fondo} relative w-full`}
-          style={{ height: contentH || "100%" }}
-        >
-          {loading ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : notes.length === 0 ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-6">
-              <div
-                className="w-24 h-24 rounded-md shadow-lg flex items-center justify-center mb-5"
-                style={{ backgroundColor: DEFAULT_IDEA_COLOR, transform: "rotate(-5deg)" }}
-              >
-                <span className="material-symbols-outlined text-gray-700/60" style={{ fontSize: 44 }}>
-                  lightbulb
-                </span>
-              </div>
-              <p className="text-base font-semibold text-on-surface mb-1">Tu pizarra esta vacia</p>
-              <p className="text-sm text-on-surface-variant max-w-xs">
-                Toca <span className="font-semibold">“Nueva idea”</span>, pulsa{" "}
-                <kbd className="px-1.5 py-0.5 rounded bg-surface-container text-xs font-bold">N</kbd>, dicta con
-                el micrófono o haz doble clic en el lienzo.
-              </p>
-            </div>
-          ) : (
-            notes.map((note) => (
-              <IdeaNote
-                key={note.id}
-                note={note}
-                boundsRef={boardRef}
-                editing={editingId === note.id}
-                dimmed={isDimmed(note)}
-                echoDays={echo && echo.id === note.id && !filtering ? echo.dias : null}
-                justBorn={initialIdsRef.current !== null && !initialIdsRef.current.has(note.id)}
-                onStartEdit={setEditingId}
-                onEndEdit={handleEndEdit}
-                onMove={handleMove}
-                onPersistPosition={handlePersistPosition}
-                onResize={handleResize}
-                onPersistSize={handlePersistSize}
-                onChangeColor={handleChangeColor}
-                onDelete={handleDelete}
-                onFocus={handleFocus}
-                onDevelop={handleDevelop}
-              />
-            ))
-          )}
         </div>
       </div>
 
