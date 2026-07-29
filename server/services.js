@@ -3093,6 +3093,23 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // pedido ESPECIAL: el anticipo es lo que arranca la fabricación, así que el pedido pasa a
         // "Fabricar" (registrándolo antes si hace falta). Ver el manejo después del loop.
         const anticipoPaidCmd = !isPostVenta && /\/anticipopagado\b/i.test(aiResponse);
+
+        // --- ¿El cliente mandó un COMPROBANTE RECIENTE? (candado anti-pago-inventado) ---
+        // Un comprobante real llega JUSTO antes de que se confirme el pago. Exigir que la imagen/PDF
+        // sea reciente evita que una foto vieja (ej. la del diseño con los nombres) haga pasar por
+        // válido un pago que nunca ocurrió: caso real DH14055, donde el cliente escribió "ahorita
+        // queda" (iba a pagar) y la IA respondió "ya recibimos tu comprobante por los $200", registró
+        // el pedido y lo mandó a Fabricar con $0 pagados — la foto que "lo respaldaba" era de 14h antes.
+        const PAYMENT_PROOF_WINDOW_MS = 6 * 60 * 60 * 1000;
+        const nowProofMs = Date.now();
+        const clienteMandoComprobanteReciente = messagesSnapshot.docs.some(mdoc => {
+            const md = mdoc.data();
+            if (md.from !== contactId) return false;
+            if (md.type !== 'image' && md.type !== 'document') return false;
+            const ts = (md.timestamp && typeof md.timestamp.toMillis === 'function') ? md.timestamp.toMillis() : 0;
+            return ts > 0 && (nowProofMs - ts) <= PAYMENT_PROOF_WINDOW_MS;
+        });
+
         // La IA emite /corregir cuando el cliente, DESPUÉS de recibir la foto de su pedido
         // terminado, reporta que nos equivocamos en algo (ej. faltó una frase, un nombre mal
         // escrito). Cambia el pedido a estatus "Corregir" y avisa al equipo. Solo en post-venta
@@ -3362,7 +3379,15 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     // Anticipo de especial validado ($200): el pedido arranca fabricación → "Fabricar"
                     // (descuenta inventario, corona y evento Purchase a Meta), PERO sin avisar aún a
                     // Rosario para la guía: falta el pago del resto y los datos de envío.
+                    // CANDADO: solo si el cliente mandó un comprobante RECIENTE. Sin esto, una IA que
+                    // "ve" un pago inexistente manda a fabricar gratis (caso DH14055). Si no hay
+                    // comprobante, el pedido NO avanza y se avisa al equipo para que lo revise.
                     if (orderNum && anticipoPaidCmd) {
+                        if (!clienteMandoComprobanteReciente) {
+                            console.warn(`[ANTICIPO] ${contactId} emitió /anticipopagado SIN comprobante reciente del cliente; NO se manda a Fabricar (posible pago inventado).`);
+                            alertAdminHumanNeeded(contactId, contactData, `La IA dio por pagado el ANTICIPO de ${orderNum} SIN que el cliente mandara comprobante (imagen/PDF) reciente. El pedido NO se mandó a fabricar. Revisa si el pago existe antes de continuar.`).catch(() => {});
+                            return;
+                        }
                         return markOrderFabricarForContact(contactId, contactData, null, { skipShippingNotify: true });
                     }
                 })
@@ -3454,16 +3479,44 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // imagen/PDF (su comprobante). Evita que la IA marque "pagado" y mande el formulario
             // cuando el cliente solo DICE que va a pagar / que ya pagó, sin adjuntar la captura
             // (caso real DH13341: "les mando la transferencia" → la IA lo dio por validado).
-            const clienteMandoComprobante = messagesSnapshot.docs.some(mdoc => {
-                const md = mdoc.data();
-                return md.from === contactId && (md.type === 'image' || md.type === 'document');
-            });
+            // Se exige un comprobante RECIENTE (no cualquier imagen vieja del chat: una foto del
+            // diseño de ayer no respalda un pago de hoy — ver el candado de arriba).
+            const clienteMandoComprobante = clienteMandoComprobanteReciente;
             if (clienteMandoComprobante) {
                 markComprobanteValidadoAndSendForm(contactId, contactData)
                     .catch(e => console.warn('[ENVIOS] markComprobanteValidadoAndSendForm falló:', e.message));
             } else {
                 console.warn(`[ENVIOS] ${contactId} emitió /comprobante SIN imagen/PDF de comprobante del cliente; NO se valida ni se manda formulario (posible validación falsa por texto).`);
                 alertAdminHumanNeeded(contactId, contactData, 'La IA intentó validar un pago SIN comprobante (el cliente no mandó imagen/captura). NO se marcó como pagado; revisa el pago antes de continuar.')
+                    .catch(() => {});
+            }
+        }
+
+        // --- VIGILANTE DE PAGOS: la IA AFIRMÓ por texto que recibió/validó un pago. ---
+        // Dos fallas reales que nadie detectaba porque la IA solo lo ESCRIBE (sin emitir comando):
+        //  · DH14055: el cliente dijo "ahorita queda" (iba a pagar) y la IA contestó "ya recibimos tu
+        //    comprobante por los $200" — pago inventado.
+        //  · DH13588: el cliente SÍ pagó y la IA lo agradeció, pero nunca emitió /comprobante, así que
+        //    el pedido jamás entró a Envíos, nadie hizo la guía y el cliente esperó días.
+        // Aquí se contrasta lo que la IA AFIRMA contra la realidad y se pide atención humana. No se
+        // bloquea el mensaje (dejar mudo al cliente sería peor): se avisa y se fija la conversación
+        // en la bandeja de ATENCIÓN (parpadeo navy) para que alguien lo revise. Fire-and-forget.
+        const claimsPaymentReceived = /(recibimos|recibí|recibido)[^.!?]{0,40}(tu |su )?(pago|comprobante|dep[oó]sito|transferencia|anticipo|confirmaci[oó]n)|ya (validamos|qued[oó] (confirmado|validado))[^.!?]{0,30}(pago|comprobante|anticipo)|(pago|anticipo)[^.!?]{0,20}(confirmado|validado|recibido)|gracias[^.!?]{0,15}por[^.!?]{0,15}(pago|comprobante|dep[oó]sito|transferencia)/i.test(aiResponse);
+        if (claimsPaymentReceived) {
+            if (!clienteMandoComprobanteReciente) {
+                // Afirmó un pago que NO tiene respaldo: posible alucinación (caso DH14055).
+                console.warn(`[PAGOS] ${contactId}: la IA AFIRMÓ haber recibido un pago SIN comprobante reciente del cliente. Se pide revisión humana.`);
+                alertAdminHumanNeeded(contactId, contactData, '⚠️ La IA le dijo al cliente que YA RECIBIMOS SU PAGO, pero el cliente NO mandó ningún comprobante (imagen/PDF) reciente. Puede ser un pago inventado: revisa la conversación antes de fabricar o enviar.')
+                    .catch(() => {});
+                contactRef.update({ needsAttention: true, needsAttentionReason: 'pago_sin_comprobante', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() })
+                    .catch(() => {});
+            } else if (!comprobanteValidado && !anticipoPaidCmd && !suspiciousReceipt) {
+                // SÍ hay comprobante y la IA lo agradeció, pero NO emitió ningún comando: el pago no
+                // queda registrado en el pedido y nunca llega a Envíos (caso DH13588). Avisar.
+                console.warn(`[PAGOS] ${contactId}: la IA agradeció un pago CON comprobante pero no emitió /comprobante ni /anticipopagado; el pago no quedó registrado.`);
+                alertAdminHumanNeeded(contactId, contactData, '⚠️ El cliente mandó su comprobante y la IA le confirmó el pago, pero NO lo registró en el sistema (no emitió el comando). El pedido NO aparecerá en Envíos ni se le pidieron datos de envío: valida el pago a mano.')
+                    .catch(() => {});
+                contactRef.update({ needsAttention: true, needsAttentionReason: 'pago_no_registrado', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() })
                     .catch(() => {});
             }
         }
