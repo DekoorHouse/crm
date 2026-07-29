@@ -972,6 +972,7 @@ const COMPROBANTE_COMMAND_NOTE = `\n\n**Comprobante de pago y formulario de env�
 - MUY IMPORTANTE: si YA validaste el comprobante antes en esta conversación (ya se le envió el formulario de envío, aunque el comprobante siga viéndose en el chat), NO vuelvas a emitir /comprobante. En los turnos siguientes responde NORMALMENTE a lo que el cliente diga (dudas, datos, etc.); reenviar el formulario en cada turno lo satura.
 - Si el comprobante es sospechoso o NO coincide, usa /sospechoso (NO /comprobante). Si el cliente solo dice que "ya pagó" pero todavía NO ha mandado el comprobante, pídeselo con amabilidad (NO emitas /comprobante).
 - Cuando el cliente te confirme que YA LLENÓ su formulario de envío (por ejemplo: "ya llené el formulario", "listo, ya mandé mis datos"), NO le creas de entrada: **VERIFICA primero** la nota del sistema "Datos de envío del pedido DHxxxx" que viene en este mismo turno.
+- /pagado va UNA SOLA VEZ por pedido: si ya lo mandaste antes en esta conversación (ya le dijiste "llenaste correctamente el formulario"), NO lo vuelvas a emitir aunque el cliente siga escribiendo "ok", "sí" o "gracias". En esos turnos responde normal y breve; repetir ese bloque satura al cliente.
    · Si esa nota dice que sus datos YA ESTÁN CAPTURADOS, responde ÚNICAMENTE con /pagado (solo eso, sin ningún otro texto).
    · Si dice que NO aparecen en el sistema, NO emitas /pagado: agradécele, dile que sus datos todavía no nos llegan y pásale de nuevo el enlace del formulario para que lo llene otra vez.
    · Si NO viene ninguna nota de datos de envío en el turno, tampoco emitas /pagado: significa que aún no se ha validado su pago (no le hemos mandado formulario). Atiende lo que corresponda a su pago.
@@ -3291,6 +3292,31 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     // transición a post-venta (el check sobre aiResponse solo veía el "/atajo").
                     if (/ya registramos tu pedido/i.test(msgText)) saleClosed = true;
                     console.log(`[AI] Atajo "${shortcutMatch[0]}" expandido a respuesta rápida para ${contactId}.`);
+
+                    // --- ANTI-REPETICIÓN: no reenviar un atajo que ya se mandó hace poco. ---
+                    // El bloque del atajo sigue en la ventana de contexto de la IA, así que ante
+                    // cualquier "ok"/"sí" del cliente lo volvía a emitir: caso real DH13597, donde el
+                    // MISMO mensaje de "llenaste correctamente el formulario" se mandó 3 veces en 20
+                    // min (15:45, 15:52, 16:05). Si el texto ya se envió en las últimas 12 h, se
+                    // sustituye por una línea corta y natural en vez de repetir el bloque completo
+                    // (nunca se deja mudo el turno: eso fue el bug que ya se corrigió en /comprobante).
+                    if (msgText && msgText.trim()) {
+                        const REPEAT_WINDOW_MS = 12 * 60 * 60 * 1000;
+                        const norm = t => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 220);
+                        const nuevoNorm = norm(msgText);
+                        const yaEnviado = messagesSnapshot.docs.some(mdoc => {
+                            const md = mdoc.data();
+                            if (md.from === contactId) return false; // solo mensajes NUESTROS
+                            const ts = (md.timestamp && typeof md.timestamp.toMillis === 'function') ? md.timestamp.toMillis() : 0;
+                            if (!ts || (Date.now() - ts) > REPEAT_WINDOW_MS) return false;
+                            return norm(md.text) === nuevoNorm;
+                        });
+                        if (yaEnviado) {
+                            console.warn(`[AI] Atajo "${shortcutMatch[0]}" YA se le había mandado a ${contactId} en las últimas 12h; no se repite el bloque.`);
+                            msgText = 'Aquí seguimos al pendiente 😊 Cualquier cosa me dices ✨';
+                            qrFileUrl = null; qrFileType = null; // tampoco repetir el archivo adjunto
+                        }
+                    }
                 } else if (shortcutMatch[1].toLowerCase() === 'pagado') {
                     // /pagado es parte del flujo de Envíos (el cliente confirmó que llenó el formulario).
                     // Si por algún motivo NO existe la respuesta rápida "pagado", mandamos un texto por
