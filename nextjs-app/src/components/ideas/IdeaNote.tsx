@@ -22,11 +22,22 @@ export const IDEA_COLORS = [
 
 export const DEFAULT_IDEA_COLOR = IDEA_COLORS[0];
 
+// Hash simple y estable por id (para variar la cinta washi entre notas).
+function idHash(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return h;
+}
+
 interface IdeaNoteProps {
   note: Idea;
   boundsRef: RefObject<HTMLDivElement | null>;
   editing: boolean;
   dimmed: boolean;
+  /** Días sin tocar la nota cuando es "la más olvidada" del mural; null si no aplica. */
+  echoDays: number | null;
+  /** true solo para notas creadas después de la carga inicial (animación de entrada). */
+  justBorn: boolean;
   onStartEdit: (id: string) => void;
   onEndEdit: (id: string, text: string) => void;
   onMove: (id: string, x: number, y: number) => void;
@@ -36,6 +47,8 @@ interface IdeaNoteProps {
   onChangeColor: (id: string, color: string) => void;
   onDelete: (id: string) => void;
   onFocus: (id: string) => void;
+  /** Desarrollar la idea con IA (agrega primeros pasos). Debe devolver una promesa. */
+  onDevelop: (id: string) => Promise<void>;
 }
 
 export default function IdeaNote({
@@ -43,6 +56,8 @@ export default function IdeaNote({
   boundsRef,
   editing,
   dimmed,
+  echoDays,
+  justBorn,
   onStartEdit,
   onEndEdit,
   onMove,
@@ -52,11 +67,13 @@ export default function IdeaNote({
   onChangeColor,
   onDelete,
   onFocus,
+  onDevelop,
 }: IdeaNoteProps) {
   const [dragging, setDragging] = useState(false);
   const [resizing, setResizing] = useState(false);
   const [showColors, setShowColors] = useState(false);
   const [armedDelete, setArmedDelete] = useState(false);
+  const [developing, setDeveloping] = useState(false);
   const [draft, setDraft] = useState(note.text);
   const offset = useRef({ dx: 0, dy: 0 });
   const posRef = useRef({ x: note.x, y: note.y });
@@ -170,7 +187,18 @@ export default function IdeaNote({
     onDelete(note.id);
   }
 
+  async function handleDevelopClick() {
+    if (developing) return;
+    setDeveloping(true);
+    try {
+      await onDevelop(note.id);
+    } finally {
+      setDeveloping(false);
+    }
+  }
+
   const interacting = dragging || resizing;
+  const tapeAngle = (idHash(note.id) % 9) - 4; // -4..4 grados, estable por nota
 
   return (
     <div
@@ -179,7 +207,9 @@ export default function IdeaNote({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       onDoubleClick={() => !editing && onStartEdit(note.id)}
-      className="group absolute select-none rounded-[3px]"
+      className={`group absolute select-none rounded-[3px] ${justBorn ? "idea-pop" : ""} ${
+        echoDays !== null && !interacting && !editing ? "idea-echo" : ""
+      }`}
       style={{
         left: note.x,
         top: note.y,
@@ -207,9 +237,36 @@ export default function IdeaNote({
         style={{ backgroundColor: note.color }}
       />
 
+      {/* Cinta washi */}
+      <div className="idea-tape" style={{ transform: `translateX(-50%) rotate(${tapeAngle}deg)` }} />
+
+      {/* Chip de idea olvidada */}
+      {echoDays !== null && !editing && (
+        <div className="absolute -bottom-2.5 left-2 z-20 bg-white/95 rounded-full shadow px-2 py-0.5 text-[10px] font-bold text-gray-600 pointer-events-none">
+          💤 hace {echoDays} día{echoDays === 1 ? "" : "s"}
+        </div>
+      )}
+
       {/* Controles (aparecen al hover; siempre visibles en pantallas táctiles).
           z-20: por encima del contenido de la nota, si no el texto tapa los taps. */}
       <div className="absolute -top-2.5 -right-2.5 z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity">
+        {/* Desarrollar con IA (solo si la nota tiene texto) */}
+        {note.text.trim() !== "" && (
+          <button
+            data-no-drag
+            onClick={handleDevelopClick}
+            disabled={developing}
+            title="Desarrollar con IA: agrega primeros pasos"
+            className="w-7 h-7 rounded-full bg-white/95 shadow flex items-center justify-center text-gray-600 hover:text-amber-600 disabled:opacity-70"
+          >
+            <span
+              className={`material-symbols-outlined ${developing ? "animate-spin" : ""}`}
+              style={{ fontSize: 16 }}
+            >
+              {developing ? "progress_activity" : "auto_fix_high"}
+            </span>
+          </button>
+        )}
         {/* Color */}
         <button
           data-no-drag
@@ -301,7 +358,7 @@ export default function IdeaNote({
           onPointerUp={handleResizeUp}
           onPointerCancel={handleResizeUp}
           title="Arrastra para cambiar el tamaño"
-          className="absolute bottom-0 right-0 w-7 h-7"
+          className="absolute bottom-0 right-0 w-7 h-7 z-10"
           style={{ cursor: "nwse-resize", touchAction: "none" }}
         />
       )}

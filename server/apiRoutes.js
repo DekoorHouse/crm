@@ -6817,6 +6817,111 @@ router.delete('/ideas/:id', async (req, res) => {
     }
 });
 
+// PUT Config de la pizarra (leyenda de colores, fondo). Doc unico: ideas_config/main.
+router.put('/ideas-config', async (req, res) => {
+    const update = {};
+    if (req.body.legend !== undefined && typeof req.body.legend === 'object' && req.body.legend !== null) {
+        const legend = {};
+        for (const [hex, label] of Object.entries(req.body.legend)) {
+            if (/^#[0-9A-Fa-f]{6}$/.test(hex)) legend[hex] = String(label).slice(0, 30);
+        }
+        update.legend = legend;
+    }
+    if (req.body.fondo !== undefined) update.fondo = String(req.body.fondo).slice(0, 20);
+    if (Object.keys(update).length === 0) {
+        return res.status(400).json({ success: false, message: 'No hay campos para actualizar.' });
+    }
+    update.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    try {
+        await db.collection('ideas_config').doc('main').set(update, { merge: true });
+        res.status(200).json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar la configuración.' });
+    }
+});
+
+// POST Repaso del mural con IA: agrupa las ideas, señala olvidadas y sugiere por dónde seguir.
+router.post('/ideas/repaso', async (req, res) => {
+    try {
+        const snap = await db.collection('ideas').get();
+        const ahora = Date.now();
+        const notas = snap.docs
+            .map(d => {
+                const v = d.data();
+                const up = v.updatedAt && v.updatedAt.toMillis ? v.updatedAt.toMillis() : ahora;
+                return { texto: String(v.text || '').trim(), dias: Math.max(0, Math.floor((ahora - up) / 86400000)) };
+            })
+            .filter(n => n.texto);
+        if (notas.length < 2) {
+            return res.status(400).json({ success: false, message: 'Aún hay muy pocas ideas para un repaso. ¡Captura un par más!' });
+        }
+        const lista = notas.map((n, i) => `${i + 1}. (hace ${n.dias} días) ${n.texto.replace(/\n/g, ' / ')}`).join('\n');
+        const prompt = `Estas son TODAS las ideas de mi pizarra personal:\n\n${lista}\n\nDevuélveme SOLO un JSON válido (sin markdown, sin explicación) con esta forma exacta:\n{"grupos":[{"nombre":"...","ideas":[números]}],"olvidadas":[números],"sugerencia":"..."}\n\nReglas:\n- "grupos": agrupa las ideas por tema (2 a 5 grupos, nombres cortos y con personalidad).\n- "olvidadas": números de hasta 3 ideas valiosas que llevan más días sin tocarse (dias alto).\n- "sugerencia": 2-3 frases cálidas y directas: cuál idea conviene desarrollar hoy y un primer paso pequeñito.`;
+        const systemInstruction = 'Eres el compañero personal de ideas de Chris. Hablas español mexicano, cálido, concreto y sin rollo. Respondes exactamente en el formato pedido.';
+        const { text } = await askGeminiPro(prompt, systemInstruction);
+        let raw = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+        let data = null;
+        try { data = JSON.parse(raw); } catch (_) {
+            const m = raw.match(/\{[\s\S]*\}/);
+            if (m) { try { data = JSON.parse(m[0]); } catch (_) { /* abajo */ } }
+        }
+        if (!data) throw new Error('La IA no devolvió un JSON válido.');
+        const porNumero = (n) => notas[Number(n) - 1];
+        const grupos = (Array.isArray(data.grupos) ? data.grupos : [])
+            .map(g => ({
+                nombre: String(g && g.nombre || '').slice(0, 60),
+                ideas: (Array.isArray(g && g.ideas) ? g.ideas : []).map(porNumero).filter(Boolean).map(n => n.texto)
+            }))
+            .filter(g => g.nombre && g.ideas.length);
+        const olvidadas = (Array.isArray(data.olvidadas) ? data.olvidadas : [])
+            .map(porNumero).filter(Boolean).map(n => ({ texto: n.texto, dias: n.dias }));
+        res.status(200).json({
+            success: true,
+            grupos,
+            olvidadas,
+            sugerencia: String(data.sugerencia || '').slice(0, 600),
+            total: notas.length
+        });
+    } catch (error) {
+        console.error('[IDEAS] Error en repaso:', error.message);
+        res.status(500).json({ success: false, message: 'No se pudo generar el repaso. Intenta de nuevo.' });
+    }
+});
+
+// POST Desarrollar una idea con IA: agrega primeros pasos concretos al texto de la nota.
+router.post('/ideas/:id/desarrollar', async (req, res) => {
+    try {
+        const ref = db.collection('ideas').doc(req.params.id);
+        const snap = await ref.get();
+        if (!snap.exists) return res.status(404).json({ success: false, message: 'Idea no encontrada.' });
+        const data = snap.data();
+        const texto = String(data.text || '').trim();
+        if (!texto) return res.status(400).json({ success: false, message: 'Escribe primero la idea para poder desarrollarla.' });
+        // Solo desarrollar sobre la idea original (si ya tiene pasos, se reemplazan).
+        const base = texto.split('\n\n→')[0].trim();
+        const prompt = `Idea personal: "${base}"\n\nConviértela en 3 a 5 primeros pasos concretos y pequeños para empezar hoy mismo. Cada paso: máximo 8 palabras, empieza con un verbo en infinitivo. Responde SOLO los pasos, uno por línea, sin números, sin guiones, sin texto extra.`;
+        const systemInstruction = 'Ayudas a aterrizar ideas personales en acciones simples. Español, ultra conciso, cero relleno.';
+        const { text: aiText } = await generateGeminiResponse(prompt, [], systemInstruction);
+        const pasos = aiText.split('\n')
+            .map(l => l.replace(/^[\s\-•*\d.)]+/, '').trim())
+            .filter(Boolean)
+            .slice(0, 5);
+        if (pasos.length === 0) throw new Error('La IA no devolvió pasos.');
+        const nuevoTexto = `${base}\n\n${pasos.map(p => `→ ${p}`).join('\n')}`;
+        const alturaExtra = 30 * pasos.length + 16;
+        const update = {
+            text: nuevoTexto,
+            h: Math.min(520, Math.max(Number(data.h) || 176, 176) + alturaExtra),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        await ref.update(update);
+        res.status(200).json({ success: true, pasos });
+    } catch (error) {
+        console.error('[IDEAS] Error en desarrollar:', error.message);
+        res.status(500).json({ success: false, message: 'No se pudo desarrollar la idea. Intenta de nuevo.' });
+    }
+});
+
 
 // --- Endpoints para Mensajes de Anuncios (/api/ad-responses) ---
 // POST (Crear)

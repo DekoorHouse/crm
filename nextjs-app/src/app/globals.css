@@ -510,3 +510,75 @@ h1, h2, h3, h4, h5, h6 {
   border-color: transparent transparent rgba(0, 0, 0, 0.13) transparent;
   pointer-events: none;
 }
+
+/* --- Fondos del tablero de Ideas (elegibles, sincronizados por config) --- */
+.ideas-board-puntos {
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color-on-surface) 9%, transparent) 1.2px,
+    transparent 1.2px
+  );
+  background-size: 26px 26px;
+}
+.ideas-board-cuadricula {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--color-on-surface) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-on-surface) 6%, transparent) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.ideas-board-renglones {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--color-on-surface) 7%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 100% 34px;
+}
+.ideas-board-liso {
+  background-image: none;
+}
+
+/* --- Cinta washi en la parte superior de cada nota --- */
+.idea-tape {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  width: 64px;
+  height: 20px;
+  background: color-mix(in srgb, #ffffff 42%, transparent);
+  border-left: 1px dashed rgba(0, 0, 0, 0.08);
+  border-right: 1px dashed rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* --- Eco: la idea más olvidada respira para llamar tu atención --- */
+@keyframes idea-echo {
+  0%, 100% { box-shadow: 0 6px 14px rgba(0, 0, 0, 0.16), 0 0 0 0 color-mix(in srgb, var(--color-secondary) 55%, transparent); }
+  50% { box-shadow: 0 6px 14px rgba(0, 0, 0, 0.16), 0 0 0 10px color-mix(in srgb, var(--color-secondary) 0%, transparent); }
+}
+.idea-echo {
+  animation: idea-echo 2.6s ease-in-out infinite;
+}
+
+/* --- Nacimiento de una nota nueva (usa `scale` para no pelear con transform) --- */
+@keyframes idea-pop {
+  0% { scale: 0.4; opacity: 0; }
+  70% { scale: 1.06; opacity: 1; }
+  100% { scale: 1; opacity: 1; }
+}
+.idea-pop {
+  animation: idea-pop 0.38s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/* --- Micrófono escuchando --- */
+@keyframes idea-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); }
+  50% { box-shadow: 0 0 0 9px rgba(239, 68, 68, 0); }
+}
+.idea-mic-active {
+  animation: idea-mic-pulse 1.4s ease-out infinite;
+}
+
+/* --- Fila de leyenda de colores (scroll horizontal discreto en móvil) --- */
+.ideas-legend::-webkit-scrollbar { height: 0; }

@@ -12,9 +12,25 @@ export interface Idea {
   h: number;
   rotation: number;
   z: number;
+  /** Última edición en ms (viene de Firestore); solo lectura. */
+  updatedAtMs?: number;
 }
 
-export type IdeaInput = Omit<Idea, "id">;
+export type IdeaInput = Omit<Idea, "id" | "updatedAtMs">;
+
+export interface IdeasConfig {
+  /** Etiqueta por color hex, p. ej. { "#FEF08A": "Negocio" }. */
+  legend: Record<string, string>;
+  /** Fondo del tablero: puntos | cuadricula | renglones | liso. */
+  fondo: string;
+}
+
+export interface RepasoResult {
+  grupos: { nombre: string; ideas: string[] }[];
+  olvidadas: { texto: string; dias: number }[];
+  sugerencia: string;
+  total: number;
+}
 
 export async function createIdea(idea: IdeaInput): Promise<string> {
   const res = await fetch("/api/ideas", {
@@ -41,4 +57,28 @@ export async function deleteIdea(id: string): Promise<void> {
   const res = await fetch(`/api/ideas/${id}`, { method: "DELETE" });
   const data = await res.json();
   if (!data.success) throw new Error(data.message || "Error deleting idea");
+}
+
+export async function saveIdeasConfig(patch: Partial<IdeasConfig>): Promise<void> {
+  const res = await fetch("/api/ideas-config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || "Error guardando configuración");
+}
+
+export async function repasoMural(): Promise<RepasoResult> {
+  const res = await fetch("/api/ideas/repaso", { method: "POST" });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || "No se pudo generar el repaso");
+  return { grupos: data.grupos, olvidadas: data.olvidadas, sugerencia: data.sugerencia, total: data.total };
+}
+
+export async function desarrollarIdea(id: string): Promise<string[]> {
+  const res = await fetch(`/api/ideas/${id}/desarrollar`, { method: "POST" });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || "No se pudo desarrollar la idea");
+  return data.pasos as string[];
 }

@@ -2,18 +2,38 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, onSnapshot, query } from "firebase/firestore";
+import { collection, doc, onSnapshot, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import { useAuth } from "@/lib/hooks/useAuth";
 import LoadingOverlay from "@/components/layout/LoadingOverlay";
-import { createIdea, updateIdea, deleteIdea, type Idea } from "@/lib/api/ideas";
+import {
+  createIdea,
+  updateIdea,
+  deleteIdea,
+  saveIdeasConfig,
+  repasoMural,
+  desarrollarIdea,
+  type Idea,
+  type RepasoResult,
+} from "@/lib/api/ideas";
 import IdeaNote, { DEFAULT_IDEA_COLOR, NOTE_SIZE } from "@/components/ideas/IdeaNote";
+import ColorLegend from "@/components/ideas/ColorLegend";
+import RepasoSheet from "@/components/ideas/RepasoSheet";
 import toast from "react-hot-toast";
 
 const BOARD_MAX_H = 4000; // tope de crecimiento vertical del lienzo
 const BOARD_PAD = 20;
+const ECHO_MIN_DAYS = 3; // a partir de cuántos días una idea "olvidada" pide atención
+
+const FONDOS = [
+  { id: "puntos", label: "Puntos" },
+  { id: "cuadricula", label: "Cuadrícula" },
+  { id: "renglones", label: "Renglones" },
+  { id: "liso", label: "Liso" },
+];
 
 function mapDoc(id: string, d: Record<string, unknown>): Idea {
+  const updatedAt = d.updatedAt as { toMillis?: () => number } | undefined;
   return {
     id,
     text: typeof d.text === "string" ? d.text : "",
@@ -24,6 +44,7 @@ function mapDoc(id: string, d: Record<string, unknown>): Idea {
     h: typeof d.h === "number" ? d.h : NOTE_SIZE,
     rotation: typeof d.rotation === "number" ? d.rotation : 0,
     z: typeof d.z === "number" ? d.z : 1,
+    updatedAtMs: updatedAt && typeof updatedAt.toMillis === "function" ? updatedAt.toMillis() : undefined,
   };
 }
 
@@ -40,13 +61,28 @@ export default function IdeasPage() {
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [colorFilter, setColorFilter] = useState<string | null>(null);
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
+  const [legend, setLegend] = useState<Record<string, string>>({});
+  const [fondo, setFondo] = useState("puntos");
+  const [fondoOpen, setFondoOpen] = useState(false);
+  const [dictatingId, setDictatingId] = useState<string | null>(null);
+  const [speechOk, setSpeechOk] = useState(false);
+  const [repaso, setRepaso] = useState<{ open: boolean; loading: boolean; data: RepasoResult | null }>({
+    open: false,
+    loading: false,
+    data: null,
+  });
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const boardRef = useRef<HTMLDivElement | null>(null);
   const draggingIdRef = useRef<string | null>(null);
   const resizingIdRef = useRef<string | null>(null);
+  const dictatingIdRef = useRef<string | null>(null);
   const newIdRef = useRef<string | null>(null);
+  const initialIdsRef = useRef<Set<string> | null>(null);
+  const autoCreatedRef = useRef(false);
+  const recognitionRef = useRef<{ stop: () => void } | null>(null);
 
   // Pizarra personal: requiere sesion (misma cuenta que el resto de la app).
   useEffect(() => {
@@ -54,6 +90,23 @@ export default function IdeasPage() {
       router.push(`/login?redirect=${encodeURIComponent("/ideas")}`);
     }
   }, [user, authLoading, router]);
+
+  // PWA propia de la pizarra: manifest + service worker minimo (instalable en el cel).
+  useEffect(() => {
+    let link = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "manifest";
+      document.head.appendChild(link);
+    }
+    link.href = "/ideas-manifest.json";
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/ideas-sw.js", { scope: "/ideas" }).catch(() => {});
+    }
+    // Dictado por voz disponible?
+    const w = window as unknown as Record<string, unknown>;
+    setSpeechOk(Boolean(w.SpeechRecognition || w.webkitSpeechRecognition));
+  }, []);
 
   // Lectura en tiempo real desde Firestore (sincroniza entre dispositivos).
   useEffect(() => {
@@ -63,16 +116,22 @@ export default function IdeasPage() {
       q,
       (snap) => {
         const remote = snap.docs.map((doc) => mapDoc(doc.id, doc.data() as Record<string, unknown>));
+        // Recordar las ideas presentes en la primera carga (no animan su nacimiento).
+        if (initialIdsRef.current === null) {
+          initialIdsRef.current = new Set(remote.map((n) => n.id));
+        }
         setNotes((prev) => {
-          // Conservar posicion/tamano locales de la nota que se esta manipulando.
+          // Conservar estado local de la nota que se esta manipulando (drag/resize/dictado).
           const dragId = draggingIdRef.current;
           const sizeId = resizingIdRef.current;
-          if (!dragId && !sizeId) return remote;
+          const dictId = dictatingIdRef.current;
+          if (!dragId && !sizeId && !dictId) return remote;
           return remote.map((n) => {
             const local = prev.find((p) => p.id === n.id);
             if (!local) return n;
             if (n.id === dragId) return { ...n, x: local.x, y: local.y };
             if (n.id === sizeId) return { ...n, w: local.w, h: local.h };
+            if (n.id === dictId) return { ...n, text: local.text };
             return n;
           });
         });
@@ -85,6 +144,18 @@ export default function IdeasPage() {
       },
       () => setLoading(false)
     );
+    return () => unsub();
+  }, [user]);
+
+  // Config compartida (leyenda de colores + fondo) — sincroniza entre dispositivos.
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(doc(db, "ideas_config", "main"), (snap) => {
+      const d = snap.data();
+      if (!d) return;
+      if (d.legend && typeof d.legend === "object") setLegend(d.legend as Record<string, string>);
+      if (typeof d.fondo === "string" && FONDOS.some((f) => f.id === d.fondo)) setFondo(d.fondo);
+    });
     return () => unsub();
   }, [user]);
 
@@ -109,13 +180,28 @@ export default function IdeasPage() {
 
   const q = norm(search.trim());
   const isDimmed = useCallback(
-    (n: Idea) => q !== "" && !norm(n.text).includes(q),
-    [q]
+    (n: Idea) =>
+      (q !== "" && !norm(n.text).includes(q)) || (colorFilter !== null && n.color !== colorFilter),
+    [q, colorFilter]
   );
-  const matchCount = q ? notes.filter((n) => !isDimmed(n)).length : notes.length;
+  const visibleCount = notes.filter((n) => !isDimmed(n)).length;
+  const filtering = q !== "" || colorFilter !== null;
+
+  // La idea mas olvidada del mural pide atencion con un halo sutil.
+  const echo = useMemo(() => {
+    const ahora = Date.now();
+    let oldest: Idea | null = null;
+    for (const n of notes) {
+      if (!n.text.trim() || n.updatedAtMs === undefined) continue;
+      if (!oldest || n.updatedAtMs < (oldest.updatedAtMs as number)) oldest = n;
+    }
+    if (!oldest) return null;
+    const dias = Math.floor((ahora - (oldest.updatedAtMs as number)) / 86400000);
+    return dias >= ECHO_MIN_DAYS ? { id: oldest.id, dias } : null;
+  }, [notes]);
 
   const handleAdd = useCallback(
-    async (atX?: number, atY?: number) => {
+    async (atX?: number, atY?: number, opts?: { edit?: boolean }): Promise<string | null> => {
       const scroller = scrollerRef.current;
       const w = scroller?.clientWidth ?? 800;
       const h = scroller?.clientHeight ?? 600;
@@ -130,7 +216,7 @@ export default function IdeasPage() {
       try {
         const id = await createIdea({
           text: "",
-          color: DEFAULT_IDEA_COLOR,
+          color: colorFilter ?? DEFAULT_IDEA_COLOR,
           x,
           y,
           w: NOTE_SIZE,
@@ -138,13 +224,29 @@ export default function IdeasPage() {
           rotation,
           z: maxZ + 1,
         });
-        newIdRef.current = id;
+        if (opts?.edit !== false) newIdRef.current = id;
+        return id;
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Error al crear la idea");
+        return null;
       }
     },
-    [maxZ, contentH]
+    [maxZ, contentH, colorFilter]
   );
+
+  // ?nueva=1 (acceso directo de la PWA): abrir creando una nota.
+  useEffect(() => {
+    if (authLoading || !user || autoCreatedRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("nueva") === "1") {
+      autoCreatedRef.current = true;
+      handleAdd();
+      params.delete("nueva");
+      const rest = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (rest ? `?${rest}` : ""));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user]);
 
   // Doble clic en el lienzo vacio crea una nota en ese punto.
   const handleBoardDoubleClick = useCallback(
@@ -171,6 +273,82 @@ export default function IdeasPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleAdd]);
+
+  // --- Dictado por voz: crea una nota y escribe lo que digas ---
+  const stopDictation = useCallback(() => {
+    recognitionRef.current?.stop();
+  }, []);
+
+  const startDictation = useCallback(async () => {
+    if (dictatingIdRef.current) {
+      stopDictation();
+      return;
+    }
+    const w = window as unknown as Record<string, unknown>;
+    const SR = (w.SpeechRecognition || w.webkitSpeechRecognition) as
+      | (new () => {
+          lang: string;
+          continuous: boolean;
+          interimResults: boolean;
+          onresult: ((e: unknown) => void) | null;
+          onend: (() => void) | null;
+          onerror: (() => void) | null;
+          start: () => void;
+          stop: () => void;
+        })
+      | undefined;
+    if (!SR) return;
+    const id = await handleAdd(undefined, undefined, { edit: false });
+    if (!id) return;
+    dictatingIdRef.current = id;
+    setDictatingId(id);
+
+    const rec = new SR();
+    recognitionRef.current = rec;
+    rec.lang = "es-MX";
+    rec.continuous = true;
+    rec.interimResults = true;
+    let finals = "";
+    let finished = false;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      dictatingIdRef.current = null;
+      setDictatingId(null);
+      recognitionRef.current = null;
+      const texto = finals.trim();
+      if (texto) {
+        updateIdea(id, { text: texto }).catch(() => toast.error("No se pudo guardar el dictado"));
+      } else {
+        // Nada reconocido: no dejar una nota fantasma.
+        deleteIdea(id).catch(() => {});
+      }
+    };
+
+    rec.onresult = (e) => {
+      const ev = e as { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> };
+      let interim = "";
+      finals = "";
+      for (let i = 0; i < ev.results.length; i++) {
+        const r = ev.results[i];
+        if (r.isFinal) finals += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      const textoVivo = (finals + interim).trim();
+      setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text: textoVivo } : n)));
+    };
+    rec.onend = finish;
+    rec.onerror = finish;
+    try {
+      rec.start();
+    } catch {
+      finish();
+    }
+  }, [handleAdd, stopDictation]);
+
+  // Detener el dictado si se desmonta la pagina.
+  useEffect(() => () => recognitionRef.current?.stop(), []);
 
   const handleMove = useCallback((id: string, x: number, y: number) => {
     draggingIdRef.current = id;
@@ -235,6 +413,47 @@ export default function IdeasPage() {
     );
   }, []);
 
+  // Desarrollar una idea con IA (el servidor actualiza la nota; llega por el listener).
+  const handleDevelop = useCallback(async (id: string) => {
+    try {
+      const pasos = await desarrollarIdea(id);
+      toast.success(`✨ ${pasos.length} pasos agregados`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo desarrollar la idea");
+    }
+  }, []);
+
+  // Repaso del mural con IA.
+  const handleRepaso = useCallback(async () => {
+    setRepaso({ open: true, loading: true, data: null });
+    try {
+      const data = await repasoMural();
+      setRepaso({ open: true, loading: false, data });
+    } catch (err) {
+      setRepaso({ open: false, loading: false, data: null });
+      toast.error(err instanceof Error ? err.message : "No se pudo generar el repaso");
+    }
+  }, []);
+
+  // Leyenda: renombrar un color (optimista + persistencia).
+  const handleRenameColor = useCallback(
+    (hex: string, label: string) => {
+      const next = { ...legend };
+      if (label) next[hex] = label;
+      else delete next[hex];
+      setLegend(next);
+      saveIdeasConfig({ legend: next }).catch(() => toast.error("No se pudo guardar la leyenda"));
+    },
+    [legend]
+  );
+
+  // Fondo del tablero (optimista + persistencia).
+  const handleFondo = useCallback((id: string) => {
+    setFondo(id);
+    setFondoOpen(false);
+    saveIdeasConfig({ fondo: id }).catch(() => toast.error("No se pudo guardar el fondo"));
+  }, []);
+
   // Acomodar todas las notas en una cuadricula (orden de lectura actual).
   const handleArrange = useCallback(async () => {
     const scroller = scrollerRef.current;
@@ -276,7 +495,7 @@ export default function IdeasPage() {
     }
   }, [notes]);
 
-  // Copiar todas las ideas como Markdown (orden de lectura).
+  // Copiar todas las ideas visibles como Markdown (orden de lectura).
   const handleCopyAll = useCallback(async () => {
     const visible = notes.filter((n) => n.text.trim() !== "" && !isDimmed(n));
     if (visible.length === 0) {
@@ -304,10 +523,12 @@ export default function IdeasPage() {
     return <LoadingOverlay />;
   }
 
+  const filterLabel = colorFilter ? legend[colorFilter] || "un color" : null;
+
   return (
     <div className="h-full flex flex-col">
-      {/* Header / toolbar */}
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 md:px-6 pt-4 pb-3 flex-shrink-0">
+      {/* Header */}
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 md:px-6 pt-4 pb-2 flex-shrink-0">
         <div className="flex items-center gap-3 mr-auto">
           <div
             className="w-9 h-9 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0"
@@ -320,15 +541,15 @@ export default function IdeasPage() {
           <div>
             <h1 className="text-xl font-bold font-headline text-on-surface leading-tight">Ideas</h1>
             <p className="text-xs text-on-surface-variant">
-              {q
-                ? `${matchCount} de ${notes.length} nota${notes.length === 1 ? "" : "s"}`
+              {filtering
+                ? `${visibleCount} de ${notes.length} nota${notes.length === 1 ? "" : "s"}${filterLabel ? ` · ${filterLabel}` : ""}`
                 : `${notes.length} nota${notes.length === 1 ? "" : "s"} · tu pizarra personal`}
             </p>
           </div>
         </div>
 
         {/* Buscador */}
-        <div className="relative order-3 w-full sm:order-none sm:w-56 md:w-64">
+        <div className="relative order-3 w-full sm:order-none sm:w-52 md:w-64">
           <span
             className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none"
             style={{ fontSize: 18 }}
@@ -353,26 +574,23 @@ export default function IdeasPage() {
           )}
         </div>
 
-        {/* Acciones */}
+        {/* Capturar */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleArrange}
-            disabled={notes.length === 0}
-            title="Acomodar todas las notas en cuadricula"
-            className="h-9 px-3 rounded-full border border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low text-sm font-semibold flex items-center gap-1.5 transition-all disabled:opacity-40 disabled:pointer-events-none"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>grid_view</span>
-            <span className="hidden md:inline">Ordenar</span>
-          </button>
-          <button
-            onClick={handleCopyAll}
-            disabled={notes.length === 0}
-            title="Copiar todas las ideas como Markdown"
-            className="h-9 px-3 rounded-full border border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low text-sm font-semibold flex items-center gap-1.5 transition-all disabled:opacity-40 disabled:pointer-events-none"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>content_copy</span>
-            <span className="hidden md:inline">Copiar</span>
-          </button>
+          {speechOk && (
+            <button
+              onClick={startDictation}
+              title={dictatingId ? "Detener dictado" : "Dictar una idea por voz"}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                dictatingId
+                  ? "bg-red-500 text-white idea-mic-active"
+                  : "border border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low"
+              }`}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                {dictatingId ? "stop" : "mic"}
+              </span>
+            </button>
+          )}
           <button
             onClick={() => handleAdd()}
             title="Nueva idea (atajo: N)"
@@ -384,6 +602,70 @@ export default function IdeasPage() {
         </div>
       </header>
 
+      {/* Leyenda de colores + acciones del tablero */}
+      <div className="flex items-center gap-2 px-4 md:px-6 pb-2.5 flex-shrink-0">
+        <ColorLegend
+          legend={legend}
+          activeColor={colorFilter}
+          onToggleFilter={(hex) => setColorFilter((cur) => (cur === hex ? null : hex))}
+          onRename={handleRenameColor}
+        />
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Fondo */}
+          <div className="relative">
+            <button
+              onClick={() => setFondoOpen((v) => !v)}
+              title="Cambiar el fondo del tablero"
+              className="w-8 h-8 rounded-full border border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low flex items-center justify-center transition-all"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 17 }}>texture</span>
+            </button>
+            {fondoOpen && (
+              <div className="absolute right-0 top-10 z-50 bg-surface-container-lowest border border-outline-variant/25 rounded-2xl shadow-xl p-2 flex gap-2">
+                {FONDOS.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => handleFondo(f.id)}
+                    title={f.label}
+                    className={`w-12 h-12 rounded-xl border overflow-hidden ideas-board-${f.id} bg-surface-container-lowest ${
+                      fondo === f.id ? "border-primary ring-2 ring-primary/30" : "border-outline-variant/30"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Ordenar */}
+          <button
+            onClick={handleArrange}
+            disabled={notes.length === 0}
+            title="Acomodar todas las notas en cuadricula"
+            className="w-8 h-8 rounded-full border border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low flex items-center justify-center transition-all disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 17 }}>grid_view</span>
+          </button>
+          {/* Copiar */}
+          <button
+            onClick={handleCopyAll}
+            disabled={notes.length === 0}
+            title="Copiar las ideas visibles como Markdown"
+            className="w-8 h-8 rounded-full border border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low flex items-center justify-center transition-all disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 17 }}>content_copy</span>
+          </button>
+          {/* Repaso IA */}
+          <button
+            onClick={handleRepaso}
+            disabled={notes.length < 2}
+            title="Repaso del mural con IA"
+            className="h-8 px-3 rounded-full bg-secondary/15 text-secondary hover:bg-secondary/25 text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>auto_awesome</span>
+            <span className="hidden md:inline">Repaso</span>
+          </button>
+        </div>
+      </div>
+
       {/* Lienzo (scrollea hacia abajo cuando empujas notas al fondo) */}
       <div
         ref={scrollerRef}
@@ -392,7 +674,7 @@ export default function IdeasPage() {
         <div
           ref={boardRef}
           onDoubleClick={handleBoardDoubleClick}
-          className="ideas-board relative w-full"
+          className={`ideas-board-${fondo} relative w-full`}
           style={{ height: contentH || "100%" }}
         >
           {loading ? (
@@ -412,8 +694,8 @@ export default function IdeasPage() {
               <p className="text-base font-semibold text-on-surface mb-1">Tu pizarra esta vacia</p>
               <p className="text-sm text-on-surface-variant max-w-xs">
                 Toca <span className="font-semibold">“Nueva idea”</span>, pulsa{" "}
-                <kbd className="px-1.5 py-0.5 rounded bg-surface-container text-xs font-bold">N</kbd> o haz doble
-                clic en cualquier parte del lienzo.
+                <kbd className="px-1.5 py-0.5 rounded bg-surface-container text-xs font-bold">N</kbd>, dicta con
+                el micrófono o haz doble clic en el lienzo.
               </p>
             </div>
           ) : (
@@ -424,6 +706,8 @@ export default function IdeasPage() {
                 boundsRef={boardRef}
                 editing={editingId === note.id}
                 dimmed={isDimmed(note)}
+                echoDays={echo && echo.id === note.id && !filtering ? echo.dias : null}
+                justBorn={initialIdsRef.current !== null && !initialIdsRef.current.has(note.id)}
                 onStartEdit={setEditingId}
                 onEndEdit={handleEndEdit}
                 onMove={handleMove}
@@ -433,11 +717,20 @@ export default function IdeasPage() {
                 onChangeColor={handleChangeColor}
                 onDelete={handleDelete}
                 onFocus={handleFocus}
+                onDevelop={handleDevelop}
               />
             ))
           )}
         </div>
       </div>
+
+      {/* Panel de repaso IA */}
+      <RepasoSheet
+        open={repaso.open}
+        loading={repaso.loading}
+        data={repaso.data}
+        onClose={() => setRepaso((r) => ({ ...r, open: false }))}
+      />
     </div>
   );
 }
