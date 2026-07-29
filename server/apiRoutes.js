@@ -6759,6 +6759,60 @@ router.delete('/tags', async (req, res) => {
 });
 
 
+// --- Endpoints para Ideas / Pizarra de post-its (/api/ideas) ---
+// POST (Crear)
+router.post('/ideas', async (req, res) => {
+    const { text = '', color = '#FEF08A', x = 40, y = 40, rotation = 0, z = 1 } = req.body || {};
+    try {
+        const ref = await db.collection('crm_ideas').add({
+            text: String(text),
+            color: String(color),
+            x: Number(x) || 0,
+            y: Number(y) || 0,
+            rotation: Number(rotation) || 0,
+            z: Number(z) || 1,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        res.status(201).json({ success: true, id: ref.id });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al crear la idea.' });
+    }
+});
+
+// PUT (Actualizar una idea: texto, color y/o posicion)
+router.put('/ideas/:id', async (req, res) => {
+    const { id } = req.params;
+    const update = {};
+    if (req.body.text !== undefined) update.text = String(req.body.text);
+    if (req.body.color !== undefined) update.color = String(req.body.color);
+    if (req.body.x !== undefined) update.x = Number(req.body.x) || 0;
+    if (req.body.y !== undefined) update.y = Number(req.body.y) || 0;
+    if (req.body.rotation !== undefined) update.rotation = Number(req.body.rotation) || 0;
+    if (req.body.z !== undefined) update.z = Number(req.body.z) || 1;
+    if (Object.keys(update).length === 0) {
+        return res.status(400).json({ success: false, message: 'No hay campos para actualizar.' });
+    }
+    update.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    try {
+        await db.collection('crm_ideas').doc(id).update(update);
+        res.status(200).json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al actualizar la idea.' });
+    }
+});
+
+// DELETE (Borrar una idea)
+router.delete('/ideas/:id', async (req, res) => {
+    try {
+        await db.collection('crm_ideas').doc(req.params.id).delete();
+        res.status(200).json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al eliminar la idea.' });
+    }
+});
+
+
 // --- Endpoints para Mensajes de Anuncios (/api/ad-responses) ---
 // POST (Crear)
 router.post('/ad-responses', async (req, res) => {

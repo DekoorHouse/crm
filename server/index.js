@@ -340,7 +340,7 @@ app.get('/crm', (req, res) => {
     res.sendFile(path.join(nextjsDir, 'crm.html'));
 });
 const crmSections = [
-    'chats', 'departamentos', 'reglas-ads', 'etiquetas',
+    'chats', 'ideas', 'departamentos', 'reglas-ads', 'etiquetas',
     'mensajes-ads', 'respuestas-rapidas', 'entrenamiento-ia',
     'simulador-ia', 'ajustes', 'carritos-abandonados', 'rentabilidad',
     'campanas'
