@@ -3997,6 +3997,9 @@ async function getPedidoAttribution(contactId, beforeTimestamp) {
 // SE ACTUALIZÓ LA EXPORTACIÓN
 module.exports = {
     diagnoseGeminiModel,
+    // Exportada para poder COMPARAR proveedores con el prompt REAL (banco de pruebas A/B del
+    // chat). Es una función pura de lectura: arma systemText + referenceText desde Firestore.
+    buildStaticContext,
     handleWholesaleMessage,
     checkCoverage,
     generateGeminiResponse,
