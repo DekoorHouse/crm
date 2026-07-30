@@ -1176,7 +1176,7 @@ const SettingsViewTemplate = () => `
             </div>
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-1">Cerebro de Andrea (proveedor de IA)</h2>
-                <p class="text-sm text-gray-500 mb-4">Qué inteligencia artificial usa Andrea para conversar con los clientes y para transcribir las notas de voz. Si un proveedor se cae o bloquea la cuenta, cambias aquí y Andrea sigue contestando.</p>
+                <p class="text-sm text-gray-500 mb-4">Qué inteligencia artificial usa Andrea para <strong>conversar</strong>, <strong>registrar pedidos</strong>, transcribir <strong>notas de voz</strong> y para la cobranza y los recordatorios automáticos. Si un proveedor se cae o bloquea la cuenta, cambias aquí y Andrea sigue trabajando.</p>
                 <div class="flex items-center justify-between">
                     <div>
                         <h3 class="font-semibold" id="ai-provider-label">Google Gemini</h3>
@@ -1191,7 +1191,7 @@ const SettingsViewTemplate = () => `
                     </label>
                 </div>
                 <p class="text-xs text-gray-400 mt-3" id="ai-provider-note">
-                    Nota: los <strong>mockups</strong> y los <strong>grabados</strong> siguen usando Gemini siempre; este cambio afecta solo la conversación y las notas de voz.
+                    Nota: los <strong>mockups</strong> y los <strong>grabados</strong> siguen usando Gemini siempre (OpenAI no genera esas imágenes aquí). El cambio tarda hasta 1 minuto en aplicar a los procesos automáticos.
                 </p>
             </div>
             <div class="settings-card">

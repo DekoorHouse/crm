@@ -2126,7 +2126,32 @@ function buildGeminiContents(promptOrContents, imageParts = []) {
     return contents;
 }
 
+// Proveedor de IA vigente, con caché corto: esta función la usan TODOS los clasificadores
+// (registro de pedidos, recordatorios, cobranza, aprobación de diseños, satisfacción...), que
+// suman ~55k llamadas al mes. Leer Firestore en cada una sería un desperdicio, así que el valor
+// se recuerda 60 s. Cambiar el interruptor en Ajustes aplica, a más tardar, un minuto después.
+let _aiProviderCache = { value: null, at: 0 };
+async function getAiProviderCached() {
+    const now = Date.now();
+    if (_aiProviderCache.value && (now - _aiProviderCache.at) < 60000) return _aiProviderCache.value;
+    let v = String(process.env.AI_CHAT_PROVIDER || 'gemini').toLowerCase();
+    try {
+        const d = await db.collection('crm_settings').doc('general').get();
+        if (d.exists && d.data().aiChatProvider) v = String(d.data().aiChatProvider).toLowerCase();
+    } catch (_) { /* si Firestore falla, se queda con la env / gemini */ }
+    _aiProviderCache = { value: v, at: now };
+    return v;
+}
+
 async function generateGeminiResponse(prompt, imageParts = [], systemInstruction = null) {
+    // SWITCH DE PROVEEDOR: si Ajustes dice OpenAI, TODO lo que pasa por aquí se va a OpenAI.
+    // Esto es lo que hace que el registro automático de pedidos, los clasificadores y la
+    // cobranza sigan funcionando cuando Gemini está bloqueado — sin esto, Andrea diría "ya
+    // registramos tu pedido" y el pedido NO se crearía (falla silenciosa que cuesta ventas).
+    if ((await getAiProviderCached()) === 'openai') {
+        const { generateOpenAIResponse } = require('./ai/openaiProvider');
+        return generateOpenAIResponse(prompt, imageParts, systemInstruction);
+    }
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     const payload = { contents: buildGeminiContents(prompt, imageParts) };
