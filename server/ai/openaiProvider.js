@@ -33,7 +33,9 @@ const OPENAI_REASONING_EFFORT = process.env.OPENAI_REASONING_EFFORT || 'minimal'
 const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS) || 60000;
 
 /**
- * ¿Este part de Gemini es una imagen que OpenAI puede ver?
+ * Convierte un part multimedia de Gemini al bloque equivalente de OpenAI.
+ * Soportado (verificado contra la API real): IMAGEN y PDF — los dos formatos en que llegan
+ * los comprobantes de pago. El PDF va como content type 'file' con file_data en base64.
  * OJO: gpt-5-mini NO acepta audio ni video (Gemini sí). Esos se descartan y se avisa por
  * texto, igual que hace skippedMediaNote con lo que no cabe.
  */
@@ -44,7 +46,14 @@ function inlineDataToOpenAIPart(part) {
     if (mime.startsWith('image/')) {
         return { type: 'image_url', image_url: { url: `data:${mime};base64,${inline.data}` } };
     }
-    return null; // audio, video, PDF: no soportados por el modelo de chat
+    if (mime.includes('pdf')) {
+        // Comprobantes de pago en PDF: probado, lee monto/beneficiario/fecha correctamente.
+        return {
+            type: 'file',
+            file: { filename: 'documento.pdf', file_data: `data:application/pdf;base64,${inline.data}` },
+        };
+    }
+    return null; // audio y video: no soportados por el modelo de chat
 }
 
 /** Describe lo que se tuvo que descartar, para decírselo al modelo en vez de callarlo. */
@@ -54,10 +63,9 @@ function describeDropped(parts) {
         const inline = p && (p.inlineData || p.inline_data);
         if (!inline) continue;
         const mime = String(inline.mimeType || inline.mime_type || '').toLowerCase();
-        if (mime.startsWith('image/')) continue;
+        if (mime.startsWith('image/') || mime.includes('pdf')) continue; // sí se mandan
         if (mime.startsWith('audio/')) tipos.add('una nota de voz');
         else if (mime.startsWith('video/')) tipos.add('un video');
-        else if (mime.includes('pdf')) tipos.add('un PDF');
         else tipos.add('un archivo');
     }
     return tipos.size ? [...tipos].join(' y ') : null;
