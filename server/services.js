@@ -2148,9 +2148,10 @@ async function generateGeminiResponse(prompt, imageParts = [], systemInstruction
     // Esto es lo que hace que el registro automático de pedidos, los clasificadores y la
     // cobranza sigan funcionando cuando Gemini está bloqueado — sin esto, Andrea diría "ya
     // registramos tu pedido" y el pedido NO se crearía (falla silenciosa que cuesta ventas).
-    if ((await getAiProviderCached()) === 'openai') {
-        const { generateOpenAIResponse } = require('./ai/openaiProvider');
-        return generateOpenAIResponse(prompt, imageParts, systemInstruction);
+    const _prov = await getAiProviderCached();
+    if (_prov === 'openai' || _prov === 'openrouter') {
+        const { generateChatCompletion } = require('./ai/openaiProvider');
+        return generateChatCompletion(prompt, imageParts, systemInstruction, _prov);
     }
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
@@ -2239,6 +2240,11 @@ async function transcribeAudio(fileUrl, mimeType) {
             || process.env.AI_TRANSCRIBE_PROVIDER || process.env.AI_CHAT_PROVIDER || 'gemini'
         ).toLowerCase();
     } catch (_) { /* si falla la lectura, se queda en gemini (comportamiento previo) */ }
+    // OpenRouter no expone endpoint de transcripcion (solo chat), asi que el audio se manda a
+    // Whisper de OpenAI si hay llave; si no la hay, se queda en Gemini (comportamiento previo).
+    if (transcribeProvider === 'openrouter') {
+        transcribeProvider = process.env.OPENAI_API_KEY ? 'openai' : 'gemini';
+    }
     if (transcribeProvider === 'openai') {
         try {
             const { transcribeAudioOpenAI, OPENAI_TRANSCRIBE_MODEL } = require('./ai/openaiProvider');
@@ -3252,20 +3258,21 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             generalSettings.aiChatProvider || process.env.AI_CHAT_PROVIDER || 'gemini'
         ).toLowerCase();
 
-        if (chatProvider === 'openai') {
-            // OpenAI cachea por PREFIJO automáticamente (no hay cachés que crear ni borrar como en
-            // Gemini): basta con mandar systemText + referenceText siempre al frente y en el mismo
-            // orden. El resto de la conversación es idéntico al fallback de Gemini.
+        if (chatProvider === 'openai' || chatProvider === 'openrouter') {
+            // Ambos hablan el MISMO formato (la API de OpenRouter es compatible con la de OpenAI) y
+            // cachean por PREFIJO automáticamente — no hay cachés que crear ni borrar como en Gemini:
+            // basta con mandar systemText + referenceText siempre al frente y en el mismo orden.
+            // OpenRouter sirve gemini-3-flash-preview, el modelo de siempre, con créditos prepagados.
             const { systemText: oaSystem, referenceText: oaRef } = await buildStaticContext(botInstructions, isPostVenta, paymentPhaseActive);
             const oaContents = [
                 { role: 'user', parts: [{ text: oaRef }] },
                 ...historyTurns,
                 { role: 'user', parts: [{ text: finalUserText }] }
             ];
-            const { generateOpenAIResponse, OPENAI_CHAT_MODEL } = require('./ai/openaiProvider');
-            console.log(`[AI] Generando respuesta con OpenAI (${OPENAI_CHAT_MODEL}) para ${contactId}. (${historyTurns.length} turnos + ${mediaParts.length} archivo(s) multimedia)`);
-            aiResult = await generateOpenAIResponse(oaContents, mediaParts, oaSystem);
-            console.log(`[AI] 💰 OpenAI — cacheados: ${aiResult.cachedTokens}, entrada: ${aiResult.inputTokens}, salida: ${aiResult.outputTokens}`);
+            const { generateChatCompletion, modelForProvider } = require('./ai/openaiProvider');
+            console.log(`[AI] Generando respuesta con ${chatProvider} (${modelForProvider(chatProvider)}) para ${contactId}. (${historyTurns.length} turnos + ${mediaParts.length} archivo(s) multimedia)`);
+            aiResult = await generateChatCompletion(oaContents, mediaParts, oaSystem, chatProvider);
+            console.log(`[AI] 💰 ${chatProvider} — cacheados: ${aiResult.cachedTokens}, entrada: ${aiResult.inputTokens}, salida: ${aiResult.outputTokens}`);
         } else {
         // --- Intentar usar Context Caching (ruta Gemini) ---
         try {

@@ -32,6 +32,42 @@ const OPENAI_CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-5-mini';
 const OPENAI_REASONING_EFFORT = process.env.OPENAI_REASONING_EFFORT || 'minimal';
 const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS) || 60000;
 
+// --- OPENROUTER: el MISMO Gemini, pero con créditos prepagados ------------------------------
+// Por qué existe: con OpenAI el prompt de Andrea (afinado meses contra Gemini) se interpreta
+// distinto y hubo que ir parchando comportamientos. OpenRouter sirve gemini-3-flash-preview —
+// el modelo de siempre — así que el prompt vuelve a comportarse como estaba afinado, y encima
+// recupera audio y video (que gpt-5-mini no acepta). Al ser prepago no hay cuenta de facturación
+// que se bloquee, que fue justo lo que tumbó a Andrea el 30-jul-2026.
+// Su API es COMPATIBLE con la de OpenAI, así que se reusa todo el traductor de este archivo.
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_CHAT_MODEL = process.env.OPENROUTER_CHAT_MODEL || 'google/gemini-3-flash-preview';
+
+// Techo de tokens de SALIDA. Andrea contesta mensajes de WhatsApp (~100 tokens); sin este tope
+// los proveedores asumen el máximo del modelo (65k) y OpenRouter llega a rechazar la petición por
+// saldo ("you requested up to 65536 tokens, but can only afford ..."). Además acota el gasto si
+// el modelo se desboca. 2048 deja margen de sobra para el mensaje más largo del flujo.
+const CHAT_MAX_TOKENS = Number(process.env.AI_CHAT_MAX_TOKENS) || 2048;
+
+const PROVIDERS = {
+    openai: {
+        url: OPENAI_URL,
+        keyEnv: 'OPENAI_API_KEY',
+        model: () => OPENAI_CHAT_MODEL,
+        // reasoning_effort es propio de los modelos GPT-5: sin 'minimal' razonan por defecto y
+        // tardan ~4x más. No aplica a Gemini.
+        extra: () => ({ reasoning_effort: OPENAI_REASONING_EFFORT, max_completion_tokens: CHAT_MAX_TOKENS }),
+        headers: () => ({}),
+    },
+    openrouter: {
+        url: OPENROUTER_URL,
+        keyEnv: 'OPENROUTER_API_KEY',
+        model: () => OPENROUTER_CHAT_MODEL,
+        extra: () => ({ max_tokens: CHAT_MAX_TOKENS }),
+        // OpenRouter pide identificar la app (aparece en su panel y en los rankings).
+        headers: () => ({ 'HTTP-Referer': 'https://app.dekoormx.com', 'X-Title': 'Dekoor CRM' }),
+    },
+};
+
 /**
  * Convierte un part multimedia de Gemini al bloque equivalente de OpenAI.
  * Soportado (verificado contra la API real): IMAGEN y PDF — los dos formatos en que llegan
@@ -115,9 +151,10 @@ function toOpenAIMessages(contents, systemText) {
  * generateGeminiResponse(promptOrContents, mediaParts, systemInstruction) para que el
  * switch de proveedor sea transparente en services.js.
  */
-async function generateOpenAIResponse(promptOrContents, mediaParts = [], systemInstruction = null) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error('Falta OPENAI_API_KEY para el chat con OpenAI.');
+async function generateChatCompletion(promptOrContents, mediaParts = [], systemInstruction = null, providerKey = 'openai') {
+    const cfg = PROVIDERS[providerKey] || PROVIDERS.openai;
+    const apiKey = process.env[cfg.keyEnv];
+    if (!apiKey) throw new Error(`Falta ${cfg.keyEnv} para el chat con ${providerKey}.`);
 
     // Acepta string (prompt plano) o array de turnos, igual que la ruta de Gemini.
     const contents = Array.isArray(promptOrContents)
@@ -135,17 +172,17 @@ async function generateOpenAIResponse(promptOrContents, mediaParts = [], systemI
     }
 
     const payload = {
-        model: OPENAI_CHAT_MODEL,
-        reasoning_effort: OPENAI_REASONING_EFFORT,
+        model: cfg.model(),
+        ...cfg.extra(),
         messages: toOpenAIMessages(contents, systemInstruction),
     };
 
     let data;
     for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-            const res = await fetch(OPENAI_URL, {
+            const res = await fetch(cfg.url, {
                 method: 'POST',
-                headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', ...cfg.headers() },
                 body: JSON.stringify(payload),
                 signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
             });
@@ -154,17 +191,17 @@ async function generateOpenAIResponse(promptOrContents, mediaParts = [], systemI
                 const msg = (data && data.error && data.error.message) || `HTTP ${res.status}`;
                 // 429/5xx son transitorios: vale la pena un reintento.
                 if (attempt < 2 && (res.status === 429 || res.status >= 500)) {
-                    console.warn(`[OPENAI] ${msg}; reintentando...`);
+                    console.warn(`[${providerKey.toUpperCase()}] ${msg}; reintentando...`);
                     await new Promise(r => setTimeout(r, 900));
                     continue;
                 }
-                throw new Error(`La API de OpenAI respondió: ${msg}`);
+                throw new Error(`La API de ${providerKey} respondió: ${msg}`);
             }
             break;
         } catch (e) {
             const retriable = /timeout|aborted|fetch failed|network|econnreset|terminated/i.test(String(e && e.message));
             if (attempt < 2 && retriable) {
-                console.warn(`[OPENAI] Falló (${e.message}), reintentando...`);
+                console.warn(`[${providerKey.toUpperCase()}] Falló (${e.message}), reintentando...`);
                 await new Promise(r => setTimeout(r, 900));
                 continue;
             }
@@ -178,7 +215,7 @@ async function generateOpenAIResponse(promptOrContents, mediaParts = [], systemI
         : '';
     if (!text) {
         const motivo = choice && choice.finish_reason ? ` (finish_reason: ${choice.finish_reason})` : '';
-        throw new Error(`No se recibió una respuesta válida de OpenAI${motivo}.`);
+        throw new Error(`No se recibió una respuesta válida de ${providerKey}${motivo}.`);
     }
     const usage = (data && data.usage) || {};
     const cached = (usage.prompt_tokens_details && usage.prompt_tokens_details.cached_tokens) || 0;
@@ -189,6 +226,22 @@ async function generateOpenAIResponse(promptOrContents, mediaParts = [], systemI
         outputTokens: usage.completion_tokens || 0,
         cachedTokens: cached,
     };
+}
+
+/** Chat con OpenAI (gpt-5-mini por defecto). */
+function generateOpenAIResponse(promptOrContents, mediaParts = [], systemInstruction = null) {
+    return generateChatCompletion(promptOrContents, mediaParts, systemInstruction, 'openai');
+}
+
+/** Chat con OpenRouter (gemini-3-flash-preview por defecto: el modelo de siempre, prepago). */
+function generateOpenRouterResponse(promptOrContents, mediaParts = [], systemInstruction = null) {
+    return generateChatCompletion(promptOrContents, mediaParts, systemInstruction, 'openrouter');
+}
+
+/** Modelo vigente de un proveedor, para logs y diagnóstico. */
+function modelForProvider(providerKey) {
+    const cfg = PROVIDERS[providerKey];
+    return cfg ? cfg.model() : null;
 }
 
 // --- Transcripción de notas de voz --------------------------------------------------------
@@ -234,9 +287,13 @@ async function transcribeAudioOpenAI(buffer, mimeType = 'audio/ogg') {
 }
 
 module.exports = {
+    generateChatCompletion,
     generateOpenAIResponse,
+    generateOpenRouterResponse,
+    modelForProvider,
     toOpenAIMessages,
     transcribeAudioOpenAI,
     OPENAI_CHAT_MODEL,
+    OPENROUTER_CHAT_MODEL,
     OPENAI_TRANSCRIBE_MODEL,
 };
