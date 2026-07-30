@@ -2440,6 +2440,31 @@ const GEMINI_MAX_VIDEO_BYTES = 8 * 1024 * 1024;          // 8 MB por video
 const GEMINI_MAX_PDF_BYTES = 8 * 1024 * 1024;            // 8 MB por PDF (comprobantes son chicos)
 const GEMINI_MAX_TOTAL_MEDIA_BYTES = 12 * 1024 * 1024;   // 12 MB en total por request
 
+// --- Caché de las imágenes de REFERENCIA del departamento -----------------------------------
+// Son estáticas (la foto del modelo de lámpara casi nunca cambia), pero se descargaban y
+// re-comprimían en CADA mensaje que contestaba Andrea: una PNG de 1.22 MB costaba ~1.6 s por
+// turno para terminar mandando siempre el mismo JPEG de 77 KB. Aquí se guarda YA PROCESADA.
+// El TTL cubre el caso de que reemplacen la imagen conservando la misma URL.
+const DEPT_IMAGE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
+const DEPT_IMAGE_CACHE_MAX = 30;                // tope de entradas (~80 KB c/u)
+const deptImageCache = new Map();               // url -> { prepared, at }
+
+function getCachedDeptImage(url) {
+    const hit = deptImageCache.get(url);
+    if (!hit) return null;
+    if (Date.now() - hit.at > DEPT_IMAGE_CACHE_TTL_MS) { deptImageCache.delete(url); return null; }
+    return hit.prepared;
+}
+
+function setCachedDeptImage(url, prepared) {
+    // Desalojo simple: al llenarse, se tira la entrada más vieja (Map conserva orden de inserción).
+    if (deptImageCache.size >= DEPT_IMAGE_CACHE_MAX) {
+        const primera = deptImageCache.keys().next().value;
+        if (primera !== undefined) deptImageCache.delete(primera);
+    }
+    deptImageCache.set(url, { prepared, at: Date.now() });
+}
+
 // Ventana de contexto de la IA: cuántos mensajes del historial ve y qué tan viejos
 // pueden ser los archivos que se le re-adjuntan. Mandar el historial completo hacía
 // que el modelo "re-resumiera" información ya dada; adjuntar multimedia vieja hacía
@@ -2849,16 +2874,26 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             for (const refImage of departmentReferenceImages) {
                 if (!(refImage && refImage.url && typeof refImage.url === 'string' && refImage.url.startsWith('http'))) continue;
                 try {
-                    const response = await fetch(refImage.url, { signal: AbortSignal.timeout(15000) });
-                    if (!response.ok) {
-                        // Con Uniform Bucket-Level Access, las URLs storage.googleapis.com dan 403.
-                        // NO metemos el cuerpo del error como "imagen" (eso cuelga/atraganta a Gemini): la omitimos.
-                        console.warn(`[AI] Imagen de referencia del departamento no disponible (HTTP ${response.status}). Se omite.`);
-                        continue;
+                    // CACHÉ: estas imágenes son ESTÁTICAS (la del departamento casi nunca cambia),
+                    // pero antes se descargaban y re-comprimían en CADA mensaje que contestaba
+                    // Andrea. Medido: una PNG de 1.22 MB tardaba 1.6 s por turno, para terminar
+                    // mandando siempre el mismo JPEG de 77 KB. Ahora se procesa una vez y se
+                    // reutiliza; el TTL cubre el caso de que reemplacen la imagen sin cambiar la URL.
+                    let prepared = getCachedDeptImage(refImage.url);
+                    if (!prepared) {
+                        const response = await fetch(refImage.url, { signal: AbortSignal.timeout(15000) });
+                        if (!response.ok) {
+                            // Con Uniform Bucket-Level Access, las URLs storage.googleapis.com dan 403.
+                            // NO metemos el cuerpo del error como "imagen" (eso cuelga/atraganta a Gemini): la omitimos.
+                            console.warn(`[AI] Imagen de referencia del departamento no disponible (HTTP ${response.status}). Se omite.`);
+                            continue;
+                        }
+                        const buffer = Buffer.from(await response.arrayBuffer());
+                        if (buffer.length === 0) continue;
+                        prepared = await buildSafeGeminiMediaPart(buffer, refImage.mimeType || 'image/jpeg', 'image');
+                        // Solo se cachea lo utilizable; una imagen omitida se reintenta al siguiente turno.
+                        if (!prepared.skipped) setCachedDeptImage(refImage.url, prepared);
                     }
-                    const buffer = Buffer.from(await response.arrayBuffer());
-                    if (buffer.length === 0) continue;
-                    const prepared = await buildSafeGeminiMediaPart(buffer, refImage.mimeType || 'image/jpeg', 'image');
                     if (prepared.skipped) {
                         console.warn(`[AI] Imagen de referencia del departamento omitida: ${prepared.skipped}.`);
                         continue;
@@ -2871,7 +2906,8 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     }
                     departmentImageParts.push(prepared.part);
                     departmentImagesBytes += prepared.bytes;
-                    console.log(`[AI] Imagen de referencia del departamento lista (${Math.round(prepared.bytes / 1024)} KB).`);
+                    console.log(`[AI] Imagen de referencia del departamento lista (${Math.round(prepared.bytes / 1024)} KB${prepared.__cached ? ', desde caché' : ', descargada'}).`);
+                    prepared.__cached = true; // a partir de aquí ya vive en el caché
                 } catch (e) {
                     console.warn('[AI] Error descargando imagen de referencia del departamento:', e.message);
                 }
