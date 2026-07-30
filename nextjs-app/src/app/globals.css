@@ -705,3 +705,16 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: 6px;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 45%, transparent);
 }
+
+/* --- Enlaces dentro de la hoja de libreta --- */
+.nb-text a {
+  color: #2563EB;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  word-break: break-all;
+}
+.nb-text a:hover {
+  color: #1D4ED8;
+}

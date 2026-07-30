@@ -62,6 +62,64 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// URLs dentro del texto de la hoja: http(s):// o www., sin puntuación al final.
+const URL_RE = /((?:https?:\/\/|www\.)[^\s<]+[^\s<.,;:!?)\]}"'])/gi;
+
+/**
+ * Solo deja pasar enlaces seguros (http/https/mailto). Cualquier otra cosa
+ * —sobre todo `javascript:`— devuelve null, porque el HTML de la hoja se
+ * vuelve a inyectar con innerHTML y un href malicioso sería un XSS.
+ */
+function safeHref(raw: string): string | null {
+  const v = raw.trim();
+  try {
+    const u = new URL(/^www\./i.test(v) ? `https://${v}` : v, window.location.origin);
+    if (u.protocol === "http:" || u.protocol === "https:" || u.protocol === "mailto:") return u.href;
+  } catch {
+    /* href inválido */
+  }
+  return null;
+}
+
+/**
+ * Convierte en <a> las URLs escritas como texto plano dentro del editor.
+ * Idempotente: salta el texto que ya vive dentro de un <a>. No se usa mientras
+ * escribes (movería el cursor); se aplica al cargar la hoja y al salir de ella.
+ */
+function linkify(root: HTMLElement): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const objetivo: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) {
+    const t = n as Text;
+    if ((t.parentElement as HTMLElement | null)?.closest("a")) continue;
+    URL_RE.lastIndex = 0;
+    if (URL_RE.test(t.textContent || "")) objetivo.push(t);
+  }
+  for (const node of objetivo) {
+    const txt = node.textContent || "";
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    URL_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = URL_RE.exec(txt))) {
+      const href = safeHref(m[0]);
+      if (m.index > last) frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
+      if (href) {
+        const a = document.createElement("a");
+        a.setAttribute("href", href);
+        a.textContent = m[0];
+        frag.appendChild(a);
+      } else {
+        frag.appendChild(document.createTextNode(m[0]));
+      }
+      last = m.index + m[0].length;
+    }
+    if (last < txt.length) frag.appendChild(document.createTextNode(txt.slice(last)));
+    node.parentNode?.replaceChild(frag, node);
+  }
+}
+
 /** Punto del texto bajo un clic, para saber si tocaste una casilla. */
 function caretFromPoint(x: number, y: number): { node: Node; offset: number } | null {
   const d = document as Document & {
@@ -120,6 +178,18 @@ function sanitizeInkHtml(html: string, baseColor: string): string {
         // Un bloque nuevo equivale a un salto de línea.
         if (to.lastChild) to.appendChild(document.createElement("br"));
         walk(el, to, teñido);
+        return;
+      }
+      if (tag === "a") {
+        const href = safeHref(el.getAttribute("href") || "");
+        if (href) {
+          const a = document.createElement("a");
+          a.setAttribute("href", href);
+          a.textContent = el.textContent || href; // el link lleva su color por CSS
+          to.appendChild(a);
+        } else {
+          walk(el, to, teñido); // href inseguro: se conserva solo el texto
+        }
         return;
       }
       const color = el.style?.color || "";
@@ -215,7 +285,13 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     if (pageIdRef.current === page.id) return;
     pageIdRef.current = page.id;
     const html = page.html || escapeHtml(page.text).replace(/\n/g, "<br>");
-    if (editorRef.current) editorRef.current.innerHTML = html;
+    if (editorRef.current) {
+      // Sanear en la CARGA también: el html viene de Firestore y podría traer
+      // un href peligroso metido por fuera del editor. Luego linkificar las
+      // URLs que quedaron como texto plano (hojas viejas o dictadas).
+      editorRef.current.innerHTML = sanitizeInkHtml(html, page.ink);
+      linkify(editorRef.current);
+    }
     setVacia(!page.text.trim());
     setPageTitle(page.title);
     titleRef.current = page.title;
@@ -384,6 +460,13 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
 
   const onEditorClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      // Tocar un enlace lo abre (el link lo escribiste tú en tu libreta).
+      const link = (e.target as HTMLElement).closest?.("a") as HTMLAnchorElement | null;
+      if (link?.href) {
+        e.preventDefault();
+        window.open(link.href, "_blank", "noopener,noreferrer");
+        return;
+      }
       const pos = caretFromPoint(e.clientX, e.clientY);
       if (!pos || pos.node.nodeType !== Node.TEXT_NODE) return;
       const txt = pos.node.textContent || "";
@@ -681,7 +764,15 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
                 onFocus={() => setInkTarget("cuerpo")}
                 onClick={onEditorClick}
                 onKeyDown={onEditorKeyDown}
-                onBlur={() => void flush()}
+                onBlur={() => {
+                  // Al salir del editor, las URLs escritas se vuelven enlaces
+                  // (durante la escritura no, para no mover el cursor).
+                  if (editorRef.current) {
+                    linkify(editorRef.current);
+                    dirtyRef.current = true;
+                  }
+                  void flush();
+                }}
                 data-placeholder="Escribe aquí…"
                 spellCheck={false}
                 className="nb-text"
