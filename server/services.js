@@ -900,12 +900,11 @@ async function getShippingQuote(zipTo) {
 const GEMINI_MODEL = 'gemini-3-flash-preview';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const CACHE_TTL = '1800s'; // 30 minutos de TTL para el caché
-// KILL-SWITCH del Context Caching. Incidente 30-jul-2026: Andrea dejó de responder porque la
-// creación del caché (API cachedContents de Google) se colgaba y bloqueaba TODAS las respuestas del
-// chat (nunca caía al fallback). Deshabilitado por defecto: el chat usa la ruta SIN caché
-// (generateGeminiResponse, la misma probada del extractor). Para reactivar sin re-deploy: poner la
-// variable de entorno CONTEXT_CACHE_ENABLED=true en Render (cuando cachedContents vuelva a la normalidad).
-const CONTEXT_CACHE_ENABLED = process.env.CONTEXT_CACHE_ENABLED === 'true';
+// KILL-SWITCH del Context Caching. Incidente 30-jul-2026: Andrea dejó de responder, pero la causa
+// REAL fue de FACTURACIÓN (Google devolvió 403 "dunning" por pago no procesado del proyecto), NO el
+// caché. El caché ABARATA los tokens, así que se deja ENCENDIDO por defecto (revertido el apagado
+// temporal). Para apagarlo en un futuro incidente sin re-deploy: env CONTEXT_CACHE_ENABLED=false.
+const CONTEXT_CACHE_ENABLED = process.env.CONTEXT_CACHE_ENABLED !== 'false';
 
 // Cliente HTTP para Gemini vía axios con conexiones NUEVAS (keepAlive:false).
 // El fetch global (undici) reutiliza conexiones del pool que el servidor ya
