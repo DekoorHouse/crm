@@ -28,6 +28,12 @@ export const INKS = [
 export const DEFAULT_INK = INKS[0].hex;
 
 const AUTOSAVE_MS = 1200;
+const SWIPE_MIN = 70; // px de deslizamiento para pasar de hoja
+const VACIO = "☐";
+const PALOMEADO = "☑";
+
+/** A qué le aplica la pluma que elijas. */
+type InkTarget = "cuerpo" | "titulo" | "fecha";
 
 function mapPage(id: string, d: Record<string, unknown>): Page {
   const written = d.writtenAt as { toMillis?: () => number } | undefined;
@@ -38,6 +44,8 @@ function mapPage(id: string, d: Record<string, unknown>): Page {
     html: typeof d.html === "string" ? d.html : "",
     ink: typeof d.ink === "string" ? d.ink : DEFAULT_INK,
     pen: typeof d.pen === "string" ? d.pen : undefined,
+    titleInk: typeof d.titleInk === "string" ? d.titleInk : undefined,
+    dateInk: typeof d.dateInk === "string" ? d.dateInk : undefined,
     order: typeof d.order === "number" ? d.order : 1,
     writtenAtMs: written && typeof written.toMillis === "function" ? written.toMillis() : undefined,
   };
@@ -52,6 +60,23 @@ function formatWritten(ms: number): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Punto del texto bajo un clic, para saber si tocaste una casilla. */
+function caretFromPoint(x: number, y: number): { node: Node; offset: number } | null {
+  const d = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+  };
+  if (d.caretRangeFromPoint) {
+    const r = d.caretRangeFromPoint(x, y);
+    return r ? { node: r.startContainer, offset: r.startOffset } : null;
+  }
+  if (d.caretPositionFromPoint) {
+    const p = d.caretPositionFromPoint(x, y);
+    return p ? { node: p.offsetNode, offset: p.offset } : null;
+  }
+  return null;
 }
 
 /**
@@ -122,12 +147,15 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
   const [pages, setPages] = useState<Page[]>([]);
   const [loading, setLoading] = useState(true);
   const [index, setIndex] = useState(0);
+  const [turnDir, setTurnDir] = useState<"next" | "prev">("next");
   const [pageTitle, setPageTitle] = useState("");
   // `ink` es la pluma en la mano; `baseInk` es el color del texto que aún no
-  // tiene tinta propia. Cambiar de pluma NO debe tocar baseInk, si no se
-  // repinta toda la hoja.
+  // tiene tinta propia. El título y la fecha llevan la suya aparte.
   const [ink, setInk] = useState(DEFAULT_INK);
   const [baseInk, setBaseInk] = useState(DEFAULT_INK);
+  const [titleInk, setTitleInk] = useState(DEFAULT_INK);
+  const [dateInk, setDateInk] = useState(DEFAULT_INK);
+  const [inkTarget, setInkTarget] = useState<InkTarget>("cuerpo");
   const [inkOpen, setInkOpen] = useState(false);
   const [vacia, setVacia] = useState(true);
   const [titleDraft, setTitleDraft] = useState(notebook.title);
@@ -193,6 +221,9 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     titleRef.current = page.title;
     setBaseInk(page.ink);
     setInk(page.pen || page.ink);
+    setTitleInk(page.titleInk || page.ink);
+    setDateInk(page.dateInk || page.ink);
+    setInkTarget("cuerpo");
     setLocalWrittenMs(null);
     dirtyRef.current = false;
   }, [page]);
@@ -243,6 +274,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
       if (next < 0 || next >= pages.length || next === index) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       await flush();
+      setTurnDir(next > index ? "next" : "prev");
       setIndex(next);
     },
     [pages.length, index, flush]
@@ -253,6 +285,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     await flush();
     try {
       await addPage(notebook.id, ink);
+      setTurnDir("next");
       setIndex(pages.length);
       requestAnimationFrame(() => editorRef.current?.focus());
     } catch (err) {
@@ -276,14 +309,27 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
   }, [notebook.id, page, pages.length]);
 
   /**
-   * Cambiar de pluma: si hay texto seleccionado se le aplica el color; si no,
-   * la tinta nueva aplica a lo que escribas a partir de ahí (misma hoja, varios
-   * colores). execCommand es lo único que soporta esto en todos los navegadores.
+   * La pluma pinta lo que estés tocando: el título, la fecha, o el cuerpo. En
+   * el cuerpo aplica a lo seleccionado, o tiñe lo que sigas escribiendo, así
+   * conviven varios colores en una misma hoja.
    */
   const handleInk = useCallback(
     (hex: string) => {
-      setInk(hex);
       setInkOpen(false);
+      if (!page) return;
+
+      if (inkTarget === "titulo") {
+        setTitleInk(hex);
+        updatePage(notebook.id, page.id, { titleInk: hex }).catch(() => {});
+        return;
+      }
+      if (inkTarget === "fecha") {
+        setDateInk(hex);
+        updatePage(notebook.id, page.id, { dateInk: hex }).catch(() => {});
+        return;
+      }
+
+      setInk(hex);
       const el = editorRef.current;
       const hojaEnBlanco = !el?.innerText.trim();
       if (el) {
@@ -302,7 +348,6 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
         }
         if (sel && !sel.isCollapsed) touch();
       }
-      if (!page) return;
       // El color base solo se mueve si la hoja está en blanco: si ya hay texto,
       // se queda como está para no repintar lo escrito.
       if (hojaEnBlanco) {
@@ -312,7 +357,73 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
         updatePage(notebook.id, page.id, { pen: hex }).catch(() => {});
       }
     },
-    [notebook.id, page, touch]
+    [notebook.id, page, inkTarget, touch]
+  );
+
+  // --- Lista de pendientes: casillas de texto que se palomean al tocarlas ---
+  const insertarCasilla = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    const sel = window.getSelection();
+    if (savedRange.current && sel) {
+      sel.removeAllRanges();
+      sel.addRange(savedRange.current);
+    }
+    // Si ya hay algo escrito en la línea, la casilla empieza en una nueva.
+    const node = sel?.anchorNode;
+    const antes =
+      node?.nodeType === Node.TEXT_NODE
+        ? (node.textContent || "").slice(0, sel?.anchorOffset ?? 0)
+        : "";
+    const lineaActual = antes.split("\n").pop() || "";
+    const prefijo = el.innerText.trim() && lineaActual.trim() ? "<br>" : "";
+    document.execCommand("insertHTML", false, `${prefijo}${VACIO}&nbsp;`);
+    touch();
+  }, [touch]);
+
+  const onEditorClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const pos = caretFromPoint(e.clientX, e.clientY);
+      if (!pos || pos.node.nodeType !== Node.TEXT_NODE) return;
+      const txt = pos.node.textContent || "";
+      // La casilla puede quedar justo bajo el clic o un carácter antes.
+      for (const off of [pos.offset, pos.offset - 1]) {
+        if (off < 0 || off >= txt.length) continue;
+        const ch = txt[off];
+        if (ch === VACIO || ch === PALOMEADO) {
+          pos.node.textContent = txt.slice(0, off) + (ch === VACIO ? PALOMEADO : VACIO) + txt.slice(off + 1);
+          touch();
+          return;
+        }
+      }
+    },
+    [touch]
+  );
+
+  const onEditorKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "Enter" || e.shiftKey) return;
+      const sel = window.getSelection();
+      const node = sel?.anchorNode;
+      const antes =
+        node?.nodeType === Node.TEXT_NODE
+          ? (node.textContent || "").slice(0, sel?.anchorOffset ?? 0)
+          : "";
+      const linea = antes.split("\n").pop() || "";
+      if (!/^\s*[☐☑]/.test(linea)) return;
+      e.preventDefault();
+      // Enter en una casilla vacía cierra la lista; si no, continúa con otra.
+      if (/^\s*[☐☑]\s*$/.test(linea)) {
+        document.execCommand("delete", false);
+        for (let i = 0; i < linea.trim().length; i++) document.execCommand("delete", false);
+        document.execCommand("insertHTML", false, "<br>");
+      } else {
+        document.execCommand("insertHTML", false, `<br>${VACIO}&nbsp;`);
+      }
+      touch();
+    },
+    [touch]
   );
 
   const handleNotebookTitleCommit = useCallback(() => {
@@ -395,10 +506,9 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     }
   }, [dictating, flush, ink, touch]);
 
-  // Deslizar para cambiar de hoja (solo si no estás escribiendo).
+  // Deslizar con el dedo para pasar de hoja. Si hay texto seleccionado se
+  // respeta la selección (el gesto era para elegir texto, no para hojear).
   function onTouchStart(e: React.TouchEvent) {
-    const activo = document.activeElement;
-    if (activo === editorRef.current || activo?.tagName === "INPUT") return;
     const t = e.touches[0];
     touchStart.current = { x: t.clientX, y: t.clientY };
   }
@@ -406,10 +516,12 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     const s = touchStart.current;
     touchStart.current = null;
     if (!s) return;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - s.x;
     const dy = t.clientY - s.y;
-    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+    if (Math.abs(dx) < SWIPE_MIN || Math.abs(dx) < Math.abs(dy) * 1.5) return;
     void goTo(dx < 0 ? index + 1 : index - 1);
   }
 
@@ -431,6 +543,9 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     const ms = page?.writtenAtMs ?? localWrittenMs;
     return ms ? formatWritten(ms) : null;
   }, [page?.writtenAtMs, localWrittenMs]);
+
+  const tintaMostrada = inkTarget === "titulo" ? titleInk : inkTarget === "fecha" ? dateInk : ink;
+  const nombreDestino = inkTarget === "titulo" ? "el título" : inkTarget === "fecha" ? "la fecha" : "el texto";
 
   return (
     <div className="fixed inset-0 z-[120] bg-surface-container-low flex flex-col">
@@ -515,7 +630,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
 
       {/* Hoja */}
       <div
-        className="flex-1 overflow-y-auto px-3 md:px-6 py-4"
+        className="flex-1 overflow-y-auto overflow-x-hidden px-3 md:px-6 py-4"
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
@@ -524,11 +639,17 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="nb-paper mx-auto w-full max-w-2xl min-h-full rounded-lg overflow-hidden">
+          <div
+            key={page?.id || "vacia"}
+            className={`nb-paper mx-auto w-full max-w-2xl min-h-full rounded-lg overflow-hidden ${
+              turnDir === "next" ? "nb-turn-next" : "nb-turn-prev"
+            }`}
+          >
             {/* Encabezado de la hoja: título a la izquierda, fecha a la derecha */}
             <div className="nb-paper-head flex items-baseline gap-3">
               <input
                 value={pageTitle}
+                onFocus={() => setInkTarget("titulo")}
                 onChange={(e) => {
                   setPageTitle(e.target.value);
                   titleRef.current = e.target.value;
@@ -538,11 +659,16 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
                 placeholder="Título de la hoja…"
                 maxLength={80}
                 className="nb-title flex-1 min-w-0"
-                style={{ color: baseInk }}
+                style={{ color: titleInk }}
               />
-              <span className="nb-date flex-shrink-0" style={{ color: baseInk }}>
+              <button
+                onClick={() => setInkTarget((t) => (t === "fecha" ? "cuerpo" : "fecha"))}
+                title="Tocar para pintar la fecha con otra tinta"
+                className={`nb-date flex-shrink-0 ${inkTarget === "fecha" ? "nb-date-sel" : ""}`}
+                style={{ color: dateInk }}
+              >
                 {fechaHora || "—"}
-              </span>
+              </button>
             </div>
 
             <div className="nb-lines">
@@ -552,6 +678,9 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
                 contentEditable
                 suppressContentEditableWarning
                 onInput={touch}
+                onFocus={() => setInkTarget("cuerpo")}
+                onClick={onEditorClick}
+                onKeyDown={onEditorKeyDown}
                 onBlur={() => void flush()}
                 data-placeholder="Escribe aquí…"
                 spellCheck={false}
@@ -563,7 +692,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
         )}
       </div>
 
-      {/* Barra inferior: tinta + navegación de hojas */}
+      {/* Barra inferior: tinta, lista y navegación de hojas */}
       <div
         className="flex items-center gap-2 px-3 md:px-6 pt-2 bg-surface-container-lowest border-t border-outline-variant/20 flex-shrink-0"
         style={{ paddingBottom: "max(0.6rem, env(safe-area-inset-bottom))" }}
@@ -572,18 +701,22 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
         <div className="relative flex-shrink-0">
           <button
             onClick={() => setInkOpen((v) => !v)}
-            title="Cambiar de pluma (aplica a lo seleccionado o a lo que sigas escribiendo)"
+            title={`Cambiar la tinta de ${nombreDestino}`}
             className="h-9 pl-2 pr-3 rounded-full border border-outline-variant/40 flex items-center gap-1.5 text-xs font-bold text-on-surface-variant hover:bg-surface-container-low transition-colors"
           >
-            <span className="w-4 h-4 rounded-full border border-black/15" style={{ backgroundColor: ink }} />
+            <span
+              className="w-4 h-4 rounded-full border border-black/15"
+              style={{ backgroundColor: tintaMostrada }}
+            />
             <span className="material-symbols-outlined" style={{ fontSize: 15 }}>ink_pen</span>
           </button>
           {inkOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setInkOpen(false)} />
               <div className="absolute bottom-11 left-0 z-50 bg-surface-container-lowest border border-outline-variant/25 rounded-2xl shadow-xl p-2.5">
-                <p className="text-[10px] text-on-surface-variant/70 mb-2 px-0.5 leading-tight max-w-40">
-                  Pinta lo seleccionado, o sigue escribiendo con la pluma nueva.
+                <p className="text-[10px] text-on-surface-variant/80 mb-2 px-0.5 leading-tight max-w-44">
+                  Pinta <span className="font-bold">{nombreDestino}</span>. Toca el título o la fecha
+                  para cambiarles la tinta por separado.
                 </p>
                 <div className="grid grid-cols-3 gap-2">
                   {INKS.map((c) => (
@@ -593,7 +726,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
                       onClick={() => handleInk(c.hex)}
                       title={c.name}
                       className={`w-8 h-8 rounded-full border transition-transform hover:scale-110 ${
-                        c.hex === ink ? "border-gray-700 ring-2 ring-primary/40" : "border-black/10"
+                        c.hex === tintaMostrada ? "border-gray-700 ring-2 ring-primary/40" : "border-black/10"
                       }`}
                       style={{ backgroundColor: c.hex }}
                     />
@@ -603,6 +736,16 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
             </>
           )}
         </div>
+
+        {/* Lista de pendientes */}
+        <button
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={insertarCasilla}
+          title="Agregar casilla de pendiente (tócala para palomearla)"
+          className="w-9 h-9 rounded-full border border-outline-variant/40 flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors flex-shrink-0"
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>checklist</span>
+        </button>
 
         <button
           onClick={handleDeletePage}

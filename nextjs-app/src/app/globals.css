@@ -681,3 +681,27 @@ h1, h2, h3, h4, h5, h6 {
   .nb-lines { padding-left: 74px; padding-right: 26px; }
   .nb-text { font-size: 24px; }
 }
+
+/* --- Voltear la hoja al cambiar de página --- */
+@keyframes nb-turn-next {
+  from { transform: perspective(1500px) rotateY(-38deg) translateX(-7%); opacity: 0.25; }
+  to   { transform: perspective(1500px) rotateY(0deg) translateX(0); opacity: 1; }
+}
+@keyframes nb-turn-prev {
+  from { transform: perspective(1500px) rotateY(38deg) translateX(7%); opacity: 0.25; }
+  to   { transform: perspective(1500px) rotateY(0deg) translateX(0); opacity: 1; }
+}
+.nb-turn-next {
+  animation: nb-turn-next 330ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  transform-origin: left center;
+}
+.nb-turn-prev {
+  animation: nb-turn-prev 330ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  transform-origin: right center;
+}
+
+/* La fecha puede seleccionarse para pintarla con otra tinta */
+.nb-date-sel {
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
