@@ -11,6 +11,29 @@ const MODEL_ID = 'gemini-3-pro-image-preview';   // Nano Banana Pro (el mejor de
 const COST_PER_IMAGE = 0.134;   // 1K y 2K cuestan igual; 4K sube a $0.24
 const INPUT_PER_1M = 2.00;
 
+// --- OpenRouter: el MISMO Nano Banana Pro, con créditos prepagados ---
+// Por qué existe: el 30-jul-2026 Google bloqueó la cuenta de Gemini por facturación y con ella se
+// cayó también la generación de mockups (usan la misma llave directa de Google). OpenRouter sirve
+// gemini-3-pro-image-preview — el MISMO modelo — al MISMO precio (~$0.135/imagen, verificado contra
+// la API), pero con créditos prepagados: no hay cuenta que se bloquee. API compatible con OpenAI.
+const OPENROUTER_IMAGE_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_IMAGE_MODEL = () => process.env.OPENROUTER_IMAGE_MODEL || 'google/gemini-3-pro-image-preview';
+
+// Proveedor de imágenes con caché de 60 s (evita leer Firestore en cada preview). Prioridad:
+// crm_settings/general.aiImageProvider > env MOCKUP_IMAGE_PROVIDER > 'gemini'. Así se togglea
+// desde el CRM sin re-deploy, igual que el proveedor del chat (aiChatProvider).
+let _imgProviderCache = { value: null, at: 0 };
+async function getImageProviderCached() {
+    if (_imgProviderCache.value && Date.now() - _imgProviderCache.at < 60000) return _imgProviderCache.value;
+    let v = process.env.MOCKUP_IMAGE_PROVIDER || 'gemini';
+    try {
+        const g = await db.collection('crm_settings').doc('general').get();
+        if (g.exists && g.data().aiImageProvider) v = String(g.data().aiImageProvider).toLowerCase();
+    } catch (_) { /* si Firestore falla, se queda con el env/default */ }
+    _imgProviderCache = { value: v, at: Date.now() };
+    return v;
+}
+
 // --- OpenAI (ChatGPT) como motor alternativo, en pruebas ---
 const OPENAI_URL = 'https://api.openai.com/v1/images/edits';
 const OPENAI_MODEL = () => process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
@@ -35,9 +58,13 @@ function normResolution(r) {
 // (ChatGPT / gpt-image-1, en pruebas). Si no se pasa, manda la env MOCKUP_IMAGE_PROVIDER
 // y, en su defecto, Gemini — el comportamiento de siempre.
 async function generateImage(prompt, aspectRatio = '1:1', refImages = [], resolution = '2K', maxRefSize = 1024, provider = null) {
-    const p = String(provider || process.env.MOCKUP_IMAGE_PROVIDER || 'gemini').toLowerCase();
+    // Un `provider` explícito (p. ej. desde la pestaña Pruebas) manda; si no, el ajuste del CRM.
+    const p = provider ? String(provider).toLowerCase() : await getImageProviderCached();
     if (['openai', 'chatgpt', 'gpt', 'gpt-image-1'].includes(p)) {
         return generateImageOpenAI(prompt, aspectRatio, refImages, null, maxRefSize);
+    }
+    if (['openrouter', 'or'].includes(p)) {
+        return generateImageOpenRouter(prompt, aspectRatio, refImages, resolution, maxRefSize);
     }
     return generateImageGemini(prompt, aspectRatio, refImages, resolution, maxRefSize);
 }
@@ -118,6 +145,64 @@ async function generateImageGemini(prompt, aspectRatio = '1:1', refImages = [], 
         images,
         usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
         cost: { perImage: COST_PER_IMAGE, imagesCost, inputTokenCost, total: inputTokenCost + imagesCost },
+    };
+}
+
+// --- OpenRouter: mismo Nano Banana Pro vía API compatible con OpenAI ----------
+// Mismo contrato que generateImageGemini (entra prompt + refs, sale { images:[{mimeType,base64}],
+// usage, cost }). La imagen de OpenRouter llega en message.images como data URI. La imagen base
+// de referencia guía el encuadre/relación de aspecto (el schema de OpenAI no lleva imageConfig).
+async function generateImageOpenRouter(prompt, aspectRatio = '1:1', refImages = [], resolution = '2K', maxRefSize = 1024) {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) throw new Error('Falta OPENROUTER_API_KEY para generar imágenes por OpenRouter.');
+
+    const content = [{ type: 'text', text: prompt }];
+    for (const img of refImages) {
+        const resized = await sharp(Buffer.from(img.base64, 'base64'))
+            .resize(maxRefSize, maxRefSize, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toBuffer();
+        content.push({ type: 'image_url', image_url: { url: `data:image/webp;base64,${resized.toString('base64')}` } });
+    }
+
+    const res = await fetch(OPENROUTER_IMAGE_URL, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://app.dekoormx.com', 'X-Title': 'Dekoor CRM',
+        },
+        body: JSON.stringify({
+            model: OPENROUTER_IMAGE_MODEL(),
+            modalities: ['image', 'text'],
+            messages: [{ role: 'user', content }],
+        }),
+    });
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`OpenRouter Image API error ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    const msg = data.choices?.[0]?.message || {};
+    const images = [];
+    for (const it of (msg.images || [])) {
+        const url = it?.image_url?.url || it?.url || '';
+        const m = /^data:([^;]+);base64,(.*)$/.exec(url);
+        if (m) { images.push({ mimeType: m[1], base64: m[2] }); break; } // 1 preview por generación
+    }
+    if (images.length === 0) {
+        throw new Error(String(msg.content || '') || 'OpenRouter no devolvió imagen. Intenta reformular el prompt.');
+    }
+
+    const usage = data.usage || {};
+    const total = usage.cost != null ? Number(usage.cost) : COST_PER_IMAGE;
+    return {
+        provider: 'openrouter',
+        model: OPENROUTER_IMAGE_MODEL(),
+        images,
+        usage: { inputTokens: usage.prompt_tokens || 0, outputTokens: usage.completion_tokens || 0, totalTokens: usage.total_tokens || 0 },
+        cost: { perImage: COST_PER_IMAGE, imagesCost: total, inputTokenCost: 0, total },
     };
 }
 
