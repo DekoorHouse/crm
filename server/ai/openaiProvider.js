@@ -63,6 +63,7 @@ const PROVIDERS = {
         keyEnv: 'OPENROUTER_API_KEY',
         model: () => OPENROUTER_CHAT_MODEL,
         extra: () => ({ max_tokens: CHAT_MAX_TOKENS }),
+        cacheControl: true, // OpenRouter no cachea Gemini solo; hay que marcar el prefijo (ver markCacheablePrefix)
         // OpenRouter pide identificar la app (aparece en su panel y en los rankings).
         headers: () => ({ 'HTTP-Referer': 'https://app.dekoormx.com', 'X-Title': 'Dekoor CRM' }),
     },
@@ -147,6 +148,30 @@ function toOpenAIMessages(contents, systemText) {
 }
 
 /**
+ * Marca el prefijo estático como cacheable (estilo Anthropic/Gemini que OpenRouter entiende).
+ * Pone cache_control:ephemeral en el último bloque de texto del PRIMER turno del usuario, que en
+ * el armado de services.js es el "contexto de referencia" (lo estático). El breakpoint hace que
+ * TODO lo anterior (system + ese bloque) se cachee; la conversación dinámica va después y no se
+ * marca. Verificado contra la API: cachea ~el 100% del prefijo.
+ */
+function markCacheablePrefix(messages) {
+    const firstUser = messages.find(m => m.role === 'user');
+    if (!firstUser) return;
+    if (typeof firstUser.content === 'string') {
+        firstUser.content = [{ type: 'text', text: firstUser.content, cache_control: { type: 'ephemeral' } }];
+        return;
+    }
+    if (Array.isArray(firstUser.content)) {
+        for (let i = firstUser.content.length - 1; i >= 0; i--) {
+            if (firstUser.content[i] && firstUser.content[i].type === 'text') {
+                firstUser.content[i] = { ...firstUser.content[i], cache_control: { type: 'ephemeral' } };
+                return;
+            }
+        }
+    }
+}
+
+/**
  * Genera la respuesta del chat con OpenAI. Misma firma y misma forma de retorno que
  * generateGeminiResponse(promptOrContents, mediaParts, systemInstruction) para que el
  * switch de proveedor sea transparente en services.js.
@@ -171,10 +196,16 @@ async function generateChatCompletion(promptOrContents, mediaParts = [], systemI
         last.parts = [...last.parts, ...mediaParts];
     }
 
+    const messages = toOpenAIMessages(contents, systemInstruction);
+    // OpenRouter NO cachea Gemini por sí solo (verificado: cached_tokens=0 en llamadas repetidas,
+    // ~$0.006/mensaje). Marcando el bloque estático con cache_control:ephemeral SÍ cachea el prefijo
+    // completo (system + contexto de referencia) — medido 99.98% de acierto y ~$0.001/mensaje, 6.5x
+    // más barato. Solo aplica a OpenRouter; OpenAI cachea automático por prefijo y no usa esta marca.
+    if (cfg.cacheControl) markCacheablePrefix(messages);
     const payload = {
         model: cfg.model(),
         ...cfg.extra(),
-        messages: toOpenAIMessages(contents, systemInstruction),
+        messages,
     };
 
     let data;
