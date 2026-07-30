@@ -3396,16 +3396,6 @@ function renderAjustesView() {
         }).catch(() => {});
     }
 
-    // Estado del selector de proveedor de IA (Gemini vs OpenAI) para el chat de Andrea
-    const aiProviderToggle = document.getElementById('ai-provider-toggle');
-    if (aiProviderToggle) {
-        db.collection('crm_settings').doc('general').get().then(doc => {
-            const p = (doc.exists && String(doc.data().aiChatProvider || '').toLowerCase() === 'openai') ? 'openai' : 'gemini';
-            aiProviderToggle.checked = (p === 'openai');
-            updateAiProviderLabel(p);
-        }).catch(() => {});
-    }
-
     // Rellena el input del ID de Google Sheet
     const sheetIdInput = document.getElementById('google-sheet-id-input');
     if (sheetIdInput) {
@@ -3645,6 +3635,17 @@ window.removeUserPhoto = removeUserPhoto;
 // --- INICIO: Renderizado de Entrenamiento de IA ---
 async function renderAITrainingView() {
     if (state.activeView !== 'ia') return;
+
+    // Estado del selector de proveedor de IA (Gemini vs OpenAI). La tarjeta vive en esta vista
+    // porque es donde el operador busca todo lo de Andrea (lo de Ajustes no se encontraba).
+    const aiProviderToggle = document.getElementById('ai-provider-toggle');
+    if (aiProviderToggle) {
+        db.collection('crm_settings').doc('general').get().then(doc => {
+            const prov = (doc.exists && String(doc.data().aiChatProvider || '').toLowerCase() === 'openai') ? 'openai' : 'gemini';
+            aiProviderToggle.checked = (prov === 'openai');
+            updateAiProviderLabel(prov);
+        }).catch(() => {});
+    }
 
     // 1. Cargar instrucciones del bot desde Firestore
     try {
