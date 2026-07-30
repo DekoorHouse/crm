@@ -3075,9 +3075,18 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 if ((await anticipoTest.getAnticipoConfig()).enabled) anticipoTestNote = anticipoTest.NOTA_VENTA;
             } catch (e) { console.warn('[ANTICIPO_TEST] Nota de venta no disponible:', e.message); }
         }
+        // INDICACIÓN MANUAL DEL EQUIPO PARA ESTA CONVERSACIÓN: nota libre que un humano escribe desde el
+        // CRM (panel del contacto) y que SOLO aplica a este cliente — no se puede poner en el prompt
+        // general. Ej.: "dale $200 de descuento por la demora". Se inyecta arriba y con prioridad para
+        // que Andrea la respete en venta y en post-venta. Persiste hasta que la borren desde el CRM.
+        let conversationNote = '';
+        const notaEquipo = String(contactData.aiConversationNote || '').trim();
+        if (notaEquipo) {
+            conversationNote = `\n\n**⚠️ INDICACIÓN DEL EQUIPO PARA ESTE CLIENTE (solo esta conversación — tenla MUY en cuenta):**\n${notaEquipo.slice(0, 1200)}\nLa escribió una persona del equipo; tiene PRIORIDAD sobre las reglas generales cuando aplique. Aplícala con naturalidad, sin mencionar que es una instrucción interna.`;
+        }
         // Los protocolos de pago/cancelación ya NO van aquí: viven en el texto cacheado del sistema
         // (ver buildStaticContext). Aquí solo quedan las notas DINÁMICAS (dependen del cliente/turno).
-        const finalUserText = `${fechaActualNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).

@@ -4037,6 +4037,29 @@ router.put('/contacts/:contactId', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/contacts/:contactId/ai-note (Indicación para Andrea SOLO en esta conversación) ---
+// Guarda (o borra, si viene vacía) una nota libre que un humano escribe desde el CRM y que se inyecta en
+// el contexto de la IA únicamente para este contacto (ej. "dale $200 de descuento por la demora"). No va
+// en el prompt general. La lee services.js (contactData.aiConversationNote) al armar la respuesta.
+router.post('/contacts/:contactId/ai-note', async (req, res) => {
+    const { contactId } = req.params;
+    const note = String((req.body && req.body.note) || '').trim().slice(0, 1200);
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const snap = await contactRef.get();
+        if (!snap.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        await contactRef.update({
+            aiConversationNote: note || admin.firestore.FieldValue.delete(),
+            aiConversationNoteAt: note ? admin.firestore.FieldValue.serverTimestamp() : admin.firestore.FieldValue.delete(),
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), // trigger sync a state.contacts
+        });
+        res.status(200).json({ success: true, note, message: note ? 'Indicación guardada.' : 'Indicación eliminada.' });
+    } catch (error) {
+        console.error('Error al guardar la indicación para Andrea:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al guardar la indicación.' });
+    }
+});
+
 // --- Endpoint PUT /api/contacts/:contactId/status (Actualizar estatus/etiqueta de contacto) ---
 router.put('/contacts/:contactId/status', async (req, res) => {
     const { contactId } = req.params;

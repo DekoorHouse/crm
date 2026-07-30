@@ -2986,6 +2986,48 @@ async function handleSaveSidebarNote() {
     }
 }
 
+// --- Indicación para Andrea (solo esta conversación) ---
+// Guarda/borra la nota libre que la IA tomará en cuenta SOLO para este contacto (ej. un descuento por
+// demora). No toca el prompt general. La inyecta services.js vía contactData.aiConversationNote.
+async function handleSaveAndreaNote(contactId) {
+    const input = document.getElementById('andrea-note-input');
+    if (!input) return;
+    const note = input.value.trim();
+    const cid = contactId || state.selectedContactId;
+    if (!cid) { showError("No hay un contacto seleccionado."); return; }
+
+    const btn = document.querySelector(`[onclick="handleSaveAndreaNote('${cid}')"]`);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${cid}/ai-note`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note })
+        });
+        if (!response.ok) {
+            const e = await response.json().catch(() => ({}));
+            throw new Error(e.message || 'Error del servidor');
+        }
+        // Reflejar en el estado local para feedback inmediato + re-render del panel (el listener de
+        // Firestore también lo sincroniza, pero re-renderizar da respuesta instantánea).
+        const c = state.contacts.find(x => x.id === cid);
+        if (c) c.aiConversationNote = note || null;
+        showError(note ? "Indicación guardada. Andrea la tomará en cuenta en este chat." : "Indicación eliminada.", "success");
+        if (state.contactDetailsOpen) openContactDetails();
+    } catch (error) {
+        console.error('Error al guardar la indicación para Andrea:', error);
+        showError(error.message);
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save mr-1"></i>Guardar'; }
+    }
+}
+
+async function handleClearAndreaNote(contactId) {
+    const input = document.getElementById('andrea-note-input');
+    if (input) input.value = '';
+    await handleSaveAndreaNote(contactId);
+}
+
 
 /**
  * Maneja la actualización del contenido de una nota existente.
@@ -3591,6 +3633,8 @@ window.handleUpdateNote = handleUpdateNote;
 window.handleDeleteNote = handleDeleteNote;
 window.toggleSidebarNoteInput = toggleSidebarNoteInput;
 window.handleSaveSidebarNote = handleSaveSidebarNote;
+window.handleSaveAndreaNote = handleSaveAndreaNote;
+window.handleClearAndreaNote = handleClearAndreaNote;
 window.handleMigrateOrphans = handleMigrateOrphans;
 // --- FIN MODIFICACIÓN ---
 

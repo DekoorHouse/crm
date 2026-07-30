@@ -2123,6 +2123,31 @@ const PendingAiToggleTemplate = (contact) => {
             </button>`;
 };
 
+// Indicación para Andrea SOLO en esta conversación (se inyecta al contexto de la IA de este contacto,
+// no al prompt general). Ej.: "dale $200 de descuento por la demora". Distinta de las Notas Internas
+// (esas el bot NO las ve). Vive en la pestaña Perfil para que se note de un vistazo cuando está activa.
+const AndreaNoteTemplate = (contact) => {
+    const note = String((contact && contact.aiConversationNote) || '').trim();
+    const has = note.length > 0;
+    return `
+        <div class="andrea-note-box mt-4 rounded-lg p-3" style="border:1px ${has ? 'solid' : 'dashed'} var(--color-primary,#6366f1);background:${has ? 'color-mix(in srgb, var(--color-primary,#6366f1) 8%, transparent)' : 'transparent'}">
+            <div class="flex items-center gap-2 mb-1">
+                <i class="fas fa-robot" style="color:var(--color-primary,#6366f1)"></i>
+                <span class="font-semibold text-sm" style="color:var(--color-text,#334155)">Indicación para Andrea</span>
+                ${has ? '<span class="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--color-primary,#6366f1);color:#fff">ACTIVA</span>' : ''}
+            </div>
+            <p class="text-[11px] text-gray-500 mb-2">Solo en esta conversación. La IA la tomará en cuenta. Ej.: <em>dale $200 de descuento por la demora</em>.</p>
+            <textarea id="andrea-note-input" rows="2" maxlength="1200"
+                class="w-full p-2 text-xs border rounded mb-2 focus:ring-1 outline-none"
+                style="border-color:var(--color-border,#e5e7eb)"
+                placeholder="Escribe una indicación solo para este cliente...">${escapeHtml(note)}</textarea>
+            <div class="flex justify-end gap-2">
+                ${has ? `<button onclick="handleClearAndreaNote('${contact.id}')" class="text-[11px] text-red-500 hover:text-red-700 mr-auto"><i class="fas fa-trash-alt mr-1"></i>Quitar</button>` : ''}
+                <button onclick="handleSaveAndreaNote('${contact.id}')" class="btn btn-primary !py-1 !px-3 !text-[11px] rounded"><i class="fas fa-save mr-1"></i>Guardar</button>
+            </div>
+        </div>`;
+};
+
 const ReplyContextBarTemplate = (message) => {
     if (!message) return '';
     const authorName = message.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
@@ -2504,6 +2529,7 @@ const ContactDetailsSidebarTemplate = (contact) => {
                         </div>
 
                         ${PendingAiToggleTemplate(contact)}
+                        ${AndreaNoteTemplate(contact)}
                         ${AdReferralBannerTemplate(contact)}
                     </div>
                 </div>
