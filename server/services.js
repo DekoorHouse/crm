@@ -3122,8 +3122,30 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
         const dynamicContents = [...historyTurns, { role: 'user', parts: [{ text: finalUserText }] }];
 
-        // --- Intentar usar Context Caching ---
+        // --- SWITCH DE PROVEEDOR (incidente 30-jul-2026) ---------------------------------
+        // Google bloqueó la cuenta de Gemini por facturación y Andrea dejó de contestar a los
+        // clientes durante horas. Con AI_CHAT_PROVIDER=openai el chat corre en OpenAI, así que un
+        // problema con Google ya no tumba la atención al cliente. Default 'gemini' (sin cambios).
+        // Volver atrás = quitar la variable de entorno en Render; no requiere re-deploy de código.
         let aiResult;
+        const chatProvider = String(process.env.AI_CHAT_PROVIDER || 'gemini').toLowerCase();
+
+        if (chatProvider === 'openai') {
+            // OpenAI cachea por PREFIJO automáticamente (no hay cachés que crear ni borrar como en
+            // Gemini): basta con mandar systemText + referenceText siempre al frente y en el mismo
+            // orden. El resto de la conversación es idéntico al fallback de Gemini.
+            const { systemText: oaSystem, referenceText: oaRef } = await buildStaticContext(botInstructions, isPostVenta, paymentPhaseActive);
+            const oaContents = [
+                { role: 'user', parts: [{ text: oaRef }] },
+                ...historyTurns,
+                { role: 'user', parts: [{ text: finalUserText }] }
+            ];
+            const { generateOpenAIResponse, OPENAI_CHAT_MODEL } = require('./ai/openaiProvider');
+            console.log(`[AI] Generando respuesta con OpenAI (${OPENAI_CHAT_MODEL}) para ${contactId}. (${historyTurns.length} turnos + ${mediaParts.length} archivo(s) multimedia)`);
+            aiResult = await generateOpenAIResponse(oaContents, mediaParts, oaSystem);
+            console.log(`[AI] 💰 OpenAI — cacheados: ${aiResult.cachedTokens}, entrada: ${aiResult.inputTokens}, salida: ${aiResult.outputTokens}`);
+        } else {
+        // --- Intentar usar Context Caching (ruta Gemini) ---
         try {
             // El caché guarda SOLO texto (instrucciones + conocimiento + respuestas rápidas).
             // La multimedia (del cliente y de referencia del departamento) va en mediaParts,
@@ -3149,6 +3171,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             ];
             aiResult = await generateGeminiResponse(fallbackContents, mediaParts, fallbackSystem);
         }
+        } // fin de la ruta Gemini (ver SWITCH DE PROVEEDOR arriba)
 
         const aiResponse = aiResult.text;
         
