@@ -8237,10 +8237,14 @@ router.get('/design-pending', async (req, res) => {
                 // video), la columna manual ya no vale y la tarjeta regresa sola a Pendientes — si no,
                 // un pedido parado en "Terminado" se quedaba ahí para siempre (caso DH13817).
                 boardCol: (() => {
+                    // Un pedido en 'Corregir' = corrección ABIERTA: no puede verse como Terminado/Diseñado.
+                    // Si quedó en una columna terminal, se muestra en Pendientes (caso DH13817).
+                    const esCorregir = String(p.estatus || '').trim().toLowerCase() === 'corregir';
+                    const terminal = c => c === 'terminado' || c === 'disenado';
                     if (!p.disenoBoardCol) return 'pendientes';
                     const movidaMs = tsToMs(p.disenoBoardColAt);
-                    if (!movidaMs) return p.disenoBoardCol;                  // sin fecha: se respeta lo que puso el usuario
-                    return pendienteRenovadoMs(p) > movidaMs ? 'pendientes' : p.disenoBoardCol;
+                    const col = (movidaMs && pendienteRenovadoMs(p) > movidaMs) ? 'pendientes' : p.disenoBoardCol;
+                    return (esCorregir && terminal(col)) ? 'pendientes' : col;
                 })(),
                 // Datos de personalización (nombres/fecha): lo que el diseñador necesita a la vista.
                 datos: (Array.isArray(p.items) ? p.items.map(i => i.datosProducto).filter(Boolean).join(' | ') : '') || p.datosProducto || '',
