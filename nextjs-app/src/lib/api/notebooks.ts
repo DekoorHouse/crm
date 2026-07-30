@@ -21,7 +21,13 @@ export type NotebookInput = Pick<Notebook, "title" | "cover" | "x" | "y" | "rota
 
 export interface Page {
   id: string;
+  /** Titulo de la hoja (arriba a la izquierda). */
+  title: string;
+  /** Texto plano: para buscar y para la IA. */
   text: string;
+  /** El mismo contenido con los tramos de tinta (varios colores por hoja). */
+  html: string;
+  /** Ultima pluma usada en la hoja. */
   ink: string;
   order: number;
   /** Momento en que se empezo a escribir la hoja; lo sella el servidor. */
@@ -72,7 +78,7 @@ export async function addPage(notebookId: string, ink: string): Promise<string> 
 export function updatePage(
   notebookId: string,
   pageId: string,
-  patch: { text?: string; ink?: string }
+  patch: { title?: string; text?: string; html?: string; ink?: string }
 ): Promise<unknown> {
   return send(`/api/notebooks/${notebookId}/pages/${pageId}`, "PUT", patch);
 }

@@ -47,6 +47,7 @@ export default function NotebookCover({
   const posRef = useRef({ x: notebook.x, y: notebook.y });
   const movedRef = useRef(false);
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTap = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -95,8 +96,15 @@ export default function NotebookCover({
     setDragging(false);
     if (movedRef.current) {
       onPersistPosition(notebook.id, posRef.current.x, posRef.current.y);
+      return;
+    }
+    // Sin arrastre: un toque selecciona, dos toques seguidos abren la libreta.
+    const now = Date.now();
+    if (now - lastTap.current < 340) {
+      lastTap.current = 0;
+      onOpen(notebook.id);
     } else {
-      // Toque sin arrastre: seleccionar (los controles aparecen en la selección).
+      lastTap.current = now;
       onSelect(notebook.id);
     }
   }
@@ -121,7 +129,6 @@ export default function NotebookCover({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      onDoubleClick={() => onOpen(notebook.id)}
       className={`group absolute select-none ${justBorn ? "idea-pop" : ""} ${
         echoDays !== null && !dragging ? "idea-echo" : ""
       }`}
@@ -178,23 +185,12 @@ export default function NotebookCover({
         </div>
       )}
 
-      {/* Controles: al seleccionar (touch) o al hover (desktop) */}
+      {/* Borrar: solo aparece con la libreta seleccionada (un toque) */}
       <div
         className={`absolute -top-2.5 -right-2.5 z-20 flex items-center gap-1 transition-opacity ${
-          selected
-            ? "opacity-100"
-            : "opacity-0 pointer-events-none pointer-fine:group-hover:opacity-100 pointer-fine:group-hover:pointer-events-auto"
+          selected ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
-        <button
-          data-no-drag
-          onClick={() => onOpen(notebook.id)}
-          title="Abrir libreta"
-          className="h-7 px-2.5 rounded-full bg-primary text-on-primary shadow flex items-center gap-1 text-[11px] font-bold"
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: 15 }}>menu_book</span>
-          Abrir
-        </button>
         <button
           data-no-drag
           onClick={handleDeleteClick}

@@ -6805,7 +6805,14 @@ const NB_SEARCH_LIMIT = 4000; // tope de caracteres del texto denormalizado
 async function recalcNotebook(notebookId) {
     const ref = db.collection('notebooks').doc(notebookId);
     const pages = await ref.collection('pages').orderBy('order', 'asc').get();
-    const texts = pages.docs.map(d => String(d.data().text || '').trim()).filter(Boolean);
+    const texts = pages.docs
+        .map(d => {
+            const v = d.data();
+            const titulo = String(v.title || '').trim();
+            const cuerpo = String(v.text || '').trim();
+            return [titulo, cuerpo].filter(Boolean).join('\n');
+        })
+        .filter(Boolean);
     await ref.update({
         pageCount: pages.size,
         searchText: texts.join('\n\n').slice(0, NB_SEARCH_LIMIT),
@@ -6846,7 +6853,9 @@ router.post('/notebooks', async (req, res) => {
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         await ref.collection('pages').add({
+            title: '',
             text: '',
+            html: '',
             ink: '#1E3A8A',
             order: 1,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -6904,7 +6913,9 @@ router.post('/notebooks/:id/pages', async (req, res) => {
         const last = await ref.collection('pages').orderBy('order', 'desc').limit(1).get();
         const order = last.empty ? 1 : (Number(last.docs[0].data().order) || 0) + 1;
         const page = await ref.collection('pages').add({
+            title: '',
             text: '',
+            html: '',
             ink: String(ink).slice(0, 20),
             order,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -6921,13 +6932,17 @@ router.post('/notebooks/:id/pages', async (req, res) => {
     }
 });
 
-// PUT (Actualizar una hoja: texto y/o tinta). La fecha de escritura se sella
-// automaticamente la primera vez que la hoja deja de estar en blanco.
+// PUT (Actualizar una hoja: titulo, texto, texto con colores y/o tinta). La
+// fecha de escritura se sella automaticamente la primera vez que la hoja deja
+// de estar en blanco. `text` es el texto plano (para buscar y para la IA) y
+// `html` el mismo contenido con los tramos de tinta.
 router.put('/notebooks/:id/pages/:pageId', async (req, res) => {
     const { id, pageId } = req.params;
     const update = {};
     const tocaTexto = req.body.text !== undefined;
     if (tocaTexto) update.text = String(req.body.text);
+    if (req.body.html !== undefined) update.html = String(req.body.html).slice(0, 40000);
+    if (req.body.title !== undefined) update.title = String(req.body.title).slice(0, 80);
     if (req.body.ink !== undefined) update.ink = String(req.body.ink).slice(0, 20);
     if (Object.keys(update).length === 0) {
         return res.status(400).json({ success: false, message: 'No hay campos para actualizar.' });
@@ -6938,12 +6953,13 @@ router.put('/notebooks/:id/pages/:pageId', async (req, res) => {
         if (!snap.exists) return res.status(404).json({ success: false, message: 'Hoja no encontrada.' });
         const prev = snap.data();
         // Sello de fecha/hora al empezar a escribir (solo la primera vez).
-        if (tocaTexto && update.text.trim() && !prev.writtenAt) {
+        const empiezaAEscribir = (tocaTexto && update.text.trim()) || (update.title && update.title.trim());
+        if (empiezaAEscribir && !prev.writtenAt) {
             update.writtenAt = admin.firestore.FieldValue.serverTimestamp();
         }
         update.updatedAt = admin.firestore.FieldValue.serverTimestamp();
         await pageRef.update(update);
-        if (tocaTexto) await recalcNotebook(id);
+        if (tocaTexto || update.title !== undefined) await recalcNotebook(id);
         res.status(200).json({ success: true });
     } catch (error) {
         console.error('[LIBRETAS] Error al guardar hoja:', error.message);
@@ -7038,7 +7054,7 @@ router.post('/notebooks/:id/pages/:pageId/desarrollar', async (req, res) => {
         if (!snap.exists) return res.status(404).json({ success: false, message: 'Hoja no encontrada.' });
         const texto = String(snap.data().text || '').trim();
         if (!texto) return res.status(400).json({ success: false, message: 'Escribe algo en la hoja para poder desarrollarlo.' });
-        // Solo desarrollar sobre lo escrito a mano (si ya tiene pasos, se reemplazan).
+        // Se desarrolla sobre lo escrito a mano; los pasos se agregan al final.
         const base = texto.split('\n\n→')[0].trim();
         const nb = await db.collection('notebooks').doc(id).get();
         const tema = String((nb.data() || {}).title || '').trim();
@@ -7050,8 +7066,14 @@ router.post('/notebooks/:id/pages/:pageId/desarrollar', async (req, res) => {
             .filter(Boolean)
             .slice(0, 5);
         if (pasos.length === 0) throw new Error('La IA no devolvio pasos.');
+        // El texto de la hoja se guarda en dos formas: `text` plano y `html` con
+        // los tramos de tinta. Los pasos se anexan a ambas para no perder colores.
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const prevHtml = String(snap.data().html || '') || esc(base).replace(/\n/g, '<br>');
+        const bloqueHtml = pasos.map(p => `→ ${esc(p)}`).join('<br>');
         await pageRef.update({
             text: `${base}\n\n${pasos.map(p => `→ ${p}`).join('\n')}`,
+            html: `${prevHtml}<br><br>${bloqueHtml}`,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         await recalcNotebook(id);

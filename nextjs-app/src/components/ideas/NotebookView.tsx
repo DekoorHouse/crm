@@ -33,7 +33,9 @@ function mapPage(id: string, d: Record<string, unknown>): Page {
   const written = d.writtenAt as { toMillis?: () => number } | undefined;
   return {
     id,
+    title: typeof d.title === "string" ? d.title : "",
     text: typeof d.text === "string" ? d.text : "",
+    html: typeof d.html === "string" ? d.html : "",
     ink: typeof d.ink === "string" ? d.ink : DEFAULT_INK,
     order: typeof d.order === "number" ? d.order : 1,
     writtenAtMs: written && typeof written.toMillis === "function" ? written.toMillis() : undefined,
@@ -47,6 +49,55 @@ function formatWritten(ms: number): string {
   return `${fecha} · ${hora}`;
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Deja pasar solo lo que produce el editor: texto, saltos de línea y tramos de
+ * color. Todo lo demás (scripts, estilos, atributos) se descarta.
+ */
+function sanitizeInkHtml(html: string): string {
+  if (typeof window === "undefined") return "";
+  const src = document.createElement("div");
+  src.innerHTML = html;
+  const out = document.createElement("div");
+
+  const walk = (from: Node, to: HTMLElement) => {
+    from.childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        to.appendChild(document.createTextNode(node.textContent || ""));
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      const el = node as HTMLElement;
+      const tag = el.tagName.toLowerCase();
+      if (tag === "br") {
+        to.appendChild(document.createElement("br"));
+        return;
+      }
+      if (tag === "div" || tag === "p") {
+        // Un bloque nuevo equivale a un salto de línea.
+        if (to.lastChild) to.appendChild(document.createElement("br"));
+        walk(el, to);
+        return;
+      }
+      const color = el.style?.color || "";
+      if (color) {
+        const span = document.createElement("span");
+        span.style.color = color;
+        walk(el, span);
+        to.appendChild(span);
+        return;
+      }
+      walk(el, to); // cualquier otra etiqueta: se conserva solo su contenido
+    });
+  };
+
+  walk(src, out);
+  return out.innerHTML;
+}
+
 interface NotebookViewProps {
   notebook: Notebook;
   onClose: () => void;
@@ -56,9 +107,10 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
   const [pages, setPages] = useState<Page[]>([]);
   const [loading, setLoading] = useState(true);
   const [index, setIndex] = useState(0);
-  const [draft, setDraft] = useState("");
+  const [pageTitle, setPageTitle] = useState("");
   const [ink, setInk] = useState(DEFAULT_INK);
   const [inkOpen, setInkOpen] = useState(false);
+  const [vacia, setVacia] = useState(true);
   const [titleDraft, setTitleDraft] = useState(notebook.title);
   const [editingTitle, setEditingTitle] = useState(false);
   const [developing, setDeveloping] = useState(false);
@@ -67,13 +119,14 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [localWrittenMs, setLocalWrittenMs] = useState<number | null>(null);
 
-  const textRef = useRef<HTMLTextAreaElement | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
-  const draftRef = useRef("");
   const pageIdRef = useRef<string | null>(null);
+  const titleRef = useRef("");
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const savedRange = useRef<Range | null>(null);
 
   const page = pages[index];
 
@@ -82,14 +135,26 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     setSpeechOk(Boolean(w.SpeechRecognition || w.webkitSpeechRecognition));
   }, []);
 
+  // Recordar dónde estaba el cursor/selección: al tocar el botón de tinta el
+  // editor pierde el foco, y sin esto no habría a qué aplicarle el color.
+  useEffect(() => {
+    const onSelChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const r = sel.getRangeAt(0);
+      if (editorRef.current?.contains(r.commonAncestorContainer)) savedRange.current = r.cloneRange();
+    };
+    document.addEventListener("selectionchange", onSelChange);
+    return () => document.removeEventListener("selectionchange", onSelChange);
+  }, []);
+
   // Hojas en tiempo real.
   useEffect(() => {
     const q = query(collection(db, "notebooks", notebook.id, "pages"), orderBy("order", "asc"));
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const remote = snap.docs.map((d) => mapPage(d.id, d.data() as Record<string, unknown>));
-        setPages(remote);
+        setPages(snap.docs.map((d) => mapPage(d.id, d.data() as Record<string, unknown>)));
         setLoading(false);
       },
       () => setLoading(false)
@@ -97,26 +162,33 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     return () => unsub();
   }, [notebook.id]);
 
-  // Al cambiar de hoja, cargar su texto y su tinta (sin pisar lo que estas escribiendo).
+  // Al cambiar de hoja, cargar su contenido (sin pisar lo que estás escribiendo).
   useEffect(() => {
     if (!page) return;
     if (pageIdRef.current === page.id) return;
     pageIdRef.current = page.id;
-    setDraft(page.text);
-    draftRef.current = page.text;
+    const html = page.html || escapeHtml(page.text).replace(/\n/g, "<br>");
+    if (editorRef.current) editorRef.current.innerHTML = html;
+    setVacia(!page.text.trim());
+    setPageTitle(page.title);
+    titleRef.current = page.title;
     setInk(page.ink);
     setLocalWrittenMs(null);
     dirtyRef.current = false;
   }, [page]);
 
-  // Guardado: se dispara solo al dejar de escribir y al salir de la hoja.
+  // Guardado: al dejar de escribir, al cambiar de hoja y al cerrar.
   const flush = useCallback(async () => {
     if (!dirtyRef.current || !pageIdRef.current) return;
     const id = pageIdRef.current;
-    const text = draftRef.current;
+    const el = editorRef.current;
     dirtyRef.current = false;
     try {
-      await updatePage(notebook.id, id, { text });
+      await updatePage(notebook.id, id, {
+        title: titleRef.current,
+        text: el?.innerText ?? "",
+        html: sanitizeInkHtml(el?.innerHTML ?? ""),
+      });
       setSavedAt(Date.now());
     } catch {
       dirtyRef.current = true;
@@ -129,7 +201,6 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     saveTimer.current = setTimeout(() => void flush(), AUTOSAVE_MS);
   }, [flush]);
 
-  // Guardar al desmontar (cerrar la libreta).
   useEffect(() => {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -138,16 +209,14 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     };
   }, [flush]);
 
-  function handleChange(value: string) {
-    setDraft(value);
-    draftRef.current = value;
+  // Marca que hay cambios y despierta la fecha/hora en cuanto hay contenido.
+  const touch = useCallback(() => {
     dirtyRef.current = true;
-    // La fecha/hora aparece en cuanto empiezas a escribir.
-    if (value.trim() && !page?.writtenAtMs && localWrittenMs === null) {
-      setLocalWrittenMs(Date.now());
-    }
+    const hayAlgo = Boolean(editorRef.current?.innerText.trim() || titleRef.current.trim());
+    setVacia(!editorRef.current?.innerText.trim());
+    if (hayAlgo && !page?.writtenAtMs && localWrittenMs === null) setLocalWrittenMs(Date.now());
     scheduleSave();
-  }
+  }, [page?.writtenAtMs, localWrittenMs, scheduleSave]);
 
   const goTo = useCallback(
     async (next: number) => {
@@ -164,9 +233,8 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     await flush();
     try {
       await addPage(notebook.id, ink);
-      // El listener trae la hoja nueva al final; nos movemos ahí.
       setIndex(pages.length);
-      requestAnimationFrame(() => textRef.current?.focus());
+      requestAnimationFrame(() => editorRef.current?.focus());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo agregar la hoja");
     }
@@ -187,16 +255,38 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     }
   }, [notebook.id, page, pages.length]);
 
+  /**
+   * Cambiar de pluma: si hay texto seleccionado se le aplica el color; si no,
+   * la tinta nueva aplica a lo que escribas a partir de ahí (misma hoja, varios
+   * colores). execCommand es lo único que soporta esto en todos los navegadores.
+   */
   const handleInk = useCallback(
     (hex: string) => {
       setInk(hex);
       setInkOpen(false);
+      const el = editorRef.current;
+      if (el) {
+        el.focus();
+        // Devolver el cursor/selección a donde estaba antes de tocar el botón.
+        const sel = window.getSelection();
+        if (savedRange.current && sel) {
+          sel.removeAllRanges();
+          sel.addRange(savedRange.current);
+        }
+        try {
+          document.execCommand("styleWithCSS", false, "true");
+          document.execCommand("foreColor", false, hex);
+        } catch {
+          /* si el navegador no lo soporta, la tinta aplica a la hoja completa */
+        }
+        if (sel && !sel.isCollapsed) touch();
+      }
       if (page) updatePage(notebook.id, page.id, { ink: hex }).catch(() => {});
     },
-    [notebook.id, page]
+    [notebook.id, page, touch]
   );
 
-  const handleTitleCommit = useCallback(() => {
+  const handleNotebookTitleCommit = useCallback(() => {
     setEditingTitle(false);
     const t = titleDraft.trim();
     if (t && t !== notebook.title) {
@@ -213,7 +303,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     setDeveloping(true);
     try {
       const pasos = await desarrollarHoja(notebook.id, page.id);
-      pageIdRef.current = null; // deja que el listener recargue el texto nuevo
+      pageIdRef.current = null; // recargar el contenido nuevo desde el listener
       toast.success(`✨ ${pasos.length} pasos agregados`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo desarrollar");
@@ -222,7 +312,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     }
   }, [notebook.id, page, developing, flush]);
 
-  // Dictado por voz sobre la hoja actual.
+  // Dictado por voz: escribe al final de la hoja, con la tinta actual.
   const handleDictate = useCallback(() => {
     if (dictating) {
       recognitionRef.current?.stop();
@@ -247,8 +337,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     rec.lang = "es-MX";
     rec.continuous = true;
     rec.interimResults = true;
-    const base = draftRef.current;
-    let finals = "";
+    const baseHtml = editorRef.current?.innerHTML ?? "";
     let done = false;
     const finish = () => {
       if (done) return;
@@ -259,16 +348,13 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     };
     rec.onresult = (e) => {
       const ev = e as { results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> };
-      let interim = "";
-      finals = "";
-      for (let i = 0; i < ev.results.length; i++) {
-        const r = ev.results[i];
-        if (r.isFinal) finals += r[0].transcript;
-        else interim += r[0].transcript;
-      }
-      const dicho = (finals + interim).trim();
-      const nuevo = base ? `${base}\n${dicho}` : dicho;
-      handleChange(nuevo);
+      let dicho = "";
+      for (let i = 0; i < ev.results.length; i++) dicho += ev.results[i][0].transcript;
+      const el = editorRef.current;
+      if (!el) return;
+      const trozo = `<span style="color:${ink}">${escapeHtml(dicho.trim())}</span>`;
+      el.innerHTML = baseHtml ? `${baseHtml}<br>${trozo}` : trozo;
+      touch();
     };
     rec.onend = finish;
     rec.onerror = finish;
@@ -278,12 +364,12 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     } catch {
       finish();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dictating, flush]);
+  }, [dictating, flush, ink, touch]);
 
   // Deslizar para cambiar de hoja (solo si no estás escribiendo).
   function onTouchStart(e: React.TouchEvent) {
-    if (document.activeElement === textRef.current) return;
+    const activo = document.activeElement;
+    if (activo === editorRef.current || activo?.tagName === "INPUT") return;
     const t = e.touches[0];
     touchStart.current = { x: t.clientX, y: t.clientY };
   }
@@ -302,7 +388,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
-      const typing = el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT");
+      const typing = el && (el.tagName === "INPUT" || el.isContentEditable);
       if (e.key === "Escape" && !typing) onClose();
       if (typing) return;
       if (e.key === "ArrowRight") void goTo(index + 1);
@@ -329,7 +415,6 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
           <span className="material-symbols-outlined" style={{ fontSize: 22 }}>arrow_back</span>
         </button>
 
-        {/* Miniatura de la portada */}
         <div className="w-8 h-11 rounded-[3px] overflow-hidden shadow flex-shrink-0">
           <CoverArt cover={notebook.cover} hideTitle spiral={false} />
         </div>
@@ -340,7 +425,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
               autoFocus
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={handleTitleCommit}
+              onBlur={handleNotebookTitleCommit}
               onKeyDown={(e) => {
                 if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
                 if (e.key === "Escape") {
@@ -358,7 +443,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
                 setEditingTitle(true);
               }}
               className="block max-w-full truncate text-base font-bold font-headline text-on-surface text-left"
-              title="Tocar para renombrar"
+              title="Tocar para renombrar la libreta"
             >
               {notebook.title || "Sin título"}
             </button>
@@ -386,7 +471,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
         )}
         <button
           onClick={handleDevelop}
-          disabled={developing || !draft.trim()}
+          disabled={developing || vacia}
           title="Desarrollar con IA: primeros pasos"
           className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-secondary hover:bg-secondary/10 transition-colors disabled:opacity-35 disabled:pointer-events-none"
         >
@@ -411,23 +496,35 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
           </div>
         ) : (
           <div className="nb-paper mx-auto w-full max-w-2xl min-h-full rounded-lg overflow-hidden">
-            {/* Encabezado de la hoja: fecha y hora automáticas */}
-            <div className="nb-paper-head flex items-center justify-between">
-              <span className="nb-date" style={{ color: ink }}>
+            {/* Encabezado de la hoja: título a la izquierda, fecha a la derecha */}
+            <div className="nb-paper-head flex items-baseline gap-3">
+              <input
+                value={pageTitle}
+                onChange={(e) => {
+                  setPageTitle(e.target.value);
+                  titleRef.current = e.target.value;
+                  touch();
+                }}
+                onBlur={() => void flush()}
+                placeholder="Título de la hoja…"
+                maxLength={80}
+                className="nb-title flex-1 min-w-0"
+                style={{ color: ink }}
+              />
+              <span className="nb-date flex-shrink-0" style={{ color: ink }}>
                 {fechaHora || "—"}
-              </span>
-              <span className="nb-folio" style={{ color: ink }}>
-                {index + 1}
               </span>
             </div>
 
             <div className="nb-lines">
-              <textarea
-                ref={textRef}
-                value={draft}
-                onChange={(e) => handleChange(e.target.value)}
+              {/* Editor con varias tintas: cada tramo guarda su color */}
+              <div
+                ref={editorRef}
+                contentEditable
+                suppressContentEditableWarning
+                onInput={touch}
                 onBlur={() => void flush()}
-                placeholder="Escribe aquí…"
+                data-placeholder="Escribe aquí…"
                 spellCheck={false}
                 className="nb-text"
                 style={{ color: ink }}
@@ -446,30 +543,33 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
         <div className="relative flex-shrink-0">
           <button
             onClick={() => setInkOpen((v) => !v)}
-            title="Color de tinta"
+            title="Cambiar de pluma (aplica a lo seleccionado o a lo que sigas escribiendo)"
             className="h-9 pl-2 pr-3 rounded-full border border-outline-variant/40 flex items-center gap-1.5 text-xs font-bold text-on-surface-variant hover:bg-surface-container-low transition-colors"
           >
-            <span
-              className="w-4 h-4 rounded-full border border-black/15"
-              style={{ backgroundColor: ink }}
-            />
+            <span className="w-4 h-4 rounded-full border border-black/15" style={{ backgroundColor: ink }} />
             <span className="material-symbols-outlined" style={{ fontSize: 15 }}>ink_pen</span>
           </button>
           {inkOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setInkOpen(false)} />
-              <div className="absolute bottom-11 left-0 z-50 bg-surface-container-lowest border border-outline-variant/25 rounded-2xl shadow-xl p-2 grid grid-cols-3 gap-2">
-                {INKS.map((c) => (
-                  <button
-                    key={c.hex}
-                    onClick={() => handleInk(c.hex)}
-                    title={c.name}
-                    className={`w-8 h-8 rounded-full border transition-transform hover:scale-110 ${
-                      c.hex === ink ? "border-gray-700 ring-2 ring-primary/40" : "border-black/10"
-                    }`}
-                    style={{ backgroundColor: c.hex }}
-                  />
-                ))}
+              <div className="absolute bottom-11 left-0 z-50 bg-surface-container-lowest border border-outline-variant/25 rounded-2xl shadow-xl p-2.5">
+                <p className="text-[10px] text-on-surface-variant/70 mb-2 px-0.5 leading-tight max-w-40">
+                  Pinta lo seleccionado, o sigue escribiendo con la pluma nueva.
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {INKS.map((c) => (
+                    <button
+                      key={c.hex}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleInk(c.hex)}
+                      title={c.name}
+                      className={`w-8 h-8 rounded-full border transition-transform hover:scale-110 ${
+                        c.hex === ink ? "border-gray-700 ring-2 ring-primary/40" : "border-black/10"
+                      }`}
+                      style={{ backgroundColor: c.hex }}
+                    />
+                  ))}
+                </div>
               </div>
             </>
           )}
