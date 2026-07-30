@@ -37,6 +37,7 @@ function mapPage(id: string, d: Record<string, unknown>): Page {
     text: typeof d.text === "string" ? d.text : "",
     html: typeof d.html === "string" ? d.html : "",
     ink: typeof d.ink === "string" ? d.ink : DEFAULT_INK,
+    pen: typeof d.pen === "string" ? d.pen : undefined,
     order: typeof d.order === "number" ? d.order : 1,
     writtenAtMs: written && typeof written.toMillis === "function" ? written.toMillis() : undefined,
   };
@@ -56,22 +57,36 @@ function escapeHtml(s: string): string {
 /**
  * Deja pasar solo lo que produce el editor: texto, saltos de línea y tramos de
  * color. Todo lo demás (scripts, estilos, atributos) se descarta.
+ *
+ * Además le pone color explícito al texto que aún no lo tiene (`baseColor`):
+ * así cada tramo guarda su tinta y ningún cambio de pluma posterior repinta lo
+ * que ya estaba escrito.
  */
-function sanitizeInkHtml(html: string): string {
+function sanitizeInkHtml(html: string, baseColor: string): string {
   if (typeof window === "undefined") return "";
   const src = document.createElement("div");
   src.innerHTML = html;
   const out = document.createElement("div");
 
-  const walk = (from: Node, to: HTMLElement) => {
+  const walk = (from: Node, to: HTMLElement, teñido: boolean) => {
     from.childNodes.forEach((node) => {
       if (node.nodeType === Node.TEXT_NODE) {
-        to.appendChild(document.createTextNode(node.textContent || ""));
+        const txt = node.textContent || "";
+        if (!txt) return;
+        if (teñido) {
+          to.appendChild(document.createTextNode(txt));
+        } else {
+          const span = document.createElement("span");
+          span.style.color = baseColor;
+          span.appendChild(document.createTextNode(txt));
+          to.appendChild(span);
+        }
         return;
       }
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       const el = node as HTMLElement;
       const tag = el.tagName.toLowerCase();
+      if (tag === "script" || tag === "style") return; // ni su contenido
       if (tag === "br") {
         to.appendChild(document.createElement("br"));
         return;
@@ -79,22 +94,22 @@ function sanitizeInkHtml(html: string): string {
       if (tag === "div" || tag === "p") {
         // Un bloque nuevo equivale a un salto de línea.
         if (to.lastChild) to.appendChild(document.createElement("br"));
-        walk(el, to);
+        walk(el, to, teñido);
         return;
       }
       const color = el.style?.color || "";
       if (color) {
         const span = document.createElement("span");
         span.style.color = color;
-        walk(el, span);
+        walk(el, span, true);
         to.appendChild(span);
         return;
       }
-      walk(el, to); // cualquier otra etiqueta: se conserva solo su contenido
+      walk(el, to, teñido); // otra etiqueta: se conserva solo su contenido
     });
   };
 
-  walk(src, out);
+  walk(src, out, false);
   return out.innerHTML;
 }
 
@@ -108,7 +123,11 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
   const [loading, setLoading] = useState(true);
   const [index, setIndex] = useState(0);
   const [pageTitle, setPageTitle] = useState("");
+  // `ink` es la pluma en la mano; `baseInk` es el color del texto que aún no
+  // tiene tinta propia. Cambiar de pluma NO debe tocar baseInk, si no se
+  // repinta toda la hoja.
   const [ink, setInk] = useState(DEFAULT_INK);
+  const [baseInk, setBaseInk] = useState(DEFAULT_INK);
   const [inkOpen, setInkOpen] = useState(false);
   const [vacia, setVacia] = useState(true);
   const [titleDraft, setTitleDraft] = useState(notebook.title);
@@ -172,7 +191,8 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
     setVacia(!page.text.trim());
     setPageTitle(page.title);
     titleRef.current = page.title;
-    setInk(page.ink);
+    setBaseInk(page.ink);
+    setInk(page.pen || page.ink);
     setLocalWrittenMs(null);
     dirtyRef.current = false;
   }, [page]);
@@ -187,14 +207,14 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
       await updatePage(notebook.id, id, {
         title: titleRef.current,
         text: el?.innerText ?? "",
-        html: sanitizeInkHtml(el?.innerHTML ?? ""),
+        html: sanitizeInkHtml(el?.innerHTML ?? "", baseInk),
       });
       setSavedAt(Date.now());
     } catch {
       dirtyRef.current = true;
       toast.error("No se pudo guardar la hoja");
     }
-  }, [notebook.id]);
+  }, [notebook.id, baseInk]);
 
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -265,6 +285,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
       setInk(hex);
       setInkOpen(false);
       const el = editorRef.current;
+      const hojaEnBlanco = !el?.innerText.trim();
       if (el) {
         el.focus();
         // Devolver el cursor/selección a donde estaba antes de tocar el botón.
@@ -277,11 +298,19 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
           document.execCommand("styleWithCSS", false, "true");
           document.execCommand("foreColor", false, hex);
         } catch {
-          /* si el navegador no lo soporta, la tinta aplica a la hoja completa */
+          /* si el navegador no lo soporta, la tinta aplica desde la próxima hoja */
         }
         if (sel && !sel.isCollapsed) touch();
       }
-      if (page) updatePage(notebook.id, page.id, { ink: hex }).catch(() => {});
+      if (!page) return;
+      // El color base solo se mueve si la hoja está en blanco: si ya hay texto,
+      // se queda como está para no repintar lo escrito.
+      if (hojaEnBlanco) {
+        setBaseInk(hex);
+        updatePage(notebook.id, page.id, { ink: hex, pen: hex }).catch(() => {});
+      } else {
+        updatePage(notebook.id, page.id, { pen: hex }).catch(() => {});
+      }
     },
     [notebook.id, page, touch]
   );
@@ -509,9 +538,9 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
                 placeholder="Título de la hoja…"
                 maxLength={80}
                 className="nb-title flex-1 min-w-0"
-                style={{ color: ink }}
+                style={{ color: baseInk }}
               />
-              <span className="nb-date flex-shrink-0" style={{ color: ink }}>
+              <span className="nb-date flex-shrink-0" style={{ color: baseInk }}>
                 {fechaHora || "—"}
               </span>
             </div>
@@ -527,7 +556,7 @@ export default function NotebookView({ notebook, onClose }: NotebookViewProps) {
                 data-placeholder="Escribe aquí…"
                 spellCheck={false}
                 className="nb-text"
-                style={{ color: ink }}
+                style={{ color: baseInk }}
               />
             </div>
           </div>

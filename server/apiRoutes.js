@@ -6944,6 +6944,7 @@ router.put('/notebooks/:id/pages/:pageId', async (req, res) => {
     if (req.body.html !== undefined) update.html = String(req.body.html).slice(0, 40000);
     if (req.body.title !== undefined) update.title = String(req.body.title).slice(0, 80);
     if (req.body.ink !== undefined) update.ink = String(req.body.ink).slice(0, 20);
+    if (req.body.pen !== undefined) update.pen = String(req.body.pen).slice(0, 20);
     if (Object.keys(update).length === 0) {
         return res.status(400).json({ success: false, message: 'No hay campos para actualizar.' });
     }

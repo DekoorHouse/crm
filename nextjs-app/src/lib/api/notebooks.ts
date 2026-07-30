@@ -27,8 +27,10 @@ export interface Page {
   text: string;
   /** El mismo contenido con los tramos de tinta (varios colores por hoja). */
   html: string;
-  /** Ultima pluma usada en la hoja. */
+  /** Color base de la hoja: el del texto que no trae tinta propia. */
   ink: string;
+  /** Ultima pluma usada (solo para dejarla elegida al volver a la hoja). */
+  pen?: string;
   order: number;
   /** Momento en que se empezo a escribir la hoja; lo sella el servidor. */
   writtenAtMs?: number;
@@ -78,7 +80,7 @@ export async function addPage(notebookId: string, ink: string): Promise<string> 
 export function updatePage(
   notebookId: string,
   pageId: string,
-  patch: { title?: string; text?: string; html?: string; ink?: string }
+  patch: { title?: string; text?: string; html?: string; ink?: string; pen?: string }
 ): Promise<unknown> {
   return send(`/api/notebooks/${notebookId}/pages/${pageId}`, "PUT", patch);
 }
