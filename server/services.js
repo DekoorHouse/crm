@@ -900,6 +900,12 @@ async function getShippingQuote(zipTo) {
 const GEMINI_MODEL = 'gemini-3-flash-preview';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const CACHE_TTL = '1800s'; // 30 minutos de TTL para el caché
+// KILL-SWITCH del Context Caching. Incidente 30-jul-2026: Andrea dejó de responder porque la
+// creación del caché (API cachedContents de Google) se colgaba y bloqueaba TODAS las respuestas del
+// chat (nunca caía al fallback). Deshabilitado por defecto: el chat usa la ruta SIN caché
+// (generateGeminiResponse, la misma probada del extractor). Para reactivar sin re-deploy: poner la
+// variable de entorno CONTEXT_CACHE_ENABLED=true en Render (cuando cachedContents vuelva a la normalidad).
+const CONTEXT_CACHE_ENABLED = process.env.CONTEXT_CACHE_ENABLED === 'true';
 
 // Cliente HTTP para Gemini vía axios con conexiones NUEVAS (keepAlive:false).
 // El fetch global (undici) reutiliza conexiones del pool que el servidor ya
@@ -1938,6 +1944,9 @@ async function markOrderEsperandoAnticipoForContact(contactId) {
  */
 async function getOrCreateCache(botInstructions, departmentImageParts = [], imagesHashInput = '', isPostVenta = false, paymentPhaseActive = false) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
+    // Kill-switch (ver CONTEXT_CACHE_ENABLED arriba): si el caching está apagado, devolver null hace
+    // que el chat use la ruta SIN caché (fallback), evitando el cuelgue de cachedContents.
+    if (!CONTEXT_CACHE_ENABLED) return null;
 
     const { systemText, referenceText } = await buildStaticContext(botInstructions, isPostVenta, paymentPhaseActive);
     const currentHash = simpleHash(systemText + referenceText + '|imgs:' + imagesHashInput);
