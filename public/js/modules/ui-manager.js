@@ -3638,12 +3638,11 @@ async function renderAITrainingView() {
 
     // Estado del selector de proveedor de IA (Gemini vs OpenAI). La tarjeta vive en esta vista
     // porque es donde el operador busca todo lo de Andrea (lo de Ajustes no se encontraba).
-    const aiProviderToggle = document.getElementById('ai-provider-toggle');
-    if (aiProviderToggle) {
+    if (document.getElementById('ai-provider-options')) {
         db.collection('crm_settings').doc('general').get().then(doc => {
-            const prov = (doc.exists && String(doc.data().aiChatProvider || '').toLowerCase() === 'openai') ? 'openai' : 'gemini';
-            aiProviderToggle.checked = (prov === 'openai');
-            updateAiProviderLabel(prov);
+            const prov = doc.exists ? String(doc.data().aiChatProvider || 'gemini').toLowerCase() : 'gemini';
+            state.aiChatProvider = prov;
+            updateAiProviderUI(prov);
         }).catch(() => {});
     }
 
@@ -4043,34 +4042,33 @@ async function handleSavePostventaInstructions() {
 // --- Selector: proveedor de IA del chat de Andrea (Gemini vs OpenAI) ---
 // Nació del incidente 30-jul-2026: Google bloqueó la cuenta por facturación y Andrea dejó de
 // contestar horas. Poder cambiarlo desde Ajustes evita tener que entrar a Render en plena caída.
-function updateAiProviderLabel(provider) {
-    const label = document.getElementById('ai-provider-label');
-    const help = document.getElementById('ai-provider-help');
-    const esOpenAI = provider === 'openai';
-    if (label) label.textContent = esOpenAI ? 'OpenAI (ChatGPT)' : 'Google Gemini';
-    if (help) {
-        help.innerHTML = esOpenAI
-            ? 'Andrea está conversando con <strong>OpenAI</strong>. Las notas de voz también se transcriben ahí.<br>Apágalo para volver a Google Gemini.'
-            : '<strong>Apagado</strong>: Google Gemini (el de siempre).<br><strong>Encendido</strong>: OpenAI (ChatGPT) — úsalo si Gemini falla.';
-    }
+function updateAiProviderUI(provider) {
+    const p = ['gemini', 'openrouter', 'openai'].includes(provider) ? provider : 'gemini';
+    document.querySelectorAll('#ai-provider-options input[name="ai-provider"]').forEach(r => {
+        r.checked = (r.value === p);
+    });
+    // Resaltar la opción activa (sin depender de CSS nuevo).
+    document.querySelectorAll('.ai-provider-opt').forEach(el => {
+        const activo = el.dataset.prov === p;
+        el.style.borderColor = activo ? 'var(--color-primary, #6366f1)' : 'var(--color-border, #e5e7eb)';
+        el.style.background = activo ? 'color-mix(in srgb, var(--color-primary, #6366f1) 7%, transparent)' : 'transparent';
+    });
 }
 
-async function handleAiProviderToggle(checked) {
-    const provider = checked ? 'openai' : 'gemini';
-    const toggle = document.getElementById('ai-provider-toggle');
-    if (toggle) toggle.disabled = true;
+const AI_PROVIDER_NOMBRE = { gemini: 'Google Gemini', openrouter: 'Gemini por OpenRouter', openai: 'OpenAI (ChatGPT)' };
+
+async function handleAiProviderChange(provider) {
+    const previo = state.aiChatProvider || 'gemini';
+    updateAiProviderUI(provider);
     try {
         await db.collection('crm_settings').doc('general').set({ aiChatProvider: provider }, { merge: true });
-        updateAiProviderLabel(provider);
-        showError(provider === 'openai'
-            ? 'Listo: Andrea ahora conversa con OpenAI (ChatGPT). Aplica en el siguiente mensaje.'
-            : 'Listo: Andrea volvió a Google Gemini. Aplica en el siguiente mensaje.', 'success');
+        state.aiChatProvider = provider;
+        showError('Listo: Andrea ahora usa ' + (AI_PROVIDER_NOMBRE[provider] || provider)
+            + '. Aplica en el siguiente mensaje (hasta 1 min en los procesos automáticos).', 'success');
     } catch (e) {
         console.error('Error al cambiar el proveedor de IA:', e);
         showError('No se pudo cambiar el proveedor de IA.');
-        if (toggle) toggle.checked = !checked; // revertir el switch si no se guardó
-    } finally {
-        if (toggle) toggle.disabled = false;
+        updateAiProviderUI(previo); // revertir si no se guardó
     }
 }
 
@@ -4096,7 +4094,7 @@ async function handlePurchaseTriggerToggle(checked) {
     }
 }
 window.handlePurchaseTriggerToggle = handlePurchaseTriggerToggle;
-window.handleAiProviderToggle = handleAiProviderToggle;
+window.handleAiProviderChange = handleAiProviderChange;
 
 async function loadKnowledgeBase() {
     try {

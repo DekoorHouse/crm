@@ -1198,17 +1198,27 @@ const AITrainingViewTemplate = () => `
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-1">Cerebro de Andrea (proveedor de IA)</h2>
                 <p class="text-sm text-gray-500 mb-4">Qué inteligencia artificial usa Andrea para <strong>conversar</strong>, <strong>registrar pedidos</strong>, transcribir <strong>notas de voz</strong> y para la cobranza y los recordatorios automáticos. Si un proveedor se cae o bloquea la cuenta, cambias aquí y Andrea sigue trabajando.</p>
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h3 class="font-semibold" id="ai-provider-label">Google Gemini</h3>
-                        <p class="text-sm text-gray-500" id="ai-provider-help">
-                            <strong>Apagado</strong>: Google Gemini (el de siempre).<br>
-                            <strong>Encendido</strong>: OpenAI (ChatGPT) — úsalo si Gemini falla.
-                        </p>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="ai-provider-toggle" onchange="handleAiProviderToggle(this.checked)">
-                        <span class="slider"></span>
+                <div class="space-y-2" id="ai-provider-options">
+                    <label class="ai-provider-opt flex items-start gap-3 p-3 rounded-lg border cursor-pointer" data-prov="gemini">
+                        <input type="radio" name="ai-provider" value="gemini" onchange="handleAiProviderChange('gemini')" class="mt-1">
+                        <span>
+                            <span class="font-semibold block">Google Gemini <span class="text-xs font-normal text-gray-400">— cuenta directa</span></span>
+                            <span class="text-sm text-gray-500">El de siempre. Depende de la cuenta de facturación de Google: si la bloquean, Andrea deja de contestar.</span>
+                        </span>
+                    </label>
+                    <label class="ai-provider-opt flex items-start gap-3 p-3 rounded-lg border cursor-pointer" data-prov="openrouter">
+                        <input type="radio" name="ai-provider" value="openrouter" onchange="handleAiProviderChange('openrouter')" class="mt-1">
+                        <span>
+                            <span class="font-semibold block">Gemini por OpenRouter <span class="text-xs font-normal text-green-600">— recomendado</span></span>
+                            <span class="text-sm text-gray-500">El <strong>mismo modelo</strong> de siempre (así Andrea se comporta igual), pero con <strong>créditos prepagados</strong>: no hay cuenta que se bloquee. Si se acaban los créditos, recargas.</span>
+                        </span>
+                    </label>
+                    <label class="ai-provider-opt flex items-start gap-3 p-3 rounded-lg border cursor-pointer" data-prov="openai">
+                        <input type="radio" name="ai-provider" value="openai" onchange="handleAiProviderChange('openai')" class="mt-1">
+                        <span>
+                            <span class="font-semibold block">OpenAI (ChatGPT)</span>
+                            <span class="text-sm text-gray-500">Proveedor distinto por si los otros dos fallan. Ojo: <strong>no oye notas de voz ni ve videos</strong>, y responde con su propio estilo (menos apegado a tus respuestas rápidas).</span>
+                        </span>
                     </label>
                 </div>
                 <p class="text-xs text-gray-400 mt-3" id="ai-provider-note">
