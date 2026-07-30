@@ -2164,6 +2164,28 @@ async function generateGeminiResponse(prompt, imageParts = [], systemInstruction
     };
 }
 
+// DIAGNÓSTICO (incidente 30-jul-2026, "Andrea no responde"): lista los modelos que la API tiene
+// disponibles y hace un PING al modelo actual (GEMINI_MODEL), devolviendo el error crudo si falla.
+// Sirve para confirmar si el nombre del modelo dejó de ser válido (Google renombra/deprecia previews).
+async function diagnoseGeminiModel() {
+    const out = { current: GEMINI_MODEL, proModel: process.env.GEMINI_PRO_MODEL || 'gemini-3.1-pro-preview', hasKey: !!GEMINI_API_KEY };
+    if (!GEMINI_API_KEY) return out;
+    try {
+        const r = await geminiHttp(`${GEMINI_BASE_URL}/models?key=${GEMINI_API_KEY}&pageSize=200`, { method: 'GET' });
+        const data = await r.json();
+        out.availableFlashPro = (data.models || []).map(m => String(m.name).replace('models/', '')).filter(n => /flash|pro/i.test(n));
+    } catch (e) { out.listError = e.message; }
+    try {
+        const r = await geminiHttp(`${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`, {
+            method: 'POST', body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'ping' }] }] })
+        });
+        out.pingStatus = r.status;
+        out.modelOk = r.ok;
+        if (!r.ok) out.pingBody = JSON.stringify(await r.json()).slice(0, 500);
+    } catch (e) { out.pingError = e.message; out.modelOk = false; }
+    return out;
+}
+
 // --- Transcripción de notas de voz (audio del cliente) → texto para el operador ---
 // Reusa Gemini (multimodal): descarga el audio, lo manda como parte inline y pide la transcripción.
 // La transcripción es una NOTA INTERNA (campo del mensaje en Firestore); NUNCA se envía al cliente.
@@ -3952,6 +3974,7 @@ async function getPedidoAttribution(contactId, beforeTimestamp) {
 
 // SE ACTUALIZÓ LA EXPORTACIÓN
 module.exports = {
+    diagnoseGeminiModel,
     handleWholesaleMessage,
     checkCoverage,
     generateGeminiResponse,

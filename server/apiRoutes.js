@@ -5827,6 +5827,17 @@ router.get('/debug/shipping-digest-run', async (req, res) => {
 // GET /api/debug/ai-order-extract?contactId=521... → DRY-RUN del extractor de pedidos de la IA:
 // reconstruye el transcript del contacto y muestra qué pedido registraría, SIN crear nada.
 // Sirve para probar el registro automático (orders/aiOrderRegistration.js) contra chats reales.
+// GET /api/debug/gemini-models → diagnóstico del modelo (incidente 30-jul-2026): lista modelos
+// disponibles + ping al modelo actual con el error crudo. Confirma si el nombre del modelo caducó.
+router.get('/debug/gemini-models', async (_req, res) => {
+    try {
+        const { diagnoseGeminiModel } = require('./services');
+        res.json(await diagnoseGeminiModel());
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/debug/ai-order-extract', async (req, res) => {
     try {
         const contactId = String(req.query.contactId || '').trim();
