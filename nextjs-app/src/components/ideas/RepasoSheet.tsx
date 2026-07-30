@@ -39,9 +39,11 @@ export default function RepasoSheet({ open, loading, data, onClose }: RepasoShee
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <h2 className="text-base font-bold font-headline text-on-surface leading-tight">Repaso del mural</h2>
+            <h2 className="text-base font-bold font-headline text-on-surface leading-tight">Repaso del escritorio</h2>
             {data && (
-              <p className="text-xs text-on-surface-variant">{data.total} ideas revisadas</p>
+              <p className="text-xs text-on-surface-variant">
+                {data.total} libreta{data.total === 1 ? "" : "s"} revisada{data.total === 1 ? "" : "s"}
+              </p>
             )}
           </div>
           <button

@@ -6793,74 +6793,29 @@ router.delete('/tags', async (req, res) => {
 });
 
 
-// --- Endpoints para Ideas / Pizarra personal de post-its (/api/ideas) ---
-// La pizarra vive en /ideas (fuera del CRM). Coleccion Firestore: `ideas`.
-// POST (Crear)
-router.post('/ideas', async (req, res) => {
-    const { text = '', color = '#FEF08A', x = 40, y = 40, w = 176, h = 176, rotation = 0, z = 1 } = req.body || {};
-    try {
-        const ref = await db.collection('ideas').add({
-            text: String(text),
-            color: String(color),
-            x: Number(x) || 0,
-            y: Number(y) || 0,
-            w: Number(w) || 176,
-            h: Number(h) || 176,
-            rotation: Number(rotation) || 0,
-            z: Number(z) || 1,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        res.status(201).json({ success: true, id: ref.id });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al crear la idea.' });
-    }
-});
+// --- Endpoints para Ideas / Libretas personales (/api/notebooks) ---
+// La app vive en /ideas (fuera del CRM). Firestore: `notebooks/{id}` con
+// subcoleccion `pages`. Cada libreta es un tema; cada hoja tiene su tinta y su
+// fecha de escritura. `searchText` guarda el texto de todas las hojas juntas
+// para poder buscar y hacer el repaso con IA sin leer subcolecciones.
 
-// PUT (Actualizar una idea: texto, color, posicion y/o tamano)
-router.put('/ideas/:id', async (req, res) => {
-    const { id } = req.params;
-    const update = {};
-    if (req.body.text !== undefined) update.text = String(req.body.text);
-    if (req.body.color !== undefined) update.color = String(req.body.color);
-    if (req.body.x !== undefined) update.x = Number(req.body.x) || 0;
-    if (req.body.y !== undefined) update.y = Number(req.body.y) || 0;
-    if (req.body.w !== undefined) update.w = Number(req.body.w) || 176;
-    if (req.body.h !== undefined) update.h = Number(req.body.h) || 176;
-    if (req.body.rotation !== undefined) update.rotation = Number(req.body.rotation) || 0;
-    if (req.body.z !== undefined) update.z = Number(req.body.z) || 1;
-    if (Object.keys(update).length === 0) {
-        return res.status(400).json({ success: false, message: 'No hay campos para actualizar.' });
-    }
-    update.updatedAt = admin.firestore.FieldValue.serverTimestamp();
-    try {
-        await db.collection('ideas').doc(id).update(update);
-        res.status(200).json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al actualizar la idea.' });
-    }
-});
+const NB_SEARCH_LIMIT = 4000; // tope de caracteres del texto denormalizado
 
-// DELETE (Borrar una idea)
-router.delete('/ideas/:id', async (req, res) => {
-    try {
-        await db.collection('ideas').doc(req.params.id).delete();
-        res.status(200).json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al eliminar la idea.' });
-    }
-});
+// Recalcula pageCount + searchText de una libreta a partir de sus hojas.
+async function recalcNotebook(notebookId) {
+    const ref = db.collection('notebooks').doc(notebookId);
+    const pages = await ref.collection('pages').orderBy('order', 'asc').get();
+    const texts = pages.docs.map(d => String(d.data().text || '').trim()).filter(Boolean);
+    await ref.update({
+        pageCount: pages.size,
+        searchText: texts.join('\n\n').slice(0, NB_SEARCH_LIMIT),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+}
 
-// PUT Config de la pizarra (leyenda de colores, fondo). Doc unico: ideas_config/main.
+// PUT Config del escritorio (fondo). Doc unico: ideas_config/main.
 router.put('/ideas-config', async (req, res) => {
     const update = {};
-    if (req.body.legend !== undefined && typeof req.body.legend === 'object' && req.body.legend !== null) {
-        const legend = {};
-        for (const [hex, label] of Object.entries(req.body.legend)) {
-            if (/^#[0-9A-Fa-f]{6}$/.test(hex)) legend[hex] = String(label).slice(0, 30);
-        }
-        update.legend = legend;
-    }
     if (req.body.fondo !== undefined) update.fondo = String(req.body.fondo).slice(0, 20);
     if (Object.keys(update).length === 0) {
         return res.status(400).json({ success: false, message: 'No hay campos para actualizar.' });
@@ -6874,24 +6829,176 @@ router.put('/ideas-config', async (req, res) => {
     }
 });
 
-// POST Repaso del mural con IA: agrupa las ideas, señala olvidadas y sugiere por dónde seguir.
-router.post('/ideas/repaso', async (req, res) => {
+// POST (Crear libreta; nace con su primera hoja en blanco)
+router.post('/notebooks', async (req, res) => {
+    const { title = '', cover = 'terracota', x = 40, y = 40, rotation = 0, z = 1 } = req.body || {};
     try {
-        const snap = await db.collection('ideas').get();
+        const ref = await db.collection('notebooks').add({
+            title: String(title).slice(0, 60),
+            cover: String(cover).slice(0, 30),
+            x: Number(x) || 0,
+            y: Number(y) || 0,
+            rotation: Number(rotation) || 0,
+            z: Number(z) || 1,
+            pageCount: 1,
+            searchText: '',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        await ref.collection('pages').add({
+            text: '',
+            ink: '#1E3A8A',
+            order: 1,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        res.status(201).json({ success: true, id: ref.id });
+    } catch (error) {
+        console.error('[LIBRETAS] Error al crear:', error.message);
+        res.status(500).json({ success: false, message: 'Error al crear la libreta.' });
+    }
+});
+
+// PUT (Actualizar libreta: titulo, portada y/o posicion en el escritorio)
+router.put('/notebooks/:id', async (req, res) => {
+    const update = {};
+    if (req.body.title !== undefined) update.title = String(req.body.title).slice(0, 60);
+    if (req.body.cover !== undefined) update.cover = String(req.body.cover).slice(0, 30);
+    if (req.body.x !== undefined) update.x = Number(req.body.x) || 0;
+    if (req.body.y !== undefined) update.y = Number(req.body.y) || 0;
+    if (req.body.rotation !== undefined) update.rotation = Number(req.body.rotation) || 0;
+    if (req.body.z !== undefined) update.z = Number(req.body.z) || 1;
+    if (Object.keys(update).length === 0) {
+        return res.status(400).json({ success: false, message: 'No hay campos para actualizar.' });
+    }
+    update.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    try {
+        await db.collection('notebooks').doc(req.params.id).update(update);
+        res.status(200).json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al actualizar la libreta.' });
+    }
+});
+
+// DELETE (Borrar libreta con todas sus hojas)
+router.delete('/notebooks/:id', async (req, res) => {
+    try {
+        const ref = db.collection('notebooks').doc(req.params.id);
+        const pages = await ref.collection('pages').get();
+        const batch = db.batch();
+        pages.docs.forEach(d => batch.delete(d.ref));
+        batch.delete(ref);
+        await batch.commit();
+        res.status(200).json({ success: true });
+    } catch (error) {
+        console.error('[LIBRETAS] Error al eliminar:', error.message);
+        res.status(500).json({ success: false, message: 'Error al eliminar la libreta.' });
+    }
+});
+
+// POST (Agregar una hoja al final)
+router.post('/notebooks/:id/pages', async (req, res) => {
+    const { ink = '#1E3A8A' } = req.body || {};
+    try {
+        const ref = db.collection('notebooks').doc(req.params.id);
+        const last = await ref.collection('pages').orderBy('order', 'desc').limit(1).get();
+        const order = last.empty ? 1 : (Number(last.docs[0].data().order) || 0) + 1;
+        const page = await ref.collection('pages').add({
+            text: '',
+            ink: String(ink).slice(0, 20),
+            order,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        await ref.update({
+            pageCount: admin.firestore.FieldValue.increment(1),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        res.status(201).json({ success: true, id: page.id, order });
+    } catch (error) {
+        console.error('[LIBRETAS] Error al agregar hoja:', error.message);
+        res.status(500).json({ success: false, message: 'Error al agregar la hoja.' });
+    }
+});
+
+// PUT (Actualizar una hoja: texto y/o tinta). La fecha de escritura se sella
+// automaticamente la primera vez que la hoja deja de estar en blanco.
+router.put('/notebooks/:id/pages/:pageId', async (req, res) => {
+    const { id, pageId } = req.params;
+    const update = {};
+    const tocaTexto = req.body.text !== undefined;
+    if (tocaTexto) update.text = String(req.body.text);
+    if (req.body.ink !== undefined) update.ink = String(req.body.ink).slice(0, 20);
+    if (Object.keys(update).length === 0) {
+        return res.status(400).json({ success: false, message: 'No hay campos para actualizar.' });
+    }
+    try {
+        const pageRef = db.collection('notebooks').doc(id).collection('pages').doc(pageId);
+        const snap = await pageRef.get();
+        if (!snap.exists) return res.status(404).json({ success: false, message: 'Hoja no encontrada.' });
+        const prev = snap.data();
+        // Sello de fecha/hora al empezar a escribir (solo la primera vez).
+        if (tocaTexto && update.text.trim() && !prev.writtenAt) {
+            update.writtenAt = admin.firestore.FieldValue.serverTimestamp();
+        }
+        update.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+        await pageRef.update(update);
+        if (tocaTexto) await recalcNotebook(id);
+        res.status(200).json({ success: true });
+    } catch (error) {
+        console.error('[LIBRETAS] Error al guardar hoja:', error.message);
+        res.status(500).json({ success: false, message: 'Error al guardar la hoja.' });
+    }
+});
+
+// DELETE (Borrar una hoja; si es la unica, se vacia en lugar de borrarse)
+router.delete('/notebooks/:id/pages/:pageId', async (req, res) => {
+    const { id, pageId } = req.params;
+    try {
+        const ref = db.collection('notebooks').doc(id);
+        const pages = await ref.collection('pages').get();
+        if (pages.size <= 1) {
+            await ref.collection('pages').doc(pageId).update({
+                text: '',
+                writtenAt: admin.firestore.FieldValue.delete(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        } else {
+            await ref.collection('pages').doc(pageId).delete();
+        }
+        await recalcNotebook(id);
+        res.status(200).json({ success: true, vaciada: pages.size <= 1 });
+    } catch (error) {
+        console.error('[LIBRETAS] Error al borrar hoja:', error.message);
+        res.status(500).json({ success: false, message: 'Error al borrar la hoja.' });
+    }
+});
+
+// POST Repaso del escritorio con IA: mira todas las libretas y sugiere por donde seguir.
+router.post('/notebooks/repaso', async (req, res) => {
+    try {
+        const snap = await db.collection('notebooks').get();
         const ahora = Date.now();
-        const notas = snap.docs
+        const libretas = snap.docs
             .map(d => {
                 const v = d.data();
                 const up = v.updatedAt && v.updatedAt.toMillis ? v.updatedAt.toMillis() : ahora;
-                return { texto: String(v.text || '').trim(), dias: Math.max(0, Math.floor((ahora - up) / 86400000)) };
+                return {
+                    titulo: String(v.title || 'Sin titulo').trim(),
+                    texto: String(v.searchText || '').trim(),
+                    hojas: Number(v.pageCount) || 0,
+                    dias: Math.max(0, Math.floor((ahora - up) / 86400000)),
+                };
             })
-            .filter(n => n.texto);
-        if (notas.length < 2) {
-            return res.status(400).json({ success: false, message: 'Aún hay muy pocas ideas para un repaso. ¡Captura un par más!' });
+            .filter(n => n.texto || n.titulo);
+        if (libretas.length < 2) {
+            return res.status(400).json({ success: false, message: 'Aun hay muy pocas libretas para un repaso. ¡Crea otra!' });
         }
-        const lista = notas.map((n, i) => `${i + 1}. (hace ${n.dias} días) ${n.texto.replace(/\n/g, ' / ')}`).join('\n');
-        const prompt = `Estas son TODAS las ideas de mi pizarra personal:\n\n${lista}\n\nDevuélveme SOLO un JSON válido (sin markdown, sin explicación) con esta forma exacta:\n{"grupos":[{"nombre":"...","ideas":[números]}],"olvidadas":[números],"sugerencia":"..."}\n\nReglas:\n- "grupos": agrupa las ideas por tema (2 a 5 grupos, nombres cortos y con personalidad).\n- "olvidadas": números de hasta 3 ideas valiosas que llevan más días sin tocarse (dias alto).\n- "sugerencia": 2-3 frases cálidas y directas: cuál idea conviene desarrollar hoy y un primer paso pequeñito.`;
-        const systemInstruction = 'Eres el compañero personal de ideas de Chris. Hablas español mexicano, cálido, concreto y sin rollo. Respondes exactamente en el formato pedido.';
+        const lista = libretas
+            .map((n, i) => `${i + 1}. "${n.titulo}" (${n.hojas} hoja(s), hace ${n.dias} dias)\n${n.texto.slice(0, 700).replace(/\n+/g, ' / ') || '(sin texto aun)'}`)
+            .join('\n\n');
+        const prompt = `Estas son TODAS las libretas de mi escritorio personal de ideas:\n\n${lista}\n\nDevuelveme SOLO un JSON valido (sin markdown, sin explicacion) con esta forma exacta:\n{"grupos":[{"nombre":"...","ideas":[numeros]}],"olvidadas":[numeros],"sugerencia":"..."}\n\nReglas:\n- "grupos": agrupa las libretas por afinidad de tema (2 a 5 grupos, nombres cortos y con personalidad).\n- "olvidadas": numeros de hasta 3 libretas valiosas que llevan mas dias sin tocarse (dias alto).\n- "sugerencia": 2-3 frases calidas y directas: en cual libreta conviene escribir hoy y un primer paso pequeñito.`;
+        const systemInstruction = 'Eres el compañero personal de ideas de Chris. Hablas español mexicano, calido, concreto y sin rollo. Respondes exactamente en el formato pedido.';
         const { text } = await askGeminiPro(prompt, systemInstruction);
         let raw = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
         let data = null;
@@ -6899,60 +7006,59 @@ router.post('/ideas/repaso', async (req, res) => {
             const m = raw.match(/\{[\s\S]*\}/);
             if (m) { try { data = JSON.parse(m[0]); } catch (_) { /* abajo */ } }
         }
-        if (!data) throw new Error('La IA no devolvió un JSON válido.');
-        const porNumero = (n) => notas[Number(n) - 1];
+        if (!data) throw new Error('La IA no devolvio un JSON valido.');
+        const porNumero = (n) => libretas[Number(n) - 1];
         const grupos = (Array.isArray(data.grupos) ? data.grupos : [])
             .map(g => ({
-                nombre: String(g && g.nombre || '').slice(0, 60),
-                ideas: (Array.isArray(g && g.ideas) ? g.ideas : []).map(porNumero).filter(Boolean).map(n => n.texto)
+                nombre: String((g && g.nombre) || '').slice(0, 60),
+                ideas: (Array.isArray(g && g.ideas) ? g.ideas : []).map(porNumero).filter(Boolean).map(n => n.titulo),
             }))
             .filter(g => g.nombre && g.ideas.length);
         const olvidadas = (Array.isArray(data.olvidadas) ? data.olvidadas : [])
-            .map(porNumero).filter(Boolean).map(n => ({ texto: n.texto, dias: n.dias }));
+            .map(porNumero).filter(Boolean).map(n => ({ texto: n.titulo, dias: n.dias }));
         res.status(200).json({
             success: true,
             grupos,
             olvidadas,
             sugerencia: String(data.sugerencia || '').slice(0, 600),
-            total: notas.length
+            total: libretas.length,
         });
     } catch (error) {
-        console.error('[IDEAS] Error en repaso:', error.message);
+        console.error('[LIBRETAS] Error en repaso:', error.message);
         res.status(500).json({ success: false, message: 'No se pudo generar el repaso. Intenta de nuevo.' });
     }
 });
 
-// POST Desarrollar una idea con IA: agrega primeros pasos concretos al texto de la nota.
-router.post('/ideas/:id/desarrollar', async (req, res) => {
+// POST Desarrollar la hoja actual con IA: agrega primeros pasos concretos al texto.
+router.post('/notebooks/:id/pages/:pageId/desarrollar', async (req, res) => {
+    const { id, pageId } = req.params;
     try {
-        const ref = db.collection('ideas').doc(req.params.id);
-        const snap = await ref.get();
-        if (!snap.exists) return res.status(404).json({ success: false, message: 'Idea no encontrada.' });
-        const data = snap.data();
-        const texto = String(data.text || '').trim();
-        if (!texto) return res.status(400).json({ success: false, message: 'Escribe primero la idea para poder desarrollarla.' });
-        // Solo desarrollar sobre la idea original (si ya tiene pasos, se reemplazan).
+        const pageRef = db.collection('notebooks').doc(id).collection('pages').doc(pageId);
+        const snap = await pageRef.get();
+        if (!snap.exists) return res.status(404).json({ success: false, message: 'Hoja no encontrada.' });
+        const texto = String(snap.data().text || '').trim();
+        if (!texto) return res.status(400).json({ success: false, message: 'Escribe algo en la hoja para poder desarrollarlo.' });
+        // Solo desarrollar sobre lo escrito a mano (si ya tiene pasos, se reemplazan).
         const base = texto.split('\n\n→')[0].trim();
-        const prompt = `Idea personal: "${base}"\n\nConviértela en 3 a 5 primeros pasos concretos y pequeños para empezar hoy mismo. Cada paso: máximo 8 palabras, empieza con un verbo en infinitivo. Responde SOLO los pasos, uno por línea, sin números, sin guiones, sin texto extra.`;
+        const nb = await db.collection('notebooks').doc(id).get();
+        const tema = String((nb.data() || {}).title || '').trim();
+        const prompt = `Libreta: "${tema || 'Ideas'}"\nLo que escribi en esta hoja: "${base}"\n\nConviertelo en 3 a 5 primeros pasos concretos y pequeños para empezar hoy mismo. Cada paso: maximo 8 palabras, empieza con un verbo en infinitivo. Responde SOLO los pasos, uno por linea, sin numeros, sin guiones, sin texto extra.`;
         const systemInstruction = 'Ayudas a aterrizar ideas personales en acciones simples. Español, ultra conciso, cero relleno.';
         const { text: aiText } = await generateGeminiResponse(prompt, [], systemInstruction);
         const pasos = aiText.split('\n')
             .map(l => l.replace(/^[\s\-•*\d.)]+/, '').trim())
             .filter(Boolean)
             .slice(0, 5);
-        if (pasos.length === 0) throw new Error('La IA no devolvió pasos.');
-        const nuevoTexto = `${base}\n\n${pasos.map(p => `→ ${p}`).join('\n')}`;
-        const alturaExtra = 30 * pasos.length + 16;
-        const update = {
-            text: nuevoTexto,
-            h: Math.min(520, Math.max(Number(data.h) || 176, 176) + alturaExtra),
+        if (pasos.length === 0) throw new Error('La IA no devolvio pasos.');
+        await pageRef.update({
+            text: `${base}\n\n${pasos.map(p => `→ ${p}`).join('\n')}`,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
-        await ref.update(update);
+        });
+        await recalcNotebook(id);
         res.status(200).json({ success: true, pasos });
     } catch (error) {
-        console.error('[IDEAS] Error en desarrollar:', error.message);
-        res.status(500).json({ success: false, message: 'No se pudo desarrollar la idea. Intenta de nuevo.' });
+        console.error('[LIBRETAS] Error en desarrollar:', error.message);
+        res.status(500).json({ success: false, message: 'No se pudo desarrollar. Intenta de nuevo.' });
     }
 });
 

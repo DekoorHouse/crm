@@ -582,3 +582,82 @@ h1, h2, h3, h4, h5, h6 {
 
 /* --- Fila de leyenda de colores (scroll horizontal discreto en móvil) --- */
 .ideas-legend::-webkit-scrollbar { height: 0; }
+
+/* ============================================================ */
+/* LIBRETAS — hoja rayada de la vista de libreta abierta         */
+/* ============================================================ */
+.nb-paper {
+  position: relative;
+  background: #fffdf7;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  box-shadow: 0 3px 18px rgba(0, 0, 0, 0.10);
+  padding-bottom: 30px;
+}
+
+/* Margen rojo vertical, como libreta de verdad */
+.nb-paper::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 44px;
+  width: 1px;
+  background: rgba(212, 88, 88, 0.45);
+}
+
+.nb-paper-head {
+  padding: 13px 18px 8px 58px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.nb-date {
+  font-family: var(--font-note);
+  font-size: 17px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.nb-folio {
+  font-family: var(--font-note);
+  font-size: 15px;
+  font-weight: 600;
+  opacity: 0.45;
+}
+
+/* Renglones: una línea cada 34px, alineada con el line-height del textarea */
+.nb-lines {
+  padding: 0 18px 0 58px;
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent 0 33px,
+    rgba(40, 60, 90, 0.16) 33px 34px
+  );
+}
+
+.nb-text {
+  display: block;
+  width: 100%;
+  min-height: 58vh;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  font-family: var(--font-note);
+  font-size: 23px;
+  line-height: 34px;
+  font-weight: 500;
+  padding: 0;
+  margin: 0;
+}
+
+.nb-text::placeholder {
+  color: rgba(0, 0, 0, 0.28);
+}
+
+@media (min-width: 768px) {
+  .nb-paper::before { left: 58px; }
+  .nb-paper-head { padding-left: 74px; padding-right: 26px; }
+  .nb-lines { padding-left: 74px; padding-right: 26px; }
+  .nb-text { font-size: 24px; }
+}
