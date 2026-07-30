@@ -2652,7 +2652,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                         const deptDoc = await db.collection('departments').doc(departmentId).get();
                         const deptName = deptDoc.exists ? String(deptDoc.data().name || '').trim() : '';
                         if (deptName) {
-                            departmentNote = `\n\n**Este cliente llegó por el departamento "${deptName}".** Ese es su modelo/línea de producto: cotiza y pide los datos SOLO de ese modelo, siguiendo las reglas de arriba. NO lo trates como otro modelo ni le pidas datos que su modelo no lleva (por ejemplo, un segundo nombre o una fecha si su lámpara solo lleva un nombre). Si el propio cliente dice claramente que quiere otro modelo, ahí sí cámbiate al que él pida.`;
+                            departmentNote = `\n\n**Dato INTERNO — este cliente llegó por el departamento "${deptName}".** Ese es su modelo/línea de producto: cotiza y pide los datos SOLO de ese modelo, siguiendo las reglas de arriba. NO lo trates como otro modelo ni le pidas datos que su modelo no lleva (por ejemplo, un segundo nombre o una fecha si su lámpara solo lleva un nombre). Si el propio cliente dice claramente que quiere otro modelo, ahí sí cámbiate al que él pida.\nEsto es SOLO para ti: NUNCA le menciones al cliente el nombre del departamento ni le hables de "modelos", "líneas" ni categorías internas — háblale de su lámpara y ya.\nY OJO: si el cliente YA te dio el dato que ese modelo necesita, NO se lo vuelvas a pedir. Confírmalo con la frase de confirmación que te indican tus instrucciones y sigue adelante.`;
                         }
                     } catch (e) { console.warn('[AI] No se pudo leer el nombre del departamento:', e.message); }
                 }
@@ -3066,7 +3066,17 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 if (createdMs && (Date.now() - createdMs) <= 45 * 24 * 60 * 60 * 1000) {
                     const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : '(sin número)';
                     const datos = String(o.datosProducto || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+                    // PEDIDO CANCELADO: no es el pedido del cliente, es historia. Presentarlo como
+                    // "Pedido REGISTRADO" contaminaba la conversación nueva — caso real (Jesús): su
+                    // pedido CANCELADO hace 20 días era de CORAZONES ("Joaquín y Romina | fecha"), y
+                    // por eso la IA le pidió un segundo nombre y una fecha a un cliente que venía por
+                    // una lámpara INFANTIL (que lleva un solo nombre). Se le dice que existe, para
+                    // que sepa contestar si él pregunta, pero SIN sus datos y marcándolo como muerto.
+                    if (/cancel/i.test(String(o.estatus || ''))) {
+                        orderInfoNote = `\n\n**Nota interna:** este cliente tuvo un pedido anterior (${num}) que quedó **CANCELADO**. NO es su pedido actual y sus datos NO aplican a esta conversación: ignóralos por completo (producto, nombres, fechas y total). Si el cliente está pidiendo algo ahora, trátalo como un pedido NUEVO y pídele sus datos desde cero. Solo menciona el pedido cancelado si él pregunta expresamente por él.`;
+                    } else {
                     orderInfoNote = `\n\n**Pedido REGISTRADO en el sistema:**\n${num} — Producto: ${o.producto || '-'} — TOTAL registrado: ${o.precio != null ? `$${o.precio}` : 'no registrado'} — Estatus: ${o.estatus || '-'}${datos ? ` — Datos: ${datos}` : ''}.\nPara el precio/total del pedido usa este ORDEN DE PRIORIDAD: 1) si un humano del equipo acordó en la conversación un total DISTINTO (descuento o ajuste), ese acuerdo MANDA — respétalo y no lo "corrijas" al del sistema; 2) si no hay un acuerdo distinto en el chat, usa el TOTAL registrado de arriba; 3) NUNCA lo calcules con promociones generales. Si hay conflicto y no queda claro cuál aplica, no afirmes ninguno: di que lo confirmas y escribe /equipo en su propio mensaje. Si el cliente quiere algo distinto a lo registrado (otra cantidad u otro modelo), aclara antes de dar totales. El estatus del pedido es SOLO informativo: NUNCA anuncies por tu cuenta que el pedido "ya está listo" ni inicies el cobro — eso lo hace el equipo humano cuando manda la foto del trabajo terminado.`;
+                    }
                 }
             }
             // --- ¿YA LLENÓ el formulario de datos de envío? ---
