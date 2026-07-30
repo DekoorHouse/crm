@@ -1000,8 +1000,11 @@ async function buildStaticContext(botInstructions, isPostVenta = false, paymentP
     const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
 
     const quickRepliesSnapshot = await db.collection('quick_replies').get();
+    // aiHidden: atajos SOLO para el equipo (p. ej. /previa, cuya caption dice "aquí está tu vista
+    // previa 👇" pero la imagen del mockup la adjunta una persona a mano). Si la IA los ve, los emite
+    // sola y le llega al cliente la promesa de una foto que nunca se manda. Se ocultan del prompt.
     const quickReplies = quickRepliesSnapshot.docs
-        .filter(doc => doc.data().message)
+        .filter(doc => doc.data().message && doc.data().aiHidden !== true)
         .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
         .join('\n');
 
