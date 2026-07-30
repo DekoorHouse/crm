@@ -2567,6 +2567,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // --- Obtener instrucciones del bot ---
         let botInstructions = 'Eres un asistente virtual amigable y servicial.';
         let departmentReferenceImages = []; // Imágenes estáticas del departamento como contexto
+        let departmentNote = "";              // Le dice a la IA de QUÉ modelo/línea es este cliente
 
         // ¿El contacto ya cerró su venta y está en etapa 2 (post-venta)?
         const isPostVenta = postSaleStageActive && contactData.aiStage === 'postventa';
@@ -2613,6 +2614,22 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     } else {
                         console.log(`[AI] No se encontró prompt para Departamento: ${departmentId}. Usando instrucciones generales.`);
                     }
+                    // QUÉ MODELO ES ESTE CLIENTE. El prompt del departamento describe TODOS los
+                    // modelos (nube, dinosaurio, corazones, llavero) y dice "habla solo del modelo
+                    // que le corresponde, el de su anuncio". Pero cuando el contacto NO trae datos
+                    // del anuncio (adReferral vacío), la IA se queda sin saber cuál es y adivina —
+                    // caso real: cliente del anuncio de DINOSAURIO al que le pidió un segundo
+                    // nombre y una fecha, que es el flujo de CORAZONES. La foto del modelo va en la
+                    // bienvenida, pero la IA no ve las imágenes que mandamos nosotros, solo las del
+                    // cliente. El nombre del departamento SÍ identifica la línea de producto, así
+                    // que se le dice explícitamente.
+                    try {
+                        const deptDoc = await db.collection('departments').doc(departmentId).get();
+                        const deptName = deptDoc.exists ? String(deptDoc.data().name || '').trim() : '';
+                        if (deptName) {
+                            departmentNote = `\n\n**Este cliente llegó por el departamento "${deptName}".** Ese es su modelo/línea de producto: cotiza y pide los datos SOLO de ese modelo, siguiendo las reglas de arriba. NO lo trates como otro modelo ni le pidas datos que su modelo no lleva (por ejemplo, un segundo nombre o una fecha si su lámpara solo lleva un nombre). Si el propio cliente dice claramente que quiere otro modelo, ahí sí cámbiate al que él pida.`;
+                        }
+                    } catch (e) { console.warn('[AI] No se pudo leer el nombre del departamento:', e.message); }
                 }
             }
 
@@ -3169,7 +3186,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         }
         // Los protocolos de pago/cancelación ya NO van aquí: viven en el texto cacheado del sistema
         // (ver buildStaticContext). Aquí solo quedan las notas DINÁMICAS (dependen del cliente/turno).
-        const finalUserText = `${fechaActualNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${fechaActualNote}${departmentNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
