@@ -191,4 +191,52 @@ async function generateOpenAIResponse(promptOrContents, mediaParts = [], systemI
     };
 }
 
-module.exports = { generateOpenAIResponse, toOpenAIMessages, OPENAI_CHAT_MODEL };
+// --- Transcripción de notas de voz --------------------------------------------------------
+// El modelo de CHAT (gpt-5-mini) no acepta audio, pero OpenAI tiene endpoint dedicado y es
+// mejor para esto. Probado con español de México: capturó nombres propios ("María Fernanda",
+// "Jonathan"), la fecha y hasta normalizó "setecientos cincuenta" -> "750".
+// gpt-4o-mini-transcribe: ~1.7s y más barato que whisper-1.
+const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe';
+
+/**
+ * Transcribe un audio con OpenAI. Devuelve { text, inputTokens, outputTokens, cachedTokens }
+ * para encajar con logAiUsage igual que la ruta de Gemini (el endpoint no reporta tokens,
+ * van en cero; el costo del audio se factura por minuto, no por token).
+ */
+async function transcribeAudioOpenAI(buffer, mimeType = 'audio/ogg') {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('Falta OPENAI_API_KEY para transcribir.');
+    if (!buffer || !buffer.length) return { text: '', inputTokens: 0, outputTokens: 0, cachedTokens: 0 };
+
+    // El nombre de archivo importa: la API deduce el formato de la extensión.
+    const mime = String(mimeType || 'audio/ogg').toLowerCase();
+    const ext = mime.includes('mp3') || mime.includes('mpeg') ? 'mp3'
+        : mime.includes('wav') ? 'wav'
+        : mime.includes('m4a') || mime.includes('mp4') ? 'm4a'
+        : mime.includes('webm') ? 'webm' : 'ogg';
+
+    const fd = new FormData();
+    fd.append('file', new Blob([buffer], { type: mime }), `nota.${ext}`);
+    fd.append('model', OPENAI_TRANSCRIBE_MODEL);
+    fd.append('language', 'es'); // fijar el idioma mejora nombres propios en español
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: fd,
+        signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+        const t = await res.text().catch(() => '');
+        throw new Error(`Transcripción con OpenAI falló: HTTP ${res.status} ${t.slice(0, 160)}`);
+    }
+    const d = await res.json().catch(() => null);
+    return { text: String((d && d.text) || '').trim(), inputTokens: 0, outputTokens: 0, cachedTokens: 0 };
+}
+
+module.exports = {
+    generateOpenAIResponse,
+    toOpenAIMessages,
+    transcribeAudioOpenAI,
+    OPENAI_CHAT_MODEL,
+    OPENAI_TRANSCRIBE_MODEL,
+};

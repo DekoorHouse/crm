@@ -2200,6 +2200,27 @@ async function transcribeAudio(fileUrl, mimeType) {
         return null;
     }
     if (!buffer || !buffer.length) return null;
+    // --- Proveedor de transcripción -------------------------------------------------------
+    // Por defecto sigue al del chat (AI_CHAT_PROVIDER), pero se puede fijar aparte con
+    // AI_TRANSCRIBE_PROVIDER por si se quiere el chat en un proveedor y el audio en otro.
+    // Con Gemini bloqueado, la transcripción también se caía; OpenAI la deja independiente.
+    const transcribeProvider = String(
+        process.env.AI_TRANSCRIBE_PROVIDER || process.env.AI_CHAT_PROVIDER || 'gemini'
+    ).toLowerCase();
+    if (transcribeProvider === 'openai') {
+        try {
+            const { transcribeAudioOpenAI, OPENAI_TRANSCRIBE_MODEL } = require('./ai/openaiProvider');
+            const res = await transcribeAudioOpenAI(buffer, mimeType || 'audio/ogg');
+            logAiUsage('transcripcion', res).catch(() => {});
+            const t = (res.text || '').trim();
+            console.log(`[TRANSCRIBE] OpenAI (${OPENAI_TRANSCRIBE_MODEL}): ${t ? t.length + ' chars' : 'sin voz clara'}.`);
+            return t || null;
+        } catch (e) {
+            console.warn('[TRANSCRIBE] OpenAI falló:', e.message);
+            return null;
+        }
+    }
+
     const prepared = await buildSafeGeminiMediaPart(buffer, mimeType || 'audio/ogg', 'audio');
     if (prepared.skipped || !prepared.part) { console.warn(`[TRANSCRIBE] Audio omitido: ${prepared.skipped || 'sin parte'}.`); return null; }
     const prompt = 'Transcribe EXACTAMENTE lo que dice esta nota de voz (de un cliente, español de México). '
