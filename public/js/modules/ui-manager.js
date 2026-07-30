@@ -1487,7 +1487,15 @@ window.changeEnvioComentario = changeEnvioComentario;
 // Quita un pedido de la tabla de Envíos (oculta, NO borra el pedido).
 async function ocultarEnvio(docId) {
     if (!docId) return;
-    const ok = await showConfirmModal('¿Quitar este pedido de la tabla de Envíos?<br><span style="display:block;margin-top:6px;color:var(--color-text-light,#64748b);font-size:12.5px">El pedido NO se borra; solo desaparece de aquí.</span>', { icon: 'fa-eye-slash', confirmText: 'Quitar' });
+    // Red de seguridad: si el pedido PAGÓ y AÚN NO tiene guía, ocultarlo lo saca de Envíos y podría
+    // quedar sin enviarse (pasó con DH13696/DH13738). Se avisa fuerte; con guía va el aviso normal.
+    const e = (window._enviosData || []).find(x => x.id === docId) || {};
+    const sinGuia = !(e.guiaEnvio && e.guiaEnvio.guia);
+    const num = e.orderNumber || 'Este pedido';
+    const msg = sinGuia
+        ? `⚠️ <b>${escapeHtml(num)} pagó y todavía NO tiene guía.</b><br><span style="display:block;margin-top:6px;color:var(--color-text-light,#64748b);font-size:12.5px">Si lo quitas, desaparece de Envíos y podría quedarse sin enviar. Quítalo solo si YA lo despachaste a mano.</span>`
+        : `¿Quitar este pedido de la tabla de Envíos?<br><span style="display:block;margin-top:6px;color:var(--color-text-light,#64748b);font-size:12.5px">El pedido NO se borra; solo desaparece de aquí.</span>`;
+    const ok = await showConfirmModal(msg, { icon: sinGuia ? 'fa-triangle-exclamation' : 'fa-eye-slash', confirmText: sinGuia ? 'Quitar de todos modos' : 'Quitar' });
     if (!ok) return;
     try {
         const r = await fetch(`${API_BASE_URL}/api/envios/ocultar`, {
