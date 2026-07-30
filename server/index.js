@@ -25,6 +25,7 @@ const { startScheduledReminderScheduler } = require('./leads/scheduledReminderSc
 const { startScheduledMessagesScheduler } = require('./scheduledMessages/scheduledMessagesScheduler');
 const { startShippingDigestScheduler } = require('./shipping/shippingDigestScheduler');
 const { startSpendCapAlertScheduler } = require('./meta/spendCapAlertScheduler');
+const { startOpenRouterCreditAlertScheduler } = require('./ai/openRouterCreditAlert');
 const { startMockupAutoScheduler } = require('./mockups/mockupAutoScheduler');
 const { startCobranzaScheduler } = require('./cobranza/cobranzaScheduler');
 const { startDesignApprovalPoller } = require('./design/designApprovalPoller');
@@ -570,6 +571,8 @@ function startSchedulers() {
   startShippingDigestScheduler();
   // Iniciar scheduler de alerta de límite publicitario Meta Ads (cada 30 min)
   startSpendCapAlertScheduler();
+  // Iniciar scheduler de alerta de saldo bajo de OpenRouter (cada 3 h; solo si el chat usa openrouter)
+  startOpenRouterCreditAlertScheduler();
   // Iniciar scheduler de auto-generación de mockups (cada 10 min; SOLO genera, no envía)
   startMockupAutoScheduler();
   // Iniciar scheduler de cobranza automática (3 cobros diarios máx; luego cancela; se enciende desde la página de cobranza)

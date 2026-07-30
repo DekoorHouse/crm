@@ -5838,6 +5838,20 @@ router.get('/debug/gemini-models', async (_req, res) => {
     }
 });
 
+// GET /api/debug/openrouter-credit-alert?test=1  → manda el WhatsApp de PRUEBA al admin
+// GET /api/debug/openrouter-credit-alert          → barrido en dryRun (reporta saldo/días, NO envía)
+// GET /api/debug/openrouter-credit-alert?force=1  → barrido REAL forzado (envía aunque ya se avisó)
+router.get('/debug/openrouter-credit-alert', async (req, res) => {
+    try {
+        const { runOpenRouterCreditAlertSweep, sendOpenRouterCreditTestAlert } = require('./ai/openRouterCreditAlert');
+        if (req.query.test === '1') return res.json(await sendOpenRouterCreditTestAlert());
+        const force = req.query.force === '1';
+        res.json(await runOpenRouterCreditAlertSweep({ force, dryRun: !force }));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/debug/ai-order-extract', async (req, res) => {
     try {
         const contactId = String(req.query.contactId || '').trim();
