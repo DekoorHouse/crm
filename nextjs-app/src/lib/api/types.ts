@@ -35,12 +35,19 @@ export interface OrderFilters {
   customEnd?: number | null;
 }
 
+export interface PedidoDesglose {
+  numero: number | null;
+  estatus: string;
+  piezas: number;
+}
+
 export interface ProductoDesglose {
   producto: string;
   piezas: number;
   pedidos: number;
   monto: number;
   porEstatus: Record<string, number>;
+  listaPedidos: PedidoDesglose[];
 }
 
 export interface DesgloseResponse {

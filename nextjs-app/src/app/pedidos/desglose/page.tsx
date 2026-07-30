@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { fetchDesglose } from "@/lib/api/orders";
 import type { DesgloseResponse, OrderFilters, ProductoDesglose } from "@/lib/api/types";
-import { STATUS_OPTIONS } from "@/lib/utils/statusConfig";
+import { STATUS_OPTIONS, getStatusConfig } from "@/lib/utils/statusConfig";
 import Select from "@/components/ui/Select";
 import type { SelectOption } from "@/components/ui/Select";
 import ThemeMenu from "@/components/layout/ThemeMenu";
@@ -280,17 +280,46 @@ function TarjetaProducto({
         <span className="material-symbols-outlined text-sm">
           {abierto ? "expand_less" : "expand_more"}
         </span>
-        {abierto ? "Ocultar estatus" : "Por estatus"}
+        {abierto ? "Ocultar detalle" : "Ver detalle"}
       </div>
 
       {abierto && (
-        <div className="mt-3 pt-3 border-t border-outline-variant/20 space-y-1.5">
-          {estatusOrdenado.map(([nombre, piezas]) => (
-            <div key={nombre} className="flex items-center justify-between gap-2 text-xs">
-              <span className="text-on-surface-variant truncate">{nombre}</span>
-              <span className="font-bold text-on-surface shrink-0">{piezas}</span>
+        <div className="mt-3 pt-3 border-t border-outline-variant/20 space-y-4">
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+              Por estatus
+            </p>
+            {estatusOrdenado.map(([nombre, piezas]) => (
+              <div key={nombre} className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-on-surface-variant truncate">{nombre}</span>
+                <span className="font-bold text-on-surface shrink-0">{piezas}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+              Números de pedido · {producto.pedidos}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {producto.listaPedidos.map((pd, i) => (
+                <span
+                  key={`${pd.numero ?? "s"}-${i}`}
+                  title={pd.estatus}
+                  className="inline-flex items-center gap-1 rounded-lg bg-surface-container-high px-2 py-0.5 text-[11px] font-bold text-on-surface"
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: getStatusConfig(pd.estatus).color }}
+                  />
+                  DH{pd.numero ?? "--"}
+                  {pd.piezas > 1 && (
+                    <span className="text-on-surface-variant font-normal">×{pd.piezas}</span>
+                  )}
+                </span>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       )}
     </button>

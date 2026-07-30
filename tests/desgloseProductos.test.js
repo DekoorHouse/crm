@@ -2,7 +2,7 @@
  * Pruebas del desglose por producto de /pedidos/desglose
  * (server/orders/desgloseProductos.js). Lógica pura: no toca Firestore.
  */
-const { agregarPorProducto } = require('../server/orders/desgloseProductos');
+const { agregarPorProducto, folioDelPedido } = require('../server/orders/desgloseProductos');
 
 const porNombre = (resultado, nombre) => resultado.productos.find(p => p.producto === nombre);
 
@@ -137,5 +137,79 @@ describe('agregarPorProducto — orden y bordes', () => {
             totalPedidos: 0,
             totalMonto: 0
         });
+    });
+});
+
+describe('agregarPorProducto — números de pedido por producto', () => {
+    test('lista el folio de cada pedido bajo su producto', () => {
+        const r = agregarPorProducto([
+            { consecutiveOrderNumber: 101, estatus: 'Pagado', precio: 850, items: [{ producto: 'Corazón', cantidad: 1, precio: 850 }] },
+            { consecutiveOrderNumber: 102, estatus: 'Fabricar', precio: 200, items: [{ producto: 'Rex', cantidad: 1, precio: 200 }] }
+        ]);
+
+        expect(porNombre(r, 'Corazón').listaPedidos).toEqual([{ numero: 101, estatus: 'Pagado', piezas: 1 }]);
+        expect(porNombre(r, 'Rex').listaPedidos).toEqual([{ numero: 102, estatus: 'Fabricar', piezas: 1 }]);
+    });
+
+    test('un pedido con varios productos aparece en la lista de cada uno', () => {
+        const r = agregarPorProducto([
+            {
+                consecutiveOrderNumber: 200, estatus: 'Pagado', precio: 1050,
+                items: [
+                    { producto: 'Corazón', cantidad: 1, precio: 850 },
+                    { producto: 'Rex', cantidad: 1, precio: 200 }
+                ]
+            }
+        ]);
+
+        expect(porNombre(r, 'Corazón').listaPedidos).toEqual([{ numero: 200, estatus: 'Pagado', piezas: 1 }]);
+        expect(porNombre(r, 'Rex').listaPedidos).toEqual([{ numero: 200, estatus: 'Pagado', piezas: 1 }]);
+    });
+
+    test('dos líneas del mismo producto en un pedido son una sola fila con las piezas sumadas', () => {
+        const r = agregarPorProducto([
+            {
+                consecutiveOrderNumber: 300, estatus: 'Pagado', precio: 1700,
+                items: [
+                    { producto: 'Corazón', cantidad: 1, precio: 850 },
+                    { producto: 'Corazón', cantidad: 1, precio: 850 }
+                ]
+            }
+        ]);
+
+        expect(porNombre(r, 'Corazón').listaPedidos).toEqual([{ numero: 300, estatus: 'Pagado', piezas: 2 }]);
+    });
+
+    test('ordena los folios de más nuevo a más viejo (consecutivo descendente)', () => {
+        const r = agregarPorProducto([
+            { consecutiveOrderNumber: 10, estatus: 'Pagado', precio: 850, items: [{ producto: 'Corazón', cantidad: 1, precio: 850 }] },
+            { consecutiveOrderNumber: 30, estatus: 'Pagado', precio: 850, items: [{ producto: 'Corazón', cantidad: 1, precio: 850 }] },
+            { consecutiveOrderNumber: 20, estatus: 'Pagado', precio: 850, items: [{ producto: 'Corazón', cantidad: 1, precio: 850 }] }
+        ]);
+
+        expect(porNombre(r, 'Corazón').listaPedidos.map(p => p.numero)).toEqual([30, 20, 10]);
+    });
+
+    test('pedidos legacy sin folio caen al final con numero null', () => {
+        const r = agregarPorProducto([
+            { estatus: 'Pagado', producto: 'Corazón', precio: 850 },
+            { consecutiveOrderNumber: 50, estatus: 'Pagado', precio: 850, items: [{ producto: 'Corazón', cantidad: 1, precio: 850 }] }
+        ]);
+
+        expect(porNombre(r, 'Corazón').listaPedidos.map(p => p.numero)).toEqual([50, null]);
+    });
+});
+
+describe('folioDelPedido', () => {
+    test('devuelve el número cuando existe', () => {
+        expect(folioDelPedido({ consecutiveOrderNumber: 123 })).toBe(123);
+        expect(folioDelPedido({ consecutiveOrderNumber: '123' })).toBe(123);
+    });
+
+    test('devuelve null cuando falta o no es numérico', () => {
+        expect(folioDelPedido({})).toBeNull();
+        expect(folioDelPedido({ consecutiveOrderNumber: null })).toBeNull();
+        expect(folioDelPedido({ consecutiveOrderNumber: 'abc' })).toBeNull();
+        expect(folioDelPedido(null)).toBeNull();
     });
 });

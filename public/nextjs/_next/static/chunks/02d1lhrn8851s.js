@@ -1,1 +1,0 @@
-(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["object"==typeof document?document.currentScript:void 0,71992,(e,t,u)=>{t.exports=e.r(35959)},12372,e=>{"use strict";var t=e.i(70387),u=e.i(71992);e.s(["default",0,function(){let e=(0,u.useRouter)();return(0,t.useEffect)(()=>{e.replace("/pedidos")},[e]),null}])}]);
