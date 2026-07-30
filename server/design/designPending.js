@@ -36,7 +36,9 @@ const REASONS = ['mockup', 'fabricar', 'corte', 'datos', 'video', 'segundo_produ
 // diseñar es pendiente de corte AUNQUE ya tenga guía.
 // El corte de fecha evita volcar el histórico (127 de esos 153 ya se fabricaron a mano hace semanas);
 // es una fecha FIJA, no una ventana móvil, para que ningún pedido nuevo vuelva a desaparecer solo.
-const CORTE_DESDE_MS = Date.parse('2026-07-17T00:00:00Z');
+// MISMA constante que usa el corte automático (svgAuto.AUTO_DESDE_MS): si divergen, un pedido podría
+// salir en esta lista pero no en la cola del worker (o al revés).
+const { AUTO_DESDE_MS: CORTE_DESDE_MS } = require('./svgAuto');
 
 const _ms = t => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : 0);
 

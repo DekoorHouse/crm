@@ -118,19 +118,50 @@ function svgAutoEligibility(o, previews) {
     return { eligible: true, reason: 'ok', fields: { nombre1, nombre2, fecha }, layoutVerificado: !!lay };
 }
 
+// --- Guía: "recién sacada" NO significa "ya fabricado" (Chris, 2026-07-29) -------------------------
+// El candado original saltaba CUALQUIER pedido con guía, porque el 2026-07-16 el worker re-cortó 9
+// pedidos ya enviados. Pero aquí las guías se sacan POR ADELANTADO, antes de fabricar, así que ese
+// candado también tapaba pedidos que aún no existen físicamente (153 casos medidos el 2026-07-27).
+// Discriminador validado con datos reales: la ANTIGÜEDAD de guiaEnvio.createdAt. Guía de ≤3 días =
+// generada por adelantado (pedido pendiente); guía de 11-30 días = ya se envió, nunca re-cortar.
+const GUIA_RECIENTE_DIAS = 3;
+
+// Fecha FIJA desde la que el corte automático puede tomar pedidos 'Pagado'. NO es ventana móvil: así
+// ningún pedido nuevo vuelve a desaparecer solo, y el histórico de 'Pagado' (~6700 pedidos viejos ya
+// fabricados a mano) queda fuera para siempre. Compartida con designPending.js.
+const AUTO_DESDE_MS = Date.parse('2026-07-17T00:00:00Z');
+
+// ¿La guía es lo bastante vieja como para asumir que el pedido YA se envió? Sin fecha de guía se
+// asume vieja (conservador: no se corta solo).
+function guiaVieja(o) {
+    if (!(o.guiaEnvio && o.guiaEnvio.guia)) return false;   // sin guía -> no bloquea
+    const creada = tsMs(o.guiaEnvio.createdAt);
+    if (!creada) return true;
+    return (Date.now() - creada) > GUIA_RECIENTE_DIAS * 864e5;
+}
+
 // Candados comunes a cualquier cola de corte automático: ya diseñado (a mano o por IA), ya enviado/
 // gestionado, o con un pendiente MANUAL aparte (2º producto agregado tras pagar -> lo revisa alguien).
 function autoBlocked(o) {
     return !!(o.disenoListoAt || o.svgCorteAt                                // ya diseñado / ya tiene SVG
-        || (o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios             // ya se envió/gestionó
+        || guiaVieja(o) || o.ocultoDeEnvios                                  // ya se envió/gestionó
         || o.productoAgregadoPostPagoAt);                                    // 2º producto -> manual
 }
 
-// ¿El pedido está EN COLA para el corte automático (Fabricar, aún sin cortar, auto-elegible)? Es el
-// conjunto exacto que el endpoint saca de "Pendientes" manual y muestra en "SVG IA" como
-// "esperando pareja". `previews` = mockup_previews[orderId].previews.
+// Estatus que el corte automático acepta. 'Pagado' se sumó el 2026-07-29: al validar el pago el pedido
+// pasa a 'Pagado' (NO a 'Fabricar'), así que exigir 'Fabricar' dejaba fuera pedidos listos para cortar.
+// OJO: 'Pagado' es también el cementerio de miles de pedidos viejos ya fabricados -> se exige además
+// que el pago sea POSTERIOR a AUTO_DESDE_MS (ver arriba).
+const ESTATUS_AUTO = new Set(['fabricar', 'pagado']);
+
+// ¿El pedido está EN COLA para el corte automático (aún sin cortar, auto-elegible)? Es el conjunto
+// exacto que el endpoint saca de "Pendientes" manual y muestra en "SVG IA" como "esperando pareja".
+// `previews` = mockup_previews[orderId].previews.
 function isAutoWaiting(o, previews) {
-    if (String(o.estatus || '').trim().toLowerCase() !== 'fabricar') return false;
+    const est = String(o.estatus || '').trim().toLowerCase();
+    if (!ESTATUS_AUTO.has(est)) return false;
+    // 'Pagado' solo cuenta si el pago es reciente (el histórico viejo no se re-corta).
+    if (est === 'pagado' && tsMs(o.comprobanteValidadoAt) < AUTO_DESDE_MS) return false;
     if (autoBlocked(o)) return false;
     return svgAutoEligibility(o, previews).eligible;
 }
@@ -243,4 +274,5 @@ function forcedDesignFields(o, previews) {
 module.exports = {
     svgAutoEligibility, isAutoWaiting, isVideoCorregir, isVideoAutoWaiting, forcedDesignFields,
     parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, esEspecial, SIN_FECHA_RE, productOf, datosOf, isCorazon,
+    guiaVieja, autoBlocked, AUTO_DESDE_MS, GUIA_RECIENTE_DIAS, ESTATUS_AUTO,
 };

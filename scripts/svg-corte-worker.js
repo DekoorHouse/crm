@@ -31,7 +31,8 @@ const { spawnSync } = require('child_process');
 
 const { db, admin } = require('../server/config');
 const { recomputeForContact } = require('../server/design/designPending');
-const { svgAutoEligibility, forcedDesignFields, isVideoCorregir } = require('../server/design/svgAuto');
+const { svgAutoEligibility, forcedDesignFields, isVideoCorregir,
+        autoBlocked, ESTATUS_AUTO, AUTO_DESDE_MS } = require('../server/design/svgAuto');
 const { uploadPublicImage } = require('../server/mockups/mockupsService');
 
 const SKILL_DIR = path.join(__dirname, '..', '.claude', 'skills', 'svg-corte');
@@ -148,25 +149,42 @@ async function getSettings() {
 //     mockup está mal y lo revisa una persona. Kill-switch propio: settings.videoAutoCut = false.
 async function findCandidates(cfg) {
     const videoOn = (cfg || {}).videoAutoCut !== false;
-    const [snapFab, snapCor] = await Promise.all([
+    // 3er origen (2026-07-29): pedidos 'Pagado' RECIENTES. Al validar el pago el pedido pasa a
+    // 'Pagado', no a 'Fabricar', así que consultar solo 'Fabricar' dejaba fuera pedidos listos para
+    // cortar. Se consulta por comprobanteValidadoAt desc (no por estatus) para NO barrer los ~6700
+    // 'Pagado' históricos: isAutoWaiting exige además que el pago sea posterior a AUTO_DESDE_MS.
+    const [snapFab, snapCor, snapPag] = await Promise.all([
         db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(800).get(),
         videoOn ? db.collection('pedidos').where('estatus', '==', 'Corregir').limit(300).get()
                 : Promise.resolve({ docs: [] }),
+        db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(400).get(),
     ]);
-    const queue = [
-        ...snapFab.docs.map(doc => ({ doc, video: false })),
-        ...snapCor.docs.map(doc => ({ doc, video: true })),
-    ];
+    const vistos = new Set();
+    const queue = [];
+    for (const doc of snapFab.docs) { vistos.add(doc.id); queue.push({ doc, video: false }); }
+    for (const doc of snapCor.docs) { if (!vistos.has(doc.id)) { vistos.add(doc.id); queue.push({ doc, video: true }); } }
+    for (const doc of snapPag.docs) {
+        if (vistos.has(doc.id)) continue;
+        if (String(doc.data().estatus || '').trim().toLowerCase() !== 'pagado') continue;
+        vistos.add(doc.id); queue.push({ doc, video: false });
+    }
     const out = [];
     const staleMs = Date.now() - CLAIM_STALE_MIN * 60 * 1000;
     for (const { doc, video } of queue) {
         const o = { id: doc.id, ...doc.data() };
         if (video && !isVideoCorregir(o)) continue;                          // Corregir por 'datos' -> manual
-        if (o.disenoListoAt || o.svgCorteAt) continue;                       // ya diseñado / ya tiene SVG
         if (o.iaForce) continue;                                             // forzado desde el CRM -> lo maneja processForcedDesigns (con confirmación antes de subir)
-        // Con guía de envío (o quitado de Envíos) el pedido ya se fabricó/gestionó: cortarlo
-        // sería duplicar producción. Misma regla que Pendientes de Diseño (designPending.js).
-        if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios) continue;
+        // Candados compartidos con el CRM (svgAuto.autoBlocked): ya diseñado, guía VIEJA (= ya se
+        // envió), quitado de Envíos, o 2º producto. OJO: una guía RECIENTE ya NO bloquea — aquí se
+        // sacan por adelantado, antes de fabricar (Chris, 2026-07-29).
+        if (autoBlocked(o)) continue;
+        if (!video) {
+            const est = String(o.estatus || '').trim().toLowerCase();
+            if (!ESTATUS_AUTO.has(est)) continue;                            // 'Fabricar' o 'Pagado'
+            // 'Pagado' es el cementerio de miles de pedidos viejos ya fabricados a mano: solo cuentan
+            // los pagados DESPUÉS de la fecha fija AUTO_DESDE_MS.
+            if (est === 'pagado' && ms(o.comprobanteValidadoAt) < AUTO_DESDE_MS) continue;
+        }
         if (ms(o.svgCorteStartedAt) > staleMs) continue;                     // otro proceso lo está trabajando
         const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
         const previews = prev.exists ? (prev.data().previews || []) : [];
