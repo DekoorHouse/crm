@@ -3396,6 +3396,16 @@ function renderAjustesView() {
         }).catch(() => {});
     }
 
+    // Estado del selector de proveedor de IA (Gemini vs OpenAI) para el chat de Andrea
+    const aiProviderToggle = document.getElementById('ai-provider-toggle');
+    if (aiProviderToggle) {
+        db.collection('crm_settings').doc('general').get().then(doc => {
+            const p = (doc.exists && String(doc.data().aiChatProvider || '').toLowerCase() === 'openai') ? 'openai' : 'gemini';
+            aiProviderToggle.checked = (p === 'openai');
+            updateAiProviderLabel(p);
+        }).catch(() => {});
+    }
+
     // Rellena el input del ID de Google Sheet
     const sheetIdInput = document.getElementById('google-sheet-id-input');
     if (sheetIdInput) {
@@ -4029,6 +4039,40 @@ async function handleSavePostventaInstructions() {
     }
 }
 
+// --- Selector: proveedor de IA del chat de Andrea (Gemini vs OpenAI) ---
+// Nació del incidente 30-jul-2026: Google bloqueó la cuenta por facturación y Andrea dejó de
+// contestar horas. Poder cambiarlo desde Ajustes evita tener que entrar a Render en plena caída.
+function updateAiProviderLabel(provider) {
+    const label = document.getElementById('ai-provider-label');
+    const help = document.getElementById('ai-provider-help');
+    const esOpenAI = provider === 'openai';
+    if (label) label.textContent = esOpenAI ? 'OpenAI (ChatGPT)' : 'Google Gemini';
+    if (help) {
+        help.innerHTML = esOpenAI
+            ? 'Andrea está conversando con <strong>OpenAI</strong>. Las notas de voz también se transcriben ahí.<br>Apágalo para volver a Google Gemini.'
+            : '<strong>Apagado</strong>: Google Gemini (el de siempre).<br><strong>Encendido</strong>: OpenAI (ChatGPT) — úsalo si Gemini falla.';
+    }
+}
+
+async function handleAiProviderToggle(checked) {
+    const provider = checked ? 'openai' : 'gemini';
+    const toggle = document.getElementById('ai-provider-toggle');
+    if (toggle) toggle.disabled = true;
+    try {
+        await db.collection('crm_settings').doc('general').set({ aiChatProvider: provider }, { merge: true });
+        updateAiProviderLabel(provider);
+        showError(provider === 'openai'
+            ? 'Listo: Andrea ahora conversa con OpenAI (ChatGPT). Aplica en el siguiente mensaje.'
+            : 'Listo: Andrea volvió a Google Gemini. Aplica en el siguiente mensaje.', 'success');
+    } catch (e) {
+        console.error('Error al cambiar el proveedor de IA:', e);
+        showError('No se pudo cambiar el proveedor de IA.');
+        if (toggle) toggle.checked = !checked; // revertir el switch si no se guardó
+    } finally {
+        if (toggle) toggle.disabled = false;
+    }
+}
+
 // --- Toggle: cuándo se envía el evento Purchase a Meta (registro vs Fabricar) ---
 function updatePurchaseTriggerLabel(trigger) {
     const label = document.getElementById('purchase-trigger-label');
@@ -4051,6 +4095,7 @@ async function handlePurchaseTriggerToggle(checked) {
     }
 }
 window.handlePurchaseTriggerToggle = handlePurchaseTriggerToggle;
+window.handleAiProviderToggle = handleAiProviderToggle;
 
 async function loadKnowledgeBase() {
     try {

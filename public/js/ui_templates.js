@@ -1175,6 +1175,26 @@ const SettingsViewTemplate = () => `
                 </div>
             </div>
             <div class="settings-card">
+                <h2 class="text-xl font-bold mb-1">Cerebro de Andrea (proveedor de IA)</h2>
+                <p class="text-sm text-gray-500 mb-4">Qué inteligencia artificial usa Andrea para conversar con los clientes y para transcribir las notas de voz. Si un proveedor se cae o bloquea la cuenta, cambias aquí y Andrea sigue contestando.</p>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-semibold" id="ai-provider-label">Google Gemini</h3>
+                        <p class="text-sm text-gray-500" id="ai-provider-help">
+                            <strong>Apagado</strong>: Google Gemini (el de siempre).<br>
+                            <strong>Encendido</strong>: OpenAI (ChatGPT) — úsalo si Gemini falla.
+                        </p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="ai-provider-toggle" onchange="handleAiProviderToggle(this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <p class="text-xs text-gray-400 mt-3" id="ai-provider-note">
+                    Nota: los <strong>mockups</strong> y los <strong>grabados</strong> siguen usando Gemini siempre; este cambio afecta solo la conversación y las notas de voz.
+                </p>
+            </div>
+            <div class="settings-card">
                 <h2 class="text-xl font-bold mb-4">Mantenimiento</h2>
                 <div>
                     <p class="text-sm text-gray-500 mb-3">Asigna todos los chats que actualmente no tienen un departamento al departamento por defecto "General".</p>

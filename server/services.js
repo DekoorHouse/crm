@@ -2201,12 +2201,19 @@ async function transcribeAudio(fileUrl, mimeType) {
     }
     if (!buffer || !buffer.length) return null;
     // --- Proveedor de transcripción -------------------------------------------------------
-    // Por defecto sigue al del chat (AI_CHAT_PROVIDER), pero se puede fijar aparte con
-    // AI_TRANSCRIBE_PROVIDER por si se quiere el chat en un proveedor y el audio en otro.
-    // Con Gemini bloqueado, la transcripción también se caía; OpenAI la deja independiente.
-    const transcribeProvider = String(
-        process.env.AI_TRANSCRIBE_PROVIDER || process.env.AI_CHAT_PROVIDER || 'gemini'
-    ).toLowerCase();
+    // Sigue al proveedor del CHAT que se eligió en Ajustes (crm_settings/general.aiChatProvider),
+    // así el operador cambia UNA cosa y todo el flujo de Andrea se mueve junto. Se puede separar
+    // con aiTranscribeProvider si algún día se quiere el chat en un proveedor y el audio en otro.
+    // Las variables de entorno quedan como respaldo. Solo se lee para mensajes de audio (raros).
+    let transcribeProvider = 'gemini';
+    try {
+        const cfgDoc = await db.collection('crm_settings').doc('general').get();
+        const cfg = cfgDoc.exists ? cfgDoc.data() : {};
+        transcribeProvider = String(
+            cfg.aiTranscribeProvider || cfg.aiChatProvider
+            || process.env.AI_TRANSCRIBE_PROVIDER || process.env.AI_CHAT_PROVIDER || 'gemini'
+        ).toLowerCase();
+    } catch (_) { /* si falla la lectura, se queda en gemini (comportamiento previo) */ }
     if (transcribeProvider === 'openai') {
         try {
             const { transcribeAudioOpenAI, OPENAI_TRANSCRIBE_MODEL } = require('./ai/openaiProvider');
@@ -3145,11 +3152,17 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 
         // --- SWITCH DE PROVEEDOR (incidente 30-jul-2026) ---------------------------------
         // Google bloqueó la cuenta de Gemini por facturación y Andrea dejó de contestar a los
-        // clientes durante horas. Con AI_CHAT_PROVIDER=openai el chat corre en OpenAI, así que un
+        // clientes durante horas. Con el proveedor en 'openai' el chat corre en OpenAI, así que un
         // problema con Google ya no tumba la atención al cliente. Default 'gemini' (sin cambios).
-        // Volver atrás = quitar la variable de entorno en Render; no requiere re-deploy de código.
+        //
+        // Se cambia desde AJUSTES del CRM (crm_settings/general.aiChatProvider) para que no haga
+        // falta entrar a Render en plena caída. Se aprovecha la lectura de generalSettings que ya
+        // se hizo arriba: no cuesta una lectura extra por turno. La variable de entorno
+        // AI_CHAT_PROVIDER queda como respaldo por si Firestore no tiene el valor.
         let aiResult;
-        const chatProvider = String(process.env.AI_CHAT_PROVIDER || 'gemini').toLowerCase();
+        const chatProvider = String(
+            generalSettings.aiChatProvider || process.env.AI_CHAT_PROVIDER || 'gemini'
+        ).toLowerCase();
 
         if (chatProvider === 'openai') {
             // OpenAI cachea por PREFIJO automáticamente (no hay cachés que crear ni borrar como en
