@@ -174,9 +174,10 @@ async function findCandidates(cfg) {
         const o = { id: doc.id, ...doc.data() };
         if (video && !isVideoCorregir(o)) continue;                          // Corregir por 'datos' -> manual
         if (o.iaForce) continue;                                             // forzado desde el CRM -> lo maneja processForcedDesigns (con confirmación antes de subir)
-        // Candados compartidos con el CRM (svgAuto.autoBlocked): ya diseñado, guía VIEJA (= ya se
-        // envió), quitado de Envíos, o 2º producto. OJO: una guía RECIENTE ya NO bloquea — aquí se
-        // sacan por adelantado, antes de fabricar (Chris, 2026-07-29).
+        // Candados compartidos con el CRM (svgAuto.autoBlocked): ya diseñado (svgCorteAt / disenoListoAt /
+        // tablero 'Terminado'), quitado de Envíos, o 2º producto. La GUÍA ya NO bloquea: se saca por
+        // adelantado (mockup->pago->formulario->guía), antes de cortar; el candado real de "ya hecho" son
+        // las 3 marcas. Ver el razonamiento y el incidente 2026-07-30 en svgAuto.autoBlocked (Chris, 2026-07-31).
         if (autoBlocked(o)) continue;
         if (!video) {
             const est = String(o.estatus || '').trim().toLowerCase();
@@ -284,11 +285,13 @@ async function processApprovedDesigns() {
         const o = { id: doc.id, ...doc.data() };
         const da = o.designApproval || {};
         const dh = dhOf(o);
-        // Guard: no resucitar un pedido cancelado / con guía / oculto de Envíos (misma regla que
-        // findCandidates). Lo marca 'needs_review' para que deje de aparecer en la query.
+        // Guard: no resucitar un pedido cancelado o quitado de Envíos (misma regla que findCandidates).
+        // La GUÍA ya NO descalifica (Chris, 2026-07-31): se saca por adelantado, antes de producir, así que
+        // no significa "ya se envió"; el candado real de "ya hecho" es svgCorteAt (abajo). Lo marca
+        // 'needs_review' para que deje de aparecer en la query.
         const estatus = String(o.estatus || '').toLowerCase();
-        if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios || /cancel/.test(estatus)) {
-            log(`  ~ ${dh} aprobado pero el pedido está "${o.estatus}"/enviado -> needs_review (no subo)`);
+        if (o.ocultoDeEnvios || /cancel/.test(estatus)) {
+            log(`  ~ ${dh} aprobado pero el pedido está "${o.estatus}"/quitado de Envíos -> needs_review (no subo)`);
             if (!DRY) await doc.ref.update({ 'designApproval.status': 'needs_review' });
             continue;
         }
@@ -348,8 +351,11 @@ async function processForcedDesigns() {
         const f = o.iaForce || {};
         const dh = dhOf(o);
         const estatus = String(o.estatus || '').toLowerCase();
-        if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios || /cancel/.test(estatus)) {
-            log(`  ~ ${dh} forzado aprobado pero enviado/cancelado -> no subo`);
+        // La GUÍA ya NO frena la subida de un forzado aprobado (Chris, 2026-07-31): es anticipada. El
+        // operador YA confirmó este corte en el CRM -> debe subir a Drive aunque tenga guía. Solo lo frenan
+        // quitado de Envíos o cancelado (svgCorteAt = ya subido, se maneja abajo).
+        if (o.ocultoDeEnvios || /cancel/.test(estatus)) {
+            log(`  ~ ${dh} forzado aprobado pero quitado de Envíos/cancelado -> no subo`);
             if (!DRY) await doc.ref.update({ iaForce: admin.firestore.FieldValue.delete() });
             continue;
         }
@@ -389,9 +395,14 @@ async function processForcedDesigns() {
         const o = { id: doc.id, ...doc.data() };
         const dh = dhOf(o);
         const estatus = String(o.estatus || '').toLowerCase();
-        if ((o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios || /cancel/.test(estatus)) {
-            log(`  ~ ${dh} forzado pero enviado/cancelado -> error`);
-            if (!DRY) await doc.ref.update({ 'iaForce.status': 'error', 'iaForce.error': 'El pedido ya se envió o está cancelado.' });
+        // La GUÍA ya NO descalifica un forzado (Chris, 2026-07-31): se saca por adelantado (mockup->pago->
+        // formulario->guía), ANTES de cortar, así que "tiene guía" NO significa "ya se envió". Sin esto,
+        // "Diseñar con IA" fallaba con "ya se envió" en justo los pedidos que hay que diseñar (DH14098/14064).
+        // Es una acción MANUAL y explícita del operador; solo lo frenan las señales duras: quitado de Envíos
+        // o cancelado (svgCorteAt se maneja abajo: si ya está cortado, se descarta el forzado en silencio).
+        if (o.ocultoDeEnvios || /cancel/.test(estatus)) {
+            log(`  ~ ${dh} forzado pero quitado de Envíos/cancelado -> error`);
+            if (!DRY) await doc.ref.update({ 'iaForce.status': 'error', 'iaForce.error': 'El pedido se quitó de Envíos o está cancelado.' });
             continue;
         }
         if (o.svgCorteAt) { if (!DRY) await doc.ref.update({ iaForce: admin.firestore.FieldValue.delete() }); continue; }

@@ -8309,14 +8309,22 @@ router.get('/design-pending', async (req, res) => {
             // "SVG IA": (a) YA diseñados por el worker (estatus "Diseñado por IA") + (b) EN COLA
             // esperando pareja (Fabricar auto-elegible, aún sin cortar). Así el equipo ve lo que hace
             // la IA sin que estorbe en "Pendientes" (que queda solo para diseño manual).
-            const [snapIA, sFab] = await Promise.all([
+            // Cola de espera = Fabricar + 'Pagado' RECIENTE (mismo 3er origen que el worker): desde que la
+            // guía dejó de bloquear (2026-07-31), un corazón pagado y elegible espera pareja igual que un
+            // Fabricar, así que también debe verse aquí "en cola" (si no, quedaría invisible hasta cortarse).
+            const [snapIA, sFab, sPag] = await Promise.all([
                 db.collection('pedidos').where('estatus', '==', 'Diseñado por IA').limit(300).get(),
                 db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(1000).get(),
+                db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(400).get(),
             ]);
+            const iaIds = new Set(snapIA.docs.map(d => d.id));
             snapIA.forEach(doc => orders.push(mapOrder(doc, [], { svgIaState: 'designed' })));
-            // Cola: solo los Fabricar que el worker cortaría (isAutoWaiting = MISMA regla que el worker).
-            const prevMap = await previewsFor(sFab.docs.map(d => d.id));
-            for (const doc of sFab.docs) {
+            // Cola: solo los que el worker cortaría (isAutoWaiting = MISMA regla que el worker). Dedup Fab+Pag,
+            // sin los ya 'Diseñado por IA'.
+            const waitDocs = new Map();
+            [...sFab.docs, ...sPag.docs].forEach(d => { if (!iaIds.has(d.id)) waitDocs.set(d.id, d); });
+            const prevMap = await previewsFor([...waitDocs.keys()]);
+            for (const doc of waitDocs.values()) {
                 const p = doc.data();
                 if (!isAutoWaiting(p, prevMap.get(doc.id))) continue;
                 const paidMs = tsToMs(p.comprobanteValidadoAt) || tsToMs(p.confirmedAt) || tsToMs(p.createdAt);

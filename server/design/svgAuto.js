@@ -136,15 +136,25 @@ function boardTerminado(o) {
 }
 
 // Candados comunes a cualquier cola de corte automático: ya diseñado (a mano, por IA o marcado en el
-// tablero), ya enviado/gestionado, o con un pendiente MANUAL aparte (2º producto -> lo revisa alguien).
-// OJO CON LA GUÍA (revertido 2026-07-30): se intentó permitir el corte cuando la guía era "reciente"
-// (≤3 días), suponiendo que aquí se sacan por adelantado. Es FALSO como señal: en DH14039 la guía se
-// generó 4 h DESPUÉS de terminar la pieza, y en DH13970 igual — ambos se re-cortaron por esa regla.
-// La guía no dice nada fiable sobre si la lámpara existe; vuelve a bloquear SIEMPRE.
+// tablero), ya gestionado en Envíos, o con un pendiente MANUAL aparte (2º producto -> lo revisa alguien).
+// LA GUÍA YA NO BLOQUEA (Chris, 2026-07-31). El flujo es mockup -> pago -> formulario -> GUÍA, así que la
+// guía se genera POR ADELANTADO, ANTES de que el diseñador físico corte la pieza. Con la guía bloqueando,
+// los pedidos pagados que la skill SÍ puede cortar quedaban atorados —invisibles y sin cortar— si la guía
+// le ganaba la carrera al worker (21 casos el 2026-07-31: DH14098/14064/14106, etc.).
+// La señal FIABLE de "ya está hecho" son las TRES marcas REALES: svgCorteAt, disenoListoAt y
+// disenoBoardCol terminal (boardTerminado). Esas SÍ atrapan lo fabricado a mano: los 4 pedidos del
+// incidente del 2026-07-30 (DH14039/13970/13859/13860, re-cortados por error) estaban TODOS en el tablero
+// 'Terminado' -> boardTerminado los frena aunque la guía ya no (boardTerminado se sumó a este candado
+// DESPUÉS de ese incidente; por eso hoy es seguro quitar la guía y no lo era entonces).
+// Verificado con datos reales antes del cambio: quitar la guía NO cortó ningún pedido de más; los viejos
+// con guía (DH13468/13542, pagados ~11 días antes) siguen frenados por su disenoListoAt (✓Diseñado).
+// RIESGO RESIDUAL asumido por Chris: si el diseñador hace una pieza a MANO y NO la marca (ni tablero
+// 'Terminado' ni ✓Diseñado ni svgCorteAt), la skill podría re-cortarla. Depende de que SIEMPRE se marque.
 function autoBlocked(o) {
-    return !!(o.disenoListoAt || o.svgCorteAt || boardTerminado(o)           // ya diseñado / marcado hecho
-        || (o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios             // ya se envió/gestionó
-        || o.productoAgregadoPostPagoAt);                                    // 2º producto -> manual
+    return !!(o.disenoListoAt || o.svgCorteAt || boardTerminado(o)           // ya diseñado / marcado hecho (3 marcas reales)
+        || o.ocultoDeEnvios                                                 // quitado de Envíos = gestionado
+        || o.productoAgregadoPostPagoAt                                     // 2º producto -> manual
+        || o.iaForce);                                                      // "Diseñar con IA": lo diseña processForcedDesigns CON confirmación, NO el auto-corte (el worker ya lo salta); así isAutoWaiting=false y sigue visible en Pendientes con su UI de confirmar
 }
 
 // Estatus que el corte automático acepta. 'Pagado' se sumó el 2026-07-29: al validar el pago el pedido
