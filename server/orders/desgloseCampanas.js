@@ -104,7 +104,9 @@ function agregarPorCampana(pedidos, adToCampaign = {}) {
             listaPedidos: acc.listaPedidos.sort((a, b) => (b.numero || 0) - (a.numero || 0)),
             ads: [..._ads]
         }))
-        .sort((a, b) => b.piezas - a.piezas);
+        // Por PEDIDOS, igual que el desglose por producto: es el número grande
+        // de la tarjeta. A igualdad de pedidos desempatan las piezas.
+        .sort((a, b) => (b.pedidos - a.pedidos) || (b.piezas - a.piezas));
 
     return {
         campanas,

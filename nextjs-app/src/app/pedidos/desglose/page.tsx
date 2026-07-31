@@ -144,9 +144,10 @@ export default function DesglosePage() {
 
   const productos = data?.productos ?? [];
   const campanas = dataCampanas?.campanas ?? [];
-  const totalPiezas = actual?.totalPiezas ?? 0;
+  const totalPedidos = actual?.totalPedidos ?? 0;
   const filas = porCampana ? campanas : productos;
-  const maxPiezas = filas.length > 0 ? filas[0].piezas : 0;
+  // El backend ya ordena por pedidos, así que el primero es el máximo.
+  const maxPedidos = filas.length > 0 ? filas[0].pedidos : 0;
 
   // Los anuncios que la Graph API no pudo traducir se juntan en una tarjeta
   // "Campaña no identificada": hay que decir por qué, o parece un dato perdido.
@@ -235,11 +236,11 @@ export default function DesglosePage() {
           <div className="flex gap-8 items-center border-l border-outline-variant/30 pl-8">
             <div className="text-center">
               <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Piezas</p>
-              <p className="text-xl font-black text-primary">{totalPiezas}</p>
+              <p className="text-xl font-black text-primary">{actual?.totalPiezas ?? 0}</p>
             </div>
             <div className="text-center">
               <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Pedidos</p>
-              <p className="text-xl font-black text-secondary">{actual?.totalPedidos ?? 0}</p>
+              <p className="text-xl font-black text-secondary">{totalPedidos}</p>
             </div>
             <div className="text-center">
               <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Monto</p>
@@ -305,8 +306,8 @@ export default function DesglosePage() {
                   <TarjetaCampana
                     key={c.id}
                     campana={c}
-                    totalPiezas={totalPiezas}
-                    maxPiezas={maxPiezas}
+                    totalPedidos={totalPedidos}
+                    maxPedidos={maxPedidos}
                     abierto={expandido === c.id}
                     onToggle={() =>
                       setExpandido((abierta) => (abierta === c.id ? null : c.id))
@@ -318,8 +319,8 @@ export default function DesglosePage() {
                   <TarjetaProducto
                     key={p.producto}
                     producto={p}
-                    totalPiezas={totalPiezas}
-                    maxPiezas={maxPiezas}
+                    totalPedidos={totalPedidos}
+                    maxPedidos={maxPedidos}
                     abierto={expandido === p.producto}
                     onToggle={() =>
                       setExpandido((abierto) => (abierto === p.producto ? null : p.producto))
@@ -398,8 +399,8 @@ function BarraProporcion({ ancho, color }: { ancho: number; color: string }) {
 
 interface TarjetaProductoProps {
   producto: ProductoDesglose;
-  totalPiezas: number;
-  maxPiezas: number;
+  totalPedidos: number;
+  maxPedidos: number;
   abierto: boolean;
   onToggle: () => void;
   onAbrirChat: (contactId: string) => void;
@@ -407,17 +408,21 @@ interface TarjetaProductoProps {
 
 function TarjetaProducto({
   producto,
-  totalPiezas,
-  maxPiezas,
+  totalPedidos,
+  maxPedidos,
   abierto,
   onToggle,
   onAbrirChat,
 }: TarjetaProductoProps) {
   const color = colorProducto(producto.producto);
-  const porcentaje = totalPiezas > 0 ? Math.round((producto.piezas / totalPiezas) * 100) : 0;
+  // OJO: en el desglose por producto los pedidos NO suman el total (uno con dos
+  // productos cuenta en las dos tarjetas), así que los porcentajes pueden pasar
+  // de 100 por un par de puntos. Aun así se mide contra pedidos, para que el %
+  // corresponda al número grande de la tarjeta.
+  const porcentaje = totalPedidos > 0 ? Math.round((producto.pedidos / totalPedidos) * 100) : 0;
   // La barra se mide contra el producto más vendido, no contra el total: con seis
   // productos ninguna barra pasaría del 40% y todas se verían igual de cortas.
-  const ancho = maxPiezas > 0 ? Math.round((producto.piezas / maxPiezas) * 100) : 0;
+  const ancho = maxPedidos > 0 ? Math.round((producto.pedidos / maxPedidos) * 100) : 0;
 
   return (
     <Tarjeta
@@ -447,10 +452,10 @@ function TarjetaProducto({
         <span className="text-xs font-bold text-on-surface-variant shrink-0">{porcentaje}%</span>
       </div>
 
-      <p className="text-4xl font-black text-on-surface leading-none">{producto.piezas}</p>
+      <p className="text-4xl font-black text-on-surface leading-none">{producto.pedidos}</p>
       <p className="text-xs text-on-surface-variant mt-1.5">
-        piezas · {producto.pedidos} {producto.pedidos === 1 ? "pedido" : "pedidos"} ·{" "}
-        {pesos.format(producto.monto)}
+        {producto.pedidos === 1 ? "pedido" : "pedidos"} · {producto.piezas}{" "}
+        {producto.piezas === 1 ? "pieza" : "piezas"} · {pesos.format(producto.monto)}
       </p>
 
       <BarraProporcion ancho={ancho} color={color} />
@@ -460,8 +465,8 @@ function TarjetaProducto({
 
 interface TarjetaCampanaProps {
   campana: CampanaDesglose;
-  totalPiezas: number;
-  maxPiezas: number;
+  totalPedidos: number;
+  maxPedidos: number;
   abierto: boolean;
   onToggle: () => void;
   onAbrirChat: (contactId: string) => void;
@@ -469,15 +474,15 @@ interface TarjetaCampanaProps {
 
 function TarjetaCampana({
   campana,
-  totalPiezas,
-  maxPiezas,
+  totalPedidos,
+  maxPedidos,
   abierto,
   onToggle,
   onAbrirChat,
 }: TarjetaCampanaProps) {
   const color = colorCampana(campana.id);
-  const porcentaje = totalPiezas > 0 ? Math.round((campana.piezas / totalPiezas) * 100) : 0;
-  const ancho = maxPiezas > 0 ? Math.round((campana.piezas / maxPiezas) * 100) : 0;
+  const porcentaje = totalPedidos > 0 ? Math.round((campana.pedidos / totalPedidos) * 100) : 0;
+  const ancho = maxPedidos > 0 ? Math.round((campana.pedidos / maxPedidos) * 100) : 0;
   const esCampanaReal = campana.id !== ID_ORGANICO && campana.id !== ID_SIN_CAMPANA;
 
   return (
@@ -549,10 +554,10 @@ function TarjetaCampana({
         <span className="text-xs font-bold text-on-surface-variant shrink-0">{porcentaje}%</span>
       </div>
 
-      <p className="text-4xl font-black text-on-surface leading-none">{campana.piezas}</p>
+      <p className="text-4xl font-black text-on-surface leading-none">{campana.pedidos}</p>
       <p className="text-xs text-on-surface-variant mt-1.5">
-        piezas · {campana.pedidos} {campana.pedidos === 1 ? "pedido" : "pedidos"} ·{" "}
-        {pesos.format(campana.monto)}
+        {campana.pedidos === 1 ? "pedido" : "pedidos"} · {campana.piezas}{" "}
+        {campana.piezas === 1 ? "pieza" : "piezas"} · {pesos.format(campana.monto)}
       </p>
 
       <BarraProporcion ancho={ancho} color={color} />

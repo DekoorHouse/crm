@@ -82,7 +82,10 @@ function agregarPorProducto(pedidos) {
             // los legacy sin folio (null) caen al final.
             listaPedidos: [..._porPedido.values()].sort((a, b) => (b.numero || 0) - (a.numero || 0))
         }))
-        .sort((a, b) => b.piezas - a.piezas);
+        // Por PEDIDOS, que es el número grande de la tarjeta: si se ordenara por
+        // piezas se vería una tarjeta de 16 pedidos arriba de una de 20 y parece
+        // un error. A igualdad de pedidos desempatan las piezas.
+        .sort((a, b) => (b.pedidos - a.pedidos) || (b.piezas - a.piezas));
 
     return {
         productos,

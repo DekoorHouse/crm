@@ -182,7 +182,18 @@ describe('agregarPorCampana — detalle de la tarjeta', () => {
 });
 
 describe('agregarPorCampana — orden', () => {
-    test('ordena de más a menos piezas', () => {
+    test('ordena de más a menos PEDIDOS (el número grande de la tarjeta)', () => {
+        const r = agregarPorCampana([
+            // Dino: 1 pedido de 10 piezas. Corazones: 2 pedidos de 1 pieza.
+            pedido({ attributedAdId: 'ad3', items: [{ producto: 'Corazón', cantidad: 10, precio: 850 }] }),
+            pedido({ attributedAdId: 'ad1' }),
+            pedido({ attributedAdId: 'ad2' })
+        ], MAPA);
+
+        expect(r.campanas.map(c => c.nombre)).toEqual(['Corazones//4ads', 'Infantiles//Dino']);
+    });
+
+    test('a igualdad de pedidos desempatan las piezas', () => {
         const r = agregarPorCampana([
             pedido({ attributedAdId: 'ad3' }),
             pedido({ attributedAdId: 'ad1', items: [{ producto: 'Corazón', cantidad: 5, precio: 850 }] }),

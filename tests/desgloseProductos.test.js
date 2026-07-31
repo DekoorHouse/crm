@@ -110,7 +110,17 @@ describe('agregarPorProducto — desglose por estatus', () => {
 });
 
 describe('agregarPorProducto — orden y bordes', () => {
-    test('ordena de más a menos piezas', () => {
+    test('ordena de más a menos PEDIDOS (el número grande de la tarjeta)', () => {
+        const uno = (producto, cantidad) => ({ estatus: 'Pagado', precio: 850, items: [{ producto, cantidad, precio: 850 }] });
+        const r = agregarPorProducto([
+            // Rex: 1 pedido de 10 piezas. Corazón: 2 pedidos de 1 pieza.
+            uno('Rex', 10), uno('Corazón', 1), uno('Corazón', 1)
+        ]);
+
+        expect(r.productos.map(p => p.producto)).toEqual(['Corazón', 'Rex']);
+    });
+
+    test('a igualdad de pedidos desempatan las piezas', () => {
         const r = agregarPorProducto([
             { estatus: 'Pagado', precio: 200, items: [{ producto: 'Rex', cantidad: 1, precio: 200 }] },
             { estatus: 'Pagado', precio: 2550, items: [{ producto: 'Corazón', cantidad: 3, precio: 850 }] },
