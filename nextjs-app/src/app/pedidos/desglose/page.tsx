@@ -93,6 +93,15 @@ const pesos = new Intl.NumberFormat("es-MX", {
   maximumFractionDigits: 0,
 });
 
+// El costo por pedido sí lleva centavos: la diferencia entre $92 y $92.60 sí
+// importa cuando lo estás comparando contra el margen.
+const pesosExactos = new Intl.NumberFormat("es-MX", {
+  style: "currency",
+  currency: "MXN",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 export default function DesglosePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -248,6 +257,19 @@ export default function DesglosePage() {
                 {pesos.format(actual?.totalMonto ?? 0)}
               </p>
             </div>
+            {porCampana && dataCampanas?.costoPorPedidoGlobal != null && (
+              <div
+                className="text-center"
+                title={`${pesos.format(dataCampanas.gastoTotal ?? 0)} gastados en publicidad ÷ ${totalPedidos} pedidos`}
+              >
+                <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">
+                  Costo/pedido
+                </p>
+                <p className="text-xl font-black text-warning">
+                  {pesosExactos.format(dataCampanas.costoPorPedidoGlobal)}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -268,6 +290,13 @@ export default function DesglosePage() {
             no se pudieron ligar a su campaña
             {dataCampanas?.metaError ? ` (${dataCampanas.metaError})` : " (anuncio borrado o sin acceso desde el token de Meta)"}
             . Sus pedidos están en la tarjeta «Campaña no identificada».
+          </div>
+        )}
+
+        {porCampana && !loading && !error && dataCampanas?.gastoError && (
+          <div className="mb-4 px-4 py-3 rounded-2xl bg-surface-container-high border border-outline-variant/20 text-sm text-on-surface-variant">
+            No se pudo traer el gasto de Meta ({dataCampanas.gastoError}), así que las
+            tarjetas van sin costo por pedido. No es que las campañas no hayan gastado.
           </div>
         )}
 
@@ -559,6 +588,23 @@ function TarjetaCampana({
         {campana.pedidos === 1 ? "pedido" : "pedidos"} · {campana.piezas}{" "}
         {campana.piezas === 1 ? "pieza" : "piezas"} · {pesos.format(campana.monto)}
       </p>
+
+      {campana.costoPorPedido != null && (
+        <p className="text-xs mt-1 flex items-center gap-1">
+          <span
+            className="material-symbols-outlined text-on-surface-variant"
+            style={{ fontSize: 14 }}
+          >
+            sell
+          </span>
+          <span className="font-bold text-on-surface">
+            {pesosExactos.format(campana.costoPorPedido)}
+          </span>
+          <span className="text-on-surface-variant">
+            por pedido · {pesos.format(campana.gasto ?? 0)} gastados
+          </span>
+        </p>
+      )}
 
       <BarraProporcion ancho={ancho} color={color} />
     </Tarjeta>

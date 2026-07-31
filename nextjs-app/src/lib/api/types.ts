@@ -68,6 +68,10 @@ export interface CampanaDesglose {
   piezas: number;
   pedidos: number;
   monto: number;
+  /** Gasto de Meta en el rango. null en orgánico y si Meta no contestó. */
+  gasto: number | null;
+  /** gasto / pedidos. null cuando no hay gasto que repartir. */
+  costoPorPedido: number | null;
   porEstatus: Record<string, number>;
   porProducto: { producto: string; piezas: number }[];
   listaPedidos: PedidoDesglose[];
@@ -87,6 +91,14 @@ export interface DesgloseCampanasResponse {
   anunciosTotales: number;
   /** Motivo por el que Meta no contestó (token vencido, etc.), si aplica. */
   metaError: string | null;
+  /**
+   * Gasto de TODAS las cuentas consultadas en el rango. Puede ser mayor que la
+   * suma de las tarjetas: hay campañas que gastan sin traer un solo pedido.
+   */
+  gastoTotal: number | null;
+  costoPorPedidoGlobal: number | null;
+  /** Motivo por el que no se pudo traer el gasto, si aplica. */
+  gastoError: string | null;
 }
 
 export interface PaginationState {

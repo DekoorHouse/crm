@@ -42,9 +42,10 @@ function cubetaDelPedido(pedido, adToCampaign) {
 /**
  * @param {Array<object>} pedidos - documentos de `pedidos` (ya filtrados).
  * @param {Object<string,{campaignId:string, campaignName:string}>} adToCampaign - mapa adId -> campaña.
- * @returns {{campanas: Array<{id:string, nombre:string, piezas:number, pedidos:number, monto:number, porEstatus:object, porProducto:Array<{producto:string, piezas:number}>, listaPedidos:Array<{numero:number|null, estatus:string, piezas:number, contactId:string|null}>, ads:string[]}>, totalPiezas:number, totalPedidos:number, totalMonto:number}}
+ * @param {Object<string,number>} gastoPorCampana - mapa campaignId -> gasto de Meta en el MISMO rango.
+ * @returns {{campanas: Array<{id:string, nombre:string, piezas:number, pedidos:number, monto:number, gasto:number|null, costoPorPedido:number|null, porEstatus:object, porProducto:Array<{producto:string, piezas:number}>, listaPedidos:Array<{numero:number|null, estatus:string, piezas:number, contactId:string|null}>, ads:string[]}>, totalPiezas:number, totalPedidos:number, totalMonto:number}}
  */
-function agregarPorCampana(pedidos, adToCampaign = {}) {
+function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}) {
     const acumulado = new Map();
     let totalPiezas = 0;
     let totalMonto = 0;
@@ -94,16 +95,27 @@ function agregarPorCampana(pedidos, adToCampaign = {}) {
     }
 
     const campanas = [...acumulado.values()]
-        .map(({ _porProducto, _ads, ...acc }) => ({
-            ...acc,
-            porProducto: [..._porProducto.entries()]
-                .map(([producto, piezas]) => ({ producto, piezas }))
-                .sort((a, b) => b.piezas - a.piezas),
-            // Folios de más nuevo a más viejo (el consecutivo crece con el tiempo);
-            // los legacy sin folio (null) caen al final.
-            listaPedidos: acc.listaPedidos.sort((a, b) => (b.numero || 0) - (a.numero || 0)),
-            ads: [..._ads]
-        }))
+        .map(({ _porProducto, _ads, ...acc }) => {
+            // Orgánico y "sin campaña" no tienen gasto que repartir: va null, no
+            // cero, para que la tarjeta no presuma un costo por pedido de $0.
+            const esCampanaReal = acc.id !== ORGANICO && acc.id !== SIN_CAMPANA;
+            const gasto = esCampanaReal && gastoPorCampana[acc.id] != null
+                ? Number(gastoPorCampana[acc.id])
+                : null;
+
+            return {
+                ...acc,
+                gasto,
+                costoPorPedido: gasto != null && acc.pedidos > 0 ? gasto / acc.pedidos : null,
+                porProducto: [..._porProducto.entries()]
+                    .map(([producto, piezas]) => ({ producto, piezas }))
+                    .sort((a, b) => b.piezas - a.piezas),
+                // Folios de más nuevo a más viejo (el consecutivo crece con el tiempo);
+                // los legacy sin folio (null) caen al final.
+                listaPedidos: acc.listaPedidos.sort((a, b) => (b.numero || 0) - (a.numero || 0)),
+                ads: [..._ads]
+            };
+        })
         // Por PEDIDOS, igual que el desglose por producto: es el número grande
         // de la tarjeta. A igualdad de pedidos desempatan las piezas.
         .sort((a, b) => (b.pedidos - a.pedidos) || (b.piezas - a.piezas));

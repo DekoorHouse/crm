@@ -18,7 +18,7 @@ const metaAdsService = require('./metaAdsService');
 const TTL_OK_MS = 6 * 60 * 60 * 1000;   // 6 h: por si renombran la campaña
 const TTL_FAIL_MS = 10 * 60 * 1000;     // 10 min: reintentar tras un fallo pasajero
 
-// adId -> { campaignId: string|null, campaignName: string|null, ts: number }
+// adId -> { campaignId: string|null, campaignName: string|null, accountId: string|null, ts: number }
 const cache = new Map();
 
 function vigente(entrada, ahora) {
@@ -36,7 +36,7 @@ function vigente(entrada, ahora) {
  * avisar que unas campañas quedaron sin identificar.
  *
  * @param {Array<string>} adIds
- * @returns {Promise<{map: Object<string,{campaignId:string, campaignName:string}>, error: string|null, resueltos:number, total:number}>}
+ * @returns {Promise<{map: Object<string,{campaignId:string, campaignName:string, accountId:string|null}>, error: string|null, resueltos:number, total:number, cuentas:string[]}>}
  */
 async function mapAdsToCampaigns(adIds) {
     const ahora = Date.now();
@@ -44,12 +44,18 @@ async function mapAdsToCampaigns(adIds) {
     const map = {};
     const faltantes = [];
 
+    const guardar = (id, entrada) => {
+        map[id] = {
+            campaignId: entrada.campaignId,
+            campaignName: entrada.campaignName,
+            accountId: entrada.accountId || null
+        };
+    };
+
     for (const id of unicos) {
         const entrada = cache.get(id);
         if (vigente(entrada, ahora)) {
-            if (entrada.campaignId) {
-                map[id] = { campaignId: entrada.campaignId, campaignName: entrada.campaignName };
-            }
+            if (entrada.campaignId) guardar(id, entrada);
         } else {
             faltantes.push(id);
         }
@@ -61,12 +67,14 @@ async function mapAdsToCampaigns(adIds) {
             const resueltos = await metaAdsService.resolveAdsToCampaigns(faltantes);
             for (const id of faltantes) {
                 const campana = resueltos[id];
-                cache.set(id, {
+                const entrada = {
                     campaignId: campana ? String(campana.campaignId) : null,
                     campaignName: campana ? campana.campaignName : null,
+                    accountId: campana ? campana.accountId : null,
                     ts: ahora
-                });
-                if (campana) map[id] = { campaignId: String(campana.campaignId), campaignName: campana.campaignName };
+                };
+                cache.set(id, entrada);
+                if (campana) guardar(id, entrada);
             }
         } catch (err) {
             // Falta de token: resolveAdsToCampaigns sí lanza aquí. Los errores de
@@ -75,7 +83,11 @@ async function mapAdsToCampaigns(adIds) {
         }
     }
 
-    return { map, error, resueltos: Object.keys(map).length, total: unicos.length };
+    // Cuentas donde de verdad hay anuncios con pedidos: es a las únicas a las
+    // que hay que pedirles el gasto.
+    const cuentas = [...new Set(Object.values(map).map(c => c.accountId).filter(Boolean))];
+
+    return { map, error, resueltos: Object.keys(map).length, total: unicos.length, cuentas };
 }
 
 // Para pruebas y para el endpoint de refresco manual.

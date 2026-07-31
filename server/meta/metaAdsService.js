@@ -487,8 +487,13 @@ async function getCampaignSpendForAccounts(accountIds, dateFrom, dateTo) {
  * (GET /?ids=ad1,ad2,...&fields=campaign{id,name}, max 50 por llamada).
  * Los anuncios borrados o sin acceso simplemente no aparecen en el mapa.
  *
+ * Tambien devuelve el accountId del anuncio: es la unica forma confiable de
+ * saber en que cuentas hay que pedir el gasto, porque los pedidos traen
+ * anuncios de varias cuentas y la lista configurada a mano (kpiAccountIds)
+ * se queda vieja.
+ *
  * @param {string[]} adIds
- * @returns {Promise<Object<string,{campaignId,campaignName}>>}
+ * @returns {Promise<Object<string,{campaignId,campaignName,accountId}>>}
  */
 async function resolveAdsToCampaigns(adIds) {
     const map = {};
@@ -500,7 +505,7 @@ async function resolveAdsToCampaigns(adIds) {
         // Batch API REAL de Meta: cada sub-request es independiente, asi que un
         // anuncio borrado NO tumba al resto del lote (a diferencia de /?ids=,
         // que falla entero y obligaba a reintentar 1x1 -> lentisimo). 50/lote.
-        const batch = slice.map(id => ({ method: 'GET', relative_url: `${id}?fields=campaign{id,name}` }));
+        const batch = slice.map(id => ({ method: 'GET', relative_url: `${id}?fields=campaign{id,name},account_id` }));
         try {
             const resp = await axios.post(`${META_API_BASE}/`, {
                 access_token: token,
@@ -512,7 +517,11 @@ async function resolveAdsToCampaigns(adIds) {
                 try {
                     const obj = JSON.parse(r.body);
                     if (obj && obj.campaign) {
-                        map[slice[idx]] = { campaignId: obj.campaign.id, campaignName: obj.campaign.name };
+                        map[slice[idx]] = {
+                            campaignId: obj.campaign.id,
+                            campaignName: obj.campaign.name,
+                            accountId: obj.account_id ? String(obj.account_id).replace('act_', '') : null
+                        };
                     }
                 } catch (_) { /* body no parseable */ }
             });

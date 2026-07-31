@@ -25,6 +25,8 @@ const { descontarInventarioPorPedido } = require('./inventario/inventarioService
 const { agregarPorProducto } = require('./orders/desgloseProductos');
 const { agregarPorCampana } = require('./orders/desgloseCampanas');
 const { mapAdsToCampaigns } = require('./meta/adCampaignCache');
+const { gastoPorCampana } = require('./meta/campaignSpendCache');
+const { ordersDateRange, metaDateRange } = require('./orders/rangoFechas');
 const { calcularReporte } = require('./inventario/inventarioReporte');
 const { ejecutarReporteDiario } = require('./inventario/inventarioScheduler');
 const { registrarEntrada, registrarConteoFisico, listarMovimientos } = require('./inventario/inventarioEntradas');
@@ -947,39 +949,12 @@ async function generateDailySnapshot(dateISO) {
  * Lo comparten /orders/list, /orders/count y /orders/desglose: si el criterio se
  * separa entre ellos, el desglose deja de cuadrar con la tabla que lo originó.
  */
-function applyOrdersDateFilter(query, { dateFilter, customStart, customEnd }) {
-    if (dateFilter === 'personalizado' && customStart && customEnd) {
-        return query
-            .where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(Number(customStart)))
-            .where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(Number(customEnd)));
-    }
-    if (!dateFilter) return query;
-
-    const mexicoDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-    let startDate, endDate;
-
-    if (dateFilter === 'hoy') {
-        startDate = new Date(mexicoDate + 'T00:00:00-06:00');
-        endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
-    } else if (dateFilter === 'ayer') {
-        const yesterday = new Date(mexicoDate + 'T00:00:00-06:00');
-        yesterday.setDate(yesterday.getDate() - 1);
-        startDate = yesterday;
-        endDate = new Date(mexicoDate + 'T00:00:00-06:00');
-    } else if (dateFilter === 'este-mes') {
-        startDate = new Date(mexicoDate.substring(0, 7) + '-01T00:00:00-06:00');
-        endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
-    } else if (dateFilter === 'ultimos-10-dias') {
-        const tenDaysAgo = new Date(mexicoDate + 'T00:00:00-06:00');
-        tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-        startDate = tenDaysAgo;
-        endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
-    }
-
-    if (!startDate || !endDate) return query;
+function applyOrdersDateFilter(query, filtros) {
+    const rango = ordersDateRange(filtros);
+    if (!rango) return query;
     return query
-        .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(startDate))
-        .where('createdAt', '<', admin.firestore.Timestamp.fromDate(endDate));
+        .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(rango.startDate))
+        .where('createdAt', '<', admin.firestore.Timestamp.fromDate(rango.endDate));
 }
 
 // --- Endpoint GET /api/orders/list (Pedidos paginados con cursor) ---
@@ -1097,10 +1072,19 @@ router.get('/orders/desglose', async (req, res) => {
         const pedidos = docs.map(doc => doc.data());
 
         if (agrupar === 'campana') {
-            const { map, error: metaError, resueltos, total } = await mapAdsToCampaigns(
+            const { map, error: metaError, resueltos, total, cuentas } = await mapAdsToCampaigns(
                 pedidos.map(p => p.attributedAdId)
             );
-            const desglose = agregarPorCampana(pedidos, map);
+
+            // Gasto del MISMO rango que los pedidos, solo de las cuentas que de
+            // verdad trajeron pedidos. Si no hay filtro de fecha no hay rango que
+            // pedirle a Meta y el costo por pedido se queda en null.
+            const rangoMeta = metaDateRange({ dateFilter, customStart, customEnd });
+            const gasto = rangoMeta
+                ? await gastoPorCampana(cuentas, rangoMeta.dateFrom, rangoMeta.dateTo)
+                : { porCampana: {}, total: 0, error: null };
+
+            const desglose = agregarPorCampana(pedidos, map, gasto.porCampana);
 
             return res.status(200).json({
                 success: true,
@@ -1112,6 +1096,14 @@ router.get('/orders/desglose', async (req, res) => {
                 anunciosResueltos: resueltos,
                 anunciosTotales: total,
                 metaError: metaError || null,
+                // Gasto de TODAS las cuentas consultadas en el rango: puede ser
+                // mayor que la suma de las tarjetas si hubo campañas que gastaron
+                // sin traer un solo pedido.
+                gastoTotal: rangoMeta ? gasto.total : null,
+                costoPorPedidoGlobal: rangoMeta && gasto.total > 0 && desglose.totalPedidos > 0
+                    ? gasto.total / desglose.totalPedidos
+                    : null,
+                gastoError: gasto.error || null,
                 truncado,
                 max: DESGLOSE_MAX_PEDIDOS
             });

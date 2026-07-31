@@ -181,6 +181,46 @@ describe('agregarPorCampana — detalle de la tarjeta', () => {
     });
 });
 
+describe('agregarPorCampana — costo por pedido', () => {
+    test('divide el gasto de Meta entre los pedidos de esa campaña', () => {
+        const r = agregarPorCampana([
+            pedido({ attributedAdId: 'ad1' }),
+            pedido({ attributedAdId: 'ad2' }),
+            pedido({ attributedAdId: 'ad3' })
+        ], MAPA, { c1: 1000, c2: 300 });
+
+        expect(porNombre(r, 'Corazones//4ads')).toMatchObject({ gasto: 1000, pedidos: 2, costoPorPedido: 500 });
+        expect(porNombre(r, 'Infantiles//Dino')).toMatchObject({ gasto: 300, pedidos: 1, costoPorPedido: 300 });
+    });
+
+    test('el orgánico no tiene gasto: va null, NO cero', () => {
+        // Un $0 se leería como "no costó nada"; null es "no aplica".
+        const r = agregarPorCampana([pedido({})], MAPA, { c1: 1000 });
+
+        expect(porNombre(r, 'Orgánico / Directo')).toMatchObject({ gasto: null, costoPorPedido: null });
+    });
+
+    test('la cubeta de anuncios sin campaña tampoco reparte gasto', () => {
+        const r = agregarPorCampana([pedido({ attributedAdId: 'borrado' })], MAPA, { c1: 1000 });
+
+        expect(porNombre(r, 'Campaña no identificada')).toMatchObject({ gasto: null, costoPorPedido: null });
+    });
+
+    test('sin datos de Meta el desglose se arma igual, solo sin costo', () => {
+        const r = agregarPorCampana([pedido({ attributedAdId: 'ad1' })], MAPA, {});
+
+        expect(porNombre(r, 'Corazones//4ads')).toMatchObject({ pedidos: 1, gasto: null, costoPorPedido: null });
+    });
+
+    test('una campaña que gastó $0 sí muestra $0, no null', () => {
+        // Gastó de verdad cero (pausada a media jornada), que es distinto de
+        // "no sabemos cuánto gastó".
+        const r = agregarPorCampana([pedido({ attributedAdId: 'ad1' })], MAPA, { c1: 0 });
+
+        expect(porNombre(r, 'Corazones//4ads')).toMatchObject({ gasto: 0, costoPorPedido: 0 });
+    });
+});
+
 describe('agregarPorCampana — orden', () => {
     test('ordena de más a menos PEDIDOS (el número grande de la tarjeta)', () => {
         const r = agregarPorCampana([
