@@ -118,33 +118,32 @@ function svgAutoEligibility(o, previews) {
     return { eligible: true, reason: 'ok', fields: { nombre1, nombre2, fecha }, layoutVerificado: !!lay };
 }
 
-// --- Guía: "recién sacada" NO significa "ya fabricado" (Chris, 2026-07-29) -------------------------
-// El candado original saltaba CUALQUIER pedido con guía, porque el 2026-07-16 el worker re-cortó 9
-// pedidos ya enviados. Pero aquí las guías se sacan POR ADELANTADO, antes de fabricar, así que ese
-// candado también tapaba pedidos que aún no existen físicamente (153 casos medidos el 2026-07-27).
-// Discriminador validado con datos reales: la ANTIGÜEDAD de guiaEnvio.createdAt. Guía de ≤3 días =
-// generada por adelantado (pedido pendiente); guía de 11-30 días = ya se envió, nunca re-cortar.
-const GUIA_RECIENTE_DIAS = 3;
-
 // Fecha FIJA desde la que el corte automático puede tomar pedidos 'Pagado'. NO es ventana móvil: así
 // ningún pedido nuevo vuelve a desaparecer solo, y el histórico de 'Pagado' (~6700 pedidos viejos ya
 // fabricados a mano) queda fuera para siempre. Compartida con designPending.js.
 const AUTO_DESDE_MS = Date.parse('2026-07-17T00:00:00Z');
 
-// ¿La guía es lo bastante vieja como para asumir que el pedido YA se envió? Sin fecha de guía se
-// asume vieja (conservador: no se corta solo).
-function guiaVieja(o) {
-    if (!(o.guiaEnvio && o.guiaEnvio.guia)) return false;   // sin guía -> no bloquea
-    const creada = tsMs(o.guiaEnvio.createdAt);
-    if (!creada) return true;
-    return (Date.now() - creada) > GUIA_RECIENTE_DIAS * 864e5;
+// --- TABLERO Kanban = "ya lo corté a mano" (Chris, 2026-07-30) -------------------------------------
+// El tablero de Pendientes de Diseño guarda la columna en `disenoBoardCol` y era "solo visual": nadie
+// lo leía. Pero arrastrar una tarjeta a Terminado/Diseñado es justamente el diseñador diciendo "esto
+// ya está hecho". Al no mirarlo, DH14039 (marcado Terminado el 29-jul, con la pieza ya en mano y el
+// pedido enviado) se re-cortó y se subió DUPLICADO a Drive el 30-jul. Ahora cuenta como diseñado en
+// TODAS las colas. Conservador a propósito: si la marca sobra, el pedido solo deja de auto-cortarse y
+// sigue a la vista de un humano; el error caro es el contrario.
+const BOARD_TERMINAL = new Set(['terminado', 'disenado', 'diseñado', 'cortado']);
+function boardTerminado(o) {
+    return BOARD_TERMINAL.has(String((o && o.disenoBoardCol) || '').trim().toLowerCase());
 }
 
-// Candados comunes a cualquier cola de corte automático: ya diseñado (a mano o por IA), ya enviado/
-// gestionado, o con un pendiente MANUAL aparte (2º producto agregado tras pagar -> lo revisa alguien).
+// Candados comunes a cualquier cola de corte automático: ya diseñado (a mano, por IA o marcado en el
+// tablero), ya enviado/gestionado, o con un pendiente MANUAL aparte (2º producto -> lo revisa alguien).
+// OJO CON LA GUÍA (revertido 2026-07-30): se intentó permitir el corte cuando la guía era "reciente"
+// (≤3 días), suponiendo que aquí se sacan por adelantado. Es FALSO como señal: en DH14039 la guía se
+// generó 4 h DESPUÉS de terminar la pieza, y en DH13970 igual — ambos se re-cortaron por esa regla.
+// La guía no dice nada fiable sobre si la lámpara existe; vuelve a bloquear SIEMPRE.
 function autoBlocked(o) {
-    return !!(o.disenoListoAt || o.svgCorteAt                                // ya diseñado / ya tiene SVG
-        || guiaVieja(o) || o.ocultoDeEnvios                                  // ya se envió/gestionó
+    return !!(o.disenoListoAt || o.svgCorteAt || boardTerminado(o)           // ya diseñado / marcado hecho
+        || (o.guiaEnvio && o.guiaEnvio.guia) || o.ocultoDeEnvios             // ya se envió/gestionó
         || o.productoAgregadoPostPagoAt);                                    // 2º producto -> manual
 }
 
@@ -274,5 +273,5 @@ function forcedDesignFields(o, previews) {
 module.exports = {
     svgAutoEligibility, isAutoWaiting, isVideoCorregir, isVideoAutoWaiting, forcedDesignFields,
     parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, esEspecial, SIN_FECHA_RE, productOf, datosOf, isCorazon,
-    guiaVieja, autoBlocked, AUTO_DESDE_MS, GUIA_RECIENTE_DIAS, ESTATUS_AUTO,
+    boardTerminado, autoBlocked, AUTO_DESDE_MS, ESTATUS_AUTO,
 };

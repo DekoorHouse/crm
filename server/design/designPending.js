@@ -38,13 +38,15 @@ const REASONS = ['mockup', 'fabricar', 'corte', 'datos', 'video', 'segundo_produ
 // es una fecha FIJA, no una ventana móvil, para que ningún pedido nuevo vuelva a desaparecer solo.
 // MISMA constante que usa el corte automático (svgAuto.AUTO_DESDE_MS): si divergen, un pedido podría
 // salir en esta lista pero no en la cola del worker (o al revés).
-const { AUTO_DESDE_MS: CORTE_DESDE_MS } = require('./svgAuto');
+const { AUTO_DESDE_MS: CORTE_DESDE_MS, boardTerminado } = require('./svgAuto');
 
 const _ms = t => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : 0);
 
 // ¿Pedido con pago validado que sigue SIN diseño de corte? (no mira el estatus ni la guía a propósito)
+// El tablero cuenta: si el diseñador arrastró la tarjeta a Terminado/Diseñado ya está hecho aunque
+// nadie haya registrado svgCorteAt (así se re-cortó DH14039 el 2026-07-30 — ver svgAuto.boardTerminado).
 function faltaCorte(d) {
-    if (d.svgCorteAt) return false;                       // ya tiene su SVG de corte
+    if (d.svgCorteAt || boardTerminado(d)) return false;  // ya tiene SVG de corte o está marcado hecho
     const pago = _ms(d.comprobanteValidadoAt);
     return !!pago && pago >= CORTE_DESDE_MS;
 }
