@@ -176,7 +176,7 @@ describe('agregarPorCampana — detalle de la tarjeta', () => {
         ], MAPA);
 
         expect(porNombre(r, 'Corazones//4ads').listaPedidos).toEqual([
-            { numero: 77, estatus: 'Pagado', piezas: 3 }
+            { numero: 77, estatus: 'Pagado', piezas: 3, contactId: null }
         ]);
     });
 });

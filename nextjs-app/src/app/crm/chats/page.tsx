@@ -32,7 +32,23 @@ export default function ChatsPage() {
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
 
-  useEffect(() => { loadContacts(); }, [loadContacts]);
+  // Carga inicial. Si venimos de un folio del desglose (/crm/chats?contacto=<id>)
+  // se busca ESE contacto en vez de la lista reciente: puede tener meses sin
+  // escribir y no venir en los primeros 50. El buscador acepta el id exacto.
+  // El parámetro se lee de window y no con useSearchParams para no tener que
+  // envolver toda la página en <Suspense>, que es lo que exige el export estático.
+  // Solo al montar: si se dejara [loadContacts], al cambiar de filtro volvería a
+  // pisar la búsqueda del deep link (applyFilters ya recarga por su cuenta).
+  useEffect(() => {
+    const contacto = new URLSearchParams(window.location.search).get("contacto");
+    if (contacto) {
+      setSelectedId(contacto);
+      search(contacto);
+      return;
+    }
+    loadContacts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("dekoor-chat-details", String(showDetails));

@@ -7,7 +7,10 @@ import { collection, query, orderBy, limit, getDocs, startAfter, Timestamp } fro
 import MessageBubble from "./MessageBubble";
 
 interface ConversationPreviewProps {
-  contact: Contact;
+  // Solo se usan id y nombre: así lo puede abrir una pantalla que únicamente
+  // conoce con quién es la conversación (el desglose, desde un folio) sin tener
+  // que cargar el contacto completo.
+  contact: Pick<Contact, "id" | "name">;
   onClose: () => void;
   onOpenChat: () => void;
 }

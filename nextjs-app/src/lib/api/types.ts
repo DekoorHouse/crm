@@ -39,6 +39,8 @@ export interface PedidoDesglose {
   numero: number | null;
   estatus: string;
   piezas: number;
+  /** Contacto del pedido, para abrir su conversación desde el folio. */
+  contactId: string | null;
 }
 
 export interface ProductoDesglose {

@@ -18,6 +18,8 @@ import Select from "@/components/ui/Select";
 import type { SelectOption } from "@/components/ui/Select";
 import ThemeMenu from "@/components/layout/ThemeMenu";
 import LoadingOverlay from "@/components/layout/LoadingOverlay";
+import ConversationPreview from "@/components/crm/ConversationPreview";
+import toast from "react-hot-toast";
 
 const DATE_OPTIONS: SelectOption[] = [
   { value: "ultimos-10-dias", label: "Últimos 10 días" },
@@ -103,6 +105,8 @@ export default function DesglosePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandido, setExpandido] = useState<string | null>(null);
+  // Contacto cuya conversación se está viendo en el modal (se abre desde un folio).
+  const [chatAbierto, setChatAbierto] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -307,6 +311,7 @@ export default function DesglosePage() {
                     onToggle={() =>
                       setExpandido((abierta) => (abierta === c.id ? null : c.id))
                     }
+                    onAbrirChat={setChatAbierto}
                   />
                 ))
               : productos.map((p) => (
@@ -319,11 +324,74 @@ export default function DesglosePage() {
                     onToggle={() =>
                       setExpandido((abierto) => (abierto === p.producto ? null : p.producto))
                     }
+                    onAbrirChat={setChatAbierto}
                   />
                 ))}
           </div>
         )}
       </section>
+
+      {chatAbierto && (
+        <ConversationPreview
+          // El desglose no carga contactos: el modal lee la conversación de
+          // Firestore con el puro id, y el nombre lo pinta el propio chat.
+          contact={{ id: chatAbierto, name: "" }}
+          onClose={() => setChatAbierto(null)}
+          onOpenChat={() => router.push(`/crm/chats?contacto=${encodeURIComponent(chatAbierto)}`)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Caparazón de las dos tarjetas. El detalle va FUERA del botón que abre y
+ * cierra: dentro hay folios que a su vez son botones (abrir chat / copiar), y
+ * un botón dentro de otro botón ni es HTML válido ni deja hacer clic en el de
+ * adentro sin cerrar la tarjeta.
+ */
+function Tarjeta({
+  abierto,
+  onToggle,
+  detalle,
+  children,
+}: {
+  abierto: boolean;
+  onToggle: () => void;
+  detalle: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-sm p-5 hover:shadow-md hover:border-outline-variant/30 transition-all">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={abierto}
+        className="w-full text-left cursor-pointer"
+      >
+        {children}
+        <div className="flex items-center gap-1 mt-3 text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">
+          <span className="material-symbols-outlined text-sm">
+            {abierto ? "expand_less" : "expand_more"}
+          </span>
+          {abierto ? "Ocultar detalle" : "Ver detalle"}
+        </div>
+      </button>
+
+      {abierto && (
+        <div className="mt-3 pt-3 border-t border-outline-variant/20 space-y-4">{detalle}</div>
+      )}
+    </div>
+  );
+}
+
+function BarraProporcion({ ancho, color }: { ancho: number; color: string }) {
+  return (
+    <div className="mt-4 h-1.5 rounded-full bg-surface-container-high overflow-hidden">
+      <div
+        className="h-full rounded-full transition-all"
+        style={{ width: `${ancho}%`, backgroundColor: color }}
+      />
     </div>
   );
 }
@@ -334,6 +402,7 @@ interface TarjetaProductoProps {
   maxPiezas: number;
   abierto: boolean;
   onToggle: () => void;
+  onAbrirChat: (contactId: string) => void;
 }
 
 function TarjetaProducto({
@@ -342,6 +411,7 @@ function TarjetaProducto({
   maxPiezas,
   abierto,
   onToggle,
+  onAbrirChat,
 }: TarjetaProductoProps) {
   const color = colorProducto(producto.producto);
   const porcentaje = totalPiezas > 0 ? Math.round((producto.piezas / totalPiezas) * 100) : 0;
@@ -350,11 +420,19 @@ function TarjetaProducto({
   const ancho = maxPiezas > 0 ? Math.round((producto.piezas / maxPiezas) * 100) : 0;
 
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={abierto}
-      className="text-left bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-sm p-5 hover:shadow-md hover:border-outline-variant/30 transition-all cursor-pointer"
+    <Tarjeta
+      abierto={abierto}
+      onToggle={onToggle}
+      detalle={
+        <>
+          <ListaEstatus porEstatus={producto.porEstatus} />
+          <ListaFolios
+            pedidos={producto.listaPedidos}
+            total={producto.pedidos}
+            onAbrirChat={onAbrirChat}
+          />
+        </>
+      }
     >
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2 min-w-0">
@@ -375,27 +453,8 @@ function TarjetaProducto({
         {pesos.format(producto.monto)}
       </p>
 
-      <div className="mt-4 h-1.5 rounded-full bg-surface-container-high overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all"
-          style={{ width: `${ancho}%`, backgroundColor: color }}
-        />
-      </div>
-
-      <div className="flex items-center gap-1 mt-3 text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">
-        <span className="material-symbols-outlined text-sm">
-          {abierto ? "expand_less" : "expand_more"}
-        </span>
-        {abierto ? "Ocultar detalle" : "Ver detalle"}
-      </div>
-
-      {abierto && (
-        <div className="mt-3 pt-3 border-t border-outline-variant/20 space-y-4">
-          <ListaEstatus porEstatus={producto.porEstatus} />
-          <ListaFolios pedidos={producto.listaPedidos} total={producto.pedidos} />
-        </div>
-      )}
-    </button>
+      <BarraProporcion ancho={ancho} color={color} />
+    </Tarjeta>
   );
 }
 
@@ -405,6 +464,7 @@ interface TarjetaCampanaProps {
   maxPiezas: number;
   abierto: boolean;
   onToggle: () => void;
+  onAbrirChat: (contactId: string) => void;
 }
 
 function TarjetaCampana({
@@ -413,6 +473,7 @@ function TarjetaCampana({
   maxPiezas,
   abierto,
   onToggle,
+  onAbrirChat,
 }: TarjetaCampanaProps) {
   const color = colorCampana(campana.id);
   const porcentaje = totalPiezas > 0 ? Math.round((campana.piezas / totalPiezas) * 100) : 0;
@@ -420,49 +481,11 @@ function TarjetaCampana({
   const esCampanaReal = campana.id !== ID_ORGANICO && campana.id !== ID_SIN_CAMPANA;
 
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={abierto}
-      className="text-left bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-sm p-5 hover:shadow-md hover:border-outline-variant/30 transition-all cursor-pointer"
-    >
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="flex items-start gap-2 min-w-0">
-          <span
-            className="w-2.5 h-2.5 rounded-full shrink-0 mt-1"
-            style={{ backgroundColor: color }}
-          />
-          {/* El nombre completo va en el title: en la tarjeta se corta a dos
-              líneas porque los nombres de campaña son larguísimos. */}
-          <span className="text-sm font-bold text-on-surface line-clamp-2" title={campana.nombre}>
-            {campana.nombre}
-          </span>
-        </div>
-        <span className="text-xs font-bold text-on-surface-variant shrink-0">{porcentaje}%</span>
-      </div>
-
-      <p className="text-4xl font-black text-on-surface leading-none">{campana.piezas}</p>
-      <p className="text-xs text-on-surface-variant mt-1.5">
-        piezas · {campana.pedidos} {campana.pedidos === 1 ? "pedido" : "pedidos"} ·{" "}
-        {pesos.format(campana.monto)}
-      </p>
-
-      <div className="mt-4 h-1.5 rounded-full bg-surface-container-high overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all"
-          style={{ width: `${ancho}%`, backgroundColor: color }}
-        />
-      </div>
-
-      <div className="flex items-center gap-1 mt-3 text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">
-        <span className="material-symbols-outlined text-sm">
-          {abierto ? "expand_less" : "expand_more"}
-        </span>
-        {abierto ? "Ocultar detalle" : "Ver detalle"}
-      </div>
-
-      {abierto && (
-        <div className="mt-3 pt-3 border-t border-outline-variant/20 space-y-4">
+    <Tarjeta
+      abierto={abierto}
+      onToggle={onToggle}
+      detalle={
+        <>
           <div className="space-y-1.5">
             <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
               Por producto
@@ -503,10 +526,37 @@ function TarjetaCampana({
             </div>
           )}
 
-          <ListaFolios pedidos={campana.listaPedidos} total={campana.pedidos} />
+          <ListaFolios
+            pedidos={campana.listaPedidos}
+            total={campana.pedidos}
+            onAbrirChat={onAbrirChat}
+          />
+        </>
+      }
+    >
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="flex items-start gap-2 min-w-0">
+          <span
+            className="w-2.5 h-2.5 rounded-full shrink-0 mt-1"
+            style={{ backgroundColor: color }}
+          />
+          {/* El nombre completo va en el title: en la tarjeta se corta a dos
+              líneas porque los nombres de campaña son larguísimos. */}
+          <span className="text-sm font-bold text-on-surface line-clamp-2" title={campana.nombre}>
+            {campana.nombre}
+          </span>
         </div>
-      )}
-    </button>
+        <span className="text-xs font-bold text-on-surface-variant shrink-0">{porcentaje}%</span>
+      </div>
+
+      <p className="text-4xl font-black text-on-surface leading-none">{campana.piezas}</p>
+      <p className="text-xs text-on-surface-variant mt-1.5">
+        piezas · {campana.pedidos} {campana.pedidos === 1 ? "pedido" : "pedidos"} ·{" "}
+        {pesos.format(campana.monto)}
+      </p>
+
+      <BarraProporcion ancho={ancho} color={color} />
+    </Tarjeta>
   );
 }
 
@@ -528,7 +578,15 @@ function ListaEstatus({ porEstatus }: { porEstatus: Record<string, number> }) {
   );
 }
 
-function ListaFolios({ pedidos, total }: { pedidos: PedidoDesglose[]; total: number }) {
+function ListaFolios({
+  pedidos,
+  total,
+  onAbrirChat,
+}: {
+  pedidos: PedidoDesglose[];
+  total: number;
+  onAbrirChat: (contactId: string) => void;
+}) {
   return (
     <div className="space-y-2">
       <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
@@ -536,22 +594,67 @@ function ListaFolios({ pedidos, total }: { pedidos: PedidoDesglose[]; total: num
       </p>
       <div className="flex flex-wrap gap-1.5">
         {pedidos.map((pd, i) => (
-          <span
-            key={`${pd.numero ?? "s"}-${i}`}
-            title={pd.estatus}
-            className="inline-flex items-center gap-1 rounded-lg bg-surface-container-high px-2 py-0.5 text-[11px] font-bold text-on-surface"
-          >
-            <span
-              className="w-1.5 h-1.5 rounded-full shrink-0"
-              style={{ backgroundColor: getStatusConfig(pd.estatus).color }}
-            />
-            DH{pd.numero ?? "--"}
-            {pd.piezas > 1 && (
-              <span className="text-on-surface-variant font-normal">×{pd.piezas}</span>
-            )}
-          </span>
+          <ChipFolio key={`${pd.numero ?? "s"}-${i}`} pedido={pd} onAbrirChat={onAbrirChat} />
         ))}
       </div>
     </div>
+  );
+}
+
+function ChipFolio({
+  pedido,
+  onAbrirChat,
+}: {
+  pedido: PedidoDesglose;
+  onAbrirChat: (contactId: string) => void;
+}) {
+  const [copiado, setCopiado] = useState(false);
+  const folio = `DH${pedido.numero ?? "--"}`;
+
+  async function copiar() {
+    try {
+      await navigator.clipboard.writeText(folio);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 1200);
+      toast.success(`${folio} copiado`);
+    } catch {
+      toast.error("El navegador no dejó copiar");
+    }
+  }
+
+  return (
+    <span className="inline-flex items-stretch rounded-lg bg-surface-container-high overflow-hidden text-[11px] font-bold text-on-surface">
+      <button
+        type="button"
+        onClick={() => pedido.contactId && onAbrirChat(pedido.contactId)}
+        disabled={!pedido.contactId}
+        title={
+          pedido.contactId
+            ? `${pedido.estatus} · ver la conversación`
+            : `${pedido.estatus} · sin conversación ligada`
+        }
+        className="inline-flex items-center gap-1 px-2 py-0.5 transition-colors enabled:hover:bg-primary/15 enabled:cursor-pointer disabled:opacity-60"
+      >
+        <span
+          className="w-1.5 h-1.5 rounded-full shrink-0"
+          style={{ backgroundColor: getStatusConfig(pedido.estatus).color }}
+        />
+        {folio}
+        {pedido.piezas > 1 && (
+          <span className="text-on-surface-variant font-normal">×{pedido.piezas}</span>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={copiar}
+        title={`Copiar ${folio}`}
+        aria-label={`Copiar ${folio}`}
+        className="flex items-center px-1.5 border-l border-outline-variant/25 text-on-surface-variant hover:bg-primary/15 hover:text-on-surface transition-colors cursor-pointer"
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
+          {copiado ? "check" : "content_copy"}
+        </span>
+      </button>
+    </span>
   );
 }

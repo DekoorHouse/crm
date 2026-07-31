@@ -26,8 +26,18 @@ function folioDelPedido(pedido) {
 }
 
 /**
+ * Con quién es la conversación del pedido, para poder abrir el chat desde el
+ * folio. `contactId` es lo canónico; los pedidos viejos solo traen `telefono`,
+ * que es el mismo id del documento en contacts_whatsapp.
+ */
+function contactoDelPedido(pedido) {
+    const id = pedido && (pedido.contactId || pedido.telefono);
+    return id ? String(id) : null;
+}
+
+/**
  * @param {Array<object>} pedidos - documentos de `pedidos` (ya filtrados).
- * @returns {{productos: Array<{producto:string, piezas:number, pedidos:number, monto:number, porEstatus:object, listaPedidos:Array<{numero:number|null, estatus:string, piezas:number}>}>, totalPiezas:number, totalPedidos:number, totalMonto:number}}
+ * @returns {{productos: Array<{producto:string, piezas:number, pedidos:number, monto:number, porEstatus:object, listaPedidos:Array<{numero:number|null, estatus:string, piezas:number, contactId:string|null}>}>, totalPiezas:number, totalPedidos:number, totalMonto:number}}
  */
 function agregarPorProducto(pedidos) {
     const acumulado = new Map();
@@ -54,7 +64,7 @@ function agregarPorProducto(pedidos) {
             // compartan folio nulo.
             let fila = acc._porPedido.get(pedido);
             if (!fila) {
-                fila = { numero: folioDelPedido(pedido), estatus, piezas: 0 };
+                fila = { numero: folioDelPedido(pedido), estatus, piezas: 0, contactId: contactoDelPedido(pedido) };
                 acc._porPedido.set(pedido, fila);
                 acc.pedidos += 1;
             }
@@ -82,4 +92,4 @@ function agregarPorProducto(pedidos) {
     };
 }
 
-module.exports = { agregarPorProducto, lineasDelPedido, folioDelPedido };
+module.exports = { agregarPorProducto, lineasDelPedido, folioDelPedido, contactoDelPedido };

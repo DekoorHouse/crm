@@ -2,7 +2,7 @@
  * Pruebas del desglose por producto de /pedidos/desglose
  * (server/orders/desgloseProductos.js). Lógica pura: no toca Firestore.
  */
-const { agregarPorProducto, folioDelPedido } = require('../server/orders/desgloseProductos');
+const { agregarPorProducto, folioDelPedido, contactoDelPedido } = require('../server/orders/desgloseProductos');
 
 const porNombre = (resultado, nombre) => resultado.productos.find(p => p.producto === nombre);
 
@@ -147,8 +147,8 @@ describe('agregarPorProducto — números de pedido por producto', () => {
             { consecutiveOrderNumber: 102, estatus: 'Fabricar', precio: 200, items: [{ producto: 'Rex', cantidad: 1, precio: 200 }] }
         ]);
 
-        expect(porNombre(r, 'Corazón').listaPedidos).toEqual([{ numero: 101, estatus: 'Pagado', piezas: 1 }]);
-        expect(porNombre(r, 'Rex').listaPedidos).toEqual([{ numero: 102, estatus: 'Fabricar', piezas: 1 }]);
+        expect(porNombre(r, 'Corazón').listaPedidos).toEqual([{ numero: 101, estatus: 'Pagado', piezas: 1, contactId: null }]);
+        expect(porNombre(r, 'Rex').listaPedidos).toEqual([{ numero: 102, estatus: 'Fabricar', piezas: 1, contactId: null }]);
     });
 
     test('un pedido con varios productos aparece en la lista de cada uno', () => {
@@ -162,8 +162,8 @@ describe('agregarPorProducto — números de pedido por producto', () => {
             }
         ]);
 
-        expect(porNombre(r, 'Corazón').listaPedidos).toEqual([{ numero: 200, estatus: 'Pagado', piezas: 1 }]);
-        expect(porNombre(r, 'Rex').listaPedidos).toEqual([{ numero: 200, estatus: 'Pagado', piezas: 1 }]);
+        expect(porNombre(r, 'Corazón').listaPedidos).toEqual([{ numero: 200, estatus: 'Pagado', piezas: 1, contactId: null }]);
+        expect(porNombre(r, 'Rex').listaPedidos).toEqual([{ numero: 200, estatus: 'Pagado', piezas: 1, contactId: null }]);
     });
 
     test('dos líneas del mismo producto en un pedido son una sola fila con las piezas sumadas', () => {
@@ -177,7 +177,7 @@ describe('agregarPorProducto — números de pedido por producto', () => {
             }
         ]);
 
-        expect(porNombre(r, 'Corazón').listaPedidos).toEqual([{ numero: 300, estatus: 'Pagado', piezas: 2 }]);
+        expect(porNombre(r, 'Corazón').listaPedidos).toEqual([{ numero: 300, estatus: 'Pagado', piezas: 2, contactId: null }]);
     });
 
     test('ordena los folios de más nuevo a más viejo (consecutivo descendente)', () => {
@@ -197,6 +197,26 @@ describe('agregarPorProducto — números de pedido por producto', () => {
         ]);
 
         expect(porNombre(r, 'Corazón').listaPedidos.map(p => p.numero)).toEqual([50, null]);
+    });
+});
+
+describe('contactoDelPedido — para abrir el chat desde el folio', () => {
+    test('el folio se queda con el contacto del pedido', () => {
+        const r = agregarPorProducto([
+            { consecutiveOrderNumber: 400, contactId: '5218112345678', estatus: 'Pagado', precio: 850, items: [{ producto: 'Corazón', cantidad: 1, precio: 850 }] }
+        ]);
+
+        expect(porNombre(r, 'Corazón').listaPedidos[0].contactId).toBe('5218112345678');
+    });
+
+    test('los pedidos viejos caen a `telefono`, que es el mismo id del contacto', () => {
+        expect(contactoDelPedido({ telefono: '5218112345678' })).toBe('5218112345678');
+        expect(contactoDelPedido({ contactId: 'psid_123', telefono: '5218100000000' })).toBe('psid_123');
+    });
+
+    test('sin contacto ni teléfono devuelve null (el folio no abre chat)', () => {
+        expect(contactoDelPedido({})).toBeNull();
+        expect(contactoDelPedido(null)).toBeNull();
     });
 });
 

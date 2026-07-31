@@ -11,7 +11,7 @@
  * en las dos tarjetas).
  */
 
-const { lineasDelPedido, folioDelPedido } = require('./desgloseProductos');
+const { lineasDelPedido, folioDelPedido, contactoDelPedido } = require('./desgloseProductos');
 
 // Cubetas que no son una campaña real de Meta.
 const ORGANICO = '__organico__';
@@ -42,7 +42,7 @@ function cubetaDelPedido(pedido, adToCampaign) {
 /**
  * @param {Array<object>} pedidos - documentos de `pedidos` (ya filtrados).
  * @param {Object<string,{campaignId:string, campaignName:string}>} adToCampaign - mapa adId -> campaña.
- * @returns {{campanas: Array<{id:string, nombre:string, piezas:number, pedidos:number, monto:number, porEstatus:object, porProducto:Array<{producto:string, piezas:number}>, listaPedidos:Array<{numero:number|null, estatus:string, piezas:number}>, ads:string[]}>, totalPiezas:number, totalPedidos:number, totalMonto:number}}
+ * @returns {{campanas: Array<{id:string, nombre:string, piezas:number, pedidos:number, monto:number, porEstatus:object, porProducto:Array<{producto:string, piezas:number}>, listaPedidos:Array<{numero:number|null, estatus:string, piezas:number, contactId:string|null}>, ads:string[]}>, totalPiezas:number, totalPedidos:number, totalMonto:number}}
  */
 function agregarPorCampana(pedidos, adToCampaign = {}) {
     const acumulado = new Map();
@@ -80,7 +80,12 @@ function agregarPorCampana(pedidos, adToCampaign = {}) {
         acc.pedidos += 1;
         acc.monto += monto;
         acc.porEstatus[estatus] = (acc.porEstatus[estatus] || 0) + piezasPedido;
-        acc.listaPedidos.push({ numero: folioDelPedido(pedido), estatus, piezas: piezasPedido });
+        acc.listaPedidos.push({
+            numero: folioDelPedido(pedido),
+            estatus,
+            piezas: piezasPedido,
+            contactId: contactoDelPedido(pedido)
+        });
         if (adId) acc._ads.add(adId);
 
         acumulado.set(id, acc);
