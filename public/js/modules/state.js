@@ -24,6 +24,7 @@ let state = {
         { key: "Diseñado por IA", label: "Diseñado por IA", color: "#e83e8c" },
         { key: "Corregir", label: "Corregir", color: "#fd7e14" },
         { key: "Corregido", label: "Corregido", color: "#20c997" },
+        { key: "Reenvio", label: "Reenvío", color: "#c026d3" },
         { key: "Mns Amenazador", label: "Mns Amenazador", color: "#dc3545" },
         { key: "Cancelado", label: "Cancelado", color: "#6c757d" }
     ],

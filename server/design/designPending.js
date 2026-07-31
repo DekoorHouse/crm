@@ -71,6 +71,11 @@ function reasonsForOrderData(d, hasMockup) {
     if (!d) return [];
     const estatus = String(d.estatus || 'Sin estatus').trim().toLowerCase();
 
+    // 'Reenvio' es un estatus de LOGÍSTICA (reponer un pedido ya entregado): su ÚNICA acción es
+    // aparecer en Envíos → Pendientes de guía (así lo acotó Chris). NO es un pendiente de DISEÑO,
+    // así que no debe ensuciar el tablero aunque al pedido original le falte el svgCorte.
+    if (estatus === 'reenvio') return [];
+
     // Marcado a mano "ya diseñado" (botón ✓ Diseñado) -> fuera de pendientes, SALVO que DESPUÉS de
     // marcarlo el cliente haya pedido algo nuevo (pendienteRenovadoMs > disenoListoAt -> reactivación).
     // Aplica también a 'Corregir': una corrección YA RESUELTA (marcada Diseñado después de pedirla) no

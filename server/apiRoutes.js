@@ -19,7 +19,7 @@ const { logAiUsage } = require('./aiUsage');
 const { buildAdvancedTemplatePayload } = require('./whatsappTemplates');
 const { cobrarContacto } = require('./cobranza/cobranzaService');
 const PRICES = require('./prices');
-const { sendConversionEvent, messagingContactInfo, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer, compressVideoToLimit } = require('./services');
+const { sendConversionEvent, messagingContactInfo, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer, compressVideoToLimit, reenvioResetFields } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
 const { agregarPorProducto } = require('./orders/desgloseProductos');
@@ -6431,6 +6431,13 @@ router.post('/orders/:orderId/change-status', async (req, res) => {
             updatePayload.confirmedAt = admin.firestore.FieldValue.serverTimestamp();
         }
 
+        // Reenvío/reposición (manual): mismo efecto que cuando la IA emite /reenvio — archiva la guía
+        // anterior, reingresa a Envíos y sella reenvioAt, para que el pedido caiga en "Pendientes de
+        // guía" y se saque una guía nueva. Fuente de verdad compartida con services.reenvioResetFields.
+        if (newStatus === 'Reenvio') {
+            Object.assign(updatePayload, reenvioResetFields(orderData));
+        }
+
         // Actualizar el pedido en Firestore
         await orderRef.update(updatePayload);
 
@@ -8653,10 +8660,15 @@ const ENVIOS_RECIENTES = 300;
 
 router.get('/envios', async (_req, res) => {
     try {
-        const [recientesSnap, datosSnap, manualSnap] = await Promise.all([
+        const [recientesSnap, datosSnap, manualSnap, reenvioSnap] = await Promise.all([
             db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(ENVIOS_RECIENTES).get(),
             db.collection('datos_envio').get(),
             db.collection('envios_manuales').orderBy('createdAt', 'desc').limit(300).get(),
+            // Pedidos en "Reenvio" (reposición): deben salir SIEMPRE en "Pendientes de guía" aunque su
+            // comprobanteValidadoAt sea viejo o falte (no entrarían por el orderBy de arriba, que descarta
+            // los docs sin ese campo). Al ponerlos en Reenvio se les archivó/limpió la guía, así que caen
+            // solos en la columna de pendientes. Equality de un solo campo → no requiere índice compuesto.
+            db.collection('pedidos').where('estatus', '==', 'Reenvio').limit(500).get(),
         ]);
 
         // Más allá de la ventana reciente se barre TODO lo viejo, pero leyendo solo dos campos
@@ -8686,6 +8698,9 @@ router.get('/envios', async (_req, res) => {
             }
         }
         const pedidosDocs = [...recientesSnap.docs, ...atrasadosDocs];
+        // Sumar los "Reenvio" que no hayan entrado ya por la ventana reciente o el rescate de atrasados.
+        const _seenEnvioIds = new Set(pedidosDocs.map(d => d.id));
+        for (const d of reenvioSnap.docs) if (!_seenEnvioIds.has(d.id)) { pedidosDocs.push(d); _seenEnvioIds.add(d.id); }
 
         // Mapa numeroPedido (solo dígitos) -> datos de envío MÁS RECIENTES.
         const norm = (v) => String(v || '').replace(/\D/g, '');

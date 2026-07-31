@@ -244,7 +244,7 @@ document.addEventListener('click', (e) => {
 // Sección "Envíos": tabla de pedidos con comprobante validado. Cada dato de envío va en su propia
 // columna y se copia al hacer clic en la celda. Lee GET /api/envios.
 // Estatus de pedido (mismos valores que en Pedidos). Cambiar a "Fabricar" dispara el evento Meta.
-const ENVIO_STATUS_OPTIONS = ['Sin estatus', 'Foto enviada', 'Esperando pago', 'Pagado', 'Diseñado', 'Fabricar', 'Diseñado por IA', 'Corregir', 'Corregido', 'Mns Amenazador', 'Cancelado'];
+const ENVIO_STATUS_OPTIONS = ['Sin estatus', 'Foto enviada', 'Esperando pago', 'Pagado', 'Diseñado', 'Fabricar', 'Diseñado por IA', 'Corregir', 'Corregido', 'Reenvio', 'Mns Amenazador', 'Cancelado'];
 // Insignia de paquetería con color aproximado de su marca.
 function courierBadge(paq) {
     const p = String(paq || '').toUpperCase();

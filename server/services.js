@@ -963,6 +963,15 @@ function simpleHash(str) {
 // prompt esté personalizado en la UI— para garantizar que la IA conozca estos comandos.
 const CANCEL_COMMAND_NOTE = `\n\n**Cancelación de pedido:** Si el cliente te dice claramente que YA NO quiere el pedido, que lo CANCELA o que NO podrá continuar con él (por ejemplo: "ya no lo quiero", "mejor cancélalo", "ya no voy a poder con el pedido"), respóndele con empatía y escribe al FINAL de tu mensaje el comando /cancelado (el cliente NO lo ve; es una señal para el equipo). NO lo emitas por una simple demora o aplazamiento del pago (por ejemplo "mañana te pago", "dame unos días"): en esos casos NO se cancela. Emítelo UNA sola vez.`;
 
+// Reposición / REENVÍO (solo post-venta): distingue el caso "es culpa NUESTRA/del envío → se repone
+// sin costo" del caso "no le gustó / culpa del cliente → se trata de RETENER, no se repone". La frontera
+// la juzga Andrea con el contexto del chat (por eso es un comando de la IA y no un regex): el comando
+// /reenvio deja el pedido en estatus "Reenvio", que SOLO lo re-mete a Envíos → Pendientes de guía para
+// generar una guía nueva. Reglas dictadas por Chris (31-jul-2026): "No aplica … que solo diga que no le
+// gustó, que diga que no le gustó la calidad. En esos casos tratamos de convencer".
+const REENVIO_COMMAND_NOTE = `\n\n**Reposición / Reenvío de un pedido (post-venta):** Si el cliente reporta un problema que es CULPA NUESTRA o del ENVÍO —y NO del propio cliente—, hay que reponerle su producto sin costo. SÍ aplican estos casos: (1) defecto de fábrica (el LED no enciende, viene mal soldado, el acrílico llegó estrellado/roto de origen, la base falla); (2) un error NUESTRO en el producto (nombre o diseño mal hecho por nosotros, pieza incompleta o distinta a lo confirmado); (3) daño durante el ENVÍO (llegó quebrada o maltratada por el traslado); (4) producto EQUIVOCADO (recibió algo distinto a lo que pidió). En esos casos: discúlpate con calidez, dile que NO se preocupe, que se lo reponemos SIN costo y que el equipo coordina el reenvío enseguida; y escribe al FINAL de tu mensaje, en su propio renglón, el comando /reenvio (el cliente NO lo ve; es una señal interna para el equipo). Si no queda claro que sea un defecto real, pídele ANTES una foto o video de cómo llegó para confirmarlo, y emite /reenvio solo cuando estés razonablemente segura. Emítelo UNA sola vez.
+**Cuándo NO reponer (NO escribas /reenvio):** cuando sea CULPA DEL CLIENTE (se le cayó, lo mojó, lo usó mal, o él dio/confirmó mal un dato), o cuando el cliente SOLO diga que "no le gustó", que "no le gustó la calidad" o que "esperaba otra cosa" SIN que haya un defecto real. En esos casos NO emitas /reenvio: atiéndelo con mucha empatía, entiende bien su inconformidad y trata de CONVENCERLO/retenerlo resaltando el valor del producto y ofreciéndole alternativas, sin prometer una reposición gratis.`;
+
 const POSTVENTA_PROTOCOL_NOTE = `\n\n**PROTOCOLO DE DATOS DE ENVÍO:**
 Los datos de envío se recopilan por un FORMULARIO (un enlace con el número de pedido ya cargado), NO por texto. El sistema le envía ese formulario al cliente automáticamente cuando se valida su pago.
 Reglas:
@@ -1036,7 +1045,7 @@ async function buildStaticContext(botInstructions, isPostVenta = false, paymentP
     }
 
     // Instrucciones van en systemInstruction, no en contents
-    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE : ''}${isPostVenta ? '' : INFANTIL_SPECIAL_NOTE}`;
+    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${isPostVenta ? REENVIO_COMMAND_NOTE : ''}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE : ''}${isPostVenta ? '' : INFANTIL_SPECIAL_NOTE}`;
 
     // Material de referencia va en contents (como contexto, no como instrucciones)
     const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo:** Si una de estas respuestas aplica perfectamente, puedes enviarla respondiendo ÚNICAMENTE con su atajo (ejemplo: responde exactamente "/ttt" y nada más); el sistema lo reemplazará automáticamente por su contenido completo, incluida cualquier imagen. También puedes escribir el contenido directamente si lo prefieres. NUNCA combines un atajo con más texto en el mismo mensaje.\n\n⚠️ **El cliente NO debe enterarse de que existen los atajos.** Son internos: él solo ve el texto ya expandido. Por eso NUNCA anuncies, presentes ni expliques un atajo, ni antes ni después ni en otro mensaje. PROHIBIDO escribir cosas como "te envío el comando", "te mando este otro", "usamos este comando para checar cobertura", "ahora te comparto la información de..." o dos puntos anunciando lo que sigue. Simplemente escribe el atajo SOLO (ej.: una línea que diga exactamente "/ttt") y nada más: el sistema pone el texto completo por ti y al cliente le llega una conversación natural. Si necesitas mandar dos atajos, ponlos cada uno en su propia línea, sin una sola palabra entre ellos.\n${quickReplies || 'No hay respuestas rápidas.'}`;
@@ -1900,6 +1909,74 @@ async function markOrderCancelledForContact(contactId) {
         return orderNumber;
     } catch (e) {
         console.warn('[POSTVENTA] markOrderCancelledForContact falló:', e.message);
+        return null;
+    }
+}
+
+/**
+ * Campos que dejan un pedido listo para RE-ENVIARSE (reposición). FUENTE DE VERDAD ÚNICA del estatus
+ * "Reenvio": la usan el cambio de estatus MANUAL (apiRoutes /change-status) y la detección de la IA
+ * (markOrderReenvioForContact), para que ambos caminos hagan exactamente lo mismo.
+ *   - estatus 'Reenvio' + reenvioAt (sello).
+ *   - ocultoDeEnvios:false → si tras el 1er envío lo habían quitado de Envíos, REINGRESA.
+ *   - archiva la guía del PRIMER envío en guiaEnvioPrevia[] y LIMPIA la activa, para que el pedido
+ *     caiga en "Pendientes de guía" y se genere una guía NUEVA para la reposición.
+ * Devuelve el payload para hacer UN solo update() (no escribe).
+ */
+function reenvioResetFields(orderData) {
+    const upd = {
+        estatus: 'Reenvio',
+        reenvioAt: admin.firestore.FieldValue.serverTimestamp(),
+        ocultoDeEnvios: false,
+    };
+    if (orderData && orderData.guiaEnvio && orderData.guiaEnvio.guia) {
+        // arrayUnion NO admite serverTimestamp dentro del elemento → sello con ISO string.
+        upd.guiaEnvioPrevia = admin.firestore.FieldValue.arrayUnion({
+            ...orderData.guiaEnvio,
+            archivedForReenvioAt: new Date().toISOString(),
+        });
+        upd.guiaEnvio = admin.firestore.FieldValue.delete();
+    }
+    return upd;
+}
+
+/**
+ * La IA de post-venta emite /reenvio cuando detecta un caso de REPOSICIÓN que es culpa NUESTRA o del
+ * envío (defecto de fábrica, error nuestro en el producto, daño en el traslado, producto equivocado).
+ * Pasa el pedido más reciente a "Reenvio" (ver reenvioResetFields) y avisa al admin. Idempotente (no
+ * re-hace nada si ya está en Reenvio) y fire-and-forget: nunca lanza. NO aplica a "no le gustó"/culpa
+ * del cliente — en esos casos la IA ni siquiera emite el comando (ver REENVIO_COMMAND_NOTE).
+ */
+async function markOrderReenvioForContact(contactId, contactData, clientMessage) {
+    try {
+        const orderDoc = await getLatestOrderForContact(contactId);
+        if (!orderDoc) {
+            console.warn(`[POSTVENTA] ${contactId} amerita reenvío pero no tiene pedido registrado; no se cambia estatus.`);
+            return null;
+        }
+        const orderData = orderDoc.data();
+        const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : `(pedido ${orderDoc.id})`;
+        if (String(orderData.estatus || '').toLowerCase() === 'reenvio') {
+            console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Reenvio; no se repite el aviso.`);
+            return null;
+        }
+        await orderDoc.ref.update(reenvioResetFields(orderData));
+        console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Reenvio (reposición) por reporte del cliente (${contactId}).`);
+        // Recalcular "Pendiente de Diseño": 'Reenvio' NO es pendiente de diseño (solo logística), pero
+        // el pedido venía de un estatus que sí podía serlo; refrescamos para limpiar la bandera.
+        try { await require('./design/designPending').recomputeForContact(contactId); } catch (_) {}
+        try {
+            const name = (contactData && contactData.name) || contactId;
+            const req = String(clientMessage || '').trim().slice(0, 300);
+            const text = `♻️ *Pedido a REENVÍO (reposición)*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nAndrea detectó un caso de reposición (defecto de fábrica / error nuestro / daño en el envío / producto equivocado)${req ? `:\n_"${req}"_` : '.'}\n\nEl pedido ya está en *Envíos → Pendientes de guía* para sacar la nueva guía. Revisa el chat y coordina la reposición.`;
+            await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
+            console.log(`[POSTVENTA] Alerta de reenvío enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
+        } catch (e) {
+            console.warn('[POSTVENTA] No se pudo alertar al admin del reenvío:', e.message);
+        }
+        return orderNumber;
+    } catch (e) {
+        console.warn('[POSTVENTA] markOrderReenvioForContact falló:', e.message);
         return null;
     }
 }
@@ -3432,12 +3509,19 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // con la alerta específica. La cobranza automática lo suelta mientras esté en "Corregir"
         // y retoma sola cuando el equipo lo regresa a "Foto enviada". Solo post-venta.
         const wantsProductMedia = isPostVenta && /\/pidevideo\b/i.test(aiResponse);
+        // La IA emite /reenvio (post-venta) cuando detecta un caso de REPOSICIÓN que es culpa NUESTRA o
+        // del envío (defecto de fábrica, error nuestro en el producto, daño en el traslado, producto
+        // equivocado). El pedido pasa a estatus "Reenvio", que SOLO lo re-mete a Envíos → Pendientes de
+        // guía para sacar una guía nueva. NO aplica a "no le gustó" / culpa del cliente (ver la nota del
+        // prompt REENVIO_COMMAND_NOTE): esos casos la IA los trata de retener y NO emite el comando.
+        // Kill-switch: crm_settings/general.reenvioAutoActive = false. Ver el manejo después del loop.
+        const needsReenvio = isPostVenta && /\/reenvio\b/i.test(aiResponse);
 
         // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado, /comprobante, /registrar) de los mensajes antes de enviar.
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
         // (anuncia pedido LISTO + datos de pago); la IA no puede saber si el pedido físico
         // ya está terminado, así que jamás debe enviarlo ni expandirlo.
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').replace(/\/formulario\s*:?\s*(?:DH)?\s*\d{4,6}/ig, '').trim()).filter(m => m.length > 0);
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').replace(/\/reenvio\b/ig, '').replace(/\/formulario\s*:?\s*(?:DH)?\s*\d{4,6}/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -3799,6 +3883,24 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         if (wantsProductMedia && !needsCorrection) {
             markOrderCorregirForContact(contactId, contactData, messageText, 'video')
                 .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact (video) falló:', e.message));
+        }
+
+        // Reposición / reenvío (/reenvio): defecto de fábrica / error nuestro / daño en el envío /
+        // producto equivocado detectado por la IA. Pasa el pedido a "Reenvio", que SOLO lo re-mete a
+        // Envíos → Pendientes de guía (archiva la guía anterior y saca una nueva). NO aplica a "no le
+        // gustó" / culpa del cliente (la IA ni siquiera emite el comando en esos casos). Kill-switch:
+        // crm_settings/general.reenvioAutoActive = false. Fire-and-forget: nunca tumba la respuesta.
+        if (needsReenvio) {
+            (async () => {
+                try {
+                    const gs = await db.collection('crm_settings').doc('general').get();
+                    if (gs.exists && gs.data().reenvioAutoActive === false) {
+                        console.log(`[POSTVENTA] /reenvio ignorado para ${contactId}: reenvioAutoActive=false.`);
+                        return;
+                    }
+                    await markOrderReenvioForContact(contactId, contactData, messageText);
+                } catch (e) { console.warn('[POSTVENTA] markOrderReenvioForContact falló:', e.message); }
+            })();
         }
 
         // Cancelación de un pedido YA REGISTRADO (post-venta): pasar el pedido a "Cancelado".
@@ -4169,6 +4271,8 @@ module.exports = {
     markComprobanteValidadoAndSendForm,
     markOrderCorregirForContact,
     markOrderFabricarForContact,
+    markOrderReenvioForContact,
+    reenvioResetFields,
     stampPedidoListoEnviado,
     compressVideoToLimit
 };
