@@ -71,24 +71,23 @@ function reasonsForOrderData(d, hasMockup) {
     if (!d) return [];
     const estatus = String(d.estatus || 'Sin estatus').trim().toLowerCase();
 
-    // 'Corregir' = corrección ABIERTA que pidió el cliente: SIEMPRE es pendiente de diseño, aunque ya se
-    // le hubiera dado ✓ Diseñado o ya se hubiera enviado. Va ANTES de todo lo demás (incluido el
-    // disenoListoAt) porque el estatus manda: se cierra cambiándole el estatus (Corregido/Fabricar/…),
-    // no con el botón del tablero. (Chris, 2026-07-30: 13 de 23 Corregir estaban ocultos por ✓ Diseñado.)
-    if (estatus === 'corregir') {
-        return [String(d.corregirMotivo || '').toLowerCase() === 'video' ? 'video' : 'datos'];
-    }
-
-    // Marcado a mano como "ya diseñado" desde el tablero (botón ✓ Diseñado) -> fuera de pendientes,
-    // SALVO que después de marcarlo el cliente haya pedido algo nuevo (ahí la marca ya no vale).
+    // Marcado a mano "ya diseñado" (botón ✓ Diseñado) -> fuera de pendientes, SALVO que DESPUÉS de
+    // marcarlo el cliente haya pedido algo nuevo (pendienteRenovadoMs > disenoListoAt -> reactivación).
+    // Aplica también a 'Corregir': una corrección YA RESUELTA (marcada Diseñado después de pedirla) no
+    // sigue pendiente; si el cliente vuelve a pedir, reaparece. DH13817 (pidió otro video, sin marca ->
+    // sigue) vs DH13608/13586 (marcados Diseñado tras la corrección -> fuera). Chris, 2026-07-31.
     if (d.disenoListoAt && _ms(d.disenoListoAt) >= pendienteRenovadoMs(d)) return [];
     if (DONE.has(estatus)) return [];
 
-    // Envío ya gestionado (tiene guía o lo quitaron de Envíos) -> el diseño ya se hizo.
+    // Envío ya gestionado (tiene guía o lo quitaron de Envíos) -> el diseño ya se hizo (no aplica a Corregir).
     const shipped = (d.guiaEnvio && d.guiaEnvio.guia) || d.ocultoDeEnvios;
     const reasons = [];
 
-    if (!shipped) {
+    if (estatus === 'corregir') {
+        // Corrección pedida por el cliente y AÚN no resuelta (las ya marcadas se filtran arriba). Aparece
+        // aunque ya se hubiera enviado. El motivo lo persiste markOrderCorregirForContact.
+        reasons.push(String(d.corregirMotivo || '').toLowerCase() === 'video' ? 'video' : 'datos');
+    } else if (!shipped) {
         if (estatus === 'fabricar') {
             // ETAPA 2: pagó y hay que producir -> falta el diseño en Corel para corte (aunque tenga mockup).
             reasons.push('fabricar');
