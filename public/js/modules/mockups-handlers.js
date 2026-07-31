@@ -205,6 +205,58 @@ async function mkLoadAutoConfig() {
     mkLoadRiTestConfig();
     mkLoadPriceTestConfig();
     mkLoadAnticipoConfig();
+    mkLoadFlashConfig();
+}
+
+// Modo FLASH: gancho de urgencia + envío PROGRAMADO del mockup. Se guarda en mkState.flash
+// para que mkSend lo consulte al enviar.
+async function mkLoadFlashConfig() {
+    try {
+        const d = await mkFetchJson('/api/mockups/flash-config');
+        mkState.flash = { enabled: d.enabled === true, minutes: Number(d.minutes) || 83, gancho: d.gancho || '' };
+        const t = document.getElementById('mk-flash-toggle'); if (t) t.checked = mkState.flash.enabled;
+        const s = document.getElementById('mk-flash-time'); if (s) s.value = String(mkState.flash.minutes);
+    } catch (_) { mkState.flash = { enabled: false, minutes: 83, gancho: '' }; }
+}
+
+async function mkToggleFlash(checked) {
+    try {
+        await mkFetchJson('/api/mockups/flash-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!checked }) });
+        mkState.flash = Object.assign(mkState.flash || {}, { enabled: !!checked });
+        mkToast(checked ? '⚡ Flash ENCENDIDO: el próximo envío de mockup irá con gancho + foto programada.' : 'Flash apagado.', 'success');
+    } catch (e) {
+        mkToast('No se pudo cambiar Flash: ' + e.message, 'error');
+        const el = document.getElementById('mk-flash-toggle'); if (el) el.checked = !checked;
+    }
+}
+
+async function mkSetFlashTime(value) {
+    const minutes = Number(value);
+    try {
+        await mkFetchJson('/api/mockups/flash-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes }) });
+        mkState.flash = Object.assign(mkState.flash || {}, { minutes });
+    } catch (e) { mkToast('No se pudo guardar el tiempo Flash: ' + e.message, 'error'); }
+}
+
+// "~1 hora" / "~2 horas" / "~4 horas" para el gancho (el cliente NO ve los minutos exactos).
+function mkFlashLabel(minutes) {
+    const h = Math.round(Number(minutes) / 60) || 1;
+    return h === 1 ? '~1 hora' : '~' + h + ' horas';
+}
+
+// Detecta pedidos ESPECIALES (grabado/logo/foto/personaje…) para NO aplicarles Flash.
+const MK_SPECIAL_RE = /foto|imagen|graba|logo|escudo|especial|personaje|mascota|dibuj|dise[nñ]|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
+function mkIsSpecial(order) {
+    const datos = String((order && (order.datosProducto || order.producto || (order.items && order.items[0] && order.items[0].datosProducto))) || '');
+    return MK_SPECIAL_RE.test(datos);
+}
+
+// Programa un mensaje (texto y/o archivo) para una hora futura (reutiliza el scheduler del chat).
+function mkScheduleChat(telefono, body, scheduledAtMs) {
+    return mkFetchJson('/api/contacts/' + encodeURIComponent(telefono) + '/schedule-message', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ scheduledAt: scheduledAtMs }, body)),
+    });
 }
 
 // ¿Hay OTRO experimento encendido? (para no correr dos a la vez — se confunden las lecturas).
@@ -778,6 +830,43 @@ async function mkSend(orderId, blockId) {
                 : 'se mandó la plantilla';
             mkToast(`Conversación cerrada: ${avisoTxt} y su pedido quedó EN COLA. Cuando responda, la foto se le envía sola ✅`, 'success');
             setBtn('<i class="fas fa-clock mr-2"></i>En cola', true);
+            return;
+        }
+
+        // ⚡ MODO FLASH: Andrea manda YA un gancho de urgencia y la foto + pago se PROGRAMAN para
+        // llegarle al cliente al cumplirse el tiempo Flash (sensación de "te metí al corte de ahorita").
+        // Solo con la ventana abierta y en pedidos NO especiales. El archivo de corte no cambia.
+        if (mkState.flash && mkState.flash.enabled && !mkIsSpecial(order)) {
+            const minutes = mkState.flash.minutes || 83;
+            const when = Date.now() + minutes * 60000;
+            // 1) Gancho AHORA (mensaje de Andrea; el cliente ve "~1 hora", no los minutos exactos).
+            const gancho = String(mkState.flash.gancho || '').replace('{tiempo}', mkFlashLabel(minutes));
+            setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Gancho…', true);
+            if (gancho.trim()) await mkSendChat(telefono, { text: gancho });
+            // 2) Foto a JPEG (WhatsApp no soporta WebP) y candado de pago (una sola vez por pedido).
+            const waF = await mkFetchJson('/api/mockups/wa-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: imageUrl }) });
+            let claimedF = false;
+            try { const r = await mkFetchJson('/api/mockups/claim-payment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) }); claimedF = !!(r && r.claimed); } catch (_) {}
+            // 3) Programar pago (/cuatro,/bbb) y foto para now+tiempo (escalonados 1s para conservar el orden).
+            setBtn('<i class="fas fa-spinner fa-spin mr-2"></i>Programando…', true);
+            let step = 0;
+            if (claimedF) {
+                if (ctx.cuatro && (ctx.cuatro.text || ctx.cuatro.fileUrl)) await mkScheduleChat(telefono, mkQrBody(ctx.cuatro), when + (step++ * 1000));
+                if (ctx.bbb && (ctx.bbb.text || ctx.bbb.fileUrl)) await mkScheduleChat(telefono, mkQrBody(ctx.bbb), when + (step++ * 1000));
+                mkState.paymentSent[orderId] = true;
+            }
+            await mkScheduleChat(telefono, { fileUrl: waF.jpgUrl, fileType: 'image/jpeg' }, when + (step++ * 1000));
+            // 4) Sacar el pedido de la fila de mockups (para no reenviarlo). NO se activa post-venta ni
+            // "Foto enviada" ahora: eso asume que la foto ya salió y dispararía cobranza antes de tiempo.
+            // La IA de VENTA (ya encendida) atiende al cliente mientras espera y maneja su pago cuando
+            // llegue la foto programada. flashScheduledAt deja rastro de a qué hora le cae.
+            try {
+                await db.collection('pedidos').doc(orderId).update({ mockupHidden: true, mockupForce: false, flashScheduledAt: when });
+                const o = mkState.pending.find(x => x.id === orderId);
+                if (o) { o.mockupHidden = true; o.mockupForce = false; }
+            } catch (e) { console.error('[mockups] flash hide:', e.message); }
+            mkToast('⚡ Flash: gancho enviado. La foto + pago le llegan al cliente en ' + mkFlashLabel(minutes) + ' ✅', 'success');
+            setBtn('<i class="fas fa-clock mr-2"></i>Programado', true);
             return;
         }
 

@@ -536,6 +536,35 @@ router.post('/auto-config', asyncHandler(async (req, res) => {
     res.json({ success: true, autoGenerate });
 }));
 
+// --- Modo FLASH: al enviar el mockup, Andrea manda un gancho de urgencia y la foto (+/cuatro,/bbb)
+// se PROGRAMA para llegarle al cliente al cumplirse el tiempo Flash (sensación de "corte exprés").
+// Config en mockup_config/settings: flashEnabled, flashMinutes (83|143|263), flashGancho (editable).
+const FLASH_MINUTES_OK = [83, 143, 263];   // 1:23, 2:23, 4:23
+const FLASH_GANCHO_DEFAULT = '¡Buenas noticias! 🔥 Justo estamos haciendo un corte de pedidos ahorita y te aparto un espacio para meter el tuyo. En {tiempo} te mando la foto de tu pedido terminado ✨';
+router.get('/flash-config', asyncHandler(async (req, res) => {
+    const doc = await db.collection('mockup_config').doc('settings').get();
+    const d = doc.exists ? doc.data() : {};
+    res.json({
+        success: true,
+        enabled: d.flashEnabled === true,
+        minutes: FLASH_MINUTES_OK.includes(Number(d.flashMinutes)) ? Number(d.flashMinutes) : 83,
+        gancho: (typeof d.flashGancho === 'string' && d.flashGancho.trim()) ? d.flashGancho : FLASH_GANCHO_DEFAULT,
+    });
+}));
+
+router.post('/flash-config', asyncHandler(async (req, res) => {
+    const patch = {};
+    if (req.body.enabled !== undefined) patch.flashEnabled = req.body.enabled === true;
+    if (req.body.minutes !== undefined) {
+        const m = Number(req.body.minutes);
+        if (!FLASH_MINUTES_OK.includes(m)) return res.status(400).json({ success: false, error: 'Tiempo Flash inválido (usa 83, 143 o 263).' });
+        patch.flashMinutes = m;
+    }
+    if (typeof req.body.gancho === 'string') patch.flashGancho = req.body.gancho.trim();
+    await db.collection('mockup_config').doc('settings').set(patch, { merge: true });
+    res.json({ success: true, ...patch });
+}));
+
 // --- Piloto preview (A/B): switch desde la sección Mockup ---
 // El server cachea la config 60s (orders/pilotoPreview.js), así que el cambio
 // tarda máximo un minuto en aplicar a todos los flujos.

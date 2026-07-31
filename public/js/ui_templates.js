@@ -982,6 +982,15 @@ const MockupsViewTemplate = () => `
                     <span style="color:#d97706;font-weight:600;">🪙 Anticipo $300</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-anticipo-toggle" onchange="mkToggleAnticipo(this.checked)"><span class="slider"></span></label>
                 </span>
+                <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Modo FLASH: al enviar el mockup, Andrea manda un gancho de urgencia (‘te aparto un espacio en el corte de ahorita’) y la foto + pago se PROGRAMAN para llegarle al cliente al cumplirse el tiempo elegido. Solo aplica a pedidos con mockup (especiales no). El archivo de corte NO cambia: se hace hasta que paga.">
+                    <span style="color:#ea580c;font-weight:600;">⚡ Flash</span>
+                    <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-flash-toggle" onchange="mkToggleFlash(this.checked)"><span class="slider"></span></label>
+                    <select id="mk-flash-time" onchange="mkSetFlashTime(this.value)" style="font-size:.8rem;padding:2px 4px;border:1px solid var(--color-border);border-radius:6px;background:var(--color-input-bg,#fff);color:inherit;">
+                        <option value="83">1:23</option>
+                        <option value="143">2:23</option>
+                        <option value="263">4:23</option>
+                    </select>
+                </span>
                 <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Genera previews solos cada 10 min para pedidos de corazones con solo nombres+fecha. NO envía nada.">
                     <span class="mk-muted">Auto-generar</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-auto-toggle" onchange="mkToggleAuto(this.checked)"><span class="slider"></span></label>
