@@ -8202,7 +8202,7 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 router.get('/design-pending', async (req, res) => {
     try {
         const { reasonsForOrderData, pendienteRenovadoMs } = require('./design/designPending');
-        const { isAutoWaiting, isVideoAutoWaiting, svgAutoEligibility, MANUAL_SPECIAL_RE, isCorazon, datosOf } = require('./design/svgAuto');
+        const { isAutoWaiting, isVideoAutoWaiting, svgAutoEligibility, MANUAL_SPECIAL_RE, isCorazon, datosOf, AUTO_DESDE_MS } = require('./design/svgAuto');
         const { decideNameLines } = require('./mockups/nameLayout');
         const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
 
@@ -8345,18 +8345,25 @@ router.get('/design-pending', async (req, res) => {
             // 'Corregir' (datos/video) + 2º producto. El motor (designPending.js) decide el motivo real.
             // NO se jala por estatus 'Pagado' (ahí se acumulan miles de pedidos ya terminados).
             const byId = new Map();
-            const [sSin, sFab, sCor, sProd] = await Promise.all([
+            // 'Pagado' recientes (sPag): al VALIDAR el pago el pedido pasa a 'Pagado' (NO a 'Fabricar') y
+            // encima se le saca la guía por adelantado, lo que BLOQUEA el corte automático (autoBlocked
+            // mira guiaEnvio.guia). Resultado: quedaban INVISIBLES — ni el worker los cortaba ni salían
+            // aquí (esta lista no jalaba 'Pagado' por el "cementerio" de miles de viejos). Se traen los de
+            // PAGO reciente (mismo orderBy+limit que el worker) y el motor (faltaCorte, corte por
+            // AUTO_DESDE_MS) descarta el histórico ya cortado; solo sobreviven los pagados y SIN cortar.
+            const [sSin, sFab, sCor, sProd, sPag] = await Promise.all([
                 db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get(),
                 db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(1000).get(),
                 db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
                 db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
+                db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(400).get(),
             ]);
-            [sSin, sFab, sCor, sProd].forEach(s => s.forEach(d => byId.set(d.id, d)));
+            [sSin, sFab, sCor, sProd, sPag].forEach(s => s.forEach(d => byId.set(d.id, d)));
 
             // Previews (mockup_previews) de los 'Sin estatus' (fuente de verdad de "ya tiene mockup", por
             // si la marca mockupPreviewAt no quedó), de los 'Fabricar' y de los 'Corregir' (para saber si
             // el worker los va a cortar solo). Un solo lote reutilizable.
-            const prevMap = await previewsFor([...new Set([...sSin.docs.map(d => d.id), ...sFab.docs.map(d => d.id), ...sCor.docs.map(d => d.id)])]);
+            const prevMap = await previewsFor([...new Set([...sSin.docs.map(d => d.id), ...sFab.docs.map(d => d.id), ...sCor.docs.map(d => d.id), ...sPag.docs.map(d => d.id)])]);
             const conMockup = new Set();
             sSin.docs.forEach(d => { const pv = prevMap.get(d.id); if (pv && pv.length) conMockup.add(d.id); });
             for (const doc of byId.values()) {
