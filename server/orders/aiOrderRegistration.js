@@ -62,8 +62,33 @@ const DEFAULT_CONFIG = {
     catalogText: [
         '- "Lámpara de corazones" — $750 c/u — datos requeridos: los DOS nombres y la FECHA que llevará grabada (ej. Nombres: Melissa y Jorge | Fecha: 05-12-2018).',
         '- "Lámpara infantil" — modelo Nube por defecto, pero puede ser CUALQUIER personaje que pida el cliente — $650 una pieza o $1,000 por dos — datos requeridos: el NOMBRE del niño/niña (y el personaje, si no es la nube).'
-    ].join('\n')
+    ].join('\n'),
+    // Pistas ANUNCIO→PERSONAJE para la lámpara infantil. Si el cliente llegó por un anuncio cuyo
+    // nombre o copy contiene alguna de estas claves (regex, sin distinguir mayúsculas), el personaje
+    // por defecto es ese —NO la nube— salvo que el cliente pida otro explícitamente. Así un lead del
+    // anuncio "Dino Hook" se registra como T-Rex y no como nube. Editable en Firestore sin deploy;
+    // agrega productos nuevos aquí: { "clave-o-regex": "Nombre del personaje" }.
+    adProductHints: {
+        'dino|t-?rex|dinosaur|jurasic|jurassic': 'T-Rex'
+    }
 };
+
+/**
+ * Deduce el personaje del anuncio del que llegó el cliente (Dino Hook → T-Rex), usando las
+ * pistas de config. Devuelve el nombre del personaje o null si el anuncio no coincide con ninguna.
+ */
+function detectAdPersonaje(contactData = {}, hints = {}) {
+    if (!hints || typeof hints !== 'object') return null;
+    const ref = contactData.adReferral || {};
+    const hist = (Array.isArray(contactData.adReferralHistory) && contactData.adReferralHistory[0]) || {};
+    const heno = [ref.ad_name, ref.headline, ref.body, hist.headline, hist.body, hist.source_url]
+        .filter(Boolean).join(' ');
+    if (!heno.trim()) return null;
+    for (const [pattern, personaje] of Object.entries(hints)) {
+        try { if (new RegExp(pattern, 'i').test(heno)) return personaje; } catch (_) { /* regex inválida en config: se ignora */ }
+    }
+    return null;
+}
 
 // --- Normalización de la FECHA dentro de datosProducto -> "DD-Mes-AA" ---
 // Día SIEMPRE 2 dígitos, mes con NOMBRE (mayúscula inicial), año tal cual lo escribió el cliente
@@ -121,7 +146,8 @@ async function getAiOrderConfig() {
         return {
             enabled: data.enabled === true,
             minConfidence: Number.isFinite(Number(data.minConfidence)) ? Number(data.minConfidence) : DEFAULT_CONFIG.minConfidence,
-            catalogText: (typeof data.catalogText === 'string' && data.catalogText.trim()) ? data.catalogText : DEFAULT_CONFIG.catalogText
+            catalogText: (typeof data.catalogText === 'string' && data.catalogText.trim()) ? data.catalogText : DEFAULT_CONFIG.catalogText,
+            adProductHints: (data.adProductHints && typeof data.adProductHints === 'object') ? data.adProductHints : DEFAULT_CONFIG.adProductHints
         };
     } catch (e) {
         console.warn('[AI_ORDER] No se pudo leer la config; el registro automático queda apagado:', e.message);
@@ -152,7 +178,13 @@ Protocolo OBLIGATORIO para cerrar un pedido:
 // Se construye con el catálogo vigente para que el extractor conozca precios y datos requeridos.
 // existingOrderNote (opcional): contexto del pedido YA registrado, para que el extractor decida
 // si la conversación lo CAMBIA (devolver el pedido completo actualizado) o es uno ADICIONAL.
-function buildExtractorSystemInstruction(catalogText, existingOrderNote = '') {
+function buildExtractorSystemInstruction(catalogText, existingOrderNote = '', adPersonaje = '') {
+    // Si el cliente llegó por un anuncio de personaje específico (ej. Dino → T-Rex), ese es el
+    // personaje por defecto de la lámpara infantil, NO la nube. Evita que un lead de T-Rex se
+    // registre como nube solo porque el cliente no repitió el personaje en el chat.
+    const adPersonajeNote = adPersonaje ? `
+IMPORTANTE — origen del cliente: llegó por el anuncio del personaje "${adPersonaje}". Si el pedido es una "Lámpara infantil" y el cliente NO pidió explícitamente OTRO personaje, el personaje es "${adPersonaje}" (NO uses "nube" por defecto en este caso). El producto va como "Lámpara infantil ${adPersonaje}" y en datosProducto pon "Personaje: ${adPersonaje}".
+` : '';
     return `Eres un extractor de pedidos para DekoorHouse, una tienda mexicana de lámparas personalizadas.
 Analizas una conversación de WhatsApp entre el "Cliente" y el "Asistente" (la tienda). El Asistente ya
 mandó un RESUMEN del pedido y el cliente lo CONFIRMÓ. Tu trabajo es convertir ese pedido confirmado en
@@ -160,7 +192,7 @@ datos estructurados para registrarlo en el CRM.
 
 Catálogo de referencia (precios de lista y datos requeridos):
 ${catalogText}
-${existingOrderNote}
+${adPersonajeNote}${existingOrderNote}
 Responde ÚNICAMENTE con un JSON válido (sin texto antes ni después, sin markdown) con esta forma exacta:
 {
   "listo": boolean,        // true SOLO si el cliente confirmó un pedido con todos los datos requeridos
@@ -236,7 +268,7 @@ function saneaExtraccion(parsed) {
  * (5216391483947), que hubo que capturar a mano como DH14004. Dos intentos (~30 s) caben de
  * sobra dentro de IN_FLIGHT_STALE_MS (3 min).
  */
-async function extractOrderDetailed({ conversationText, name, catalogText, existingOrder = null }) {
+async function extractOrderDetailed({ conversationText, name, catalogText, existingOrder = null, adPersonaje = '' }) {
     if (!conversationText || !conversationText.trim()) {
         return { extraction: null, motivo: 'la conversación llegó vacía' };
     }
@@ -250,7 +282,7 @@ Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelv
 ` : '';
 
     const prompt = `Cliente: ${name || 'desconocido'}\n\nConversación (más antiguo arriba):\n${conversationText}\n\nDevuelve solo el JSON.`;
-    const systemInstruction = buildExtractorSystemInstruction(catalogText, existingOrderNote);
+    const systemInstruction = buildExtractorSystemInstruction(catalogText, existingOrderNote, adPersonaje);
 
     let motivo = 'el extractor no devolvió nada';
     for (let intento = 1; intento <= EXTRACTOR_INTENTOS; intento++) {
@@ -376,10 +408,16 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             }
         }
 
+        // Personaje inferido del anuncio (Dino Hook → T-Rex): evita que un lead de un anuncio de
+        // personaje se registre como "nube" por defecto solo porque no lo repitió en el chat.
+        const adPersonaje = detectAdPersonaje(contactData, cfg.adProductHints);
+        if (adPersonaje) console.log(`[AI_ORDER] ${contactId} llegó por anuncio de "${adPersonaje}"; se usa como personaje por defecto.`);
+
         const { extraction, motivo: motivoExtraccion } = await extractOrderDetailed({
             conversationText,
             name,
             catalogText: cfg.catalogText,
+            adPersonaje,
             // Contexto del pedido ya registrado (si hay uno reciente): el extractor decide si la
             // conversación lo CAMBIA (devuelve el pedido completo actualizado) o es uno ADICIONAL.
             existingOrder: await findRecentOrderForContact(contactId).then(rec => rec ? {
@@ -518,6 +556,7 @@ module.exports = {
     buildRegistrationRule,
     extractOrderFromChat,
     extractOrderDetailed,
+    detectAdPersonaje,
     saneaExtraccion,
     registerOrderFromAI,
     DEFAULT_CONFIG
