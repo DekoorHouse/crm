@@ -23,6 +23,8 @@ const { sendConversionEvent, messagingContactInfo, generateGeminiResponse, gener
 const metaAdsService = require('./meta/metaAdsService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
 const { agregarPorProducto } = require('./orders/desgloseProductos');
+const { agregarPorCampana } = require('./orders/desgloseCampanas');
+const { mapAdsToCampaigns } = require('./meta/adCampaignCache');
 const { calcularReporte } = require('./inventario/inventarioReporte');
 const { ejecutarReporteDiario } = require('./inventario/inventarioScheduler');
 const { registrarEntrada, registrarConteoFisico, listarMovimientos } = require('./inventario/inventarioEntradas');
@@ -1063,15 +1065,20 @@ router.get('/orders/count', async (req, res) => {
     }
 });
 
-// --- Endpoint GET /api/orders/desglose (Piezas por producto dentro del filtro) ---
+// --- Endpoint GET /api/orders/desglose (Piezas por producto o por campaña dentro del filtro) ---
 // Alimenta /pedidos/desglose. Agrega del lado del servidor porque el front tendría
 // que paginar de 50 en 50 para llegar al mismo total, y con "este mes" eso son
 // decenas de peticiones para un puñado de números.
+//
+// ?agrupar=campana agrupa por campaña de Meta Ads en vez de por producto: usa el
+// `attributedAdId` que createOrderCore ya le pone a cada pedido y lo traduce a
+// campaña contra la Graph API (cacheado en adCampaignCache).
 const DESGLOSE_MAX_PEDIDOS = 4000;
 
 router.get('/orders/desglose', async (req, res) => {
     try {
         const { producto, estatus, dateFilter, customStart, customEnd } = req.query;
+        const agrupar = req.query.agrupar === 'campana' ? 'campana' : 'producto';
 
         let query = db.collection('pedidos');
 
@@ -1087,17 +1094,40 @@ router.get('/orders/desglose', async (req, res) => {
 
         const truncado = snapshot.docs.length > DESGLOSE_MAX_PEDIDOS;
         const docs = truncado ? snapshot.docs.slice(0, DESGLOSE_MAX_PEDIDOS) : snapshot.docs;
+        const pedidos = docs.map(doc => doc.data());
 
-        const desglose = agregarPorProducto(docs.map(doc => doc.data()));
+        if (agrupar === 'campana') {
+            const { map, error: metaError, resueltos, total } = await mapAdsToCampaigns(
+                pedidos.map(p => p.attributedAdId)
+            );
+            const desglose = agregarPorCampana(pedidos, map);
+
+            return res.status(200).json({
+                success: true,
+                agrupar,
+                ...desglose,
+                // El front avisa cuando quedaron anuncios sin campaña: el desglose
+                // se pinta igual, pero el usuario tiene que saber por qué hay una
+                // tarjeta "Campaña no identificada".
+                anunciosResueltos: resueltos,
+                anunciosTotales: total,
+                metaError: metaError || null,
+                truncado,
+                max: DESGLOSE_MAX_PEDIDOS
+            });
+        }
+
+        const desglose = agregarPorProducto(pedidos);
 
         res.status(200).json({
             success: true,
+            agrupar,
             ...desglose,
             truncado,
             max: DESGLOSE_MAX_PEDIDOS
         });
     } catch (error) {
-        console.error("Error armando el desglose por producto:", error);
+        console.error("Error armando el desglose:", error);
         res.status(500).json({ success: false, message: 'Error al obtener el desglose.', error: error.message });
     }
 });

@@ -1,4 +1,9 @@
-import type { DesgloseResponse, Order, OrderFilters } from "./types";
+import type {
+  DesgloseCampanasResponse,
+  DesgloseResponse,
+  Order,
+  OrderFilters,
+} from "./types";
 
 interface OrdersResponse {
   success: boolean;
@@ -61,6 +66,17 @@ export async function fetchDesglose(
   filters: OrderFilters
 ): Promise<DesgloseResponse> {
   const params = buildFilterParams(filters);
+  const response = await fetch(`/api/orders/desglose?${params.toString()}`);
+  const data = await response.json();
+  if (!data.success) throw new Error(data.message || "Error al obtener el desglose");
+  return data;
+}
+
+export async function fetchDesgloseCampanas(
+  filters: OrderFilters
+): Promise<DesgloseCampanasResponse> {
+  const params = buildFilterParams(filters);
+  params.set("agrupar", "campana");
   const response = await fetch(`/api/orders/desglose?${params.toString()}`);
   const data = await response.json();
   if (!data.success) throw new Error(data.message || "Error al obtener el desglose");

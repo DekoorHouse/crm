@@ -59,6 +59,34 @@ export interface DesgloseResponse {
   max: number;
 }
 
+export interface CampanaDesglose {
+  /** campaignId de Meta, o `__organico__` / `__sin_campana__`. */
+  id: string;
+  nombre: string;
+  piezas: number;
+  pedidos: number;
+  monto: number;
+  porEstatus: Record<string, number>;
+  porProducto: { producto: string; piezas: number }[];
+  listaPedidos: PedidoDesglose[];
+  /** Ad IDs que alimentaron la campaña (vacío en el orgánico). */
+  ads: string[];
+}
+
+export interface DesgloseCampanasResponse {
+  campanas: CampanaDesglose[];
+  totalPiezas: number;
+  totalPedidos: number;
+  totalMonto: number;
+  truncado: boolean;
+  max: number;
+  /** Anuncios que sí se pudieron traducir a campaña, de los que había. */
+  anunciosResueltos: number;
+  anunciosTotales: number;
+  /** Motivo por el que Meta no contestó (token vencido, etc.), si aplica. */
+  metaError: string | null;
+}
+
 export interface PaginationState {
   lastVisibleId: string | null;
   hasMore: boolean;
