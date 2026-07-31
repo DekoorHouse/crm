@@ -29,6 +29,29 @@ const NO_QUOTA_RE = /quota|RESOURCE_EXHAUSTED|billing|API[ _]key|PERMISSION_DENI
 // Palabras que indican "algo especial" -> NO auto-generar (queda para revisión manual).
 const SPECIAL_RE = /foto|imagen|graba|logo|escudo|especial|personaje|mascota|dibuj|dise[nñ]|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
 
+// Para las plantillas INFANTILES (Nube, Dinosaurio/T-Rex): el "Personaje: X" es el PRODUCTO en sí,
+// no un extra especial, así que NO bloquea. Lo que sí sigue mandando a revisión manual: una foto,
+// un grabado, un logo, una frase, o la palabra "especial". (No incluye 'personaje' ni 'diseño'.)
+const INF_SPECIAL_RE = /foto|imagen|graba|logo|escudo|dibuj|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b|especial/i;
+
+// ¿La plantilla infantil puede auto-generar ESTE pedido? Solo pedidos de UN nombre: los de varios
+// niños llevan varias lámparas (a veces con plantillas distintas por niño/color) -> los hace una
+// persona. Y nada de foto/grabado/logo/frase.
+function esAutoGenerableInfantil(o) {
+    const datos = datosOf(o);
+    const nombreCount = (datos.match(/nombre\s*:/gi) || []).length;
+    const itemCount = Array.isArray(o.items) ? o.items.length : 1;
+    if (nombreCount > 1 || itemCount > 1) return false;       // varios niños -> manual
+    if (INF_SPECIAL_RE.test(datos)) return false;             // foto/grabado/logo/frase -> manual
+    return true;
+}
+
+// Plantilla que le toca a un pedido por su producto (productMatch). null si ninguna.
+function matchTemplate(o, tpls) {
+    const prod = productOf(o);
+    return tpls.find(t => (t.productMatch || []).some(m => m && prod.includes(String(m).toLowerCase()))) || null;
+}
+
 let running = false;
 let task = null;
 
@@ -138,25 +161,33 @@ async function runOnce(opts) {
 
         const templates = await svc.listTemplates();
         const corazones = templates.find(t => /corazon/i.test(t.nombre) || (t.productMatch || []).some(m => /corazon/i.test(m)));
-        if (!corazones || !corazones.baseImageUrl) return;   // sin plantilla de corazones, nada que hacer
+        // Plantillas INFANTILES marcadas para auto (Nube, Dinosaurio/T-Rex): 1 nombre, con foto base.
+        const infantiles = templates.filter(t => t.autoInfantil && t.baseImageUrl && (t.productMatch || []).length);
+        if ((!corazones || !corazones.baseImageUrl) && !infantiles.length) return;   // nada que auto-generar
 
         const snap = await db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get();
-        const candidates = [];
+        const candidates = [];   // { o, tpl }
         for (const d of snap.docs) {
             const o = { id: d.id, ...d.data() };
             if (o.mockupHidden === true) continue;
-            if (!isCorazones(o, corazones)) continue;
-            if (SPECIAL_RE.test(datosOf(o))) continue;   // algo especial -> revisión manual
-            candidates.push(o);
+            // 1) Corazones (regla de siempre, intacta).
+            if (corazones && corazones.baseImageUrl && isCorazones(o, corazones)) {
+                if (SPECIAL_RE.test(datosOf(o))) continue;   // algo especial -> revisión manual
+                candidates.push({ o, tpl: corazones });
+                continue;
+            }
+            // 2) Infantiles (Nube / Dinosaurio / T-Rex) por productMatch, solo de un nombre y sin especiales.
+            const inf = matchTemplate(o, infantiles);
+            if (inf && esAutoGenerableInfantil(o)) candidates.push({ o, tpl: inf });
         }
 
         const cap = force ? FORCE_BATCH : BATCH;
         let done = 0;
-        for (const o of candidates) {
+        for (const { o, tpl } of candidates) {
             if (done >= cap) break;
             const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
             if (prev.exists && Array.isArray(prev.data().previews) && prev.data().previews.length) continue;   // ya tiene preview
-            const res = await generateOne(o, corazones, cfg);
+            const res = await generateOne(o, tpl, cfg);
             if (res === 'no-balance') { await alertNoBalance(); break; }
             if (res === true) done++;
         }
