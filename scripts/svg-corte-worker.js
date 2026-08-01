@@ -336,10 +336,13 @@ function forcedErrorMsg(reason) {
 
 // Diseños FORZADOS desde el CRM (botón "Diseñar con IA"). Corren SIEMPRE (aunque el kill-switch de
 // auto-generación esté apagado): son una orden explícita del usuario. Dos pasos por corrida:
-//   1) status='approved'  -> el usuario ya confirmó en el CRM: sube el SVG staged a Drive y marca
-//                            el pedido "Diseñado por IA" (igual que el auto, pero con confirmación previa).
-//   2) status='queued'    -> genera el SVG con Corel y lo deja STAGED (NO sube a Drive); guarda la ruta
-//                            local + la imagen de preview (el mockup aprobado) para que el CRM lo muestre.
+//   1) status='approved'  -> LEGADO: quedan de antes del 2026-07-31, cuando el corte esperaba que el
+//                            usuario apretara "Subir a Drive". Se sigue atendiendo para no dejar
+//                            colgado nada que ya estuviera staged/aprobado.
+//   2) status='queued'    -> genera el SVG con Corel y lo SUBE A DRIVE en la misma corrida (Chris,
+//                            2026-07-31: apretar "Diseñar con IA" YA es la decisión, no se pide
+//                            confirmación aparte). El PNG legible del corte queda en
+//                            svgCortePreviewUrl para poder revisarlo después desde el CRM.
 async function processForcedDesigns() {
     // --- Paso 1: subir lo ya aprobado por el usuario ---
     let appr = { docs: [], empty: true };
@@ -430,22 +433,28 @@ async function processForcedDesigns() {
         try {
             const { svg, cdr } = runCorel(dh, [fields]);
             const cortePreviewUrl = await makeCortePreview(cdr, dh);   // PNG legible del corte -> Storage
+            // SUBIDA DIRECTA (Chris, 2026-07-31): antes esto quedaba 'staged' esperando que el operador
+            // apretara "Subir a Drive" en el CRM. Ya no: apretar "Diseñar con IA" es la decisión, así que
+            // el corte se sube en la MISMA corrida. El PNG del corte queda en svgCortePreviewUrl para
+            // poder revisarlo después desde el CRM.
+            const up = await uploadToDrive(svg);
             await doc.ref.update({
-                'iaForce.status': 'staged',
-                'iaForce.stagedAt': admin.firestore.FieldValue.serverTimestamp(),
-                'iaForce.svgLocalPath': svg,
-                'iaForce.cdrLocalPath': cdr,
-                'iaForce.svgName': path.basename(svg),
-                'iaForce.lines': fields,
-                'iaForce.mockupUrl': ff.previewUrl || null,                        // lo que aprobo el cliente
-                'iaForce.cortePreviewUrl': cortePreviewUrl || null,                // el corte que hizo la skill
-                'iaForce.previewUrl': cortePreviewUrl || ff.previewUrl || null,    // compat fila: ahora muestra el corte
-                'iaForce.error': admin.firestore.FieldValue.delete(),
+                estatus: NEW_STATUS,
+                svgCorteAt: admin.firestore.FieldValue.serverTimestamp(),
+                svgCorteUrl: up.webViewLink,
+                svgCorteFileName: up.name,
+                svgCorteCdrLocal: cdr,
+                svgCortePreviewUrl: cortePreviewUrl || null,
+                svgCorteBy: 'ia-force',
+                iaForce: admin.firestore.FieldValue.delete(),
             });
-            log(`  STAGED ${dh} -> ${path.basename(svg)}${cortePreviewUrl ? ' (+preview)' : ''} (espera confirmación en el CRM)`);
+            try { await recomputeForContact(o.contactId || o.telefono); } catch (_) {}
+            log(`  OK ${dh} -> ${up.webViewLink}${cortePreviewUrl ? ' (+preview)' : ''}`);
         } catch (e) {
             log(`  ERROR generando forzado ${dh}: ${e.message}`);
-            try { await doc.ref.update({ 'iaForce.status': 'error', 'iaForce.error': ('No se pudo generar: ' + e.message).slice(0, 300) }); } catch (_) {}
+            // Cubre generar Y subir: si falla cualquiera de los dos el pedido queda en 'error' con el
+            // motivo y el botón del CRM se convierte en "Reintentar IA".
+            try { await doc.ref.update({ 'iaForce.status': 'error', 'iaForce.error': ('No se pudo diseñar/subir: ' + e.message).slice(0, 300) }); } catch (_) {}
         }
     }
 }

@@ -360,7 +360,7 @@ function dpIaControls(o) {
     }
     if (f.status === 'queued') return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b22;color:#b45309;border:1px solid #f59e0b66;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700"><i class="fas fa-hourglass-half"></i>En cola IA…</span>`;
     if (f.status === 'error') return `<button onclick="designWithIA('${o.id}', this)" title="${escapeHtml(f.error || 'Error')} — clic para reintentar" style="background:#dc262611;color:#b91c1c;border:1px solid #dc262666;${bb}"><i class="fas fa-triangle-exclamation" style="margin-right:3px"></i>Reintentar IA</button>`;
-    if (o.boardCol === 'pendientes' && o.iaEligible) return `<button onclick="designWithIA('${o.id}', this)" title="Forzar diseño con IA: tu PC lo diseña y pide confirmar antes de subir" style="background:#7c3aed;color:#fff;${bb}"><i class="fas fa-wand-magic-sparkles" style="margin-right:3px"></i>Diseñar con IA</button>`;
+    if (o.boardCol === 'pendientes' && o.iaEligible) return `<button onclick="designWithIA('${o.id}', this)" title="Forzar diseño con IA: tu PC lo diseña y lo SUBE A DRIVE en ≤15 min (sin pedir confirmacion)" style="background:#7c3aed;color:#fff;${bb}"><i class="fas fa-wand-magic-sparkles" style="margin-right:3px"></i>Diseñar con IA</button>`;
     return '';
 }
 
@@ -561,7 +561,9 @@ async function reopenDesign(orderId, el) {
 }
 window.reopenDesign = reopenDesign;
 
-// --- "Diseñar con IA": fuerza al worker local (svg-corte) a diseñar el pedido; confirma antes de subir ---
+// --- "Diseñar con IA": fuerza al worker local (svg-corte) a diseñar el pedido y SUBIRLO a Drive ---
+// Desde 2026-07-31 ya NO hay paso de confirmación: apretar el botón ES la decisión (Chris). El estado
+// 'staged' solo queda para pedidos encolados ANTES de ese cambio.
 // Actualiza el estado iaForce en el cache local y re-pinta la fila conservando el scroll (sin re-fetch).
 function _updateIaForceLocal(orderId, iaForce) {
     const o = (window._designPendingData || []).find(x => x.id === orderId);
@@ -887,11 +889,11 @@ function _paintDesignPending() {
                 const thumb = f.previewUrl ? `<img src="${escapeHtml(f.previewUrl)}" onclick="openImageModal(this.src)" title="Diseño listo — clic para ampliar" style="width:34px;height:34px;object-fit:cover;border-radius:5px;cursor:zoom-in;border:1px solid var(--color-border,#e5e7eb)">` : '';
                 iaCell = `${thumb}<button onclick="confirmIAUpload('${o.id}', this)" title="Subir el corte a Drive (producción): ${escapeHtml(linesTxt)}" style="border:none;background:#16a34a;color:#fff;${bb}"><i class="fas fa-cloud-arrow-up" style="margin-right:4px"></i>Subir a Drive</button><button onclick="rejectIADesign('${o.id}', this)" title="Descartar este diseño de IA (no sube nada)" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;color:#dc2626;${bb}"><i class="fas fa-times"></i></button>`;
             } else if (f.status === 'queued') {
-                iaCell = `<span title="Tu PC la diseñará en ≤15 min y la dejará lista para confirmar" style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b22;color:#b45309;border:1px solid #f59e0b66;padding:4px 9px;border-radius:6px;font-size:12px;font-weight:700"><i class="fas fa-hourglass-half"></i>En cola IA…</span>`;
+                iaCell = `<span title="Tu PC la diseñará y la subirá a Drive en ≤15 min" style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b22;color:#b45309;border:1px solid #f59e0b66;padding:4px 9px;border-radius:6px;font-size:12px;font-weight:700"><i class="fas fa-hourglass-half"></i>En cola IA…</span>`;
             } else if (f.status === 'error') {
                 iaCell = `<button onclick="designWithIA('${o.id}', this)" title="${escapeHtml(f.error || 'No se pudo diseñar')} — clic para reintentar" style="border:1px solid #dc262666;background:#dc262611;color:#b91c1c;${bb}"><i class="fas fa-triangle-exclamation" style="margin-right:4px"></i>Reintentar IA</button>`;
             } else if (o.iaEligible) {
-                iaCell = `<button onclick="designWithIA('${o.id}', this)" title="Forzar diseño con IA: tu PC lo diseña y te pide confirmar antes de subir a Drive" style="border:none;background:#7c3aed;color:#fff;${bb}"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px"></i>Diseñar con IA</button>`;
+                iaCell = `<button onclick="designWithIA('${o.id}', this)" title="Forzar diseño con IA: tu PC lo diseña y lo SUBE A DRIVE en ≤15 min (sin pedir confirmacion)" style="border:none;background:#7c3aed;color:#fff;${bb}"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px"></i>Diseñar con IA</button>`;
             } else {
                 iaCell = `<button disabled title="Requiere diseño manual (lleva foto/imagen o texto extra para grabar, o no es lámpara de corazones)" style="border:1px solid var(--color-border,#e5e7eb);background:transparent;color:#94a3b8;${bb};font-weight:600;opacity:.5;cursor:not-allowed"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px"></i>Diseñar con IA</button>`;
             }
