@@ -448,8 +448,17 @@ async function mkLoadTemplates() {
 // Plantilla auto-sugerida por el producto del pedido (por productMatch).
 function mkAutoTemplate(producto) {
     const prod = (producto || '').toLowerCase();
+    // 1) por productMatch configurado (Nube, Dinosaurio/T-Rex…).
     for (const t of mkState.templates) {
         if ((t.productMatch || []).some(m => m && prod.includes(String(m).toLowerCase()))) return t.id;
+    }
+    // 2) por NOMBRE de la plantilla dentro del producto (ej. "Lámpara infantil Spiderman" → "Spiderman").
+    //    Evita default-ear a una plantilla ARBITRARIA (templates[0], puede ser dino/nube) un personaje
+    //    que tiene su propia plantilla pero sin productMatch — así no se genera un mockup del personaje
+    //    equivocado (Chris: "si el cliente pide Spiderman u otro, no generar el de dinosaurio").
+    for (const t of mkState.templates) {
+        const n = String(t.nombre || '').toLowerCase().trim();
+        if (n.length >= 4 && prod.includes(n)) return t.id;
     }
     return mkState.templates.length ? mkState.templates[0].id : '';
 }
