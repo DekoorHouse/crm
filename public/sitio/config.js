@@ -10,7 +10,7 @@
     // Defaults (fallback si falla fetch). DEBEN coincidir con server/prices.js.
     const defaults = {
         productUnitPrice: 750,
-        productOriginalPrice: 780,
+        productOriginalPrice: 950,
         shippingJtCost: 0,
         shippingDhlCost: 0,
         currency: 'MXN',
