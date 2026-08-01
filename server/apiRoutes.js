@@ -8290,14 +8290,19 @@ router.get('/design-pending', async (req, res) => {
                 // video), la columna manual ya no vale y la tarjeta regresa sola a Pendientes — si no,
                 // un pedido parado en "Terminado" se quedaba ahí para siempre (caso DH13817).
                 boardCol: (() => {
-                    // Un pedido en 'Corregir' = corrección ABIERTA: no puede verse como Terminado/Diseñado.
-                    // Si quedó en una columna terminal, se muestra en Pendientes (caso DH13817).
-                    const esCorregir = String(p.estatus || '').trim().toLowerCase() === 'corregir';
-                    const terminal = c => c === 'terminado' || c === 'disenado';
+                    // REACTIVACIÓN (única regla que puede regresar una tarjeta a Pendientes): la columna
+                    // manual solo vale mientras el cliente no haya pedido algo DESPUÉS de moverla. Si pidió
+                    // (otro video, otra corrección…), la marca queda vieja y la tarjeta vuelve sola.
+                    // Antes había ADEMÁS un candado por estatus: cualquier pedido en 'Corregir' se forzaba a
+                    // Pendientes aunque estuviera en una columna terminal. Eso hacía IMPOSIBLE cerrar una
+                    // corrección desde el tablero: la tarjeta rebotaba para siempre por el solo hecho de
+                    // seguir en 'Corregir' (DH13603 ya tenía ✓ Diseñado y su bandera limpia, y regresaba
+                    // igual; DH13817/DH14079 regresaban al arrastrarlas). El estatus 'Corregir' es de
+                    // LOGÍSTICA y sigue su curso; que la diseñadora ya haya hecho lo suyo es otra cosa y lo
+                    // dice disenoMarcadoHechoMs (✓ Diseñado o columna terminal). Chris, 2026-08-01.
                     if (!p.disenoBoardCol) return 'pendientes';
                     const movidaMs = tsToMs(p.disenoBoardColAt);
-                    const col = (movidaMs && pendienteRenovadoMs(p) > movidaMs) ? 'pendientes' : p.disenoBoardCol;
-                    return (esCorregir && terminal(col)) ? 'pendientes' : col;
+                    return (movidaMs && pendienteRenovadoMs(p) > movidaMs) ? 'pendientes' : p.disenoBoardCol;
                 })(),
                 // Datos de personalización (nombres/fecha): lo que el diseñador necesita a la vista.
                 datos: (Array.isArray(p.items) ? p.items.map(i => i.datosProducto).filter(Boolean).join(' | ') : '') || p.datosProducto || '',
@@ -8623,9 +8628,13 @@ router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
 });
 
 // POST /api/design-pending/:orderId/board-col — mueve la tarjeta del TABLERO Kanban a otra columna.
-// Es SOLO visual: guarda disenoBoardCol en el pedido; NO cambia el estatus real ni dispara ningún
-// efecto (inventario, evento Meta, mensajes al cliente). Columna 'pendientes' -> borra la marca
-// (la tarjeta vuelve a derivarse de la lógica normal de pendientes).
+// Guarda disenoBoardCol en el pedido; NO cambia el estatus real ni dispara ningún efecto de negocio
+// (inventario, evento Meta, mensajes al cliente). Columna 'pendientes' -> borra la marca (la tarjeta
+// vuelve a derivarse de la lógica normal de pendientes).
+// YA NO es "solo visual": una columna TERMINAL (Terminado/Diseñado) cuenta como "la diseñadora terminó
+// su parte" y saca el pedido de Pendientes (designPending.disenoMarcadoHechoMs), igual que el botón
+// ✓ Diseñado. Por eso hay que recalcular la bandera del contacto aquí: si no, el filtro y el contador
+// de "Pendientes de Diseño" del CRM se quedaban con el valor viejo hasta el siguiente recálculo.
 router.post('/design-pending/:orderId/board-col', async (req, res) => {
     const { orderId } = req.params;
     const col = String((req.body && req.body.col) || '').trim();
@@ -8640,6 +8649,8 @@ router.post('/design-pending/:orderId/board-col', async (req, res) => {
         } else {
             await ref.update({ disenoBoardCol: col, disenoBoardColAt: admin.firestore.FieldValue.serverTimestamp() });
         }
+        const d = doc.data();
+        try { await require('./design/designPending').recomputeForContact(d.contactId || d.telefono); } catch (_) {}
         res.json({ success: true });
     } catch (e) {
         console.error('[design-pending/board-col] error:', e.message);

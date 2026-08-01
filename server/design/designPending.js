@@ -65,6 +65,22 @@ function pendienteRenovadoMs(d) {
     );
 }
 
+// ¿Cuándo dijo la DISEÑADORA "mi parte ya está hecha"? Hay DOS marcas equivalentes:
+//   - botón ✓ Diseñado                                  -> disenoListoAt
+//   - tarjeta movida en el TABLERO a Terminado/Diseñado  -> disenoBoardCol (+ disenoBoardColAt)
+// Esta lista es la vista de QUIEN DISEÑA: mover la tarjeta a una columna terminal es justamente ella
+// diciendo "terminé mi trabajo". Que falte cortar, enviar, etc. NO la devuelve aquí — eso ya es de
+// otras áreas y se ve en sus propias colas (Chris, 2026-08-01). Antes solo contaba disenoListoAt, así
+// que arrastrar la tarjeta no servía de nada y el pedido regresaba solo a Pendientes (DH13817/DH14079).
+// Es la MISMA señal que ya respeta el corte automático (svgAuto.autoBlocked -> boardTerminado); ahora
+// las dos colas coinciden en qué cuenta como "diseñado".
+// Devuelve ms (0 = sin marca). Con FECHA a propósito: una petición NUEVA del cliente posterior a la
+// marca la invalida y la tarjeta se reactiva sola (ver pendienteRenovadoMs).
+function disenoMarcadoHechoMs(d) {
+    if (!d) return 0;
+    return Math.max(_ms(d.disenoListoAt), boardTerminado(d) ? _ms(d.disenoBoardColAt) : 0);
+}
+
 // Evalúa los motivos de "pendiente de diseño" sobre los datos de UN pedido (puede ser []).
 // hasMockup (opcional): si el caller ya consultó mockup_previews, lo pasa para no depender de la marca.
 function reasonsForOrderData(d, hasMockup) {
@@ -76,12 +92,13 @@ function reasonsForOrderData(d, hasMockup) {
     // así que no debe ensuciar el tablero aunque al pedido original le falte el svgCorte.
     if (estatus === 'reenvio') return [];
 
-    // Marcado a mano "ya diseñado" (botón ✓ Diseñado) -> fuera de pendientes, SALVO que DESPUÉS de
-    // marcarlo el cliente haya pedido algo nuevo (pendienteRenovadoMs > disenoListoAt -> reactivación).
+    // Marcado a mano "ya diseñado" -> fuera de pendientes, SALVO que DESPUÉS de marcarlo el cliente
+    // haya pedido algo nuevo (pendienteRenovadoMs > la marca -> reactivación).
     // Aplica también a 'Corregir': una corrección YA RESUELTA (marcada Diseñado después de pedirla) no
     // sigue pendiente; si el cliente vuelve a pedir, reaparece. DH13817 (pidió otro video, sin marca ->
     // sigue) vs DH13608/13586 (marcados Diseñado tras la corrección -> fuera). Chris, 2026-07-31.
-    if (d.disenoListoAt && _ms(d.disenoListoAt) >= pendienteRenovadoMs(d)) return [];
+    const hechoMs = disenoMarcadoHechoMs(d);
+    if (hechoMs && hechoMs >= pendienteRenovadoMs(d)) return [];
     if (DONE.has(estatus)) return [];
 
     // Envío ya gestionado (tiene guía o lo quitaron de Envíos) -> el diseño ya se hizo (no aplica a Corregir).
@@ -192,4 +209,4 @@ async function markPreviewSent(contactId) {
     }
 }
 
-module.exports = { recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, pendienteRenovadoMs, orderHasMockup, REASONS, DONE };
+module.exports = { recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, pendienteRenovadoMs, disenoMarcadoHechoMs, orderHasMockup, REASONS, DONE };
