@@ -205,7 +205,10 @@ async function findCandidates(cfg) {
         const paidMs = ms(o.comprobanteValidadoAt) || ms(o.confirmedAt) || ms(o.createdAt);
         out.push({ o, fields: el.fields, paidMs, layoutVerificado: el.layoutVerificado, video });
     }
-    out.sort((a, b) => a.paidMs - b.paidMs);   // más antiguos primero
+    // Los que piden VIDEO van PRIMERO (Chris, 2026-08-01): el cliente está esperando el video de una
+    // lámpara que todavía no existe, así que es lo más urgente de la cola. Entre iguales, más antiguos
+    // primero. Ir al frente también los hace emparejar antes.
+    out.sort((a, b) => (b.video ? 1 : 0) - (a.video ? 1 : 0) || a.paidMs - b.paidMs);
     return out;
 }
 
@@ -219,8 +222,17 @@ function buildSheets(candidates) {
     if (i < candidates.length) {
         const solo = candidates[i];
         const ageH = (Date.now() - solo.paidMs) / 36e5;
-        if (ageH >= SINGLE_AFTER_HOURS) sheets.push([solo]);
-        else log(`  ~ ${dhOf(solo.o)} espera pareja (lleva ${ageH.toFixed(1)}h de ${SINGLE_AFTER_HOURS}h)`);
+        // Un pedido de VIDEO nunca espera pareja: sale solo en media hoja de inmediato. Media hoja de
+        // acrílico cuesta mucho menos que dejar a un cliente esperando hasta 12 h su video (Chris,
+        // 2026-08-01). El resto sí espera pareja hasta SINGLE_AFTER_HOURS para no desperdiciar material.
+        if (solo.video) {
+            log(`  ! ${dhOf(solo.o)} pide VIDEO y no tiene pareja -> sale SOLO ya (sin esperar ${SINGLE_AFTER_HOURS}h)`);
+            sheets.push([solo]);
+        } else if (ageH >= SINGLE_AFTER_HOURS) {
+            sheets.push([solo]);
+        } else {
+            log(`  ~ ${dhOf(solo.o)} espera pareja (lleva ${ageH.toFixed(1)}h de ${SINGLE_AFTER_HOURS}h)`);
+        }
     }
     return sheets;
 }
