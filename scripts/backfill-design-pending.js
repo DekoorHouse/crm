@@ -3,7 +3,11 @@
 //      salgan de la cola "falta mockup". Solo toca pedidos que existen.
 //   1) LIMPIA todas las banderas designPending actuales (evita positivos falsos de lógicas anteriores).
 //   2) MARCA de nuevo los contactos cuyos pedidos SÍ están pendientes hoy (motor designPending.js:
-//      Sin estatus sin mockup + Fabricar sin enviar + Corregir + 2º producto).
+//      Sin estatus sin mockup + Fabricar sin enviar + Corregir + 2º producto + PAGADOS sin cortar).
+//
+// OJO: la Fase 1 apaga TODO antes de que la Fase 2 vuelva a encender. Los buckets de la Fase 2 tienen
+// que cubrir TODOS los motivos de designPending.reasonsForOrderData; si falta uno, esos pedidos
+// desaparecen del filtro del CRM sin avisar. Si agregas un motivo nuevo, agrega aquí su consulta.
 //
 // Uso (desde la raíz del repo, con serviceAccountKey.json presente):
 //   node scripts/backfill-design-pending.js
@@ -46,15 +50,29 @@ const { reasonsForOrderData, recomputeForContact } = require('../server/design/d
     console.log(`[backfill] Fase 1 lista: ${cleared} banderas limpiadas.`);
 
     // --- FASE 2: marcar los pendientes reales ---
+    // Los buckets tienen que ser LOS MISMOS que consulta el tablero (apiRoutes /design-pending).
+    // Faltaba comprobanteValidadoAt, que es de donde sale el motivo 'corte' (pagado y sin diseñar,
+    // ver designPending.faltaCorte): como la Fase 1 apaga TODAS las banderas primero, esos pedidos
+    // se quedaban apagados para siempre y desaparecían del filtro del CRM. Justo el incidente que el
+    // propio motivo 'corte' vino a resolver (153 pedidos invisibles). Detectado al auditar antes de
+    // correr el backfill: hoy afectaba a DH14128 ('Foto enviada', pendiente de corte). Chris, 2026-08-01.
     console.log('[backfill] Fase 2: escaneando candidatos...');
     const byId = new Map();
-    const [sSin, sFab, sCor, sProd] = await Promise.all([
-        db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get(),
-        db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(1000).get(),
+    const LIM = { sin: 500, fab: 1000, prod: 200, pag: 1500 };
+    const [sSin, sFab, sCor, sProd, sPag] = await Promise.all([
+        db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(LIM.sin).get(),
+        db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(LIM.fab).get(),
         db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
-        db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
+        db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(LIM.prod).get(),
+        db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(LIM.pag).get(),
     ]);
-    [sSin, sFab, sCor, sProd].forEach(s => s.forEach(d => byId.set(d.id, d)));
+    // Un bucket que llega a su tope está TRUNCADO: los que quedaron fuera se apagaron en la Fase 1 y
+    // no se van a volver a encender. Se avisa fuerte en vez de dejarlo pasar como si todo hubiera ido bien.
+    [['Sin estatus', sSin, LIM.sin], ['Fabricar', sFab, LIM.fab], ['2º producto', sProd, LIM.prod], ['pagados', sPag, LIM.pag]]
+        .forEach(([nombre, snap, lim]) => {
+            if (snap.size >= lim) console.warn(`[backfill] ⚠️  BUCKET TRUNCADO: '${nombre}' llegó al tope de ${lim}. Sube el límite y vuelve a correr, o quedarán pendientes apagados.`);
+        });
+    [sSin, sFab, sCor, sProd, sPag].forEach(s => s.forEach(d => byId.set(d.id, d)));
 
     const contactIds = new Set();
     for (const doc of byId.values()) {
