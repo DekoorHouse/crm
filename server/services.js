@@ -1761,6 +1761,10 @@ async function markOrderFabricarForContact(contactId, contactData, addressText, 
  */
 async function markOrderCorregirForContact(contactId, contactData, clientMessage, reason = 'error', conversationText = '') {
     const isVideo = reason === 'video';
+    // Foto ESPECIAL (apagada, de otro ángulo, de cerca…) se comporta IGUAL que el video: para dársela
+    // hay que tener/fabricar la lámpara real y fotografiarla, así que va a "Corregir" + corte y NO
+    // bloquea el corte automático como sí lo hace un reporte de DATOS. (Pedido de Chris, 2 ago 2026.)
+    const isMediaExtra = reason === 'video' || reason === 'foto_especial';
     try {
         const orderDoc = await getLatestOrderForContact(contactId);
         if (!orderDoc) {
@@ -1776,11 +1780,11 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
             // La ÚLTIMA petición manda sobre el motivo (decisión de Chris): si el pedido estaba en
             // 'Corregir' por datos y ahora pide video (o al revés), el badge de Pendientes de Diseño
             // muestra lo último que pidió, que es lo que hay que atender.
-            upd.corregirMotivo = isVideo ? 'video' : 'datos';
+            upd.corregirMotivo = isMediaExtra ? 'video' : 'datos';
             // Queja de DATOS abierta: se sella para que el corte AUTOMÁTICO no toque este pedido
             // aunque el motivo pase después a 'video' (si no, se cortaría con el dato que el cliente
             // dijo que estaba mal). Se considera resuelta cuando datoCorregidoAt es posterior.
-            if (!isVideo) upd.datosReportadoAt = admin.firestore.FieldValue.serverTimestamp();
+            if (!isMediaExtra) upd.datosReportadoAt = admin.firestore.FieldValue.serverTimestamp();
             // Y SIEMPRE se refresca la fecha del último pendiente: el pedido ya estaba en 'Corregir', así
             // que ni corregirAt ni videoRequestedAt cambian y el tablero de Diseño no tenía cómo saber
             // que el cliente volvió a pedir algo (caso DH13817: pidió OTRO video con la tarjeta ya en
@@ -1795,7 +1799,7 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         const corregirUpdate = {
             estatus: 'Corregir',
             corregirAt: admin.firestore.FieldValue.serverTimestamp(),
-            corregirMotivo: isVideo ? 'video' : 'datos',   // separa "quiere video" de "dato mal" para Pendientes de Diseño
+            corregirMotivo: isMediaExtra ? 'video' : 'datos',   // separa "quiere video/foto extra" de "dato mal" para Pendientes de Diseño
         };
         // Sello PERMANENTE de "este cliente pidió video". corregirMotivo se sobrescribe si después
         // reporta un dato mal, así que la métrica de "piden video → ¿pagan?" necesita su propio campo.
@@ -1804,9 +1808,9 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         }
         // Queja de DATOS abierta (ver el mismo sello arriba): protege del corte automático hasta que
         // alguien corrija el dato (datoCorregidoAt posterior).
-        if (!isVideo) corregirUpdate.datosReportadoAt = admin.firestore.FieldValue.serverTimestamp();
+        if (!isMediaExtra) corregirUpdate.datosReportadoAt = admin.firestore.FieldValue.serverTimestamp();
         await orderDoc.ref.update(corregirUpdate);
-        console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Corregir (${isVideo ? 'pide video' : 'reporte de error'}) del cliente (${contactId}).`);
+        console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Corregir (${isMediaExtra ? (isVideo ? 'pide video' : 'pide foto especial') : 'reporte de error'}) del cliente (${contactId}).`);
         // Refrescar la bandera "Pendiente de Diseño" del contacto (no bloquear si falla).
         try { await require('./design/designPending').recomputeForContact(contactId); } catch (_) {}
 
@@ -1817,7 +1821,7 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         // no cambia el precio. Solo con confianza alta y si de verdad cambió; se guarda el valor anterior
         // y el equipo lo verifica (el pedido queda en "Corregir"). Nunca bloquea la alerta.
         let datoUpdateNote = '';
-        if (!isVideo && conversationText) {
+        if (!isMediaExtra && conversationText) {
             try {
                 const aiOrderReg = require('./orders/aiOrderRegistration');
                 const cfg = await aiOrderReg.getAiOrderConfig();
@@ -1853,7 +1857,7 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         try {
             const name = (contactData && contactData.name) || contactId;
             const req = String(clientMessage || '').trim().slice(0, 300);
-            const text = isVideo
+            const text = isMediaExtra
                 ? `🎥 *Pedido a CORREGIR — pide VIDEO/FOTO extra*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente pide un video o una foto adicional (ej. otro color de luz) de su producto ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nNO hay que re-fabricar nada: graba/toma lo que pide y envíaselo por el chat. Al mandarlo, regresa el pedido a "Foto enviada" para que siga su cobro.`
                 : `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido${req ? `:\n_"${req}"_` : '.'}${datoUpdateNote}\n\nRevisa la conversación${datoUpdateNote ? '.' : ' y corrígelo.'}`;
             await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });

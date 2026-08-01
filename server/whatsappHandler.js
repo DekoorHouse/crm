@@ -713,6 +713,19 @@ router.post('/', async (req, res) => {
             // --- Update contact document ---
             const isNewContact = !contactDoc.exists;
             let isAiRuleEnabled = false; // Nueva bandera para saber si la regla tiene IA
+            // VENTANA DE CONVERSACIÓN ACTIVA (regla de tiempo, pedida por Chris): un cliente EXISTENTE que
+            // venía escribiendo hace POCO no debe ser re-enrutado ni re-saludado si vuelve a tocar OTRO
+            // anuncio —eso lo saca de su conversación en curso (caso Yadi: mid-corazones, tocó dino y le
+            // cambió el depto + le llegó un saludo de dino)—. Si ya pasó "cierto tiempo" (vio una campaña
+            // y DESPUÉS otra distinta), SÍ se re-enruta y se le manda la info del nuevo producto que pide.
+            // contactDoc es el snapshot leído al inicio: su lastMessageTimestamp es el de ANTES de este msj.
+            const ACTIVE_CONV_HOURS = Number(process.env.AD_WELCOME_ACTIVE_HOURS) || 6;
+            const _prevData = contactDoc.exists ? contactDoc.data() : {};
+            const _lastTs = _prevData.lastMessageTimestamp || _prevData.lastClientMsgAt;
+            const _lastMs = _lastTs && _lastTs.toMillis ? _lastTs.toMillis() : (_lastTs && _lastTs._seconds ? _lastTs._seconds * 1000 : 0);
+            const recentlyActive = _lastMs > 0 && (Date.now() - _lastMs) < ACTIVE_CONV_HOURS * 3600 * 1000;
+            // Un contacto EXISTENTE activo hace poco: NO re-enrutar (dejarlo en su depto/IA actuales).
+            const skipRerouting = recentlyActive && !isNewContact;
             // ¿El mensaje llega desde un anuncio que este contacto NO había usado antes?
             // Permite enviar la respuesta configurada también a contactos EXISTENTES que escriben
             // desde un anuncio distinto al original (antes solo se respondía a contactos nuevos).
@@ -831,7 +844,10 @@ router.post('/', async (req, res) => {
             let priceTestGroup = null;
             // Prueba de anticipo (server/orders/anticipoTest.js): experimento independiente.
             let anticipoTestGroup = null;
-            if (message.referral?.source_type === 'ad' && message.referral.source_id) {
+            if (skipRerouting && message.referral?.source_type === 'ad' && message.referral.source_id) {
+                console.log(`[ROUTING] ${from} estuvo activo hace <${ACTIVE_CONV_HOURS}h; NO se re-enruta ni se reinicia la IA (se queda en su departamento/conversación actuales).`);
+            }
+            if (message.referral?.source_type === 'ad' && message.referral.source_id && !skipRerouting) {
                 const adId = message.referral.source_id;
                 console.log(`[ROUTING] Verificando reglas para Ad ID: ${adId}`);
 
@@ -1019,13 +1035,26 @@ router.post('/', async (req, res) => {
                 // Kill-switch: crm_settings/general.fotoReversoToFabricarActive = false.
                 const fotoReversoActive = !(generalSettingsDoc.exists && generalSettingsDoc.data().fotoReversoToFabricarActive === false);
                 // Pide ver/foto + de la parte de ATRÁS/reverso/trasera de la lámpara.
-                const wantsPhoto = /(foto|fotito|im[aá]gen|manda|mandas|mande|env[ií]|enseñ|muestr|ver c[oó]mo|c[oó]mo (se ve|queda|luce)|puedo ver|quiero ver|me ense|checar)/i.test(body);
+                const wantsPhoto = /(foto|fotito|im[aá]gen|manda|mandas|mande|env[ií]|enseñ|muestr|ver c[oó]mo|c[oó]mo (se ve|queda|luce)|puedo ver|quiero ver|me ense|checar|tomar|tom[ae]s?|t[oó]mal[ao]|sacar|s[aá]ca(r|la|le|me)?|saque)/i.test(body);
                 const backSide = /(revers|parte de atr[aá]s|lado de atr[aá]s|parte trasera|por detr[aá]s|de atr[aá]s|por atr[aá]s|atr[aá]s de la l[aá]mpara|detr[aá]s de la l[aá]mpara|de la parte de atr[aá]s)/i.test(body);
                 const alreadyGotBackPhoto = /(gracias por (la|esa|tu) (foto|imagen)|ya (la |lo )?vi|ya me lleg|ya la recib|qued[oó] (bien|perfect))/i.test(body);
                 if (fotoReversoActive && wantsPhoto && backSide && !alreadyGotBackPhoto) {
                     console.log(`[POSTVENTA] ${from} pide FOTO DEL REVERSO → pasando su pedido a "Fabricar" (sin contar venta).`);
                     markOrderFabricarForContact(from, updatedContactData, null, { countSale: false, clientMessage: body })
                         .catch(e => console.warn('[POSTVENTA] markOrderFabricarForContact (foto reverso) falló:', e.message));
+                }
+
+                // --- Cliente pide una FOTO ESPECIAL (apagada, de otro ángulo, de cerca…) → "Corregir" + corte ---
+                // Igual que cuando pide video: para dársela hay que tener la lámpara real y re-fotografiarla,
+                // así que el pedido va a "Corregir" (y a la cola de corte). Se excluye el REVERSO (tiene su
+                // propia rama a "Fabricar" arriba) y los agradecimientos por una foto ya recibida.
+                // Kill-switch: crm_settings/general.fotoEspecialToCorregirActive = false.
+                const fotoEspecialActive = !(generalSettingsDoc.exists && generalSettingsDoc.data().fotoEspecialToCorregirActive === false);
+                const specialCondition = /(sin encender|sin prender|apagad[ao]|sin (luz|la luz)|otro [aá]ngulo|de otro [aá]ngulo|distinto [aá]ngulo|otro [aá]ngulito|de lado|de perfil|de cerca|m[aá]s de cerca|de arriba|por arriba|de frente|con m[aá]s luz|otra vez la foto|otra foto)/i.test(body);
+                if (fotoEspecialActive && wantsPhoto && specialCondition && !backSide && !alreadyGotBackPhoto) {
+                    console.log(`[POSTVENTA] ${from} pide FOTO ESPECIAL (ángulo/apagada/etc.) → marcando su pedido a "Corregir".`);
+                    markOrderCorregirForContact(from, updatedContactData, body, 'foto_especial')
+                        .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact (foto especial) falló:', e.message));
                 }
             }
 
@@ -1063,20 +1092,9 @@ router.post('/', async (req, res) => {
             //   quien ya había escrito desde un anuncio NO recibía la respuesta del siguiente.
             let adResponseSent = false;
             const fromAd = message.referral?.source_type === 'ad' && message.referral.source_id;
-            // VENTANA DE CONVERSACIÓN ACTIVA (regla de tiempo, pedida por Chris): si un cliente que ya
-            // venía escribiendo hace POCO vuelve a tocar OTRO anuncio, NO se le suelta una bienvenida
-            // encima (caso Yadi: a media compra de corazones tocó un anuncio de dino → saludo dino que
-            // la confundió y canceló; la IA no pudo hacer labor de venta). PERO si ya pasó "cierto
-            // tiempo" (vio la campaña, y DESPUÉS otra distinta), SÍ se le manda la info del nuevo
-            // producto que pide —porque quizá sí lo quiere—. El umbral es configurable (default 6 h).
-            // Solo aplica a CONTACTOS EXISTENTES con anuncio nuevo; a un contacto NUEVO siempre se saluda.
-            const ACTIVE_CONV_HOURS = Number(process.env.AD_WELCOME_ACTIVE_HOURS) || 6;
-            // contactDoc es el snapshot leído al inicio (línea ~698): su lastMessageTimestamp es el de
-            // ANTES de este mensaje, justo la señal de "venía conversando hace poco".
-            const _prevData = contactDoc.exists ? contactDoc.data() : {};
-            const _lastTs = _prevData.lastMessageTimestamp || _prevData.lastClientMsgAt;
-            const _lastMs = _lastTs && _lastTs.toMillis ? _lastTs.toMillis() : (_lastTs && _lastTs._seconds ? _lastTs._seconds * 1000 : 0);
-            const recentlyActive = _lastMs > 0 && (Date.now() - _lastMs) < ACTIVE_CONV_HOURS * 3600 * 1000;
+            // recentlyActive / ACTIVE_CONV_HOURS ya se calcularon al INICIO del handler (junto a
+            // isNewContact/skipRerouting): un cliente que venía activo hace poco NO recibe una bienvenida
+            // de OTRO anuncio encima (regla de tiempo). A un contacto NUEVO siempre se le saluda.
             if (fromAd && isNewAdForContact && !isNewContact && recentlyActive) {
                 console.log(`[AD] Contacto ${from} tocó un anuncio nuevo pero estuvo activo hace <${ACTIVE_CONV_HOURS}h; NO se re-saluda (la IA atiende su mensaje en contexto).`);
             }
