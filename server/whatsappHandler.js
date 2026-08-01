@@ -1063,7 +1063,24 @@ router.post('/', async (req, res) => {
             //   quien ya había escrito desde un anuncio NO recibía la respuesta del siguiente.
             let adResponseSent = false;
             const fromAd = message.referral?.source_type === 'ad' && message.referral.source_id;
-            if (fromAd && (isNewContact || isNewAdForContact)) {
+            // VENTANA DE CONVERSACIÓN ACTIVA (regla de tiempo, pedida por Chris): si un cliente que ya
+            // venía escribiendo hace POCO vuelve a tocar OTRO anuncio, NO se le suelta una bienvenida
+            // encima (caso Yadi: a media compra de corazones tocó un anuncio de dino → saludo dino que
+            // la confundió y canceló; la IA no pudo hacer labor de venta). PERO si ya pasó "cierto
+            // tiempo" (vio la campaña, y DESPUÉS otra distinta), SÍ se le manda la info del nuevo
+            // producto que pide —porque quizá sí lo quiere—. El umbral es configurable (default 6 h).
+            // Solo aplica a CONTACTOS EXISTENTES con anuncio nuevo; a un contacto NUEVO siempre se saluda.
+            const ACTIVE_CONV_HOURS = Number(process.env.AD_WELCOME_ACTIVE_HOURS) || 6;
+            // contactDoc es el snapshot leído al inicio (línea ~698): su lastMessageTimestamp es el de
+            // ANTES de este mensaje, justo la señal de "venía conversando hace poco".
+            const _prevData = contactDoc.exists ? contactDoc.data() : {};
+            const _lastTs = _prevData.lastMessageTimestamp || _prevData.lastClientMsgAt;
+            const _lastMs = _lastTs && _lastTs.toMillis ? _lastTs.toMillis() : (_lastTs && _lastTs._seconds ? _lastTs._seconds * 1000 : 0);
+            const recentlyActive = _lastMs > 0 && (Date.now() - _lastMs) < ACTIVE_CONV_HOURS * 3600 * 1000;
+            if (fromAd && isNewAdForContact && !isNewContact && recentlyActive) {
+                console.log(`[AD] Contacto ${from} tocó un anuncio nuevo pero estuvo activo hace <${ACTIVE_CONV_HOURS}h; NO se re-saluda (la IA atiende su mensaje en contexto).`);
+            }
+            if (fromAd && (isNewContact || (isNewAdForContact && !recentlyActive))) {
                 const adId = message.referral.source_id;
                 console.log(`[AD] ${isNewContact ? 'Nuevo contacto' : 'Contacto existente'} desde Ad ID: ${adId} (anuncio nuevo para el contacto: ${isNewAdForContact}).`);
                 // Query using 'array-contains' for the adId within the 'adIds' array
