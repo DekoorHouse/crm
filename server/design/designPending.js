@@ -26,7 +26,7 @@ const DONE = new Set([
     'cancelado', 'entregado', 'devolución', 'devolucion', 'mns amenazador',
 ]);
 
-const REASONS = ['mockup', 'fabricar', 'corte', 'datos', 'video', 'segundo_producto'];
+const REASONS = ['mockup', 'fabricar', 'corte', 'datos', 'video', 'segundo_producto', 'manual'];
 
 // --- Motivo 'corte': el HUECO por el que se colaban pedidos sin diseñar (detectado 2026-07-27) -----
 // Al VALIDAR el pago el pedido pasa a 'Pagado' (NO a 'Fabricar'), y si además se le generó la guía por
@@ -124,6 +124,12 @@ function reasonsForOrderData(d, hasMockup) {
     if (!reasons.length && faltaCorte(d)) reasons.push('corte');
 
     if (d.productoAgregadoPostPagoAt) reasons.push('segundo_producto');
+
+    // Empujado a mano a Pendientes de Diseño desde la sección Mockup (botón "A Diseño"): aparece aquí
+    // aunque no tenga un motivo natural (p.ej. ya tiene mockup). Los early-returns de arriba (marcado
+    // hecho / estatus terminal) ganan primero, así que un forzado YA diseñado NO reaparece. El botón
+    // "✓ Diseñado" (endpoint /done) limpia designForce. Espejo inverso de mockupForce. Chris, 2026-08-01.
+    if (!reasons.length && d.designForce) reasons.push('manual');
 
     return reasons;
 }

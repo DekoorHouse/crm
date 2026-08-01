@@ -8284,6 +8284,8 @@ router.get('/design-pending', async (req, res) => {
                 iaEligible: isCorazon(p) && !MANUAL_SPECIAL_RE.test(datosOf(p)),
                 // ¿Se empujó a mano a la cola de Mockup ("A Mockup")? Pinta el estado del botón.
                 mockupForce: !!p.mockupForce,
+                // ¿Se empujó a mano DESDE Mockup a esta cola ("A Diseño", designForce)? Pinta el badge "Desde Mockup".
+                forcedToDesign: p.designForce === true,
                 // Columna del TABLERO Kanban donde el diseñador puso la tarjeta a mano (solo visual, no
                 // cambia el estatus). Sin asignar -> 'pendientes' (columna por defecto).
                 // REACTIVACIÓN: si el cliente pidió algo DESPUÉS de que se movió la tarjeta (p.ej. otro
@@ -8380,19 +8382,22 @@ router.get('/design-pending', async (req, res) => {
             // aquí (esta lista no jalaba 'Pagado' por el "cementerio" de miles de viejos). Se traen los de
             // PAGO reciente (mismo orderBy+limit que el worker) y el motor (faltaCorte, corte por
             // AUTO_DESDE_MS) descarta el histórico ya cortado; solo sobreviven los pagados y SIN cortar.
-            const [sSin, sFab, sCor, sProd, sPag] = await Promise.all([
+            const [sSin, sFab, sCor, sProd, sPag, sForce] = await Promise.all([
                 db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get(),
                 db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(1000).get(),
                 db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
                 db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
                 db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(400).get(),
+                // Empujados a mano desde Mockup (botón "A Diseño", campo designForce): pueden estar en
+                // CUALQUIER estatus (ya tienen mockup, etc.), por eso se traen aparte. Espejo de mockupForce.
+                db.collection('pedidos').where('designForce', '==', true).limit(300).get(),
             ]);
-            [sSin, sFab, sCor, sProd, sPag].forEach(s => s.forEach(d => byId.set(d.id, d)));
+            [sSin, sFab, sCor, sProd, sPag, sForce].forEach(s => s.forEach(d => byId.set(d.id, d)));
 
             // Previews (mockup_previews) de los 'Sin estatus' (fuente de verdad de "ya tiene mockup", por
             // si la marca mockupPreviewAt no quedó), de los 'Fabricar' y de los 'Corregir' (para saber si
             // el worker los va a cortar solo). Un solo lote reutilizable.
-            const prevMap = await previewsFor([...new Set([...sSin.docs.map(d => d.id), ...sFab.docs.map(d => d.id), ...sCor.docs.map(d => d.id), ...sPag.docs.map(d => d.id)])]);
+            const prevMap = await previewsFor([...new Set([...sSin.docs.map(d => d.id), ...sFab.docs.map(d => d.id), ...sCor.docs.map(d => d.id), ...sPag.docs.map(d => d.id), ...sForce.docs.map(d => d.id)])]);
             const conMockup = new Set();
             sSin.docs.forEach(d => { const pv = prevMap.get(d.id); if (pv && pv.length) conMockup.add(d.id); });
             for (const doc of byId.values()) {
@@ -8400,8 +8405,9 @@ router.get('/design-pending', async (req, res) => {
                 const reasons = reasonsForOrderData(p, conMockup.has(doc.id));
                 if (!reasons.length) continue;
                 // Los que el worker corta solo (Fabricar auto-elegible, esperando pareja) NO son diseño
-                // manual: se muestran en la pestaña "SVG IA", no en Pendientes.
-                if (isAutoWaiting(p, prevMap.get(doc.id))) continue;
+                // manual: se muestran en la pestaña "SVG IA", no en Pendientes. EXCEPCIÓN: si el operador
+                // lo empujó a mano ("A Diseño", designForce), se respeta y se queda en Pendientes.
+                if (isAutoWaiting(p, prevMap.get(doc.id)) && !p.designForce) continue;
                 // Los 'Corregir' que pidieron VIDEO sí se quedan aquí (el pendiente del video es manual),
                 // pero se marcan para que el diseñador NO los corte a mano: el worker ya los tiene en cola.
                 // Si ya hay un iaForce en curso (Chris lo forzó a mano) NO se marca: ese pedido ya muestra
@@ -8484,6 +8490,28 @@ router.post('/design-pending/:orderId/comentario', async (req, res) => {
     }
 });
 
+// POST /api/design-pending/force — Empuja (o quita) un pedido a Pendientes de Diseño desde la sección
+// Mockup (botón "A Diseño"). Espejo inverso de /api/mockups/force-order. NO toca el estatus; solo pone/
+// quita la marca `designForce`, que hace que /design-pending lo incluya (motivo 'manual'). Body: { orderId, enabled }.
+router.post('/design-pending/force', async (req, res) => {
+    const orderId = String((req.body && req.body.orderId) || '').trim();
+    if (!orderId) return res.status(400).json({ success: false, message: 'Falta orderId.' });
+    const enabled = req.body.enabled !== false;   // default: empujar
+    try {
+        const ref = db.collection('pedidos').doc(orderId);
+        const doc = await ref.get();
+        if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        await ref.update({ designForce: enabled });
+        // Refresca la bandera del contacto (por si el pedido forzado es el último del contacto).
+        const d = doc.data();
+        try { await require('./design/designPending').recomputeForContact(d.contactId || d.telefono); } catch (_) {}
+        res.json({ success: true, enabled });
+    } catch (e) {
+        console.error('[design-pending/force] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // POST /api/design-pending/:orderId/done — marca un pedido como "ya diseñado": lo saca de Pendientes
 // y lo pasa a Diseñados. NO cambia el estatus real del pedido, solo pone la marca del tablero.
 router.post('/design-pending/:orderId/done', async (req, res) => {
@@ -8492,7 +8520,9 @@ router.post('/design-pending/:orderId/done', async (req, res) => {
         const ref = db.collection('pedidos').doc(orderId);
         const doc = await ref.get();
         if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
-        await ref.update({ disenoListoAt: admin.firestore.FieldValue.serverTimestamp() });
+        // disenoListoAt lo saca de Pendientes; designForce:false limpia el empujón manual ("A Diseño") para
+        // que un pedido forzado y ya diseñado no reaparezca solo (el motivo 'manual' depende de designForce).
+        await ref.update({ disenoListoAt: admin.firestore.FieldValue.serverTimestamp(), designForce: false });
         const d = doc.data();
         try { await require('./design/designPending').recomputeForContact(d.contactId || d.telefono); } catch (_) {}
         res.json({ success: true });

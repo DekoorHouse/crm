@@ -267,6 +267,7 @@ const DP_MOTIVOS = {
     datos: ['Datos', '#fd7e14', 'fa-triangle-exclamation'],
     video: ['Video', '#e83e8c', 'fa-video'],
     segundo_producto: ['+Producto', '#2563eb', 'fa-plus'],
+    manual: ['Desde Mockup', '#0d9488', 'fa-wand-magic-sparkles'],   // empujado a mano desde la sección Mockup ("A Diseño")
 };
 
 function DesignPendingViewTemplate() {

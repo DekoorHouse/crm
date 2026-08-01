@@ -137,6 +137,35 @@ async function mkHideOrder(orderId) {
     } catch (e) { mkToast('No se pudo quitar: ' + e.message, 'error'); }
 }
 
+// Botón "A Diseño": empuja (o quita) el pedido a Pendientes de Diseño. Espejo inverso del "A Mockup" que
+// vive en Pendientes de Diseño. NO cambia el estatus; solo la marca designForce (el pedido aparece allá
+// con el motivo "Desde Mockup"). Tres estados como "A Mockup": empujar / quitar.
+function mkDesignBtn(o) {
+    return o.forcedToDesign === true
+        ? `<button class="btn btn-sm mk-design-btn" style="background:#0d9488;color:#fff;border:none;white-space:nowrap;" title="Este pedido ya está en Pendientes de Diseño (enviado desde aquí). Clic para quitarlo de esa lista." onclick="mkSendToDesign('${mkAttr(o.id)}', false, this)"><i class="fas fa-palette mr-1"></i>En Diseño ✓</button>`
+        : `<button class="btn btn-outline btn-sm mk-design-btn" style="white-space:nowrap;" title="Mandar este pedido a Pendientes de Diseño (para diseño manual). No cambia su estatus." onclick="mkSendToDesign('${mkAttr(o.id)}', true, this)"><i class="fas fa-palette mr-1"></i>A Diseño</button>`;
+}
+
+// Empuja/quita el pedido a Pendientes de Diseño (POST /api/design-pending/force). Reemplaza el botón en
+// su lugar (sin re-render de la tarjeta, para no perder los previews en curso).
+async function mkSendToDesign(orderId, enabled, el) {
+    if (el) el.disabled = true;
+    try {
+        const r = await mkFetchJson('/api/design-pending/force', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, enabled }),
+        });
+        if (!r || r.success === false) throw new Error((r && (r.error || r.message)) || 'Error');
+        const o = mkState.pending.find(x => x.id === orderId);
+        if (o) o.forcedToDesign = !!enabled;
+        if (el && o) el.outerHTML = mkDesignBtn(o);
+        mkToast(enabled ? 'Pedido enviado a Pendientes de Diseño ✅' : 'Pedido quitado de Pendientes de Diseño', enabled ? 'success' : 'info');
+    } catch (e) {
+        if (el) el.disabled = false;
+        mkToast('No se pudo: ' + (e.message || e), 'error');
+    }
+}
+
 // Heurística: intenta separar nombre1/nombre2/fecha del texto libre del pedido.
 // Los campos quedan EDITABLES, así que basta con acercar; el operador confirma.
 // Extrae la fecha: primero por la etiqueta "Fecha:" (soporta mes con letras, rangos,
@@ -581,6 +610,7 @@ function mkRenderPending() {
                 </div>
                 <div style="display:flex;align-items:center;gap:12px;">
                     <span class="mk-date">${mkEsc(mkFmtDate(o.createdAt))}${lastMsgHtml}${producto ? ' · ' + mkEsc(producto) : ''}</span>
+                    ${mkDesignBtn(o)}
                     <button class="mk-block-x" title="Quitar de la lista (no borra el pedido)" onclick="mkHideOrder('${mkAttr(o.id)}')"><i class="fas fa-eye-slash"></i></button>
                 </div>
             </div>
