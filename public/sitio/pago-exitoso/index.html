@@ -150,8 +150,8 @@
         if (!localStorage.getItem(key)) {
             let value = 0, items = 0;
             try { value = DekoorCart.subtotal(); items = DekoorCart.count(); } catch (e) {}
-            if (typeof fbq === 'function') fbq('track', 'Purchase', { value: value || 650, currency: 'MXN', num_items: items || 1 });
-            if (typeof gtag === 'function') gtag('event', 'purchase', { transaction_id: externalRef || undefined, value: value || 650, currency: 'MXN' });
+            if (typeof fbq === 'function') fbq('track', 'Purchase', { value: value || 750, currency: 'MXN', num_items: items || 1 });
+            if (typeof gtag === 'function') gtag('event', 'purchase', { transaction_id: externalRef || undefined, value: value || 750, currency: 'MXN' });
             localStorage.setItem(key, '1');
         }
         try { DekoorCart.clear(); } catch (e) {}

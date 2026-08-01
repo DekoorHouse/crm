@@ -720,6 +720,26 @@ function escapeAttr(str) {
 
 renderCart();
 
+// Si el precio vigente cambió desde que el cliente guardó su carrito
+// (localStorage), actualizarlo: el cobro real siempre usa el precio del
+// servidor, así que el resumen debe mostrar lo mismo.
+window.addEventListener('dekoor:prices-updated', function () {
+    const p = window.DekoorConfig.prices;
+    const cart = DekoorCart.get();
+    let cambio = false;
+    cart.forEach(function (item) {
+        if (item.price !== p.productUnitPrice) {
+            item.price = p.productUnitPrice;
+            item.originalPrice = p.productOriginalPrice;
+            cambio = true;
+        }
+    });
+    if (cambio) {
+        DekoorCart.save(cart);
+        renderCart();
+    }
+});
+
 // Mobile menu
 document.getElementById('hamburgerBtn').addEventListener('click', function() {
     document.getElementById('mobileMenu').classList.toggle('hidden');

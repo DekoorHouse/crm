@@ -8,7 +8,7 @@
  * Cambiar aqui actualiza TODOS los lugares del sitio.
  */
 const PRICES = {
-    productUnitPrice: 650,        // MXN por lampara (precio de venta)
+    productUnitPrice: 750,        // MXN por lampara (precio de venta)
     productOriginalPrice: 780,    // MXN precio original (tachado, muestra descuento)
     shippingJtCost: 0,            // MXN - envío estándar (gratis)
     shippingDhlCost: 0,           // MXN - DHL (envío gratis, tarifa única)
