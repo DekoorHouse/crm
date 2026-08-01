@@ -147,8 +147,18 @@ router.get('/pending', asyncHandler(async (req, res) => {
     snapForce.docs.forEach(d => byId.set(d.id, d));
     const pend = [...byId.values()]
         .map(d => ({ id: d.id, ...d.data() }))
-        // mockupHidden oculta un "Sin estatus"; un pedido EMPUJADO (mockupForce) siempre se muestra.
-        .filter(o => o.mockupForce === true || o.mockupHidden !== true)
+        .filter(o => {
+            // Un pedido EMPUJADO a mano (mockupForce) SIEMPRE se muestra (aunque ya se haya enviado).
+            if (o.mockupForce === true) return true;
+            if (o.mockupHidden === true) return false;   // ocultado por el operador
+            // Ya se le ENVIÓ su mockup / pedido-listo al cliente -> fuera de la cola aunque el estatus
+            // se haya quedado en 'Sin estatus'. Caso DH14108: la foto + datos de pago se mandaron por
+            // /cuatro desde el chat (sella pedidoListoEnviadoAt) sin cambiar el estatus, y el pedido
+            // seguía apareciendo aquí. previewEnviadoAt = se envió el preview desde esta sección;
+            // mockupPaymentSentAt = se envió el mockup + pago (flujo Mockup).
+            if (o.previewEnviadoAt || o.pedidoListoEnviadoAt || o.mockupPaymentSentAt) return false;
+            return true;
+        })
         .sort((a, b) => {
             const ta = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
             const tb = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
