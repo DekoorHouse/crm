@@ -4565,6 +4565,30 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             const { stampPedidoListoEnviado } = require('./services');
             stampPedidoListoEnviado(contactId).catch(() => {});
         }
+        // Pedido ESPECIAL atendido a MANO: un pedido sin mockup automático (especial: foto/grabado/frase,
+        // o cualquier personaje sin plantilla) recibe su preview/producto como una FOTO/VIDEO que el
+        // operador manda desde el chat. Si el pedido sigue 'Sin estatus' y NO tiene preview automático,
+        // esa imagen ES su mockup: se sella mockupSentManuallyAt para sacarlo de la cola de Mockup y que
+        // el auto-generador no gaste en él. Campo dedicado (no toca las métricas de cobro). Cubre también
+        // el /cuatro (que manda la foto adjunta). Fire-and-forget. Chris, 2026-08-01.
+        if (fileUrl && /^(image|video)\//i.test(String(fileType || ''))) {
+            (async () => {
+                try {
+                    const { getLatestOrderForContact } = require('./services');
+                    const od = await getLatestOrderForContact(contactId);
+                    const odata = od && od.data();
+                    if (odata && !odata.mockupSentManuallyAt
+                        && String(odata.estatus || 'Sin estatus').trim().toLowerCase() === 'sin estatus') {
+                        const pv = await db.collection('mockup_previews').doc(od.id).get();
+                        const tienePreview = pv.exists && Array.isArray(pv.data().previews) && pv.data().previews.length;
+                        if (!tienePreview) {
+                            await od.ref.update({ mockupSentManuallyAt: admin.firestore.FieldValue.serverTimestamp() });
+                            console.log(`[MOCKUP] DH${odata.consecutiveOrderNumber || '?'}: foto/video manual → fuera de la cola de Mockup.`);
+                        }
+                    }
+                } catch (e) { console.warn('[MOCKUP] mockupSentManuallyAt falló:', e.message); }
+            })();
+        }
         // /corazon: encender la IA del contacto. No dispara respuesta inmediata (el último mensaje es
         // saliente); la IA contestará el próximo mensaje del cliente.
         if (isCorazonCommand) { contactUpdateData.botActive = true; console.log(`[CORAZON] IA activada (whatsapp) para ${contactId}.`); }

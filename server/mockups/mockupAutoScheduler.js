@@ -170,6 +170,8 @@ async function runOnce(opts) {
         for (const d of snap.docs) {
             const o = { id: d.id, ...d.data() };
             if (o.mockupHidden === true) continue;
+            // Ya atendido a mano (foto/video de su preview enviada desde el chat) -> no gastar en auto-gen.
+            if (o.mockupSentManuallyAt) continue;
             // 1) Corazones (regla de siempre, intacta).
             if (corazones && corazones.baseImageUrl && isCorazones(o, corazones)) {
                 if (SPECIAL_RE.test(datosOf(o))) continue;   // algo especial -> revisión manual

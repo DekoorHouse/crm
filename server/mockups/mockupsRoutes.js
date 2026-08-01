@@ -157,6 +157,10 @@ router.get('/pending', asyncHandler(async (req, res) => {
             // seguía apareciendo aquí. previewEnviadoAt = se envió el preview desde esta sección;
             // mockupPaymentSentAt = se envió el mockup + pago (flujo Mockup).
             if (o.previewEnviadoAt || o.pedidoListoEnviadoAt || o.mockupPaymentSentAt) return false;
+            // Pedido ESPECIAL (sin mockup automático) al que el operador ya le mandó su preview/producto
+            // como FOTO/VIDEO desde el chat -> ya está atendido, fuera de la cola. Lo sella el envío de
+            // media en POST /api/contacts/:id/messages. Chris, 2026-08-01.
+            if (o.mockupSentManuallyAt) return false;
             return true;
         })
         .sort((a, b) => {
