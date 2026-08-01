@@ -44,9 +44,18 @@ const MK_DESIGN_SEED = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900
 
 // results: URL de preview por blockId (en sesión). paymentSent/noticeSent: dedupe de
 // envío por pedido (mandar /cuatro+/bbb o el aviso una sola vez aunque haya varias fotos).
+// sent: foto YA despachada por blockId ('enviado' | 'cola' | 'programado'), para que el botón
+// no vuelva a ofrecer "Enviar" al re-dibujar la lista (ver mkResultHtml).
 // refFiles: 2ª referencia subida a mano por bloque (blockId -> File). pruebas: estado del
 // banco de pruebas (pestaña "Pruebas").
-const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, refFiles: {}, refPasteTarget: null, lzPickByTemplate: {}, lzHydrated: {}, pruebas: { values: {}, resultUrl: '', refFile: null, promptEdits: {}, provider: 'gemini' }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
+const mkState = { tab: 'pendientes', pending: [], templates: [], results: {}, editing: null, newFile: null, paymentSent: {}, noticeSent: {}, sent: {}, refFiles: {}, refPasteTarget: null, lzPickByTemplate: {}, lzHydrated: {}, pruebas: { values: {}, resultUrl: '', refFile: null, promptEdits: {}, provider: 'gemini' }, lienzo: { items: [], sel: null, selIds: [], seq: 1, designs: [], designId: null } };
+
+// Estado FINAL del botón de envío de un bloque (icono + texto). Se re-dibuja desde mkState.sent.
+const MK_SENT_UI = {
+    enviado: { icon: 'fa-check', label: 'Enviado' },
+    cola: { icon: 'fa-clock', label: 'En cola' },
+    programado: { icon: 'fa-clock', label: 'Programado' },
+};
 
 // Cache (promesa) del data-URI de la fuente manuscrita, para embeberla en el SVG al rasterizar.
 let mkFontDataUrlPromise = null;
@@ -666,10 +675,23 @@ function mkAddBlock(orderId) {
     cont.insertAdjacentHTML('beforeend', mkBlockHtml(order, block, n));
 }
 
-function mkRemoveBlock(blockId) {
+async function mkRemoveBlock(blockId) {
     const el = document.querySelector(`.mk-block[data-block="${window.CSS && CSS.escape ? CSS.escape(blockId) : blockId}"]`);
+    const orderId = el && el.closest('.mk-card') && el.closest('.mk-card').dataset.order;
     if (el) el.remove();
     delete mkState.results[blockId];
+    delete mkState.sent[blockId];
+    // Quitar el preview PERSISTIDO de ese bloque: si no, "todas las fotos enviadas" esperaría una foto que
+    // el operador ya eliminó y el pedido no se cerraría nunca. Best-effort. Chris, 2026-08-01.
+    if (orderId) {
+        const o = mkState.pending.find(x => x.id === orderId);
+        if (o && Array.isArray(o.previews)) o.previews = o.previews.filter(p => p.blockId !== blockId);
+        try {
+            const ref = db.collection('mockup_previews').doc(orderId);
+            const snap = await ref.get();
+            if (snap.exists) await ref.set({ previews: (snap.data().previews || []).filter(p => p.blockId !== blockId) }, { merge: true });
+        } catch (e) { console.error('[mockups] quitar preview del bloque:', e.message); }
+    }
 }
 
 // Al cambiar la plantilla de un bloque, re-render de sus campos (conservando lo escrito por clave)
@@ -689,11 +711,26 @@ function mkOnBlockTemplateChange(blockId) {
 }
 
 function mkResultHtml(orderId, blockId, imgUrl) {
+    // El "ya enviado" NO puede vivir solo en el botón: mkSend lo dejaba en "Enviado" tocando el DOM,
+    // pero cualquier re-dibujo (mkRenderPending al quitar OTRO pedido, o "Regenerar") volvía a pintar
+    // un "Enviar por WhatsApp" ACTIVO sobre un pedido ya despachado —y volver a picarle le manda la
+    // foto DOS VECES al cliente (caso DH14117: el pedido ya tenía estatus "Foto enviada"). El estado
+    // se conserva en mkState.sent y se re-dibuja aquí. "Regenerar" lo limpia: la foto nueva sí se envía.
+    // Y para que sobreviva a un RECARGO de página (mkState.sent es de sesión), se respeta también el
+    // sello PERSISTIDO `sentAt` del preview (mockup_previews.previews[].sentAt) — clave en pedidos de
+    // varias lámparas: la foto ya enviada sigue marcada "Enviado" y solo falta picarle a la otra.
+    const _o = mkState.pending.find(o => o.id === orderId);
+    const _pv = _o && (_o.previews || []).find(p => p.blockId === blockId);
+    const sent = mkState.sent[blockId] || ((_pv && _pv.sentAt) ? 'enviado' : null);
+    const ui = MK_SENT_UI[sent];
+    const sendBtn = ui
+        ? `<button class="btn btn-primary btn-sm mk-send-btn" disabled title="Este preview ya se le mandó al cliente. Para mandarle otro, dale Regenerar."><i class="fas ${ui.icon} mr-2"></i>${ui.label}</button>`
+        : `<button class="btn btn-primary btn-sm mk-send-btn" onclick="mkSend('${mkAttr(orderId)}','${mkAttr(blockId)}')"><i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp</button>`;
     // Clic en la imagen (o en "Ampliar") la abre en el modal del CRM (openImageModal), no en pestaña nueva.
     return `
         <img src="${mkAttr(imgUrl)}" alt="Preview" title="Clic para ampliar" onclick="openImageModal(this.src)">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
-            <button class="btn btn-primary btn-sm mk-send-btn" onclick="mkSend('${mkAttr(orderId)}','${mkAttr(blockId)}')"><i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp</button>
+            ${sendBtn}
             <button class="btn btn-outline btn-sm" onclick="openImageModal(this.closest('.mk-result').querySelector('img').src)"><i class="fas fa-expand mr-2"></i>Ampliar</button>
             <button class="btn btn-secondary btn-sm" onclick="mkGenerate('${mkAttr(orderId)}','${mkAttr(blockId)}')"><i class="fas fa-redo mr-2"></i>Regenerar</button>
         </div>`;
@@ -735,6 +772,14 @@ async function mkGenerate(orderId, blockId) {
         const url = await mkRunGeneration({ templateId, fields, extraPrompt, orderId, blockId, secondImageUrl });
 
         mkState.results[blockId] = url;
+        // Preview NUEVO en este bloque: se reabre el envío (la foto anterior ya salió, pero esta
+        // corrección todavía no). Sin esto el bloque quedaría en "Enviado" y no habría cómo mandarla.
+        delete mkState.sent[blockId];
+        // El backend (savePreview) ya reemplazó el preview SIN sentAt; limpia también el sello LOCAL
+        // para que el bloque re-dibujado muestre "Enviar" (no "Enviado" del envío anterior).
+        const _rg = mkState.pending.find(x => x.id === orderId);
+        const _rgpv = _rg && (_rg.previews || []).find(p => p.blockId === blockId);
+        if (_rgpv) delete _rgpv.sentAt;
         if (box) box.innerHTML = mkResultHtml(orderId, blockId, url);
     } catch (e) {
         if (box) box.innerHTML = `<div class="mk-result-empty" style="color:#dc2626;">${mkEsc(e.message)}</div>`;
@@ -831,13 +876,15 @@ async function mkSend(orderId, blockId) {
             const waQ = await mkFetchJson('/api/mockups/wa-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: imageUrl }) });
             await mkQueueChat(telefono, { fileUrl: waQ.jpgUrl, fileType: 'image/jpeg' });
 
-            // Se marca como enviado (IA post-venta + estatus): el pedido YA quedó despachado, así no
-            // vuelve a salir en la fila de mockups ni se encola dos veces la misma foto.
-            await mkAfterSend(orderId, telefono, true);
+            // Este bloque quedó despachado (en cola): se marca su envío (persistido) y el pedido se cierra
+            // SOLO si con este ya se dejaron en cola TODAS sus fotos (soporta pedidos de varias lámparas).
+            const allSentQ = await mkMarkBlockSent(orderId, blockId);
+            await mkAfterSend(orderId, telefono, allSentQ);
             const avisoTxt = canal === 'messenger' ? 'se le mandó un aviso por Messenger'
                 : canal === 'instagram' ? 'Instagram no permite avisar fuera de 24 h'
                 : 'se mandó la plantilla';
             mkToast(`Conversación cerrada: ${avisoTxt} y su pedido quedó EN COLA. Cuando responda, la foto se le envía sola ✅`, 'success');
+            mkState.sent[blockId] = 'cola';
             setBtn('<i class="fas fa-clock mr-2"></i>En cola', true);
             return;
         }
@@ -875,6 +922,7 @@ async function mkSend(orderId, blockId) {
                 if (o) { o.mockupHidden = true; o.mockupForce = false; }
             } catch (e) { console.error('[mockups] flash hide:', e.message); }
             mkToast('⚡ Flash: gancho enviado. La foto + pago le llegan al cliente en ' + mkFlashLabel(minutes) + ' ✅', 'success');
+            mkState.sent[blockId] = 'programado';
             setBtn('<i class="fas fa-clock mr-2"></i>Programado', true);
             return;
         }
@@ -894,12 +942,20 @@ async function mkSend(orderId, blockId) {
         const wa = await mkFetchJson('/api/mockups/wa-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: imageUrl }) });
         await mkSendChat(telefono, { fileUrl: wa.jpgUrl, fileType: 'image/jpeg' });
 
-        await mkAfterSend(orderId, telefono, true);   // estatus -> "Foto enviada" + IA encendida
-        mkToast('Foto enviada al cliente ✅', 'success');
+        // La foto YA salió: se marca ANTES de mkAfterSend (best-effort, puede tardar) para que ni un
+        // re-dibujo ni un fallo posterior devuelvan un botón "Enviar" activo sobre una foto ya enviada.
+        mkState.sent[blockId] = 'enviado';
+        const allSent = await mkMarkBlockSent(orderId, blockId);   // persiste el envío; true si ya salieron TODAS
+        await mkAfterSend(orderId, telefono, allSent);             // cierra el pedido SOLO si ya se enviaron todas
+        mkToast(allSent ? 'Foto enviada al cliente ✅' : 'Foto enviada ✅ · falta(n) otra(s) foto(s) de este pedido', 'success');
         setBtn('<i class="fas fa-check mr-2"></i>Enviado', true);
     } catch (e) {
         mkToast('Error al enviar: ' + e.message, 'error');
-        setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp', false);
+        // Si la foto ya había salido y el error vino DESPUÉS (estatus, IA post-venta…), no se
+        // reabre el botón: reintentar solo le mandaría la foto repetida al cliente.
+        const yaEnviado = MK_SENT_UI[mkState.sent[blockId]];
+        if (yaEnviado) setBtn(`<i class="fas ${yaEnviado.icon} mr-2"></i>${yaEnviado.label}`, true);
+        else setBtn('<i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp', false);
     } finally {
         delete mkState.sending[blockId];
     }
@@ -933,22 +989,33 @@ function mkQrBody(qr) {
     return body;
 }
 
-// Tras enviar: asegurar la IA encendida (post-venta) para que responda al cliente, y
-// (si se envió la foto) cambiar el estatus del pedido a "Foto enviada". Best-effort:
-// los mensajes ya salieron, así que un fallo aquí no debe romper el flujo.
-async function mkAfterSend(orderId, telefono, photoSent) {
+// Marca en el SERVIDOR que la foto de ESTE bloque ya salió (persistido en mockup_previews.previews[].sentAt,
+// sobrevive a un recargo). Devuelve true si con esta ya se enviaron TODAS las fotos del pedido (para
+// cerrarlo). Refleja el sello en el estado local para que "Enviado" persista si la tarjeta se re-dibuja.
+async function mkMarkBlockSent(orderId, blockId) {
+    const o = mkState.pending.find(x => x.id === orderId);
+    const pv = o && (o.previews || []).find(p => p.blockId === blockId);
+    if (pv && !pv.sentAt) pv.sentAt = new Date().toISOString();
+    try {
+        const r = await mkFetchJson('/api/mockups/mark-block-sent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, blockId }) });
+        return !!(r && r.allSent);
+    } catch (e) { console.error('[mockups] mark-block-sent:', e.message); return false; }
+}
+
+// Tras enviar: asegurar la IA encendida (post-venta) para que responda al cliente, y —SOLO si ya se
+// enviaron TODAS las fotos del pedido— cerrar el estatus a "Foto enviada". Best-effort: los mensajes ya
+// salieron, así que un fallo aquí no debe romper el flujo.
+async function mkAfterSend(orderId, telefono, allSent) {
     try {
         await mkFetchJson('/api/contacts/' + encodeURIComponent(telefono) + '/activate-postventa', { method: 'POST' });
     } catch (e) { console.error('[mockups] activar IA:', e.message); }
-    if (photoSent) {
-        try {
-            // mockupForce:false ADEMÁS del estatus. Un pedido empujado con "A Mockup" se lista SIEMPRE
-            // (mockupsRoutes /pending trae todos los mockupForce, sea cual sea su estatus), así que sin
-            // limpiar la marca seguía apareciendo aunque ya se le hubiera mandado la foto (caso DH13919).
-            await db.collection('pedidos').doc(orderId).update({ estatus: 'Foto enviada', mockupForce: false });
-            const o = mkState.pending.find(x => x.id === orderId);
-            if (o) { o.estatus = 'Foto enviada'; o.mockupForce = false; o.forcedToMockup = false; }
-        } catch (e) { console.error('[mockups] estatus Foto enviada:', e.message); }
+    // El pedido se cierra (estatus 'Foto enviada') SOLO cuando ya se enviaron TODAS sus fotos. En pedidos
+    // de varias lámparas, mandar 1 de 2 NO lo cierra: sigue en la cola con la otra pendiente. El estatus
+    // lo pone el servidor en /mark-block-sent (atómico, sobrevive a un recargo); aquí solo actualizamos el
+    // estado LOCAL para que la tarjeta salga de la lista sin recargar.
+    if (allSent) {
+        const o = mkState.pending.find(x => x.id === orderId);
+        if (o) { o.estatus = 'Foto enviada'; o.mockupForce = false; o.forcedToMockup = false; }
     }
 }
 

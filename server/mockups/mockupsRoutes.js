@@ -145,22 +145,36 @@ router.get('/pending', asyncHandler(async (req, res) => {
     const byId = new Map();
     snap.docs.forEach(d => byId.set(d.id, d));
     snapForce.docs.forEach(d => byId.set(d.id, d));
-    const pend = [...byId.values()]
-        .map(d => ({ id: d.id, ...d.data() }))
+    const candidatos = [...byId.values()].map(d => ({ id: d.id, ...d.data() }));
+
+    // Previews ya generados (uno o varios por pedido). Se cargan ANTES de filtrar para poder decidir,
+    // en pedidos de VARIAS lámparas, si ya se enviaron TODAS (cada preview lleva `sentAt` al enviarse).
+    const previewByOrder = {};
+    if (candidatos.length) {
+        const prefs = candidatos.map(o => db.collection('mockup_previews').doc(String(o.id)));
+        const pdocs = await db.getAll(...prefs);
+        pdocs.forEach(d => { if (d.exists) previewByOrder[d.id] = Array.isArray(d.data().previews) ? d.data().previews : []; });
+    }
+    // ¿Se enviaron TODAS las fotos del pedido? (>=1 preview y todas con sentAt). Un pedido de 2 lámparas
+    // con solo 1 foto enviada -> false, así NO se quita de la lista (aunque recargues) hasta la última.
+    const todasEnviadas = (o) => {
+        const pv = previewByOrder[o.id] || [];
+        return pv.length > 0 && pv.every(p => p && p.sentAt);
+    };
+
+    const pend = candidatos
         .filter(o => {
-            // Un pedido EMPUJADO a mano (mockupForce) SIEMPRE se muestra (aunque ya se haya enviado).
-            if (o.mockupForce === true) return true;
-            if (o.mockupHidden === true) return false;   // ocultado por el operador
-            // Ya se le ENVIÓ su mockup / pedido-listo al cliente -> fuera de la cola aunque el estatus
-            // se haya quedado en 'Sin estatus'. Caso DH14108: la foto + datos de pago se mandaron por
-            // /cuatro desde el chat (sella pedidoListoEnviadoAt) sin cambiar el estatus, y el pedido
-            // seguía apareciendo aquí. previewEnviadoAt = se envió el preview desde esta sección;
-            // mockupPaymentSentAt = se envió el mockup + pago (flujo Mockup).
-            if (o.previewEnviadoAt || o.pedidoListoEnviadoAt || o.mockupPaymentSentAt) return false;
-            // Pedido ESPECIAL (sin mockup automático) al que el operador ya le mandó su preview/producto
-            // como FOTO/VIDEO desde el chat -> ya está atendido, fuera de la cola. Lo sella el envío de
-            // media en POST /api/contacts/:id/messages. Chris, 2026-08-01.
-            if (o.mockupSentManuallyAt) return false;
+            if (o.mockupForce === true) return true;          // empujado a mano -> siempre visible
+            if (o.mockupHidden === true) return false;        // ocultado por el operador
+            if ((previewByOrder[o.id] || []).length > 0) {
+                // Pedido con preview(s) EN LA SECCIÓN: sale SOLO cuando se enviaron TODAS sus fotos.
+                // Soporta pedidos de varias lámparas: mandar 1 de 2 NO lo quita, y al recargar sigue ahí
+                // porque cada preview se sella `sentAt` al enviarse. Chris, 2026-08-01 (DH14137).
+                return !todasEnviadas(o);
+            }
+            // Sin preview en la sección: se atendió por el CHAT (/cuatro -> pedidoListoEnviadoAt) o a MANO
+            // en un especial (foto/video -> mockupSentManuallyAt) -> fuera de la cola. Caso DH14108.
+            if (o.previewEnviadoAt || o.pedidoListoEnviadoAt || o.mockupPaymentSentAt || o.mockupSentManuallyAt) return false;
             return true;
         })
         .sort((a, b) => {
@@ -193,14 +207,6 @@ router.get('/pending', asyncHandler(async (req, res) => {
                 try { lastMsgByPhone[p] = t && t.toDate ? t.toDate().toISOString() : (t || null); } catch (_) { lastMsgByPhone[p] = null; }
             }
         });
-    }
-
-    // Previews ya generados (uno o varios por pedido), para persistir en la lista al recargar.
-    const previewByOrder = {};
-    if (pend.length) {
-        const prefs = pend.map(o => db.collection('mockup_previews').doc(String(o.id)));
-        const pdocs = await db.getAll(...prefs);
-        pdocs.forEach(d => { if (d.exists) previewByOrder[d.id] = Array.isArray(d.data().previews) ? d.data().previews : []; });
     }
 
     const items = pend.map(o => {
@@ -691,6 +697,36 @@ router.post('/claim-payment', asyncHandler(async (req, res) => {
         return true;
     });
     res.json({ claimed });
+}));
+
+// POST /api/mockups/mark-block-sent — marca UN preview (blockId) como ENVIADO. Soporta pedidos de VARIAS
+// lámparas: cada foto se sella `sentAt` al enviarse, y el pedido solo se cierra (sale de la cola) cuando
+// TODAS están enviadas. Así, mandar 1 de 2 fotos y recargar NO quita el pedido. Chris, 2026-08-01 (DH14137).
+router.post('/mark-block-sent', asyncHandler(async (req, res) => {
+    const orderId = String(req.body.orderId || '').trim();
+    const blockId = String(req.body.blockId || '').trim();
+    if (!orderId || !blockId) return res.status(400).json({ success: false, message: 'orderId y blockId requeridos.' });
+    const ref = db.collection('mockup_previews').doc(orderId);
+    const result = await db.runTransaction(async (tx) => {
+        const d = await tx.get(ref);
+        const previews = (d.exists && Array.isArray(d.data().previews)) ? d.data().previews : [];
+        let found = false;
+        const nowIso = new Date().toISOString();
+        const upd = previews.map(p => {
+            if (p && p.blockId === blockId) { found = true; return p.sentAt ? p : { ...p, sentAt: nowIso }; }
+            return p;
+        });
+        if (found) tx.set(ref, { previews: upd }, { merge: true });   // merge:true reemplaza el array completo
+        const total = upd.length;
+        const sent = upd.filter(p => p && p.sentAt).length;
+        return { found, total, sent, allSent: total > 0 && sent === total };
+    });
+    // Todas las fotos enviadas -> cerrar el pedido (estatus 'Foto enviada' + limpiar empujón). Idempotente.
+    if (result.allSent) {
+        try { await db.collection('pedidos').doc(orderId).update({ estatus: 'Foto enviada', mockupForce: false }); }
+        catch (e) { console.warn('[mockups] cerrar pedido (allSent) falló:', e.message); }
+    }
+    res.json({ success: true, ...result });
 }));
 
 // POST /api/mockups/check-send — salvaguarda ANTI-FUGA: impide mandar el preview de OTRO cliente.
