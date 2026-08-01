@@ -674,6 +674,13 @@ const COLLECTIONS = {
         productDesc: 'Lámpara LED con la foto de tu mascota grabada con láser. 16 colores con control remoto.',
         folder: 'Mascotas'
     },
+    deportes: {
+        title: 'Deportes y Aficiones',
+        desc: 'Su equipo, su deporte o su pasión favorita con su nombre grabado con láser. Para fans de verdad.',
+        productName: 'Lámpara 3D Deportiva',
+        productDesc: 'Lámpara LED con su equipo, deporte o afición favorita y su nombre grabados con láser.',
+        folder: 'Deportes'
+    },
     graduacion: {
         title: 'Graduación',
         desc: 'Su logro merece brillar: lámparas con foto, nombre, generación y carrera para celebrar la graduación.',
@@ -730,7 +737,7 @@ const canonicalEl = document.querySelector('link[rel="canonical"]');
 if (canonicalEl) canonicalEl.setAttribute('href', `https://app.dekoormx.com/sitio/coleccion/${colId}/`);
 
 // Inject Product + BreadcrumbList schema
-const SCHEMA_IMG = { ninos: 'lamp-ariel.webp', pareja: 'lamp-pareja.webp', empresas: 'lamp-empresas.webp', familia: 'lamp-familia2.webp', mascotas: 'lamp-mascotas.webp', graduacion: 'og-logo.png', memorial: 'lamp-memorial.webp', religiosas: 'lamp-religiosas.webp', cuadros: 'cuadro-multifoto.webp' };
+const SCHEMA_IMG = { ninos: 'lamp-ariel.webp', pareja: 'lamp-pareja.webp', empresas: 'lamp-empresas.webp', familia: 'lamp-familia2.webp', mascotas: 'lamp-mascotas.webp', graduacion: 'col/graduacion/sync-bf22d1bdfc.webp', deportes: 'col/deportes/sync-267a470ca5.webp', memorial: 'lamp-memorial.webp', religiosas: 'lamp-religiosas.webp', cuadros: 'cuadro-multifoto.webp' };
 const productSchema = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -786,7 +793,23 @@ const PHOTOS = {
         { file: "sync-32efb666c1.webp", name: "Pandilla Curiosa", desc: "El pequeño explorador y sus amigos acompañan sus sueños con su nombre" },
         { file: "sync-b114c95e5f.webp", name: "Mi Hada de Luz", desc: "Su foto con alitas y unicornios se vuelve la velita mágica de su cuarto" },
         { file: "sync-43a837c18c.webp", name: "Aroma de Fresas", desc: "La muñequita de las fresas endulza sus noches con su nombre en luz" },
-        { src: "/sitio/img/lamp-nino.webp", name: "Pequeño Astronauta", desc: "Su propio planeta con su nombre, para dormir soñando con estrellas" }
+        { src: "/sitio/img/lamp-nino.webp", name: "Pequeño Astronauta", desc: "Su propio planeta con su nombre, para dormir soñando con estrellas" },
+        { file: "sync-36247cab9e.webp", name: "Erizo Relámpago", desc: "El erizo azul más veloz corre junto a su nombre cada noche" },
+        { file: "sync-7c5399ca61.webp", name: "Fiebre Mundialista", desc: "La emoción del Mundial 2026 con los nombres de tus campeones" },
+        { file: "sync-db17bfc91c.webp", name: "Pequeño Hechicero", desc: "Un pequeño mago con bufanda y varita cuida sus sueños" },
+        { file: "sync-a35414d2b7.webp", name: "Piloto Intrépido", desc: "Su foto sobre la moto grabada en luz junto a su nombre" },
+        { file: "sync-96027b6832.webp", name: "Beso de Ternura", desc: "Ese beso a su gatito congelado en luz para siempre" },
+        { file: "sync-070f2f6e07.webp", name: "Pequeño Charro", desc: "Su charrito con sombrero brilla entre corazones cada noche" },
+        { file: "sync-d81e8c6897.webp", name: "Vaquero de Juguete", desc: "El vaquero de juguete más querido vigila sus noches" },
+        { file: "sync-cf4dee39e2.webp", name: "Leoncito Soñador", desc: "Un cachorrito de león vela su cuna con luz suave" },
+        { file: "sync-097bf135f3.webp", name: "Anillos de Sueños", desc: "Saturno gira con su nombre para el astrónomo de la casa" },
+        { file: "sync-7078561313.webp", name: "Guerrero de Anime", desc: "Su héroe estilo anime custodia sus partidas nocturnas" },
+        { file: "sync-a0f28d3a07.webp", name: "Jinete del Dino", desc: "Los héroes del videojuego clásico saltan en luz con su nombre" },
+        { file: "sync-f160ad64fa.webp", name: "Universo en Casa", desc: "Todo el sistema solar orbita alrededor de su nombre" },
+        { file: "sync-1d4ee3fb01.webp", name: "Princesa de Corazón", desc: "Su carita dentro de un corazón que se enciende cada noche" },
+        { file: "sync-3b6741e109.webp", name: "Mi Avatar Gamer", desc: "Su avatar del juego de bloques brilla junto a su nombre" },
+        { file: "sync-d4a1cda6eb.webp", name: "Bailarina de Ensueño", desc: "Una bailarina de puntitas guarda sus sueños en rosa" },
+        { file: "sync-ae3e5803f4.webp", name: "Mi Niña Adorada", desc: "Su carita traviesa grabada en luz vela sus sueños con su nombre" }
     ],
     pareja: [
         { file: "sync-23cb5f2e68.webp", name: "Amor Vaquero", desc: "Su foto de pareja con sombrero brillando junto a la cama cada noche" },
@@ -794,7 +817,10 @@ const PHOTOS = {
         { file: "sync-679d3289ba.webp", name: "Nuestro Infinito", desc: "Corazónes con los nombres de los suyos y las fechas que importan" },
         { file: "sync-4c14bcff24.webp", name: "Cómplices de Amor", desc: "Su foto de pareja en luz cálida que enciende el romance del cuarto" },
         { file: "sync-63d9cb3ad8.webp", name: "Amor de Luna", desc: "Su retrato con una promesa: como la luna, este amor nunca deja de salir" },
-        { src: "/sitio/img/lamp-couple.webp", name: "Juntos Hasta los Huesos", desc: "Su foto más divertida hecha luz, un amor que ni el tiempo asusta" }
+        { src: "/sitio/img/lamp-couple.webp", name: "Juntos Hasta los Huesos", desc: "Su foto más divertida hecha luz, un amor que ni el tiempo asusta" },
+        { file: "sync-68720b7080.webp", name: "Siempre Juntos", desc: "Sus rostros grabados juntos como promesa de amor eterno" },
+        { file: "sync-ae51c958f9.webp", name: "Dos Corazones", desc: "Dos corazones, sus nombres y la fecha que lo empezó todo" },
+        { file: "sync-667e6f143d.webp", name: "Mi Vida Eres Tú", desc: "Su foto a color con la frase que se dicen cada día" }
     ],
     empresas: [
         { file: "sync-b2528a99da.webp", name: "Manos que Sanan", desc: "El logo de su consultorio brillando, el toque profesional que da confianza" },
@@ -802,7 +828,13 @@ const PHOTOS = {
         { file: "sync-5009a4e6dd.webp", name: "Rey del Camino", desc: "El logo de tu flotilla encendido, reconocimiento que motiva cada entrega" },
         { file: "sync-922323f613.webp", name: "Sabor Encendido", desc: "El logo de tu negocio en luz viva que abre el antojo de los clientes" },
         { file: "sync-5f7c70d236.webp", name: "Balanza de Prestigio", desc: "La balanza de tu despacho iluminada impone respeto en cada asesoría" },
-        { file: "sync-8820c8b9f0.webp", name: "Mirada Experta", desc: "El logo de tu óptica en luz azul da confianza a cada paciente que entra" }
+        { file: "sync-8820c8b9f0.webp", name: "Mirada Experta", desc: "El logo de tu óptica en luz azul da confianza a cada paciente que entra" },
+        { file: "sync-0528062983.webp", name: "Vocación que Brilla", desc: "Nombre, especialidad y QR de tu consultorio en una lámpara" },
+        { file: "sync-5f087ba530.webp", name: "Orgullo Universitario", desc: "El escudo de su universidad encendido junto a su nombre" },
+        { file: "sync-c3aa19fc6b.webp", name: "Legado del Rancho", desc: "El emblema de tu rancho presumiendo su historia con luz" },
+        { file: "sync-1fe3569fb0.webp", name: "Marca que Ilumina", desc: "El logo de tu empresa brillando en recepción y mostrador" },
+        { file: "sync-d39f736287.webp", name: "Tulipanes de Éxito", desc: "Tulipanes que nunca se marchitan y le desean éxito en su día" },
+        { file: "sync-043c1b0448.webp", name: "Alma de Rockstar", desc: "Su guitarra eléctrica enciende el estudio con su nombre" }
     ],
     familia: [
         { file: "sync-46665314c0.webp", name: "Unidos por Siempre", desc: "El retrato de tu familia grabado con láser presume su apellido cada noche" },
@@ -812,14 +844,44 @@ const PHOTOS = {
         { file: "sync-a4b24c4c66.webp", name: "Abuelos de Oro", desc: "Tus papitos caminando de la mano, un homenaje que ilumina la sala" },
         { file: "sync-e7ee52b968.webp", name: "Mis Consentidos", desc: "Tu familia abrazada con su apodo de cariño brillando en el buró" },
         { file: "sync-b1da558e12.webp", name: "Hermanos Inseparables", desc: "Las sonrisas de tus hijos con sus nombres alumbran las noches en casa" },
-        { src: "/sitio/img/lamp-family.webp", name: "Siempre Te Amaremos", desc: "Toda la familia en una placa de luz, dedicatoria eterna para papá" }
+        { src: "/sitio/img/lamp-family.webp", name: "Siempre Te Amaremos", desc: "Toda la familia en una placa de luz, dedicatoria eterna para papá" },
+        { file: "sync-1e9da68e0f.webp", name: "Abrazo de Mamá", desc: "El abrazo con mamá convertido en luz para cada noche" },
+        { file: "sync-1cc4eb1196.webp", name: "Complicidad Eterna", desc: "Su selfie juntas grabada a láser para tenerse siempre cerca" },
+        { file: "sync-f09139f177.webp", name: "Tesoro de Tres", desc: "Papá, mamá y su pequeña brillan en un solo recuerdo" },
+        { file: "sync-7c4d6d3035.webp", name: "Sonrisa que Ilumina", desc: "Su sonrisa y su seña de paz encendidas junto a su nombre" },
+        { file: "sync-e9437f09b2.webp", name: "Mi Mayor Orgullo", desc: "Hijo y nieto jugando juntos, el tesoro que ilumina al abuelo" },
+        { file: "sync-f0319976b5.webp", name: "Musa de Luz", desc: "Su retrato grabado con tanto detalle que parece fotografía" },
+        { file: "sync-fb42ef5a25.webp", name: "Elegancia Eterna", desc: "Un retrato elegante de traje para quien tanto admiras" },
+        { file: "sync-53468b8afb.webp", name: "Familia de Caricatura", desc: "Su foto familiar convertida en caricatura que brilla de noche" },
+        { file: "sync-b82b14d5d6.webp", name: "Amor de Antaño", desc: "La foto antigua de tus papás revive en luz cálida" },
+        { file: "sync-b408e35bc5.webp", name: "Dedicatoria de Amor", desc: "Su rostro y unas palabras que le desean bonita noche" },
+        { file: "sync-b387c0798c.webp", name: "Reina de la Casa", desc: "El retrato de mamá brillando como la reina que es" },
+        { file: "sync-ae2c723be8.webp", name: "Abrazo Infinito", desc: "El abrazo de los tres iluminando la sala cada noche" },
+        { file: "sync-23cb5f2e68.webp", name: "Amor Vaquero", desc: "Su foto de pareja con sombrero brillando junto a la cama cada noche" }
     ],
     mascotas: [
-        { src: "/sitio/img/col/familia/460b38b0-4d38-4127-b508-bbb03e55660b.webp", name: "Huellas de Luz", desc: "Sus perritos iluminando la sala, homenaje a los más fieles de casa" }
+        { src: "/sitio/img/col/familia/460b38b0-4d38-4127-b508-bbb03e55660b.webp", name: "Huellas de Luz", desc: "Sus perritos iluminando la sala, homenaje a los más fieles de casa" },
+        { file: "sync-741b7c337f.webp", name: "Cachorro Fiel", desc: "Su cachorro posando en luz para acompañarlo cada noche" },
+        { file: "sync-a75d0c8dcb.webp", name: "Amor de Cuatro Patas", desc: "El consentido de papá con una dedicatoria que abraza" },
+        { file: "sync-45f79ccf93.webp", name: "Mi Fiel Salchichita", desc: "Tu salchichita con suéter brillando en azul cada noche" },
+        { file: "sync-cc5c6a5df5.webp", name: "Carita de Pug", desc: "Esa carita arrugadita que tanto amas, con su nombre" },
+        { file: "sync-f419ac1e90.webp", name: "Michi de Luz", desc: "Tu michi acostado vigilando tus noches con su nombre" },
+        { file: "sync-be37d3d8bf.webp", name: "Huella de Amor", desc: "Una huella gigante con sus mejores fotos a todo color" },
+        { file: "sync-edfc5d8c27.webp", name: "Compañeros Peludos", desc: "Tus perritos con sus nombres iluminan la sala que llenan de amor" }
     ],
-    graduacion: [],
+    deportes: [
+        { file: "sync-267a470ca5.webp", name: "Corazón Beisbolero", desc: "La pelota de sus triunfos con su nombre en luz de estadio" },
+        { file: "sync-be9e10dcf9.webp", name: "Campeón del Tatami", desc: "Una llave de judo perfecta con su nombre brillando en azul" }
+    ],
+    graduacion: [
+        { file: "sync-bf22d1bdfc.webp", name: "Generación Zapata", desc: "Un recuerdo de generación con el nombre de cada graduado" },
+        { file: "sync-4e39d01369.webp", name: "Birrete Dorado", desc: "Birrete, laureles y su nombre en dorado para su gran logro" },
+        { file: "sync-d73540ed74.webp", name: "Triunfo Violeta", desc: "Su silueta de graduada levanta el diploma con orgullo" }
+    ],
     memorial: [
-        { file: "sync-8aa461b6d2.webp", name: "Vives en Mi Corazón", desc: "Su foto iluminada con la promesa de que siempre vivirá en tu corazón" }
+        { file: "sync-8aa461b6d2.webp", name: "Vives en Mi Corazón", desc: "Su foto iluminada con la promesa de que siempre vivirá en tu corazón" },
+        { file: "sync-600ae33e53.webp", name: "Memoria Encendida", desc: "Su recuerdo permanece encendido en el altar de casa" },
+        { file: "sync-ce68ceb555.webp", name: "Recuerdo que Abraza", desc: "Ese abrazo con la abuela seguirá brillando por siempre" }
     ],
     religiosas: [
         { file: "sync-570ee0697d.webp", name: "Amigo de la Creación", desc: "San Francisco y sus aves bendicen el hogar con el nombre de quien amas" },

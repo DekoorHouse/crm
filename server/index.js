@@ -13,6 +13,7 @@ const transferenciasRouter = require('./transferencias/transferenciasRoutes');
 const carritosRouter = require('./carritos/carritosRoutes');
 const pagadosRouter = require('./pagados/pagadosRoutes');
 const leadsRouter = require('./leads/leadReactivationRoutes');
+const galeriaRouter = require('./galeria/galeriaRoutes');
 const repartosMtyRouter = require('./repartos/repartosRoutes');
 const repartosDgoRouter = require('./repartos/dgoRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
@@ -79,6 +80,7 @@ app.use('/api/pagados', pagadosRouter);
 app.use('/api/leads', leadsRouter);
 app.use('/api/order-followup', orderFollowupRouter);
 app.use('/api/reminders', scheduledReminderRouter);
+app.use('/api/galeria', galeriaRouter);
 app.use('/api/repartos-mty', repartosMtyRouter);
 app.use('/api/repartos-dgo', repartosDgoRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
@@ -224,7 +226,14 @@ const SITIO_COLECCIONES = {
         title: 'Lámparas Personalizadas de Graduación con Foto | DEKOOR',
         desc: 'Regalos de graduación personalizados: lámpara 3D con foto, nombre, carrera y generación grabados con láser. Envío gratis a todo México.',
         visible: 'Su logro merece brillar: lámparas con foto, nombre, generación y carrera para celebrar la graduación.',
-        img: 'og-logo.png'
+        img: 'col/graduacion/sync-bf22d1bdfc.webp'
+    },
+    deportes: {
+        h1: 'Lámparas personalizadas de deportes y aficiones',
+        title: 'Lámparas Personalizadas de Deportes y Aficiones | DEKOOR',
+        desc: 'Su equipo, su deporte o su pasión favorita en una lámpara 3D con su nombre grabado con láser. Envío gratis a todo México.',
+        visible: 'Su equipo, su deporte o su pasión favorita con su nombre grabado con láser. Para fans de verdad.',
+        img: 'col/deportes/sync-267a470ca5.webp'
     },
     memorial: {
         h1: 'Lámparas memorial con foto de tu ser querido',

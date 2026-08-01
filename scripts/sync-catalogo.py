@@ -25,6 +25,7 @@ DEST_BASE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 # Carpeta local -> id de coleccion del sitio
 FOLDER_MAP = {
     "Bebes y Niños": "ninos",
+    "Deportes": "deportes",
     "Empresas y Profesiones": "empresas",
     "Familia": "familia",
     "Graduación": "graduacion",

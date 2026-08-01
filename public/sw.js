@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dekoor-v19';
+const CACHE_NAME = 'dekoor-v20';
 const STATIC_ASSETS = [
     '/sitio/',
     '/sitio/style.css',
