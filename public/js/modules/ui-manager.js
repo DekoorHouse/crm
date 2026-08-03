@@ -691,14 +691,75 @@ function designChatUpdateToolbar() {
     const actionBtn = isDone
         ? `<button onclick="designModalAction('reopen')" title="Regresar a Pendientes" style="background:transparent;color:#334155;border:1px solid var(--color-border,#e5e7eb);padding:6px 12px;border-radius:6px;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-rotate-left" style="margin-right:4px"></i>Regresar</button>`
         : `<button onclick="designModalAction('done')" title="Marcar como diseñado (pasa al siguiente)" style="background:#16a34a;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap"><i class="fas fa-check" style="margin-right:4px"></i>Diseñado</button>`;
+    // Control de ESTATUS: el nº de pedido es un botón; al clic se despliega el menú de estatus y se puede
+    // cambiar (p.ej. a "Foto enviada") sin salir del modal. Cambia el estatus REAL (POST change-status).
+    const st = o.estatus || 'Sin estatus';
+    const stColor = (s) => { try { return (state.orderStatuses.find(x => x.key === s) || {}).color || '#64748b'; } catch (_) { return '#64748b'; } };
+    const statusMenu = ENVIO_STATUS_OPTIONS.map(s => `<button type="button" onclick="designChatSetStatus('${s.replace(/'/g, "\\'")}')" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:7px 10px;border:none;background:${s === st ? 'var(--color-subtle-bg,#f1f5f9)' : 'transparent'};border-radius:6px;cursor:pointer;font-size:.82rem;color:var(--color-text,#334155);font-weight:${s === st ? '700' : '500'}"><span style="width:9px;height:9px;border-radius:50%;background:${stColor(s)};flex-shrink:0"></span>${escapeHtml(s)}</button>`).join('');
+    const statusCtrl = `
+        <div style="position:relative;flex-shrink:0">
+            <button type="button" onclick="designChatToggleStatusMenu(event)" title="Clic para ver y cambiar el estatus del pedido" style="display:flex;align-items:center;gap:7px;background:var(--color-subtle-bg,#f1f5f9);border:1px solid var(--color-border,#e5e7eb);border-radius:8px;padding:5px 9px;cursor:pointer;white-space:nowrap;max-width:210px">
+                <span style="font-weight:700;color:var(--color-primary);font-size:.86rem">${escapeHtml(o.orderNumber || '')}</span>
+                <span style="width:1px;height:12px;background:var(--color-border,#e5e7eb)"></span>
+                <span style="width:8px;height:8px;border-radius:50%;background:${stColor(st)};flex-shrink:0"></span>
+                <span style="color:var(--color-text,#334155);font-size:.8rem;overflow:hidden;text-overflow:ellipsis">${escapeHtml(st)}</span>
+                <i class="fas fa-caret-down" style="opacity:.55;font-size:.72em"></i>
+            </button>
+            <div id="design-chat-status-menu" style="display:none;position:absolute;top:calc(100% + 5px);left:0;z-index:70;background:var(--color-container-bg,#fff);border:1px solid var(--color-border,#e5e7eb);border-radius:9px;box-shadow:0 10px 28px rgba(0,0,0,.16);padding:4px;min-width:180px;max-height:300px;overflow:auto">${statusMenu}</div>
+        </div>`;
     tb.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 52px 8px 14px;border-bottom:1px solid var(--color-border);flex-shrink:0;background:var(--color-container-bg,#fff)';
     tb.innerHTML = `
-        <span style="font-weight:700;color:var(--color-primary);white-space:nowrap;font-size:.9rem">${escapeHtml(o.orderNumber || '')}</span>
+        ${statusCtrl}
         <input id="design-chat-comment" type="text" placeholder="Comentario del diseñador…" value="${escapeHtml(o.comentarioDiseno || '')}" oninput="designChatMirrorComment(this)" onblur="designChatSaveComment(this)"
             style="flex:1;min-width:0;font-size:12px;padding:6px 9px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;background:var(--color-surface,#fff);color:var(--color-text,#334155)">
         ${actionBtn}`;
 }
 window.designChatUpdateToolbar = designChatUpdateToolbar;
+
+// Menú de estatus del modal de Diseño: abre/cierra el desplegable al clic en el nº de pedido.
+function designChatToggleStatusMenu(event) {
+    if (event) event.stopPropagation();
+    const menu = document.getElementById('design-chat-status-menu');
+    if (!menu) return;
+    const willShow = !menu.style.display || menu.style.display === 'none';
+    menu.style.display = willShow ? 'block' : 'none';
+    if (willShow) setTimeout(() => document.addEventListener('click', _designChatCloseStatusMenu), 0);
+    else document.removeEventListener('click', _designChatCloseStatusMenu);
+}
+window.designChatToggleStatusMenu = designChatToggleStatusMenu;
+function _designChatCloseStatusMenu(e) {
+    const menu = document.getElementById('design-chat-status-menu');
+    if (!menu) { document.removeEventListener('click', _designChatCloseStatusMenu); return; }
+    if (!menu.contains(e.target)) { menu.style.display = 'none'; document.removeEventListener('click', _designChatCloseStatusMenu); }
+}
+
+// Cambia el ESTATUS real del pedido abierto en el modal (POST change-status). Optimista: refleja YA el
+// cambio en la barra y, si falla, revierte. Refresca el tablero/lista detrás.
+async function designChatSetStatus(status) {
+    const menu = document.getElementById('design-chat-status-menu');
+    if (menu) menu.style.display = 'none';
+    document.removeEventListener('click', _designChatCloseStatusMenu);
+    const o = (window._designShownOrders || [])[window._designChatIndex];
+    if (!o || !status) return;
+    if ((o.estatus || 'Sin estatus') === status) return;   // sin cambio
+    const prev = o.estatus;
+    o.estatus = status;                 // optimista
+    designChatUpdateToolbar();
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/orders/${o.id}/change-status`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newStatus: status }),
+        });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        if (typeof showToast === 'function') showToast('Estatus → ' + status + ' ✅', 'success');
+        _paintDesignPending();          // el pedido puede salir de Pendientes si pasó a un estatus terminado
+    } catch (e) {
+        o.estatus = prev;               // revertir
+        designChatUpdateToolbar();
+        if (window.showError) showError('No se pudo cambiar el estatus: ' + (e.message || e)); else alert('No se pudo cambiar el estatus: ' + (e.message || e));
+    }
+}
+window.designChatSetStatus = designChatSetStatus;
 
 // Espejo EN VIVO del comentario del modal hacia la celda de la tabla (y el cache), tecla por
 // tecla. El guardado a la API sigue siendo al salir del campo (designChatSaveComment).
