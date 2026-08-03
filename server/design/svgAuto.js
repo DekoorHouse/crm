@@ -150,8 +150,30 @@ function boardTerminado(o) {
 // con guía (DH13468/13542, pagados ~11 días antes) siguen frenados por su disenoListoAt (✓Diseñado).
 // RIESGO RESIDUAL asumido por Chris: si el diseñador hace una pieza a MANO y NO la marca (ni tablero
 // 'Terminado' ni ✓Diseñado ni svgCorteAt), la skill podría re-cortarla. Depende de que SIEMPRE se marque.
+// --- REENVÍO (reposición) = hay que hacer una lámpara NUEVA (Chris, 2026-08-03) --------------------
+// Cuando al cliente le llega el producto EQUIVOCADO o DAÑADO, `reenvioAt` sella la reposición. Todo lo
+// hecho ANTES de ese sello deja de valer: el corte viejo es de la pieza que ya se fue. Sin esto el
+// pedido quedaba fuera de la cola de diseño para siempre — caso DH13554: se repuso, sacó guía nueva y
+// nunca volvió a diseño porque conservaba el svgCorteAt del corte original.
+// Se apoya en `reenvioAt` y NO en el estatus a propósito: al generar la guía nueva el estatus se fuerza
+// a 'Pagado' (apiRoutes:9209), así que 'Reenvio' se pierde a los minutos; el sello de tiempo no.
+function disenoYaHecho(o) {
+    if (!o) return false;
+    const re = tsMs(o.reenvioAt);
+    const vigente = ts => ts > 0 && (!re || ts > re);      // marca anterior al reenvío -> ya no cuenta
+    if (vigente(tsMs(o.svgCorteAt))) return true;
+    if (vigente(tsMs(o.disenoListoAt))) return true;
+    if (boardTerminado(o)) {
+        // Sin reenvío la columna del tablero cuenta aunque no traiga fecha (conservador, protege lo
+        // fabricado a mano). Con reenvío, solo si se movió DESPUÉS de él.
+        const bts = tsMs(o.disenoBoardColAt);
+        if (!re || (bts && bts > re)) return true;
+    }
+    return false;
+}
+
 function autoBlocked(o) {
-    return !!(o.disenoListoAt || o.svgCorteAt || boardTerminado(o)           // ya diseñado / marcado hecho (3 marcas reales)
+    return !!(disenoYaHecho(o)                                              // ya diseñado / marcado hecho (3 marcas reales, invalidadas por un reenvío)
         || o.ocultoDeEnvios                                                 // quitado de Envíos = gestionado
         || o.productoAgregadoPostPagoAt                                     // 2º producto -> manual
         || o.iaForce);                                                      // "Diseñar con IA": lo diseña processForcedDesigns CON confirmación, NO el auto-corte (el worker ya lo salta); así isAutoWaiting=false y sigue visible en Pendientes con su UI de confirmar
@@ -283,5 +305,5 @@ function forcedDesignFields(o, previews) {
 module.exports = {
     svgAutoEligibility, isAutoWaiting, isVideoCorregir, isVideoAutoWaiting, forcedDesignFields,
     parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, esEspecial, SIN_FECHA_RE, productOf, datosOf, isCorazon,
-    boardTerminado, autoBlocked, AUTO_DESDE_MS, ESTATUS_AUTO,
+    boardTerminado, disenoYaHecho, autoBlocked, AUTO_DESDE_MS, ESTATUS_AUTO,
 };

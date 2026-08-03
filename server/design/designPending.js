@@ -38,7 +38,7 @@ const REASONS = ['mockup', 'fabricar', 'corte', 'datos', 'video', 'segundo_produ
 // es una fecha FIJA, no una ventana móvil, para que ningún pedido nuevo vuelva a desaparecer solo.
 // MISMA constante que usa el corte automático (svgAuto.AUTO_DESDE_MS): si divergen, un pedido podría
 // salir en esta lista pero no en la cola del worker (o al revés).
-const { AUTO_DESDE_MS: CORTE_DESDE_MS, boardTerminado } = require('./svgAuto');
+const { AUTO_DESDE_MS: CORTE_DESDE_MS, boardTerminado, disenoYaHecho } = require('./svgAuto');
 
 const _ms = t => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : 0);
 
@@ -46,7 +46,12 @@ const _ms = t => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._second
 // El tablero cuenta: si el diseñador arrastró la tarjeta a Terminado/Diseñado ya está hecho aunque
 // nadie haya registrado svgCorteAt (así se re-cortó DH14039 el 2026-07-30 — ver svgAuto.boardTerminado).
 function faltaCorte(d) {
-    if (d.svgCorteAt || boardTerminado(d)) return false;  // ya tiene SVG de corte o está marcado hecho
+    // disenoYaHecho mira las 3 marcas reales (svgCorteAt / disenoListoAt / tablero Terminado) y las
+    // INVALIDA si son anteriores a un reenvío: la pieza que se cortó ya se fue con el cliente.
+    if (disenoYaHecho(d)) return false;
+    // REPOSICIÓN (producto equivocado o dañado): siempre pendiente hasta volver a cortarla, sin
+    // importar la antigüedad del pago — el pedido original puede ser de hace meses (Chris, 2026-08-03).
+    if (_ms(d.reenvioAt)) return true;
     const pago = _ms(d.comprobanteValidadoAt);
     return !!pago && pago >= CORTE_DESDE_MS;
 }
