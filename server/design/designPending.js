@@ -26,7 +26,7 @@ const DONE = new Set([
     'cancelado', 'entregado', 'devolución', 'devolucion', 'mns amenazador',
 ]);
 
-const REASONS = ['mockup', 'fabricar', 'corte', 'datos', 'video', 'segundo_producto', 'manual'];
+const REASONS = ['mockup', 'fabricar', 'corte', 'datos', 'video', 'segundo_producto', 'manual', 'reenvio'];
 
 // --- Motivo 'corte': el HUECO por el que se colaban pedidos sin diseñar (detectado 2026-07-27) -----
 // Al VALIDAR el pago el pedido pasa a 'Pagado' (NO a 'Fabricar'), y si además se le generó la guía por
@@ -62,6 +62,7 @@ function pendienteRenovadoMs(d) {
         _ms(d.videoRequestedAt),
         _ms(d.productoAgregadoPostPagoAt), // 2º producto tras pagar
         _ms(d.comprobanteValidadoAt),      // pagó -> falta corte
+        _ms(d.reenvioAt),                  // reposición -> re-hacer el diseño desde el principio
     );
 }
 
@@ -87,10 +88,6 @@ function reasonsForOrderData(d, hasMockup) {
     if (!d) return [];
     const estatus = String(d.estatus || 'Sin estatus').trim().toLowerCase();
 
-    // 'Reenvio' es un estatus de LOGÍSTICA (reponer un pedido ya entregado): su ÚNICA acción es
-    // aparecer en Envíos → Pendientes de guía (así lo acotó Chris). NO es un pendiente de DISEÑO,
-    // así que no debe ensuciar el tablero aunque al pedido original le falte el svgCorte.
-    if (estatus === 'reenvio') return [];
 
     // Marcado a mano "ya diseñado" -> fuera de pendientes, SALVO que DESPUÉS de marcarlo el cliente
     // haya pedido algo nuevo (pendienteRenovadoMs > la marca -> reactivación).
@@ -109,6 +106,12 @@ function reasonsForOrderData(d, hasMockup) {
         // Corrección pedida por el cliente y AÚN no resuelta (las ya marcadas se filtran arriba). Aparece
         // aunque ya se hubiera enviado. El motivo lo persiste markOrderCorregirForContact.
         reasons.push(String(d.corregirMotivo || '').toLowerCase() === 'video' ? 'video' : 'datos');
+    } else if (estatus === 'reenvio') {
+        // REPOSICIÓN: el pedido se vuelve a hacer desde el principio (Chris, 2026-08-01). Además de
+        // re-meterse a Envíos, REACTIVA el diseño: reaparece en Pendientes (motivo 'reenvio') aunque el
+        // original ya estuviera diseñado. reenvioAt entra en pendienteRenovadoMs, así que una tarjeta que
+        // estaba en "Terminado" regresa sola a Pendientes al ponerse en Reenvio.
+        reasons.push('reenvio');
     } else if (!shipped) {
         if (estatus === 'fabricar') {
             // ETAPA 2: pagó y hay que producir -> falta el diseño en Corel para corte (aunque tenga mockup).

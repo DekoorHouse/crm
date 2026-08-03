@@ -8382,7 +8382,7 @@ router.get('/design-pending', async (req, res) => {
             // aquí (esta lista no jalaba 'Pagado' por el "cementerio" de miles de viejos). Se traen los de
             // PAGO reciente (mismo orderBy+limit que el worker) y el motor (faltaCorte, corte por
             // AUTO_DESDE_MS) descarta el histórico ya cortado; solo sobreviven los pagados y SIN cortar.
-            const [sSin, sFab, sCor, sProd, sPag, sForce] = await Promise.all([
+            const [sSin, sFab, sCor, sProd, sPag, sForce, sReenvio] = await Promise.all([
                 db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get(),
                 db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(1000).get(),
                 db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
@@ -8391,13 +8391,17 @@ router.get('/design-pending', async (req, res) => {
                 // Empujados a mano desde Mockup (botón "A Diseño", campo designForce): pueden estar en
                 // CUALQUIER estatus (ya tienen mockup, etc.), por eso se traen aparte. Espejo de mockupForce.
                 db.collection('pedidos').where('designForce', '==', true).limit(300).get(),
+                // 'Reenvio' (reposición): reactiva el diseño desde el principio. Su comprobanteValidadoAt
+                // suele ser VIEJO (el pedido se entregó hace días) y no entraría por el orderBy de arriba,
+                // así que se traen aparte para que siempre reaparezcan en Pendientes. Chris, 2026-08-01.
+                db.collection('pedidos').where('estatus', '==', 'Reenvio').limit(300).get(),
             ]);
-            [sSin, sFab, sCor, sProd, sPag, sForce].forEach(s => s.forEach(d => byId.set(d.id, d)));
+            [sSin, sFab, sCor, sProd, sPag, sForce, sReenvio].forEach(s => s.forEach(d => byId.set(d.id, d)));
 
             // Previews (mockup_previews) de los 'Sin estatus' (fuente de verdad de "ya tiene mockup", por
             // si la marca mockupPreviewAt no quedó), de los 'Fabricar' y de los 'Corregir' (para saber si
             // el worker los va a cortar solo). Un solo lote reutilizable.
-            const prevMap = await previewsFor([...new Set([...sSin.docs.map(d => d.id), ...sFab.docs.map(d => d.id), ...sCor.docs.map(d => d.id), ...sPag.docs.map(d => d.id), ...sForce.docs.map(d => d.id)])]);
+            const prevMap = await previewsFor([...new Set([...sSin.docs.map(d => d.id), ...sFab.docs.map(d => d.id), ...sCor.docs.map(d => d.id), ...sPag.docs.map(d => d.id), ...sForce.docs.map(d => d.id), ...sReenvio.docs.map(d => d.id)])]);
             const conMockup = new Set();
             sSin.docs.forEach(d => { const pv = prevMap.get(d.id); if (pv && pv.length) conMockup.add(d.id); });
             for (const doc of byId.values()) {

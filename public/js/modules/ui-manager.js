@@ -268,6 +268,7 @@ const DP_MOTIVOS = {
     video: ['Video', '#e83e8c', 'fa-video'],
     segundo_producto: ['+Producto', '#2563eb', 'fa-plus'],
     manual: ['Desde Mockup', '#0d9488', 'fa-wand-magic-sparkles'],   // empujado a mano desde la sección Mockup ("A Diseño")
+    reenvio: ['Reenvío', '#c026d3', 'fa-rotate-right'],              // reposición: re-hacer el diseño desde el principio
 };
 
 function DesignPendingViewTemplate() {
@@ -421,9 +422,19 @@ function dpBoardCard(o, checkedSet) {
 function _paintDesignBoard() {
     const container = document.getElementById('design-pending-container');
     if (!container) return;
+    // Preserva el scroll de CADA columna (se pierde al reconstruir el innerHTML): así al cambiar un
+    // estatus desde el modal —o al mover una tarjeta— la lista NO salta al inicio. Chris, 2026-08-01.
+    const savedScroll = {};
+    DP_BOARD_COLS.forEach(([k]) => { const el = document.getElementById('dp-col-' + k); if (el) savedScroll[k] = el.scrollTop; });
     const all = window._designPendingData || [];
     const byCol = {}; DP_BOARD_COLS.forEach(([k]) => byCol[k] = []);
-    for (const o of all) { const c = byCol[o.boardCol] ? o.boardCol : 'pendientes'; byCol[c].push(o); }
+    for (const o of all) {
+        const c = byCol[o.boardCol] ? o.boardCol : 'pendientes';
+        // "Terminado" NO lista pedidos ya cerrados (Pagado/Cancelado): son diseños terminados que ya
+        // avanzaron (pagó) o murieron (cancelado); si no, la columna acumula para siempre. Chris, 2026-08-01.
+        if (c === 'terminado') { const est = String(o.estatus || '').trim().toLowerCase(); if (est === 'pagado' || est === 'cancelado') continue; }
+        byCol[c].push(o);
+    }
     window._designShownOrders = DP_BOARD_COLS.flatMap(([k]) => byCol[k]);   // orden plano para ← →
     const checkedSet = _dpVisualChecks();
     const cols = DP_BOARD_COLS.map(([key, label, color]) => {
@@ -439,6 +450,8 @@ function _paintDesignBoard() {
     container.innerHTML = DP_BOARD_CSS + _dpTabsBar('tablero') + `<div class="dp-board">${cols}</div>`;
     _dpInitSortable();
     _dpFitBoardHeight();
+    // Restaura el scroll de cada columna (capturado arriba antes de reconstruir el DOM).
+    DP_BOARD_COLS.forEach(([k]) => { const el = document.getElementById('dp-col-' + k); if (el && savedScroll[k] != null) el.scrollTop = savedScroll[k]; });
     // Re-ajusta el alto del tablero al cambiar el tamaño de la ventana (una sola vez).
     if (!window._dpBoardResizeBound) {
         window._dpBoardResizeBound = true;
