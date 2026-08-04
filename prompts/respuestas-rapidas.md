@@ -175,12 +175,16 @@ Los paquetes salen a las 6pm; por el momento te aparecerá en preparación cuand
 - dhl: Tenemos un envío exprés por DHL ✈️ que llega en 1-2 días, sale en $150. Por si te interesa que llegue más rápido. 😉💨
 - DHL: Tenemos un envío exprés por DHL ✈️ que llega en 1-2 días, sale en $150. Por si te interesa que llegue más rápido. 😉💨
 - dia: Muy bien la entrega seria el miercoles en el transcurso de el dia.Las entregas comienzan apartir de la 1 😀
-- dino: ¡Hola! 👋 *Hoy es el último día con Envío GRATIS* 🔥
-👉 *Por solo $750* le das un regalo que nunca va a olvidar ✨ (con envío GRATIS a todo México 🚀)
-📸 *Cero riesgo:* no pagas hasta ver la foto de tu lámpara ya terminada. La apruebas, pagas (Oxxo o transferencia) y te la enviamos ✅
-*¿Qué nombre le grabamos?* 😃✨
+- dino: ¡Hola! 👋 ¡Últimas lámparas disponibles! 🔥
 
-.
+👉 1 por $750 o llévate 2 por solo $1200:
+🚀 Envío GRATIS a domicilio en todo México
+🔒 Garantía de entrega✅
+💰 Pago en Oxxo o transferencia
+📸 Pagas al ver la foto del trabajo terminado antes de enviar
+
+✨ El detalle que le recordará tu amor todos los días ✨
+*¿Qué nombre quieres que lleve la suya?* 😃
 - dkpop: ¡Hola! 👋 *Última entrega mañana en el transcurso del día!* 🔥
 
 👉 *Por solo $750 pesos, obtienes:*
@@ -328,11 +332,10 @@ Por solo *$750 pesos*, obtienes:
 
 👉 *Por solo $750 pesos, obtienes:*
 🚀 *Envío GRATIS en el área metropolitana*
-🏡 *Pago al momento de la entrega*
 🔒 *Garantía de durabilidad*
 🔐 *Más de 6,000 referencias en Facebook* ✅❤️
 ✨ El regalo que le recordará tu amor todos los días ✨
-📷 *SIN ANTICIPO* Pagas al recibir.
+📸 Pagas al ver la foto de tu pedido terminado, antes de enviarlo
 
 *¿Qué foto quieres que lleve la suya?* 😃
 
@@ -491,11 +494,10 @@ El ENVÍO ES GRATIS por DHL ✈️ y *tu pedido llegará en 3 a 5 días hábiles
 
 👉 Por solo $750 pesos, obtienes:
 🚀 Envío GRATIS en el área metropolitana
-🏡 *Pago al momento de la entrega*
 🔒 Garantía de durabilidad
 🔐 Más de 6,000 referencias en Facebook ✅❤️
 ✨ El regalo que le recordará tu amor todos los días ✨
-📷 SIN ANTICIPO Pagas al recibir.
+📸 Pagas al ver la foto de tu pedido terminado, antes de enviarlo
 
 *¿Qué nombre quieres que lleve la suya? 😃*
 - vip: ✨ ¡También quiero invitarte a nuestra comunidad exclusiva de WhatsApp! 💬
