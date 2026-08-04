@@ -4082,8 +4082,11 @@ async function tagOrderInProgress(contactId, contactRef, conversationHistory, na
 // Devuelve null (y registra el motivo) si el contacto no cumple los requisitos del canal. Para los
 // tres canales exigimos señal de anuncio, así solo se reportan conversiones atribuibles (mismo
 // criterio que ya tenía WhatsApp con el ctwa_clid).
-function resolveMessagingIdentity(contactInfo = {}, referralInfo = {}, eventName = '') {
-    const pageId = FB_PAGE_ID || '110927358587213';
+function resolveMessagingIdentity(contactInfo = {}, referralInfo = {}, eventName = '', pageIdOverride = null) {
+    // El page_id NO es libre: Meta exige que sea la página que generó el ctwa_clid (la que corrió el
+    // anuncio). Como aquí se anuncia desde varias páginas, el llamador resuelve la página del anuncio
+    // (getPageIdForAd) y la pasa en pageIdOverride. El env queda solo como respaldo.
+    const pageId = pageIdOverride || FB_PAGE_ID || '110927358587213';
     const channel = contactInfo.channel
         || (contactInfo.igsid ? 'instagram' : (contactInfo.psid ? 'messenger' : 'whatsapp'));
     const cameFromAd = !!(referralInfo && (referralInfo.ad_id || referralInfo.source_id));
@@ -4136,14 +4139,75 @@ function resolveMessagingIdentity(contactInfo = {}, referralInfo = {}, eventName
     };
 }
 
+// Página de Facebook que corrió un anuncio (y que por lo tanto generó su ctwa_clid). Meta rechaza el
+// evento con error_subcode 2804072 si el page_id no es EXACTAMENTE esa página, y aquí se anuncia desde
+// varias páginas, así que un page_id fijo hace fallar todos los eventos de las demás.
+// Caché en dos niveles: memoria (por proceso) + Firestore `meta_ad_pages` (sobrevive reinicios).
+const _adPageCache = new Map();
+
+async function getPageIdForAd(adId) {
+    if (!adId) return null;
+    const key = String(adId).trim();
+    if (!key) return null;
+    if (_adPageCache.has(key)) return _adPageCache.get(key);
+
+    try {
+        const doc = await db.collection('meta_ad_pages').doc(key).get();
+        if (doc.exists && doc.data().pageId) {
+            const pid = String(doc.data().pageId);
+            _adPageCache.set(key, pid);
+            return pid;
+        }
+    } catch (e) {
+        console.warn(`[META PAGE] No se pudo leer meta_ad_pages/${key}:`, e.message);
+    }
+
+    const token = META_GRAPH_TOKEN || process.env.WHATSAPP_TOKEN || META_CAPI_ACCESS_TOKEN;
+    if (!token) {
+        console.warn('[META PAGE] Sin token de Graph para resolver la página del anuncio.');
+        return null;
+    }
+    try {
+        const { data } = await axios.get(`https://graph.facebook.com/v22.0/${encodeURIComponent(key)}`, {
+            params: { fields: 'creative{object_story_spec{page_id},effective_object_story_id}', access_token: token }
+        });
+        // object_story_spec.page_id es lo directo; effective_object_story_id viene como "<pageId>_<postId>".
+        const spec = data && data.creative && data.creative.object_story_spec;
+        const eff = data && data.creative && data.creative.effective_object_story_id;
+        const pageId = (spec && spec.page_id) ? String(spec.page_id)
+            : (eff && String(eff).includes('_') ? String(eff).split('_')[0] : null);
+        if (!pageId) {
+            console.warn(`[META PAGE] El anuncio ${key} no expuso su página (respuesta: ${JSON.stringify(data)}).`);
+            _adPageCache.set(key, null); // solo en memoria: un token mejor podría resolverlo luego
+            return null;
+        }
+        _adPageCache.set(key, pageId);
+        // Se guarda para no volver a pegarle a la Graph API por el mismo anuncio.
+        db.collection('meta_ad_pages').doc(key).set({
+            pageId, adId: key, resolvedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true }).catch(e => console.warn('[META PAGE] No se pudo cachear:', e.message));
+        console.log(`[META PAGE] Anuncio ${key} corre en la página ${pageId}.`);
+        return pageId;
+    } catch (e) {
+        const err = e.response && e.response.data && e.response.data.error;
+        console.warn(`[META PAGE] No se pudo resolver la página del anuncio ${key}: ${(err && err.message) || e.message}`);
+        _adPageCache.set(key, null);
+        return null;
+    }
+}
+
 async function sendConversionEvent(eventName, contactInfo, referralInfo, customData = {}) {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn(`[META CAPI] Faltan credenciales. PIXEL_ID=${!!META_PIXEL_ID}, TOKEN=${!!META_CAPI_ACCESS_TOKEN}. No se enviará evento '${eventName}'.`);
         return;
     }
 
+    // El ctwa_clid y el id del anuncio salen del MISMO referral, así que la página que resolvemos es
+    // la que de verdad generó ese clid. Si no se puede resolver, se cae al env (comportamiento viejo).
+    const adPageId = await getPageIdForAd(referralInfo && (referralInfo.source_id || referralInfo.ad_id));
+
     // Arma user_data + messaging_channel según el canal del contacto (WA/Messenger/IG).
-    const identity = resolveMessagingIdentity(contactInfo, referralInfo, eventName);
+    const identity = resolveMessagingIdentity(contactInfo, referralInfo, eventName, adPageId);
     if (!identity) return; // el motivo ya quedó registrado
 
     const url = `https://graph.facebook.com/v22.0/${META_PIXEL_ID}/events`;
@@ -4166,13 +4230,17 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
     const headers = { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' };
 
     try {
-        console.log(`[META CAPI] Enviando '${eventName}' (${identity.messagingChannel}) al dataset ${META_PIXEL_ID}. ref=${identity.userRef}`);
+        console.log(`[META CAPI] Enviando '${eventName}' (${identity.messagingChannel}) al dataset ${META_PIXEL_ID}. ref=${identity.userRef} page_id=${identity.userData.page_id || identity.userData.instagram_business_account_id || '—'}${adPageId ? ' (resuelto del anuncio)' : ' (del env)'}`);
         const response = await axios.post(url, payload, { headers });
         console.log(`[META CAPI] ✅ Evento '${eventName}' enviado. Respuesta:`, JSON.stringify(response.data));
     } catch (error) {
         console.error(`[META CAPI] ❌ Error al enviar evento '${eventName}'. HTTP ${error.response?.status || 'N/A'}`,
             error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        throw new Error(`Falló el envío del evento '${eventName}' a Meta.`);
+        // El motivo REAL de Meta (error_user_title/msg) se propaga: sin esto el CRM solo decía
+        // "falló el envío" y se perdía el diagnóstico (p.ej. "Page Id y Ctwa Clid no coinciden").
+        const err = (error.response && error.response.data && error.response.data.error) || {};
+        const motivo = err.error_user_title || err.error_user_msg || err.message || error.message;
+        throw new Error(`Falló el envío del evento '${eventName}' a Meta: ${motivo}`);
     }
 }
 
@@ -4272,6 +4340,7 @@ module.exports = {
     // contacto es orgánico: sendConversionEvent se salta esos casos SIN lanzar, y sellar la bandera
     // ahí dejaría la palomita en verde sin que Meta haya recibido nada.
     resolveMessagingIdentity,
+    getPageIdForAd,
     sendAdvancedWhatsAppMessage,
     sendMessengerMessage,
     messengerMediaSelfTest,
