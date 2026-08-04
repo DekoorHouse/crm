@@ -19,7 +19,7 @@ const { logAiUsage } = require('./aiUsage');
 const { buildAdvancedTemplatePayload } = require('./whatsappTemplates');
 const { cobrarContacto } = require('./cobranza/cobranzaService');
 const PRICES = require('./prices');
-const { sendConversionEvent, messagingContactInfo, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer, compressVideoToLimit, reenvioResetFields } = require('./services');
+const { sendConversionEvent, messagingContactInfo, resolveMessagingIdentity, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer, compressVideoToLimit, reenvioResetFields } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
 const { agregarPorProducto } = require('./orders/desgloseProductos');
@@ -8799,7 +8799,10 @@ router.get('/envios', async (_req, res) => {
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
             // metaPurchaseSentAt: sello de cuándo se mandó el evento Purchase a Meta (null = nunca se mandó).
             const metaSent = p.metaPurchaseSentAt && p.metaPurchaseSentAt.toDate ? p.metaPurchaseSentAt.toDate().toISOString() : (p.metaPurchaseSentAt ? String(p.metaPurchaseSentAt) : null);
-            if (num != null) pedidosByNum.set(String(num), { id: doc.id, estatus: p.estatus || null, metaPurchaseSentAt: metaSent });
+            // Sellado a mano como "no aplica" (contacto orgánico): la palomita se pone en verde para
+            // que deje de salir pendiente, pero el tooltip NO debe decir que se reportó a Meta.
+            const metaNoAplica = p.metaPurchaseManual === 'no_aplica_organico';
+            if (num != null) pedidosByNum.set(String(num), { id: doc.id, estatus: p.estatus || null, metaPurchaseSentAt: metaSent, metaPurchaseNoAplica: metaNoAplica });
             if (p.ocultoDeEnvios) return null; // el operador lo quitó de Envíos (el pedido sigue intacto)
             const orderNumber = num != null ? `DH${num}` : (p.numeroPedido || doc.id);
             const de = datosByOrder.get(norm(num));
@@ -8831,6 +8834,7 @@ router.get('/envios', async (_req, res) => {
                 contactId: p.contactId || null, // para abrir la conversación en Chats
                 orderDocId: doc.id,  // id del pedido para cambiar su estatus
                 metaPurchaseSentAt: metaSent, // ISO si ya se mandó el Purchase a Meta; null si no
+                metaPurchaseNoAplica: metaNoAplica, // se marcó a mano como "no aplica" (orgánico)
                 guiaEnvio: serGuia(p.guiaEnvio),
             };
         }).filter(Boolean);
@@ -8856,6 +8860,7 @@ router.get('/envios', async (_req, res) => {
                 tieneDatos,
                 manualId: doc.id,    // permite borrarla desde el CRM
                 metaPurchaseSentAt: null, // se llena abajo si la línea enlaza con un pedido real
+                metaPurchaseNoAplica: false,
                 guiaEnvio: serGuia(m.guiaEnvio),
             };
         });
@@ -8872,7 +8877,7 @@ router.get('/envios', async (_req, res) => {
         }
         manuales.forEach(m => {
             const ped = pedidosByNum.get(norm(m.orderNumber));
-            if (ped) { m.orderDocId = ped.id; m.estatus = ped.estatus; m.metaPurchaseSentAt = ped.metaPurchaseSentAt || null; }
+            if (ped) { m.orderDocId = ped.id; m.estatus = ped.estatus; m.metaPurchaseSentAt = ped.metaPurchaseSentAt || null; m.metaPurchaseNoAplica = !!ped.metaPurchaseNoAplica; }
         });
 
         // Manuales primero (recién agregadas), luego los pedidos con comprobante validado.
@@ -9035,6 +9040,91 @@ router.post('/envios/ocultar', async (req, res) => {
     } catch (error) {
         console.error('[ENVIOS] Error en POST /envios/ocultar:', error.message);
         res.status(500).json({ success: false, message: 'No se pudo ocultar el pedido.' });
+    }
+});
+
+// --- GET /api/envios/meta-purchase/:docId — ¿este pedido ya mandó el Purchase a Meta? ---
+// Sirve para refrescar SOLO la palomita después de cambiar el estatus a "Fabricar", sin recargar
+// toda la tabla (el envío del evento ocurre en segundo plano dentro de change-status).
+router.get('/envios/meta-purchase/:docId', async (req, res) => {
+    try {
+        const snap = await db.collection('pedidos').doc(String(req.params.docId || '').trim()).get();
+        if (!snap.exists) return res.status(404).json({ success: false, message: 'El pedido no existe.' });
+        const p = snap.data();
+        const t = p.metaPurchaseSentAt;
+        res.json({
+            success: true,
+            metaPurchaseSentAt: t && t.toDate ? t.toDate().toISOString() : (t || null),
+            metaPurchaseNoAplica: p.metaPurchaseManual === 'no_aplica_organico',
+        });
+    } catch (error) {
+        console.error('[META EVENT] Error consultando meta-purchase:', error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// --- POST /api/envios/meta-purchase — manda el Purchase a Meta A MANO para un pedido ---
+// Para los pedidos que pasaron a "Fabricar" pero cuyo evento nunca salió (la llamada a la CAPI
+// falló y nadie reintenta: sendPurchaseEventOnFabricar solo dispara en la TRANSICIÓN a Fabricar).
+// Usa los valores REALES del pedido (precio) y la señal de anuncio del contacto.
+//   - Idempotente: si ya tiene metaPurchaseSentAt no lo repite (responde already:true).
+//   - Si el contacto es ORGÁNICO (sin ctwa_clid / ad_id) responde 409 y NO sella la bandera:
+//     sendConversionEvent se salta esos casos sin lanzar, y sellar dejaría la palomita verde
+//     mintiendo. Con `force:true` se sella como "no aplica" para dejar de verlo pendiente.
+router.post('/envios/meta-purchase', async (req, res) => {
+    try {
+        const docId = String((req.body && req.body.docId) || '').trim();
+        if (!docId) return res.status(400).json({ success: false, message: 'Falta docId.' });
+        const ref = db.collection('pedidos').doc(docId);
+        const snap = await ref.get();
+        if (!snap.exists) return res.status(404).json({ success: false, message: 'El pedido no existe.' });
+        const p = snap.data();
+        const orderNumber = p.consecutiveOrderNumber != null ? `DH${p.consecutiveOrderNumber}` : docId;
+
+        if (p.metaPurchaseSentAt) {
+            const t = p.metaPurchaseSentAt;
+            return res.json({ success: true, already: true, message: `${orderNumber} ya había mandado el Purchase.`, metaPurchaseSentAt: t && t.toDate ? t.toDate().toISOString() : String(t) });
+        }
+        if (!p.contactId) return res.status(400).json({ success: false, message: `${orderNumber} no tiene contacto ligado: no hay a quién atribuirle la compra.` });
+
+        const cSnap = await db.collection('contacts_whatsapp').doc(p.contactId).get();
+        if (!cSnap.exists) return res.status(404).json({ success: false, message: `El contacto ${p.contactId} ya no existe.` });
+        const contactData = cSnap.data();
+        const eventInfo = messagingContactInfo(contactData);
+        if (!eventInfo.wa_id && !eventInfo.psid && !eventInfo.igsid) {
+            return res.status(400).json({ success: false, message: `El contacto ${p.contactId} no tiene identificador de mensajería (wa_id/psid/igsid).` });
+        }
+        const referral = contactData.adReferral || {};
+        const value = Number(p.precio) || 0;
+
+        // ¿Meta puede atribuir esta compra? Misma lógica que usa el envío automático.
+        const identity = resolveMessagingIdentity(eventInfo, referral, 'Purchase');
+        if (!identity) {
+            if (req.body.force !== true) {
+                return res.status(409).json({
+                    success: false, organico: true,
+                    message: `${orderNumber} viene de un contacto ORGÁNICO (sin señal de anuncio). Meta no puede atribuir esta compra, así que mandarla no sirve de nada.`
+                });
+            }
+            await ref.update({
+                metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp(),
+                metaPurchaseManual: 'no_aplica_organico',
+            });
+            console.log(`[META EVENT] ${orderNumber} marcado como "no aplica" (orgánico) a mano desde Envíos.`);
+            return res.json({ success: true, noAplica: true, message: `${orderNumber} marcado como "no aplica" (contacto orgánico).`, metaPurchaseSentAt: new Date().toISOString() });
+        }
+
+        console.log(`[META EVENT] Envío MANUAL de Purchase desde Envíos: ${orderNumber} (${docId}), contacto ${p.contactId}, valor $${value}`);
+        await sendConversionEvent('Purchase', eventInfo, referral, { value, currency: 'MXN' });
+        await ref.update({
+            metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp(),
+            metaPurchaseManual: true, // se mandó a mano, no por el cambio a "Fabricar"
+        });
+        console.log(`[META EVENT] ✅ Purchase MANUAL enviado, pedido ${orderNumber}, valor $${value}`);
+        res.json({ success: true, message: `Compra de ${orderNumber} enviada a Meta ($${value.toLocaleString('es-MX')} MXN).`, valor: value, canal: identity.messagingChannel, metaPurchaseSentAt: new Date().toISOString() });
+    } catch (error) {
+        console.error('[META EVENT] Error en POST /envios/meta-purchase:', error.message);
+        res.status(502).json({ success: false, message: `Meta rechazó el evento: ${error.message}` });
     }
 });
 

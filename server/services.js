@@ -4268,6 +4268,10 @@ module.exports = {
     getShippingQuote,
     sendConversionEvent,
     messagingContactInfo,
+    // Exportada para que el envío MANUAL del Purchase (Envíos) pueda avisar ANTES de intentar si el
+    // contacto es orgánico: sendConversionEvent se salta esos casos SIN lanzar, y sellar la bandera
+    // ahí dejaría la palomita en verde sin que Meta haya recibido nada.
+    resolveMessagingIdentity,
     sendAdvancedWhatsAppMessage,
     sendMessengerMessage,
     messengerMediaSelfTest,

@@ -1308,6 +1308,14 @@ function _fechaCortaEnvio(iso) {
     return ` (${d.toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })})`;
 }
 
+// Texto del tooltip de la palomita verde. "No aplica" (contacto orgánico) NO debe decir que se
+// reportó a Meta: la palomita se puso verde solo para que deje de salir pendiente.
+function _tipPalomitaMeta(iso, noAplica) {
+    return noAplica
+        ? 'No aplica: contacto orgánico (sin anuncio), Meta no puede atribuir esta compra'
+        : 'Compra ya reportada a Meta' + _fechaCortaEnvio(iso);
+}
+
 // Pinta la tabla de Envíos desde window._enviosData (SIN volver a consultar) -> refrescos instantáneos.
 function _paintEnvios() {
     const container = document.getElementById('envios-container');
@@ -1362,15 +1370,14 @@ function _paintEnvios() {
             } else {
                 dataCells = `<td colspan="${DATA_COLS}" style="padding:10px 0;color:#b45309;font-weight:600">Pendiente — aún no llena el formulario</td>`;
             }
-            // Celda del pedido: copiable. El COLOR dice si ya salió el evento Purchase a Meta:
-            // verde = ya se mandó · naranja = todavía no · gris = línea manual sin pedido enlazado (no se puede saber).
-            const metaSent = !!e.metaPurchaseSentAt;
-            const metaDesconocido = !e.orderDocId; // manual suelta: no hay pedido del cual leer el flag
-            const metaColor = metaDesconocido ? '#94a3b8' : (metaSent ? '#16a34a' : '#ea580c');
-            const metaTip = metaDesconocido
-                ? 'Línea manual sin pedido enlazado — no se sabe si mandó compra a Meta'
-                : (metaSent ? `✅ Compra enviada a Meta${_fechaCortaEnvio(e.metaPurchaseSentAt)}` : '⚠️ Todavía NO manda compra a Meta');
-            const pedidoCell = `<td class="envio-copy" title="${escapeHtml(metaTip)} · Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;white-space:nowrap;font-weight:700;color:${metaColor}">${escapeHtml(e.orderNumber)}</td>`;
+            // Palomita del evento Purchase a Meta, a un lado del número de pedido:
+            //   VERDE = la compra ya se reportó a Meta · GRIS = todavía no (clic = mandarla a mano).
+            // Las líneas manuales sin pedido enlazado no llevan palomita: no hay de dónde leer la bandera.
+            const palomita = !e.orderDocId ? '' : (e.metaPurchaseSentAt
+                ? `<i class="fas fa-check-circle" data-meta-order="${escapeHtml(e.orderDocId)}" title="${escapeHtml(_tipPalomitaMeta(e.metaPurchaseSentAt, e.metaPurchaseNoAplica))}" style="color:#16a34a;font-size:13px;margin-left:7px"></i>`
+                : `<i class="fas fa-check-circle envio-meta-pend" data-meta-order="${escapeHtml(e.orderDocId)}" onclick="event.stopPropagation();sendMetaPurchase('${escapeHtml(e.orderDocId)}')" title="Todavía NO se reporta la compra a Meta — clic para mandarla a mano" style="color:#cbd5e1;font-size:13px;margin-left:7px;cursor:pointer"></i>`);
+            // Celda del pedido: copiable (la palomita no copia: para el clic con stopPropagation).
+            const pedidoCell = `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;white-space:nowrap;font-weight:700;color:var(--color-primary)">${escapeHtml(e.orderNumber)}${palomita}</td>`;
             // Acciones: si ya hay guía, mostrarla (guía + etiqueta + rastreo); si hay datos, botón para crear guía.
             const linkStyle = 'font-size:12px;text-decoration:none;color:var(--color-primary,#ef4444);white-space:nowrap';
             let actions = '';
@@ -1417,6 +1424,8 @@ function _paintEnvios() {
               #envios-container .envio-copy{transition:background-color .12s;border-radius:6px;}
               #envios-container .envio-copy:hover{background-color:var(--color-subtle-bg,#f1f5f9);}
               #envios-container .envio-copy[data-copied]{background-color:#dcfce7 !important;color:#166534;}
+              #envios-container .envio-meta-pend:hover{color:#16a34a !important;transform:scale(1.15);}
+              #envios-container .envio-meta-pend{transition:color .12s,transform .12s;}
             </style>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
               ${[['all', 'Todas', envios.length], ['pendiente', 'Pendientes de guía', pendCount], ['guia', 'Con guía', guiaCount]].map(([k, lbl, c]) => `<button onclick="setEnviosFilter('${k}')" style="border:1px solid ${filter === k ? 'var(--color-primary,#ef4444)' : 'var(--color-border,#e5e7eb)'};background:${filter === k ? 'var(--color-primary,#ef4444)' : 'transparent'};color:${filter === k ? '#fff' : 'var(--color-text,#334155)'};border-radius:999px;padding:5px 14px;font-size:.8rem;cursor:pointer;font-weight:600">${lbl} (${c})</button>`).join('')}
@@ -1427,7 +1436,9 @@ function _paintEnvios() {
               <a href="https://shipping.t1.com" target="_blank" rel="noopener" style="text-decoration:none;color:var(--color-primary,#ef4444);font-weight:600">T1 · DHL/FedEx ↗</a>
               <a href="https://app.enviosperros.com/wallet" target="_blank" rel="noopener" style="text-decoration:none;color:var(--color-primary,#ef4444);font-weight:600">Envíos Perros · Estafeta ↗</a>
             </div>
-            <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo. · Nº de pedido en <b style="color:#16a34a">verde</b> = ya mandó compra a Meta; en <b style="color:#ea580c">naranja</b> = todavía no${metaPend ? ` (${metaPend})` : ''}.</p>
+            <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo. · La palomita junto al pedido dice si la compra ya se reportó a Meta:
+              <i class="fas fa-check-circle" style="color:#16a34a"></i> ya se mandó ·
+              <i class="fas fa-check-circle" style="color:#cbd5e1"></i> todavía no${metaPend ? ` (${metaPend})` : ''} — clic en la palomita gris para mandarla a mano.</p>
             <div id="envios-scroll" style="overflow:auto">
               <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
                 <thead>
@@ -1552,12 +1563,89 @@ async function changeEnvioStatus(orderId, newStatus, sel) {
         const d = await r.json().catch(() => ({}));
         if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
         if (sel) { const c = sel.style.borderColor; sel.style.borderColor = '#16a34a'; setTimeout(() => { sel.style.borderColor = c || 'var(--color-border,#e5e7eb)'; }, 800); }
+        // Pasar a "Fabricar" es lo que dispara el Purchase a Meta: refrescamos la palomita para VER
+        // si de verdad salió. Si sigue gris, el evento falló y se puede mandar a mano con un clic.
+        if (/fabricar/i.test(newStatus)) _refrescarPalomitaMeta(orderId);
     } catch (e) {
         if (window.showError) showError('No se pudo cambiar el estatus: ' + (e.message || e)); else alert('No se pudo cambiar el estatus: ' + (e.message || e));
         renderEnviosView(); // revertir el select al valor real del servidor
     }
 }
 window.changeEnvioStatus = changeEnvioStatus;
+
+// Vuelve a preguntar por metaPurchaseSentAt de un pedido y repinta la tabla si cambió. El envío del
+// evento va en segundo plano dentro de change-status, así que se consulta un par de veces.
+async function _refrescarPalomitaMeta(orderDocId, intentos = 3) {
+    for (let i = 0; i < intentos; i++) {
+        await new Promise(r => setTimeout(r, 1500));
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/envios/meta-purchase/${encodeURIComponent(orderDocId)}`);
+            const d = await res.json();
+            if (!d.success) break;
+            if (d.metaPurchaseSentAt) { _marcarPalomitaMeta(orderDocId, d.metaPurchaseSentAt, d.metaPurchaseNoAplica); return; }
+        } catch (_) { break; }
+    }
+}
+
+// Manda el Purchase a Meta A MANO para un pedido cuyo evento nunca salió (palomita gris).
+// Usa el valor real del pedido; el servidor no repite si ya se había mandado.
+async function sendMetaPurchase(orderDocId) {
+    const linea = (window._enviosData || []).find(x => x.orderDocId === orderDocId);
+    const num = linea ? linea.orderNumber : orderDocId;
+    const valTxt = (linea && linea.montoPagado != null) ? `$${Number(linea.montoPagado).toLocaleString('es-MX')} MXN` : 'el valor real del pedido';
+    const ok = await showConfirmModal(
+        `¿Mandar a Meta la compra de <b>${escapeHtml(num)}</b>?<br><span style="display:block;margin-top:8px;color:var(--color-text-light,#64748b);font-size:12.5px">Se reporta el evento <b>Purchase</b> por ${escapeHtml(valTxt)} con la señal del anuncio que trajo a este cliente. Al cliente <b>no</b> le llega nada.</span>`,
+        { icon: 'fa-bullseye', confirmText: 'Mandar a Meta' }
+    );
+    if (!ok) return;
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/envios/meta-purchase`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docId: orderDocId })
+        });
+        const d = await r.json().catch(() => ({}));
+        // Contacto orgánico: Meta no puede atribuirlo. Se ofrece marcarlo como "no aplica" para
+        // que deje de aparecer pendiente, en vez de sellar la palomita mintiendo.
+        if (r.status === 409 && d.organico) {
+            const marcar = await showConfirmModal(
+                `${escapeHtml(d.message || '')}<br><span style="display:block;margin-top:8px;color:var(--color-text-light,#64748b);font-size:12.5px">¿Lo marco como <b>“no aplica”</b> para que deje de salir pendiente?</span>`,
+                { icon: 'warning', confirmText: 'Marcar no aplica' }
+            );
+            if (!marcar) return;
+            const r2 = await fetch(`${API_BASE_URL}/api/envios/meta-purchase`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docId: orderDocId, force: true })
+            });
+            const d2 = await r2.json().catch(() => ({}));
+            if (!r2.ok || d2.success === false) throw new Error(d2.message || ('HTTP ' + r2.status));
+            _marcarPalomitaMeta(orderDocId, d2.metaPurchaseSentAt, true);
+            showError(d2.message || `${num} marcado como no aplica.`, 'success');
+            return;
+        }
+        if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
+        _marcarPalomitaMeta(orderDocId, d.metaPurchaseSentAt);
+        showError(d.message || `Compra de ${num} enviada a Meta.`, 'success');
+    } catch (e) {
+        showError('No se pudo mandar la compra a Meta: ' + (e.message || e));
+    }
+}
+window.sendMetaPurchase = sendMetaPurchase;
+
+// Pone la palomita en verde EN SU LUGAR (no se repinta la tabla: repintar perdería el scroll).
+function _marcarPalomitaMeta(orderDocId, iso, noAplica = false) {
+    const stamp = iso || new Date().toISOString();
+    (window._enviosData || []).forEach(x => {
+        if (x.orderDocId !== orderDocId) return;
+        x.metaPurchaseSentAt = stamp;
+        x.metaPurchaseNoAplica = !!noAplica;
+    });
+    document.querySelectorAll(`#envios-container [data-meta-order="${orderDocId}"]`).forEach(el => {
+        el.classList.remove('envio-meta-pend');
+        el.removeAttribute('onclick');
+        el.onclick = null;
+        el.style.color = '#16a34a';
+        el.style.cursor = 'default';
+        el.title = _tipPalomitaMeta(stamp, noAplica);
+    });
+}
 
 // Guarda la NOTA INTERNA de una línea de Envíos (no sale en la guía). Guarda al salir del campo.
 async function changeEnvioComentario(lineId, manualId, el) {
