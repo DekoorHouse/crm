@@ -8797,7 +8797,9 @@ router.get('/envios', async (_req, res) => {
         const envios = pedidosDocs.map(doc => {
             const p = doc.data();
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
-            if (num != null) pedidosByNum.set(String(num), { id: doc.id, estatus: p.estatus || null });
+            // metaPurchaseSentAt: sello de cuándo se mandó el evento Purchase a Meta (null = nunca se mandó).
+            const metaSent = p.metaPurchaseSentAt && p.metaPurchaseSentAt.toDate ? p.metaPurchaseSentAt.toDate().toISOString() : (p.metaPurchaseSentAt ? String(p.metaPurchaseSentAt) : null);
+            if (num != null) pedidosByNum.set(String(num), { id: doc.id, estatus: p.estatus || null, metaPurchaseSentAt: metaSent });
             if (p.ocultoDeEnvios) return null; // el operador lo quitó de Envíos (el pedido sigue intacto)
             const orderNumber = num != null ? `DH${num}` : (p.numeroPedido || doc.id);
             const de = datosByOrder.get(norm(num));
@@ -8828,6 +8830,7 @@ router.get('/envios', async (_req, res) => {
                 manualId: null,      // no es una línea manual
                 contactId: p.contactId || null, // para abrir la conversación en Chats
                 orderDocId: doc.id,  // id del pedido para cambiar su estatus
+                metaPurchaseSentAt: metaSent, // ISO si ya se mandó el Purchase a Meta; null si no
                 guiaEnvio: serGuia(p.guiaEnvio),
             };
         }).filter(Boolean);
@@ -8852,6 +8855,7 @@ router.get('/envios', async (_req, res) => {
                 datos,
                 tieneDatos,
                 manualId: doc.id,    // permite borrarla desde el CRM
+                metaPurchaseSentAt: null, // se llena abajo si la línea enlaza con un pedido real
                 guiaEnvio: serGuia(m.guiaEnvio),
             };
         });
@@ -8863,12 +8867,12 @@ router.get('/envios', async (_req, res) => {
             if (!chunk.length) continue;
             try {
                 const snap = await db.collection('pedidos').where('consecutiveOrderNumber', 'in', chunk).get();
-                snap.docs.forEach(d => { const dd = d.data(); if (dd.consecutiveOrderNumber != null) pedidosByNum.set(String(dd.consecutiveOrderNumber), { id: d.id, estatus: dd.estatus || null }); });
+                snap.docs.forEach(d => { const dd = d.data(); if (dd.consecutiveOrderNumber != null) pedidosByNum.set(String(dd.consecutiveOrderNumber), { id: d.id, estatus: dd.estatus || null, metaPurchaseSentAt: dd.metaPurchaseSentAt && dd.metaPurchaseSentAt.toDate ? dd.metaPurchaseSentAt.toDate().toISOString() : null }); });
             } catch (e) { console.warn('[ENVIOS] resolver manual->pedido:', e.message); }
         }
         manuales.forEach(m => {
             const ped = pedidosByNum.get(norm(m.orderNumber));
-            if (ped) { m.orderDocId = ped.id; m.estatus = ped.estatus; }
+            if (ped) { m.orderDocId = ped.id; m.estatus = ped.estatus; m.metaPurchaseSentAt = ped.metaPurchaseSentAt || null; }
         });
 
         // Manuales primero (recién agregadas), luego los pedidos con comprobante validado.

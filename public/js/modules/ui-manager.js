@@ -1300,6 +1300,14 @@ async function renderEnviosView() {
 }
 window.renderEnviosView = renderEnviosView;
 
+// " (3 ago 14:20)" a partir de un ISO — para el tooltip del evento de Meta. Vacío si no hay fecha válida.
+function _fechaCortaEnvio(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return ` (${d.toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })})`;
+}
+
 // Pinta la tabla de Envíos desde window._enviosData (SIN volver a consultar) -> refrescos instantáneos.
 function _paintEnvios() {
     const container = document.getElementById('envios-container');
@@ -1322,6 +1330,7 @@ function _paintEnvios() {
         const pendCount = envios.filter(e => !e._hasGuia).length;
         const guiaCount = envios.length - pendCount;
         const cotizables = envios.filter(e => e.datos && e.datos.codigoPostal && !e._hasGuia).length; // pendientes CON datos -> cotizables en lote
+        const metaPend = envios.filter(e => e.orderDocId && !e.metaPurchaseSentAt).length; // pedidos que aún NO mandan Purchase a Meta
         const filter = window._enviosFilter || 'all';
         const _ts = (e) => (e.comprobanteValidadoAt ? new Date(e.comprobanteValidadoAt).getTime() : 0);
         const ordered = envios.slice().sort((a, b) => _ts(a) - _ts(b)); // ascendente: nuevos al final
@@ -1353,8 +1362,15 @@ function _paintEnvios() {
             } else {
                 dataCells = `<td colspan="${DATA_COLS}" style="padding:10px 0;color:#b45309;font-weight:600">Pendiente — aún no llena el formulario</td>`;
             }
-            // Celda del pedido: copiable; si es manual añade una etiqueta (no copiable con el clic principal).
-            const pedidoCell = `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;white-space:nowrap;font-weight:700;color:var(--color-primary)">${escapeHtml(e.orderNumber)}</td>`;
+            // Celda del pedido: copiable. El COLOR dice si ya salió el evento Purchase a Meta:
+            // verde = ya se mandó · naranja = todavía no · gris = línea manual sin pedido enlazado (no se puede saber).
+            const metaSent = !!e.metaPurchaseSentAt;
+            const metaDesconocido = !e.orderDocId; // manual suelta: no hay pedido del cual leer el flag
+            const metaColor = metaDesconocido ? '#94a3b8' : (metaSent ? '#16a34a' : '#ea580c');
+            const metaTip = metaDesconocido
+                ? 'Línea manual sin pedido enlazado — no se sabe si mandó compra a Meta'
+                : (metaSent ? `✅ Compra enviada a Meta${_fechaCortaEnvio(e.metaPurchaseSentAt)}` : '⚠️ Todavía NO manda compra a Meta');
+            const pedidoCell = `<td class="envio-copy" title="${escapeHtml(metaTip)} · Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;white-space:nowrap;font-weight:700;color:${metaColor}">${escapeHtml(e.orderNumber)}</td>`;
             // Acciones: si ya hay guía, mostrarla (guía + etiqueta + rastreo); si hay datos, botón para crear guía.
             const linkStyle = 'font-size:12px;text-decoration:none;color:var(--color-primary,#ef4444);white-space:nowrap';
             let actions = '';
@@ -1411,7 +1427,7 @@ function _paintEnvios() {
               <a href="https://shipping.t1.com" target="_blank" rel="noopener" style="text-decoration:none;color:var(--color-primary,#ef4444);font-weight:600">T1 · DHL/FedEx ↗</a>
               <a href="https://app.enviosperros.com/wallet" target="_blank" rel="noopener" style="text-decoration:none;color:var(--color-primary,#ef4444);font-weight:600">Envíos Perros · Estafeta ↗</a>
             </div>
-            <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo.</p>
+            <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo. · Nº de pedido en <b style="color:#16a34a">verde</b> = ya mandó compra a Meta; en <b style="color:#ea580c">naranja</b> = todavía no${metaPend ? ` (${metaPend})` : ''}.</p>
             <div id="envios-scroll" style="overflow:auto">
               <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
                 <thead>
