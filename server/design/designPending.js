@@ -45,10 +45,25 @@ const _ms = t => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._second
 // ¿Pedido con pago validado que sigue SIN diseño de corte? (no mira el estatus ni la guía a propósito)
 // El tablero cuenta: si el diseñador arrastró la tarjeta a Terminado/Diseñado ya está hecho aunque
 // nadie haya registrado svgCorteAt (así se re-cortó DH14039 el 2026-07-30 — ver svgAuto.boardTerminado).
+// El TABLERO no oculta (Chris, 2026-08-04) --------------------------------------------------------
+// El 2026-07-30 se hizo que la columna 'Terminado' contara como "ya diseñado" para frenar re-cortes
+// (incidente DH14039). Pero medido el 2026-08-04: de 113 pedidos en 'Terminado', 78 NO tienen ningún
+// corte registrado — la tarjeta se mueve por muchas razones, no solo porque ya se cortó (DH14204/
+// 14267/14264 se marcaron ANTES de que saliera su guía). Usarla para OCULTAR desaparecía pedidos que
+// sí faltaba diseñar.
+// Criterio que aguanta los dos errores: el tablero SIGUE frenando el corte automático (svgAuto.
+// autoBlocked -> nunca se re-corta solo, que es el error caro) pero YA NO oculta de esta lista, que
+// es la que mira un humano. Ver y decidir es barato; cortar de más, no.
+function marcaDeCorteReal(d) {
+    const re = _ms(d.reenvioAt);
+    const vig = ts => ts > 0 && (!re || ts > re);   // un corte anterior a un reenvío ya no vale
+    return vig(_ms(d.svgCorteAt)) || vig(_ms(d.disenoListoAt));
+}
+
 function faltaCorte(d) {
-    // disenoYaHecho mira las 3 marcas reales (svgCorteAt / disenoListoAt / tablero Terminado) y las
-    // INVALIDA si son anteriores a un reenvío: la pieza que se cortó ya se fue con el cliente.
-    if (disenoYaHecho(d)) return false;
+    // Solo las marcas DURAS (svgCorteAt / ✓Diseñado) sacan un pedido de la lista. La columna del
+    // tablero NO: ver el comentario de arriba.
+    if (marcaDeCorteReal(d)) return false;
     // REPOSICIÓN (producto equivocado o dañado): siempre pendiente hasta volver a cortarla, sin
     // importar la antigüedad del pago — el pedido original puede ser de hace meses (Chris, 2026-08-03).
     if (_ms(d.reenvioAt)) return true;
@@ -82,9 +97,16 @@ function pendienteRenovadoMs(d) {
 // las dos colas coinciden en qué cuenta como "diseñado".
 // Devuelve ms (0 = sin marca). Con FECHA a propósito: una petición NUEVA del cliente posterior a la
 // marca la invalida y la tarjeta se reactiva sola (ver pendienteRenovadoMs).
+// Solo cuenta la marca DURA: el botón "✓ Diseñado" (disenoListoAt), que es un acto explícito de
+// "esto ya está resuelto". La columna 'Terminado' del TABLERO ya NO cuenta aquí (Chris, 2026-08-04):
+// se movía por muchas razones y no solo porque el corte estuviera hecho — medido, 78 de 113 pedidos en
+// 'Terminado' no tenían ningún corte registrado, y así desaparecían de esta lista pedidos que sí
+// faltaba diseñar (DH14204/14267/14264, marcados ANTES incluso de que saliera su guía).
+// El tablero SIGUE frenando el corte automático en svgAuto.autoBlocked: no re-cortar es el error caro,
+// no mostrar es el barato. Aquí la lista la mira un humano, así que peca de mostrar de más.
 function disenoMarcadoHechoMs(d) {
     if (!d) return 0;
-    return Math.max(_ms(d.disenoListoAt), boardTerminado(d) ? _ms(d.disenoBoardColAt) : 0);
+    return _ms(d.disenoListoAt);
 }
 
 // Evalúa los motivos de "pendiente de diseño" sobre los datos de UN pedido (puede ser []).
