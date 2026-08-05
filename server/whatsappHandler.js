@@ -1159,6 +1159,15 @@ router.post('/', async (req, res) => {
                     // Solo cuenta como "respondido" si el envío a Meta tuvo éxito: si falla,
                     // adResponseSent queda false y la IA responde como red de seguridad.
                     adResponseSent = (await sendAutoMessage(contactRef, { text: riText, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType })) === true;
+                    // QUÉ RI RECIBIÓ: es la señal de MODELO para Andrea. La FOTO del anuncio no le
+                    // sirve (no ve las imágenes que mandamos NOSOTROS, solo las del cliente), y el
+                    // texto de la RI se sale de la ventana de historial en conversaciones largas.
+                    // Sellado en el contacto, el dato dura para siempre. Lo lee processMessagesWithAI.
+                    if (adResponseSent && adResponseData.adName) {
+                        try {
+                            await contactRef.set({ riAdName: String(adResponseData.adName).trim(), riAdId: adId }, { merge: true });
+                        } catch (e) { console.warn('[AD] No se pudo sellar riAdName en el contacto:', e.message); }
+                    }
                 } else {
                     console.log(`[AD] No se encontró mensaje específico para Ad ID ${adId}.`);
                 }

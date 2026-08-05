@@ -2695,6 +2695,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         let botInstructions = 'Eres un asistente virtual amigable y servicial.';
         let departmentReferenceImages = []; // Imágenes estáticas del departamento como contexto
         let departmentNote = "";              // Le dice a la IA de QUÉ modelo/línea es este cliente
+        let riNote = "";                      // Le dice CUÁL RI recibió (el modelo exacto, no solo la línea)
 
         // ¿El contacto ya cerró su venta y está en etapa 2 (post-venta)?
         const isPostVenta = postSaleStageActive && contactData.aiStage === 'postventa';
@@ -2765,6 +2766,39 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
                 if (botSettingsDoc.exists) botInstructions = botSettingsDoc.data().instructions;
             }
+        }
+
+        // CUÁL RI RECIBIÓ ESTE CLIENTE. El nombre del departamento dice la LÍNEA (p.ej. "Lámparas
+        // niños") pero no el MODELO: nube, dinosaurio y Spiderman viven en el mismo departamento. El
+        // modelo lo distingue su RI... y muchas RI solo se diferencian por la FOTO, que la IA no ve
+        // (solo ve las imágenes que manda el CLIENTE). Encima, el texto de la RI se sale de la
+        // ventana de historial (AI_HISTORY_MESSAGE_LIMIT) en conversaciones largas. Así que el nombre
+        // de la RI se le dice explícitamente. whatsappHandler lo sella al enviarla (riAdName); para
+        // los contactos de antes de ese cambio se resuelve aquí por su ad id y se sella de paso, para
+        // no repetir la consulta en cada turno.
+        if (!isPostVenta) {
+            try {
+                let riAdName = (contactData.riAdName || '').trim();
+                if (!riAdName) {
+                    const hist = Array.isArray(contactData.adReferralHistory) ? contactData.adReferralHistory : [];
+                    const ultimo = hist.length ? hist[hist.length - 1] : contactData.adReferral; // el ad más reciente = la RI que recibió
+                    const adIdRi = ultimo && ultimo.source_id;
+                    if (adIdRi) {
+                        const riSnap = await db.collection('ad_responses').where('adIds', 'array-contains', String(adIdRi)).limit(1).get();
+                        if (!riSnap.empty) {
+                            riAdName = String(riSnap.docs[0].data().adName || '').trim();
+                            if (riAdName) {
+                                contactRef.set({ riAdName, riAdId: String(adIdRi) }, { merge: true })
+                                    .catch(e => console.warn('[AI] No se pudo sellar riAdName:', e.message));
+                            }
+                        }
+                    }
+                }
+                if (riAdName) {
+                    riNote = `\n\n**Dato INTERNO (no es un mensaje para el cliente):** el mensaje inicial (RI) que recibió este cliente es el de "${riAdName}", y ahí venía la FOTO del modelo que le interesa. Esa es la señal MÁS CONFIABLE de qué modelo es —por encima de lo que supongas por el texto—, porque tú no ves las imágenes que le mandamos nosotros. Úsala solo para saber qué datos pedirle y qué precio y promoción cotizar, siguiendo las reglas de arriba. Si el cliente dice claramente que quiere otro modelo, cámbiate al que pida.\nNUNCA le menciones el nombre de esta RI ni le hables de "anuncios", "campañas", "modelos" ni de nuestras reglas internas: el cliente no tiene por qué enterarse.`;
+                    console.log(`[AI] Contacto ${contactId} recibió la RI "${riAdName}" (señal de modelo para el prompt).`);
+                }
+            } catch (e) { console.warn('[AI] No se pudo resolver la RI del contacto:', e.message); }
         }
 
         // --- Contenido dinámico (cambia en cada petición) ---
@@ -3339,7 +3373,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         const _ladaDigits = String(contactId || '').replace(/\D/g, '');
         const _ladaLocal = _ladaDigits.startsWith('521') ? _ladaDigits.slice(3) : (_ladaDigits.startsWith('52') ? _ladaDigits.slice(2) : _ladaDigits);
         const ladaNote = /^618\d{7}$/.test(_ladaLocal) ? '\n\n**Dato interno (lada):** el número de este cliente tiene lada de DURANGO (618); ES POSIBLE que sea de Durango, pero NO lo asumas ni le digas que "es de aquí": si viene al caso (recoger en tienda, pago al entregar), PREGÚNTALE con calidez para confirmarlo antes de ofrecérselo.' : '';
-        const finalUserText = `${ladaNote}${fechaActualNote}${departmentNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${ladaNote}${fechaActualNote}${departmentNote}${riNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
