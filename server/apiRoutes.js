@@ -19,7 +19,7 @@ const { logAiUsage } = require('./aiUsage');
 const { buildAdvancedTemplatePayload } = require('./whatsappTemplates');
 const { cobrarContacto } = require('./cobranza/cobranzaService');
 const PRICES = require('./prices');
-const { sendConversionEvent, messagingContactInfo, resolveMessagingIdentity, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer, compressVideoToLimit, reenvioResetFields } = require('./services');
+const { sendConversionEvent, messagingContactInfo, resolveMessagingIdentity, pickAdReferralForConversion, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, cancelPendingAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, messengerMediaSelfTest, sendMessengerUtilityMessage, sendInstagramReaction, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro, getPurchaseEventTrigger, sendPurchaseEventOnFabricar, markComprobanteValidadoAndSendForm, notifyGuiaToCustomer, compressVideoToLimit, reenvioResetFields } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
 const { agregarPorProducto } = require('./orders/desgloseProductos');
@@ -6593,7 +6593,8 @@ router.post('/contacts/:contactId/mark-as-purchase', async (req, res) => {
 
         // Enviar evento 'Purchase' a la API de Conversiones de Meta. sendConversionEvent arma el
         // user_data correcto por canal y omite a los contactos sin señal de anuncio (orgánicos).
-        await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customEventData);
+        // Sin pedido en contexto: se usa el anuncio MÁS RECIENTE del contacto (no el primero).
+        await sendConversionEvent('Purchase', eventInfo, pickAdReferralForConversion(contactData), customEventData);
 
         // Actualizar el estado del contacto en Firestore
         await contactRef.update({
@@ -9094,7 +9095,8 @@ router.post('/envios/meta-purchase', async (req, res) => {
         if (!eventInfo.wa_id && !eventInfo.psid && !eventInfo.igsid) {
             return res.status(400).json({ success: false, message: `El contacto ${p.contactId} no tiene identificador de mensajería (wa_id/psid/igsid).` });
         }
-        const referral = contactData.adReferral || {};
+        // El anuncio con el que COMPRÓ, no el primero que lo trajo (pickAdReferralForConversion).
+        const referral = pickAdReferralForConversion(contactData, { attributedAdId: p.attributedAdId, before: p.createdAt });
         const value = Number(p.precio) || 0;
 
         // ¿Meta puede atribuir esta compra? Misma lógica que usa el envío automático.
@@ -9114,7 +9116,7 @@ router.post('/envios/meta-purchase', async (req, res) => {
             return res.json({ success: true, noAplica: true, message: `${orderNumber} marcado como "no aplica" (contacto orgánico).`, metaPurchaseSentAt: new Date().toISOString() });
         }
 
-        console.log(`[META EVENT] Envío MANUAL de Purchase desde Envíos: ${orderNumber} (${docId}), contacto ${p.contactId}, valor $${value}`);
+        console.log(`[META EVENT] Envío MANUAL de Purchase desde Envíos: ${orderNumber} (${docId}), contacto ${p.contactId}, valor $${value}, anuncio ${referral.source_id || '—'}`);
         await sendConversionEvent('Purchase', eventInfo, referral, { value, currency: 'MXN' });
         await ref.update({
             metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp(),

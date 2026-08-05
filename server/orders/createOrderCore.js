@@ -95,7 +95,7 @@ async function createOrder({
 
     // require perezoso: services.js requiere (indirectamente) este módulo para el registro
     // automático por IA; requerir services arriba del archivo crearía un ciclo de módulos.
-    const { getPedidoAttribution, sendConversionEvent, messagingContactInfo, getPurchaseEventTrigger } = require('../services');
+    const { getPedidoAttribution, sendConversionEvent, messagingContactInfo, getPurchaseEventTrigger, pickAdReferralForConversion } = require('../services');
 
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     const orderCounterRef = db.collection('counters').doc('orders');
@@ -179,8 +179,10 @@ async function createOrder({
 
     // --- Atribución del pedido al ad más reciente del contacto antes de su creación ---
     // Se usa para el dashboard de rentabilidad: agrupa por ad y por leadDate (no por createdAt)
+    let attributedAdId = null; // se reusa abajo para atribuirle el Purchase al anuncio correcto
     try {
         const attribution = await getPedidoAttribution(contactId, new Date());
+        attributedAdId = attribution.attributedAdId;
         await newOrderRef.update({
             attributedAdId: attribution.attributedAdId,
             leadDate: attribution.leadDate,
@@ -326,8 +328,10 @@ async function createOrder({
             const eventInfo = cData ? messagingContactInfo(cData) : null;
             if (eventInfo && (eventInfo.wa_id || eventInfo.psid || eventInfo.igsid)) {
                 const customData = { value: totalValue, currency: 'MXN' };
-                console.log(`[META EVENT] Enviando Purchase por registro de pedido DH${newOrderNumber}, contacto ${contactId}`);
-                await sendConversionEvent('Purchase', eventInfo, cData.adReferral || {}, customData);
+                // El anuncio con el que COMPRÓ, no el primero que lo trajo (pickAdReferralForConversion).
+                const referral = pickAdReferralForConversion(cData, { attributedAdId, before: new Date() });
+                console.log(`[META EVENT] Enviando Purchase por registro de pedido DH${newOrderNumber}, contacto ${contactId}, anuncio ${referral.source_id || '—'}`);
+                await sendConversionEvent('Purchase', eventInfo, referral, customData);
                 await newOrderRef.update({ metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp() });
                 console.log(`[META EVENT] ✅ Evento Purchase enviado por registro, pedido DH${newOrderNumber}, valor $${totalValue}`);
             } else {

@@ -1313,8 +1313,10 @@ async function sendPurchaseEventOnFabricar(orderId, orderData, oldStatusLower) {
             return;
         }
         const customData = { value: Number(orderData.precio) || 0, currency: 'MXN' };
-        console.log(`[META EVENT] Enviando Purchase por cambio a Fabricar, pedido ${orderId}, contacto ${orderData.contactId}`);
-        await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
+        // El anuncio con el que COMPRÓ, no el primero que lo trajo (ver pickAdReferralForConversion).
+        const referral = pickAdReferralForConversion(contactData, { attributedAdId: orderData.attributedAdId, before: orderData.createdAt });
+        console.log(`[META EVENT] Enviando Purchase por cambio a Fabricar, pedido ${orderId}, contacto ${orderData.contactId}, anuncio ${referral.source_id || '—'}`);
+        await sendConversionEvent('Purchase', eventInfo, referral, customData);
         await db.collection('pedidos').doc(orderId).update({ metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp() });
         console.log(`[META EVENT] ✅ Evento Purchase enviado por Fabricar, pedido ${orderId}, valor $${Number(orderData.precio) || 0}`);
     } catch (metaError) {
@@ -4244,6 +4246,50 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
     }
 }
 
+/**
+ * Elige con QUÉ referral se reporta una conversión. `contactData.adReferral` está clavado al PRIMER
+ * anuncio que trajo al contacto (whatsappHandler lo mantiene así a propósito, por retrocompatibilidad),
+ * pero la venta hay que atribuirla al anuncio con el que de verdad compró: el más reciente que vio
+ * antes del pedido. Reportar el primero tiene dos costos: le da el crédito al anuncio equivocado y,
+ * si esa página no está conectada al dataset, Meta rechaza el evento COMPLETO (error 2804065) — así
+ * que una venta buena se pierde por culpa de un anuncio viejo con el que ya no compró.
+ *
+ * Solo se consideran referrals CON ctwa_clid: son los únicos que Meta puede atribuir.
+ * Orden de preferencia:
+ *   1. El que coincide con `attributedAdId` del pedido (getPedidoAttribution ya lo resolvió leyendo
+ *      los mensajes, así que es el anuncio más reciente antes de ese pedido).
+ *   2. El más reciente visto ANTES de `before` (evita atribuirle una venta vieja a un anuncio nuevo
+ *      al que el cliente le picó después de comprar).
+ *   3. El más reciente del historial.
+ *   4. adReferral tal cual (comportamiento anterior).
+ */
+function pickAdReferralForConversion(contactData = {}, { attributedAdId = null, before = null } = {}) {
+    const fallback = contactData.adReferral || {};
+    const hist = Array.isArray(contactData.adReferralHistory) ? contactData.adReferralHistory : [];
+    const candidatos = (hist.length ? hist : [fallback]).filter(r => r && r.ctwa_clid);
+    if (!candidatos.length) return fallback; // orgánico o sin clid: que decida resolveMessagingIdentity
+
+    if (attributedAdId) {
+        const exacto = candidatos.find(r => String(r.source_id) === String(attributedAdId));
+        if (exacto) return exacto;
+    }
+    // firstSeenAt puede venir como Timestamp de Firestore, Date o string ISO.
+    const ms = (v) => {
+        if (!v) return 0;
+        if (typeof v.toMillis === 'function') return v.toMillis();
+        if (typeof v.toDate === 'function') return v.toDate().getTime();
+        const t = new Date(v).getTime();
+        return Number.isNaN(t) ? 0 : t;
+    };
+    const ordenados = candidatos.slice().sort((a, b) => ms(a.firstSeenAt) - ms(b.firstSeenAt));
+    const beforeMs = before ? ms(before) : 0;
+    if (beforeMs) {
+        const previos = ordenados.filter(r => ms(r.firstSeenAt) && ms(r.firstSeenAt) <= beforeMs);
+        if (previos.length) return previos[previos.length - 1];
+    }
+    return ordenados[ordenados.length - 1];
+}
+
 // Arma el contactInfo multicanal que espera sendConversionEvent a partir del documento del
 // contacto. WhatsApp usa wa_id; Messenger, psid; Instagram, igsid. El canal se toma de
 // contactData.channel (con fallback a la presencia de igsid/psid; si nada, se asume whatsapp).
@@ -4341,6 +4387,7 @@ module.exports = {
     // ahí dejaría la palomita en verde sin que Meta haya recibido nada.
     resolveMessagingIdentity,
     getPageIdForAd,
+    pickAdReferralForConversion,
     sendAdvancedWhatsAppMessage,
     sendMessengerMessage,
     messengerMediaSelfTest,
