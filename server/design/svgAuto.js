@@ -179,10 +179,21 @@ function autoBlocked(o) {
         || o.iaForce);                                                      // "Diseñar con IA": lo diseña processForcedDesigns CON confirmación, NO el auto-corte (el worker ya lo salta); así isAutoWaiting=false y sigue visible en Pendientes con su UI de confirmar
 }
 
-// Estatus que el corte automático acepta. 'Pagado' se sumó el 2026-07-29: al validar el pago el pedido
-// pasa a 'Pagado' (NO a 'Fabricar'), así que exigir 'Fabricar' dejaba fuera pedidos listos para cortar.
-// OJO: 'Pagado' es también el cementerio de miles de pedidos viejos ya fabricados -> se exige además
-// que el pago sea POSTERIOR a AUTO_DESDE_MS (ver arriba).
+// --- La cola NO se decide por el ESTATUS (Chris, 2026-08-05) ---------------------------------------
+// El estatus ha demostrado ser una señal frágil y ya dejó al corte automático sin candidatos TRES
+// veces, siempre en silencio (el worker corría y decía "Nada que generar"):
+//   1) exigía 'Fabricar', pero al validar el pago el pedido pasa a 'Pagado'   -> 2026-07-29
+//   2) se sumó 'Pagado', pero ahora el pago validado deja el pedido en 'Foto enviada' (el estatus del
+//      mockup ya enviado) y volvió a quedarse sin candidatos                   -> 2026-08-05
+// La señal ESTABLE de "esto ya se vende y hay que fabricarlo" es el PAGO VALIDADO
+// (`comprobanteValidadoAt`), que no depende de cómo se llame el estatus del momento. El estatus solo
+// se usa para DESCARTAR los terminales (cancelado/entregado/devolución/ya diseñado).
+// 'Fabricar' se acepta aunque no traiga comprobante: en el flujo viejo se ponía al confirmar la venta.
+const ESTATUS_TERMINAL = new Set([
+    'cancelado', 'entregado', 'devolución', 'devolucion', 'mns amenazador',
+    'diseñado', 'disenado', 'diseñado por ia', 'disenado por ia', 'corregido',
+]);
+// Se mantiene exportado por compatibilidad; ya no decide la cola.
 const ESTATUS_AUTO = new Set(['fabricar', 'pagado']);
 
 // ¿El pedido está EN COLA para el corte automático (aún sin cortar, auto-elegible)? Es el conjunto
@@ -190,9 +201,10 @@ const ESTATUS_AUTO = new Set(['fabricar', 'pagado']);
 // `previews` = mockup_previews[orderId].previews.
 function isAutoWaiting(o, previews) {
     const est = String(o.estatus || '').trim().toLowerCase();
-    if (!ESTATUS_AUTO.has(est)) return false;
-    // 'Pagado' solo cuenta si el pago es reciente (el histórico viejo no se re-corta).
-    if (est === 'pagado' && tsMs(o.comprobanteValidadoAt) < AUTO_DESDE_MS) return false;
+    if (ESTATUS_TERMINAL.has(est)) return false;
+    // El pago validado manda; sin él solo pasa 'Fabricar' (flujo viejo). El corte de fecha deja fuera
+    // el histórico de pedidos ya fabricados a mano.
+    if (est !== 'fabricar' && tsMs(o.comprobanteValidadoAt) < AUTO_DESDE_MS) return false;
     if (autoBlocked(o)) return false;
     return svgAutoEligibility(o, previews).eligible;
 }
@@ -305,5 +317,5 @@ function forcedDesignFields(o, previews) {
 module.exports = {
     svgAutoEligibility, isAutoWaiting, isVideoCorregir, isVideoAutoWaiting, forcedDesignFields,
     parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, esEspecial, SIN_FECHA_RE, productOf, datosOf, isCorazon,
-    boardTerminado, disenoYaHecho, autoBlocked, AUTO_DESDE_MS, ESTATUS_AUTO,
+    boardTerminado, disenoYaHecho, autoBlocked, AUTO_DESDE_MS, ESTATUS_AUTO, ESTATUS_TERMINAL,
 };

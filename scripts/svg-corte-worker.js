@@ -32,7 +32,7 @@ const { spawnSync } = require('child_process');
 const { db, admin } = require('../server/config');
 const { recomputeForContact } = require('../server/design/designPending');
 const { svgAutoEligibility, forcedDesignFields, isVideoCorregir,
-        autoBlocked, ESTATUS_AUTO, AUTO_DESDE_MS } = require('../server/design/svgAuto');
+        autoBlocked, ESTATUS_TERMINAL, AUTO_DESDE_MS } = require('../server/design/svgAuto');
 const { uploadPublicImage } = require('../server/mockups/mockupsService');
 
 const SKILL_DIR = path.join(__dirname, '..', '.claude', 'skills', 'svg-corte');
@@ -149,10 +149,11 @@ async function getSettings() {
 //     mockup está mal y lo revisa una persona. Kill-switch propio: settings.videoAutoCut = false.
 async function findCandidates(cfg) {
     const videoOn = (cfg || {}).videoAutoCut !== false;
-    // 3er origen (2026-07-29): pedidos 'Pagado' RECIENTES. Al validar el pago el pedido pasa a
-    // 'Pagado', no a 'Fabricar', así que consultar solo 'Fabricar' dejaba fuera pedidos listos para
-    // cortar. Se consulta por comprobanteValidadoAt desc (no por estatus) para NO barrer los ~6700
-    // 'Pagado' históricos: isAutoWaiting exige además que el pago sea posterior a AUTO_DESDE_MS.
+    // 3er origen: TODO pedido con PAGO VALIDADO reciente, sin importar cómo se llame su estatus.
+    // Se consulta por comprobanteValidadoAt desc (no por estatus) para NO barrer los ~6700 pedidos
+    // viejos: la fecha fija AUTO_DESDE_MS los deja fuera. Ya no se filtra por 'Pagado' (2026-08-05):
+    // al validar el pago el pedido puede quedarse en 'Foto enviada' y así el worker pasó ~21 h
+    // diciendo "Nada que generar" con 7 pedidos listos. El estatus solo descarta los terminales.
     const [snapFab, snapCor, snapPag] = await Promise.all([
         db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(800).get(),
         videoOn ? db.collection('pedidos').where('estatus', '==', 'Corregir').limit(300).get()
@@ -165,7 +166,7 @@ async function findCandidates(cfg) {
     for (const doc of snapCor.docs) { if (!vistos.has(doc.id)) { vistos.add(doc.id); queue.push({ doc, video: true }); } }
     for (const doc of snapPag.docs) {
         if (vistos.has(doc.id)) continue;
-        if (String(doc.data().estatus || '').trim().toLowerCase() !== 'pagado') continue;
+        // Sin filtro de estatus: lo que califica es el pago validado. Los terminales se descartan abajo.
         vistos.add(doc.id); queue.push({ doc, video: false });
     }
     const out = [];
@@ -181,10 +182,10 @@ async function findCandidates(cfg) {
         if (autoBlocked(o)) continue;
         if (!video) {
             const est = String(o.estatus || '').trim().toLowerCase();
-            if (!ESTATUS_AUTO.has(est)) continue;                            // 'Fabricar' o 'Pagado'
-            // 'Pagado' es el cementerio de miles de pedidos viejos ya fabricados a mano: solo cuentan
-            // los pagados DESPUÉS de la fecha fija AUTO_DESDE_MS.
-            if (est === 'pagado' && ms(o.comprobanteValidadoAt) < AUTO_DESDE_MS) continue;
+            if (ESTATUS_TERMINAL.has(est)) continue;                         // cancelado/entregado/ya diseñado
+            // Manda el PAGO VALIDADO, no el nombre del estatus (ver svgAuto.isAutoWaiting). Sin pago
+            // solo pasa 'Fabricar', que en el flujo viejo se ponía al confirmar la venta.
+            if (est !== 'fabricar' && ms(o.comprobanteValidadoAt) < AUTO_DESDE_MS) continue;
         }
         if (ms(o.svgCorteStartedAt) > staleMs) continue;                     // otro proceso lo está trabajando
         const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
