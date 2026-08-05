@@ -107,6 +107,8 @@ body {
 /* Cada control con su etiqueta va junto y NO se parte al envolver: sin esto la barra dejaba
    "CONTORNO" al final de una fila y su slider al principio de la siguiente. */
 .toolbar-field { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+/* Flechita entre los dos colores del contorno: deja claro que el degradado va de arriba a abajo. */
+.toolbar-grad-arrow { font-size: 13px; font-weight: 700; color: var(--text-3); line-height: 1; margin: 0 -2px; }
 .toolbar-separator { width: 1px; height: 28px; background: var(--border); }
 .toolbar-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-3); letter-spacing: 0.04em; }
 /* 80px era muy poco: con un rango de 1 a 500 cada píxel movía ~6 unidades. Ahora que la barra

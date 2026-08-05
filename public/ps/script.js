@@ -69,6 +69,7 @@ const textQualityVal = document.getElementById('text-quality-val');
 const strokeWidthInput = document.getElementById('stroke-width');
 const strokeWidthVal = document.getElementById('stroke-width-val');
 const strokeColorInput = document.getElementById('stroke-color');
+const strokeColor2Input = document.getElementById('stroke-color2');
 const strokeDirSelect = document.getElementById('stroke-dir');
 const fillBlurInput = document.getElementById('fill-blur');
 const fillBlurVal = document.getElementById('fill-blur-val');
@@ -349,7 +350,23 @@ const setStrokeWidth = linkRangeAndNumber(strokeWidthInput, strokeWidthVal, (v) 
 
 strokeColorInput.addEventListener('input', () => {
     if (selectedTextIdx >= 0) {
-        textLayers[selectedTextIdx].strokeColor = strokeColorInput.value;
+        const t = textLayers[selectedTextIdx];
+        // Si el contorno NO tenía degradado (los dos colores iguales), cambiar el de arriba mueve
+        // también el de abajo: si no, tocar un solo color le estrenaría un degradado sin pedirlo.
+        const planoAntes = !t.strokeColor2 || t.strokeColor2 === t.strokeColor;
+        t.strokeColor = strokeColorInput.value;
+        if (planoAntes) {
+            t.strokeColor2 = strokeColorInput.value;
+            strokeColor2Input.value = strokeColorInput.value;
+        }
+        redrawCanvas();
+    }
+});
+
+// Color de ABAJO del contorno: en cuanto es distinto al de arriba, el contorno lleva degradado.
+strokeColor2Input.addEventListener('input', () => {
+    if (selectedTextIdx >= 0) {
+        textLayers[selectedTextIdx].strokeColor2 = strokeColor2Input.value;
         redrawCanvas();
     }
 });
@@ -532,6 +549,7 @@ function onPointerDown(e) {
             glowColor: glowColorInput.value,
             strokeWidth: parseFloat(strokeWidthVal.value),
             strokeColor: strokeColorInput.value,
+            strokeColor2: strokeColor2Input.value,
             strokeDir: strokeDirSelect.value,
             fillBlur: parseFloat(fillBlurInput.value),
             strokeBlur: parseFloat(strokeBlurInput.value),
@@ -567,6 +585,7 @@ function onPointerDown(e) {
                 glowColorInput.value = t.glowColor;
                 setStrokeWidth(t.strokeWidth || 0);
                 strokeColorInput.value = t.strokeColor || '#0066ff';
+                strokeColor2Input.value = t.strokeColor2 || t.strokeColor || '#0066ff';
                 strokeDirSelect.value = t.strokeDir || 'center';
                 fillBlurInput.value = t.fillBlur || 0;
                 fillBlurVal.value = t.fillBlur || 0;
@@ -672,9 +691,34 @@ function getStrokeDirOffset(dir, sw) {
     return map[dir] || [0, 0];
 }
 
+// Pintura del contorno: un color plano, o un DEGRADADO vertical si la capa trae un segundo color
+// distinto. En la lámpara la luz entra por la base, así que el halo del grabado no es de un solo
+// tono: va cambiando de arriba a abajo.
+// Dos cuidados:
+//  - Se construye en el espacio de coordenadas donde se va a dibujar (el lienzo auxiliar del
+//    desenfoque está escalado), si no el degradado quedaría corrido.
+//  - Abarca la TINTA real de la letra (actualBoundingBox), no la caja de la fuente: si usara la
+//    caja, el arranque del degradado caería en el espacio vacío del ascendente y los colores no
+//    llegarían a los extremos visibles de las letras.
+function strokePaint(c, t, ty) {
+    const c1 = t.strokeColor || '#0066ff';
+    const c2 = t.strokeColor2 || c1;
+    if (c2 === c1) return c1; // sin segundo color: se comporta igual que antes
+    let arriba = ty - t.fontSize * 0.75, abajo = ty;
+    try {
+        const m = c.measureText(t.text);
+        if (m.actualBoundingBoxAscent) arriba = ty - m.actualBoundingBoxAscent;
+        if (m.actualBoundingBoxDescent) abajo = ty + m.actualBoundingBoxDescent;
+    } catch (_) { /* navegador sin actualBoundingBox: queda la aproximación de arriba */ }
+    const g = c.createLinearGradient(0, arriba, 0, abajo);
+    g.addColorStop(0, c1);
+    g.addColorStop(1, c2);
+    return g;
+}
+
 function drawStroke(c, t, sw, tx, ty) {
     const dir = t.strokeDir || 'center';
-    const sColor = t.strokeColor || '#0066ff';
+    const sColor = strokePaint(c, t, ty);
     const steps = 8;
     const stepAlpha = 0.18;
 
@@ -1347,6 +1391,7 @@ clearRefAreaBtn.addEventListener('click', () => {
                     glowColor: glowColorInput.value,
                     strokeWidth: parseFloat(strokeWidthVal.value),
                     strokeColor: strokeColorInput.value,
+            strokeColor2: strokeColor2Input.value,
                     strokeDir: strokeDirSelect.value,
                     fillBlur: parseFloat(fillBlurInput.value),
                     strokeBlur: parseFloat(strokeBlurInput.value),

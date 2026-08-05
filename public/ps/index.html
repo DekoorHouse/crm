@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
-    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
     <!-- ========== LOGIN ========== -->
@@ -115,7 +115,9 @@
                 <label class="toolbar-label">Contorno</label>
                 <input type="range" id="stroke-width" min="0" max="20" value="0" step="0.01" class="toolbar-range" title="Grosor del contorno. Rueda del mouse para afinar; la barra es más fina en los valores delgados.">
                 <input type="number" id="stroke-width-val" class="toolbar-val-input" value="0" min="0" max="20" step="0.01">
-                <input type="color" id="stroke-color" value="#0066ff" class="toolbar-color">
+                <input type="color" id="stroke-color" value="#0066ff" class="toolbar-color" title="Color del contorno — ARRIBA si usas degradado">
+                <span class="toolbar-grad-arrow" title="Degradado del contorno: de arriba a abajo">↓</span>
+                <input type="color" id="stroke-color2" value="#0066ff" class="toolbar-color" title="Color del contorno ABAJO. Ponlo distinto al de arriba para que el contorno lleve degradado; si es igual, el contorno queda de un solo tono.">
                 <select id="stroke-dir" class="toolbar-select" title="Dirección del contorno">
                     <option value="center">Uniforme</option>
                     <option value="top-right">↗</option>
@@ -221,6 +223,6 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
     <script src="/js/auth-guard.js"></script>
-    <script src="script.js?v=2"></script>
+    <script src="script.js?v=3"></script>
 </body>
 </html>
