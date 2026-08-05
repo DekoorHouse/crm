@@ -70,6 +70,13 @@ body {
     font-size: 12px; font-weight: 600; color: var(--text-2);
     background: var(--primary-light); padding: 4px 12px; border-radius: 20px;
 }
+/* Nombre de la plantilla abierta: sin esto no hay forma de saber en cuál estás trabajando. */
+.project-name-badge {
+    font-size: 12px; font-weight: 700; color: var(--primary);
+    border: 1px dashed var(--border); padding: 4px 12px; border-radius: 20px;
+    max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.project-name-badge::before { content: '\f0c7'; font-family: 'Font Awesome 6 Free'; font-weight: 900; margin-right: 6px; opacity: 0.6; }
 
 /* ========== BUTTONS ========== */
 .btn {
@@ -261,6 +268,14 @@ body {
 }
 .project-card:hover .project-card-delete { display: flex; }
 .project-card-delete:hover { background: var(--danger); }
+/* Lápiz para renombrar, a la izquierda del bote de basura (mismo tamaño y mismo hover-para-aparecer) */
+.project-card-rename {
+    position: absolute; top: 6px; right: 36px; width: 24px; height: 24px;
+    background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 50%;
+    cursor: pointer; font-size: 10px; display: none; align-items: center; justify-content: center;
+}
+.project-card:hover .project-card-rename { display: flex; }
+.project-card-rename:hover { background: var(--primary); }
 .projects-empty {
     text-align: center; color: var(--text-3); padding: 48px 20px;
 }

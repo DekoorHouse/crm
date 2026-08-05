@@ -125,6 +125,16 @@ loginForm.addEventListener('submit', async (e) => {
 
 logoutBtn.addEventListener('click', () => firebaseAuth.signOut());
 
+// Una foto nueva es una plantilla NUEVA: se suelta la que estuviera abierta. Sin esto, subir otra
+// foto seguía apuntando al proyecto anterior y "Guardar" lo sobrescribía en silencio — y ahora que
+// el nombre solo se pregunta al crear, ni siquiera habría aviso.
+// Se define antes que los handlers de subir/pegar la usen (declaración de función, se iza).
+function soltarPlantillaAbierta() {
+    currentProjectId = null;
+    currentProjectName = '';
+    if (typeof pintarNombreProyecto === 'function') pintarNombreProyecto();
+}
+
 // ===================== DARK MODE =====================
 function initDarkMode() {
     const saved = localStorage.getItem('ps-dark-mode');
@@ -162,6 +172,7 @@ imageInput.addEventListener('change', (e) => {
             selectedTextIdx = -1;
             undoStack = [];
             redoStack = [];
+            soltarPlantillaAbierta();
             resetZoom();
             redrawCanvas();
             saveUndo();
@@ -194,6 +205,7 @@ document.addEventListener('paste', (e) => {
                     selectedTextIdx = -1;
                     undoStack = [];
                     redoStack = [];
+                    soltarPlantillaAbierta();
                     resetZoom();
                     redrawCanvas();
                     saveUndo();
@@ -1029,14 +1041,46 @@ async function uploadToStorage(dataUrl, path) {
     return await ref.getDownloadURL();
 }
 
-function getProjectName() {
-    if (textLayers.length > 0 && textLayers[0].text && textLayers[0].text !== 'Nombre') return textLayers[0].text;
-    const name = prompt('Nombre del proyecto:', currentProjectName || '');
-    if (name && name.trim()) {
-        currentProjectName = name.trim();
-        return currentProjectName;
+// Sugiere "Plantilla N" con el primer número libre. El nombre del proyecto NO sale del texto de la
+// lámpara: una plantilla se reusa con muchos nombres distintos, así que llamarla "Alex" porque ese
+// fue el primer nombre que le pusiste no sirve para encontrarla después.
+async function sugerirNombrePlantilla() {
+    try {
+        const snap = await db.collection('ps_projects').get();
+        const usados = new Set();
+        snap.forEach(d => {
+            const m = /^Plantilla\s+(\d+)$/i.exec(String(d.data().name || '').trim());
+            if (m) usados.add(parseInt(m[1], 10));
+        });
+        let n = 1;
+        while (usados.has(n)) n++;
+        return `Plantilla ${n}`;
+    } catch (_) {
+        return 'Plantilla 1';
     }
-    return currentProjectName || 'Sin nombre';
+}
+
+// Pregunta el nombre SOLO al crear la plantilla. Devuelve null si el usuario cancela (ahí no se
+// guarda nada). Al re-guardar una plantilla existente no se vuelve a preguntar ni se toca el
+// nombre: para cambiarlo está el lápiz del panel de Proyectos.
+async function pedirNombreProyecto() {
+    const sugerido = currentProjectName || await sugerirNombrePlantilla();
+    const name = prompt('¿Cómo se va a llamar esta plantilla?', sugerido);
+    if (name === null) return null;
+    currentProjectName = name.trim() || sugerido;
+    return currentProjectName;
+}
+
+// Muestra el nombre de la plantilla abierta arriba, junto al título.
+function pintarNombreProyecto() {
+    const el = document.getElementById('current-project-name');
+    if (!el) return;
+    if (currentProjectId && currentProjectName) {
+        el.textContent = currentProjectName;
+        el.style.display = '';
+    } else {
+        el.style.display = 'none';
+    }
 }
 
 function getCanvasStateWithoutText() {
@@ -1054,6 +1098,13 @@ function getCanvasStateWithoutText() {
 
 saveProjectBtn.addEventListener('click', async () => {
     if (!baseImage) { alert('No hay proyecto para guardar.'); return; }
+    // El nombre se pregunta ANTES de empezar a subir: si cancelas, no se sube nada.
+    // En una plantilla ya guardada no se pregunta — su nombre se cambia con el lápiz del panel.
+    let nombreNuevo = null;
+    if (!currentProjectId) {
+        nombreNuevo = await pedirNombreProyecto();
+        if (nombreNuevo === null) return; // canceló
+    }
     const indicator = showSaving('Guardando...');
     try {
         const ts = Date.now();
@@ -1061,11 +1112,10 @@ saveProjectBtn.addEventListener('click', async () => {
         const thumbnail = generateThumbnail();
 
         if (currentProjectId) {
-            // Update existing
+            // Update existing — OJO: no se toca `name`, para no revivir el nombre viejo.
             const baseUrl = await uploadToStorage(baseImage.src, `ps_projects/${currentProjectId}/base_${ts}`);
             const stateUrl = await uploadToStorage(canvasState, `ps_projects/${currentProjectId}/state_${ts}`);
             await db.collection('ps_projects').doc(currentProjectId).update({
-                name: getProjectName(),
                 baseImage: baseUrl,
                 canvasState: stateUrl,
                 textLayers: JSON.stringify(textLayers),
@@ -1077,7 +1127,7 @@ saveProjectBtn.addEventListener('click', async () => {
         } else {
             // New project
             const docRef = await db.collection('ps_projects').add({
-                name: getProjectName(),
+                name: nombreNuevo,
                 textLayers: JSON.stringify(textLayers),
                 width: canvas.width,
                 height: canvas.height,
@@ -1090,6 +1140,7 @@ saveProjectBtn.addEventListener('click', async () => {
             const stateUrl = await uploadToStorage(canvasState, `ps_projects/${currentProjectId}/state_${ts}`);
             await docRef.update({ baseImage: baseUrl, canvasState: stateUrl });
         }
+        pintarNombreProyecto();
         indicator.innerHTML = '<i class="fas fa-check"></i> Guardado';
         setTimeout(hideSaving, 1500);
         loadProjectsList();
@@ -1145,15 +1196,20 @@ async function loadProjectsList() {
                     <div class="project-card-name">${p.name || 'Sin nombre'}</div>
                     <div class="project-card-date">${date}</div>
                 </div>
+                <button class="project-card-rename" data-id="${doc.id}" title="Cambiar el nombre"><i class="fas fa-pen"></i></button>
                 <button class="project-card-delete" data-id="${doc.id}" title="Eliminar"><i class="fas fa-trash"></i></button>
             `;
             card.addEventListener('click', (e) => {
-                if (e.target.closest('.project-card-delete')) return;
+                if (e.target.closest('.project-card-delete') || e.target.closest('.project-card-rename')) return;
                 openProject(doc.id, p);
             });
             card.querySelector('.project-card-delete').addEventListener('click', (e) => {
                 e.stopPropagation();
                 deleteProject(doc.id);
+            });
+            card.querySelector('.project-card-rename').addEventListener('click', (e) => {
+                e.stopPropagation();
+                renameProject(doc.id, p.name || '');
             });
             projectsList.appendChild(card);
         });
@@ -1198,6 +1254,7 @@ async function openProject(id, p) {
         redoStack = [];
         currentProjectId = id;
         currentProjectName = p.name || '';
+        pintarNombreProyecto();
         resetZoom();
         loadProjectFonts(textLayers);
         redrawCanvas();
@@ -1206,6 +1263,23 @@ async function openProject(id, p) {
     } catch (err) {
         hideSaving();
         alert('Error al cargar proyecto: ' + err.message);
+    }
+}
+
+// Cambia el nombre de una plantilla ya guardada, sin volver a subir la imagen ni el estado: es
+// solo el campo `name`. Si es la plantilla que está abierta, también se actualiza en memoria para
+// que el próximo "Guardar" no la deje con el nombre viejo.
+async function renameProject(id, nombreActual) {
+    const nuevo = prompt('Nuevo nombre de la plantilla:', nombreActual);
+    if (nuevo === null) return;
+    const limpio = nuevo.trim();
+    if (!limpio || limpio === nombreActual) return;
+    try {
+        await db.collection('ps_projects').doc(id).update({ name: limpio });
+        if (currentProjectId === id) { currentProjectName = limpio; pintarNombreProyecto(); }
+        loadProjectsList();
+    } catch (err) {
+        alert('No se pudo cambiar el nombre: ' + err.message);
     }
 }
 
