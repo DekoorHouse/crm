@@ -181,7 +181,12 @@ If WScript.Arguments.Named.Exists("svg") Then WScript.Echo "OK " & svgPath
 
 Sub ReplaceByContent(doc, phText, valor, maxW, dyOff, esNombre)
     Dim s, t, cx, cy, w, found, valor2, multilinea, baseSize
+    ' Mismo arreglo que infinito.vbs (Chris, 2026-08-05): el salto puede llegar como token literal
+    ' "\n" O como salto real (vbLf/vbCrLf) si el argumento pasa por Node/spawnSync. Sin normalizar
+    ' las tres formas, `multilinea` queda en falso y el nombre sale a 1 renglon, pegado o fusionado.
     valor2 = Replace(valor, "\n", vbCr)
+    valor2 = Replace(valor2, vbCrLf, vbCr)
+    valor2 = Replace(valor2, vbLf, vbCr)
     ' Normaliza nombres (inicial mayuscula + espacio tras punto) tras armar los renglones; fecha no.
     If esNombre Then valor2 = NormalizarNombre(valor2)
     multilinea = (InStr(valor2, vbCr) > 0)

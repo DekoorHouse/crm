@@ -186,8 +186,17 @@ WScript.Echo "CDR " & cdrPath
 
 Sub ReplaceText(doc, ph, valor, baseSize, base2L, maxW, dyOff, esNombre)
     Dim s, t, cx, cy, w, found, valor2, multilinea, talla
-    ' El token literal \n parte el texto en renglones apilados (vbCr)
+    ' El token literal \n parte el texto en renglones apilados (vbCr).
+    ' OJO (Chris, 2026-08-05): el argumento NO siempre llega con el token literal. Al pasar por
+    ' Node/spawnSync el "\n" se convierte en un SALTO REAL (chr 10 = vbLf) antes de llegar aqui —
+    ' medido: llega "Jaquelin<10>Liliana". Como el codigo solo buscaba el token literal, `multilinea`
+    ' quedaba en FALSO y el nombre se grababa con el tamano de 1 renglon (65.2pt) y el interlineado
+    ' por defecto. Sintomas vistos: "JaquelinLiliana" pegado (DH14204) y los dos renglones de
+    ' "Claudia / Ivon" FUSIONADOS (DH13985) — no era el interlineado del 60%, es que nunca se aplico.
+    ' Por eso se normalizan las TRES formas a vbCr, que es lo que esperan `multilinea` y Corel.
     valor2 = Replace(valor, "\n", vbCr)
+    valor2 = Replace(valor2, vbCrLf, vbCr)
+    valor2 = Replace(valor2, vbLf, vbCr)
     ' Normalizar nombres (inicial mayuscula + espacio tras punto) DESPUES de armar los renglones, para
     ' que cada renglon se capitalice. La fecha se graba tal cual (esNombre=False).
     If esNombre Then valor2 = NormalizarNombre(valor2)
