@@ -41,6 +41,10 @@ function navigateTo(viewName, force = false) {
         document.body.classList.remove('chat-open');
     }
 
+    // Al salir de Envíos se cortan sus listeners en vivo (si no, siguen cobrando lecturas
+    // de Firestore y pidiendo /api/envios en una sección que ya no se está viendo).
+    if (viewName !== 'envios' && typeof _enviosDesuscribir === 'function') _enviosDesuscribir();
+
     state.activeView = viewName;
 
 
@@ -1293,6 +1297,7 @@ async function renderEnviosView() {
         window._enviosData = data.envios || []; // para los handlers de cotizar/crear guía
         window._enviosOmitidos = Number(data.omitidos) || 0; // envíos viejos ya despachados que no se traen
         _paintEnvios();
+        _enviosSuscribir(); // de aquí en adelante la tabla se actualiza sola cuando la lista cambie
     } catch (e) {
         container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los envíos: ${escapeHtml(e.message || String(e))}</p>
             <button class="btn btn-outline btn-sm mt-2" onclick="renderEnviosView()">Reintentar</button>`;
@@ -1426,6 +1431,10 @@ function _paintEnvios() {
               #envios-container .envio-copy[data-copied]{background-color:#dcfce7 !important;color:#166534;}
               #envios-container .envio-meta-pend:hover{color:#16a34a !important;transform:scale(1.15);}
               #envios-container .envio-meta-pend{transition:color .12s,transform .12s;}
+              #envios-ir-abajo{transition:opacity .15s,transform .15s;}
+              #envios-ir-abajo:hover{transform:translateY(-2px);}
+              #envios-vivo{transition:color .3s}
+              #envios-vivo[data-flash]{color:#16a34a !important}
             </style>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
               ${[['all', 'Todas', envios.length], ['pendiente', 'Pendientes de guía', pendCount], ['guia', 'Con guía', guiaCount]].map(([k, lbl, c]) => `<button onclick="setEnviosFilter('${k}')" style="border:1px solid ${filter === k ? 'var(--color-primary,#ef4444)' : 'var(--color-border,#e5e7eb)'};background:${filter === k ? 'var(--color-primary,#ef4444)' : 'transparent'};color:${filter === k ? '#fff' : 'var(--color-text,#334155)'};border-radius:999px;padding:5px 14px;font-size:.8rem;cursor:pointer;font-weight:600">${lbl} (${c})</button>`).join('')}
@@ -1435,10 +1444,12 @@ function _paintEnvios() {
               <span style="color:var(--color-text-light,#64748b)"><i class="fas fa-wallet mr-1"></i>Saldo:</span>
               <a href="https://shipping.t1.com" target="_blank" rel="noopener" style="text-decoration:none;color:var(--color-primary,#ef4444);font-weight:600">T1 · DHL/FedEx ↗</a>
               <a href="https://app.enviosperros.com/wallet" target="_blank" rel="noopener" style="text-decoration:none;color:var(--color-primary,#ef4444);font-weight:600">Envíos Perros · Estafeta ↗</a>
+              <span id="envios-vivo" title="La tabla se actualiza sola cuando la lista cambia — no hace falta picarle a Actualizar" style="margin-left:auto;color:var(--color-text-light,#64748b);white-space:nowrap"><i class="fas fa-circle" style="font-size:7px;vertical-align:middle;margin-right:5px;color:#16a34a"></i>en vivo</span>
             </div>
             <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo. · La palomita junto al pedido dice si la compra ya se reportó a Meta:
               <i class="fas fa-check-circle" style="color:#16a34a"></i> ya se mandó ·
               <i class="fas fa-check-circle" style="color:#cbd5e1"></i> todavía no${metaPend ? ` (${metaPend})` : ''} — clic en la palomita gris para mandarla a mano.</p>
+            <div style="position:relative">
             <div id="envios-scroll" style="overflow:auto">
               <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
                 <thead>
@@ -1463,10 +1474,164 @@ function _paintEnvios() {
                 <tbody>${rows || '<tr><td colspan="15" style="padding:16px 0;color:#94a3b8">No hay envíos en este filtro.</td></tr>'}</tbody>
               </table>
             </div>
+            <button id="envios-ir-abajo" onclick="enviosIrAlFinal()" title="Ir al final de la lista (los pedidos más nuevos están abajo)" style="position:absolute;right:20px;bottom:28px;z-index:3;display:none;background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:999px;padding:8px 15px;font-size:.8rem;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22);white-space:nowrap"><i class="fas fa-arrow-down mr-1"></i>Ir al final</button>
+            </div>
             <p class="text-xs text-gray-400 mt-3">${shown.length} de ${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''} · ${pendCount} pendiente(s) de guía · ${guiaCount} con guía${(window._enviosOmitidos || 0) ? ` · ${window._enviosOmitidos} envío(s) viejo(s) ya despachado(s) no se muestran` : ''}.</p>`;
-    requestAnimationFrame(_ajustarAltoEnvios); // scroll dentro de la tabla: barra horizontal visible + header sticky
+    requestAnimationFrame(() => { _ajustarAltoEnvios(); _enviosEngancharScroll(); }); // scroll dentro de la tabla: barra horizontal visible + header sticky
 }
 window._paintEnvios = _paintEnvios;
+
+// --- Botón "Ir al final" -----------------------------------------------------------------------
+// La lista va en orden cronológico ASCENDENTE (los nuevos abajo) y son cientos de líneas, así que
+// bajar hasta el último pedido a mano es un viaje. El botón vive fuera de #envios-scroll (absoluto
+// sobre él) para que no se mueva con el contenido.
+function enviosIrAlFinal() {
+    const el = document.getElementById('envios-scroll');
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+}
+window.enviosIrAlFinal = enviosIrAlFinal;
+
+// El botón solo se ve si de verdad falta lista por bajar (si ya estás al final, estorba).
+function _syncBtnIrAbajo() {
+    const el = document.getElementById('envios-scroll');
+    const btn = document.getElementById('envios-ir-abajo');
+    if (!el || !btn) return;
+    const falta = el.scrollHeight - el.scrollTop - el.clientHeight;
+    btn.style.display = falta > 60 ? '' : 'none';
+}
+
+// _paintEnvios rehace el DOM, así que el listener se vuelve a colgar del elemento nuevo (el viejo
+// se va con su listener: no hay fuga).
+function _enviosEngancharScroll() {
+    const el = document.getElementById('envios-scroll');
+    if (!el || el._scrollHooked) return;
+    el._scrollHooked = true;
+    el.addEventListener('scroll', _syncBtnIrAbajo, { passive: true });
+    _syncBtnIrAbajo();
+}
+
+// --- Envíos en vivo ---------------------------------------------------------------------------
+// Antes la tabla solo se refrescaba al picar "Actualizar". Ahora, mientras estés en la sección,
+// unos listeners de Firestore AVISAN que la lista cambió y se vuelve a pedir /api/envios. El
+// listener es solo la señal: la fuente de verdad sigue siendo el endpoint, que es el que hace el
+// cruce con datos_envio, el rescate de pendientes viejos y las líneas manuales. Duplicar ese
+// armado en el cliente sería otra implementación que se desincroniza.
+window._enviosUnsub = [];
+let _enviosRefetchTimer = null;
+let _enviosRefetchPendiente = false;
+let _enviosUltimoRefetch = 0;
+const ENVIOS_REFETCH_MIN_MS = 4000; // piso entre refrescos: /api/envios lee cientos de docs por llamada
+
+function _enviosDesuscribir() {
+    (window._enviosUnsub || []).forEach(u => { try { u(); } catch (_) {} });
+    window._enviosUnsub = [];
+    clearTimeout(_enviosRefetchTimer);
+    clearTimeout(_enviosReintentoTimer);
+    _enviosRefetchPendiente = false;
+}
+window._enviosDesuscribir = _enviosDesuscribir;
+
+function _enviosSuscribir() {
+    _enviosDesuscribir();
+    if (typeof db === 'undefined' || !db || !db.collection) return; // sin SDK: queda el botón manual
+    // El primer snapshot es la carga inicial (ya la trajo el fetch): se ignora.
+    const señal = (origen) => {
+        let primera = true;
+        return (snap) => {
+            if (primera) { primera = false; return; }
+            if (snap.docChanges && !snap.docChanges().length) return; // cambio de metadata, no de datos
+            _enviosRefetchDebounced(origen);
+        };
+    };
+    const err = (origen) => (e) => console.warn(`[ENVIOS] Listener de ${origen} falló (se sigue con el botón Actualizar):`, e.message);
+    try {
+        window._enviosUnsub = [
+            // Misma ventana que usa el servidor (ENVIOS_RECIENTES=300): cubre pedidos nuevos y
+            // cambios de estatus/guía de los que están en la tabla. orderBy de un solo campo → sin índice compuesto.
+            db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(300)
+                .onSnapshot(señal('pedidos'), err('pedidos')),
+            // El cliente acaba de llenar su formulario → se llena la columna "Datos de envío".
+            db.collection('datos_envio').orderBy('createdAt', 'desc').limit(60)
+                .onSnapshot(señal('datos_envio'), err('datos_envio')),
+            // Líneas que alguien agrega/borra a mano desde otra compu.
+            db.collection('envios_manuales').orderBy('createdAt', 'desc').limit(60)
+                .onSnapshot(señal('envios_manuales'), err('envios_manuales')),
+        ];
+        console.log('[ENVIOS] Actualización en vivo activa.');
+    } catch (e) {
+        console.warn('[ENVIOS] No se pudo activar la actualización en vivo:', e.message);
+        _enviosDesuscribir();
+    }
+}
+
+function _enviosRefetchDebounced(origen) {
+    if (!document.getElementById('envios-container')) return; // ya no estamos en la sección
+    clearTimeout(_enviosRefetchTimer);
+    // Un cambio suele venir en ráfaga (estatus + guía + inventario del mismo pedido): se juntan en
+    // uno. Y si acabamos de refrescar, se espera el resto del piso para no encadenar llamadas caras.
+    const desdeUltimo = Date.now() - _enviosUltimoRefetch;
+    const espera = Math.max(1200, ENVIOS_REFETCH_MIN_MS - desdeUltimo);
+    _enviosRefetchTimer = setTimeout(() => {
+        if (_enviosOcupado()) { _enviosRefetchPendiente = true; _enviosReintentarPendiente(); return; }
+        _enviosRefetchPendiente = false;
+        _enviosRefetchSilencioso(origen);
+    }, espera);
+}
+
+// NO repintar si hay un modal abierto o si el operador está escribiendo/eligiendo en la tabla:
+// _paintEnvios rehace el innerHTML y le borraría la nota a medias o le cerraría el select.
+function _enviosOcupado() {
+    const modales = ['guia-modal', 'lote-modal', 'envio-edit-modal', 'chat-envios-modal'];
+    if (modales.some(id => { const m = document.getElementById(id); return m && m.style.display !== 'none'; })) return true;
+    const cont = document.getElementById('envios-container');
+    const a = document.activeElement;
+    if (cont && a && a !== document.body && cont.contains(a)) return true;
+    return false;
+}
+
+// Reintenta el refresco diferido hasta que el operador suelte el campo o cierre el modal. Se hace
+// con un timer y NO con el evento focusout: si la ventana no tiene el foco del sistema, el focusout
+// puede no llegar nunca y el refresco se quedaría colgado para siempre. Solo revisa una bandera:
+// no cuesta lecturas ni llamadas mientras no se pueda aplicar.
+let _enviosReintentoTimer = null;
+function _enviosReintentarPendiente() {
+    clearTimeout(_enviosReintentoTimer);
+    _enviosReintentoTimer = setTimeout(() => {
+        if (!_enviosRefetchPendiente) return;
+        if (!document.getElementById('envios-container')) { _enviosRefetchPendiente = false; return; }
+        if (_enviosOcupado()) { _enviosReintentarPendiente(); return; }
+        _enviosRefetchPendiente = false;
+        _enviosRefetchSilencioso('pendiente');
+    }, 2500);
+}
+
+// Refresca la tabla sin el "Cargando envíos…" y CONSERVANDO el scroll. Si estabas al final, te
+// deja al final (así ves entrar el pedido nuevo sin volver a bajar).
+async function _enviosRefetchSilencioso(origen) {
+    _enviosUltimoRefetch = Date.now();
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/envios`);
+        const data = await res.json();
+        if (!res.ok || !data.success) return;
+        const el = document.getElementById('envios-scroll');
+        const scrollPrev = el ? el.scrollTop : 0;
+        const estabaAlFinal = el ? (el.scrollHeight - el.scrollTop - el.clientHeight) < 60 : false;
+        window._enviosData = data.envios || [];
+        window._enviosOmitidos = Number(data.omitidos) || 0;
+        _paintEnvios();
+        requestAnimationFrame(() => {
+            const nuevo = document.getElementById('envios-scroll');
+            if (!nuevo) return;
+            nuevo.scrollTop = estabaAlFinal ? nuevo.scrollHeight : scrollPrev;
+            _syncBtnIrAbajo();
+        });
+        const vivo = document.getElementById('envios-vivo');
+        if (vivo) { vivo.setAttribute('data-flash', '1'); setTimeout(() => vivo.removeAttribute('data-flash'), 900); }
+        console.log(`[ENVIOS] Lista actualizada en vivo (cambió ${origen}).`);
+    } catch (e) {
+        console.warn('[ENVIOS] Falló el refresco en vivo (queda el botón Actualizar):', e.message);
+    }
+}
 
 // Da al contenedor de la tabla un alto que llene lo que queda de pantalla, para que el scroll (vertical
 // Y horizontal) viva DENTRO de la tabla: header sticky arriba y barra horizontal visible al fondo de la
