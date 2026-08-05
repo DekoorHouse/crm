@@ -6454,6 +6454,16 @@ router.post('/orders/:orderId/change-status', async (req, res) => {
             Object.assign(updatePayload, reenvioResetFields(orderData));
         }
 
+        // Corregir MANUAL (desde el dropdown/modal): sella corregirAt + pendienteDisenoAt para que la
+        // tarjeta REGRESE a Pendientes en el tablero. La reactivación se decide por pendienteRenovadoMs >
+        // (fecha en que se movió a Diseñado/Terminado); el camino de la IA (markOrderCorregirForContact)
+        // ya sella estas fechas, pero el cambio manual NO lo hacía, así que un pedido en "Diseñado" que se
+        // re-marcaba Corregir se quedaba ahí (DH14357). Cerrar la corrección: botón ✓ Diseñado. Chris, 2026-08-05.
+        if (newStatus === 'Corregir') {
+            updatePayload.corregirAt = admin.firestore.FieldValue.serverTimestamp();
+            updatePayload.pendienteDisenoAt = admin.firestore.FieldValue.serverTimestamp();
+        }
+
         // Actualizar el pedido en Firestore
         await orderRef.update(updatePayload);
 
