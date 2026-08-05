@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
     <!-- ========== LOGIN ========== -->
@@ -63,15 +63,20 @@
             <div class="toolbar-separator"></div>
             <!-- Brush options -->
             <div id="brush-options" class="toolbar-group">
-                <label class="toolbar-label">Tamano</label>
-                <input type="range" id="brush-size" min="0.5" max="200" value="30" step="0.5" class="toolbar-range">
-                <input type="number" id="brush-size-val" class="toolbar-val-input" value="30" min="0.5" max="200" step="0.5">
-                <label class="toolbar-label" style="margin-left:12px;">Color</label>
-                <input type="color" id="brush-color" value="#0a0a2e" class="toolbar-color">
-                <button id="pick-color" class="btn btn-tool" title="Tomar color de la imagen"><i class="fas fa-eye-dropper"></i></button>
+                <span class="toolbar-field">
+                    <label class="toolbar-label">Tamano</label>
+                    <input type="range" id="brush-size" min="0.5" max="200" value="30" step="0.5" class="toolbar-range" title="Arrastra, o usa la rueda del mouse encima (Shift = pasos de 10)">
+                    <input type="number" id="brush-size-val" class="toolbar-val-input" value="30" min="0.5" max="200" step="0.5">
+                </span>
+                <span class="toolbar-field">
+                    <label class="toolbar-label">Color</label>
+                    <input type="color" id="brush-color" value="#0a0a2e" class="toolbar-color">
+                    <button id="pick-color" class="btn btn-tool" title="Tomar color de la imagen"><i class="fas fa-eye-dropper"></i></button>
+                </span>
             </div>
             <!-- Text options -->
             <div id="text-options" class="toolbar-group" style="display:none;">
+                <span class="toolbar-field">
                 <label class="toolbar-label">Fuente</label>
                 <select id="font-family" class="toolbar-select">
                     <option value="Inter">Inter</option>
@@ -85,22 +90,30 @@
                     <i class="fas fa-plus"></i>
                     <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none;">
                 </label>
-                <div class="toolbar-group" style="margin-left:8px; gap:2px;">
+                </span>
+                <div class="toolbar-group" style="gap:2px;">
                     <button id="align-left" class="btn btn-tool active" title="Alinear izquierda"><i class="fas fa-align-left"></i></button>
                     <button id="align-center" class="btn btn-tool" title="Alinear centro"><i class="fas fa-align-center"></i></button>
                     <button id="align-right" class="btn btn-tool" title="Alinear derecha"><i class="fas fa-align-right"></i></button>
                 </div>
-                <label class="toolbar-label" style="margin-left:12px;">Tamano</label>
-                <input type="range" id="font-size" min="1" max="500" value="48" step="0.5" class="toolbar-range">
+                <span class="toolbar-field">
+                <label class="toolbar-label">Tamano</label>
+                <input type="range" id="font-size" min="1" max="500" value="48" step="0.5" class="toolbar-range" title="Arrastra, o usa la rueda del mouse encima (Shift = pasos de 10). La barra es más fina en los tamaños chicos.">
                 <input type="number" id="font-size-val" class="toolbar-val-input" value="48" min="1" max="500" step="0.5">
-                <label class="toolbar-label" style="margin-left:12px;">Color</label>
+                </span>
+                <span class="toolbar-field">
+                <label class="toolbar-label">Color</label>
                 <input type="color" id="font-color" value="#ffffff" class="toolbar-color">
-                <label class="toolbar-label" style="margin-left:12px;">Glow</label>
-                <input type="range" id="glow-strength" min="0" max="50" value="8" step="0.5" class="toolbar-range">
+                </span>
+                <span class="toolbar-field">
+                <label class="toolbar-label">Glow</label>
+                <input type="range" id="glow-strength" min="0" max="50" value="8" step="0.5" class="toolbar-range" title="Halo alrededor de la letra. Rueda del mouse para afinar.">
                 <input type="number" id="glow-val" class="toolbar-val-input" value="8" min="0" max="50" step="0.5">
                 <input type="color" id="glow-color" value="#4488ff" class="toolbar-color">
-                <label class="toolbar-label" style="margin-left:12px;">Contorno</label>
-                <input type="range" id="stroke-width" min="0" max="20" value="0" step="0.01" class="toolbar-range">
+                </span>
+                <span class="toolbar-field">
+                <label class="toolbar-label">Contorno</label>
+                <input type="range" id="stroke-width" min="0" max="20" value="0" step="0.01" class="toolbar-range" title="Grosor del contorno. Rueda del mouse para afinar; la barra es más fina en los valores delgados.">
                 <input type="number" id="stroke-width-val" class="toolbar-val-input" value="0" min="0" max="20" step="0.01">
                 <input type="color" id="stroke-color" value="#0066ff" class="toolbar-color">
                 <select id="stroke-dir" class="toolbar-select" title="Dirección del contorno">
@@ -114,9 +127,22 @@
                     <option value="bottom">↓</option>
                     <option value="bottom-left">↙</option>
                 </select>
-                <label class="toolbar-label" style="margin-left:12px;">Suavizado</label>
-                <input type="range" id="text-quality" min="1" max="4" value="1" step="0.5" class="toolbar-range">
+                </span>
+                <span class="toolbar-field">
+                <label class="toolbar-label" title="Difumina el RELLENO de la letra: la luz del grabado no tiene borde filoso">Desenf. relleno</label>
+                <input type="range" id="fill-blur" min="0" max="50" value="0" step="0.5" class="toolbar-range" title="Difumina el RELLENO de la letra. Rueda del mouse para afinar (Shift = pasos de 10).">
+                <input type="number" id="fill-blur-val" class="toolbar-val-input" value="0" min="0" max="50" step="0.5">
+                </span>
+                <span class="toolbar-field">
+                <label class="toolbar-label" title="Difumina el CONTORNO por separado (solo se nota si el contorno tiene grosor)">Desenf. borde</label>
+                <input type="range" id="stroke-blur" min="0" max="50" value="0" step="0.5" class="toolbar-range" title="Difumina el CONTORNO sin tocar el relleno. Rueda del mouse para afinar (Shift = pasos de 10).">
+                <input type="number" id="stroke-blur-val" class="toolbar-val-input" value="0" min="0" max="50" step="0.5">
+                </span>
+                <span class="toolbar-field">
+                <label class="toolbar-label">Suavizado</label>
+                <input type="range" id="text-quality" min="1" max="4" value="1" step="0.5" class="toolbar-range" title="Renderiza el texto a mayor resolución (más nítido, más lento)">
                 <input type="number" id="text-quality-val" class="toolbar-val-input" value="1" min="1" max="4" step="0.5">
+                </span>
                 <div class="toolbar-separator"></div>
                 <button id="toggle-ref-area" class="btn btn-tool" title="Definir area de referencia para auto-ajuste de texto"><i class="fas fa-vector-square"></i> Ref</button>
                 <button id="clear-ref-area" class="btn btn-tool" title="Quitar area de referencia" style="display:none;"><i class="fas fa-times"></i></button>
@@ -195,6 +221,6 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
     <script src="/js/auth-guard.js"></script>
-    <script src="script.js"></script>
+    <script src="script.js?v=2"></script>
 </body>
 </html>

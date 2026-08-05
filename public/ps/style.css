@@ -100,10 +100,19 @@ body {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
     box-shadow: var(--shadow); margin-bottom: 12px; flex-wrap: wrap;
 }
-.toolbar-group { display: flex; align-items: center; gap: 6px; }
+/* Los grupos también envuelven: la barra ya tenía flex-wrap, pero #text-options es UN solo hijo
+   con todos los controles del texto, así que sin esto se quedaba en una sola fila larguísima y los
+   últimos controles (desenfoque, suavizado, Ref) se salían de la pantalla sin manera de alcanzarlos. */
+.toolbar-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 10px; }
+/* Cada control con su etiqueta va junto y NO se parte al envolver: sin esto la barra dejaba
+   "CONTORNO" al final de una fila y su slider al principio de la siguiente. */
+.toolbar-field { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .toolbar-separator { width: 1px; height: 28px; background: var(--border); }
 .toolbar-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-3); letter-spacing: 0.04em; }
-.toolbar-range { width: 80px; accent-color: var(--primary); }
+/* 80px era muy poco: con un rango de 1 a 500 cada píxel movía ~6 unidades. Ahora que la barra
+   envuelve en varias filas hay espacio para sliders más largos, y más largo = más fino. */
+.toolbar-range { width: 150px; accent-color: var(--primary); cursor: ew-resize; }
+.toolbar-range:hover { accent-color: var(--primary); }
 .toolbar-val { font-size: 12px; font-weight: 700; color: var(--primary); min-width: 24px; font-variant-numeric: tabular-nums; }
 .toolbar-val-input {
     width: 48px; font-size: 11px; font-weight: 700; color: var(--primary);

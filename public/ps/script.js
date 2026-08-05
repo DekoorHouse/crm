@@ -70,6 +70,10 @@ const strokeWidthInput = document.getElementById('stroke-width');
 const strokeWidthVal = document.getElementById('stroke-width-val');
 const strokeColorInput = document.getElementById('stroke-color');
 const strokeDirSelect = document.getElementById('stroke-dir');
+const fillBlurInput = document.getElementById('fill-blur');
+const fillBlurVal = document.getElementById('fill-blur-val');
+const strokeBlurInput = document.getElementById('stroke-blur');
+const strokeBlurVal = document.getElementById('stroke-blur-val');
 const alignLeftBtn = document.getElementById('align-left');
 const alignCenterBtn = document.getElementById('align-center');
 const alignRightBtn = document.getElementById('align-right');
@@ -219,19 +223,77 @@ toolText.addEventListener('click', () => setTool('text'));
 toolMove.addEventListener('click', () => setTool('move'));
 
 // ===================== RANGE ↔ NUMBER SYNC =====================
-function linkRangeAndNumber(range, num, onChange) {
+// Enlaza un slider con su campo numérico. Devuelve un setter para colocar AMBOS desde un valor real
+// (el resto del código debe usarlo en vez de tocar .value a mano).
+//
+// Tres cosas para que los controles no se sientan a brincos:
+//  1. opts.curve (gamma): el slider deja de ser lineal. Con rangos enormes —tamaño de letra 1 a 500—
+//     un slider lineal mueve varias unidades por píxel y es imposible afinar un texto chico. Con la
+//     curva, la mitad izquierda cubre los valores bajos (donde la precisión importa) y la derecha
+//     avanza a zancadas, que ahí no molesta. El número que se muestra siempre es el valor REAL.
+//  2. Rueda del mouse encima del slider o del campo: ±1 paso, o ±10 pasos con Shift. Es la forma
+//     exacta de ajustar sin arrastrar.
+//  3. Todo se redondea al paso, para no acabar con 47.30000000000001.
+const CURVE_POS_MAX = 1000;
+
+function linkRangeAndNumber(range, num, onChange, opts = {}) {
+    const gamma = opts.curve || 0;
+    const vMin = parseFloat(num.min) || 0;
+    const vMax = parseFloat(num.max) || 100;
+    const step = parseFloat(num.step) || 1;
+    const decimals = (String(step).split('.')[1] || '').length;
+
+    const clamp = (v) => Math.min(vMax, Math.max(vMin, v));
+    const snap = (v) => parseFloat((Math.round(v / step) * step).toFixed(decimals));
+    const fix = (v) => snap(clamp(v));
+
+    // Con curva el slider trabaja en posiciones 0..1000; sin curva, en el valor directo.
+    if (gamma) { range.min = 0; range.max = CURVE_POS_MAX; range.step = 1; }
+    const posToVal = (p) => gamma
+        ? fix(vMin + (vMax - vMin) * Math.pow(p / CURVE_POS_MAX, gamma))
+        : fix(p);
+    const valToPos = (v) => gamma
+        ? Math.round(CURVE_POS_MAX * Math.pow((clamp(v) - vMin) / (vMax - vMin), 1 / gamma))
+        : fix(v);
+
+    // Ojo: aquí NO se redondea al paso, solo se acota. El auto-ajuste al área de referencia produce
+    // tamaños fraccionarios (129.3) y redondear haría que el campo mostrara 129.5 mientras la capa
+    // vale 129.3. El redondeo al paso es solo para lo que mueve el usuario (slider, campo, rueda).
+    const setValue = (v, fire) => {
+        const val = clamp(parseFloat(v));
+        if (Number.isNaN(val)) return;
+        num.value = parseFloat(val.toFixed(2));
+        range.value = valToPos(val);
+        if (fire) onChange(val);
+        return val;
+    };
+
     range.addEventListener('input', () => {
-        num.value = range.value;
-        onChange(parseFloat(range.value));
+        const val = posToVal(parseFloat(range.value));
+        num.value = val;
+        onChange(val);
     });
     num.addEventListener('input', () => {
-        range.value = num.value;
-        onChange(parseFloat(num.value));
+        const raw = parseFloat(num.value);
+        if (Number.isNaN(raw)) return; // deja borrar el campo para escribir otro valor
+        range.value = valToPos(raw);
+        onChange(fix(raw));
     });
+
+    const onWheel = (e) => {
+        e.preventDefault();
+        const dir = e.deltaY < 0 ? 1 : -1;
+        setValue((parseFloat(num.value) || 0) + dir * step * (e.shiftKey ? 10 : 1), true);
+    };
+    range.addEventListener('wheel', onWheel, { passive: false });
+    num.addEventListener('wheel', onWheel, { passive: false });
+
+    return setValue;
 }
 
 // ===================== BRUSH CONTROLS =====================
-linkRangeAndNumber(brushSizeInput, brushSizeVal, (v) => { brushSize = v; });
+// Curva: el pincel útil casi siempre anda entre 1 y 40 de un rango que llega a 200.
+linkRangeAndNumber(brushSizeInput, brushSizeVal, (v) => { brushSize = v; }, { curve: 2.2 });
 
 brushColorInput.addEventListener('input', () => {
     brushColor = brushColorInput.value;
@@ -245,9 +307,10 @@ pickColorBtn.addEventListener('click', () => {
 });
 
 // ===================== FONT CONTROLS =====================
-linkRangeAndNumber(fontSizeInput, fontSizeVal, (v) => {
+// Curva: el rango va de 1 a 500 y los tamaños que de verdad se usan viven en la parte baja.
+const setFontSize = linkRangeAndNumber(fontSizeInput, fontSizeVal, (v) => {
     if (selectedTextIdx >= 0) { textLayers[selectedTextIdx].fontSize = v; redrawCanvas(); }
-});
+}, { curve: 2.5 });
 
 fontColorInput.addEventListener('input', () => {
     if (selectedTextIdx >= 0) {
@@ -261,8 +324,7 @@ fontFamilySelect.addEventListener('change', () => {
         textLayers[selectedTextIdx].fontFamily = fontFamilySelect.value;
         if (textLayers[selectedTextIdx].refArea) {
             fitTextToRefArea(textLayers[selectedTextIdx]);
-            fontSizeInput.value = textLayers[selectedTextIdx].fontSize;
-            fontSizeVal.value = textLayers[selectedTextIdx].fontSize;
+            setFontSize(textLayers[selectedTextIdx].fontSize);
         }
         redrawCanvas();
     }
@@ -279,9 +341,11 @@ glowColorInput.addEventListener('input', () => {
     }
 });
 
-linkRangeAndNumber(strokeWidthInput, strokeWidthVal, (v) => {
+// Curva: el paso es 0.01 sobre un rango de 0 a 20 (2000 pasos). Sin curva, un píxel del slider
+// se saltaba decenas de pasos y era imposible acertarle a un contorno delgado.
+const setStrokeWidth = linkRangeAndNumber(strokeWidthInput, strokeWidthVal, (v) => {
     if (selectedTextIdx >= 0) { textLayers[selectedTextIdx].strokeWidth = v; redrawCanvas(); }
-});
+}, { curve: 2 });
 
 strokeColorInput.addEventListener('input', () => {
     if (selectedTextIdx >= 0) {
@@ -295,6 +359,16 @@ strokeDirSelect.addEventListener('change', () => {
         textLayers[selectedTextIdx].strokeDir = strokeDirSelect.value;
         redrawCanvas();
     }
+});
+
+// Desenfoque INDEPENDIENTE del relleno y del contorno: en una lámpara real el grabado difunde la
+// luz y no tiene borde filoso, y muchas veces el halo del contorno va más suave que la letra.
+linkRangeAndNumber(fillBlurInput, fillBlurVal, (v) => {
+    if (selectedTextIdx >= 0) { textLayers[selectedTextIdx].fillBlur = v; redrawCanvas(); }
+});
+
+linkRangeAndNumber(strokeBlurInput, strokeBlurVal, (v) => {
+    if (selectedTextIdx >= 0) { textLayers[selectedTextIdx].strokeBlur = v; redrawCanvas(); }
 });
 
 function setTextAlign(align) {
@@ -319,8 +393,7 @@ textContent.addEventListener('input', () => {
         textLayers[selectedTextIdx].text = textContent.value;
         if (textLayers[selectedTextIdx].refArea) {
             fitTextToRefArea(textLayers[selectedTextIdx]);
-            fontSizeInput.value = textLayers[selectedTextIdx].fontSize;
-            fontSizeVal.value = textLayers[selectedTextIdx].fontSize;
+            setFontSize(textLayers[selectedTextIdx].fontSize);
         }
         redrawCanvas();
     }
@@ -453,13 +526,15 @@ function onPointerDown(e) {
             x: pos.x,
             y: pos.y,
             fontFamily: fontFamilySelect.value,
-            fontSize: parseFloat(fontSizeInput.value),
+            fontSize: parseFloat(fontSizeVal.value),
             color: fontColorInput.value,
             glowStrength: parseFloat(glowStrengthInput.value),
             glowColor: glowColorInput.value,
-            strokeWidth: parseFloat(strokeWidthInput.value),
+            strokeWidth: parseFloat(strokeWidthVal.value),
             strokeColor: strokeColorInput.value,
             strokeDir: strokeDirSelect.value,
+            fillBlur: parseFloat(fillBlurInput.value),
+            strokeBlur: parseFloat(strokeBlurInput.value),
             quality: parseFloat(textQualityInput.value),
             textAlign: activeAlign,
         });
@@ -485,16 +560,18 @@ function onPointerDown(e) {
                 // Load properties into controls
                 textContent.value = t.text;
                 fontFamilySelect.value = t.fontFamily;
-                fontSizeInput.value = t.fontSize;
-                fontSizeVal.value = t.fontSize;
+                setFontSize(t.fontSize);
                 fontColorInput.value = t.color;
                 glowStrengthInput.value = t.glowStrength;
                 glowVal.value = t.glowStrength;
                 glowColorInput.value = t.glowColor;
-                strokeWidthInput.value = t.strokeWidth || 0;
-                strokeWidthVal.value = t.strokeWidth || 0;
+                setStrokeWidth(t.strokeWidth || 0);
                 strokeColorInput.value = t.strokeColor || '#0066ff';
                 strokeDirSelect.value = t.strokeDir || 'center';
+                fillBlurInput.value = t.fillBlur || 0;
+                fillBlurVal.value = t.fillBlur || 0;
+                strokeBlurInput.value = t.strokeBlur || 0;
+                strokeBlurVal.value = t.strokeBlur || 0;
                 const ta = t.textAlign || 'left';
                 alignLeftBtn.classList.toggle('active', ta === 'left');
                 alignCenterBtn.classList.toggle('active', ta === 'center');
@@ -625,6 +702,40 @@ function drawStroke(c, t, sw, tx, ty) {
     }
 }
 
+// ¿El navegador soporta ctx.filter? Es lo que aplica el desenfoque. Si no (navegadores viejos), el
+// texto sale nítido en lugar de romperse.
+const CANVAS_FILTER_OK = (() => {
+    try {
+        const c = document.createElement('canvas').getContext('2d');
+        c.filter = 'blur(1px)';
+        return c.filter === 'blur(1px)';
+    } catch (_) { return false; }
+})();
+
+// Dibuja UNA parte del texto (el contorno o el relleno) en un lienzo aparte y la compone con SU
+// propio desenfoque. Van en lienzos separados justamente para eso: si el contorno y el relleno se
+// dibujaran en el mismo, compartirían el filtro y no se podría suavizar solo uno de los dos.
+function composeTextPart(t, geo, blur, draw) {
+    const { pad, textW, textH, q, alignOff } = geo;
+    const offW = Math.ceil(textW + pad * 2);
+    const offH = Math.ceil(textH + pad * 2);
+    const tmp = document.createElement('canvas');
+    tmp.width = Math.max(1, Math.ceil(offW * q));
+    tmp.height = Math.max(1, Math.ceil(offH * q));
+    const tc = tmp.getContext('2d');
+    tc.scale(q, q);
+    tc.font = `${t.fontSize}px "${t.fontFamily}"`;
+    tc.textBaseline = 'alphabetic';
+    draw(tc, pad, textH + pad);
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if (blur > 0 && CANVAS_FILTER_OK) ctx.filter = `blur(${blur}px)`;
+    ctx.drawImage(tmp, t.x + alignOff - pad, t.y - textH - pad, offW, offH);
+    ctx.restore(); // restore devuelve ctx.filter a 'none': no se contamina la capa siguiente
+}
+
 function drawTextLayer(t, isSelected) {
     ctx.save();
     const q = t.quality || 1;
@@ -632,41 +743,42 @@ function drawTextLayer(t, isSelected) {
     const scale = t.fontSize / 100; // proportional scaling for effects
     const glow = (t.glowStrength || 0) * scale;
     const sw = (t.strokeWidth || 0) * scale;
+    // El desenfoque escala con el tamaño de la letra igual que el glow y el contorno. Es
+    // indispensable para el modo lote: el auto-ajuste al área de referencia cambia el fontSize
+    // según el largo de cada nombre, y sin escalar, un nombre corto saldría con otro desenfoque.
+    const fillBlur = (t.fillBlur || 0) * scale;
+    const strokeBlur = (t.strokeBlur || 0) * scale;
     ctx.font = `${t.fontSize}px "${t.fontFamily}"`;
     ctx.textBaseline = 'alphabetic';
     const metrics = ctx.measureText(t.text);
     const textW = metrics.width;
     const textH = t.fontSize;
     const glowPad = glow > 0 ? glow * 3 : 0;
-    const pad = Math.max(glowPad, sw + 6);
+    // El desenfoque se derrama fuera de la caja del texto: sin margen suficiente en el lienzo
+    // auxiliar se corta con un borde recto. ~3x el radio cubre todo lo visible.
+    const blurPad = Math.max(fillBlur, strokeBlur) * 3;
+    const pad = Math.max(glowPad, sw + 6, blurPad);
     const alignOff = align === 'center' ? -textW / 2 : align === 'right' ? -textW : 0;
 
-    if (q > 1) {
-        const offW = Math.ceil(textW + pad * 2);
-        const offH = Math.ceil(textH + pad * 2);
-        const tmp = document.createElement('canvas');
-        tmp.width = Math.ceil(offW * q);
-        tmp.height = Math.ceil(offH * q);
-        const tc = tmp.getContext('2d');
-        tc.scale(q, q);
-        tc.font = `${t.fontSize}px "${t.fontFamily}"`;
-        tc.textBaseline = 'alphabetic';
-
+    // Relleno (con su glow, que es parte de la letra y se difumina junto con ella).
+    const drawFill = (c, x, y) => {
         if (glow > 0) {
-            tc.shadowColor = t.glowColor;
-            tc.shadowBlur = glow;
-            tc.fillStyle = t.color;
-            for (let g = 0; g < 3; g++) tc.fillText(t.text, pad, textH + pad);
+            c.shadowColor = t.glowColor;
+            c.shadowBlur = glow;
+            c.fillStyle = t.color;
+            for (let g = 0; g < 3; g++) c.fillText(t.text, x, y);
         }
-        tc.shadowColor = 'transparent';
-        tc.shadowBlur = 0;
-        if (sw > 0) drawStroke(tc, t, sw, pad, textH + pad);
-        tc.fillStyle = t.color;
-        tc.fillText(t.text, pad, textH + pad);
+        c.shadowColor = 'transparent';
+        c.shadowBlur = 0;
+        c.fillStyle = t.color;
+        c.fillText(t.text, x, y);
+    };
 
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(tmp, t.x + alignOff - pad, t.y - textH - pad, offW, offH);
+    if (q > 1 || fillBlur > 0 || strokeBlur > 0) {
+        // Contorno primero (va debajo) y relleno encima, cada uno con su desenfoque.
+        const geo = { pad, textW, textH, q, alignOff };
+        if (sw > 0) composeTextPart(t, geo, strokeBlur, (c, x, y) => drawStroke(c, t, sw, x, y));
+        composeTextPart(t, geo, fillBlur, drawFill);
     } else {
         ctx.textAlign = align;
         if (glow > 0) {
@@ -1233,9 +1345,11 @@ clearRefAreaBtn.addEventListener('click', () => {
                     color: fontColorInput.value,
                     glowStrength: parseFloat(glowStrengthInput.value),
                     glowColor: glowColorInput.value,
-                    strokeWidth: parseFloat(strokeWidthInput.value),
+                    strokeWidth: parseFloat(strokeWidthVal.value),
                     strokeColor: strokeColorInput.value,
                     strokeDir: strokeDirSelect.value,
+                    fillBlur: parseFloat(fillBlurInput.value),
+                    strokeBlur: parseFloat(strokeBlurInput.value),
                     quality: parseFloat(textQualityInput.value),
                     textAlign: activeAlign,
                     refArea: { x, y, w, h },
@@ -1249,8 +1363,7 @@ clearRefAreaBtn.addEventListener('click', () => {
             // Sync controls
             const t = textLayers[selectedTextIdx];
             textContent.value = t.text;
-            fontSizeInput.value = t.fontSize;
-            fontSizeVal.value = t.fontSize;
+            setFontSize(t.fontSize);
             textInputPanel.style.display = 'block';
             setTool('move');
             redrawCanvas();
