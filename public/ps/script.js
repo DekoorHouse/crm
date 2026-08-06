@@ -772,9 +772,9 @@ const CANVAS_FILTER_OK = (() => {
 // propio desenfoque. Van en lienzos separados justamente para eso: si el contorno y el relleno se
 // dibujaran en el mismo, compartirían el filtro y no se podría suavizar solo uno de los dos.
 function composeTextPart(t, geo, blur, draw) {
-    const { pad, textW, textH, q, alignOff } = geo;
-    const offW = Math.ceil(textW + pad * 2);
-    const offH = Math.ceil(textH + pad * 2);
+    const { q, alignOff, padL, arriba, w, h } = geo;
+    const offW = Math.ceil(w);
+    const offH = Math.ceil(h);
     const tmp = document.createElement('canvas');
     tmp.width = Math.max(1, Math.ceil(offW * q));
     tmp.height = Math.max(1, Math.ceil(offH * q));
@@ -782,13 +782,15 @@ function composeTextPart(t, geo, blur, draw) {
     tc.scale(q, q);
     tc.font = `${t.fontSize}px "${t.fontFamily}"`;
     tc.textBaseline = 'alphabetic';
-    draw(tc, pad, textH + pad);
+    // Origen del texto DENTRO del buffer: padL a la izquierda, `arriba` de alto (o sea, el baseline).
+    draw(tc, padL, arriba);
 
     ctx.save();
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     if (blur > 0 && CANVAS_FILTER_OK) ctx.filter = `blur(${blur}px)`;
-    ctx.drawImage(tmp, t.x + alignOff - pad, t.y - textH - pad, offW, offH);
+    // El buffer se pega de modo que su baseline caiga exactamente en t.y.
+    ctx.drawImage(tmp, t.x + alignOff - padL, t.y - arriba, offW, offH);
     ctx.restore(); // restore devuelve ctx.filter a 'none': no se contamina la capa siguiente
 }
 
@@ -816,6 +818,23 @@ function drawTextLayer(t, isSelected) {
     const pad = Math.max(glowPad, sw + 6, blurPad);
     const alignOff = align === 'center' ? -textW / 2 : align === 'right' ? -textW : 0;
 
+    // Caja del lienzo auxiliar: se mide por la TINTA REAL, no por la caja nominal de la fuente.
+    // Antes el alto era fontSize + 2*pad con el baseline a fontSize + pad, o sea que debajo del
+    // baseline solo quedaba `pad` — y sin glow ni contorno `pad` son 6 px. La cola de la "y" (y de
+    // g, j, p, q) baja bastante más que eso y se cortaba en recto. A lo ancho pasa lo mismo con las
+    // fuentes manuscritas, cuyos trazos se salen del avance (measureText().width).
+    const asc = Math.max(textH, metrics.actualBoundingBoxAscent || 0);
+    const desc = metrics.actualBoundingBoxDescent != null ? metrics.actualBoundingBoxDescent : textH * 0.25;
+    const inkL = Math.max(0, metrics.actualBoundingBoxLeft || 0);   // tinta a la izquierda del origen
+    const inkR = Math.max(textW, metrics.actualBoundingBoxRight || 0);
+    const geo = {
+        q, alignOff,
+        padL: pad + inkL,          // del borde del buffer al origen del texto
+        arriba: pad + asc,         // del borde de arriba al baseline
+        w: pad + inkL + inkR + pad,
+        h: pad + asc + desc + pad,
+    };
+
     // Relleno (con su glow, que es parte de la letra y se difumina junto con ella).
     const drawFill = (c, x, y) => {
         if (glow > 0) {
@@ -832,7 +851,6 @@ function drawTextLayer(t, isSelected) {
 
     if (q > 1 || fillBlur > 0 || strokeBlur > 0) {
         // Contorno primero (va debajo) y relleno encima, cada uno con su desenfoque.
-        const geo = { pad, textW, textH, q, alignOff };
         if (sw > 0) composeTextPart(t, geo, strokeBlur, (c, x, y) => drawStroke(c, t, sw, x, y));
         composeTextPart(t, geo, fillBlur, drawFill);
     } else {
@@ -850,14 +868,15 @@ function drawTextLayer(t, isSelected) {
         ctx.fillText(t.text, t.x, t.y);
     }
 
-    // Selection indicator
+    // Selection indicator. Encierra la tinta real (incluida la cola de la "y"): con la caja nominal
+    // de la fuente el recuadro cruzaba por encima del descendente y parecía que lo cortaba.
     const selX = t.x + alignOff;
     if (isSelected) {
         ctx.textAlign = 'left';
         ctx.strokeStyle = '#7aa2f7';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 3]);
-        ctx.strokeRect(selX - 4, t.y - textH - 2, textW + 8, textH + 8);
+        ctx.strokeRect(selX - inkL - 4, t.y - asc - 2, inkL + inkR + 8, asc + desc + 6);
         ctx.setLineDash([]);
     }
 
