@@ -208,9 +208,20 @@ del pedido es UNA lampara**, asi que un mismo pedido puede traer varias, incluso
 distintos (por eso importa el "no mezclar modelos" al armar la hoja). Es una linea nueva y con volumen:
 317 items en 90 dias, encabezada por T-Rex (69), Spiderman (62), nube (56) y dinosaurio (27), mas una
 cola larga de ~70 personajes de una sola pieza (unicornio, Hello Kitty, Sonic, Goku, Stitch, Messi...)
-para los que **no hay plantilla** — esos siguen siendo diseno manual. "Hombre araña" es alias de
-Spiderman. El **28%** de los nombres son compuestos o de mas de 9 caracteres, que es justo el caso en
-el que hay que cotejar el mockup.
+para los que **no hay plantilla** — esos siguen siendo diseno manual. El **28%** de los nombres son
+compuestos o de mas de 9 caracteres, que es justo el caso en el que hay que cotejar el mockup.
+
+**Alias de personaje -> plantilla** (Chris, 2026-08-06; verificado contra el mockup de DH14328, que
+graba la MISMA silueta de T-Rex):
+
+| Plantilla | Personajes que la usan |
+|---|---|
+| `rex` | `T-Rex`, `Dinosaurio T-Rex`, `dinosaurio rex`, **`dinosaurio`** |
+| `spiderman` | `Spiderman`, `Hombre araña` |
+
+Con esos alias las dos plantillas cubren ~160 de las 317 lamparas (la mitad de la linea). **Ojo con dos
+trampas**: `Dino cuello largo` **NO** es T-Rex (es de cuello largo, otra silueta) y `dinosaurio bebé`
+esta sin confirmar — preguntar antes de cortarlo con la plantilla de rex.
 
     cscript //nologo "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\gen-personaje.vbs" /tpl:spiderman|rex [/label:DH14300-DH14301] [/file:base] [/max:NN] [/preview] [/close] "Nombre1" ["Nombre2"]
 
