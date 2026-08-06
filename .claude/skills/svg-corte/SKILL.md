@@ -201,6 +201,17 @@ de color**: si el laser necesita lo contrario (negro sobre blanco), invertir el 
 Lamparas redondas con la silueta de un personaje grabada y **un solo nombre** (sin fecha).
 Plantillas dadas por Chris el 2026-08-06. Hoja de 350x330 con **DOS lamparas** apiladas.
 
+**Como llegan estos pedidos** (verificado en Firestore el 2026-08-06): el producto se llama
+`Lámpara infantil <Personaje>` y los datos vienen ya estructurados como
+`Nombre: <nombre> | Personaje: <personaje>` (a veces con un `| Especial: ...` al final). **Cada item
+del pedido es UNA lampara**, asi que un mismo pedido puede traer varias, incluso de personajes
+distintos (por eso importa el "no mezclar modelos" al armar la hoja). Es una linea nueva y con volumen:
+317 items en 90 dias, encabezada por T-Rex (69), Spiderman (62), nube (56) y dinosaurio (27), mas una
+cola larga de ~70 personajes de una sola pieza (unicornio, Hello Kitty, Sonic, Goku, Stitch, Messi...)
+para los que **no hay plantilla** — esos siguen siendo diseno manual. "Hombre araña" es alias de
+Spiderman. El **28%** de los nombres son compuestos o de mas de 9 caracteres, que es justo el caso en
+el que hay que cotejar el mockup.
+
     cscript //nologo "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\gen-personaje.vbs" /tpl:spiderman|rex [/label:DH14300-DH14301] [/file:base] [/max:NN] [/preview] [/close] "Nombre1" ["Nombre2"]
 
 - **1 nombre** -> media hoja: graba la lampara de arriba y **borra** la de abajo (no deja una pieza en
@@ -231,9 +242,10 @@ ese largo se reduce la letra proporcionalmente. Los topes se midieron con prueba
 queda la figura, y el tamano base de letra tambien difiere (spiderman 80.3pt, rex 92.9pt; el script lo
 **lee del propio placeholder**, no esta hardcodeado). Con `/max:NN` se ajusta a mano una hoja suelta.
 
-**Nombres a 2 renglones** (`\n`): funcionan igual que en la infinito (68% de letra, interlineado 60%).
-La cuna libre de estas plantillas es diagonal, asi que el segundo renglon se arrima a la silueta —
-pero eso **no lo decide el gusto de quien corta**: manda el mockup (ver abajo).
+**Nombres a 2 renglones** (`\n`): la letra baja al 68% como en la infinito, pero el **interlineado es
+100%, NO el 60% de la infinito**. Con 60 los renglones se enciman: medido con DH14344 ("Dylan/Javier"),
+la "y" de Dylan chocaba con la "J" de Javier. En los mockups de personaje los renglones van bien
+separados, y el mockup es el que manda (ver abajo).
 
 **EL MOCKUP MANDA** (regla de Chris, 2026-08-06): el corte tiene que quedar **como se le mostro al
 cliente**, porque si no el cliente puede reclamar. Con un nombre largo NO se elige libremente entre

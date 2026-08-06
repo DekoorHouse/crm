@@ -39,7 +39,11 @@ Const MAX_LARGO_SPIDERMAN = 62
 Const MAX_LARGO_REX = 72
 Const RATIO_2L = 0.687        ' proporcion de letra para nombres a 2 renglones (44.8/65.2 de infinito)
 Const ALINEACION_CENTRO = 3   ' cdrCenterAlignment
-Const INTERLINEADO_2L = 60    ' % altura caracter — interlineado de renglones apilados
+' Interlineado de renglones apilados, en % de altura de caracter. OJO: NO es el 60% de la infinito.
+' Con 60 los renglones se enciman (medido con DH14344 "Dylan/Javier": la "y" de Dylan chocaba con la
+' "J" de Javier). En los mockups de personaje los renglones van bien separados, asi que se usa 100,
+' que es lo que reproduce el acomodo que vio el cliente.
+Const INTERLINEADO_2L = 100
 
 Dim args, nArgs, label, fileBase, tplName, quierePreview, maxLargo, maxArg
 Set args = WScript.Arguments.Unnamed
