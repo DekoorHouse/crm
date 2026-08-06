@@ -1953,6 +1953,20 @@ function reenvioResetFields(orderData) {
         });
         upd.guiaEnvio = admin.firestore.FieldValue.delete();
     }
+    // Reposición: hay que RE-HACER la pieza DESDE EL PRINCIPIO, así que se limpian las marcas de "ya
+    // diseñado/cortado" y se archiva el corte anterior. Con esto el pedido re-entra al flujo: si la skill
+    // lo puede hacer (corazón elegible), el worker lo vuelve a cortar y sube una COPIA NUEVA a Drive (y lo
+    // pasa a "Diseñado por IA"); si no (especial), reaparece en Pendientes de Diseño manual. Sin esto, un
+    // Reenvío que la skill YA había cortado se quedaba bloqueado por su svgCorteAt/disenoListoAt viejos y
+    // nunca se re-subía. Chris, 2026-08-06.
+    if (orderData && (orderData.svgCorteAt || orderData.svgCorteUrl)) {
+        if (orderData.svgCorteUrl) upd.svgCorteUrlPrevia = admin.firestore.FieldValue.arrayUnion(orderData.svgCorteUrl);
+        upd.svgCorteAt = admin.firestore.FieldValue.delete();
+        upd.svgCorteUrl = admin.firestore.FieldValue.delete();
+        upd.svgCorteBy = admin.firestore.FieldValue.delete();
+    }
+    if (orderData && orderData.disenoListoAt) upd.disenoListoAt = admin.firestore.FieldValue.delete();
+    if (orderData && orderData.disenoBoardCol) { upd.disenoBoardCol = admin.firestore.FieldValue.delete(); upd.disenoBoardColAt = admin.firestore.FieldValue.delete(); }
     return upd;
 }
 

@@ -175,16 +175,20 @@ async function findCandidates(cfg) {
         const o = { id: doc.id, ...doc.data() };
         if (video && !isVideoCorregir(o)) continue;                          // Corregir por 'datos' -> manual
         if (o.iaForce) continue;                                             // forzado desde el CRM -> lo maneja processForcedDesigns (con confirmación antes de subir)
-        // Candados compartidos con el CRM (svgAuto.autoBlocked): ya diseñado (svgCorteAt / disenoListoAt /
-        // tablero 'Terminado'), quitado de Envíos, o 2º producto. La GUÍA ya NO bloquea: se saca por
-        // adelantado (mockup->pago->formulario->guía), antes de cortar; el candado real de "ya hecho" son
-        // las 3 marcas. Ver el razonamiento y el incidente 2026-07-30 en svgAuto.autoBlocked (Chris, 2026-07-31).
-        if (autoBlocked(o)) continue;
-        if (!video) {
+        if (video) {
+            // VIDEO: el pendiente es CORTAR la pieza para poder grabar el video. Solo lo frena que YA esté
+            // cortado/subido a Drive (svgCorteAt) o gestionado (ocultoDeEnvios). Un ✓ Diseñado
+            // (disenoListoAt) o el tablero 'Terminado' NO cuentan: si nunca se subió a Drive no hay pieza
+            // que grabar (DH13714 estaba marcado ✓ Diseñado SIN corte real -> se saltaba). Chris, 2026-08-06.
+            if (o.svgCorteAt || o.ocultoDeEnvios) continue;
+        } else {
+            // Candados compartidos con el CRM (svgAuto.autoBlocked): ya diseñado (svgCorteAt / disenoListoAt /
+            // tablero 'Terminado'), quitado de Envíos, o 2º producto. La GUÍA ya NO bloquea (se saca por
+            // adelantado, antes de cortar); ver svgAuto.autoBlocked + incidente 2026-07-30.
+            if (autoBlocked(o)) continue;
             const est = String(o.estatus || '').trim().toLowerCase();
             if (ESTATUS_TERMINAL.has(est)) continue;                         // cancelado/entregado/ya diseñado
-            // Manda el PAGO VALIDADO, no el nombre del estatus (ver svgAuto.isAutoWaiting). Sin pago
-            // solo pasa 'Fabricar', que en el flujo viejo se ponía al confirmar la venta.
+            // Manda el PAGO VALIDADO, no el nombre del estatus. Sin pago solo pasa 'Fabricar'.
             if (est !== 'fabricar' && ms(o.comprobanteValidadoAt) < AUTO_DESDE_MS) continue;
         }
         if (ms(o.svgCorteStartedAt) > staleMs) continue;                     // otro proceso lo está trabajando
