@@ -195,6 +195,41 @@ Exito = ultima linea `OK <ruta-png>`. El prompt de grabado vive en el servidor
 va DENTRO de la lampara con el pipeline de Corel (como el panda/toronja) y luego a Drive. **Convencion
 de color**: si el laser necesita lo contrario (negro sobre blanco), invertir el PNG (sharp `.negate()`).
 
+## Modo 5: lamparas de PERSONAJE (Spiderman / T-Rex) — UN nombre por lampara
+
+Lamparas redondas con la silueta de un personaje grabada y **un solo nombre** (sin fecha).
+Plantillas dadas por Chris el 2026-08-06. Hoja de 350x330 con **DOS lamparas** apiladas.
+
+    cscript //nologo "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\gen-personaje.vbs" /tpl:spiderman|rex [/label:DH14300-DH14301] [/file:base] [/max:NN] [/preview] [/close] "Nombre1" ["Nombre2"]
+
+- **1 nombre** -> media hoja: graba la lampara de arriba y **borra** la de abajo (no deja una pieza en
+  blanco cortandose). **2 nombres** -> hoja llena, Nombre1 arriba y Nombre2 abajo.
+- `/preview` saca ademas un PNG **al derecho** (legible) para revisar; el SVG del laser no se toca.
+- **OJO — lanzarlo desde PowerShell, NO desde Git Bash**: bash convierte `/tpl:spiderman` en ruta y
+  el script recibe los argumentos mal (aparece el "Uso:").
+
+**Tres diferencias contra el Modo 2 (infinito) que hay que tener en la cabeza:**
+
+1. **Estas plantillas YA VIENEN en orientacion de produccion** (giradas -90 + espejo vertical: la
+   figura sale acostada y el nombre vertical). Por eso `gen-personaje.vbs` **NO rota ni refleja** al
+   exportar — si se le copiara el bloque de orientacion de `infinito.vbs` saldrian al reves.
+2. Como el texto va **girado 90 grados**, el LARGO del nombre crece en **vertical**: el limite se mide
+   sobre `SizeHeight`, no sobre `SizeWidth` (al reves que en la infinito).
+3. **Las dos lamparas usan el MISMO placeholder literal `Xxxxx`**, y ademas va **dentro de grupos
+   anidados**. No se pueden distinguir por texto: el script los busca recursivamente y los **ordena por
+   posicion** (el de arriba es el primero). Tampoco sirve `doc.ActivePage.Shapes` a secas.
+
+**Largo maximo del nombre** (constantes `MAX_LARGO_SPIDERMAN` = 62 mm, `MAX_LARGO_REX` = 72 mm): pasado
+ese largo se reduce la letra proporcionalmente. Los topes se midieron con pruebas — en el spiderman
+"Santiago" (67 mm) ya rozaba el aro por la izquierda y el brazo del personaje por la derecha; en el rex
+"Emiliano" (77 mm) rozaba el aro. Son **distintos por plantilla** porque el hueco libre depende de donde
+queda la figura, y el tamano base de letra tambien difiere (spiderman 80.3pt, rex 92.9pt; el script lo
+**lee del propio placeholder**, no esta hardcodeado). Con `/max:NN` se ajusta a mano una hoja suelta.
+
+**Nombres a 2 renglones** (`\n`): funcionan igual que en la infinito (68% de letra, interlineado 60%),
+pero **en estas plantillas conviene evitarlos**: el hueco libre es una cuna diagonal y el segundo
+renglon se acerca al brazo/silueta. Preferir 1 renglon y dejar que se reduzca la letra.
+
 ## Subida a Drive (carpeta "SVG Corte", id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`)
 
 **OJO: subir SOLO disenos ya autorizados por el cliente** (mockup aprobado o previo de
@@ -254,6 +289,10 @@ candado el worker re-cortó 9 pedidos ya enviados el 2026-07-16 (corrida de las 
 - `plantilla-infinito-2.cdr`: hoja 350x330 con DOS lamparas y placeholders
   `NOMBRE1/NOMBRE2/FECHA1` (izquierda) y `NOMBRE3/NOMBRE4/FECHA2` (derecha).
 - `plantilla-infinito-1.cdr`: solo la lampara izquierda (mismo marco azul 324x200).
+- `plantilla-spiderman-2.cdr` / `plantilla-rex-2.cdr` (Modo 5): hoja 350x330 con DOS lamparas
+  redondas apiladas, cada una = grupo{ texto `Xxxxx` + grupo{ figura azul + corte rojo } }. Fuente
+  "Rows of Sunflowers". Traidas de `Downloads` el 2026-08-06. **Ya vienen orientadas para produccion**
+  (ver Modo 5), a diferencia de las de infinito que estan al derecho.
 - Extraidas del archivo de produccion "Plantillas Corazones.cdr" (2026-07-16), alineadas a la
   esquina superior izquierda. `infinito.vbs` NUNCA las modifica (trabaja sobre copia).
 - Si el diseno base cambia, re-extraer con el mismo procedimiento: seleccionar la region con
