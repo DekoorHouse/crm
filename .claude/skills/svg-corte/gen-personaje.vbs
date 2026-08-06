@@ -45,15 +45,16 @@ Const ALINEACION_CENTRO = 3   ' cdrCenterAlignment
 ' que es lo que reproduce el acomodo que vio el cliente.
 Const INTERLINEADO_2L = 100
 
-Dim args, nArgs, label, fileBase, tplName, quierePreview, maxLargo, maxArg
+Dim args, nArgs, label, fileBase, tplName, quierePreview, maxLargo, maxArg, escala, escalaArg
 Set args = WScript.Arguments.Unnamed
 nArgs = args.Count
-label = "" : fileBase = "" : tplName = "" : maxArg = ""
+label = "" : fileBase = "" : tplName = "" : maxArg = "" : escalaArg = ""
 On Error Resume Next
 label = WScript.Arguments.Named("label")
 fileBase = WScript.Arguments.Named("file")
 tplName = WScript.Arguments.Named("tpl")
 maxArg = WScript.Arguments.Named("max")
+escalaArg = WScript.Arguments.Named("escala")
 On Error GoTo 0
 quierePreview = WScript.Arguments.Named.Exists("preview")
 
@@ -67,6 +68,12 @@ If tplName = "rex" Then maxLargo = MAX_LARGO_REX Else maxLargo = MAX_LARGO_SPIDE
 ' OJO: si no se paso /max:, Named("max") devuelve Empty y IsNumeric(Empty) es TRUE (Empty vale 0),
 ' asi que hay que descartar el vacio ANTES de convertir o maxLargo se va a 0 y la letra queda en 0pt.
 If maxArg <> "" And IsNumeric(maxArg) Then maxLargo = CDbl(maxArg)   ' /max:NN para ajustar a mano
+' /escala:F encoge TODOS los nombres al final, ya aplicado el tope de largo. Existe porque el tope
+' mide el LARGO DEL RENGLON y por eso NO alcanza a un nombre de dos renglones cortos: "Dylan/Javier"
+' tiene renglones de 5-6 letras, nunca pasaba el tope, y aun asi la "J" cruzaba la cola del dinosaurio.
+' El que decide cuanto encoger es hoja-personaje.js, midiendo el render de verdad.
+escala = 1
+If escalaArg <> "" And IsNumeric(escalaArg) Then escala = CDbl(escalaArg)
 If nArgs <> 1 And nArgs <> 2 Then
     WScript.Echo "Uso: cscript //nologo gen-personaje.vbs /tpl:spiderman|rex ""Nombre1"" [""Nombre2""]"
     WScript.Quit 1
@@ -260,6 +267,10 @@ Sub GrabarNombre(s, valor)
     largo = s.SizeHeight
     If largo > maxLargo Then
         s.Text.Story.Size = talla * maxLargo / largo
+        s.CenterX = cx : s.CenterY = cy
+    End If
+    If escala <> 1 Then
+        s.Text.Story.Size = s.Text.Story.Size * escala
         s.CenterX = cx : s.CenterY = cy
     End If
 End Sub
