@@ -205,6 +205,10 @@ Plantillas dadas por Chris el 2026-08-06. Hoja de 350x330 con **DOS lamparas** a
 
 - **1 nombre** -> media hoja: graba la lampara de arriba y **borra** la de abajo (no deja una pieza en
   blanco cortandose). **2 nombres** -> hoja llena, Nombre1 arriba y Nombre2 abajo.
+- **NUNCA mezclar modelos en una hoja** (regla de Chris, 2026-08-06): una hoja es toda de Spiderman o
+  toda de T-Rex. Al emparejar pedidos para llenar la hoja, solo se pueden juntar dos del MISMO modelo;
+  si no hay con quien emparejar, sale media hoja y ya. Esto aplica tambien a cualquier modelo nuevo que
+  se agregue despues.
 - `/preview` saca ademas un PNG **al derecho** (legible) para revisar; el SVG del laser no se toca.
 - **OJO — lanzarlo desde PowerShell, NO desde Git Bash**: bash convierte `/tpl:spiderman` en ruta y
   el script recibe los argumentos mal (aparece el "Uso:").
@@ -227,9 +231,15 @@ ese largo se reduce la letra proporcionalmente. Los topes se midieron con prueba
 queda la figura, y el tamano base de letra tambien difiere (spiderman 80.3pt, rex 92.9pt; el script lo
 **lee del propio placeholder**, no esta hardcodeado). Con `/max:NN` se ajusta a mano una hoja suelta.
 
-**Nombres a 2 renglones** (`\n`): funcionan igual que en la infinito (68% de letra, interlineado 60%),
-pero **en estas plantillas conviene evitarlos**: el hueco libre es una cuna diagonal y el segundo
-renglon se acerca al brazo/silueta. Preferir 1 renglon y dejar que se reduzca la letra.
+**Nombres a 2 renglones** (`\n`): funcionan igual que en la infinito (68% de letra, interlineado 60%).
+La cuna libre de estas plantillas es diagonal, asi que el segundo renglon se arrima a la silueta —
+pero eso **no lo decide el gusto de quien corta**: manda el mockup (ver abajo).
+
+**EL MOCKUP MANDA** (regla de Chris, 2026-08-06): el corte tiene que quedar **como se le mostro al
+cliente**, porque si no el cliente puede reclamar. Con un nombre largo NO se elige libremente entre
+"reducir la letra" y "partir a dos renglones": hay que **cotejar el mockup aprobado** y reproducir ese
+mismo acomodo. Es la misma regla del Modo 2, solo que aqui es un unico nombre. El auto-reducido a
+`MAX_LARGO_*` es la red de seguridad para que nunca se salga del aro, no la decision de diseno.
 
 ## Subida a Drive (carpeta "SVG Corte", id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`)
 
