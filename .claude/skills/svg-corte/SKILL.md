@@ -3,11 +3,12 @@ name: svg-corte
 description: >
   Genera archivos SVG de corte/grabado laser en CorelDRAW y los sube a la carpeta "SVG Corte"
   de Google Drive. Modos: lampara infinito personalizada (dos nombres + fecha por pedido, 1 o 2
-  pedidos por hoja de 350x330 mm), lampara de 4 corazones (tabloide), e imagen para grabado raster
-  (foto del cliente -> Gemini). Usar siempre que el usuario pida una lampara/plantilla infinito,
+  pedidos por hoja de 350x330 mm), lampara de 4 corazones (tabloide), imagen para grabado raster
+  (foto del cliente -> Gemini) y lamparas de PERSONAJE con un solo nombre (Spiderman, T-Rex).
+  Usar siempre que el usuario pida una lampara/plantilla infinito, una lampara de Spiderman o T-Rex,
   "archivo para laser", poner nombres y fecha a una lampara, convertir una foto en imagen de grabado,
   o dibujar/exportar algo en CorelDRAW y subirlo a Drive — aunque solo diga "hazme la de Juan y Maria
-  del 14-Febrero-2026".
+  del 14-Febrero-2026" o "la de Spiderman de Santiago".
 ---
 
 # svg-corte: archivos de corte laser en CorelDRAW → SVG → Drive
