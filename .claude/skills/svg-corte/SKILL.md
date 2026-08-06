@@ -241,6 +241,34 @@ cliente**, porque si no el cliente puede reclamar. Con un nombre largo NO se eli
 mismo acomodo. Es la misma regla del Modo 2, solo que aqui es un unico nombre. El auto-reducido a
 `MAX_LARGO_*` es la red de seguridad para que nunca se salga del aro, no la decision de diseno.
 
+## Cotejar el mockup antes de cortar (`mockup-de-pedido.js`)
+
+    node "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\mockup-de-pedido.js" DH14300 [DH14301 ...]
+
+Corre LOCAL (lee Firestore con `serviceAccountKey.json`, igual que el worker). Por cada pedido imprime
+estatus, datos, y TODOS sus previews, y **baja la imagen del ULTIMO preview** a
+`Documents\SVG-Corte\mockups\<DH>.webp` — el ultimo es, por convencion del repo, el que el cliente
+aprobo. **Hay que ABRIR esa imagen y mirarla**, no solo confiar en el texto.
+
+Avisa solo cuando el mockup **quedo obsoleto** (`datoCorregidoAt` posterior al `createdAt` del preview):
+en ese caso el cliente aprobo otra cosa y hay que rehacer el previo, no copiar ese.
+
+**Gotcha del campo `layout`** (importante en Modo 5): cuando un preview trae `layout`, son los renglones
+que la vision de Gemini leyo en la imagen — pero ese verificador (`verifyMockupLayout` en
+`server/mockups/mockupsService.js`) esta **cableado a la lampara INFINITO**: su JSON solo tiene
+`nombreIzquierdo` / `nombreDerecho` / `fecha`. En una lampara de UN nombre, el nombre cae
+**arbitrariamente** en `izquierdo` o en `derecho`, y los `okNombre1` / `okNombre2` / `ok` salen en
+**falso sin que nada este mal**. Por eso el script imprime los renglones **unidos de ambos lados** y
+hay que **ignorar los `ok*`** en personaje. Sirven de pista; la fuente de verdad es la imagen.
+
+**Que faltaria para automatizar personaje** (hoy NO esta automatizado; solo infinito lo esta): habria
+que (1) darle a `verifyMockupLayout` un esquema alterno de un solo nombre, (2) quitar el freno
+`if (!isCorazon(o)) return {reason:'not_corazon'}` de `svgAutoEligibility` y el `nombre1 && nombre2 &&
+fecha` del final (`server/design/svgAuto.js`), (3) detectar el modelo del pedido (hoy no hay ningun
+campo ni deteccion de "spiderman"/"rex" en todo el repo), (4) hacer dependiente del tipo las tres filas
+fijas de `buildReviewInfo` (`server/apiRoutes.js`), y (5) que el emparejado del worker respete el
+"no mezclar modelos".
+
 ## Subida a Drive (carpeta "SVG Corte", id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`)
 
 **OJO: subir SOLO disenos ya autorizados por el cliente** (mockup aprobado o previo de
