@@ -65,7 +65,8 @@ function PendientesViewTemplate() {
             <span id="pend-updated" style="font-size:.75rem;color:var(--color-text-light,#94a3b8)"></span>
             <button onclick="renderPendientesView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
         </div>
-        <p class="text-sm text-gray-500 mb-4">Todo lo que hay que atender y no es diseño: videos por mandar, mockups que faltan, clientes que necesitan una persona y ventas que la IA dejó a medias.</p>
+        <p class="text-sm text-gray-500 mb-4">Todo lo que hay que atender y no es diseño: videos por mandar, mockups que faltan, clientes que necesitan una persona y ventas que la IA dejó a medias.
+            <span style="white-space:nowrap"><i class="fas fa-rotate-left" style="margin:0 4px 0 6px"></i>¿Quitaste una tarjeta sin querer? <b>Ctrl+Z</b> la regresa.</span></p>
         <div id="pendientes-container"></div>
     </div>`;
 }
@@ -250,17 +251,100 @@ async function _pendPost(path, body) {
 }
 
 // Quita una tarjeta del cache local y re-pinta (sin re-consultar: no parpadea ni salta el scroll).
+// Devuelve lo que quitó y de qué posición, que es justo lo que necesita el deshacer para regresarla
+// a su lugar (y no al final de la columna).
 function _pendRemove(col, id) {
     const arr = (window._pendData || {})[col];
-    if (!arr) return;
+    if (!arr) return null;
     const i = arr.findIndex(x => x.id === id);
-    if (i >= 0) arr.splice(i, 1);
+    const item = i >= 0 ? arr.splice(i, 1)[0] : null;
     _paintPendientes();
+    return item ? { col, index: i, item } : null;
 }
 
-function pendOpenChat(contactId) {
+// --- Deshacer (Ctrl+Z) -------------------------------------------------------------------------
+// Todas las acciones de esta sección quitan la tarjeta de la lista, y varias son un clic de distancia
+// de la de al lado. Cada una apila aquí cómo revertirse (endpoint inverso + dónde estaba la tarjeta),
+// así que Ctrl+Z —o el botón del aviso— deshace la última, y otra vez la anterior.
+const PEND_UNDO_MAX = 20;
+window._pendUndo = window._pendUndo || [];
+
+function _pendPushUndo(quitado, label, undoFn) {
+    if (!quitado) return;                       // la tarjeta ya no estaba: nada que regresar
+    window._pendUndo.push({ ...quitado, label, undo: undoFn });
+    if (window._pendUndo.length > PEND_UNDO_MAX) window._pendUndo.shift();
+    pendToast(label, { undo: true });
+}
+
+async function pendUndo() {
+    const e = window._pendUndo.pop();
+    if (!e) return pendToast('No hay nada que deshacer', {});
+    try {
+        await e.undo();
+    } catch (err) {
+        window._pendUndo.push(e);                // no se pudo revertir: la acción sigue disponible
+        alert('No se pudo deshacer: ' + (err.message || err));
+        return;
+    }
+    const arr = (window._pendData || {})[e.col];
+    if (arr) arr.splice(Math.min(e.index, arr.length), 0, e.item);
+    _paintPendientes();
+    pendToast('Se deshizo: ' + e.label, {});
+}
+window.pendUndo = pendUndo;
+
+// Aviso abajo a la izquierda: dice qué acabas de hacer y ofrece deshacerlo. Se va solo a los 8 s,
+// pero el deshacer sigue disponible con Ctrl+Z (el aviso es el recordatorio, no el único camino).
+function pendToast(msg, opts) {
+    let el = document.getElementById('pend-toast');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'pend-toast';
+        el.style.cssText = 'position:fixed;left:18px;bottom:18px;z-index:11500;display:flex;align-items:center;gap:12px;'
+            + 'background:#1e293b;color:#fff;padding:10px 14px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.28);'
+            + 'font-size:.85rem;font-weight:600;max-width:min(460px,90vw)';
+        document.body.appendChild(el);
+    }
+    el.innerHTML = `<span>${escapeHtml(msg)}</span>`
+        + ((opts && opts.undo) ? `<button onclick="pendUndo()" style="border:none;background:#38bdf8;color:#0b2436;padding:4px 10px;border-radius:6px;font-size:.8rem;font-weight:800;cursor:pointer;white-space:nowrap"><i class="fas fa-rotate-left" style="margin-right:4px"></i>Deshacer</button>` : '');
+    el.style.display = 'flex';
+    clearTimeout(window._pendToastT);
+    window._pendToastT = setTimeout(() => { el.style.display = 'none'; }, 8000);
+}
+window.pendToast = pendToast;
+
+// Ctrl+Z / Cmd+Z. Solo en esta sección y solo cuando NO se está escribiendo: dentro de una nota o del
+// chat, Ctrl+Z tiene que seguir deshaciendo el TEXTO (lo del navegador), no la tarjeta.
+document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || String(e.key).toLowerCase() !== 'z') return;
+    if (typeof state === 'undefined' || state.activeView !== 'pendientes' || state.chatModalOpen) return;
+    const a = document.activeElement;
+    if (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT' || a.isContentEditable)) return;
+    e.preventDefault();
+    pendUndo();
+});
+
+// La ventana de chat (encabezado con etiquetas/IA/archivar y el panel Detalles del contacto) se pinta
+// desde `state.contacts`. Un contacto de esta sección puede NO estar ahí (la vista de Chats solo carga
+// los últimos 30), y entonces el modal salía sin encabezado ni opciones. Se trae de Firestore y se
+// inyecta antes de abrir.
+async function _pendEnsureContact(contactId) {
+    try {
+        if (typeof state === 'undefined' || !Array.isArray(state.contacts)) return;
+        if (state.contacts.some(c => c.id === contactId)) return;
+        const doc = await db.collection('contacts_whatsapp').doc(String(contactId)).get();
+        if (!doc.exists) return;
+        const c = { id: doc.id, ...doc.data() };
+        state.contacts.unshift(typeof processContacts === 'function' ? processContacts([c])[0] : c);
+    } catch (e) { console.warn('[pendientes] no se pudo precargar el contacto:', e.message); }
+}
+
+// Abre la conversación COMPLETA (con el panel de detalles: Perfil, Pedidos, Notas, indicación para
+// Andrea…). Se cierra con Esc o con la ✕, como los demás modales.
+async function pendOpenChat(contactId) {
     if (!contactId) return;
-    if (typeof openChatEnviosModal === 'function') openChatEnviosModal(String(contactId));
+    await _pendEnsureContact(String(contactId));
+    if (typeof openChatEnviosModal === 'function') await openChatEnviosModal(String(contactId), { full: true });
 }
 window.pendOpenChat = pendOpenChat;
 
@@ -272,48 +356,69 @@ function pendCopyNum(el, num) {
 }
 window.pendCopyNum = pendCopyNum;
 
+// Nombre corto de una tarjeta (DH#### o el nombre del cliente) para el texto del aviso de deshacer.
+// Se lee ANTES de quitarla de la lista.
+const _pendNombre = (col, id) => {
+    const o = ((window._pendData || {})[col] || []).find(x => x.id === id);
+    return o ? (o.orderNumber || o.name || id) : id;
+};
+
 async function pendVideoEnviado(orderId, el) {
     if (el) el.disabled = true;
+    const num = _pendNombre('video', orderId);
     try {
         await _pendPost(`pendientes/video/${orderId}/enviado`);
-        _pendRemove('video', orderId);
+        _pendPushUndo(_pendRemove('video', orderId), `${num}: video enviado`,
+            () => _pendPost(`pendientes/video/${orderId}/reabrir`));
     } catch (e) { if (el) el.disabled = false; alert('No se pudo marcar el video como enviado: ' + (e.message || e)); }
 }
 window.pendVideoEnviado = pendVideoEnviado;
 
 async function pendMockupOcultar(orderId, el) {
-    if (typeof showConfirmModal === 'function'
-        && !await showConfirmModal('¿Quitar este pedido de la lista sin hacerle mockup?', { icon: 'warning', confirmText: 'Quitar' })) return;
     if (el) el.disabled = true;
+    const num = _pendNombre('mockup', orderId);
     try {
         await _pendPost(`pendientes/mockup/${orderId}/ocultar`);
-        _pendRemove('mockup', orderId);
+        _pendPushUndo(_pendRemove('mockup', orderId), `${num}: quitado de Falta mockup`,
+            () => _pendPost(`pendientes/mockup/${orderId}/ocultar`, { enabled: false }));
     } catch (e) { if (el) el.disabled = false; alert('No se pudo quitar: ' + (e.message || e)); }
 }
 window.pendMockupOcultar = pendMockupOcultar;
 
 async function pendAtendido(contactId, el) {
     if (el) el.disabled = true;
+    const card = ((window._pendData || {}).atencion || []).find(x => x.id === contactId) || {};
     try {
         await _pendPost(`pendientes/atencion/${contactId}/atendido`);
         // Si la lista de Chats ya está cargada en memoria, apaga también ahí el parpadeo.
-        try {
-            const c = (typeof state !== 'undefined' && state.contacts) ? state.contacts.find(x => x.id === contactId) : null;
-            if (c) { c.needsAttention = false; c.needsAttentionReason = null; }
-        } catch (_) {}
-        _pendRemove('atencion', contactId);
+        const enChats = (v, r) => {
+            try {
+                const c = (typeof state !== 'undefined' && state.contacts) ? state.contacts.find(x => x.id === contactId) : null;
+                if (c) { c.needsAttention = v; c.needsAttentionReason = r; }
+                if (typeof scheduleContactListRender === 'function') scheduleContactListRender();
+            } catch (_) {}
+        };
+        enChats(false, null);
+        _pendPushUndo(_pendRemove('atencion', contactId), `${card.name || contactId}: marcada como atendida`,
+            async () => {
+                // El motivo y la fecha originales viajan de vuelta para que la conversación reaparezca
+                // con su antigüedad real (si no, saldría como recién marcada).
+                await _pendPost(`pendientes/atencion/${contactId}/reabrir`, { reason: card.reason || null, at: card.at || null });
+                enChats(true, card.reason || null);
+            });
     } catch (e) { if (el) el.disabled = false; alert('No se pudo marcar como atendida: ' + (e.message || e)); }
 }
 window.pendAtendido = pendAtendido;
 
 async function pendIaResolver(contactId, el) {
-    if (typeof showConfirmModal === 'function'
-        && !await showConfirmModal('¿Sacar a este cliente de la cola "Pendientes IA"? Hazlo solo si ya registraste o aplicaste su pedido.', { icon: 'fa-check', confirmText: 'Sí, resuelto' })) return;
     if (el) el.disabled = true;
+    const card = [...((window._pendData || {}).ia_cola || []), ...((window._pendData || {}).ia_sin_pedido || [])]
+        .find(x => x.id === contactId) || {};
     try {
-        await _pendPost(`pendientes/ia/${contactId}/resolver`);
-        _pendRemove('ia_cola', contactId);
-        _pendRemove('ia_sin_pedido', contactId);
+        const r = await _pendPost(`pendientes/ia/${contactId}/resolver`);
+        const quitado = _pendRemove('ia_cola', contactId) || _pendRemove('ia_sin_pedido', contactId);
+        _pendPushUndo(quitado, `${card.name || contactId}: sacado de la cola de la IA`,
+            () => _pendPost(`pendientes/ia/${contactId}/reabrir`, { fallas: r.fallas || [], estabaEnCola: r.estabaEnCola }));
     } catch (e) { if (el) el.disabled = false; alert('No se pudo resolver: ' + (e.message || e)); }
 }
 window.pendIaResolver = pendIaResolver;

@@ -338,6 +338,28 @@ router.post('/atencion/:contactId/atendido', async (req, res) => {
     }
 });
 
+// POST /api/pendientes/atencion/:contactId/reabrir — DESHACER de lo anterior (Ctrl+Z). El motivo y la
+// fecha original los manda el CRM desde la tarjeta que quitó, para que la conversación vuelva a la
+// columna tal como estaba (con su antigüedad real, no como si acabara de marcarse urgente).
+router.post('/atencion/:contactId/reabrir', async (req, res) => {
+    const { contactId } = req.params;
+    const { reason, at } = req.body || {};
+    try {
+        const upd = {
+            needsAttention: true,
+            needsAttentionReason: reason || null,
+            needsAttentionAt: at
+                ? admin.firestore.Timestamp.fromMillis(Number(at))
+                : admin.firestore.FieldValue.serverTimestamp(),
+        };
+        await db.collection('contacts_whatsapp').doc(String(contactId)).update(upd);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[PENDIENTES/atencion-reabrir] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // POST /api/pendientes/ia/:contactId/resolver — saca al contacto de la cola "Pendientes IA" (status
 // null, igual que hace createOrder al registrar el pedido) y da por vistas sus fallas de registro.
 // Es la salida manual: lo normal es registrar el pedido desde el chat y que salga solo.
@@ -352,16 +374,47 @@ router.post('/ia/:contactId/resolver', async (req, res) => {
         // Marca las fallas abiertas de este contacto: si no, la tarjeta reaparece por ai_order_failures.
         const sFail = await db.collection('ai_order_failures').where('contactId', '==', String(contactId)).limit(20).get();
         const batch = db.batch();
-        let n = 0;
+        const fallas = [];
         sFail.forEach(d => {
             if (d.data().resueltoAt) return;
             batch.update(d.ref, { resueltoAt: admin.firestore.FieldValue.serverTimestamp() });
-            n++;
+            fallas.push(d.id);
         });
-        if (n) await batch.commit();
-        res.json({ success: true });
+        if (fallas.length) await batch.commit();
+        // `fallas` se devuelve para poder DESHACER con precisión: al reabrir solo se destapan las que
+        // esta llamada tapó, no las que ya estaban resueltas de antes.
+        res.json({ success: true, fallas, estabaEnCola: doc.exists && doc.data().status === 'pendientes_ia' });
     } catch (e) {
         console.error('[PENDIENTES/ia-resolver] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/pendientes/ia/:contactId/reabrir — DESHACER del anterior (Ctrl+Z): regresa al contacto a
+// la cola "Pendientes IA" y destapa las fallas que aquella llamada marcó como resueltas.
+// Body: { fallas: [ids], estabaEnCola: bool } (lo que devolvió /resolver).
+router.post('/ia/:contactId/reabrir', async (req, res) => {
+    const { contactId } = req.params;
+    const { fallas, estabaEnCola } = req.body || {};
+    try {
+        if (estabaEnCola !== false) {
+            // pendientesIaAt NO se tocó al resolver, así que la antigüedad de la cola se conserva sola.
+            await db.collection('contacts_whatsapp').doc(String(contactId)).update({
+                status: 'pendientes_ia',
+                pendientesIaResueltoAt: admin.firestore.FieldValue.delete(),
+            });
+        }
+        const ids = Array.isArray(fallas) ? fallas.slice(0, 20) : [];
+        if (ids.length) {
+            const batch = db.batch();
+            ids.forEach(id => batch.update(db.collection('ai_order_failures').doc(String(id)), {
+                resueltoAt: admin.firestore.FieldValue.delete(),
+            }));
+            await batch.commit();
+        }
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[PENDIENTES/ia-reabrir] error:', e.message);
         res.status(500).json({ success: false, message: e.message });
     }
 });

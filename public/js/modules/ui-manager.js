@@ -1662,7 +1662,7 @@ function _chatEnviosModalEl() {
     m.id = 'chat-envios-modal';
     m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;z-index:11000;';
     m.innerHTML = `
-        <div style="position:absolute;top:2vh;left:50%;transform:translateX(-50%);width:min(480px,96vw);height:96vh;background:var(--color-container-bg,#fff);border-radius:16px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45);display:flex;flex-direction:column">
+        <div id="chat-envios-shell" style="position:absolute;top:2vh;left:50%;transform:translateX(-50%);width:min(480px,96vw);height:96vh;background:var(--color-container-bg,#fff);border-radius:16px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45);display:flex;flex-direction:column">
             <button onclick="closeChatEnviosModal()" title="Cerrar (Esc)"
                 style="position:absolute;top:10px;right:14px;z-index:30;border:none;background:rgba(255,255,255,.92);border-radius:50%;width:34px;height:34px;font-size:22px;line-height:1;cursor:pointer;color:#334155;box-shadow:0 2px 8px rgba(0,0,0,.25)">&times;</button>
             <div id="design-chat-toolbar" style="display:none"></div>
@@ -1673,19 +1673,27 @@ function _chatEnviosModalEl() {
     return m;
 }
 
-async function openChatEnviosModal(contactId) {
+// opts.full = true -> VENTANA COMPLETA: el modal se ensancha y deja visible el panel "Detalles del
+// contacto" (Perfil / Pedidos / Notas, indicación para Andrea, etiquetas…), que en el modo normal se
+// oculta. Lo usa la sección Pendientes, donde no basta con leer el chat: hay que trabajarlo. Sin opts
+// se comporta exactamente igual que antes (Envíos y Pendientes de Diseño no cambian).
+async function openChatEnviosModal(contactId, opts) {
     if (!contactId) return;
+    const full = !!(opts && opts.full);
     window._designChatActive = false;   // por defecto NO navegar con flechas; openDesignPendingChat lo reactiva.
     // Si ya estás en la vista de Chats, no hace falta modal: seleccionar normal.
     if (state.activeView === 'chats') { handleSelectContactFromPipeline(contactId); return; }
     const m = _chatEnviosModalEl();
     if (typeof designChatUpdateToolbar === 'function') designChatUpdateToolbar();   // oculta el panel (active=false); se re-muestra si viene de Diseño
+    const shell = m.querySelector('#chat-envios-shell');
+    // El modo completo necesita espacio para el chat + los 320px del panel de detalles.
+    if (shell) shell.style.width = full ? 'min(1180px,96vw)' : 'min(480px,96vw)';
     const slot = m.querySelector('#chat-envios-slot');
     slot.innerHTML = ChatViewTemplate();
     // Mostrar SOLO la conversación: ocultar lista de contactos y panel de detalles; chat a todo lo ancho.
     const cv = slot.querySelector('#chat-view'); if (cv) { cv.style.height = '100%'; cv.style.width = '100%'; cv.style.display = 'flex'; }
     const cpanel = slot.querySelector('#contacts-panel'); if (cpanel) cpanel.style.display = 'none';
-    const dpanel = slot.querySelector('#contact-details-panel'); if (dpanel) dpanel.style.display = 'none';
+    const dpanel = slot.querySelector('#contact-details-panel'); if (dpanel && !full) dpanel.style.display = 'none';
     const chp = slot.querySelector('#chat-panel'); if (chp) { chp.style.width = '100%'; chp.style.maxWidth = '100%'; chp.style.flex = '1'; }
     m.style.display = 'block';
     // Flag para que renderChatWindow (que exige activeView==='chats') pinte dentro del modal en Envíos.
@@ -1695,6 +1703,11 @@ async function openChatEnviosModal(contactId) {
     try { if (typeof renderTagFilters === 'function') renderTagFilters(); } catch (e) {}
     try { if (typeof setupChatListEventListeners === 'function') setupChatListEventListeners(); } catch (e) {}
     try { await handleSelectContact(contactId); } catch (e) { console.warn('openChatEnviosModal:', e); }
+    // El panel se abre solo en pantallas anchas. En celular es una capa a pantalla completa (ver
+    // style.css): taparía la conversación al abrir, así que ahí se deja al clic en el nombre/avatar.
+    if (full && window.innerWidth >= 900) {
+        try { await openContactDetails(); } catch (e) { console.warn('openChatEnviosModal detalles:', e); }
+    }
 }
 window.openChatEnviosModal = openChatEnviosModal;
 
@@ -1702,6 +1715,7 @@ function closeChatEnviosModal() {
     const m = document.getElementById('chat-envios-modal');
     state.chatModalOpen = false;
     window._designChatActive = false;   // apagar la navegación con flechas al cerrar
+    state.contactDetailsOpen = false;   // el panel de detalles (modo completo) se va con el modal
     // Cortar listeners ANTES de quitar el DOM, para no dejar fugas apuntando al chat real.
     try { if (typeof stopChatListeners === 'function') stopChatListeners(); } catch (e) {}
     document.body.classList.remove('chat-open'); // por si se marcó en móvil dentro del modal
