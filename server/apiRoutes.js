@@ -8222,8 +8222,8 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 // --- GET /api/envios — pedidos con comprobante validado (para la sección Envíos del CRM) ---
 // Devuelve por pedido: número, monto pagado (precio) y datos de envío (si el cliente ya llenó el
 // formulario; se unen por numeroPedido con la colección datos_envio).
-// GET /api/design-pending — Pedidos con algún pendiente para el equipo de diseño (5 motivos:
-// mockup pagado / datos / video / anticipo / 2º producto). Fuente de verdad: los propios pedidos,
+// GET /api/design-pending — Pedidos con algún pendiente para el equipo de diseño (corte, datos mal,
+// reenvío, 2º producto; mockup y video se mudaron a /api/pendientes). Fuente de verdad: los pedidos,
 // evaluados con la MISMA lógica que server/design/designPending.js. Devuelve cada pedido con sus
 // motivos + nombre/canal del cliente. La lista de la sección "Pendientes de Diseño" del CRM la usa.
 router.get('/design-pending', async (req, res) => {
@@ -8383,8 +8383,8 @@ router.get('/design-pending', async (req, res) => {
             snap.forEach(doc => { seen.add(doc.id); orders.push(mapOrder(doc, [])); });
             snapIA.forEach(doc => { if (!seen.has(doc.id)) orders.push(mapOrder(doc, [])); });
         } else {
-            // Pendientes (2 etapas de diseño): 'Sin estatus' (falta mockup) + 'Fabricar' (falta corte) +
-            // 'Corregir' (datos/video) + 2º producto. El motor (designPending.js) decide el motivo real.
+            // Pendientes de diseño: 'Fabricar' (falta corte) + 'Corregir' por un DATO MAL + reenvíos +
+            // 2º producto. El motor (designPending.js) decide el motivo real.
             // NO se jala por estatus 'Pagado' (ahí se acumulan miles de pedidos ya terminados).
             const byId = new Map();
             // 'Pagado' recientes (sPag): al VALIDAR el pago el pedido pasa a 'Pagado' (NO a 'Fabricar') y
@@ -8393,8 +8393,10 @@ router.get('/design-pending', async (req, res) => {
             // aquí (esta lista no jalaba 'Pagado' por el "cementerio" de miles de viejos). Se traen los de
             // PAGO reciente (mismo orderBy+limit que el worker) y el motor (faltaCorte, corte por
             // AUTO_DESDE_MS) descarta el histórico ya cortado; solo sobreviven los pagados y SIN cortar.
-            const [sSin, sFab, sCor, sProd, sPag, sForce, sReenvio] = await Promise.all([
-                db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get(),
+            // Ya NO se traen los 'Sin estatus': su único motivo aquí era "falta mockup", que desde el
+            // 2026-08-06 vive en la sección "Pendientes". Si uno de ellos tiene otro pendiente real
+            // (pagado sin cortar, 2º producto, empujado a mano) entra igual por sPag/sProd/sForce.
+            const [sFab, sCor, sProd, sPag, sForce, sReenvio] = await Promise.all([
                 db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(1000).get(),
                 db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
                 db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
@@ -8407,17 +8409,14 @@ router.get('/design-pending', async (req, res) => {
                 // así que se traen aparte para que siempre reaparezcan en Pendientes. Chris, 2026-08-01.
                 db.collection('pedidos').where('estatus', '==', 'Reenvio').limit(300).get(),
             ]);
-            [sSin, sFab, sCor, sProd, sPag, sForce, sReenvio].forEach(s => s.forEach(d => byId.set(d.id, d)));
+            [sFab, sCor, sProd, sPag, sForce, sReenvio].forEach(s => s.forEach(d => byId.set(d.id, d)));
 
-            // Previews (mockup_previews) de los 'Sin estatus' (fuente de verdad de "ya tiene mockup", por
-            // si la marca mockupPreviewAt no quedó), de los 'Fabricar' y de los 'Corregir' (para saber si
-            // el worker los va a cortar solo). Un solo lote reutilizable.
-            const prevMap = await previewsFor([...new Set([...sSin.docs.map(d => d.id), ...sFab.docs.map(d => d.id), ...sCor.docs.map(d => d.id), ...sPag.docs.map(d => d.id), ...sForce.docs.map(d => d.id), ...sReenvio.docs.map(d => d.id)])]);
-            const conMockup = new Set();
-            sSin.docs.forEach(d => { const pv = prevMap.get(d.id); if (pv && pv.length) conMockup.add(d.id); });
+            // Previews (mockup_previews) de los 'Fabricar' y los 'Corregir' (para saber si el worker los
+            // va a cortar solo). Un solo lote reutilizable.
+            const prevMap = await previewsFor([...byId.keys()]);
             for (const doc of byId.values()) {
                 const p = doc.data();
-                const reasons = reasonsForOrderData(p, conMockup.has(doc.id));
+                const reasons = reasonsForOrderData(p);
                 if (!reasons.length) continue;
                 // Los que el worker corta solo (Fabricar auto-elegible, esperando pareja) NO son diseño
                 // manual: se muestran en la pestaña "SVG IA", no en Pendientes. EXCEPCIÓN: si el operador
@@ -8435,11 +8434,23 @@ router.get('/design-pending', async (req, res) => {
 
             // Tablero: suma los pedidos que el diseñador movió a mano a otra columna (disenoBoardCol),
             // aunque ya no sean "pendientes" (p.ej. Diseñado/Terminado), para que la tarjeta no desaparezca.
+            // EXCEPTO los que ahora son de la sección "Pendientes" (video / falta mockup): si no, una
+            // tarjeta arrastrada hace semanas a "Hacer Mockup" seguiría viviendo aquí para siempre y el
+            // pedido saldría en los DOS tableros (caso DH13714). Chris, 2026-08-06.
             if (boardMode) {
+                const { esVideoPendiente, faltaMockup } = require('./design/designPending');
                 const already = new Set(orders.map(o => o.id));
                 const movedCols = ['hacer_mockup', 'esperando_confirmacion', 'esperando_pago', 'disenado', 'terminado'];
                 const movedSnap = await db.collection('pedidos').where('disenoBoardCol', 'in', movedCols).limit(500).get();
-                movedSnap.forEach(doc => { if (!already.has(doc.id)) orders.push(mapOrder(doc, [])); });
+                const moved = movedSnap.docs.filter(doc => !already.has(doc.id) && !esVideoPendiente(doc.data()));
+                // Previews SOLO de los 'Sin estatus' (los únicos donde "falta mockup" puede ser cierto):
+                // sin ellos no se puede distinguir un pedido sin mockup de uno que ya tiene su preview.
+                const sinEstatus = moved.filter(d => String(d.data().estatus || 'Sin estatus').trim().toLowerCase() === 'sin estatus');
+                const movedPrev = sinEstatus.length ? await previewsFor(sinEstatus.map(d => d.id)) : new Map();
+                moved.forEach(doc => {
+                    if (faltaMockup(doc.data(), (movedPrev.get(doc.id) || []).length > 0)) return;
+                    orders.push(mapOrder(doc, []));
+                });
             }
         }
 

@@ -5,14 +5,16 @@
 // denormaliza al contacto para reutilizar la infraestructura de filtros del CRM (igual que
 // inDesignReview). El filtro "Pendientes de Diseño" del CRM consulta where('designPending','==',true).
 //
-// El diseño se hace en DOS etapas, y la lista es la cola de ambas:
-//   - mockup           -> ETAPA 1: pedido 'Sin estatus' que aún NO tiene mockup (no se pudo hacer en la
-//                         sección Mockup). Al generar su preview (mockupPreviewAt) sale de la cola.
-//   - fabricar         -> ETAPA 2: pedido 'Fabricar' (pagó y hay que producir) -> falta el diseño en
-//                         Corel para corte. Aparece aunque ya tenga mockup.
-//   - datos / video    -> estatus 'Corregir' (el cliente reportó un dato mal / pide un video).
+// La lista es la cola del diseño (Erika):
+//   - fabricar         -> pedido 'Fabricar' (pagó y hay que producir) -> falta el diseño en Corel para
+//                         corte. Aparece aunque ya tenga mockup.
+//   - datos            -> estatus 'Corregir' porque el cliente reportó un DATO MAL.
 //   - segundo_producto -> agregó un producto DESPUÉS de haber pagado (productoAgregadoPostPagoAt).
 // Se limpian solas al llegar a un estatus "terminado", tener guía/quitarse de Envíos, o marca ✓ Diseñado.
+//
+// MOCKUP y VIDEO ya NO son de Diseño (Chris, 2026-08-06): son otro puesto (Lupita) y viven en la
+// sección "Pendientes" (server/pendientes/pendientesRoutes.js). Su lógica sigue AQUÍ —
+// pendientesReasonsForOrderData, al final del archivo— para no partir en dos las reglas de un pedido.
 const { db, admin } = require('../config');
 
 // Estatus "terminado" para diseño: si el pedido está aquí, NO hay pendiente (limpia la bandera).
@@ -26,7 +28,9 @@ const DONE = new Set([
     'cancelado', 'entregado', 'devolución', 'devolucion', 'mns amenazador',
 ]);
 
-const REASONS = ['mockup', 'fabricar', 'corte', 'datos', 'video', 'segundo_producto', 'manual', 'reenvio'];
+const REASONS = ['fabricar', 'corte', 'datos', 'segundo_producto', 'manual', 'reenvio'];
+// Motivos de la OTRA sección ("Pendientes", Lupita). Nunca se mezclan con los de arriba.
+const PENDIENTES_REASONS = ['mockup', 'video'];
 
 // --- Motivo 'corte': el HUECO por el que se colaban pedidos sin diseñar (detectado 2026-07-27) -----
 // Al VALIDAR el pago el pedido pasa a 'Pagado' (NO a 'Fabricar'), y si además se le generó la guía por
@@ -109,9 +113,9 @@ function disenoMarcadoHechoMs(d) {
     return _ms(d.disenoListoAt);
 }
 
-// Evalúa los motivos de "pendiente de diseño" sobre los datos de UN pedido (puede ser []).
-// hasMockup (opcional): si el caller ya consultó mockup_previews, lo pasa para no depender de la marca.
-function reasonsForOrderData(d, hasMockup) {
+// Evalúa los motivos de "pendiente de DISEÑO" sobre los datos de UN pedido (puede ser []).
+// Los de la sección "Pendientes" (mockup/video) van en pendientesReasonsForOrderData.
+function reasonsForOrderData(d) {
     if (!d) return [];
     const estatus = String(d.estatus || 'Sin estatus').trim().toLowerCase();
 
@@ -130,9 +134,15 @@ function reasonsForOrderData(d, hasMockup) {
     const reasons = [];
 
     if (estatus === 'corregir') {
+        // VIDEO -> no es de Diseño: es de la sección "Pendientes" (grabar y mandar el video). Sale
+        // ENTERO de esta cola —con return, no con un simple "no pushear"— para que tampoco lo recoja
+        // la red de seguridad 'corte' de abajo; si no, el mismo pedido aparecería en los DOS tableros.
+        // Ahí también se puede cortar con la skill (el botón "Diseñar con IA" vive en esa sección).
+        // Chris, 2026-08-06.
+        if (String(d.corregirMotivo || '').toLowerCase() === 'video') return [];
         // Corrección pedida por el cliente y AÚN no resuelta (las ya marcadas se filtran arriba). Aparece
         // aunque ya se hubiera enviado. El motivo lo persiste markOrderCorregirForContact.
-        reasons.push(String(d.corregirMotivo || '').toLowerCase() === 'video' ? 'video' : 'datos');
+        reasons.push('datos');
     } else if (estatus === 'reenvio') {
         // REPOSICIÓN: el pedido se vuelve a hacer desde el principio (Chris, 2026-08-01). Además de
         // re-meterse a Envíos, REACTIVA el diseño: reaparece en Pendientes (motivo 'reenvio') aunque el
@@ -141,13 +151,11 @@ function reasonsForOrderData(d, hasMockup) {
         reasons.push('reenvio');
     } else if (!shipped) {
         if (estatus === 'fabricar') {
-            // ETAPA 2: pagó y hay que producir -> falta el diseño en Corel para corte (aunque tenga mockup).
+            // pagó y hay que producir -> falta el diseño en Corel para corte (aunque tenga mockup).
             reasons.push('fabricar');
-        } else if (estatus === 'sin estatus' && !d.mockupHidden && !d.mockupPreviewAt && !hasMockup) {
-            // ETAPA 1: aún sin mockup (no se pudo hacer en la sección Mockup) -> falta el mockup.
-            // hasMockup viene de consultar mockup_previews (fuente de verdad, por si falta la marca).
-            reasons.push('mockup');
         }
+        // 'Sin estatus' sin mockup ya NO entra aquí: ese pendiente es de la sección "Pendientes"
+        // (columna "Falta mockup"). Ver faltaMockup() al final del archivo. Chris, 2026-08-06.
     }
     // Red de seguridad: pagado y sin diseñar sigue siendo un pendiente aunque su estatus sea 'Pagado'
     // y aunque ya tenga guía (ver CORTE_DESDE_MS arriba). Solo si ningún otro motivo lo cubre ya.
@@ -196,14 +204,7 @@ async function recomputeForContact(contactId) {
     if (!contactId) return null;
     try {
         const orderDoc = await getLatestOrder(contactId);
-        let reasons = [];
-        if (orderDoc) {
-            const od = orderDoc.data();
-            // Para 'Sin estatus' sin la marca, consultamos mockup_previews (fuente de verdad).
-            const esSin = String(od.estatus || 'Sin estatus').trim().toLowerCase() === 'sin estatus';
-            const hm = (esSin && !od.mockupPreviewAt) ? await orderHasMockup(orderDoc.id) : false;
-            reasons = reasonsForOrderData(od, hm);
-        }
+        const reasons = orderDoc ? reasonsForOrderData(orderDoc.data()) : [];
         // El id del doc del contacto = pedido.contactId (o el propio contactId si no hay pedido).
         const cid = (orderDoc && orderDoc.data().contactId) || contactId;
         await db.collection('contacts_whatsapp').doc(String(cid)).set({
@@ -245,4 +246,55 @@ async function markPreviewSent(contactId) {
     }
 }
 
-module.exports = { recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, pendienteRenovadoMs, disenoMarcadoHechoMs, orderHasMockup, REASONS, DONE };
+// =================================================================================================
+// === Motivos de la sección "Pendientes" (Lupita), NO de Diseño ===================================
+// =================================================================================================
+// Viven aquí —y no en su propio archivo— porque son reglas sobre el MISMO pedido que las de arriba:
+// separarlas era la única forma de garantizar que un pedido no salga en los dos tableros a la vez.
+// Los otros tres pendientes de esa sección son de CONTACTOS (atención humana, cola Pendientes IA),
+// no de pedidos, y se calculan en server/pendientes/pendientesRoutes.js.
+
+// ¿El cliente pidió VIDEO de su lámpara y todavía no se lo mandamos?
+// El pendiente lo abre el webhook al detectar la petición (estatus 'Corregir' + corregirMotivo
+// 'video'; ver project_video_corregir) y lo cierra el botón "✓ Video enviado" (videoEnviadoAt).
+// Con FECHA a propósito: si el cliente pide OTRO video después (corregirAt/videoRequestedAt se
+// refrescan en cada petición), la marca vieja ya no vale y la tarjeta se reactiva sola.
+// Cambiar el estatus (a 'Corregido', 'Entregado'…) también lo cierra: deja de ser 'Corregir'.
+function esVideoPendiente(d) {
+    if (!d) return false;
+    if (String(d.estatus || '').trim().toLowerCase() !== 'corregir') return false;
+    if (String(d.corregirMotivo || '').toLowerCase() !== 'video') return false;
+    const pedido = Math.max(_ms(d.videoRequestedAt), _ms(d.corregirAt));
+    const enviado = _ms(d.videoEnviadoAt);
+    return !enviado || enviado < pedido;
+}
+
+// ¿Al pedido le falta su mockup? (lo que hasta el 2026-08-06 salía en Diseño como "Falta mockup").
+// hasMockup: lo pasa el caller tras consultar mockup_previews (fuente de verdad, por si la marca
+// mockupPreviewAt no quedó puesta). Las marcas de "ya se atendió" son las MISMAS que usa la cola de
+// la sección Mockup (/api/mockups/pending): si la foto se mandó por el chat (/cuatro) o a mano en un
+// especial, el pendiente ya está resuelto aunque nunca haya pasado por la sección.
+function faltaMockup(d, hasMockup) {
+    if (!d) return false;
+    if (String(d.estatus || 'Sin estatus').trim().toLowerCase() !== 'sin estatus') return false;
+    if (d.mockupHidden) return false;                       // ocultado a mano por el operador
+    if (hasMockup || d.mockupPreviewAt) return false;       // ya tiene preview generado
+    if (d.previewEnviadoAt || d.pedidoListoEnviadoAt || d.mockupPaymentSentAt || d.mockupSentManuallyAt) return false;
+    return true;
+}
+
+// Motivos de la sección "Pendientes" para UN pedido (puede ser []). Espejo de reasonsForOrderData.
+function pendientesReasonsForOrderData(d, hasMockup) {
+    if (!d) return [];
+    const reasons = [];
+    if (faltaMockup(d, hasMockup)) reasons.push('mockup');
+    if (esVideoPendiente(d)) reasons.push('video');
+    return reasons;
+}
+
+module.exports = {
+    recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, pendienteRenovadoMs,
+    disenoMarcadoHechoMs, orderHasMockup, REASONS, DONE,
+    // Sección "Pendientes"
+    pendientesReasonsForOrderData, esVideoPendiente, faltaMockup, PENDIENTES_REASONS,
+};

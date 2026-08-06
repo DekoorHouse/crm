@@ -133,7 +133,13 @@ function navigateTo(viewName, force = false) {
             break;
         case 'pendientes-diseno':
             mainViewContainer.innerHTML = DesignPendingViewTemplate();
-            renderDesignPendingView(); // Tablero de pedidos con algún pendiente de diseño (5 motivos)
+            renderDesignPendingView(); // Tablero de pedidos con algún pendiente de diseño
+            break;
+        case 'pendientes':
+            // Hermana de la anterior, para los pendientes que NO son de diseño (video, mockup,
+            // conversaciones que piden humano, cola de la IA). Ver js/modules/pendientes-handlers.js.
+            mainViewContainer.innerHTML = PendientesViewTemplate();
+            renderPendientesView();
             break;
         default:
             mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
@@ -281,7 +287,7 @@ function DesignPendingViewTemplate() {
             <h1 class="text-2xl font-bold" style="margin:0"><i class="fas fa-palette mr-2" style="color:#6f42c1"></i>Pendientes de Diseño</h1>
             <button onclick="renderDesignPendingView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
         </div>
-        <p class="text-sm text-gray-500 mb-4"><b>Pendientes</b> = diseño MANUAL (mockup, corte especial, correcciones). <b>SVG IA</b> = lo que corta la IA sola (ya diseñados + en cola esperando pareja). <b>Diseñados ✓</b> = marcados a mano.</p>
+        <p class="text-sm text-gray-500 mb-4"><b>Pendientes</b> = diseño MANUAL (corte especial, correcciones de datos, reenvíos). <b>SVG IA</b> = lo que corta la IA sola (ya diseñados + en cola esperando pareja). <b>Diseñados ✓</b> = marcados a mano.<br>Los mockups que faltan y los videos por mandar están en la sección <a onclick="navigateTo('pendientes')" style="color:#0ea5e9;font-weight:600;cursor:pointer">Pendientes</a>.</p>
         <div id="design-pending-container"></div>
     </div>`;
 }

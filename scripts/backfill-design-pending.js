@@ -3,7 +3,12 @@
 //      salgan de la cola "falta mockup". Solo toca pedidos que existen.
 //   1) LIMPIA todas las banderas designPending actuales (evita positivos falsos de lógicas anteriores).
 //   2) MARCA de nuevo los contactos cuyos pedidos SÍ están pendientes hoy (motor designPending.js:
-//      Sin estatus sin mockup + Fabricar sin enviar + Corregir + 2º producto + PAGADOS sin cortar).
+//      Fabricar sin enviar + Corregir por datos + reenvíos + 2º producto + PAGADOS sin cortar).
+//
+// Correrlo también sirve para MIGRAR: desde el 2026-08-06 "falta mockup" y "video" ya no son motivos
+// de diseño (se fueron a la sección Pendientes), así que este script apaga las banderas viejas que
+// quedaron encendidas solo por eso. Si no se corre, se limpian solas conforme cada contacto se
+// recalcula (cualquier cambio en sus pedidos), pero mientras tanto siguen saliendo sus chips.
 //
 // OJO: la Fase 1 apaga TODO antes de que la Fase 2 vuelva a encender. Los buckets de la Fase 2 tienen
 // que cubrir TODOS los motivos de designPending.reasonsForOrderData; si falta uno, esos pedidos
