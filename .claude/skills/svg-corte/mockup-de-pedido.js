@@ -14,12 +14,16 @@
  * CLIENTE. Con nombres largos no se elige a gusto entre reducir la letra o partir a dos renglones:
  * se abre esta imagen, se ve como quedo el nombre y se reproduce igual.
  *
- * OJO con `layout`: cuando el preview trae `layout`, son los renglones que la vision de Gemini LEYO
- * en la imagen. Pero ese verificador esta cableado a la lampara INFINITO (su JSON solo tiene
- * nombreIzquierdo/nombreDerecho/fecha). En una lampara de UN nombre (Spiderman / T-Rex) el nombre
- * cae arbitrariamente en `izquierdo` o en `derecho` y los `ok*` salen en falso sin que nada este mal.
- * Por eso aqui se imprimen los renglones UNIDOS de ambos lados y se ignoran los `ok*`: sirven de
- * pista, pero la fuente de verdad es MIRAR la imagen.
+ * OJO con `layout` — NO SIRVE PARA DECIDIR EL ACOMODO EN PERSONAJE. El verificador de vision esta
+ * cableado a la lampara INFINITO: su JSON solo tiene nombreIzquierdo / nombreDerecho / fecha. En una
+ * lampara de UN nombre eso rompe de dos maneras:
+ *   1) El nombre cae arbitrariamente en `izquierdo` o en `derecho`, y los `ok*` salen en falso sin
+ *      que nada este mal.
+ *   2) PEOR: si el nombre son dos palabras, el modelo tiende a repartirlas una por hueco. En DH14299
+ *      el mockup dice "Angel Ariel" en UN SOLO renglon y la vision reporto izq=["Angel"]
+ *      der=["Ariel"], que leido como renglones es un DOS RENGLONES FALSO.
+ * Por eso los renglones que se imprimen aqui son solo una PISTA y los `ok*` se ignoran. La fuente de
+ * verdad es ABRIR LA IMAGEN Y MIRARLA.
  */
 'use strict';
 
@@ -104,10 +108,15 @@ async function bajarImagen(url, destSinExt) {
             }
             if (p.layout) {
                 const l = p.layout;
-                // Union de ambos lados: en una lampara de UN nombre la vision lo pone en cualquiera.
-                const renglones = [...(l.izquierdo || []), ...(l.derecho || [])].filter(Boolean);
-                console.log(`      vision:  renglones=${JSON.stringify(renglones)}  fecha=${JSON.stringify(l.fecha || [])}`);
-                console.log(`               (izq=${JSON.stringify(l.izquierdo || [])} der=${JSON.stringify(l.derecho || [])}; los ok* de aqui son de la infinito, ignoralos en personaje)`);
+                const izq = (l.izquierdo || []).filter(Boolean), der = (l.derecho || []).filter(Boolean);
+                console.log(`      vision:  izq=${JSON.stringify(izq)}  der=${JSON.stringify(der)}  fecha=${JSON.stringify(l.fecha || [])}`);
+                // El reparto izq/der es de la infinito. Si cada lado trae una palabra, muy probablemente
+                // sea UN solo renglon que el modelo partio en dos huecos (caso DH14299 "Angel Ariel").
+                if (izq.length === 1 && der.length === 1) {
+                    console.log(`               OJO: puede ser UN renglon "${izq[0]} ${der[0]}" partido en los dos huecos de la infinito. MIRA LA IMAGEN.`);
+                } else {
+                    console.log(`               (pista nada mas: el reparto izq/der es de la infinito. MIRA LA IMAGEN.)`);
+                }
             }
         });
 
