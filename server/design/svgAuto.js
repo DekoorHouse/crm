@@ -196,6 +196,159 @@ const ESTATUS_TERMINAL = new Set([
 // Se mantiene exportado por compatibilidad; ya no decide la cola.
 const ESTATUS_AUTO = new Set(['fabricar', 'pagado']);
 
+// --- LÁMPARAS DE PERSONAJE (Spiderman / T-Rex) — Modo 5 de la skill -------------------------------
+// Producto "Lámpara infantil <Personaje>", datos "Nombre: X | Personaje: Y". UNA lámpara por item, y
+// un pedido puede traer varias, incluso de personajes distintos. Va aquí y no en un módulo aparte a
+// propósito: `isAutoWaiting` es el predicado que el CRM usa para SACAR un pedido de "Pendientes"
+// manual (apiRoutes:8424). Si el worker cortara personaje sin que este predicado lo supiera, el pedido
+// seguiría a la vista del diseñador y saldría cortado DOS veces — el mismo incidente del 2026-07-30.
+const ES_INFANTIL_RE = /l[aá]mpara\s+infantil/i;
+
+// Alias personaje -> plantilla (Chris, 2026-08-06; "dinosaurio" y "T-Rex" son la MISMA, verificado
+// contra el mockup de DH14328). `no` son las trampas: "Dino cuello largo" es otra silueta y
+// "dinosaurio bebé" está SIN CONFIRMAR, así que ninguno de los dos se corta solo.
+// `\bdino` con frontera al INICIO: sin ella, /dino/ pegaba dentro de cualquier palabra ("aladino").
+const PERSONAJE_ALIAS = [
+    { tpl: 'rex', re: /\bt-?rex\b|\brex\b|\bdino/, no: /cuello\s*largo|bebe/ },
+    { tpl: 'spiderman', re: /spider|hombre\s*ara/ },
+];
+// Lista de plantillas que el worker sabe emparejar. Se deriva de PERSONAJE_ALIAS para que no se
+// desincronicen al agregar un modelo nuevo.
+const PLANTILLAS_PERSONAJE = [...new Set(PERSONAJE_ALIAS.map(a => a.tpl))];
+
+// "Algo especial" para una lámpara infantil. NO se puede usar SPECIAL_RE tal cual: incluye la palabra
+// "personaje", y estos datos SIEMPRE traen la etiqueta "Personaje:", así que TODO pedido daría especial.
+const ESPECIAL_PERSONAJE_RE = /foto|imagen|graba|logo|escudo|mascota|dibuj|dise[nñ]|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
+
+// ¿Este item lleva algo que la plantilla no puede? Mira el texto COMPLETO, no solo el valor de la
+// etiqueta "Especial:": hay pedidos que lo piden en texto libre, y además todo lo que va ANTES del
+// primer "Nombre:" se pierde al partir en lámparas. Las notas de logística no cuentan (igual que esEspecial).
+function itemEspecialPersonaje(datos) {
+    const s = String(datos || '');
+    const sinEtiquetas = s.replace(/(?:personaje|nombre)\s*:/gi, ' ');
+    const m = /especial\s*:\s*([^|\n]+)/i.exec(s);
+    if (m) {
+        const valor = m[1].trim();
+        // "Especial: recoger en tienda" no cambia el diseño; "Especial: con su foto" sí.
+        if (!(ESPECIAL_LOGISTICA_RE.test(valor) && !ESPECIAL_PERSONAJE_RE.test(valor))) return true;
+        return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas.replace(/especial\s*:[^|\n]*/gi, ' '));
+    }
+    return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas);
+}
+function plantillaDePersonaje(pers) {
+    const p = sinAcentos(String(pers || '')).toLowerCase().trim();
+    if (!p) return null;
+    for (const a of PERSONAJE_ALIAS) {
+        if (a.no && a.no.test(p)) continue;
+        if (a.re.test(p)) return a.tpl;
+    }
+    return null;
+}
+
+// Saca TODAS las lámparas del texto de un item. Normalmente es una sola ("Nombre: X | Personaje: Y"),
+// pero hay pedidos que traen varias apiladas en el mismo campo, separadas por punto:
+// "Nombre: Ian | Personaje: dinosaurio. Nombre: Ivanna | Personaje: dinosaurio." (DH14328). Con un
+// solo match se perdían las demás EN SILENCIO: no se les hacía mockup ni se cortaban.
+function lamparasDeTexto(datos, productoFallback) {
+    const s = String(datos || '').replace(/\r/g, '');
+    // El corte solo vale al INICIO de un campo (principio, "|", salto o el punto que separa lámparas
+    // apiladas). Con un lookahead pelón, un "nombre:" dentro de un valor libre partía el texto e
+    // inventaba una lámpara fantasma que sí se habría cortado.
+    const partes = s.split(/(?<=[|\n.]|^)\s*(?=nombre\s*:)/i).filter(x => /nombre\s*:/i.test(x));
+    const limpia = v => String(v || '').split(/\b(?:personaje|especial)\s*:/i)[0].trim().replace(/[.,;]+$/, '').trim();
+    return partes.map(p => {
+        const mn = /nombre\s*:\s*([^|\n]+)/i.exec(p);
+        const mp = /personaje\s*:\s*([^|\n]+)/i.exec(p);
+        const me = /especial\s*:\s*([^|\n]+)/i.exec(p);
+        const pers = mp ? limpia(mp[1]) : String(productoFallback || '').replace(ES_INFANTIL_RE, '').trim();
+        return { nombre: limpia(mn && mn[1]), personaje: pers, especial: me ? limpia(me[1]) : '' };
+    });
+}
+
+// Renglones que el cliente vio en su mockup, SOLO cuando se puede confiar en ellos.
+// El verificador de visión está cableado a la infinito (nombreIzquierdo/nombreDerecho/fecha), y en una
+// lámpara de UN nombre reparte las palabras entre los dos huecos: en DH14299 el mockup dice
+// "Angel Ariel" en UN renglón y la visión reportó izq=["Angel"] der=["Ariel"], que leído como renglones
+// es un DOS RENGLONES FALSO. Discriminador medido sobre 4 mockups reales:
+//   der VACÍO  -> izq es la estructura REAL   (DH14424 ["Luis Roberto"]=1 renglón; DH14344 ["Dylan","Javier"]=2)
+//   der CON algo -> es el reparto de la infinito, NO son renglones (DH14299)
+// Además se exige que el texto leído sea el nombre de ESTA lámpara: un pedido con varias lámparas tiene
+// UN solo mockup, y aplicarle su acomodo a otra lámpara sería grabar lo que nadie aprobó.
+function renglonesDelMockup(o, previews, nombre) {
+    const arr = Array.isArray(previews) ? previews : [];
+    if (!arr.length) return null;
+    const last = arr[arr.length - 1];
+    if (mockupObsoletoPorCorreccion(o, last)) return null;
+    const lay = last.layout;
+    if (!lay) return null;
+    const izq = (lay.izquierdo || []).filter(Boolean);
+    const der = (lay.derecho || []).filter(Boolean);
+    if (der.length || !izq.length) return null;
+    const norm = t => sinAcentos(String(t || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (norm(izq.join(' ')) !== norm(nombre)) return null;
+    return izq;
+}
+
+// titleCaseName pone mayúscula en CADA palabra, así que "Yandel y Roman" salía grabado
+// "Yandel Y Roman". Las conjunciones sueltas vuelven a minúscula.
+const arreglaConjunciones = t => String(t || '').replace(/(^|\s)([YE])(\s)/g, (m, a, c, b) => a + c.toLowerCase() + b);
+
+// ¿Qué lámparas de personaje puede cortar solo el worker?
+// `eligible` es TODO O NADA a propósito: basta que UNA lámpara del pedido no se pueda (sin plantilla,
+// con foto grabada, datos ilegibles…) para que el pedido ENTERO se vaya a diseño manual. Antes
+// devolvía eligible:true con un flag `completo` aparte, y como `isAutoWaiting` solo miraba `eligible`,
+// el CRM sacaba el pedido de "Pendientes" pero el worker no lo cortaba: quedaba en un limbo, invisible
+// para todos. El predicado del CRM y el candado del worker tienen que ser EL MISMO (ver cabecera).
+// `reason` del NO: sin_items | sin_plantilla | mixto.  `manuales` explica el porqué (para el log/UI).
+function personajeEligibility(o, previews) {
+    const items = Array.isArray(o.items) && o.items.length ? o.items
+        : (o.datosProducto || o.producto ? [{ producto: o.producto, datosProducto: o.datosProducto }] : []);
+    const lamparas = [], manuales = [];
+    for (const it of items) {
+        const prod = String(it.producto || it.nombre || '');
+        if (!ES_INFANTIL_RE.test(prod)) { manuales.push({ nombre: '', personaje: prod, motivo: 'otro_producto' }); continue; }
+        if (itemEspecialPersonaje(it.datosProducto)) { manuales.push({ nombre: '', personaje: prod, motivo: 'especial' }); continue; }
+        const ls = lamparasDeTexto(it.datosProducto, prod);
+        // Item infantil cuyo texto no se pudo leer: sin esto desaparecía en silencio y el pedido se
+        // daba por completo, así que se cortaban solo las otras lámparas y se marcaba como diseñado.
+        if (!ls.length) { manuales.push({ nombre: '', personaje: prod, motivo: 'datos_ilegibles' }); continue; }
+        // `cantidad` dice cuántas lámparas lleva el item. Si no cuadra con los "Nombre:" encontrados es
+        // ambiguo y va a manual: DH14426 pide cantidad=2 con un solo "Nombre: Yandel y Roman" — ¿son dos
+        // lámparas iguales, o una para cada niño? No se adivina.
+        const cant = Math.max(1, parseInt(it.cantidad, 10) || 1);
+        if (cant !== ls.length) { manuales.push({ nombre: ls.map(x => x.nombre).join('/'), personaje: prod, motivo: `cantidad_${cant}_vs_${ls.length}` }); continue; }
+        for (const l of ls) {
+            const tpl = plantillaDePersonaje(l.personaje);
+            if (!l.nombre) manuales.push({ ...l, motivo: 'sin_nombre' });
+            else if (!tpl) manuales.push({ ...l, motivo: 'sin_plantilla' });
+            else {
+                const rr = renglonesDelMockup(o, previews, l.nombre);
+                lamparas.push({
+                    tpl,
+                    personaje: l.personaje,
+                    // Sin mockup usable se corta con el nombre del PEDIDO en UN renglón (Chris,
+                    // 2026-08-07); el ajuste de tamaño lo hace hoja-personaje.js midiendo el render.
+                    nombre: arreglaConjunciones(titleCaseName(rr ? rr.join('\n') : l.nombre)),
+                    delMockup: !!rr,
+                });
+            }
+        }
+    }
+    if (!lamparas.length) return { eligible: false, reason: items.length ? 'sin_plantilla' : 'sin_items', lamparas: [], manuales, completo: false };
+    if (manuales.length) return { eligible: false, reason: 'mixto', lamparas, manuales, completo: false };
+    return { eligible: true, reason: 'ok', lamparas, manuales, completo: true };
+}
+
+function isPersonajeAutoWaiting(o, previews) {
+    const est = String(o.estatus || '').trim().toLowerCase();
+    if (ESTATUS_TERMINAL.has(est)) return false;
+    if (est !== 'fabricar' && tsMs(o.comprobanteValidadoAt) < AUTO_DESDE_MS) return false;
+    if (autoBlocked(o)) return false;
+    if (quejaDeDatosAbierta(o)) return false;        // un dato sigue mal: lo revisa una persona
+    if (est === 'corregir' && !isVideoCorregir(o)) return false;
+    return personajeEligibility(o, previews).eligible;
+}
+
 // ¿El pedido está EN COLA para el corte automático (aún sin cortar, auto-elegible)? Es el conjunto
 // exacto que el endpoint saca de "Pendientes" manual y muestra en "SVG IA" como "esperando pareja".
 // `previews` = mockup_previews[orderId].previews.
@@ -206,7 +359,10 @@ function isAutoWaiting(o, previews) {
     // el histórico de pedidos ya fabricados a mano.
     if (est !== 'fabricar' && tsMs(o.comprobanteValidadoAt) < AUTO_DESDE_MS) return false;
     if (autoBlocked(o)) return false;
-    return svgAutoEligibility(o, previews).eligible;
+    // Corazón (Modo 2) o lámpara de personaje (Modo 5): las dos las corta el worker. Se delega en
+    // isPersonajeAutoWaiting (y no en .eligible pelado) para que esta función y el candado del worker
+    // no puedan divergir: si el worker no lo va a cortar, el pedido TIENE que seguir visible en manual.
+    return svgAutoEligibility(o, previews).eligible || isPersonajeAutoWaiting(o, previews);
 }
 
 // ¿El pedido está en 'Corregir' porque el cliente PIDIÓ UN VIDEO de su lámpara (corregirMotivo
@@ -318,4 +474,6 @@ module.exports = {
     svgAutoEligibility, isAutoWaiting, isVideoCorregir, isVideoAutoWaiting, forcedDesignFields,
     parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, esEspecial, SIN_FECHA_RE, productOf, datosOf, isCorazon,
     boardTerminado, disenoYaHecho, autoBlocked, AUTO_DESDE_MS, ESTATUS_AUTO, ESTATUS_TERMINAL,
+    personajeEligibility, isPersonajeAutoWaiting, plantillaDePersonaje, lamparasDeTexto, ES_INFANTIL_RE,
+    PLANTILLAS_PERSONAJE, quejaDeDatosAbierta,
 };

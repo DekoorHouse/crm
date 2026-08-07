@@ -284,13 +284,28 @@ que la vision de Gemini leyo en la imagen — pero ese verificador (`verifyMocku
 **falso sin que nada este mal**. Por eso el script imprime los renglones **unidos de ambos lados** y
 hay que **ignorar los `ok*`** en personaje. Sirven de pista; la fuente de verdad es la imagen.
 
-**Que faltaria para automatizar personaje** (hoy NO esta automatizado; solo infinito lo esta): habria
-que (1) darle a `verifyMockupLayout` un esquema alterno de un solo nombre, (2) quitar el freno
-`if (!isCorazon(o)) return {reason:'not_corazon'}` de `svgAutoEligibility` y el `nombre1 && nombre2 &&
-fecha` del final (`server/design/svgAuto.js`), (3) detectar el modelo del pedido (hoy no hay ningun
-campo ni deteccion de "spiderman"/"rex" en todo el repo), (4) hacer dependiente del tipo las tres filas
-fijas de `buildReviewInfo` (`server/apiRoutes.js`), y (5) que el emparejado del worker respete el
-"no mezclar modelos".
+## Automatizacion del Modo 5 (worker, desde 2026-08-07)
+
+El worker corta y sube las lamparas de personaje solo, igual que el infinito. Kill-switch:
+`svg_corte_config/settings { personajeAutoCut: false }` (independiente del `autoGenerate` del infinito).
+
+- Elegibilidad: `personajeEligibility` en `server/design/svgAuto.js`. Vive AHI y no en un modulo aparte
+  a proposito: `isAutoWaiting` es el predicado con el que el CRM **saca** un pedido de "Pendientes"
+  manual (`apiRoutes.js:8424`). Si el worker cortara personaje sin que ese predicado lo supiera, el
+  pedido seguiria a la vista del diseñador y saldria cortado DOS veces — el incidente del 2026-07-30.
+- El worker usa **`hoja-personaje.js`, no el .vbs pelon**: solo ese driver garantiza que el nombre no
+  toque las lineas. Corre con `--close` para no dejar documentos abiertos acumulandose en Corel.
+- **Solo entran pedidos donde TODAS sus lamparas son cortables** (`completo`). Si una lleva foto
+  grabada o un personaje sin plantilla, el pedido ENTERO se va a manual. Asi nunca queda a medias ni
+  hace falta un estado intermedio de "medio diseñado".
+- Emparejado: 2 lamparas por hoja **del mismo modelo**; una suelta espera pareja hasta
+  `SINGLE_AFTER_HOURS` (12 h) y luego sale en media hoja, igual que el infinito.
+- El paso de personaje corre en su propio `try`: si truena, el corte de corazones sigue igual.
+
+**Lo que sigue sin automatizarse**: los personajes sin plantilla (la cola larga: unicornio, Sonic,
+Goku...), las lamparas con foto grabada, y `verifyMockupLayout`, que sigue cableado a la infinito (por
+eso `renglonesDelMockup` solo se fia de la vision cuando `derecho` viene VACIO — ver Modo 5).
+`buildReviewInfo` (`server/apiRoutes.js`) tambien sigue con sus tres filas fijas de infinito.
 
 ## Subida a Drive (carpeta "SVG Corte", id `1FhMAUghuLI7u58hPJbV8ZWk9hJ5JOG4b`)
 

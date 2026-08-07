@@ -7,6 +7,8 @@
  *
  *   --holgura N  milimetros minimos entre el texto y cualquier linea (default 3)
  *   --max N      largo maximo inicial del nombre en mm (default: el de la plantilla)
+ *   --close      cierra el documento en Corel al terminar (lo usa el worker; a mano conviene dejarlo
+ *                abierto para revisarlo)
  *
  * QUE HACE: llama a gen-personaje.vbs, exporta el PNG de revision, lo pasa por verifica-toques.js y,
  * si el nombre toca o se arrima a una linea, VUELVE A GENERAR con el nombre mas chico. Repite hasta
@@ -42,10 +44,13 @@ function arg(nombre, def) {
     return i >= 0 ? process.argv[i + 1] : def;
 }
 
-function generar(tpl, fileBase, nombres, maxMm, escala, label) {
+function generar(tpl, fileBase, nombres, maxMm, escala, label, cerrar) {
     const args = ['//nologo', VBS, `/tpl:${tpl}`, `/file:${fileBase}`, '/preview',
         `/max:${maxMm.toFixed(1)}`, `/escala:${escala.toFixed(3)}`];
     if (label) args.push(`/label:${label}`);
+    // El worker corre desatendido cada 15 min: si los documentos se quedan abiertos, Corel se llena
+    // y termina tumbandose. A mano conviene dejarlos abiertos para revisarlos.
+    if (cerrar) args.push('/close');
     args.push(...nombres);
     const r = spawnSync('cscript', args, { encoding: 'utf8', windowsHide: true });
     const salida = (r.stdout || '') + (r.stderr || '');
@@ -70,20 +75,28 @@ function verificar(pngPath, holgura) {
     const holgura = parseFloat(arg('holgura', '3')) || 3;
     let max = parseFloat(arg('max', '')) || MAX_INICIAL[tpl];
 
-    const nombres = process.argv.slice(2).filter((a, i, all) => {
-        if (a.startsWith('--')) return false;
-        const prev = all[i - 1];
-        return !(prev && prev.startsWith('--'));   // descartar los valores de las banderas
-    });
+    // OJO: los nombres NO se pueden separar con la regla "el argumento anterior empieza con --".
+    // Con esa regla, una bandera SIN valor pegada a los nombres (--close) se comia el PRIMER nombre y
+    // la hoja salia con una sola lampara — pero los dos pedidos igual se marcaban como diseñados.
+    // Por eso las banderas con valor son una lista explicita.
+    const CON_VALOR = new Set(['--tpl', '--file', '--label', '--holgura', '--max']);
+    const argv = process.argv.slice(2);
+    const nombres = [];
+    for (let i = 0; i < argv.length; i++) {
+        if (CON_VALOR.has(argv[i])) { i++; continue; }      // salta la bandera y su valor
+        if (argv[i].startsWith('--')) continue;             // bandera sin valor (--close)
+        nombres.push(argv[i]);
+    }
     if (!nombres.length || nombres.length > 2) {
         console.error('ERROR: hay que dar 1 o 2 nombres. Llegaron: ' + JSON.stringify(nombres));
         process.exit(1);
     }
 
+    const cerrar = process.argv.includes('--close');
     const pngPath = path.join(OUT_DIR, fileBase + '.png');
     let res = null, escala = 1;
     for (let intento = 1; intento <= INTENTOS; intento++) {
-        generar(tpl, fileBase, nombres, max, escala, label);
+        generar(tpl, fileBase, nombres, max, escala, label, cerrar);
         res = verificar(pngPath, holgura);
         const dz = res.distanciaAzulMm === null ? 'libre' : res.distanciaAzulMm + 'mm';
         const dr = res.distanciaRojoMm === null ? 'libre' : res.distanciaRojoMm + 'mm';
