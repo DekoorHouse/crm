@@ -1,2 +1,2 @@
 - "Lámpara de corazones" — $750 c/u — datos requeridos: los DOS nombres y la FECHA que llevará grabada (ej. Nombres: Melissa y Jorge | Fecha: 05-12-2018).
-- "Lámpara infantil" — modelo Nube por defecto, pero puede ser CUALQUIER personaje que pida el cliente — $650 una pieza o $1,000 por dos — datos requeridos: el NOMBRE del niño/niña (y el personaje, si no es la nube).
+- "Lámpara infantil" — modelo Nube por defecto, pero puede ser CUALQUIER personaje que pida el cliente (Spiderman, Dinosaurio, Stitch, Unicornio…) — $750 una pieza o $1,200 por DOS (es decir $600 c/u cuando lleva dos) — datos requeridos: el NOMBRE del niño/niña (y el personaje, si no es la nube).
