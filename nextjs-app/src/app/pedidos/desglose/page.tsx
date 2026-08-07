@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -106,14 +108,17 @@ export default function DesglosePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [dateFilter, setDateFilter] = useState("ultimos-10-dias");
+  // La vista que se usa a diario es "cómo va el día por campaña", así que la página abre ahí.
+  const [dateFilter, setDateFilter] = useState("hoy");
   const [estatus, setEstatus] = useState("");
-  const [agrupar, setAgrupar] = useState<Agrupacion>("producto");
+  const [agrupar, setAgrupar] = useState<Agrupacion>("campana");
   const [data, setData] = useState<DesgloseResponse | null>(null);
   const [dataCampanas, setDataCampanas] = useState<DesgloseCampanasResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandido, setExpandido] = useState<string | null>(null);
+  // Hora del último refresco automático: sin esto no hay forma de saber si sigue vivo.
+  const [ultimaActualizacion, setUltimaActualizacion] = useState<Date | null>(null);
   // Contacto cuya conversación se está viendo en el modal (se abre desde un folio).
   const [chatAbierto, setChatAbierto] = useState<string | null>(null);
 
@@ -123,28 +128,87 @@ export default function DesglosePage() {
     }
   }, [user, authLoading, router]);
 
-  const cargar = useCallback(async (filters: OrderFilters, modo: Agrupacion) => {
-    setLoading(true);
-    setError(null);
-    try {
-      if (modo === "campana") {
-        setDataCampanas(await fetchDesgloseCampanas(filters));
-      } else {
-        setData(await fetchDesglose(filters));
+  // `silencioso` = refresco en vivo: no enciende el loading (que vacía las tarjetas) y, si falla,
+  // conserva lo último bueno en pantalla en vez de tirar la vista por un error pasajero.
+  const cargar = useCallback(
+    async (filters: OrderFilters, modo: Agrupacion, silencioso = false) => {
+      if (!silencioso) {
+        setLoading(true);
+        setError(null);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al cargar el desglose");
-      setData(null);
-      setDataCampanas(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      try {
+        if (modo === "campana") {
+          setDataCampanas(await fetchDesgloseCampanas(filters));
+        } else {
+          setData(await fetchDesglose(filters));
+        }
+        if (silencioso) setError(null);
+      } catch (err) {
+        if (silencioso) {
+          console.warn("[Desglose] el refresco en vivo falló, se conserva lo anterior:", err);
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Error al cargar el desglose");
+        setData(null);
+        setDataCampanas(null);
+      } finally {
+        if (!silencioso) setLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!user) return;
     cargar({ dateFilter, estatus: estatus || undefined }, agrupar);
   }, [user, dateFilter, estatus, agrupar, cargar]);
+
+  // Los filtros vivos, en un ref, para que el listener de abajo no tenga que re-suscribirse cada
+  // vez que cambias el rango o el agrupado (re-suscribirse vuelve a cobrar las lecturas).
+  const filtrosRef = useRef({ dateFilter, estatus, agrupar });
+  filtrosRef.current = { dateFilter, estatus, agrupar };
+  const refrescoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ultimoRefresco = useRef(0);
+
+  const programarRefresco = useCallback(() => {
+    if (refrescoTimer.current) clearTimeout(refrescoTimer.current);
+    // Un pedido nuevo dispara varias escrituras seguidas (atribución, corona, inventario): se
+    // juntan en un solo refresco. Y hay un piso, porque estos endpoints agregan todo el rango y
+    // el de campañas además cruza el gasto de Meta.
+    const espera = Math.max(1500, 6000 - (Date.now() - ultimoRefresco.current));
+    refrescoTimer.current = setTimeout(() => {
+      ultimoRefresco.current = Date.now();
+      const f = filtrosRef.current;
+      cargar({ dateFilter: f.dateFilter, estatus: f.estatus || undefined }, f.agrupar, true);
+      setUltimaActualizacion(new Date());
+    }, espera);
+  }, [cargar]);
+
+  // Actualización en vivo. El listener es solo la SEÑAL de que entró (o cambió) un pedido; los
+  // totales los sigue calculando el endpoint, que es quien agrupa por producto/campaña y cruza el
+  // gasto. Se miran los 20 más recientes: cubre el pedido nuevo y los cambios de estatus del día,
+  // que es lo que se ve en esta pantalla.
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, "pedidos"), orderBy("createdAt", "desc"), limit(20));
+    let primera = true;
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        if (primera) {
+          primera = false; // la carga inicial ya la trajo el fetch de arriba
+          return;
+        }
+        if (snap.docChanges().length === 0) return; // cambio de metadata, no de datos
+        programarRefresco();
+      },
+      (err) => console.warn("[Desglose] listener de pedidos:", err.message)
+    );
+    return () => {
+      unsub();
+      if (refrescoTimer.current) clearTimeout(refrescoTimer.current);
+    };
+  }, [user, programarRefresco]);
 
   if (authLoading || !user) return <LoadingOverlay />;
 
@@ -243,6 +307,17 @@ export default function DesglosePage() {
           </div>
 
           <div className="flex gap-8 items-center border-l border-outline-variant/30 pl-8">
+            <div
+              className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-on-surface-variant"
+              title={
+                ultimaActualizacion
+                  ? `La tabla se actualiza sola cuando entra un pedido. Último refresco: ${ultimaActualizacion.toLocaleTimeString("es-MX")}`
+                  : "La tabla se actualiza sola cuando entra un pedido nuevo — no hace falta refrescar"
+              }
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+              En vivo
+            </div>
             <div className="text-center">
               <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Piezas</p>
               <p className="text-xl font-black text-primary">{actual?.totalPiezas ?? 0}</p>
