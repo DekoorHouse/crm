@@ -291,7 +291,14 @@ function renglonesDelMockup(o, previews, nombre) {
 
 // titleCaseName pone mayúscula en CADA palabra, así que "Yandel y Roman" salía grabado
 // "Yandel Y Roman". Las conjunciones sueltas vuelven a minúscula.
-const arreglaConjunciones = t => String(t || '').replace(/(^|\s)([YE])(\s)/g, (m, a, c, b) => a + c.toLowerCase() + b);
+// OJO con la "E": casi siempre es una INICIAL, no una conjunción ("Jose E MH" -> no es "Jose e MH").
+// Solo es conjunción delante de una palabra que empieza con i/hi ("Alison e Ivan"). La "Y" suelta sí
+// se asume conjunción: como inicial es rarísima.
+function arreglaConjunciones(t) {
+    return String(t || '')
+        .replace(/(^|\s)Y(\s)/g, '$1y$2')
+        .replace(/(^|\s)E(\s+(?:i|hi))/gi, (m, a, b) => a + 'e' + b);
+}
 
 // ¿Qué lámparas de personaje puede cortar solo el worker?
 // `eligible` es TODO O NADA a propósito: basta que UNA lámpara del pedido no se pueda (sin plantilla,
