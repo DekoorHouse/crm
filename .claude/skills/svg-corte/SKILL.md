@@ -314,6 +314,16 @@ aprobacion contestado) — ver la REGLA DE ORO de arriba. Todo lo que cae en est
 se considera listo para cortar. El Apps Script solo sube (no puede borrar): si algo se
 sube por error, hay que borrarlo A MANO en Drive y avisar al usuario.
 
+**ESTA CARPETA ES LA COLA DE LA LASER, NO UN ARCHIVERO** (aprendido a la mala el 2026-08-07).
+El flujo real es: se sube a "SVG Corte" -> alguien lo corta -> mueve el archivo a la subcarpeta
+**"Cortadas :)"**. O sea que **todo archivo que se suba se va a cortar**, y lo que ya esta en
+"Cortadas :)" YA SE CORTO.
+
+De ahi la regla: **NUNCA resubir una version nueva de algo ya subido.** Subir no reemplaza, SUMA
+otra pieza a la cola. Si un diseno hay que rehacerlo, el orden es: (1) avisar, (2) que el usuario
+borre el archivo viejo de Drive, (3) recien entonces subir el nuevo. Ese dia se re-subieron hojas
+"corregidas" sin borrar las viejas y se cortaron LAS DOS versiones: acrilico tirado.
+
 **Via principal** (rapida, sin costo de contexto; setup YA HECHO el 2026-07-16):
 
     node "C:\Users\chris\Documents\crm\.claude\skills\svg-corte\upload-drive.js" "<ruta-del-svg>"
