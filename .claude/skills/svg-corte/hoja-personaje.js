@@ -42,9 +42,14 @@ const MAX_INICIAL = { spiderman: 62, rex: 72 };
 // Tamano de arranque por plantilla, respecto al placeholder. El de spiderman graba el nombre mas
 // chico de lo que sale en los mockups que aprueba el cliente (comparados los de TALI y Jose Miguel,
 // 2026-08-07), y el corte tiene que quedar como se le mostro.
-const BASE_INICIAL = { spiderman: 1, rex: 1 };
+// Medido contra los mockups que aprueba el cliente (TALI y Jose Miguel, 2026-08-07): la plantilla de
+// spiderman graba el nombre mas chico. 1.15 es el TECHO: lo que choca es la ALTURA de la letra contra
+// la mano de Spiderman, y esa altura no depende de que tan largo sea el nombre, asi que el tope es el
+// mismo para "Tali" que para "Jose Miguel". A 1.3 ya no libra el corredor por mas que se mueva.
+const BASE_INICIAL = { spiderman: 1.15, rex: 1 };
 const PASO = 0.94;      // cuanto se encoge en cada reintento (paso fino: encoger es el ultimo recurso)
 const INTENTOS = 5;
+const MAX_CORRIDAS = 14;   // tope duro de corridas de Corel, para no colgarse en un caso imposible
 // Corrimientos a probar ANTES de encoger, en mm. Alejan el nombre de la figura sin tocarle el tamano.
 // El 0 va primero: si la posicion original ya libra, no se mueve nada.
 const SEPARACIONES = [0, -2, -3, -1, -4];
@@ -129,22 +134,25 @@ function verificar(pngPath, holgura) {
     // (arriba) y el brazo (abajo): medido, la holgura máxima a tamaño completo es ~2.1 mm y se logra
     // corriéndolo 2 mm. Encoger ahí destroza el tamaño para ganar décimas, así que primero se busca la
     // mejor posición SIN tocar la letra.
+    // PASO 2: si moverlo no alcanzó, se encoge — y en cada paso se vuelven a probar los corrimientos.
+    // Re-probarlos importa: el que mejor funciona a tamaño grande NO es el mismo que funciona ya
+    // encogido, y fijando el primero se perdían combinaciones que sí libraban.
     let mejor = null;
-    for (const sep of SEPARACIONES) {
-        const r = probar(base, sep);
-        if (r.ok) { res = r; separa = sep; break; }
-        if (!mejor || holguraDe(r) > holguraDe(mejor.r)) mejor = { r, sep };
-    }
-    // PASO 2: solo si moverlo no alcanzó, se encoge desde la mejor posición encontrada.
-    if (!res) {
-        separa = mejor.sep;
-        res = mejor.r;
-        for (let i = 0; i < INTENTOS && !res.ok; i++) {
-            escala *= PASO;
-            max *= PASO;
-            res = probar(escala, separa);
+    let paso = 0;
+    busqueda:
+    while (true) {
+        const sweeps = paso === 0 ? SEPARACIONES : SEPARACIONES.slice(0, 3);
+        for (const sep of sweeps) {
+            const r = probar(escala, sep);
+            if (r.ok) { res = r; separa = sep; break busqueda; }
+            if (!mejor || holguraDe(r) > holguraDe(mejor.r)) mejor = { r, sep, escala };
+            if (n >= MAX_CORRIDAS) break busqueda;
         }
+        if (++paso > INTENTOS) break;
+        escala *= PASO;
+        max *= PASO;
     }
+    if (!res) { res = mejor.r; separa = mejor.sep; escala = mejor.escala; }
 
     if (!res || !res.ok) {
         console.error(`\nNO LOGRE que el nombre librara las lineas con ${holgura} mm en ${INTENTOS} intentos.`);
