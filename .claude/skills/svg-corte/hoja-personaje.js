@@ -8,6 +8,8 @@
  *   --holgura N  milimetros minimos entre el texto y cualquier linea (default 1.5; en el
  *                spiderman el corredor libre entre la mano y el brazo NO da para mas de ~2.1 mm)
  *   --max N      largo maximo inicial del nombre en mm (default: el de la plantilla)
+ *   --base F     tamano de arranque del nombre respecto al de la plantilla (default 1). Se sube
+ *                cuando la plantilla graba el nombre mas chico de lo que el cliente vio en su mockup.
  *   --close      cierra el documento en Corel al terminar (lo usa el worker; a mano conviene dejarlo
  *                abierto para revisarlo)
  *
@@ -37,11 +39,18 @@ const OUT_DIR = path.join(os.homedir(), 'Documents', 'SVG-Corte');
 
 // Largo inicial por plantilla (mm). Son los mismos topes que trae el VBS; el ciclo los baja si hace falta.
 const MAX_INICIAL = { spiderman: 62, rex: 72 };
+// Tamano de arranque por plantilla, respecto al placeholder. El de spiderman graba el nombre mas
+// chico de lo que sale en los mockups que aprueba el cliente (comparados los de TALI y Jose Miguel,
+// 2026-08-07), y el corte tiene que quedar como se le mostro.
+const BASE_INICIAL = { spiderman: 1, rex: 1 };
 const PASO = 0.94;      // cuanto se encoge en cada reintento (paso fino: encoger es el ultimo recurso)
 const INTENTOS = 5;
 // Corrimientos a probar ANTES de encoger, en mm. Alejan el nombre de la figura sin tocarle el tamano.
 // El 0 va primero: si la posicion original ya libra, no se mueve nada.
 const SEPARACIONES = [0, -2, -3, -1, -4];
+
+// Banderas que llevan un valor detras. Toda bandera nueva con valor TIENE que anadirse aqui.
+const BANDERAS_CON_VALOR = new Set(['--tpl', '--file', '--label', '--holgura', '--max', '--separa', '--base']);
 
 function arg(nombre, def) {
     const i = process.argv.indexOf('--' + nombre);
@@ -78,12 +87,17 @@ function verificar(pngPath, holgura) {
     const label = arg('label', '');
     const holgura = parseFloat(arg('holgura', '1.5')) || 1.5;
     let max = parseFloat(arg('max', '')) || MAX_INICIAL[tpl];
+    const base = parseFloat(arg('base', '')) || BASE_INICIAL[tpl];
+    max *= base;   // el tope de largo acompana al tamano de arranque
 
     // OJO: los nombres NO se pueden separar con la regla "el argumento anterior empieza con --".
     // Con esa regla, una bandera SIN valor pegada a los nombres (--close) se comia el PRIMER nombre y
     // la hoja salia con una sola lampara — pero los dos pedidos igual se marcaban como diseñados.
     // Por eso las banderas con valor son una lista explicita.
-    const CON_VALOR = new Set(['--tpl', '--file', '--label', '--holgura', '--max', '--separa']);
+    // Ya paso DOS veces que una bandera nueva no se registre aqui y se coma un nombre (--close se
+    // llevaba el primero; --base metia "1.15" como si fuera un nombre). Por eso la lista sale de UN
+    // solo lugar: BANDERAS_CON_VALOR, arriba, junto a donde se leen.
+    const CON_VALOR = BANDERAS_CON_VALOR;
     const argv = process.argv.slice(2);
     const nombres = [];
     for (let i = 0; i < argv.length; i++) {
@@ -102,7 +116,7 @@ function verificar(pngPath, holgura) {
         r.distanciaAzulMm === null ? Infinity : r.distanciaAzulMm,
         r.distanciaRojoMm === null ? Infinity : r.distanciaRojoMm);
 
-    let res = null, escala = 1, separa = 0, n = 0;
+    let res = null, escala = base, separa = 0, n = 0;
     const probar = (esc, sep) => {
         generar(tpl, fileBase, nombres, max, esc, sep, label, cerrar);
         const r = verificar(pngPath, holgura);
@@ -117,7 +131,7 @@ function verificar(pngPath, holgura) {
     // mejor posición SIN tocar la letra.
     let mejor = null;
     for (const sep of SEPARACIONES) {
-        const r = probar(1, sep);
+        const r = probar(base, sep);
         if (r.ok) { res = r; separa = sep; break; }
         if (!mejor || holguraDe(r) > holguraDe(mejor.r)) mejor = { r, sep };
     }
