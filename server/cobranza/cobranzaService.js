@@ -52,6 +52,17 @@ async function fetchApprovedTemplates() {
 // tiene menos de estas horas — se sentiría encimoso.
 const SAME_DAY_MIN_GAP_MS = 5 * 60 * 60 * 1000;
 
+// Guardia del pase vespertino, lado del CLIENTE: cuánto silencio suyo hace falta para
+// que el cobro no caiga encima de una conversación viva.
+// Antes bastaba UN mensaje del cliente en todo el día para bloquear el cobro, y eso
+// mataba justo el toque más valioso: la mediana de pago es 1.1 días y el 66% paga en
+// ≤2 días, pero solo el 13.6% de los pedidos de 0–2 días llegaba a recibir un cobro
+// (medido 8-ago-2026; 114 de 512 candidatos vespertinos se saltaban por esta guardia).
+// El caso típico era el cliente que a las 10am dice "está preciosa", no paga, y a las
+// 7pm ya no se le cobraba. Con 3h de silencio se respeta la conversación activa de
+// verdad y se recupera la conversación tibia.
+const SAME_DAY_INBOUND_QUIET_MS = 3 * 60 * 60 * 1000;
+
 /**
  * Carga el contacto + su conversación y aplica las GUARDIAS de conversación de la cobranza
  * (contacto existe, no cobrado hoy, conversación de hoy según el modo, margen de 5h del pase
@@ -83,9 +94,10 @@ async function loadContactCobranzaContext({ contactId, sameDayFirstTouch = false
     // Reglas de "conversación de hoy" según el modo:
     //  - Modo normal: si hay CUALQUIER mensaje de hoy (entrante o saliente), no cobrar
     //    (no interrumpir conversaciones activas; la foto de hoy también pospone al día sig.).
-    //  - Pase vespertino (sameDayFirstTouch): el escenario es EXACTAMENTE "hoy se le mandó
-    //    la foto y no ha contestado". Exige envío del equipo HOY, silencio del cliente HOY,
-    //    y que el último envío no sea demasiado reciente (SAME_DAY_MIN_GAP_MS).
+    //  - Pase vespertino (sameDayFirstTouch): el escenario es "hoy se le mandó la foto y no
+    //    está pagando". Exige envío del equipo HOY, que el cliente lleve callado al menos
+    //    SAME_DAY_INBOUND_QUIET_MS (no todo el día: ver la nota de esa constante) y que el
+    //    último envío no sea demasiado reciente (SAME_DAY_MIN_GAP_MS).
     const msgsToday = messagesSnapshot.docs.filter(d => {
         const ts = d.data().timestamp?.toDate();
         if (!ts) return false;
@@ -96,9 +108,12 @@ async function loadContactCobranzaContext({ contactId, sameDayFirstTouch = false
             return { skip: 'Tiene conversación hoy' };
         }
     } else {
-        const inboundToday = msgsToday.some(d => d.data().from === contactId);
-        if (inboundToday) {
-            return { skip: 'El cliente escribió hoy (conversación activa)' };
+        // Solo bloquea el silencio RECIENTE del cliente, no cualquier mensaje del día.
+        const lastInboundTodayMs = Math.max(0, ...msgsToday
+            .filter(d => d.data().from === contactId)
+            .map(d => d.data().timestamp.toDate().getTime()));
+        if (lastInboundTodayMs && (Date.now() - lastInboundTodayMs) < SAME_DAY_INBOUND_QUIET_MS) {
+            return { skip: 'El cliente escribió hace poco (conversación activa)' };
         }
         const outboundTodayMs = msgsToday
             .filter(d => d.data().from !== contactId)

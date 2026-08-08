@@ -37,6 +37,7 @@ const {
     computeSendAtMs,
     computeShortSendAtMs,
     sanitizeTemplateParam,
+    buildReminderParams,
     hasDeferralHint,
     isWhatsAppContact,
     renderText,
@@ -92,9 +93,19 @@ function todayLocalISO(cfg) {
 }
 
 // --- Plantilla de Meta (patrón carritos abandonados) --------------------------
-async function fetchApprovedTemplate(name) {
+/**
+ * Resuelve la primera plantilla APROBADA de la lista de candidatas (la de config primero,
+ * luego cfg.templateFallbacks). Se prefiere caer a un respaldo antes que no mandar nada:
+ * el modo de falla anterior era silencioso (el recordatorio moría en `failed` y solo se
+ * veía escarbando en Firestore), así que si se usa un respaldo o no hay ninguna, se grita.
+ * @param {string[]} names candidatas en orden de preferencia
+ */
+async function fetchApprovedTemplate(names) {
+    const candidates = (Array.isArray(names) ? names : [names]).map(n => String(n || '').trim()).filter(Boolean);
+    if (!candidates.length) throw new Error('No hay ninguna plantilla configurada para el recordatorio');
+
     const now = Date.now();
-    if (cachedTemplate && cachedTemplate.name === name && (now - cachedTemplateAt) < TEMPLATE_CACHE_MS) {
+    if (cachedTemplate && candidates.includes(cachedTemplate.name) && (now - cachedTemplateAt) < TEMPLATE_CACHE_MS) {
         return cachedTemplate;
     }
     if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN) {
@@ -103,14 +114,20 @@ async function fetchApprovedTemplate(name) {
     const url = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
     const res = await axios.get(url, { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } });
     const approved = (res.data?.data || []).filter(t => t.status === 'APPROVED');
-    const tpl = approved.find(t => t.name === name);
-    if (!tpl) {
-        const names = approved.map(t => t.name).join(', ') || '(ninguna)';
-        throw new Error(`Plantilla "${name}" no encontrada o no aprobada. Aprobadas: ${names}`);
+
+    for (const name of candidates) {
+        const tpl = approved.find(t => t.name === name);
+        if (!tpl) continue;
+        if (name !== candidates[0]) {
+            console.error(`[REMINDER] ⚠️ La plantilla principal "${candidates[0]}" NO está aprobada; se usa el respaldo "${name}". Arregla crm_settings/scheduled_reminders.templateName.`);
+        }
+        cachedTemplate = tpl;
+        cachedTemplateAt = now;
+        return tpl;
     }
-    cachedTemplate = tpl;
-    cachedTemplateAt = now;
-    return tpl;
+    const names_ = approved.map(t => t.name).join(', ') || '(ninguna)';
+    console.error(`[REMINDER] 🔴 NINGUNA plantilla de recordatorio está aprobada (probadas: ${candidates.join(', ')}). Los recordatorios NO se están enviando. Aprobadas en Meta: ${names_}`);
+    throw new Error(`Plantilla "${candidates[0]}" no encontrada o no aprobada. Aprobadas: ${names_}`);
 }
 
 // Rellena los {{n}} del BODY con params en orden. Meta rechaza parámetros vacíos,
@@ -144,11 +161,15 @@ function renderTemplateBody(template, params) {
     return text;
 }
 
-async function sendReminderTemplate(waId, messageParam, cfg) {
-    const template = await fetchApprovedTemplate(cfg.templateName);
-    // La plantilla lleva UNA sola variable {{1}} = el mensaje. Sin nombre a propósito:
-    // muchos contactos tienen nombres "raros" (no el suyo) y saludarlos así se siente mal.
-    const params = [messageParam];
+async function sendReminderTemplate(waId, messageParam, cfg, contactName = '') {
+    const template = await fetchApprovedTemplate([cfg.templateName, ...(cfg.templateFallbacks || [])]);
+    // No se asume cuántas variables trae la plantilla: se cuentan las del BODY que devolvió
+    // Meta y los parámetros se acomodan solos. Si solo hay una, va el mensaje (sin nombre:
+    // muchos contactos tienen nombres "raros" y saludarlos así se siente mal); si hay dos,
+    // la primera es el saludo y ahí sí se filtra el nombre basura.
+    const body = (template.components || []).find(c => c.type === 'BODY');
+    const varCount = ((body?.text || '').match(/\{\{\d+\}\}/g) || []).length;
+    const params = buildReminderParams(varCount, { name: contactName, message: messageParam });
     const payload = buildTemplatePayload(waId, template, params, cfg);
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const res = await axios.post(url, payload, {
@@ -491,7 +512,7 @@ async function runReminderSweep({ dryRun = false } = {}) {
             try {
                 const { messageId, renderedText } = asFreeText
                     ? await sendReminderFreeText(doc.id, messageParam, contact)
-                    : await sendReminderTemplate(doc.id, messageParam, cfg);
+                    : await sendReminderTemplate(doc.id, messageParam, cfg, (contact && contact.name) || rem.name);
                 await doc.ref.update({
                     status: 'sent', sentAt: new Date(), messageId,
                     sentText: renderedText.slice(0, 300), attempts: 0, updatedAt: new Date()

@@ -20,7 +20,13 @@ const DEFAULT_REMINDER_CONFIG = {
                                     // detecta aplazamientos de compra o de PAGO en cualquier momento.
                                     // Nada se ENVÍA hasta que exista la plantilla aprobada, y los
                                     // recordatorios siempre son a fecha futura (no manda al instante).
-    templateName: 'recordatorio_lead', // plantilla aprobada en Meta ({{1}}=nombre, {{2}}=texto IA)
+    // Plantilla aprobada en Meta. El número de variables NO se asume: se lee del BODY que
+    // devuelve Meta y los parámetros se acomodan solo (ver buildReminderParams).
+    // OJO: durante ~5 semanas esto apuntó a 'recordatorio_lead', que nunca existió en Meta;
+    // los 699 recordatorios de ese periodo murieron en "plantilla no aprobada" sin que nadie
+    // se enterara. Por eso ahora hay lista de respaldo y el fallo se grita en el log.
+    templateName: 'recordatorio_fecha',
+    templateFallbacks: ['recordatorio_lead'], // si la primera no está aprobada, se intenta con estas
     langCode: 'es_MX',              // idioma de la plantilla (fallback si Meta no lo trae)
     utcOffsetHours: -6,             // México Centro (sin DST desde 2022)
     sendHourLocal: 10,              // hora local a la que se manda el recordatorio (10am)
@@ -184,6 +190,44 @@ function sanitizeTemplateParam(text) {
         .slice(0, 700);
 }
 
+/**
+ * ¿Este nombre de WhatsApp sirve para saludar? Muchos contactos traen basura como
+ * "ds65834", "..." o un número: meterlo en un "¡Hola {{1}}!" se siente peor que no saludar.
+ * Exige letras, algo de largo y que no sea mayoritariamente dígitos.
+ */
+function isUsableName(name) {
+    const n = String(name || '').trim();
+    if (n.length < 2 || n.length > 40) return false;
+    if (!/[a-záéíóúüñ]/i.test(n)) return false;              // sin letras no es un nombre
+    // Solo letras, espacios y los signos que sí aparecen en nombres. Excluye de un golpe
+    // los dígitos ("ds65834", "5214771234567") y los emojis.
+    return /^[\p{L}\p{M}\s'.-]+$/u.test(n);
+}
+
+/**
+ * Acomoda los parámetros de la plantilla según CUÁNTAS variables trae de verdad, en vez
+ * de asumir una forma fija. Esto es lo que evita repetir el bug de 'recordatorio_lead':
+ * si mañana se cambia la plantilla por otra con distinto número de {{n}}, el envío sigue
+ * saliendo bien en lugar de mandar guiones o de reventar.
+ *   1 variable   → [mensaje]
+ *   2 variables  → [nombre, mensaje]   (nombre inservible → saludo neutro)
+ *   3+           → [nombre, ...relleno neutro, mensaje]  (el mensaje siempre va al final)
+ * @param {number} varCount  cuántos {{n}} tiene el BODY de la plantilla
+ */
+// 'de nuevo' porque cae natural en el hueco del nombre pase lo que pase ("¡Hola de nuevo!",
+// "Hola de nuevo, ...") y además es cierto: el recordatorio siempre es un seguimiento.
+function buildReminderParams(varCount, { name, message, neutralGreeting = 'de nuevo' } = {}) {
+    const msg = sanitizeTemplateParam(message) || '—';
+    const n = Number(varCount) || 0;
+    if (n <= 0) return [];
+    if (n === 1) return [msg];
+    const greeting = isUsableName(name) ? firstName(name) : neutralGreeting;
+    const params = [sanitizeTemplateParam(greeting)];
+    while (params.length < n - 1) params.push(neutralGreeting);
+    params.push(msg);
+    return params;
+}
+
 // Pre-filtro barato: ¿el mensaje del cliente insinúa un aplazamiento a fecha futura?
 // Solo si da positivo se gasta una llamada a Gemini. Los falsos positivos solo cuestan
 // esa clasificación (que de todas formas decide en firme).
@@ -235,6 +279,10 @@ function normalizeReminderConfig(raw) {
     if (end <= start) { start = 8; end = 21; }
 
     let templateName = String(merged.templateName || '').trim() || DEFAULT_REMINDER_CONFIG.templateName;
+    // Respaldos: solo nombres válidos, sin duplicar la principal y sin vacíos.
+    const templateFallbacks = (Array.isArray(merged.templateFallbacks) ? merged.templateFallbacks : [])
+        .map(t => String(t || '').trim())
+        .filter(t => t && t !== templateName);
     let langCode = String(merged.langCode || '').trim() || DEFAULT_REMINDER_CONFIG.langCode;
     let fallbackMessage = String(merged.fallbackMessage || '').trim() || DEFAULT_REMINDER_CONFIG.fallbackMessage;
     let shortFallbackMessage = String(merged.shortFallbackMessage || '').trim() || DEFAULT_REMINDER_CONFIG.shortFallbackMessage;
@@ -247,6 +295,7 @@ function normalizeReminderConfig(raw) {
     return {
         enabled: merged.enabled === true,
         templateName,
+        templateFallbacks,
         langCode,
         utcOffsetHours: num(merged.utcOffsetHours, -6, -12, 14),
         sendHourLocal: num(merged.sendHourLocal, 10, start, end),
@@ -315,6 +364,8 @@ module.exports = {
     computeSendAtMs,
     computeShortSendAtMs,
     sanitizeTemplateParam,
+    isUsableName,
+    buildReminderParams,
     hasDeferralHint,
     isWhatsAppContact,
     normalizeReminderConfig,
