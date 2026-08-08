@@ -45,16 +45,17 @@ Const ALINEACION_CENTRO = 3   ' cdrCenterAlignment
 ' que es lo que reproduce el acomodo que vio el cliente.
 Const INTERLINEADO_2L = 100
 
-Dim args, nArgs, label, fileBase, tplName, quierePreview, maxLargo, maxArg, escala, escalaArg
+Dim args, nArgs, label, fileBase, tplName, quierePreview, maxLargo, maxArg, escala, escalaArg, separa, separaArg
 Set args = WScript.Arguments.Unnamed
 nArgs = args.Count
-label = "" : fileBase = "" : tplName = "" : maxArg = "" : escalaArg = ""
+label = "" : fileBase = "" : tplName = "" : maxArg = "" : escalaArg = "" : separaArg = ""
 On Error Resume Next
 label = WScript.Arguments.Named("label")
 fileBase = WScript.Arguments.Named("file")
 tplName = WScript.Arguments.Named("tpl")
 maxArg = WScript.Arguments.Named("max")
 escalaArg = WScript.Arguments.Named("escala")
+separaArg = WScript.Arguments.Named("separa")
 On Error GoTo 0
 quierePreview = WScript.Arguments.Named.Exists("preview")
 
@@ -74,6 +75,14 @@ If maxArg <> "" And IsNumeric(maxArg) Then maxLargo = CDbl(maxArg)   ' /max:NN p
 ' El que decide cuanto encoger es hoja-personaje.js, midiendo el render de verdad.
 escala = 1
 If escalaArg <> "" And IsNumeric(escalaArg) Then escala = CDbl(escalaArg)
+' /separa:N — aleja el nombre de la figura N mm, SIN cambiarle el tamaño. Es la palanca correcta cuando
+' el choque es por el borde de arriba de las letras: en la plantilla de spiderman el nombre queda justo
+' debajo de la mano y la barra de una "J" o una "T" toca el pulgar. Encoger ahí es malísimo — el borde
+' superior solo baja la MITAD de lo que se encoge, asi que para librar 1 mm hay que quitar 2 mm de
+' letra, y nombres cortos como "Uriel" acababan al 66% (Chris, 2026-08-07: "quedaron muy chicos").
+' El texto va girado 90 grados, asi que "alejarse de la figura" es moverse sobre la X de la plantilla.
+separa = 0
+If separaArg <> "" And IsNumeric(separaArg) Then separa = CDbl(separaArg)
 If nArgs <> 1 And nArgs <> 2 Then
     WScript.Echo "Uso: cscript //nologo gen-personaje.vbs /tpl:spiderman|rex ""Nombre1"" [""Nombre2""]"
     WScript.Quit 1
@@ -273,6 +282,8 @@ Sub GrabarNombre(s, valor)
         s.Text.Story.Size = s.Text.Story.Size * escala
         s.CenterX = cx : s.CenterY = cy
     End If
+    ' Alejarse de la figura. El texto va girado, asi que es un corrimiento sobre la X de la plantilla.
+    If separa <> 0 Then s.CenterX = cx + separa
 End Sub
 
 ' Borra la lampara entera a la que pertenece un placeholder (para las medias hojas de 1 nombre).
