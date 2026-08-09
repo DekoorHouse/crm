@@ -982,7 +982,7 @@ const MockupsViewTemplate = () => `
                     <span style="color:#d97706;font-weight:600;">🪙 Anticipo $300</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-anticipo-toggle" onchange="mkToggleAnticipo(this.checked)"><span class="slider"></span></label>
                 </span>
-                <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Modo FLASH: al enviar el mockup, Andrea manda un gancho de urgencia (‘te aparto un espacio en el corte de ahorita’) y la foto + pago se PROGRAMAN para llegarle al cliente al cumplirse el tiempo elegido. Solo aplica a pedidos con mockup (especiales no). El archivo de corte NO cambia: se hace hasta que paga.">
+                <span style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;" title="Modo FLASH: al enviar el mockup, Leonel manda un gancho de urgencia (‘te aparto un espacio en el corte de ahorita’) y la foto + pago se PROGRAMAN para llegarle al cliente al cumplirse el tiempo elegido. Solo aplica a pedidos con mockup (especiales no). El archivo de corte NO cambia: se hace hasta que paga.">
                     <span style="color:#ea580c;font-weight:600;">⚡ Flash</span>
                     <label class="toggle-switch" style="margin:0;"><input type="checkbox" id="mk-flash-toggle" onchange="mkToggleFlash(this.checked)"><span class="slider"></span></label>
                     <select id="mk-flash-time" onchange="mkSetFlashTime(this.value)" style="font-size:.8rem;padding:2px 4px;border:1px solid var(--color-border);border-radius:6px;background:var(--color-input-bg,#fff);color:inherit;">
@@ -1205,21 +1205,21 @@ const AITrainingViewTemplate = () => `
         </div>
         <div class="max-w-3xl space-y-8">
             <div class="settings-card">
-                <h2 class="text-xl font-bold mb-1">Cerebro de Andrea (proveedor de IA)</h2>
-                <p class="text-sm text-gray-500 mb-4">Qué inteligencia artificial usa Andrea para <strong>conversar</strong>, <strong>registrar pedidos</strong>, transcribir <strong>notas de voz</strong> y para la cobranza y los recordatorios automáticos. Si un proveedor se cae o bloquea la cuenta, cambias aquí y Andrea sigue trabajando.</p>
+                <h2 class="text-xl font-bold mb-1">Cerebro de Leonel (proveedor de IA)</h2>
+                <p class="text-sm text-gray-500 mb-4">Qué inteligencia artificial usa Leonel para <strong>conversar</strong>, <strong>registrar pedidos</strong>, transcribir <strong>notas de voz</strong> y para la cobranza y los recordatorios automáticos. Si un proveedor se cae o bloquea la cuenta, cambias aquí y Leonel sigue trabajando.</p>
                 <div class="space-y-2" id="ai-provider-options">
                     <label class="ai-provider-opt flex items-start gap-3 p-3 rounded-lg border cursor-pointer" data-prov="gemini">
                         <input type="radio" name="ai-provider" value="gemini" onchange="handleAiProviderChange('gemini')" class="mt-1">
                         <span>
                             <span class="font-semibold block">Google Gemini <span class="text-xs font-normal text-gray-400">— cuenta directa</span></span>
-                            <span class="text-sm text-gray-500">El de siempre. Depende de la cuenta de facturación de Google: si la bloquean, Andrea deja de contestar.</span>
+                            <span class="text-sm text-gray-500">El de siempre. Depende de la cuenta de facturación de Google: si la bloquean, Leonel deja de contestar.</span>
                         </span>
                     </label>
                     <label class="ai-provider-opt flex items-start gap-3 p-3 rounded-lg border cursor-pointer" data-prov="openrouter">
                         <input type="radio" name="ai-provider" value="openrouter" onchange="handleAiProviderChange('openrouter')" class="mt-1">
                         <span>
                             <span class="font-semibold block">Gemini por OpenRouter <span class="text-xs font-normal text-green-600">— recomendado</span></span>
-                            <span class="text-sm text-gray-500">El <strong>mismo modelo</strong> de siempre (así Andrea se comporta igual), pero con <strong>créditos prepagados</strong>: no hay cuenta que se bloquee. Si se acaban los créditos, recargas.</span>
+                            <span class="text-sm text-gray-500">El <strong>mismo modelo</strong> de siempre (así Leonel se comporta igual), pero con <strong>créditos prepagados</strong>: no hay cuenta que se bloquee. Si se acaban los créditos, recargas.</span>
                         </span>
                     </label>
                     <label class="ai-provider-opt flex items-start gap-3 p-3 rounded-lg border cursor-pointer" data-prov="openai">
@@ -2172,7 +2172,7 @@ const AndreaNoteTemplate = (contact) => {
         <div class="andrea-note-box mt-4 rounded-lg p-3" style="border:1px ${has ? 'solid' : 'dashed'} var(--color-primary,#6366f1);background:${has ? 'color-mix(in srgb, var(--color-primary,#6366f1) 8%, transparent)' : 'transparent'}">
             <div class="flex items-center gap-2 mb-1">
                 <i class="fas fa-robot" style="color:var(--color-primary,#6366f1)"></i>
-                <span class="font-semibold text-sm" style="color:var(--color-text,#334155)">Indicación para Andrea</span>
+                <span class="font-semibold text-sm" style="color:var(--color-text,#334155)">Indicación para Leonel</span>
                 ${has ? '<span class="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:var(--color-primary,#6366f1);color:#fff">ACTIVA</span>' : ''}
             </div>
             <p class="text-[11px] text-gray-500 mb-2">Solo en esta conversación. La IA la tomará en cuenta. Ej.: <em>dale $200 de descuento por la demora</em>.</p>

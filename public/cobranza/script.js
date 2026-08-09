@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- Cobranza automática (Andrea) ---
+    // --- Cobranza automática (Leonel) ---
     // Config en crm_settings/cobranza_auto; el scheduler del servidor la lee cada 15 min.
     // Dos pases diarios: mañana (cobros 2..4, cancelaciones) y vespertino (cobro 1 del
     // mismo día de la foto). El reporte diario trae un campo por pase: {manana, tarde}.

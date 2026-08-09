@@ -5214,7 +5214,7 @@ function toggleAIChat() {
         if (msgs.children.length === 0) {
             const welcome = document.createElement('div');
             welcome.className = 'ai-chat-welcome';
-            welcome.innerHTML = `<div class="ai-chat-welcome-icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5z"/></svg></div><h4>Hola, soy Andrea</h4><p>Tu asistente de dise\u00f1o. Puedo ayudarte con el editor, consultar pedidos o lo que necesites.</p>`;
+            welcome.innerHTML = `<div class="ai-chat-welcome-icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5z"/></svg></div><h4>Hola, soy Leonel</h4><p>Tu asistente de dise\u00f1o. Puedo ayudarte con el editor, consultar pedidos o lo que necesites.</p>`;
             msgs.appendChild(welcome);
         }
     }
