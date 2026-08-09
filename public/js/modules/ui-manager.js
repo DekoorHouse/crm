@@ -4437,7 +4437,7 @@ async function handleAiProviderChange(provider) {
     try {
         await db.collection('crm_settings').doc('general').set({ aiChatProvider: provider }, { merge: true });
         state.aiChatProvider = provider;
-        showError('Listo: Andrea ahora usa ' + (AI_PROVIDER_NOMBRE[provider] || provider)
+        showError('Listo: Leonel ahora usa ' + (AI_PROVIDER_NOMBRE[provider] || provider)
             + '. Aplica en el siguiente mensaje (hasta 1 min en los procesos automáticos).', 'success');
     } catch (e) {
         console.error('Error al cambiar el proveedor de IA:', e);
@@ -4651,7 +4651,7 @@ async function loadAIUsageStats() {
 // Nombres legibles de cada fuente de consumo (ver server/aiUsage.js). Las no listadas
 // (features aún sin etiquetar) se muestran con su clave cruda.
 const AI_SOURCE_LABELS = {
-    bot: 'Andrea (respuestas a clientes)',
+    bot: 'Leonel (respuestas a clientes)',
     transcripcion: 'Transcripción de audios',
     clasificador_pedido: 'Clasificador de pedidos',
     clasificador_recordatorio: 'Clasificador de recordatorios',

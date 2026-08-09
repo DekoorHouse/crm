@@ -1,4 +1,4 @@
-# Prompts de Andrea (espejo versionado)
+# Prompts de Leonel (espejo versionado)
 
 Los prompts **viven en Firestore** y se editan desde la UI del CRM (Entrenamiento IA, /cobranza) o con `scripts/prompt-tool.js`. Esta carpeta es un **espejo** en el repo para poder leerlos, revisarlos y versionarlos; **no se lee en runtime** — el bot siempre usa Firestore.
 
@@ -10,8 +10,8 @@ Los prompts **viven en Firestore** y se editan desde la UI del CRM (Entrenamient
 | `postventa.md` | `crm_settings/postventa` → `instructions` | Etapa 2 (post-venta: cobro, comprobantes, entrega) |
 | `cobranza.md` | `crm_settings/bot_cobranza` → `instructions` | Cobranza automática (`server/cobranza/`) |
 | `registro-pedidos-catalogo.md` | `crm_settings/ai_order_registration` → `catalogText` | Catálogo que se inyecta a la regla de cierre/registro cuando `enabled` |
-| `conocimiento.md` | `ai_knowledge_base` (compilado) | Solo lectura: base de conocimiento tal como la ve Andrea |
-| `respuestas-rapidas.md` | `quick_replies` (compilado) | Solo lectura: atajos del equipo tal como los ve Andrea |
+| `conocimiento.md` | `ai_knowledge_base` (compilado) | Solo lectura: base de conocimiento tal como la ve Leonel |
+| `respuestas-rapidas.md` | `quick_replies` (compilado) | Solo lectura: atajos del equipo tal como los ve Leonel |
 
 Prioridad del prompt en etapa de venta: **anuncio → departamento → bot general** (`processMessagesWithAI` en `server/services.js`).
 

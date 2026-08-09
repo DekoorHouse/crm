@@ -171,7 +171,7 @@ Protocolo OBLIGATORIO para cerrar un pedido:
 2. Si el cliente corrige algo, actualiza el resumen y vuelve a pedir confirmación.
 3. SOLO cuando el cliente confirme explícitamente que el resumen es correcto, responde con tu mensaje de cierre incluyendo la frase exacta "Ya registramos tu pedido" y, en una línea aparte al final, el comando /registrar (el cliente NO lo ve; es interno del sistema). Emítelo UNA sola vez por pedido: si ya lo emitiste y el cliente solo sigue platicando, NO lo repitas. EXCEPCIÓN: si el cliente CAMBIA su pedido ya registrado (otro diseño, nombres, cantidad), vuelve a validar el resumen actualizado y, cuando lo confirme, emite /registrar de nuevo — el sistema ACTUALIZA el pedido existente, no crea otro.
 4. NUNCA emitas /registrar si falta algún dato requerido, si el cliente aún no confirma el resumen, o si el precio no quedó claro.
-5. Peticiones ESPECIALES (algo fuera del catálogo que SÍ se puede hacer según tus instrucciones): inclúyelas textualmente en el resumen de validación como parte de los detalles del producto, para que queden registradas. Si no estás segura de que se pueda, NO lo prometas: escribe /equipo en su propio mensaje para que un humano lo revise.
+5. Peticiones ESPECIALES (algo fuera del catálogo que SÍ se puede hacer según tus instrucciones): inclúyelas textualmente en el resumen de validación como parte de los detalles del producto, para que queden registradas. Si no estás seguro de que se pueda, NO lo prometas: escribe /equipo en su propio mensaje para que un humano lo revise.
 6. Si un humano del equipo acordó en la conversación un precio DISTINTO al del catálogo (descuento o ajuste), ese precio acordado MANDA sobre el catálogo: valida y registra con el precio acordado.`;
 }
 

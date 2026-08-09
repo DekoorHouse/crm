@@ -3013,7 +3013,7 @@ async function handleSaveAndreaNote(contactId) {
         // Firestore también lo sincroniza, pero re-renderizar da respuesta instantánea).
         const c = state.contacts.find(x => x.id === cid);
         if (c) c.aiConversationNote = note || null;
-        showError(note ? "Indicación guardada. Andrea la tomará en cuenta en este chat." : "Indicación eliminada.", "success");
+        showError(note ? "Indicación guardada. Leonel la tomará en cuenta en este chat." : "Indicación eliminada.", "success");
         if (state.contactDetailsOpen) openContactDetails();
     } catch (error) {
         console.error('Error al guardar la indicación para Andrea:', error);
