@@ -5320,8 +5320,13 @@ function renderFilePreview() {
     if (state.stagedFiles.length > 0) { // Si hay archivos locales seleccionados
         container.innerHTML = LocalFilePreviewTemplate(state.stagedFiles);
         container.classList.remove('hidden');
-    } else if (state.stagedRemoteFiles.length > 0) { // Si hay archivos remotos (respuesta rápida o galería)
-        container.innerHTML = RemoteFilePreviewTemplate(state.stagedRemoteFiles);
+    // OJO: es `stagedRemoteFile`, singular y objeto (o null) — así lo declara state.js y
+    // así lo espera RemoteFilePreviewTemplate, que lee file.type/file.url. En plural es
+    // undefined, y `.length` sobre undefined truena aquí adentro: como esta función se
+    // llama desde cancelStagedFile() y esa se llama a media rutina de envío, el mensaje
+    // se quedaba sin encolar (ver handleSendMessage).
+    } else if (state.stagedRemoteFile) { // Si hay un archivo remoto (respuesta rápida o galería)
+        container.innerHTML = RemoteFilePreviewTemplate(state.stagedRemoteFile);
         container.classList.remove('hidden');
     } else { // Si no hay archivo adjunto
         container.innerHTML = '';
