@@ -611,6 +611,25 @@ body.dark-mode .modal-image-nav-btn:disabled { background-color: #4a6572; }
  #formularioNuevoPedido .form-actions { text-align: right; margin-top: 25px; padding-top: 20px; border-top: 1px solid var(--color-border); }
  #formularioNuevoPedido button { margin-left: 12px; }
 
+/* Lista angosta + panel de detalle. Antes la tabla tenía 11 columnas y min-width 1100px,
+   así que el precio y las acciones vivían fuera de pantalla; ahora la lista se queda con
+   4 columnas que siempre caben y el resto del pedido se lee en el panel. */
+.pedidos-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    /* minmax(0,1fr) y no el 'auto' por defecto: sin esto la fila del grid crece con el
+       contenido y el scroll se va a la ventana en vez de quedarse dentro de la lista. */
+    grid-template-rows: minmax(0, 1fr);
+    gap: 15px;
+    flex: 1;
+    min-height: 0;
+}
+@media (max-width: 1100px) {
+    /* Sin ancho para dos columnas, el panel se va abajo en vez de desaparecer. */
+    .pedidos-split { grid-template-columns: 1fr; }
+    .panel-detalle { max-height: 60vh; }
+}
+
 .tabla-container-wrapper {
     position: relative;
     flex: 1;
@@ -630,11 +649,29 @@ body.dark-mode .modal-image-nav-btn:disabled { background-color: #4a6572; }
     box-shadow: 0 4px 20px var(--color-shadow);
 }
 #tablaPedidos {
-    width: 100%; min-width: 1100px;
+    width: 100%; min-width: 420px;
+    table-layout: fixed;
     border-collapse: separate; border-spacing: 0;
     font-size: 0.9em; border-radius: var(--border-radius-md); overflow: hidden;
 }
-#tablaPedidos th, #tablaPedidos td { padding: 12px 15px; border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: middle; white-space: nowrap; transition: background-color 0.3s ease, color 0.3s ease; }
+#tablaPedidos th, #tablaPedidos td { padding: 8px 12px; border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: middle; white-space: nowrap; transition: background-color 0.3s ease, color 0.3s ease; }
+
+/* Anchos fijos: el alto de la fila deja de depender de cuánto texto traiga un pedido. */
+#tablaPedidos th:nth-child(1), #tablaPedidos td:nth-child(1) { width: 112px; }
+#tablaPedidos th:nth-child(3), #tablaPedidos td:nth-child(3) { width: 152px; }
+#tablaPedidos th:nth-child(4), #tablaPedidos td:nth-child(4) { width: 94px; text-align: right; }
+#tablaPedidos tbody tr { height: 54px; }
+
+/* Producto arriba, datos del pedido abajo: dos renglones recortados, nunca más.
+   El line-height apretado es lo que mantiene la fila en ~54px; con el 1.6 heredado
+   del body cada fila crecía a 60. */
+.celda-producto { white-space: normal; overflow: hidden; line-height: 1.35; }
+.celda-producto .cp-nombre,
+.celda-producto .cp-datos {
+    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.celda-producto .cp-nombre { font-weight: 700; }
+.celda-producto .cp-datos { font-size: 0.85em; color: var(--color-text-light); }
 
 #tablaPedidos td.comment-cell {
     max-width: 200px;
@@ -751,16 +788,72 @@ body.dark-mode .modal-image-nav-btn:disabled { background-color: #4a6572; }
 .status-sin-estatus { background-color: #e9ecef; color: #495057; border-color: #ced4da;}
 .status-default { background-color: #f0f0f0; color: var(--color-text-light); border-color: #e0e0e0; }
 
-body.dark-mode .status-pagado { background-color: #2ecc71; color: #145a32; border-color: #27ae60;}
-body.dark-mode .status-foto-enviada { background-color: #3498db; color: #1a5276; border-color: #2980b9;}
-body.dark-mode .status-cancelado { background-color: #e74c3c; color: #641e16; border-color: #c0392b;}
-body.dark-mode .status-esperando-pago { background-color: #f1c40f; color: #7e5109; border-color: #d68910;}
-body.dark-mode .status-corregir { background-color: #e67e22; color: #6e2c00; border-color: #d35400;}
-body.dark-mode .status-corregido { background-color: #20c997; color: #084235; border-color: #198754; }
-body.dark-mode .status-mns-amenazador { background-color: #9b59b6; color: #4a235a; border-color: #8e44ad;}
-body.dark-mode .status-fabricar { background-color: #1abc9c; color: #0e6655; border-color: #16a085;}
-body.dark-mode .status-diseñado { background-color: #7e57c2; color: #ede7f6; border-color: #5e35b1;}
-body.dark-mode .status-sin-estatus { background-color: #7f8c8d; color: #2c3e50; border-color: #95a5a6;}
+/* Modo oscuro: antes era fondo saturado medio con texto oscuro encima (#1a5276 sobre
+   #3498db = 2.65:1) y 9 de los 10 estatus quedaban por debajo del mínimo legible de
+   4.5:1. Se conserva el tono que identifica a cada estatus, pero con el patrón del resto
+   del tema oscuro: fondo translúcido del tono y texto claro del mismo tono. */
+body.dark-mode .status-pagado { background-color: rgba(46,204,113,.20); color: #84e5ad; border-color: rgba(46,204,113,.45);}
+body.dark-mode .status-foto-enviada { background-color: rgba(52,152,219,.24); color: #9ccdee; border-color: rgba(52,152,219,.5);}
+body.dark-mode .status-cancelado { background-color: rgba(231,76,60,.24); color: #f39c92; border-color: rgba(231,76,60,.5);}
+body.dark-mode .status-esperando-pago { background-color: rgba(241,196,15,.20); color: #f3d271; border-color: rgba(241,196,15,.45);}
+body.dark-mode .status-corregir { background-color: rgba(230,126,34,.24); color: #f2b077; border-color: rgba(230,126,34,.5);}
+body.dark-mode .status-corregido { background-color: rgba(32,201,151,.20); color: #7ce3c6; border-color: rgba(32,201,151,.45); }
+body.dark-mode .status-mns-amenazador { background-color: rgba(155,89,182,.30); color: #d3aae1; border-color: rgba(155,89,182,.55);}
+body.dark-mode .status-fabricar { background-color: rgba(26,188,156,.20); color: #79dfca; border-color: rgba(26,188,156,.45);}
+body.dark-mode .status-diseñado { background-color: rgba(126,87,194,.30); color: #c6b2ea; border-color: rgba(126,87,194,.55);}
+body.dark-mode .status-sin-estatus { background-color: rgba(127,140,141,.24); color: #cfd8d9; border-color: rgba(127,140,141,.5);}
+
+/* --- Panel de detalle (columna derecha) --- */
+.panel-detalle {
+    background: var(--color-container-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 4px 20px var(--color-shadow);
+    padding: 18px 20px;
+    overflow-y: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.panel-vacio {
+    margin: auto;
+    text-align: center;
+    color: var(--color-text-light);
+    font-style: italic;
+    font-size: 0.92em;
+    max-width: 26ch;
+    line-height: 1.5;
+}
+.panel-vacio i { display: block; font-size: 1.8em; margin-bottom: 10px; opacity: 0.45; font-style: normal; }
+
+.panel-encabezado { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.panel-encabezado .panel-num {
+    font-family: var(--font-heading); font-weight: 700; font-size: 1.15em;
+}
+.panel-encabezado .panel-fecha { margin-left: auto; font-size: 0.82em; color: var(--color-text-light); }
+
+.panel-campos { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.panel-campo dt {
+    font-size: 0.68em; letter-spacing: 0.1em; text-transform: uppercase;
+    font-weight: 700; color: var(--color-text-light); margin-bottom: 3px;
+    font-family: var(--font-heading);
+}
+.panel-campo dd { margin: 0; font-size: 0.92em; word-break: break-word; white-space: pre-wrap; }
+.panel-campo dd.panel-precio { font-size: 1.3em; font-weight: 700; font-family: var(--font-heading); }
+
+.panel-acciones {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-top: auto; padding-top: 14px; border-top: 1px solid var(--color-border);
+}
+.panel-detalle .datos-container { white-space: normal; }
+.panel-detalle .panel-comentarios { cursor: pointer; }
+
+/* Coincidencia de búsqueda en un campo que ya no se ve en la fila (teléfono,
+   comentarios, fecha): sin marca amarilla que señalar, se avisa con el borde. */
+#tablaPedidos tbody tr.search-match-en-detalle td:first-child {
+    box-shadow: inset 3px 0 0 var(--color-primary);
+}
 
 
 .circular-menu-container {

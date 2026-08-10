@@ -137,6 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchMatchIcon = document.getElementById('search-match-icon');
     const closeSearchBtn = document.getElementById('closeSearchBtn');
     const pageOverlay = document.getElementById('page-overlay');
+    const panelDetalle = document.getElementById('panelDetalle');
     const searchCounter = document.getElementById('search-counter');
     const searchRemoteInfo = document.getElementById('search-remote-info');
     const prevMatchBtn = document.getElementById('prevMatchBtn');
@@ -1043,6 +1044,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return td;
         };
 
+        // Guardado para que el panel de detalle arme las mismas celdas de fotos+datos.
+        pedido._render = {
+            productoNombre, precioFormateado, fechaFormateada, vendedor,
+            datosProductoTexto, datosPromocionTexto, orderPhotoUrls, promoPhotoUrls,
+            telefonoOriginal, estatus, comentarios, consecutiveOrderNumber,
+            telefonoDuplicado: ordersToHighlight.has(pedido.id),
+            createDatosCell
+        };
+
         // Red de seguridad: pedidos registrados automáticamente por la IA. Mientras nadie
         // los revise (aiReviewStatus === 'pending') la fila queda resaltada y el badge 🤖
         // es un botón para marcarlos como revisados; ya aprobados, queda el badge informativo.
@@ -1066,81 +1076,28 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         tr.appendChild(numeroTd);
-        tr.appendChild(createTd(fechaFormateada));
-        tr.appendChild(createTd(vendedor, true));
 
-        const telefonoTd = document.createElement('td');
-        const phoneActionsContainer = document.createElement('div');
-        phoneActionsContainer.className = 'phone-actions-container';
-
-        if (telefonoOriginal !== '-') {
-            const checkboxContainer = document.createElement('label');
-            checkboxContainer.className = 'phone-checkbox-container';
-            checkboxContainer.title = 'Marcar como verificado';
-
-            const checkboxInput = document.createElement('input');
-            checkboxInput.type = 'checkbox';
-            checkboxInput.checked = pedido.telefonoVerificado === true;
-            checkboxInput.dataset.action = 'toggle-phone-verified';
-            checkboxInput.dataset.orderId = pedido.id;
-
-            const checkmarkSpan = document.createElement('span');
-            checkmarkSpan.className = 'checkmark';
-
-            checkboxContainer.appendChild(checkboxInput);
-            checkboxContainer.appendChild(checkmarkSpan);
-            phoneActionsContainer.appendChild(checkboxContainer);
+        // Producto arriba, datos del pedido abajo. No hay campo de nombre del cliente:
+        // el nombre viene embebido en datosProducto ("Nombres: X y Y | Fecha: ...").
+        const productoTd = createTd('');
+        productoTd.className = 'celda-producto';
+        const nombreSpan = document.createElement('span');
+        nombreSpan.className = 'cp-nombre';
+        // textContent (no innerHTML): items[].producto puede venir del cliente vía pedidos
+        // registrados por la IA (ej. el "personaje" de la lámpara infantil) — XSS si se inyecta.
+        if (productoNombre === null) {
+            nombreSpan.innerHTML = '<em>N/A</em>';
+        } else {
+            nombreSpan.textContent = productoNombre;
         }
-
-        const telefonoSpan = document.createElement('span');
-        telefonoSpan.textContent = telefonoOriginal;
-        if (telefonoOriginal !== '-') {
-            // Click en el número → abre la conversación del CRM en un modal.
-            telefonoSpan.classList.add('phone-number-clickable');
-            telefonoSpan.dataset.action = 'open-chat';
-            telefonoSpan.dataset.phone = telefonoOriginal;
-            telefonoSpan.title = 'Ver conversación del CRM';
-        }
-        if (ordersToHighlight.has(pedido.id)) {
-            telefonoSpan.style.color = 'red';
-            telefonoSpan.style.fontWeight = 'bold';
-            telefonoSpan.title = 'Este número fue registrado múltiples veces en menos de 24 horas.';
-        }
-        phoneActionsContainer.appendChild(telefonoSpan);
-
-        if (telefonoOriginal !== '-') {
-            const copyButton = document.createElement('button');
-            copyButton.className = 'copy-phone-button';
-            copyButton.title = 'Copiar teléfono';
-            copyButton.innerHTML = '<i class="fas fa-copy"></i>';
-            copyButton.dataset.action = 'copy-phone';
-            copyButton.dataset.phone = telefonoOriginal;
-            phoneActionsContainer.appendChild(copyButton);
-        }
-        telefonoTd.appendChild(phoneActionsContainer);
-        tr.appendChild(telefonoTd);
+        productoTd.appendChild(nombreSpan);
+        const datosSpan = document.createElement('span');
+        datosSpan.className = 'cp-datos';
+        datosSpan.textContent = datosProductoTexto;
+        productoTd.appendChild(datosSpan);
+        tr.appendChild(productoTd);
 
         const estatusTdCell = createTd('');
-        const statusActionsContainer = document.createElement('div');
-        statusActionsContainer.className = 'status-actions-container';
-
-        const checkboxContainerEstatus = document.createElement('label');
-        checkboxContainerEstatus.className = 'status-checkbox-container';
-        checkboxContainerEstatus.title = 'Marcar como verificado';
-
-        const checkboxInputEstatus = document.createElement('input');
-        checkboxInputEstatus.type = 'checkbox';
-        checkboxInputEstatus.checked = pedido.estatusVerificado === true;
-        checkboxInputEstatus.dataset.action = 'toggle-status-verified';
-        checkboxInputEstatus.dataset.orderId = pedido.id;
-
-        const checkmarkSpanEstatus = document.createElement('span');
-        checkmarkSpanEstatus.className = 'checkmark';
-
-        checkboxContainerEstatus.appendChild(checkboxInputEstatus);
-        checkboxContainerEstatus.appendChild(checkmarkSpanEstatus);
-        statusActionsContainer.appendChild(checkboxContainerEstatus);
-
         const estatusSpan = document.createElement('span');
         estatusSpan.className = `status-display status-${estatus.toLowerCase().replace(/\s+/g, '-')}`;
         estatusSpan.textContent = estatus;
@@ -1148,72 +1105,205 @@ document.addEventListener('DOMContentLoaded', () => {
         estatusSpan.dataset.action = 'change-status';
         estatusSpan.dataset.orderId = pedido.id;
         estatusSpan.dataset.status = estatus;
-        statusActionsContainer.appendChild(estatusSpan);
-
-        estatusTdCell.appendChild(statusActionsContainer);
+        estatusTdCell.appendChild(estatusSpan);
         tr.appendChild(estatusTdCell);
 
-        const comentariosTd = createTd(comentarios);
-        comentariosTd.classList.add('comment-cell');
-        comentariosTd.dataset.fullText = comentarios;
-        comentariosTd.title = 'Doble clic para ver el comentario completo';
-        tr.appendChild(comentariosTd);
-
-        // textContent (no innerHTML): items[].producto puede venir del cliente vía pedidos
-        // registrados por la IA (ej. el "personaje" de la lámpara infantil) — XSS si se inyecta.
-        if (productoNombre === null) {
-            tr.appendChild(createTd('<em>N/A</em>', true));
-        } else {
-            tr.appendChild(createTd(productoNombre));
-        }
-        tr.appendChild(createDatosCell(orderPhotoUrls, datosProductoTexto, consecutiveOrderNumber, 'Pedido'));
-        tr.appendChild(createDatosCell(promoPhotoUrls, datosPromocionTexto, consecutiveOrderNumber, 'Promo'));
         tr.appendChild(createTd(precioFormateado));
 
-        const accionesTd = createTd('');
-        const editButton = document.createElement('button');
-        editButton.className = 'action-button edit-button';
-        editButton.innerHTML = '<i class="fas fa-edit"></i> Editar';
-        editButton.title = 'Editar Pedido';
-        editButton.dataset.action = 'edit';
-        editButton.dataset.orderId = pedido.id;
-        accionesTd.appendChild(editButton);
-
-        // Boton OXXO: genera referencia de pago y la copia para mandar por WhatsApp
-        const oxxoButton = document.createElement('button');
-        const oxxoEstado = pedido.oxxo?.status;
-        if (oxxoEstado === 'approved') {
-            oxxoButton.className = 'action-button oxxo-button oxxo-paid';
-            oxxoButton.innerHTML = '<i class="fas fa-check-circle"></i> OXXO Pagado';
-            oxxoButton.title = 'Pago OXXO acreditado';
-        } else if (oxxoEstado === 'pending') {
-            oxxoButton.className = 'action-button oxxo-button oxxo-pending';
-            oxxoButton.innerHTML = '<i class="fas fa-clock"></i> OXXO Pendiente';
-            oxxoButton.title = 'Ver referencia OXXO';
-        } else {
-            oxxoButton.className = 'action-button oxxo-button';
-            oxxoButton.innerHTML = '<i class="fas fa-store"></i> OXXO';
-            oxxoButton.title = 'Generar referencia de pago OXXO';
-        }
-        oxxoButton.dataset.action = 'oxxo';
-        oxxoButton.dataset.orderId = pedido.id;
-        accionesTd.appendChild(oxxoButton);
-
-        const deleteButton = document.createElement('button');
-        deleteButton.className = 'action-button delete-button';
-        deleteButton.innerHTML = '<i class="fas fa-trash-alt"></i> Borrar';
-        deleteButton.title = 'Borrar Pedido';
-        deleteButton.dataset.action = 'delete';
-        deleteButton.dataset.orderId = pedido.id;
-        accionesTd.appendChild(deleteButton);
-        tr.appendChild(accionesTd);
-
-        // Texto buscable cacheado al construir la fila. Antes cada tecla recorría los 11 td
-        // (y sus nodos de texto) de TODAS las filas cargadas; ahora el recorrido caro sólo
-        // ocurre en las filas que ya sabemos que coinciden.
-        tr.dataset.searchText = collectSearchText(tr).toLowerCase();
+        // Texto buscable cacheado al construir la fila. Ahora la fila muestra menos campos,
+        // así que se le suman los que se fueron al panel: si no, buscar un teléfono o un
+        // comentario dejaría de encontrar filas que sí coinciden.
+        tr.dataset.searchText = [
+            collectSearchText(tr),
+            telefonoOriginal, comentarios, fechaFormateada, vendedor, datosPromocionTexto
+        ].join(' ').toLowerCase();
 
         return tr;
+    }
+
+    // --- Panel de detalle -----------------------------------------------------------
+    // Todo lo que ya no cabe en la lista. Los controles conservan sus mismos data-action,
+    // y la delegación se engancha también al panel (ver enlazarAccionesPedido).
+    function renderPanelDetalle(pedidoId) {
+        if (!panelDetalle) return;
+        const pedido = pedidoId ? pedidosDataMap.get(pedidoId) : null;
+
+        if (!pedido || !pedido._render) {
+            panelDetalle.innerHTML = `<p class="panel-vacio"><i class="fas fa-hand-pointer"></i>Selecciona un pedido de la lista para ver todos sus datos aquí.</p>`;
+            return;
+        }
+        const r = pedido._render;
+        panelDetalle.innerHTML = '';
+        panelDetalle.dataset.id = pedido.id;
+
+        const enc = document.createElement('div');
+        enc.className = 'panel-encabezado';
+        const num = document.createElement('span');
+        num.className = 'panel-num';
+        num.textContent = r.consecutiveOrderNumber !== 'N/A' ? `DH${r.consecutiveOrderNumber}` : 'N/A';
+        enc.appendChild(num);
+
+        const estatusSpan = document.createElement('span');
+        estatusSpan.className = `status-display status-${r.estatus.toLowerCase().replace(/\s+/g, '-')}`;
+        estatusSpan.textContent = r.estatus;
+        estatusSpan.title = 'Clic para cambiar estatus';
+        estatusSpan.dataset.action = 'change-status';
+        estatusSpan.dataset.orderId = pedido.id;
+        estatusSpan.dataset.status = r.estatus;
+        enc.appendChild(estatusSpan);
+
+        const chkEstatus = document.createElement('label');
+        chkEstatus.className = 'status-checkbox-container';
+        chkEstatus.title = 'Marcar estatus como verificado';
+        const chkEstatusIn = document.createElement('input');
+        chkEstatusIn.type = 'checkbox';
+        chkEstatusIn.checked = pedido.estatusVerificado === true;
+        chkEstatusIn.dataset.action = 'toggle-status-verified';
+        chkEstatusIn.dataset.orderId = pedido.id;
+        const chkEstatusMark = document.createElement('span');
+        chkEstatusMark.className = 'checkmark';
+        chkEstatus.appendChild(chkEstatusIn);
+        chkEstatus.appendChild(chkEstatusMark);
+        enc.appendChild(chkEstatus);
+
+        if (pedido.registeredByAI === true) {
+            const aiTag = document.createElement('span');
+            aiTag.className = 'ai-order-badge';
+            aiTag.textContent = '🤖';
+            aiTag.title = 'Pedido registrado por la IA.';
+            enc.appendChild(aiTag);
+        }
+
+        const fecha = document.createElement('span');
+        fecha.className = 'panel-fecha';
+        fecha.textContent = r.fechaFormateada;
+        enc.appendChild(fecha);
+        panelDetalle.appendChild(enc);
+
+        const campos = document.createElement('dl');
+        campos.className = 'panel-campos';
+
+        const addCampo = (titulo, nodo) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'panel-campo';
+            const dt = document.createElement('dt');
+            dt.textContent = titulo;
+            const dd = document.createElement('dd');
+            if (typeof nodo === 'string') dd.textContent = nodo; else dd.appendChild(nodo);
+            wrap.appendChild(dt);
+            wrap.appendChild(dd);
+            campos.appendChild(wrap);
+            return dd;
+        };
+
+        // Teléfono con su checkbox de verificado, el clic al chat y el botón de copiar.
+        const telWrap = document.createElement('div');
+        telWrap.className = 'phone-actions-container';
+        if (r.telefonoOriginal !== '-') {
+            const chkTel = document.createElement('label');
+            chkTel.className = 'phone-checkbox-container';
+            chkTel.title = 'Marcar como verificado';
+            const chkTelIn = document.createElement('input');
+            chkTelIn.type = 'checkbox';
+            chkTelIn.checked = pedido.telefonoVerificado === true;
+            chkTelIn.dataset.action = 'toggle-phone-verified';
+            chkTelIn.dataset.orderId = pedido.id;
+            const chkTelMark = document.createElement('span');
+            chkTelMark.className = 'checkmark';
+            chkTel.appendChild(chkTelIn);
+            chkTel.appendChild(chkTelMark);
+            telWrap.appendChild(chkTel);
+        }
+        const telSpan = document.createElement('span');
+        telSpan.textContent = r.telefonoOriginal;
+        if (r.telefonoOriginal !== '-') {
+            telSpan.classList.add('phone-number-clickable');
+            telSpan.dataset.action = 'open-chat';
+            telSpan.dataset.phone = r.telefonoOriginal;
+            telSpan.title = 'Ver conversación del CRM';
+        }
+        if (r.telefonoDuplicado) {
+            telSpan.style.color = 'red';
+            telSpan.style.fontWeight = 'bold';
+            telSpan.title = 'Este número fue registrado múltiples veces en menos de 24 horas.';
+        }
+        telWrap.appendChild(telSpan);
+        if (r.telefonoOriginal !== '-') {
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-phone-button';
+            copyBtn.title = 'Copiar teléfono';
+            copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
+            copyBtn.dataset.action = 'copy-phone';
+            copyBtn.dataset.phone = r.telefonoOriginal;
+            telWrap.appendChild(copyBtn);
+        }
+        addCampo('Teléfono', telWrap);
+
+        addCampo('Vendedor', r.vendedor.replace(/<[^>]*>/g, '') || 'N/A');
+
+        // createDatosCell devuelve un <td>; en el panel se usa su contenido.
+        const datosProdTd = r.createDatosCell(r.orderPhotoUrls, r.datosProductoTexto, r.consecutiveOrderNumber, 'Pedido');
+        addCampo('Datos del producto', datosProdTd.firstChild);
+
+        const datosPromoTd = r.createDatosCell(r.promoPhotoUrls, r.datosPromocionTexto, r.consecutiveOrderNumber, 'Promo');
+        addCampo('Promoción', datosPromoTd.firstChild);
+
+        const ddComentarios = addCampo('Comentarios', r.comentarios);
+        ddComentarios.classList.add('panel-comentarios');
+        ddComentarios.title = 'Doble clic para verlo completo';
+        addCampo('Precio', r.precioFormateado).classList.add('panel-precio');
+        panelDetalle.appendChild(campos);
+
+        const acciones = document.createElement('div');
+        acciones.className = 'panel-acciones';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'action-button edit-button';
+        editBtn.innerHTML = '<i class="fas fa-edit"></i> Editar';
+        editBtn.title = 'Editar Pedido';
+        editBtn.dataset.action = 'edit';
+        editBtn.dataset.orderId = pedido.id;
+        acciones.appendChild(editBtn);
+
+        // Boton OXXO: genera referencia de pago y la copia para mandar por WhatsApp
+        const oxxoBtn = document.createElement('button');
+        const oxxoEstado = pedido.oxxo?.status;
+        if (oxxoEstado === 'approved') {
+            oxxoBtn.className = 'action-button oxxo-button oxxo-paid';
+            oxxoBtn.innerHTML = '<i class="fas fa-check-circle"></i> OXXO Pagado';
+            oxxoBtn.title = 'Pago OXXO acreditado';
+        } else if (oxxoEstado === 'pending') {
+            oxxoBtn.className = 'action-button oxxo-button oxxo-pending';
+            oxxoBtn.innerHTML = '<i class="fas fa-clock"></i> OXXO Pendiente';
+            oxxoBtn.title = 'Ver referencia OXXO';
+        } else {
+            oxxoBtn.className = 'action-button oxxo-button';
+            oxxoBtn.innerHTML = '<i class="fas fa-store"></i> OXXO';
+            oxxoBtn.title = 'Generar referencia de pago OXXO';
+        }
+        oxxoBtn.dataset.action = 'oxxo';
+        oxxoBtn.dataset.orderId = pedido.id;
+        acciones.appendChild(oxxoBtn);
+
+        if (pedido.registeredByAI === true && pedido.aiReviewStatus === 'pending') {
+            const aiBtn = document.createElement('button');
+            aiBtn.className = 'ai-order-badge ai-order-badge--pending';
+            aiBtn.innerHTML = '🤖 Marcar revisado';
+            aiBtn.title = 'Marcar este pedido de la IA como revisado.';
+            aiBtn.dataset.action = 'approve-ai-order';
+            aiBtn.dataset.orderId = pedido.id;
+            acciones.appendChild(aiBtn);
+        }
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'action-button delete-button';
+        delBtn.innerHTML = '<i class="fas fa-trash-alt"></i> Borrar';
+        delBtn.title = 'Borrar Pedido';
+        delBtn.dataset.action = 'delete';
+        delBtn.dataset.orderId = pedido.id;
+        acciones.appendChild(delBtn);
+
+        panelDetalle.appendChild(acciones);
     }
 
     // Mismo criterio de exclusión que highlightTextInNode: si aquí contara el texto de
@@ -1242,7 +1332,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (orders.length === 0 && !append) {
-            cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="empty-cell">Aún no hay pedidos registrados que coincidan con los filtros. 😊</td></tr>`;
+            cuerpoTablaPedidos.innerHTML = `<tr><td colspan="4" class="empty-cell">Aún no hay pedidos registrados que coincidan con los filtros. 😊</td></tr>`;
             return;
         }
 
@@ -1258,7 +1348,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pedidosPagination.hasMore) {
             const sentinel = document.createElement('tr');
             sentinel.className = 'loading-sentinel';
-            sentinel.innerHTML = `<td colspan="11" class="loading-cell" style="padding: 12px; text-align: center; opacity: 0.5;"><i class="fas fa-spinner fa-spin"></i> Cargando más...</td>`;
+            sentinel.innerHTML = `<td colspan="4" class="loading-cell" style="padding: 12px; text-align: center; opacity: 0.5;"><i class="fas fa-spinner fa-spin"></i> Cargando más...</td>`;
             cuerpoTablaPedidos.appendChild(sentinel);
         }
 
@@ -1272,6 +1362,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentlySelectedRow = null;
             }
         }
+        // El panel se repinta con los datos recién traídos: si no, tras un refresco en
+        // vivo seguiría mostrando el estatus o el precio viejos del pedido abierto.
+        renderPanelDetalle(selectedRowId);
 
         if (document.body.classList.contains('search-active')) {
             performSearch(false);
@@ -1319,7 +1412,7 @@ document.addEventListener('DOMContentLoaded', () => {
         pedidosDataMap.clear();
 
         if (!silent) {
-            cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando pedidos lindos...</td></tr>`;
+            cuerpoTablaPedidos.innerHTML = `<tr><td colspan="4" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando pedidos lindos...</td></tr>`;
         }
 
         try {
@@ -1350,7 +1443,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setupRealtimeListener(filters);
         } catch (error) {
             console.error("Error al obtener pedidos:", error);
-            cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="empty-cell" style="color: #d9534f;">Hubo un error al cargar los pedidos.</td></tr>`;
+            cuerpoTablaPedidos.innerHTML = `<tr><td colspan="4" class="empty-cell" style="color: #d9534f;">Hubo un error al cargar los pedidos.</td></tr>`;
         }
     }
 
@@ -1941,11 +2034,8 @@ document.addEventListener('DOMContentLoaded', () => {
             searchInput.select();
             return;
         }
-        if (currentlySelectedRow) {
-            currentlySelectedRow.classList.remove('selected-row');
-            currentlySelectedRow = null;
-            selectedRowId = null;
-        }
+        // La selección ya NO se limpia al buscar: es la que alimenta el panel de detalle,
+        // y perderla dejaría el panel en blanco cada vez que se abre el buscador.
         searchBarContainer.style.display = 'flex';
         document.body.classList.add('search-active');
         searchInput.focus();
@@ -2052,8 +2142,15 @@ document.addEventListener('DOMContentLoaded', () => {
             row.querySelectorAll('td').forEach(cell => {
                 highlightTextInNode(cell, regex, searchMatches, cell);
             });
-            if (row.querySelector('mark.search-highlight-text')) {
-                row.classList.add('search-match');
+            row.classList.add('search-match');
+
+            // El texto buscable incluye campos que ahora viven en el panel (teléfono,
+            // comentarios, fecha…). Si la coincidencia está sólo ahí no hay nada que
+            // resaltar en la fila: sin esto, buscar un teléfono daría 0/0 aunque la fila
+            // sí coincida. Se ancla la navegación al número de pedido.
+            if (!row.querySelector('mark.search-highlight-text')) {
+                row.classList.add('search-match-en-detalle');
+                if (row.cells[0]) searchMatches.push({ element: row.cells[0], cell: row.cells[0] });
             }
         });
 
@@ -2866,11 +2963,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        cuerpoTablaPedidos.addEventListener('click', (e) => {
+        // Un solo manejador para la tabla y para el panel: los controles se mudaron al
+        // panel con sus mismos data-action, así que duplicar la lógica sería pedir que se
+        // desincronice. Devuelve true si atendió un [data-action].
+        const manejarAccionPedido = (e) => {
             const actionEl = e.target.closest('[data-action]');
             if (actionEl) {
                 const action = actionEl.dataset.action;
-                const orderId = actionEl.dataset.orderId || actionEl.closest('tr')?.dataset.id;
+                const orderId = actionEl.dataset.orderId || actionEl.closest('tr')?.dataset.id || panelDetalle?.dataset.id;
 
                 if (action === 'view-photo') {
                     e.stopPropagation();
@@ -2911,27 +3011,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     e.stopPropagation();
                     marcarPedidoIARevisado(orderId, actionEl);
                 }
-                return;
+                return true;
             }
+            return false;
+        };
 
-            // Row selection (no action element clicked)
+        cuerpoTablaPedidos.addEventListener('click', (e) => {
+            if (manejarAccionPedido(e)) return;
+
+            // Selección de fila: es lo que alimenta el panel de detalle, así que a
+            // diferencia de antes NO se apaga durante la búsqueda ni se alterna al
+            // volver a hacer clic — el panel siempre muestra la fila marcada.
             const tr = e.target.closest('tr');
-            if (!tr || e.target.closest('button, a, .status-display, input, select, textarea, img')) return;
-            if (document.body.classList.contains('search-active')) return;
+            if (!tr || !tr.dataset.id) return;
+            if (e.target.closest('button, a, .status-display, input, select, textarea, img')) return;
 
-            const isCurrentlySelected = tr.classList.contains('selected-row');
             if (currentlySelectedRow) currentlySelectedRow.classList.remove('selected-row');
-            if (!isCurrentlySelected) {
-                tr.classList.add('selected-row');
-                currentlySelectedRow = tr;
-                selectedRowId = tr.dataset.id;
-            } else {
-                currentlySelectedRow = null;
-                selectedRowId = null;
-            }
+            tr.classList.add('selected-row');
+            currentlySelectedRow = tr;
+            selectedRowId = tr.dataset.id;
+            renderPanelDetalle(selectedRowId);
         });
 
-        cuerpoTablaPedidos.addEventListener('change', (e) => {
+        const manejarCambioPedido = (e) => {
             const actionEl = e.target.closest('[data-action]');
             if (!actionEl) return;
             const action = actionEl.dataset.action;
@@ -2944,7 +3046,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 actualizarVerificacionEstatus(orderId, e.target.checked);
             }
-        });
+        };
+        cuerpoTablaPedidos.addEventListener('change', manejarCambioPedido);
+
+        if (panelDetalle) {
+            panelDetalle.addEventListener('click', manejarAccionPedido);
+            panelDetalle.addEventListener('change', manejarCambioPedido);
+            panelDetalle.addEventListener('dblclick', (e) => {
+                const dd = e.target.closest('.panel-campo dd.panel-comentarios');
+                if (dd) abrirModalComentario(dd.textContent);
+            });
+            renderPanelDetalle(null);
+        }
     }
     
     // --- Centralized Keydown Handler ---

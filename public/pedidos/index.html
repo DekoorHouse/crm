@@ -23,7 +23,7 @@
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 
     <link rel="stylesheet" href="/style.css">
-    <link rel="stylesheet" href="/pedidos/style.css?v=6">
+    <link rel="stylesheet" href="/pedidos/style.css?v=7">
 </head>
 <body>
 
@@ -111,33 +111,31 @@
 
         <button id="btnMostrarFormularioPedido"><i class="fas fa-plus-circle"></i> Registrar Nuevo Pedido</button>
         <div id="mensajeConfirmacion"></div>
-        <div class="tabla-container-wrapper content-box">
-              <div class="tabla-container">
-                  <table id="tablaPedidos">
-                      <thead>
-                          <tr>
-                              <th># Pedido</th>
-                              <th>Fecha y Hora</th>
-                              <th>Vendedor</th>
-                              <th>Teléfono</th>
-                              <th>Estatus</th>
-                              <th>Comentarios</th>
-                              <th>Producto</th>
-                              <th>Datos Producto</th>
-                              <th>Promoción</th>
-                              <th>Precio</th>
-                              <th>Acciones</th>
-                          </tr>
-                      </thead>
-                      <tbody id="cuerpoTablaPedidos">
-                          <tr>
-                              <td colspan="11" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando pedidos lindos...</td>
-                          </tr>
-                      </tbody>
-                  </table>
-              </div>
-              <button id="scrollToTopBtn" title="Ir arriba"><i class="fas fa-arrow-up"></i></button>
-         </div>
+        <!-- Lista angosta + panel de detalle. La lista se queda con lo que se escanea; el
+             resto del pedido (teléfono, fotos, comentarios, acciones) vive en el panel. -->
+        <div class="pedidos-split">
+            <div class="tabla-container-wrapper">
+                  <div class="tabla-container">
+                      <table id="tablaPedidos">
+                          <thead>
+                              <tr>
+                                  <th># Pedido</th>
+                                  <th>Producto y datos</th>
+                                  <th>Estatus</th>
+                                  <th>Precio</th>
+                              </tr>
+                          </thead>
+                          <tbody id="cuerpoTablaPedidos">
+                              <tr>
+                                  <td colspan="4" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando pedidos lindos...</td>
+                              </tr>
+                          </tbody>
+                      </table>
+                  </div>
+                  <button id="scrollToTopBtn" title="Ir arriba"><i class="fas fa-arrow-up"></i></button>
+             </div>
+             <aside id="panelDetalle" class="panel-detalle" aria-live="polite"></aside>
+        </div>
 
     </div>
 
@@ -457,7 +455,7 @@
 <!-- Adjunta el ID token de Firebase a todo fetch hacia /api (lo pide server/apiAuth.js) -->
 <script src="/js/auth-fetch.js?v=1"></script>
 <!-- Link to external JS file -->
-<script type="module" src="/pedidos/script.js?v=8"></script>
+<script type="module" src="/pedidos/script.js?v=9"></script>
 
 </body>
 </html>
