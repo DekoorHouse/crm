@@ -301,12 +301,14 @@ function arreglaConjunciones(t) {
 }
 
 // ¿Qué lámparas de personaje puede cortar solo el worker?
-// `eligible` es TODO O NADA a propósito: basta que UNA lámpara del pedido no se pueda (sin plantilla,
-// con foto grabada, datos ilegibles…) para que el pedido ENTERO se vaya a diseño manual. Antes
-// devolvía eligible:true con un flag `completo` aparte, y como `isAutoWaiting` solo miraba `eligible`,
-// el CRM sacaba el pedido de "Pendientes" pero el worker no lo cortaba: quedaba en un limbo, invisible
-// para todos. El predicado del CRM y el candado del worker tienen que ser EL MISMO (ver cabecera).
-// `reason` del NO: sin_items | sin_plantilla | mixto.  `manuales` explica el porqué (para el log/UI).
+// PEDIDOS MIXTOS (Chris, 2026-08-07): si un pedido trae dos productos, uno especial y uno que la skill
+// sí sabe hacer, se corta el que se pueda y queda pendiente SOLO el que no. Por eso `eligible` es true
+// en cuanto UNA lámpara sea cortable, y `completo` dice si quedó algo para el humano.
+// OJO — lo que hace segura esa parcialidad está en el WORKER, no aquí: al marcar un pedido incompleto
+// NO se le cambia el estatus y se le pone `designForce`, para que siga a la vista en "Pendientes" por
+// su lámpara especial. Sin eso el pedido desaparecería de la única lista que mira una persona: el CRM
+// saca de "Pendientes" todo lo que el worker va a cortar (apiRoutes:8424).
+// `reason` del NO: sin_items | sin_plantilla.  `manuales` explica qué quedó fuera (log/UI).
 function personajeEligibility(o, previews) {
     const items = Array.isArray(o.items) && o.items.length ? o.items
         : (o.datosProducto || o.producto ? [{ producto: o.producto, datosProducto: o.datosProducto }] : []);
@@ -342,8 +344,7 @@ function personajeEligibility(o, previews) {
         }
     }
     if (!lamparas.length) return { eligible: false, reason: items.length ? 'sin_plantilla' : 'sin_items', lamparas: [], manuales, completo: false };
-    if (manuales.length) return { eligible: false, reason: 'mixto', lamparas, manuales, completo: false };
-    return { eligible: true, reason: 'ok', lamparas, manuales, completo: true };
+    return { eligible: true, reason: 'ok', lamparas, manuales, completo: !manuales.length };
 }
 
 function isPersonajeAutoWaiting(o, previews) {

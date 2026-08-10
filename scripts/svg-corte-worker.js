@@ -532,12 +532,14 @@ async function findPersonajeLamps() {
         const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
         const previews = prev.exists ? (prev.data().previews || []) : [];
         const el = personajeEligibility(o, previews);
-        if (!el.eligible) {
-            if (el.reason === 'mixto') log(`  ~ ${dhOf(o)} tiene lámparas que la skill no hace (${el.manuales.map(m => m.motivo).join(',')}) -> pedido completo a manual`);
-            continue;
-        }
+        if (!el.eligible) continue;
+        // Pedido MIXTO: se corta lo que la skill sabe y queda pendiente SOLO lo que no (Chris,
+        // 2026-08-07). Al marcarlo NO se le cambia el estatus y se le pone designForce, para que siga
+        // a la vista en "Pendientes" por la lámpara que falta.
+        if (!el.completo) log(`  ~ ${dhOf(o)} es mixto: se cortan ${el.lamparas.length} lámpara(s) y queda(n) ${el.manuales.length} a mano (${el.manuales.map(m => m.motivo).join(',')})`);
         const paidMs = ms(o.comprobanteValidadoAt) || ms(o.confirmedAt) || ms(o.createdAt);
-        el.lamparas.forEach((l, i) => lamps.push({ o, video, tpl: l.tpl, nombre: l.nombre, delMockup: l.delMockup, paidMs, i, total: el.lamparas.length }));
+        el.lamparas.forEach((l, i) => lamps.push({ o, video, completo: el.completo, pendientes: el.manuales.length,
+            tpl: l.tpl, nombre: l.nombre, delMockup: l.delMockup, paidMs, i, total: el.lamparas.length }));
     }
     // Más antiguos primero, y las lámparas del MISMO pedido juntas, para que se emparejen entre ellas
     // antes que con las de otro pedido (menos hojas a medias y menos pedidos partidos).
@@ -608,7 +610,11 @@ async function processPersonajeSheets(sheets) {
     let ok = 0;
     for (const bloque of bloquesDeHojas(sheets)) {
         const pedidos = new Map();
-        for (const h of bloque.hojas) for (const l of h) if (!pedidos.has(l.o.id)) pedidos.set(l.o.id, l.o);
+        const info = new Map();   // por pedido: si quedó algo a mano
+        for (const h of bloque.hojas) for (const l of h) {
+            if (!pedidos.has(l.o.id)) pedidos.set(l.o.id, l.o);
+            if (!info.has(l.o.id)) info.set(l.o.id, { completo: l.completo !== false, pendientes: l.pendientes || 0 });
+        }
         const dhs = [...pedidos.values()].map(dhOf);
         const video = bloque.hojas.flat().some(l => l.video);
 
@@ -676,7 +682,15 @@ async function processPersonajeSheets(sheets) {
             };
             // Los que pidieron VIDEO se quedan en 'Corregir': el pendiente del video sigue vivo hasta
             // que el equipo lo grabe y lo mande (misma regla que el corte de corazones).
-            if (!video) upd.estatus = NEW_STATUS;
+            const mixto = !info.get(id).completo;
+            if (!video && !mixto) upd.estatus = NEW_STATUS;
+            if (mixto) {
+                // Se corto SU parte, pero al pedido le queda una lampara especial. NO se marca como
+                // diseñado —eso escondería el pendiente— y designForce lo mantiene en "Pendientes":
+                // el CRM lo respeta aunque el pedido ya tenga svgCorteAt (designPending.js:170).
+                upd.designForce = true;
+                log(`  ! ${dhOf(o)} cortado a medias a proposito: le quedan ${info.get(id).pendientes} lampara(s) a mano -> sigue en Pendientes`);
+            }
             await db.collection('pedidos').doc(String(id)).update(upd);
             try { await recomputeForContact(o.contactId || o.telefono); } catch (_) {}
         }
