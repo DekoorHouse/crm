@@ -1016,6 +1016,16 @@ const DURANGO_NOTE = `\n\n**SI EL CLIENTE ES DE DURANGO (recoger en tienda / pag
 // IDENTIDAD del asistente (cambio 8-ago-2026, decision de Chris): antes se llamaba "Andrea"
 // (femenino); ahora es "Leonel", HOMBRE, amable y caballeroso. Los clientes que ya trataban con
 // Andrea preguntan por ella, asi que hay una respuesta oficial: paso al departamento de corte.
+// Sin comprobante NO hay pago (casos DH14657 y DH14685, 9-ago-2026): en etapa de VENTA (flujo de
+// anticipo) Leonel dio por recibido el anticipo sin que el cliente mandara nada — en uno el cliente
+// solo escribio "ya te deposite $400" (texto) y en el OTRO solo contesto "Ok" y un pulgar. La regla
+// estricta vivia solo en el prompt de post-venta y en COMPROBANTE_COMMAND_NOTE (que se inyecta solo
+// en fase de pago), asi que el flujo de anticipo quedaba descubierto. Va global: todos los deptos y
+// ambas etapas.
+const PAYMENT_PROOF_NOTE = `
+
+**SIN COMPROBANTE NO HAY PAGO:** solo puedes decir que recibimos un pago o un ANTICIPO si en ESTA conversacion el cliente MANDO una IMAGEN o PDF del comprobante y tu lo pudiste ver. Que el cliente ESCRIBA \"ya te deposite\", \"ya hice la transferencia\", \"ya pague\", \"ya quedo\" —o que solo conteste \"ok\", \"va\" o un emoji— NO es comprobante: es texto. En esos casos agradece y PIDE con amabilidad la foto o captura del comprobante; NUNCA escribas \"recibimos tu anticipo\", \"ya nos llego tu pago\" ni digas que ya arrancamos su diseño. Jamas confirmes un pago por tu cuenta ni lo des por hecho porque el cliente prometio pagar.`;
+
 const IDENTITY_NOTE = `
 
 **QUIEN ERES:** Te llamas **Leonel** y eres HOMBRE. Habla SIEMPRE de ti en masculino (\"encantado\", \"estoy listo\", \"soy tu asesor\", \"quedo atento\") — NUNCA en femenino (\"encantada\", \"atenta\", \"asesora\"). Tu trato es AMABLE y CABALLEROSO: cordial, respetuoso y atento, con calidez pero sin coquetear. Si te preguntan tu nombre, di que eres Leonel; no lo repitas ni te presentes en cada mensaje si ya venias conversando. Aunque en el historial veas mensajes firmados con otro nombre, tu eres Leonel y jamas te presentas con otro nombre.
@@ -1066,7 +1076,7 @@ async function buildStaticContext(botInstructions, isPostVenta = false, paymentP
     }
 
     // Instrucciones van en systemInstruction, no en contents
-    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${isPostVenta ? REENVIO_COMMAND_NOTE : ''}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE : ''}${isPostVenta ? '' : INFANTIL_SPECIAL_NOTE}${DURANGO_NOTE}${NO_PERSONAL_PLANS_NOTE}${IDENTITY_NOTE}`;
+    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${isPostVenta ? REENVIO_COMMAND_NOTE : ''}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE : ''}${isPostVenta ? '' : INFANTIL_SPECIAL_NOTE}${DURANGO_NOTE}${NO_PERSONAL_PLANS_NOTE}${IDENTITY_NOTE}${PAYMENT_PROOF_NOTE}`;
 
     // Material de referencia va en contents (como contexto, no como instrucciones)
     const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo:** Si una de estas respuestas aplica perfectamente, puedes enviarla respondiendo ÚNICAMENTE con su atajo (ejemplo: responde exactamente "/ttt" y nada más); el sistema lo reemplazará automáticamente por su contenido completo, incluida cualquier imagen. También puedes escribir el contenido directamente si lo prefieres. NUNCA combines un atajo con más texto en el mismo mensaje.\n\n⚠️ **El cliente NO debe enterarse de que existen los atajos.** Son internos: él solo ve el texto ya expandido. Por eso NUNCA anuncies, presentes ni expliques un atajo, ni antes ni después ni en otro mensaje. PROHIBIDO escribir cosas como "te envío el comando", "te mando este otro", "usamos este comando para checar cobertura", "ahora te comparto la información de..." o dos puntos anunciando lo que sigue. Simplemente escribe el atajo SOLO (ej.: una línea que diga exactamente "/ttt") y nada más: el sistema pone el texto completo por ti y al cliente le llega una conversación natural. Si necesitas mandar dos atajos, ponlos cada uno en su propia línea, sin una sola palabra entre ellos.\n${quickReplies || 'No hay respuestas rápidas.'}`;
@@ -3404,7 +3414,38 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         const _ladaDigits = String(contactId || '').replace(/\D/g, '');
         const _ladaLocal = _ladaDigits.startsWith('521') ? _ladaDigits.slice(3) : (_ladaDigits.startsWith('52') ? _ladaDigits.slice(2) : _ladaDigits);
         const ladaNote = /^618\d{7}$/.test(_ladaLocal) ? '\n\n**Dato interno (lada):** el número de este cliente tiene lada de DURANGO (618); ES POSIBLE que sea de Durango, pero NO lo asumas ni le digas que "es de aquí": si viene al caso (recoger en tienda, pago al entregar), PREGÚNTALE con calidez para confirmarlo antes de ofrecérselo.' : '';
-        const finalUserText = `${ladaNote}${fechaActualNote}${departmentNote}${riNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        // ⚠️ SIN COMPROBANTE NO HAY PAGO (casos DH14657 / DH14685, 9-ago-2026): el cliente escribia
+        // "ya te deposite $400" —solo texto— y la IA daba por recibido el anticipo y arrancaba el
+        // diseño. La regla general del prompt no bastaba (queda enterrada entre ~12k tokens), asi que
+        // cuando se detecta el reclamo de pago SIN imagen/PDF reciente se le avisa aqui, en el turno,
+        // que es donde el modelo si lo ve. Kill-switch: crm_settings/general.avisoPagoSinComprobante=false.
+        let pagoSinComprobanteNote = '';
+        try {
+            if (generalSettings.avisoPagoSinComprobante !== false) {
+                const PROOF_MS = 6 * 60 * 60 * 1000;
+                const ahoraMs = Date.now();
+                const hayComprobante = messagesSnapshot.docs.some(mdoc => {
+                    const md = mdoc.data();
+                    if (md.from !== contactId) return false;
+                    if (md.type !== 'image' && md.type !== 'document') return false;
+                    const ts = (md.timestamp && typeof md.timestamp.toMillis === 'function') ? md.timestamp.toMillis() : 0;
+                    return ts > 0 && (ahoraMs - ts) <= PROOF_MS;
+                });
+                // Ultimos 3 mensajes del cliente: puede decir "ya deposite" y luego "ok".
+                const ultimosCliente = messagesSnapshot.docs
+                    .filter(mdoc => mdoc.data().from === contactId)
+                    .slice(0, 3)
+                    .map(mdoc => String(mdoc.data().text || ''))
+                    .join(' | ');
+                const DICE_PAGO_RE = /(ya (te )?(hice|mand[eé]|realic[eé]|envi[eé]|deposit[eé]|transfer[ií]|pagu[eé])|acabo de (pagar|depositar|transferir)|hice (el|la) (dep[oó]sito|transferencia|pago)|ya (est[aá]|qued[oó]) pagad|ya lo pagu[eé]|ya te (deposit|transfer|pagu)|te deposit[eé]|te transfer[ií])/i;
+                if (!hayComprobante && DICE_PAGO_RE.test(ultimosCliente)) {
+                    pagoSinComprobanteNote = '\n\n**⚠️ AVISO DEL SISTEMA — EL CLIENTE DICE QUE YA PAGÓ PERO NO HAY COMPROBANTE:** revisé la conversación y NO hay ninguna imagen ni PDF de comprobante suyo. Su pago NO está confirmado. Por lo tanto: NO le digas que recibimos su pago o su anticipo, NO lo des por pagado y NO le digas que ya arrancamos su diseño. Agradécele con calidez y pídele la FOTO o captura de su comprobante para validarlo (ej.: "¡Gracias! 🙌 ¿Me compartes la captura de tu comprobante para validarlo y arrancar enseguida? ✨").';
+                    console.log(`[AI] ${contactId} dice que pagó pero NO hay comprobante reciente; se avisa a la IA para que no lo confirme.`);
+                }
+            }
+        } catch (e) { console.warn('[AI] aviso pago-sin-comprobante falló (se continúa):', e.message); }
+
+        const finalUserText = `${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
