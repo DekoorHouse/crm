@@ -656,8 +656,11 @@ body.dark-mode .modal-image-nav-btn:disabled { background-color: #4a6572; }
 }
 #tablaPedidos th, #tablaPedidos td { padding: 8px 12px; border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: middle; white-space: nowrap; transition: background-color 0.3s ease, color 0.3s ease; }
 
-/* Anchos fijos: el alto de la fila deja de depender de cuánto texto traiga un pedido. */
-#tablaPedidos th:nth-child(1), #tablaPedidos td:nth-child(1) { width: 112px; }
+/* Anchos fijos: el alto de la fila deja de depender de cuánto texto traiga un pedido.
+   El overflow:hidden de la primera columna es una red de seguridad: con table-layout
+   fijo el contenido que no cabe NO se recorta solo, se dibuja encima de la columna
+   de al lado (fue justo lo que pasó con el badge de la IA). */
+#tablaPedidos th:nth-child(1), #tablaPedidos td:nth-child(1) { width: 136px; overflow: hidden; }
 #tablaPedidos th:nth-child(3), #tablaPedidos td:nth-child(3) { width: 152px; }
 #tablaPedidos th:nth-child(4), #tablaPedidos td:nth-child(4) { width: 94px; text-align: right; }
 #tablaPedidos tbody tr { height: 54px; }
@@ -842,9 +845,24 @@ body.dark-mode .status-sin-estatus { background-color: rgba(127,140,141,.24); co
 .panel-campo dd { margin: 0; font-size: 0.92em; word-break: break-word; white-space: pre-wrap; }
 .panel-campo dd.panel-precio { font-size: 1.3em; font-weight: 700; font-family: var(--font-heading); }
 
+/* Pegada al fondo del panel: con pedidos de datos largos las acciones quedaban abajo
+   del scroll y había que bajarle para encontrar Editar o Borrar. */
 .panel-acciones {
     display: flex; gap: 8px; flex-wrap: wrap;
-    margin-top: auto; padding-top: 14px; border-top: 1px solid var(--color-border);
+    margin-top: auto;
+    position: sticky;
+    bottom: -18px; /* compensa el padding inferior del panel */
+    padding: 14px 0;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-container-bg);
+}
+
+/* Badge de la IA en la lista: sólo el ícono, para no invadir la columna del producto. */
+.ai-order-badge--compacto {
+    padding: 1px 7px;
+    font-size: 0.85rem;
+    line-height: 1.3;
+    margin-left: 5px;
 }
 .panel-detalle .datos-container { white-space: normal; }
 .panel-detalle .panel-comentarios { cursor: pointer; }

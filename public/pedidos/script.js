@@ -1061,8 +1061,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (pedido.aiReviewStatus === 'pending') {
                 tr.classList.add('ai-pending-review');
                 const aiBtn = document.createElement('button');
-                aiBtn.className = 'ai-order-badge ai-order-badge--pending';
-                aiBtn.innerHTML = '🤖 Revisar';
+                // Compacto a propósito: con la palabra "Revisar" el badge medía 81px y se
+                // salía de la columna de 112px, encimándose sobre el producto. La acción
+                // completa ("Marcar revisado") vive en el panel de detalle.
+                aiBtn.className = 'ai-order-badge ai-order-badge--pending ai-order-badge--compacto';
+                aiBtn.innerHTML = '🤖';
                 aiBtn.title = `Pedido registrado automáticamente por la IA${pedido.aiConfidence != null ? ` (confianza ${pedido.aiConfidence}%)` : ''}. Verifica los datos y da clic para marcarlo como revisado. Si algo está mal, edítalo con el lápiz.`;
                 aiBtn.dataset.action = 'approve-ai-order';
                 aiBtn.dataset.orderId = pedido.id;
