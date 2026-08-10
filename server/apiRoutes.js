@@ -957,6 +957,36 @@ function applyOrdersDateFilter(query, filtros) {
         .where('createdAt', '<', admin.firestore.Timestamp.fromDate(rango.endDate));
 }
 
+/**
+ * Forma en que la tabla de /pedidos espera cada pedido. Lo comparten /orders/list y
+ * /orders/search: si se separan, la búsqueda devuelve filas que se pintan a medias.
+ */
+function mapOrderDoc(doc) {
+    const data = doc.data();
+    return {
+        id: doc.id,
+        consecutiveOrderNumber: data.consecutiveOrderNumber || null,
+        producto: data.producto || '',
+        telefono: data.telefono || '',
+        precio: data.precio || 0,
+        datosProducto: data.datosProducto || '',
+        datosPromocion: data.datosPromocion || '',
+        comentarios: data.comentarios || '',
+        fotoUrls: data.fotoUrls || (data.fotoUrl ? [data.fotoUrl] : []),
+        fotoPromocionUrls: data.fotoPromocionUrls || (data.fotoPromocionUrl ? [data.fotoPromocionUrl] : []),
+        estatus: data.estatus || 'Sin estatus',
+        telefonoVerificado: data.telefonoVerificado || false,
+        estatusVerificado: data.estatusVerificado || false,
+        createdAt: data.createdAt ? { _seconds: data.createdAt._seconds, _nanoseconds: data.createdAt._nanoseconds } : null,
+        vendedor: data.vendedor || '',
+        contactId: data.contactId || null,
+        // Red de seguridad de pedidos registrados por la IA (orders/aiOrderRegistration.js)
+        registeredByAI: data.registeredByAI === true,
+        aiReviewStatus: data.aiReviewStatus || null,
+        aiConfidence: data.aiConfidence != null ? data.aiConfidence : null,
+    };
+}
+
 // --- Endpoint GET /api/orders/list (Pedidos paginados con cursor) ---
 router.get('/orders/list', async (req, res) => {
     try {
@@ -985,31 +1015,7 @@ router.get('/orders/list', async (req, res) => {
         const hasMore = snapshot.docs.length > pageLimit;
         const docs = hasMore ? snapshot.docs.slice(0, pageLimit) : snapshot.docs;
 
-        const orders = docs.map(doc => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                consecutiveOrderNumber: data.consecutiveOrderNumber || null,
-                producto: data.producto || '',
-                telefono: data.telefono || '',
-                precio: data.precio || 0,
-                datosProducto: data.datosProducto || '',
-                datosPromocion: data.datosPromocion || '',
-                comentarios: data.comentarios || '',
-                fotoUrls: data.fotoUrls || (data.fotoUrl ? [data.fotoUrl] : []),
-                fotoPromocionUrls: data.fotoPromocionUrls || (data.fotoPromocionUrl ? [data.fotoPromocionUrl] : []),
-                estatus: data.estatus || 'Sin estatus',
-                telefonoVerificado: data.telefonoVerificado || false,
-                estatusVerificado: data.estatusVerificado || false,
-                createdAt: data.createdAt ? { _seconds: data.createdAt._seconds, _nanoseconds: data.createdAt._nanoseconds } : null,
-                vendedor: data.vendedor || '',
-                contactId: data.contactId || null,
-                // Red de seguridad de pedidos registrados por la IA (orders/aiOrderRegistration.js)
-                registeredByAI: data.registeredByAI === true,
-                aiReviewStatus: data.aiReviewStatus || null,
-                aiConfidence: data.aiConfidence != null ? data.aiConfidence : null,
-            };
-        });
+        const orders = docs.map(mapOrderDoc);
 
         const lastVisibleId = docs.length > 0 ? docs[docs.length - 1].id : null;
 
@@ -1017,6 +1023,146 @@ router.get('/orders/list', async (req, res) => {
     } catch (error) {
         console.error("Error fetching paginated orders:", error);
         res.status(500).json({ success: false, message: 'Error al obtener los pedidos.', error: error.message });
+    }
+});
+
+// --- Endpoint GET /api/orders/search (Búsqueda en TODA la colección) ---
+//
+// La tabla de /pedidos sólo tiene cargadas las filas del filtro de fecha activo, así que
+// buscar en el DOM nunca encontraba un pedido viejo, y peor: si había 2 coincidencias en
+// la vista se reportaban como el total, escondiendo las de meses anteriores.
+//
+// Dos modos según lo que se escriba:
+//   - exacto: número de pedido (DH1234 / 1234) o teléfono. Igualdad sobre UN solo campo y
+//     sin orderBy, para que Firestore lo resuelva con los índices automáticos de campo
+//     único. No requiere ningún índice compuesto nuevo.
+//   - texto: barrido con proyección (.select) sobre un rango de fechas, filtrado en
+//     memoria. Sólo acota por createdAt (rango de un campo, también auto-indexado);
+//     producto/estatus se filtran en memoria a propósito, para no depender de índices
+//     compuestos que en este proyecto se crean a mano en producción.
+//
+// El barrido cuesta 1 lectura por documento recorrido, de ahí los topes de abajo.
+const ORDERS_SEARCH_MAX_SCAN = 20000;
+const ORDERS_SEARCH_MAX_RESULTS = 300;
+const ORDERS_SEARCH_DEEP_MONTHS = 24;
+
+function normalizeSearchText(value) {
+    return (value == null ? '' : String(value))
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+}
+
+// Los teléfonos se guardaron con y sin lada país según la época (ver /orders/:num, que
+// hace slice(-10)). Sobre una muestra de 2000 pedidos aparecen largos de 10, 11, 12 y 13
+// dígitos, así que se consultan todas esas formas o los pedidos viejos no aparecen.
+function phoneQueryVariants(digits) {
+    const last10 = digits.slice(-10);
+    return [...new Set([digits, last10, `1${last10}`, `52${last10}`, `521${last10}`])]
+        .filter(Boolean).slice(0, 30);
+}
+
+function orderCreatedAtSeconds(order) {
+    return order.createdAt && order.createdAt._seconds ? order.createdAt._seconds : 0;
+}
+
+router.get('/orders/search', async (req, res) => {
+    try {
+        const { q, scope, producto, estatus, dateFilter, customStart, customEnd } = req.query;
+        const term = (q || '').toString().trim();
+        const deep = scope === 'todo';
+
+        if (term.length < 2) {
+            return res.status(200).json({
+                success: true, orders: [], total: 0, truncated: false, scanned: 0, mode: 'vacio', scope: deep ? 'todo' : 'filtro'
+            });
+        }
+
+        const digits = term.replace(/\D/g, '');
+        // "1234", "DH1234", "#1234", "81 1234 5678" -> búsqueda exacta por número o teléfono
+        const pareceIdentificador = digits.length > 0 && /^(dh)?[\s#-]*[\d\s-]+$/i.test(term);
+
+        // Las coincidencias exactas se SUMAN al barrido, no lo reemplazan: escribir "850"
+        // puede querer decir el pedido DH850 o los pedidos de $850, y hay que devolver
+        // ambos. Lo exacto además ignora el rango de fechas, que es justo lo que la tabla
+        // no podía hacer.
+        const exactos = new Map();
+        if (pareceIdentificador) {
+            if (digits.length <= 7) {
+                const snap = await db.collection('pedidos')
+                    .where('consecutiveOrderNumber', '==', Number(digits))
+                    .limit(ORDERS_SEARCH_MAX_RESULTS).get();
+                snap.docs.forEach(d => exactos.set(d.id, d));
+            }
+            if (digits.length >= 10) {
+                const snap = await db.collection('pedidos')
+                    .where('telefono', 'in', phoneQueryVariants(digits))
+                    .limit(ORDERS_SEARCH_MAX_RESULTS).get();
+                snap.docs.forEach(d => exactos.set(d.id, d));
+            }
+        }
+
+        let query = db.collection('pedidos');
+        if (deep) {
+            const desde = new Date();
+            desde.setMonth(desde.getMonth() - ORDERS_SEARCH_DEEP_MONTHS);
+            query = query.where('createdAt', '>=', admin.firestore.Timestamp.fromDate(desde));
+        } else {
+            query = applyOrdersDateFilter(query, { dateFilter, customStart, customEnd });
+        }
+
+        // orderBy sobre el mismo campo del rango (createdAt), así que sigue resolviéndose
+        // con el índice automático. Va del más nuevo al más viejo a propósito: cuando el
+        // resultado se trunca en ORDERS_SEARCH_MAX_RESULTS, lo que se conserva son los
+        // pedidos recientes y no un subconjunto arbitrario en orden de documento.
+        const snapshot = await query
+            .orderBy('createdAt', 'desc')
+            .select('consecutiveOrderNumber', 'producto', 'telefono', 'datosProducto',
+                    'datosPromocion', 'comentarios', 'vendedor', 'estatus', 'createdAt')
+            .limit(ORDERS_SEARCH_MAX_SCAN)
+            .get();
+
+        const needle = normalizeSearchText(term);
+        const coincidencias = [];
+        let topeResultados = false;
+
+        for (const doc of snapshot.docs) {
+            const d = doc.data();
+            if (producto && d.producto !== producto) continue;
+            if (estatus && d.estatus !== estatus) continue;
+
+            const haystack = normalizeSearchText([
+                d.consecutiveOrderNumber != null ? `DH${d.consecutiveOrderNumber} ${d.consecutiveOrderNumber}` : '',
+                d.producto, d.telefono, d.datosProducto, d.datosPromocion,
+                d.comentarios, d.vendedor, d.estatus
+            ].join(' '));
+
+            if (haystack.includes(needle) && !exactos.has(doc.id)) {
+                if (coincidencias.length >= ORDERS_SEARCH_MAX_RESULTS) { topeResultados = true; break; }
+                coincidencias.push(doc.ref);
+            }
+        }
+
+        const delBarrido = coincidencias.length
+            ? (await db.getAll(...coincidencias)).filter(d => d.exists).map(mapOrderDoc)
+            : [];
+
+        const orders = [...exactos.values()].map(mapOrderDoc)
+            .concat(delBarrido)
+            .sort((a, b) => orderCreatedAtSeconds(b) - orderCreatedAtSeconds(a));
+
+        res.status(200).json({
+            success: true,
+            orders,
+            total: orders.length,
+            truncated: topeResultados || snapshot.docs.length >= ORDERS_SEARCH_MAX_SCAN,
+            scanned: snapshot.docs.length,
+            mode: exactos.size > 0 ? 'exacto+texto' : 'texto',
+            scope: deep ? 'todo' : 'filtro'
+        });
+    } catch (error) {
+        console.error('Error buscando pedidos:', error);
+        res.status(500).json({ success: false, message: 'Error al buscar pedidos.', error: error.message });
     }
 });
 

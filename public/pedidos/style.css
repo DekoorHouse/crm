@@ -1216,6 +1216,9 @@ body.search-active #page-overlay {
     display: none; /* Oculto por defecto, se muestra con JS */
     align-items: center;
     gap: 10px;
+    /* El aviso de alcance ensancha la barra; que no se salga en pantallas angostas. */
+    max-width: calc(100vw - 50px);
+    flex-wrap: wrap;
 }
 
 #search-match-icon {
@@ -1241,6 +1244,33 @@ body.search-active #page-overlay {
     padding: 0 10px;
     border-right: 1px solid var(--color-border);
 }
+
+/* Alcance real de la búsqueda: cuántos pedidos hay fuera del rango cargado en la tabla. */
+#search-remote-info {
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82em;
+    color: var(--color-text-light);
+    white-space: nowrap;
+    padding-right: 4px;
+    border-right: 1px solid var(--color-border);
+}
+#search-remote-info button {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    padding: 3px 8px;
+    font-size: 1em;
+    font-family: inherit;
+    color: var(--color-primary, #3498db);
+    font-weight: 600;
+}
+#search-remote-info button:hover {
+    background-color: rgba(52, 152, 219, 0.12);
+}
+#search-remote-info .search-remote-ok { color: #96ceb4; }
+#search-remote-info .search-remote-warn { color: #e0a458; }
 #search-nav-buttons button {
     background: transparent;
     border: none;

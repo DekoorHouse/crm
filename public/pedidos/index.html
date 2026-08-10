@@ -23,7 +23,7 @@
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 
     <link rel="stylesheet" href="/style.css">
-    <link rel="stylesheet" href="/pedidos/style.css?v=4">
+    <link rel="stylesheet" href="/pedidos/style.css?v=5">
 </head>
 <body>
 
@@ -429,6 +429,7 @@
     <span id="search-match-icon"></span>
     <input type="text" id="searchInput" placeholder="Buscar en pedidos...">
     <span id="search-counter">0/0</span>
+    <span id="search-remote-info" style="display: none;"></span>
     <div id="search-nav-buttons">
         <button id="prevMatchBtn" title="Anterior (Shift+Enter)"><i class="fas fa-chevron-up"></i></button>
         <button id="nextMatchBtn" title="Siguiente (Enter)"><i class="fas fa-chevron-down"></i></button>
@@ -457,7 +458,7 @@
 <!-- Adjunta el ID token de Firebase a todo fetch hacia /api (lo pide server/apiAuth.js) -->
 <script src="/js/auth-fetch.js?v=1"></script>
 <!-- Link to external JS file -->
-<script type="module" src="/pedidos/script.js?v=6"></script>
+<script type="module" src="/pedidos/script.js?v=7"></script>
 
 </body>
 </html>

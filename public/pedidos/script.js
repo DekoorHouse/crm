@@ -139,6 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeSearchBtn = document.getElementById('closeSearchBtn');
     const pageOverlay = document.getElementById('page-overlay');
     const searchCounter = document.getElementById('search-counter');
+    const searchRemoteInfo = document.getElementById('search-remote-info');
     const prevMatchBtn = document.getElementById('prevMatchBtn');
     const nextMatchBtn = document.getElementById('nextMatchBtn');
 
@@ -176,6 +177,13 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     let allLoadedPedidos = []; // All currently loaded order data
     let isFetchingAll = false; // Guard against recursive fetchAllRemainingOrders
+
+    // Búsqueda en el servidor (/api/orders/search): lo que la tabla no tiene cargado.
+    let remoteSearch = { term: '', scope: 'filtro', loading: false, orders: [], truncated: false, mode: '', done: false };
+    let remoteSearchSeq = 0;          // descarta respuestas de términos ya abandonados
+    let remoteSearchTimer = null;
+    let showingRemoteResults = false; // la tabla está mostrando resultados de búsqueda, no la vista normal
+    let pendingRealtimeRefresh = false;
 
     // State for multiple order photos
     let orderPhotosManager = [];
@@ -1202,7 +1210,26 @@ document.addEventListener('DOMContentLoaded', () => {
         accionesTd.appendChild(deleteButton);
         tr.appendChild(accionesTd);
 
+        // Texto buscable cacheado al construir la fila. Antes cada tecla recorría los 11 td
+        // (y sus nodos de texto) de TODAS las filas cargadas; ahora el recorrido caro sólo
+        // ocurre en las filas que ya sabemos que coinciden.
+        tr.dataset.searchText = collectSearchText(tr).toLowerCase();
+
         return tr;
+    }
+
+    // Mismo criterio de exclusión que highlightTextInNode: si aquí contara el texto de
+    // .ai-order-badge, una fila podría marcarse como coincidencia y no resaltar nada.
+    function collectSearchText(root) {
+        const partes = [];
+        (function walk(node) {
+            if (node.nodeType === Node.TEXT_NODE) { partes.push(node.nodeValue); return; }
+            if (node.nodeType !== Node.ELEMENT_NODE) return;
+            if (/^(script|style)$/i.test(node.tagName)) return;
+            if (node.classList && node.classList.contains('ai-order-badge')) return;
+            node.childNodes.forEach(walk);
+        })(root);
+        return partes.join(' ');
     }
 
     function renderOrders(orders, append = false) {
@@ -1256,7 +1283,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Paginated data fetching ---
     function buildApiUrl(filters, startAfterId = null) {
         const params = new URLSearchParams();
-        params.set('limit', '50');
+        // 100 es el tope que acepta /orders/list: la mitad de viajes redondos al paginar.
+        params.set('limit', '100');
         if (filters.producto) params.set('producto', filters.producto);
         if (filters.estatus) params.set('estatus', filters.estatus);
         if (filters.dateFilter) params.set('dateFilter', filters.dateFilter);
@@ -1403,6 +1431,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const setupTime = Date.now();
         unsubscribePedidos = onSnapshot(q, { includeMetadataChanges: false }, (snapshot) => {
             if (Date.now() - setupTime < 3000) return;
+
+            // Con la búsqueda abierta NO se refresca: fetchInitialOrders resetea la tabla a
+            // la primera página y tiraba las coincidencias (incluidos los resultados que
+            // vinieron del servidor). Se aplica al cerrar la búsqueda.
+            if (document.body.classList.contains('search-active')) {
+                pendingRealtimeRefresh = true;
+                return;
+            }
 
             // Debounce: re-fetch the current view after a short delay
             clearTimeout(window._pedidosRealtimeTimer);
@@ -1922,9 +1958,12 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.add('search-active');
         searchInput.focus();
         performSearch(true);
+        scheduleRemoteSearch(searchInput.value.trim());
     }
 
     function closeSearch() {
+        const debeRestaurarVista = showingRemoteResults || pendingRealtimeRefresh;
+
         document.body.classList.remove('search-active');
         searchBarContainer.style.display = 'none';
         searchInput.value = '';
@@ -1935,7 +1974,16 @@ document.addEventListener('DOMContentLoaded', () => {
             row.classList.remove('search-match', 'current-search-highlight');
         });
         searchMatchIcon.style.display = 'none';
+        resetRemoteSearch();
         updateSearchUI();
+
+        // Se volvió de los resultados de búsqueda, o hubo cambios en vivo que se
+        // pospusieron mientras la búsqueda estaba abierta.
+        if (debeRestaurarVista) {
+            showingRemoteResults = false;
+            pendingRealtimeRefresh = false;
+            fetchInitialOrders(pedidosPagination.currentFilters, true);
+        }
     }
 
     function updateSearchUI() {
@@ -1965,6 +2013,8 @@ document.addEventListener('DOMContentLoaded', () => {
             prevMatchBtn.disabled = true;
             nextMatchBtn.disabled = true;
         }
+
+        renderRemoteSearchUI();
     }
 
     function navigateToCurrentMatch() {
@@ -1982,10 +2032,10 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSearchUI();
     }
     
-    async function performSearch(isNewSearch = true, focusedPedidoId = null) {
+    function performSearch(isNewSearch = true, focusedPedidoId = null) {
         clearSearchHighlight();
         const searchTerm = searchInput.value.trim();
-        let allRows = document.querySelectorAll('#cuerpoTablaPedidos tr');
+        const allRows = document.querySelectorAll('#cuerpoTablaPedidos tr');
 
         searchMatches = [];
         allRows.forEach(row => row.classList.remove('search-match', 'current-search-highlight'));
@@ -1999,36 +2049,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.body.classList.add('search-active');
         const regex = new RegExp(escapeRegExp(searchTerm), 'gi');
-        const matchedRows = new Set();
+        const needle = searchTerm.toLowerCase();
 
+        // Prefiltro barato con el texto cacheado; el resaltado (que sí toca el DOM) se
+        // hace nada más en las filas que coinciden. Lo que falte fuera de la vista lo
+        // resuelve la búsqueda del servidor (runRemoteSearch), no un barrido secuencial.
         allRows.forEach(row => {
+            const haystack = row.dataset.searchText;
+            if (!haystack || !haystack.includes(needle)) return;
             row.querySelectorAll('td').forEach(cell => {
                 highlightTextInNode(cell, regex, searchMatches, cell);
             });
             if (row.querySelector('mark.search-highlight-text')) {
-                matchedRows.add(row);
-            }
-        });
-
-        // Si no hay resultados locales pero hay más pedidos por cargar, cargar todos y re-buscar
-        if (searchMatches.length === 0 && pedidosPagination.hasMore) {
-            await fetchAllRemainingOrders();
-            // Re-buscar en todas las filas ahora cargadas
-            allRows = document.querySelectorAll('#cuerpoTablaPedidos tr');
-            searchMatches = [];
-            matchedRows.clear();
-            allRows.forEach(row => {
-                row.querySelectorAll('td').forEach(cell => {
-                    highlightTextInNode(cell, regex, searchMatches, cell);
-                });
-                if (row.querySelector('mark.search-highlight-text')) {
-                    matchedRows.add(row);
-                }
-            });
-        }
-
-        allRows.forEach(row => {
-            if (matchedRows.has(row)) {
                 row.classList.add('search-match');
             }
         });
@@ -2044,6 +2076,119 @@ document.addEventListener('DOMContentLoaded', () => {
             currentSearchIndex = -1;
         }
         updateSearchUI();
+    }
+
+    // --- Búsqueda en el servidor ---------------------------------------------------
+    // Resuelve lo que la tabla no puede: pedidos fuera del rango de fechas cargado.
+
+    function resetRemoteSearch() {
+        clearTimeout(remoteSearchTimer);
+        remoteSearchSeq++;
+        remoteSearch = { term: '', scope: 'filtro', loading: false, orders: [], truncated: false, mode: '', done: false };
+    }
+
+    function scheduleRemoteSearch(term, scope = 'filtro') {
+        clearTimeout(remoteSearchTimer);
+        if (!term || term.length < 2) {
+            resetRemoteSearch();
+            renderRemoteSearchUI();
+            return;
+        }
+        remoteSearchTimer = setTimeout(() => runRemoteSearch(term, scope), 350);
+    }
+
+    async function runRemoteSearch(term, scope) {
+        const seq = ++remoteSearchSeq;
+        remoteSearch = { ...remoteSearch, term, scope, loading: true, done: false };
+        renderRemoteSearchUI();
+
+        const params = new URLSearchParams({ q: term, scope });
+        const f = pedidosPagination.currentFilters || {};
+        if (f.producto) params.set('producto', f.producto);
+        if (f.estatus) params.set('estatus', f.estatus);
+        if (f.dateFilter) params.set('dateFilter', f.dateFilter);
+        if (f.customStart) params.set('customStart', f.customStart);
+        if (f.customEnd) params.set('customEnd', f.customEnd);
+
+        try {
+            const response = await fetch(`/api/orders/search?${params.toString()}`);
+            const data = await response.json();
+            if (seq !== remoteSearchSeq) return; // llegó tarde: el término ya cambió
+            if (!data.success) throw new Error(data.message || 'Error buscando');
+
+            remoteSearch = {
+                term, scope: data.scope || scope, loading: false, done: true,
+                orders: data.orders || [], truncated: !!data.truncated, mode: data.mode || ''
+            };
+        } catch (error) {
+            if (seq !== remoteSearchSeq) return;
+            console.error('Error en la búsqueda del servidor:', error);
+            remoteSearch = { ...remoteSearch, loading: false, done: false, orders: [], mode: 'error' };
+        }
+        renderRemoteSearchUI();
+    }
+
+    function locallyMatchedIds() {
+        const ids = new Set();
+        document.querySelectorAll('#cuerpoTablaPedidos tr.search-match').forEach(row => {
+            if (row.dataset.id) ids.add(row.dataset.id);
+        });
+        return ids;
+    }
+
+    // Pasa la tabla a "resultados de búsqueda": sólo los pedidos que encontró el servidor,
+    // sin scroll infinito. Se vuelve a la vista normal al cerrar la búsqueda.
+    function showRemoteResults() {
+        if (!remoteSearch.orders.length) return;
+        showingRemoteResults = true;
+        pedidosPagination.hasMore = false;
+        pedidosPagination.lastVisibleId = null;
+        allLoadedPedidos = remoteSearch.orders.slice();
+        pedidosDataMap.clear();
+        renderOrders(allLoadedPedidos, false);
+        if (loadAllBtn) loadAllBtn.style.display = 'none';
+        performSearch(true);
+        if (tablaContainer) tablaContainer.scrollTop = 0;
+    }
+
+    function renderRemoteSearchUI() {
+        if (!searchRemoteInfo) return;
+        const term = searchInput.value.trim();
+
+        if (!term) { searchRemoteInfo.innerHTML = ''; searchRemoteInfo.style.display = 'none'; return; }
+        searchRemoteInfo.style.display = 'inline-flex';
+
+        if (remoteSearch.loading) {
+            searchRemoteInfo.innerHTML = '<i class="fas fa-spinner fa-spin"></i> buscando en todo…';
+            return;
+        }
+        if (remoteSearch.mode === 'error') {
+            searchRemoteInfo.innerHTML = '<span class="search-remote-warn">no se pudo buscar en el servidor</span>';
+            return;
+        }
+        if (!remoteSearch.done || remoteSearch.term !== term) { searchRemoteInfo.innerHTML = ''; return; }
+
+        if (showingRemoteResults) {
+            searchRemoteInfo.innerHTML = `<span class="search-remote-ok">viendo ${remoteSearch.orders.length} resultado${remoteSearch.orders.length === 1 ? '' : 's'} de la búsqueda</span>`;
+            return;
+        }
+
+        const locales = locallyMatchedIds();
+        const fuera = remoteSearch.orders.filter(o => !locales.has(o.id)).length;
+        const buscoTodo = remoteSearch.scope === 'todo';
+
+        if (fuera > 0) {
+            searchRemoteInfo.innerHTML =
+                `<button type="button" id="btnVerResultadosRemotos">+${fuera} fuera de la vista${remoteSearch.truncated ? '+' : ''}</button>`;
+            return;
+        }
+        if (!buscoTodo) {
+            searchRemoteInfo.innerHTML = '<button type="button" id="btnBuscarHistorial">buscar en todo el historial</button>';
+            return;
+        }
+        searchRemoteInfo.innerHTML = locales.size > 0
+            ? '<span class="search-remote-ok"><i class="fas fa-check"></i> no hay más en el historial</span>'
+            : '<span class="search-remote-warn">sin resultados en todo el historial</span>';
     }
 
     function navigateMatches(direction) {
@@ -2923,8 +3068,24 @@ document.addEventListener('DOMContentLoaded', () => {
     let searchDebounceTimer;
     searchInput.addEventListener('input', () => {
         clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = setTimeout(() => performSearch(true), 200);
+        searchDebounceTimer = setTimeout(() => {
+            performSearch(true);
+            // El servidor busca en paralelo: la tabla responde al instante y el alcance
+            // real (cuántas hay fuera de la vista) llega un momento después.
+            scheduleRemoteSearch(searchInput.value.trim());
+        }, 200);
     });
+
+    if (searchRemoteInfo) {
+        searchRemoteInfo.addEventListener('click', (e) => {
+            if (e.target.closest('#btnVerResultadosRemotos')) {
+                showRemoteResults();
+                renderRemoteSearchUI();
+            } else if (e.target.closest('#btnBuscarHistorial')) {
+                runRemoteSearch(searchInput.value.trim(), 'todo');
+            }
+        });
+    }
     closeSearchBtn.addEventListener('click', closeSearch);
     prevMatchBtn.addEventListener('click', () => navigateMatches('prev'));
     nextMatchBtn.addEventListener('click', () => navigateMatches('next'));
