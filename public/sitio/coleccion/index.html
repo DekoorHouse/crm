@@ -701,14 +701,6 @@ const COLLECTIONS = {
         productName: 'Lámpara 3D Religiosa',
         productDesc: 'Lámpara LED con imagen religiosa personalizada, nombre y mensaje de fe. 16 colores con control remoto.',
         folder: 'Religiosas'
-    },
-    cuadros: {
-        title: 'Más Regalos',
-        desc: 'Cuadros con foto, letreros y más regalos personalizados con grabado láser para cualquier ocasión. Cotización gratis por WhatsApp.',
-        productName: 'Regalo Personalizado',
-        productDesc: 'Producto personalizado con grabado láser. Diseño único hecho a tu medida.',
-        folder: 'Cuadros',
-        quoteOnly: true
     }
 };
 
@@ -737,7 +729,7 @@ const canonicalEl = document.querySelector('link[rel="canonical"]');
 if (canonicalEl) canonicalEl.setAttribute('href', `https://app.dekoormx.com/sitio/coleccion/${colId}/`);
 
 // Inject Product + BreadcrumbList schema
-const SCHEMA_IMG = { ninos: 'lamp-ariel.webp', pareja: 'lamp-pareja.webp', empresas: 'lamp-empresas.webp', familia: 'lamp-familia2.webp', mascotas: 'lamp-mascotas.webp', graduacion: 'col/graduacion/sync-bf22d1bdfc.webp', deportes: 'col/deportes/sync-267a470ca5.webp', memorial: 'lamp-memorial.webp', religiosas: 'lamp-religiosas.webp', cuadros: 'cuadro-multifoto.webp' };
+const SCHEMA_IMG = { ninos: 'lamp-ariel.webp', pareja: 'lamp-pareja.webp', empresas: 'lamp-empresas.webp', familia: 'lamp-familia2.webp', mascotas: 'lamp-mascotas.webp', graduacion: 'col/graduacion/sync-bf22d1bdfc.webp', deportes: 'col/deportes/sync-267a470ca5.webp', memorial: 'lamp-memorial.webp', religiosas: 'lamp-religiosas.webp' };
 const productSchema = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -888,14 +880,6 @@ const PHOTOS = {
         { file: "sync-0a99e5ee3e.webp", name: "En Vos Confío", desc: "Jesús y su corazón radiante velan tu hogar con la frase de tu fe" },
         { file: "sync-262d3b45f5.webp", name: "Morenita del Tepeyac", desc: "La Virgencita orando con su nombre protege a tu familia cada noche" },
         { file: "sync-f78e5d5b18.webp", name: "Redentor Eterno", desc: "Cristo y las tres cruces llenan de paz tu rincón de fe en luz cálida" }
-    ],
-    cuadros: [
-        { src: "/sitio/img/cuadro2.webp", name: "Nuestra Historia", desc: "Sus fotos formando un corazón con la fecha en que empezó todo" },
-        { src: "/sitio/img/cuadro-multifoto.webp", name: "Corazón de Recuerdos", desc: "Cada foto un momento juntos, un corazón que decora su pared" },
-        { src: "/sitio/img/cuadros-pared.webp", name: "Muro de Momentos", desc: "Sus recuerdos en mosaicos que convierten la pared en su historia" },
-        { file: "sync-c9d17b40f7.webp", name: "Lazo Infinito", desc: "Collage de fotos en forma de infinito que presume su amor en la pared" },
-        { file: "sync-d46104498a.webp", name: "Hogar de Recuerdos", desc: "Marco múltiple para reunir los mejores momentos de la familia" },
-        { file: "sync-f2b2abd438.webp", name: "Dulce Espera", desc: "Su ultrasonido y datos de llegada en un cuadro que anuncia la ilusión" }
     ]
 };
 

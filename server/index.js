@@ -250,14 +250,14 @@ const SITIO_COLECCIONES = {
         desc: 'Virgen de Guadalupe, santos y mensajes de fe grabados con láser, personalizados con tu nombre. Envío gratis a todo México.',
         visible: 'Lámparas con imágenes religiosas personalizadas. Vírgenes, santos y mensajes de fe grabados con láser.',
         img: 'lamp-religiosas.webp'
-    },
-    cuadros: {
-        h1: 'Cuadros con foto y más regalos personalizados',
-        title: 'Cuadros con Foto y Más Regalos Personalizados | DEKOOR',
-        desc: 'Cuadros de madera con tus fotos, letreros y más regalos personalizados grabados con láser. Cotización gratis por WhatsApp. Envío a todo México.',
-        visible: 'Cuadros con foto, letreros y más regalos personalizados con grabado láser para cualquier ocasión.',
-        img: 'cuadro-multifoto.webp'
     }
+};
+
+// Colecciones retiradas: 301 hacia su reemplazo para no perder los enlaces
+// que Google ya indexó
+const SITIO_COLECCIONES_RETIRADAS = {
+    cuadros: '/sitio/catalogo/',
+    profesiones: '/sitio/coleccion/empresas/'
 };
 
 let coleccionSeoTemplate = null;
@@ -307,6 +307,7 @@ app.get('/sitio/coleccion/', (req, res, next) => {
 
 app.get('/sitio/coleccion/:id', (req, res, next) => {
     const id = String(req.params.id || '').toLowerCase();
+    if (SITIO_COLECCIONES_RETIRADAS[id]) return res.redirect(301, SITIO_COLECCIONES_RETIRADAS[id]);
     if (!SITIO_COLECCIONES[id]) return next();
     try {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');

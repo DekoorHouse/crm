@@ -29,7 +29,6 @@ FOLDER_MAP = {
     "Empresas y Profesiones": "empresas",
     "Familia": "familia",
     "Graduación": "graduacion",
-    "Mas Regalos": "cuadros",
     "Mascotas": "mascotas",
     "Memorial": "memorial",
     "Parejas": "pareja",
