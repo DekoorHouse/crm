@@ -322,10 +322,8 @@ window.renderDesignPendingView = renderDesignPendingView;
 // estatus del pedido ni dispara ningún efecto (inventario/Meta/mensajes). La posición persiste por pedido.
 const DP_BOARD_COLS = [
     ['pendientes', 'Pendientes', '#6f42c1'],
-    ['hacer_mockup', 'Hacer Mockup', '#14b8a6'],
     ['esperando_confirmacion', 'Esperando confirmación', '#0ea5e9'],
     ['esperando_pago', 'Esperando pago', '#f59e0b'],
-    ['disenado', 'Diseñado', '#16a34a'],
     ['terminado', 'Terminado', '#64748b'],
 ];
 
@@ -5322,8 +5320,8 @@ function renderFilePreview() {
     if (state.stagedFiles.length > 0) { // Si hay archivos locales seleccionados
         container.innerHTML = LocalFilePreviewTemplate(state.stagedFiles);
         container.classList.remove('hidden');
-    } else if (state.stagedRemoteFile) { // Si hay un archivo remoto (de respuesta rápida)
-        container.innerHTML = RemoteFilePreviewTemplate(state.stagedRemoteFile);
+    } else if (state.stagedRemoteFiles.length > 0) { // Si hay archivos remotos (respuesta rápida o galería)
+        container.innerHTML = RemoteFilePreviewTemplate(state.stagedRemoteFiles);
         container.classList.remove('hidden');
     } else { // Si no hay archivo adjunto
         container.innerHTML = '';

@@ -8603,7 +8603,7 @@ router.get('/design-pending', async (req, res) => {
             if (boardMode) {
                 const { esVideoPendiente, faltaMockup } = require('./design/designPending');
                 const already = new Set(orders.map(o => o.id));
-                const movedCols = ['hacer_mockup', 'esperando_confirmacion', 'esperando_pago', 'disenado', 'terminado'];
+                const movedCols = ['esperando_confirmacion', 'esperando_pago', 'terminado'];
                 const movedSnap = await db.collection('pedidos').where('disenoBoardCol', 'in', movedCols).limit(500).get();
                 const moved = movedSnap.docs.filter(doc => !already.has(doc.id) && !esVideoPendiente(doc.data()));
                 // Previews SOLO de los 'Sin estatus' (los únicos donde "falta mockup" puede ser cierto):
@@ -8857,7 +8857,7 @@ router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
 router.post('/design-pending/:orderId/board-col', async (req, res) => {
     const { orderId } = req.params;
     const col = String((req.body && req.body.col) || '').trim();
-    const VALID = ['pendientes', 'hacer_mockup', 'esperando_confirmacion', 'esperando_pago', 'disenado', 'terminado'];
+    const VALID = ['pendientes', 'esperando_confirmacion', 'esperando_pago', 'terminado'];
     if (!VALID.includes(col)) return res.status(400).json({ success: false, message: 'Columna inválida.' });
     try {
         const ref = db.collection('pedidos').doc(orderId);
