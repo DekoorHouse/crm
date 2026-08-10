@@ -226,11 +226,13 @@ const ESPECIAL_PERSONAJE_RE = /foto|imagen|graba|logo|escudo|mascota|dibuj|dise[
 function itemEspecialPersonaje(datos) {
     const s = String(datos || '');
     const sinEtiquetas = s.replace(/(?:personaje|nombre)\s*:/gi, ' ');
-    const m = /especial\s*:\s*([^|\n]+)/i.exec(s);
-    if (m) {
-        const valor = m[1].trim();
-        // "Especial: recoger en tienda" no cambia el diseño; "Especial: con su foto" sí.
-        if (!(ESPECIAL_LOGISTICA_RE.test(valor) && !ESPECIAL_PERSONAJE_RE.test(valor))) return true;
+    // TODOS los "Especial:", no solo el primero: un item puede traer varias lámparas apiladas, cada
+    // una con el suyo. Mirando solo el primero, un "Especial: envío exprés" al principio hacía pasar
+    // por bueno un "Especial: con su foto" que venía después, y esa lámpara se habría cortado.
+    const vals = [...s.matchAll(/especial\s*:\s*([^|\n]+)/gi)].map(m => m[1].trim()).filter(Boolean);
+    if (vals.length) {
+        // Basta que UNO no sea pura logística ("recoger en tienda") para mandar el item a manual.
+        if (vals.some(v => !(ESPECIAL_LOGISTICA_RE.test(v) && !ESPECIAL_PERSONAJE_RE.test(v)))) return true;
         return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas.replace(/especial\s*:[^|\n]*/gi, ' '));
     }
     return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas);
@@ -347,6 +349,13 @@ function personajeEligibility(o, previews) {
     return { eligible: true, reason: 'ok', lamparas, manuales, completo: !manuales.length };
 }
 
+// OJO: este predicado NO es el mismo que el del worker, Y ESO ES A PROPÓSITO.
+// El worker corta la parte que puede de un pedido MIXTO (llama a personajeEligibility directo), pero
+// aquí se exige `completo`. Motivo: este es el predicado con el que el CRM SACA un pedido de
+// "Pendientes de Diseño" (apiRoutes:8424). Si un mixto saliera de esa lista, entre que se vuelve
+// elegible y el worker lo corta habría una ventana en la que no está en ninguna vista — y su lámpara
+// especial NUNCA vuelve sola, porque depende de una marca que aún no existe. Diferir en la dirección
+// SEGURA (el pedido se queda a la vista de más) es barato; al revés se pierde un pendiente.
 function isPersonajeAutoWaiting(o, previews) {
     const est = String(o.estatus || '').trim().toLowerCase();
     if (ESTATUS_TERMINAL.has(est)) return false;
@@ -354,7 +363,8 @@ function isPersonajeAutoWaiting(o, previews) {
     if (autoBlocked(o)) return false;
     if (quejaDeDatosAbierta(o)) return false;        // un dato sigue mal: lo revisa una persona
     if (est === 'corregir' && !isVideoCorregir(o)) return false;
-    return personajeEligibility(o, previews).eligible;
+    const el = personajeEligibility(o, previews);
+    return el.eligible && el.completo;
 }
 
 // ¿El pedido está EN COLA para el corte automático (aún sin cortar, auto-elegible)? Es el conjunto

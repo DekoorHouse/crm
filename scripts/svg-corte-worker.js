@@ -531,11 +531,18 @@ async function findPersonajeLamps() {
         if (ms(o.svgCorteStartedAt) > staleMs) continue;                     // otro proceso lo trabaja
         const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
         const previews = prev.exists ? (prev.data().previews || []) : [];
+        if (o.svgCorteParcialAt) continue;                                    // ya se le corto su parte
         const el = personajeEligibility(o, previews);
         if (!el.eligible) continue;
-        // Pedido MIXTO: se corta lo que la skill sabe y queda pendiente SOLO lo que no (Chris,
-        // 2026-08-07). Al marcarlo NO se le cambia el estatus y se le pone designForce, para que siga
-        // a la vista en "Pendientes" por la lámpara que falta.
+        // Pedido MIXTO: se corta lo que la skill sabe y queda pendiente SOLO lo que no (Chris, 2026-08-07).
+        // EXCEPCION: si ademas pidio VIDEO, NO se corta a medias. En un pedido 'Corregir' por video,
+        // reasonsForOrderData (designPending.js:142) hace `return []` ANTES de mirar designForce, asi
+        // que el pendiente de la lampara especial no aparece en NINGUNA lista y se pierde para siempre.
+        // Mientras ese hueco siga ahi, un video mixto se trata como todo-o-nada.
+        if (!el.completo && video) {
+            log(`  ~ ${dhOf(o)} es mixto Y pidio video -> a manual entero (el pendiente del especial no se veria)`);
+            continue;
+        }
         if (!el.completo) log(`  ~ ${dhOf(o)} es mixto: se cortan ${el.lamparas.length} lámpara(s) y queda(n) ${el.manuales.length} a mano (${el.manuales.map(m => m.motivo).join(',')})`);
         const paidMs = ms(o.comprobanteValidadoAt) || ms(o.confirmedAt) || ms(o.createdAt);
         el.lamparas.forEach((l, i) => lamps.push({ o, video, completo: el.completo, pendientes: el.manuales.length,
@@ -613,10 +620,11 @@ async function processPersonajeSheets(sheets) {
         const info = new Map();   // por pedido: si quedó algo a mano
         for (const h of bloque.hojas) for (const l of h) {
             if (!pedidos.has(l.o.id)) pedidos.set(l.o.id, l.o);
-            if (!info.has(l.o.id)) info.set(l.o.id, { completo: l.completo !== false, pendientes: l.pendientes || 0 });
+            // `video` se guarda POR PEDIDO, no por bloque: dos pedidos pueden compartir hoja y solo uno
+            // ser de video; con la bandera del bloque, al otro se le dejaba el estatus sin actualizar.
+            if (!info.has(l.o.id)) info.set(l.o.id, { completo: l.completo !== false, pendientes: l.pendientes || 0, video: !!l.video });
         }
         const dhs = [...pedidos.values()].map(dhOf);
-        const video = bloque.hojas.flat().some(l => l.video);
 
         for (const h of bloque.hojas) {
             log(`> Hoja ${h[0].tpl} ${[...new Set(h.map(l => dhOf(l.o)))].join('-')}: `
@@ -668,8 +676,9 @@ async function processPersonajeSheets(sheets) {
 
         for (const [id, o] of pedidos) {
             const otros = dhs.filter(d => d !== dhOf(o));
+            const meta = info.get(id);
+            const mixto = !meta.completo;
             const upd = {
-                svgCorteAt: admin.firestore.FieldValue.serverTimestamp(),
                 svgCorteUrl: subidas[0].up.webViewLink,
                 svgCorteFileName: subidas[0].up.name,
                 svgCorteCdrLocal: subidas[0].cdr,
@@ -680,16 +689,22 @@ async function processPersonajeSheets(sheets) {
                 svgCorteStartedAt: admin.firestore.FieldValue.delete(),
                 svgCortePersonajeFails: admin.firestore.FieldValue.delete(),
             };
-            // Los que pidieron VIDEO se quedan en 'Corregir': el pendiente del video sigue vivo hasta
-            // que el equipo lo grabe y lo mande (misma regla que el corte de corazones).
-            const mixto = !info.get(id).completo;
-            if (!video && !mixto) upd.estatus = NEW_STATUS;
             if (mixto) {
-                // Se corto SU parte, pero al pedido le queda una lampara especial. NO se marca como
-                // diseñado —eso escondería el pendiente— y designForce lo mantiene en "Pendientes":
-                // el CRM lo respeta aunque el pedido ya tenga svgCorteAt (designPending.js:170).
+                // CORTE PARCIAL. NO se escribe svgCorteAt: esa es la marca global de "este pedido ya
+                // esta diseñado" y desarmaria faltaCorte / autoBlocked / disenoYaHecho para el pedido
+                // ENTERO, dejando sin red de seguridad a la lampara que falta. Se sella en su propio
+                // campo, que solo lee el candado de aqui arriba, y el pedido sigue contando como
+                // pendiente de corte por lo que le falta. designForce va ademas, como cinturon.
+                upd.svgCorteParcialAt = admin.firestore.FieldValue.serverTimestamp();
+                upd.svgCorteParcialPendientes = meta.pendientes;
                 upd.designForce = true;
-                log(`  ! ${dhOf(o)} cortado a medias a proposito: le quedan ${info.get(id).pendientes} lampara(s) a mano -> sigue en Pendientes`);
+                log(`  ! ${dhOf(o)} cortado a medias a proposito: le quedan ${meta.pendientes} lampara(s) a mano -> sigue en Pendientes`);
+            } else {
+                upd.svgCorteAt = admin.firestore.FieldValue.serverTimestamp();
+                // Los que pidieron VIDEO se quedan en 'Corregir': el pendiente del video sigue vivo
+                // hasta que el equipo lo grabe (misma regla que el corte de corazones). La bandera es
+                // POR PEDIDO: dos pedidos pueden compartir hoja y solo uno ser de video.
+                if (!meta.video) upd.estatus = NEW_STATUS;
             }
             await db.collection('pedidos').doc(String(id)).update(upd);
             try { await recomputeForContact(o.contactId || o.telefono); } catch (_) {}
