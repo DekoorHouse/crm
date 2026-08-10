@@ -50,7 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const tablaPedidos = document.getElementById('tablaPedidos');
     const tablaContainer = document.querySelector('.tabla-container');
     const scrollToTopBtn = document.getElementById('scrollToTopBtn');
-    const loadAllBtn = document.getElementById('loadAllBtn');
     const copyToast = document.getElementById('copy-toast');
     const photoCopyToast = document.getElementById('photo-copy-toast');
 
@@ -176,7 +175,6 @@ document.addEventListener('DOMContentLoaded', () => {
         currentFilters: { producto: '', dateFilter: '', estatus: '', customStart: null, customEnd: null }
     };
     let allLoadedPedidos = []; // All currently loaded order data
-    let isFetchingAll = false; // Guard against recursive fetchAllRemainingOrders
 
     // Búsqueda en el servidor (/api/orders/search): lo que la tabla no tiene cargado.
     let remoteSearch = { term: '', scope: 'filtro', loading: false, orders: [], truncated: false, mode: '', done: false };
@@ -1275,7 +1273,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        if (document.body.classList.contains('search-active') && !isFetchingAll) {
+        if (document.body.classList.contains('search-active')) {
             performSearch(false);
         }
     }
@@ -1336,22 +1334,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Update counters — exact count from server
             const exactCount = await getFilteredCount(filters);
-            const sumaTotal = allLoadedPedidos.reduce((sum, o) => sum + (Number(o.precio) || 0), 0);
 
             const defaultDateFilter = (auth.currentUser && auth.currentUser.email === 'alex@dekoor.com') ? 'hoy' : 'ultimos-10-dias';
             const isDefaultView = !filters.producto && !filters.estatus && filters.dateFilter === defaultDateFilter && !filters.customStart;
 
             contadorPedidosFiltrados.textContent = `${exactCount} filtrados`;
-            contadorSumaFiltrada.textContent = formatCurrency(sumaTotal);
             contadorPedidosFiltrados.classList.toggle('visible', !isDefaultView);
             if (isDefaultView) {
                 contadorSumaFiltrada.classList.remove('visible');
                 filteredCounterClicks = 0;
             }
+            refreshFilteredSum(filters);
 
             renderOrders(allLoadedPedidos, false);
             setupRealtimeListener(filters);
-            if (loadAllBtn) loadAllBtn.style.display = data.hasMore ? 'block' : 'none';
         } catch (error) {
             console.error("Error al obtener pedidos:", error);
             cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="empty-cell" style="color: #d9534f;">Hubo un error al cargar los pedidos.</td></tr>`;
@@ -1372,12 +1368,8 @@ document.addEventListener('DOMContentLoaded', () => {
             pedidosPagination.lastVisibleId = data.lastVisibleId;
             pedidosPagination.hasMore = data.hasMore;
 
-            // Update sum with loaded data (count stays exact from initial fetch)
-            const sumaTotal = allLoadedPedidos.reduce((sum, o) => sum + (Number(o.precio) || 0), 0);
-            contadorSumaFiltrada.textContent = formatCurrency(sumaTotal);
-
+            // La suma NO se recalcula aquí: es del filtro completo, no de lo cargado.
             renderOrders(data.orders, true);
-            if (loadAllBtn && !data.hasMore) loadAllBtn.style.display = 'none';
         } catch (error) {
             console.error("Error al cargar más pedidos:", error);
         } finally {
@@ -1385,28 +1377,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function fetchAllRemainingOrders() {
-        if (!pedidosPagination.hasMore || isFetchingAll) return;
-        isFetchingAll = true;
-        if (loadAllBtn) {
-            loadAllBtn.disabled = true;
-            loadAllBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cargando...';
-        }
+    // Total en pesos del filtro completo, contando también los pedidos que la tabla no
+    // tiene cargados. Sólo se pide cuando el contador está a la vista: es una lectura por
+    // pedido del rango, y no tiene caso pagarla en cada refresco si nadie lo está viendo.
+    async function refreshFilteredSum(filters) {
+        if (!contadorSumaFiltrada || !contadorSumaFiltrada.classList.contains('visible')) return;
+
+        const params = new URLSearchParams({ includeSum: '1' });
+        if (filters.producto) params.set('producto', filters.producto);
+        if (filters.estatus) params.set('estatus', filters.estatus);
+        if (filters.dateFilter) params.set('dateFilter', filters.dateFilter);
+        if (filters.customStart) params.set('customStart', filters.customStart);
+        if (filters.customEnd) params.set('customEnd', filters.customEnd);
+
+        contadorSumaFiltrada.textContent = '…';
         try {
-            while (pedidosPagination.hasMore && pedidosPagination.lastVisibleId) {
-                await fetchMoreOrders();
-            }
-        } finally {
-            isFetchingAll = false;
-            if (loadAllBtn) {
-                loadAllBtn.style.display = 'none';
-                loadAllBtn.disabled = false;
-                loadAllBtn.innerHTML = '<i class="fas fa-download"></i> Cargar todos';
-            }
-            // Run search once after all orders are loaded (not during each batch)
-            if (document.body.classList.contains('search-active')) {
-                performSearch(false);
-            }
+            const response = await fetch(`/api/orders/count?${params.toString()}`);
+            const data = await response.json();
+            if (!data.success || typeof data.suma !== 'number') throw new Error(data.message || 'Sin suma');
+            contadorSumaFiltrada.textContent = formatCurrency(data.suma);
+        } catch (error) {
+            console.error('Error obteniendo la suma del filtro:', error);
+            contadorSumaFiltrada.textContent = '—';
         }
     }
 
@@ -2146,7 +2138,6 @@ document.addEventListener('DOMContentLoaded', () => {
         allLoadedPedidos = remoteSearch.orders.slice();
         pedidosDataMap.clear();
         renderOrders(allLoadedPedidos, false);
-        if (loadAllBtn) loadAllBtn.style.display = 'none';
         performSearch(true);
         if (tablaContainer) tablaContainer.scrollTop = 0;
     }
@@ -2640,6 +2631,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (filteredCounterClicks >= 5) {
                 contadorSumaFiltrada.classList.toggle('visible');
+                // Al destaparlo se pide el total del filtro completo (no se pide antes
+                // porque cuesta una lectura por pedido del rango).
+                refreshFilteredSum(pedidosPagination.currentFilters);
             }
         });
     }
@@ -2667,10 +2661,6 @@ document.addEventListener('DOMContentLoaded', () => {
             tablaContainer.scrollTo({ top: 0, behavior: 'smooth' });
         });
     }
-    if (loadAllBtn) {
-        loadAllBtn.addEventListener('click', fetchAllRemainingOrders);
-    }
-    
     // Modal Event Listeners
     if (btnMostrarFormularioPedido) btnMostrarFormularioPedido.addEventListener('click', () => abrirModalPedido());
     if (btnCerrarModal) btnCerrarModal.addEventListener('click', cerrarModalPedido);

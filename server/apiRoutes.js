@@ -1179,7 +1179,24 @@ router.get('/orders/count', async (req, res) => {
         query = applyOrdersDateFilter(query, { dateFilter, customStart, customEnd });
 
         const snapshot = await query.count().get();
-        res.status(200).json({ success: true, count: snapshot.data().count });
+        const payload = { success: true, count: snapshot.data().count };
+
+        // ?includeSum=1 agrega el total en pesos del filtro completo. Antes esto no
+        // existía y la tabla sumaba sólo las filas cargadas, así que había que apretar
+        // "Cargar todos" (y meter cada pedido al DOM) nada más para ver un número.
+        //
+        // Se suma leyendo sólo el campo `precio`, no con AggregateField.sum: la suma
+        // agregada sobre un rango de fechas pide un índice compuesto (createdAt+precio)
+        // y en este proyecto los índices se crean a mano en producción.
+        //
+        // Es 1 lectura por pedido del rango, por eso va bajo bandera: se pide nada más
+        // cuando el contador de pesos está a la vista, no en cada refresco de la tabla.
+        if (req.query.includeSum === '1') {
+            const precios = await query.select('precio').get();
+            payload.suma = precios.docs.reduce((total, doc) => total + (Number(doc.data().precio) || 0), 0);
+        }
+
+        res.status(200).json(payload);
     } catch (error) {
         console.error("Error counting orders:", error);
         res.status(500).json({ success: false, message: 'Error al contar pedidos.', error: error.message });
