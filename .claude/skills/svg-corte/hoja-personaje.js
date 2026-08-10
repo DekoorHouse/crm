@@ -49,13 +49,20 @@ const MAX_INICIAL = { spiderman: 62, rex: 72 };
 const BASE_INICIAL = { spiderman: 1.15, rex: 1 };
 const PASO = 0.94;      // cuanto se encoge en cada reintento (paso fino: encoger es el ultimo recurso)
 const INTENTOS = 5;
-const MAX_CORRIDAS = 14;   // tope duro de corridas de Corel, para no colgarse en un caso imposible
+const MAX_CORRIDAS = 18;   // tope duro de corridas de Corel, para no colgarse en un caso imposible
 // Corrimientos a probar ANTES de encoger, en mm. Alejan el nombre de la figura sin tocarle el tamano.
 // El 0 va primero: si la posicion original ya libra, no se mueve nada.
-const SEPARACIONES = [0, -2, -3, -1, -4];
+// En spiderman el nombre se aleja de la mano moviendose hacia el NEGATIVO; en rex, un nombre de dos
+// renglones necesita irse al POSITIVO para librar la figura. Con solo negativos, un caso de rex no
+// encontraba salida aunque existiera (DH14573). Se prueban los dos lados, del corrimiento mas chico
+// al mas grande, para tocar la posicion original lo menos posible.
+const SEPARACIONES = [0, -2, 2, -3, 3, -4, 4, -6, 6];
 
 // Banderas que llevan un valor detras. Toda bandera nueva con valor TIENE que anadirse aqui.
 const BANDERAS_CON_VALOR = new Set(['--tpl', '--file', '--label', '--holgura', '--max', '--separa', '--base']);
+
+// Pausa sincrona sin dependencias (el ciclo es sincrono de arriba a abajo).
+const dormir = msEspera => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, msEspera); } catch (_) {} };
 
 function arg(nombre, def) {
     const i = process.argv.indexOf('--' + nombre);
@@ -121,9 +128,30 @@ function verificar(pngPath, holgura) {
         r.distanciaAzulMm === null ? Infinity : r.distanciaAzulMm,
         r.distanciaRojoMm === null ? Infinity : r.distanciaRojoMm);
 
+    // Corel exporta el PNG de forma ASINCRONA: cscript puede regresar antes de que el archivo este
+    // escrito del todo. Sin esperar, verifica-toques.js medía el PNG del intento ANTERIOR y el ciclo
+    // tomaba decisiones con datos viejos — sintoma: la misma combinacion daba 0.09 mm en el ciclo y
+    // "no se acerca" al volver a medirla a mano (caso DH14573 "Emma/Samadhi", 14 intentos fallidos
+    // sobre una hoja que en realidad estaba bien). Se borra el PNG antes y se espera a que reaparezca
+    // y deje de crecer.
+    const esperarPng = () => {
+        const hasta = Date.now() + 30000;
+        let prev = -1, estable = 0;
+        while (Date.now() < hasta) {
+            let size = -1;
+            try { size = fs.statSync(pngPath).size; } catch (_) { size = -1; }
+            if (size > 0 && size === prev) { if (++estable >= 3) return true; } else estable = 0;
+            prev = size;
+            dormir(120);
+        }
+        throw new Error('el PNG de revision no se termino de escribir: ' + pngPath);
+    };
+
     let res = null, escala = base, separa = 0, n = 0;
     const probar = (esc, sep) => {
+        try { fs.unlinkSync(pngPath); } catch (_) {}
         generar(tpl, fileBase, nombres, max, esc, sep, label, cerrar);
+        esperarPng();
         const r = verificar(pngPath, holgura);
         const f = v => (v === null ? 'libre' : v + 'mm');
         console.log(`intento ${++n}: escala=${esc.toFixed(2)} separa=${sep}mm  ->  azul ${f(r.distanciaAzulMm)}, rojo ${f(r.distanciaRojoMm)}  ${r.ok ? 'OK' : 'se arrima (' + r.lamparasConToque.join(',') + ')'}`);

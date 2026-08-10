@@ -18,6 +18,7 @@
  *   --dry    solo muestra qué haría, no toca nada
  *   --force  ignora el kill-switch autoGenerate
  *   --max N  máximo de hojas en esta corrida (default 2)
+ *   --sin-pareja  una lámpara de personaje suelta sale ya en media hoja (no espera pareja)
  * Kill-switches: Firestore svg_corte_config/settings { autoGenerate: false } (todo el auto-corte),
  *                { videoAutoCut: false } (solo los 'Corregir' que pidieron video).
  * Log: Documents\SVG-Corte\worker.log
@@ -52,6 +53,11 @@ const CLAIM_STALE_MIN = 30;      // reclamo (svgCorteStartedAt) más viejo que e
 const argv = process.argv.slice(2);
 const DRY = argv.includes('--dry');
 const FORCE = argv.includes('--force');
+// --sin-pareja: una lampara de personaje suelta sale YA en media hoja, sin esperar las
+// SINGLE_AFTER_HOURS. Es un override MANUAL (Chris lo pide para un pedido concreto); el corte de
+// corazones no se toca. Existe para que sacar una hoja urgente use el MISMO camino que produccion
+// —mismo corte, mismo marcado, mismo candado— en vez de un script aparte que pueda divergir.
+const SIN_PAREJA = argv.includes('--sin-pareja');
 const MAX_SHEETS = (() => {
     const i = argv.indexOf('--max');
     return i >= 0 ? Math.max(1, parseInt(argv[i + 1], 10) || 2) : 2;
@@ -584,7 +590,11 @@ function buildPersonajeSheets(lamps) {
         if (i < grupo.length) {
             const solo = grupo[i];
             const ageH = (Date.now() - solo.paidMs) / 36e5;
-            if (ageH >= SINGLE_AFTER_HOURS) sheets.push([solo]);
+            if (SIN_PAREJA) {
+                log(`  ! ${dhOf(solo.o)} (${tpl}: ${solo.nombre.replace(/\n/g, '⏎')}) sale SOLO por --sin-pareja`);
+                sheets.push([solo]);
+            }
+            else if (ageH >= SINGLE_AFTER_HOURS) sheets.push([solo]);
             else log(`  ~ ${dhOf(solo.o)} (${tpl}: ${solo.nombre.replace(/\n/g, '⏎')}) espera pareja del MISMO modelo (lleva ${ageH.toFixed(1)}h de ${SINGLE_AFTER_HOURS}h)`);
         }
     }
