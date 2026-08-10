@@ -24,7 +24,8 @@ import {
     calculateExpectedBalance,
     reconcileBalance,
     detectBBVAHeader,
-    parseBBVARow
+    parseBBVARow,
+    planStatementReplace
 } from './bbva-parser.js';
 
 // ---------------------------------------------------------------------------
@@ -222,6 +223,136 @@ function caso6_deteccionEncabezadosRobusta() {
 }
 
 // ---------------------------------------------------------------------------
+//  Caso 7: columna SALDO y etiqueta "En tránsito".
+// ---------------------------------------------------------------------------
+
+function caso7_columnaSaldoYPendiente() {
+    const data = [
+        ['Cuenta: 1540963262'],
+        ['DETALLE DE MOVIMIENTOS'],
+        [],
+        ['FECHA', 'DESCRIPCIÓN', 'CARGO', 'ABONO', 'SALDO'],
+        ['10/08/2026', 'MERPAGO*BATREZ', '-41.00', '', 'En tránsito'],
+        ['09/08/2026', 'MINISUPER NATALIA / ****0670 AUT: 909892', '-70.44', '', '39,825.08'],
+    ];
+
+    const det = detectBBVAHeader(data);
+    assert('Caso 7.a — detecta la columna SALDO', det.columnMap.balance === 4, det.columnMap.balance);
+
+    const enTransito = parseBBVARow(data[4], 4, det.columnMap, {});
+    assert('Caso 7.b — fila "En tránsito" queda marcada pending',
+        enTransito && enTransito.pending === true);
+
+    const liquidado = parseBBVARow(data[5], 5, det.columnMap, {});
+    assert('Caso 7.c — fila con saldo numérico NO es pending',
+        liquidado && liquidado.pending === false);
+
+    // Archivos sin columna SALDO: no debe romper ni marcar pending.
+    const sinSaldo = [
+        ['FECHA', 'CONCEPTO', 'CARGO', 'ABONO'],
+        ['10/08/2026', 'ALGO', '-10.00', ''],
+    ];
+    const det2 = detectBBVAHeader(sinSaldo);
+    assert('Caso 7.d — sin columna SALDO, balance = -1', det2.columnMap.balance === -1);
+    const tx2 = parseBBVARow(sinSaldo[1], 1, det2.columnMap, {});
+    assert('Caso 7.e — sin columna SALDO, pending = false', tx2 && tx2.pending === false);
+}
+
+// ---------------------------------------------------------------------------
+//  Caso 8: planStatementReplace — el ciclo "En tránsito" → liquidado.
+//          Es la causa raíz del desfase de saldo: el mismo cargo entra dos
+//          veces porque al liquidarse cambia concepto Y fecha.
+// ---------------------------------------------------------------------------
+
+function caso8_reemplazoPorVentana() {
+    // Lo que ya está guardado: la versión EN TRÁNSITO (concepto truncado).
+    const transito = attachSignatures({
+        id: 'doc-transito', date: '2026-08-09', concept: 'OPENROUTER, INC',
+        charge: 186.02, credit: 0, source: 'xlsx'
+    });
+    // Un movimiento que el archivo también trae, idéntico: debe sobrevivir.
+    const estable = attachSignatures({
+        id: 'doc-estable', date: '2026-08-10', concept: 'GRANERO DEL GUADI / ****0670 AUT: 1',
+        charge: 106, credit: 0, source: 'xlsx', category: 'Material'
+    });
+    // Captura manual dentro del rango: intocable.
+    const manual = attachSignatures({
+        id: 'doc-manual', date: '2026-08-10', concept: 'Ajuste capturado a mano',
+        charge: 500, credit: 0, source: 'manual'
+    });
+    // Confirmado por el usuario: intocable.
+    const confirmado = attachSignatures({
+        id: 'doc-confirmado', date: '2026-08-10', concept: 'REPETIDO REAL',
+        charge: 650, credit: 0, source: 'xlsx', duplicateStatus: 'confirmed_real'
+    });
+    // Fuera del rango del archivo: intocable.
+    const viejo = attachSignatures({
+        id: 'doc-viejo', date: '2026-07-30', concept: 'ALGO VIEJO',
+        charge: 99, credit: 0, source: 'xlsx'
+    });
+
+    // El archivo nuevo: la versión LIQUIDADA del cargo de OpenRouter (otro
+    // concepto, otra fecha) + el movimiento estable sin cambios.
+    const liquidado = attachSignatures({
+        date: '2026-08-10', concept: 'OPENROUTER, INC / ******8493 USD 10.80TC017.22 AUT: 555',
+        charge: 186.02, credit: 0
+    });
+    const estableArchivo = attachSignatures({
+        date: '2026-08-10', concept: 'GRANERO DEL GUADI / ****0670 AUT: 1', charge: 106, credit: 0
+    });
+
+    const plan = planStatementReplace(
+        [liquidado, estableArchivo],
+        [transito, estable, manual, confirmado, viejo]
+    );
+
+    assert('Caso 8.a — ventana = rango del archivo',
+        plan.from === '2026-08-10' && plan.to === '2026-08-10', `${plan.from} → ${plan.to}`);
+
+    const ids = plan.stale.map(e => e.id);
+    assert('Caso 8.b — la versión En tránsito NO entra (quedó fuera de la ventana)',
+        !ids.includes('doc-transito'), ids.join(','));
+    assert('Caso 8.c — el movimiento que el archivo confirma sobrevive',
+        !ids.includes('doc-estable'));
+    assert('Caso 8.d — la captura manual está protegida', !ids.includes('doc-manual'));
+    assert('Caso 8.e — el confirmado por el usuario está protegido',
+        !ids.includes('doc-confirmado'));
+    assert('Caso 8.f — lo de fuera del rango ni se mira', !ids.includes('doc-viejo'));
+    assert('Caso 8.g — cuenta los confirmados por el archivo', plan.confirmed === 1, plan.confirmed);
+    assert('Caso 8.h — cuenta los protegidos', plan.protectedCount === 2, plan.protectedCount);
+
+    // Ahora con el archivo cubriendo también el día del registro en tránsito:
+    // ahí sí debe detectarse como desplazado.
+    const planAmplio = planStatementReplace(
+        [attachSignatures({ date: '2026-08-09', concept: 'OTRA COSA', charge: 1, credit: 0 }), liquidado],
+        [transito, estable, manual, confirmado, viejo]
+    );
+    assert('Caso 8.i — con el día cubierto, el En tránsito sí se marca desplazado',
+        planAmplio.stale.map(e => e.id).includes('doc-transito'),
+        planAmplio.stale.map(e => e.id).join(','));
+
+    // Multiconjunto: 3 copias guardadas, 2 en el archivo → sobra 1.
+    const copia = (id) => attachSignatures({
+        id, date: '2026-08-10', concept: 'SU PAGO EN EFECTIVO / 000 EN COMERCIO',
+        charge: 0, credit: 650, source: 'xlsx'
+    });
+    const enArchivo = () => attachSignatures({
+        date: '2026-08-10', concept: 'SU PAGO EN EFECTIVO / 000 EN COMERCIO', charge: 0, credit: 650
+    });
+    const planCopias = planStatementReplace(
+        [enArchivo(), enArchivo()],
+        [copia('c1'), copia('c2'), copia('c3')]
+    );
+    assert('Caso 8.j — con 3 guardadas y 2 en el archivo, sobra exactamente 1',
+        planCopias.stale.length === 1, planCopias.stale.length);
+
+    // Archivo vacío → plan vacío (jamás borrar por un archivo ilegible).
+    const planVacio = planStatementReplace([], [transito, estable]);
+    assert('Caso 8.k — archivo sin movimientos no borra nada',
+        planVacio.stale.length === 0 && planVacio.from === '');
+}
+
+// ---------------------------------------------------------------------------
 //  Runner público
 // ---------------------------------------------------------------------------
 
@@ -235,6 +366,8 @@ export function runAllTests() {
     test('Caso 4: saldo esperado = inicial + abonos - cargos', caso4_calculoDeSaldo);
     test('Caso 5: normalización de montos (comas, $, signos, espacios)', caso5_normalizacionDeMontos);
     test('Caso 6: detección robusta de encabezados BBVA', caso6_deteccionEncabezadosRobusta);
+    test('Caso 7: columna SALDO y etiqueta "En tránsito"', caso7_columnaSaldoYPendiente);
+    test('Caso 8: reemplazo por ventana (tránsito → liquidado)', caso8_reemplazoPorVentana);
 
     const pass = results.filter(r => r.ok).length;
     const fail = results.length - pass;

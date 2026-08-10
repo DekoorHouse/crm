@@ -3,7 +3,7 @@ import * as utils from './utils.js';
 import * as ui from './ui-manager.js';
 import * as services from './services.js';
 import * as charts from './charts.js';
-import { classifyForImport, computeFileHash, generateImportBatchId, calculateExpectedBalance, reconcileBalance, detectBBVAHeader } from './bbva-parser.js';
+import { classifyForImport, computeFileHash, generateImportBatchId, calculateExpectedBalance, reconcileBalance, detectBBVAHeader, planStatementReplace } from './bbva-parser.js';
 import { isTestMode } from './config.js';
 
 /**
@@ -54,14 +54,89 @@ function ensureXLSXLoaded() {
  *
  * @param {{ newUnique:Array, intraFileDuplicates:Array, existingExact:Array, suspectRepeated:Array, importMeta:object }} classified
  */
+/**
+ * Pregunta al usuario si eliminar los movimientos que el estado de cuenta ya
+ * no lista dentro de su rango de fechas (ver `planStatementReplace`). Resuelve
+ * a true si confirma, false si cancela o cierra.
+ *
+ * @param {{ from:string, to:string, stale:Array, confirmed:number, protectedCount:number }} plan
+ * @returns {Promise<boolean>}
+ */
+function confirmarReemplazoDeVentana(plan) {
+    return new Promise(resolve => {
+        let resuelto = false;
+        const cerrar = (valor) => {
+            if (resuelto) return;
+            resuelto = true;
+            ui.showModal({ show: false });
+            resolve(valor);
+        };
+
+        const filas = plan.stale.slice(0, 12).map(e => {
+            const monto = (parseFloat(e.charge) || 0) > 0
+                ? `-${utils.formatCurrency(parseFloat(e.charge) || 0)}`
+                : utils.formatCurrency(parseFloat(e.credit) || 0);
+            return `<tr>
+                        <td style="padding:3px 8px 3px 0; white-space:nowrap;">${e.date}</td>
+                        <td style="padding:3px 8px 3px 0; text-align:right; white-space:nowrap;">${monto}</td>
+                        <td style="padding:3px 0; font-size:11px;">${String(e.concept || '').replace(/\s+/g, ' ').slice(0, 52)}</td>
+                    </tr>`;
+        }).join('');
+
+        ui.showModal({
+            title: 'Movimientos desplazados por el estado de cuenta',
+            body: `
+                <p>El archivo cubre del <strong>${plan.from}</strong> al <strong>${plan.to}</strong> y en ese rango
+                   hay <strong>${plan.stale.length}</strong> movimiento${plan.stale.length !== 1 ? 's' : ''} guardado${plan.stale.length !== 1 ? 's' : ''}
+                   que el archivo <strong>ya no lista</strong>.</p>
+                <p style="font-size:13px; color:var(--text-secondary);">
+                   Típicamente son registros que estaban <em>En tránsito</em>: al liquidarse, BBVA los reexporta
+                   con el concepto completo y otra fecha, así que quedan duplicados. Eliminarlos evita que el
+                   saldo estimado se desfase.</p>
+                <div class="table-container" style="max-height:32vh; margin-top:10px;">
+                    <table style="width:100%; border-collapse:collapse; font-size:12px;">${filas}</table>
+                </div>
+                ${plan.stale.length > 12 ? `<p style="font-size:12px; margin-top:6px;">…y ${plan.stale.length - 12} más.</p>` : ''}
+                <p style="font-size:12px; color:var(--text-secondary); margin-top:10px;">
+                   Se conservan intactos <strong>${plan.confirmed}</strong> que el archivo sí confirma (con su categoría)
+                   ${plan.protectedCount > 0 ? `y <strong>${plan.protectedCount}</strong> capturados a mano o ya confirmados por ti` : ''}.</p>`,
+            confirmText: `Eliminar ${plan.stale.length}`,
+            confirmClass: 'btn-danger',
+            showCancel: true,
+            onConfirm: () => cerrar(true),
+            onModalOpen: () => {
+                // showModal fija el onclick de Cancelar antes de llamar a
+                // onModalOpen, así que aquí lo sobreescribimos para resolver.
+                elements.modalCancelBtn.onclick = () => cerrar(false);
+            }
+        });
+    });
+}
+
 async function persistClassifiedImport(classified) {
-    const { newUnique, intraFileDuplicates, existingExact, suspectRepeated, importMeta } = classified;
+    const { newUnique, intraFileDuplicates, existingExact, suspectRepeated, importMeta, replacePlan } = classified;
+
+    // "El estado de cuenta manda en su rango": antes de insertar nada, ofrecer
+    // eliminar los movimientos que el archivo ya no lista (versiones viejas de
+    // operaciones que estaban En tránsito). Es opcional: si el usuario cancela,
+    // la importación sigue igual que antes.
+    let eliminados = 0;
+    if (replacePlan && replacePlan.stale && replacePlan.stale.length > 0) {
+        const confirmado = await confirmarReemplazoDeVentana(replacePlan);
+        if (confirmado) {
+            eliminados = await services.deleteExpensesBulk(replacePlan.stale.map(e => e.id));
+        }
+    }
 
     // newUnique ya incluye los `suspect_repeated` (se importan, pero marcados
     // para que el panel de Conciliación los pueda listar).
     if (newUnique.length > 0) {
         await services.saveBulkExpenses(newUnique);
     }
+
+    const notaEliminados = eliminados > 0
+        ? `<p><strong>${eliminados}</strong> movimiento${eliminados !== 1 ? 's' : ''} desplazado${eliminados !== 1 ? 's' : ''} eliminado${eliminados !== 1 ? 's' : ''}.</p>`
+        : '';
 
     const totalSkipped = intraFileDuplicates.length + existingExact.length;
 
@@ -85,6 +160,7 @@ async function persistClassifiedImport(classified) {
                 ui.showModal({
                     title: 'Importación completada',
                     body:
+                        notaEliminados +
                         `<p><strong>${totalImported}</strong> movimiento${totalImported !== 1 ? 's' : ''} importado${totalImported !== 1 ? 's' : ''} en total.</p>` +
                         (selectedExpenses.length > 0
                             ? `<p>Incluyendo <strong>${selectedExpenses.length}</strong> confirmado${selectedExpenses.length !== 1 ? 's' : ''} de los sospechosos.</p>` : '') +
@@ -99,10 +175,10 @@ async function persistClassifiedImport(classified) {
         });
     } else {
         ui.showModal({
-            title: newUnique.length > 0 ? 'Importación completada' : 'Sin registros nuevos',
-            body: newUnique.length > 0
+            title: (newUnique.length > 0 || eliminados > 0) ? 'Importación completada' : 'Sin registros nuevos',
+            body: notaEliminados + (newUnique.length > 0
                 ? `<p><strong>${newUnique.length}</strong> movimiento${newUnique.length !== 1 ? 's' : ''} nuevo${newUnique.length !== 1 ? 's' : ''} importado${newUnique.length !== 1 ? 's' : ''}.</p>`
-                : '<p>No se encontraron registros válidos en el archivo.</p>',
+                : (eliminados > 0 ? '' : '<p>No se encontraron registros válidos en el archivo.</p>')),
             confirmText: 'Entendido',
             showCancel: false
         });
@@ -194,6 +270,10 @@ async function handleFileUpload(e, options = {}) {
             const { newUnique, intraFileDuplicates, existingExact, suspectRepeated } =
                 classifyForImport(newExpenses, state.expenses);
 
+            // Plan de "el estado de cuenta manda en su rango": qué movimientos
+            // ya guardados quedaron desplazados porque el archivo no los lista.
+            const replacePlan = planStatementReplace(newExpenses, state.expenses);
+
             // ============================================================
             //  DRY-RUN: NO se persiste nada. El usuario puede pulsar
             //  "Importar este archivo" dentro del modal para promover el
@@ -215,13 +295,13 @@ async function handleFileUpload(e, options = {}) {
                     getExpenses: () => state.expenses,
                     onImport: async (classified) => {
                         ui.showModal({ show: false });
-                        await persistClassifiedImport(classified);
+                        await persistClassifiedImport({ ...classified, replacePlan });
                     }
                 });
                 return;
             }
 
-            await persistClassifiedImport({ newUnique, intraFileDuplicates, existingExact, suspectRepeated, importMeta });
+            await persistClassifiedImport({ newUnique, intraFileDuplicates, existingExact, suspectRepeated, importMeta, replacePlan });
 
         } catch (error) {
             console.error("Error al procesar el archivo de gastos:", error);

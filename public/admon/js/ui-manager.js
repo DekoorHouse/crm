@@ -2116,22 +2116,27 @@ export function openReconciliationModal({ getExpenses, calculateExpectedBalance,
             const $compute = document.getElementById('rec-compute-btn');
 
             // Inyectar botón "Guardar saldo real" en el footer, a la izquierda
-            // del botón Cerrar. Si ya existe (re-apertura del modal), reciclar.
+            // del botón Cerrar.
+            //
+            // El botón se crea SIEMPRE desde cero. `showModal` ya elimina los
+            // botones no canónicos del footer antes de abrir, así que en la
+            // práctica nunca hay uno previo; el `remove()` de abajo sólo hace
+            // explícita esa invariante. Importa porque el addEventListener se
+            // registra en cada apertura: si el nodo se reciclara, los listeners
+            // se apilarían y cada uno traería su propio `lastReconciliation`.
             const footer = elements.modal.querySelector('.modal-footer');
             const confirmBtn = elements.modalConfirmBtn;
-            let $save = document.getElementById('rec-save-btn');
-            if (!$save) {
-                $save = document.createElement('button');
-                $save.id = 'rec-save-btn';
-                $save.type = 'button';
-                $save.className = 'btn';
-                $save.disabled = true;
-                $save.innerHTML = '<i class="fas fa-save"></i> Guardar saldo real';
-                footer.insertBefore($save, confirmBtn);
-            } else {
-                $save.disabled = true;
-                $save.innerHTML = '<i class="fas fa-save"></i> Guardar saldo real';
-            }
+            const $previo = document.getElementById('rec-save-btn');
+            if ($previo) $previo.remove();
+
+            const $save = document.createElement('button');
+            $save.id = 'rec-save-btn';
+            $save.type = 'button';
+            $save.className = 'btn';
+            $save.disabled = true;
+            $save.title = 'Primero pulsa "Calcular"';
+            $save.innerHTML = '<i class="fas fa-save"></i> Guardar saldo real';
+            footer.insertBefore($save, confirmBtn);
 
             let lastReconciliation = null;
 
@@ -2219,12 +2224,19 @@ export function openReconciliationModal({ getExpenses, calculateExpectedBalance,
                 $result.style.borderColor = statusColor;
                 $result.style.display = 'block';
                 $save.disabled = false;
+                $save.title = 'Guardar este saldo real como checkpoint';
             };
 
             $compute.addEventListener('click', compute);
 
             $save.addEventListener('click', async () => {
-                if (!lastReconciliation) return;
+                // Sin cálculo previo no hay nada que guardar. Antes esto era un
+                // `return` mudo: el usuario pulsaba y no pasaba absolutamente
+                // nada, sin mensaje ni error en consola.
+                if (!lastReconciliation) {
+                    showToast('Primero pulsa "Calcular" para conciliar el periodo', 'warning');
+                    return;
+                }
                 $save.disabled = true;
                 const orig = $save.textContent;
                 $save.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';

@@ -303,6 +303,23 @@
     .btn:active {
       transform: translateY(0);
     }
+
+    /* Un botón deshabilitado debe VERSE deshabilitado. Sin esto un .btn:disabled
+       se renderiza idéntico a uno activo (mismo color, mismo hover) y el usuario
+       hace clic esperando que pase algo. */
+    .btn:disabled,
+    .btn[disabled] {
+      opacity: 0.45;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    .btn:disabled:hover,
+    .btn[disabled]:hover {
+      background-color: var(--primary);
+      transform: none;
+      box-shadow: none;
+    }
+
     .btn.btn-primary:hover { background-color: var(--primary-dark); }
     .btn.btn-sm { padding: 5px 10px; font-size: 12px; }
     

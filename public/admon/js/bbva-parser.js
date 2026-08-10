@@ -166,7 +166,7 @@ export function toISODate(raw) {
 export function detectBBVAHeader(jsonData) {
     const FALLBACK = {
         headerRowIndex: 3,  // los datos arrancan en la fila 5 (índice 4)
-        columnMap: { date: 0, concept: 1, charge: 2, credit: 3 },
+        columnMap: { date: 0, concept: 1, charge: 2, credit: 3, balance: -1 },
         headerFound: false
     };
 
@@ -177,12 +177,13 @@ export function detectBBVAHeader(jsonData) {
     const conceptRe = /(descripci[oó]n|concepto|detalle)/i;
     const chargeRe = /(cargo|d[eé]bito|retiro)/i;
     const creditRe = /(abono|cr[eé]dito|dep[oó]sito)/i;
+    const balanceRe = /saldo/i;
 
     for (let i = 0; i < MAX_SCAN; i++) {
         const row = jsonData[i];
         if (!Array.isArray(row)) continue;
 
-        let dateCol = -1, conceptCol = -1, chargeCol = -1, creditCol = -1;
+        let dateCol = -1, conceptCol = -1, chargeCol = -1, creditCol = -1, balanceCol = -1;
         for (let c = 0; c < row.length; c++) {
             const cell = String(row[c] || '').trim();
             if (!cell) continue;
@@ -190,6 +191,7 @@ export function detectBBVAHeader(jsonData) {
             else if (conceptCol === -1 && conceptRe.test(cell)) conceptCol = c;
             else if (chargeCol === -1 && chargeRe.test(cell)) chargeCol = c;
             else if (creditCol === -1 && creditRe.test(cell)) creditCol = c;
+            else if (balanceCol === -1 && balanceRe.test(cell)) balanceCol = c;
         }
         // Necesitamos al menos fecha + concepto + (cargo o abono) para considerar
         // que es una fila de encabezado válida.
@@ -202,6 +204,9 @@ export function detectBBVAHeader(jsonData) {
                     // si una de las dos columnas falta, asumir la siguiente al concept
                     charge: chargeCol >= 0 ? chargeCol : conceptCol + 1,
                     credit: creditCol >= 0 ? creditCol : conceptCol + 2,
+                    // SALDO es opcional: no todos los exports la traen. Cuando
+                    // existe, distingue los movimientos "En tránsito".
+                    balance: balanceCol,
                 },
                 headerFound: true
             };
@@ -233,6 +238,15 @@ export function parseBBVARow(row, sourceRowIndex, columnMap, importMeta = {}) {
     const rawCharge = row[columnMap.charge];
     const rawCredit = row[columnMap.credit];
 
+    // Columna SALDO (opcional). BBVA escribe "En tránsito" en las operaciones
+    // que aún no se liquidan. Ese dato es clave: mientras está en tránsito el
+    // concepto viene TRUNCADO ("FACEBK *7AJBZSV6E"), y al liquidarse BBVA lo
+    // reexporta completo ("FACEBK *7AJBZSV6E2 / ******8493 RFC: ... AUT: ...")
+    // y con otra fecha. Como la firma estricta depende de fecha+concepto, el
+    // mismo cargo entra dos veces si sólo se importa lo "nuevo".
+    const rawBalance = (columnMap && columnMap.balance >= 0) ? row[columnMap.balance] : '';
+    const pending = /tr[aá]nsito/i.test(String(rawBalance == null ? '' : rawBalance).trim());
+
     const date = toISODate(rawDate);
     const concept = String(rawConcept || '').trim();
     const charge = normalizeAmount(rawCharge);
@@ -254,6 +268,7 @@ export function parseBBVARow(row, sourceRowIndex, columnMap, importMeta = {}) {
         channel: '',
         type: 'operativo',
         sub_type: '',
+        pending,              // true = "En tránsito", el concepto puede cambiar al liquidarse
         source: importMeta.sourceFileExt || 'xls',
 
         // --- Metadata de importación (auditoría) ---
@@ -432,6 +447,82 @@ export function classifyForImport(newTxs, existingTxs) {
     }
 
     return { newUnique, intraFileDuplicates, existingExact, suspectRepeated };
+}
+
+/**
+ * "El estado de cuenta manda en su rango".
+ *
+ * PROBLEMA QUE RESUELVE
+ * Un movimiento "En tránsito" se guarda con el concepto truncado. Días después
+ * BBVA lo liquida y lo reexporta con el concepto completo y otra fecha, así que
+ * su strictSignature cambia y `classifyForImport` lo ve como movimiento NUEVO:
+ * el mismo cargo queda contado dos veces y el saldo estimado se desfasa para
+ * siempre. Cotejar por importe+comercio con ventana de días sería heurístico y
+ * fallaría en ambos sentidos.
+ *
+ * SOLUCIÓN
+ * Un export de BBVA es la verdad completa para el rango de fechas que cubre.
+ * Entonces, dentro de ese rango, todo movimiento importado que el archivo ya no
+ * lista está de más (es una versión vieja) y debe eliminarse. Es exactamente lo
+ * que se hacía a mano —borrar el mes y recargarlo— pero sin perder categorías:
+ * los movimientos que el archivo sí confirma NO se tocan, conservan su
+ * categoría, subcategoría y splits.
+ *
+ * NUNCA se marcan para borrar:
+ *   - capturas manuales (`source` 'manual' o 'modified'),
+ *   - los que el usuario confirmó explícitamente (`duplicateStatus`
+ *     'confirmed_real'),
+ *   - nada fuera del rango [from, to] del archivo.
+ *
+ * El cotejo es por multiconjunto de firmas: si el archivo trae 3 copias de una
+ * firma y en la base hay 5, sobran 2. Así se limpian también los duplicados
+ * acumulados por reimportaciones traslapadas.
+ *
+ * @param {Array<object>} newTxs       transacciones parseadas del archivo
+ * @param {Array<object>} existingTxs  movimientos ya guardados (con id)
+ * @returns {{ from:string, to:string, stale:Array<object>, confirmed:number, protectedCount:number }}
+ */
+export function planStatementReplace(newTxs, existingTxs) {
+    const vacio = { from: '', to: '', stale: [], confirmed: 0, protectedCount: 0 };
+    if (!Array.isArray(newTxs) || newTxs.length === 0) return vacio;
+
+    const fechas = newTxs.map(t => t && t.date).filter(Boolean).sort();
+    if (fechas.length === 0) return vacio;
+    const from = fechas[0];
+    const to = fechas[fechas.length - 1];
+
+    // Multiconjunto de firmas del archivo: firma → cuántas veces aparece.
+    const enArchivo = new Map();
+    for (const tx of newTxs) {
+        const ss = tx.strictSignature || getStrictSignature(tx);
+        enArchivo.set(ss, (enArchivo.get(ss) || 0) + 1);
+    }
+
+    const esProtegido = e =>
+        e.source === 'manual' || e.source === 'modified' || e.duplicateStatus === 'confirmed_real';
+
+    const usadas = new Map();
+    const stale = [];
+    let confirmed = 0;
+    let protectedCount = 0;
+
+    for (const e of (existingTxs || [])) {
+        if (!e || !e.date || e.date < from || e.date > to) continue;
+        if (esProtegido(e)) { protectedCount++; continue; }
+
+        const ss = e.strictSignature || getStrictSignature(e);
+        const permitidas = enArchivo.get(ss) || 0;
+        const yaVistas = usadas.get(ss) || 0;
+
+        if (yaVistas < permitidas) {
+            usadas.set(ss, yaVistas + 1);   // el archivo lo sigue listando → intacto
+            confirmed++;
+        } else {
+            stale.push(e);                   // el archivo ya no lo lista → sobra
+        }
+    }
+
+    return { from, to, stale, confirmed, protectedCount };
 }
 
 // ---------------------------------------------------------------------------

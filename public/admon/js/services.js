@@ -800,6 +800,36 @@ export async function deleteExpense(id) {
     }
 }
 
+/**
+ * Borra varios movimientos por id, en lotes. La usa el reemplazo por ventana
+ * del importador para eliminar las versiones viejas de movimientos que el
+ * estado de cuenta ya no lista (típicamente el registro "En tránsito" cuyo
+ * concepto cambió al liquidarse).
+ *
+ * @param {Array<string>} ids
+ * @returns {Promise<number>}  cuántos se borraron
+ */
+export async function deleteExpensesBulk(ids) {
+    const limpios = (ids || []).filter(Boolean);
+    if (limpios.length === 0) return 0;
+    saveStateToHistory();
+    const CHUNK_SIZE = 400; // el límite de Firestore es 500
+    try {
+        for (let i = 0; i < limpios.length; i += CHUNK_SIZE) {
+            const batch = writeBatch(db);
+            limpios.slice(i, i + CHUNK_SIZE).forEach(id => {
+                batch.delete(doc(db, EXP(), id));
+            });
+            await batch.commit();
+        }
+        return limpios.length;
+    } catch (error) {
+        console.error("Error borrando movimientos en lote:", error);
+        actionHistory.pop();
+        throw new Error("No se pudieron eliminar los movimientos desplazados.");
+    }
+}
+
 export async function deleteKpi(id) {
     try {
         await deleteDoc(doc(db, "daily_kpis", id));
