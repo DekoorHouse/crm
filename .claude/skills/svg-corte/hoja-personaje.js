@@ -48,15 +48,19 @@ const MAX_INICIAL = { spiderman: 62, rex: 72 };
 // mismo para "Tali" que para "Jose Miguel". A 1.3 ya no libra el corredor por mas que se mueva.
 const BASE_INICIAL = { spiderman: 1.15, rex: 1 };
 const PASO = 0.94;      // cuanto se encoge en cada reintento (paso fino: encoger es el ultimo recurso)
-const INTENTOS = 5;
-const MAX_CORRIDAS = 18;   // tope duro de corridas de Corel, para no colgarse en un caso imposible
+const INTENTOS = 7;
+const MAX_CORRIDAS = 26;   // tope duro de corridas de Corel, para no colgarse en un caso imposible
 // Corrimientos a probar ANTES de encoger, en mm. Alejan el nombre de la figura sin tocarle el tamano.
 // El 0 va primero: si la posicion original ya libra, no se mueve nada.
 // En spiderman el nombre se aleja de la mano moviendose hacia el NEGATIVO; en rex, un nombre de dos
 // renglones necesita irse al POSITIVO para librar la figura. Con solo negativos, un caso de rex no
 // encontraba salida aunque existiera (DH14573). Se prueban los dos lados, del corrimiento mas chico
 // al mas grande, para tocar la posicion original lo menos posible.
-const SEPARACIONES = [0, -2, 2, -3, 3, -4, 4, -6, 6];
+const SEPARACIONES = [0, -2, 2, -4, 4];
+// En los pasos de encogido se prueban solo los 3 primeros: gastar 9 corrimientos por escalon agotaba
+// el presupuesto ANTES de llegar a un tamano que si cabia. Caso medido: "Rodrigo" (la "g" baja y pega
+// con el brazo) cabe a escala ~1.0 pero el ciclo moria en 0.96 tras 18 corridas sin haber bajado mas.
+const SEPARACIONES_ENCOGIDO = [0, -2, 2];
 
 // Banderas que llevan un valor detras. Toda bandera nueva con valor TIENE que anadirse aqui.
 const BANDERAS_CON_VALOR = new Set(['--tpl', '--file', '--label', '--holgura', '--max', '--separa', '--base']);
@@ -169,7 +173,7 @@ function verificar(pngPath, holgura) {
     let paso = 0;
     busqueda:
     while (true) {
-        const sweeps = paso === 0 ? SEPARACIONES : SEPARACIONES.slice(0, 3);
+        const sweeps = paso === 0 ? SEPARACIONES : SEPARACIONES_ENCOGIDO;
         for (const sep of sweeps) {
             const r = probar(escala, sep);
             if (r.ok) { res = r; separa = sep; break busqueda; }

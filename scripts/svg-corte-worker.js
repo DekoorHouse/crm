@@ -538,6 +538,10 @@ async function findPersonajeLamps() {
         const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
         const previews = prev.exists ? (prev.data().previews || []) : [];
         if (o.svgCorteParcialAt) continue;                                    // ya se le corto su parte
+        // Deja de intentar un caso imposible. El contador ya mandaba el pedido a Pendientes a los 3
+        // fallos, pero NADA impedia volver a intentarlo: DH14600 acumulo 73 intentos, o sea horas de
+        // Corel cada 15 min sobre una hoja que nunca iba a salir. Ahora tambien se salta.
+        if ((Number(o.svgCortePersonajeFails) || 0) >= 3) continue;
         const el = personajeEligibility(o, previews);
         if (!el.eligible) continue;
         // Pedido MIXTO: se corta lo que la skill sabe y queda pendiente SOLO lo que no (Chris, 2026-08-07).
@@ -711,6 +715,9 @@ async function processPersonajeSheets(sheets) {
                 log(`  ! ${dhOf(o)} cortado a medias a proposito: le quedan ${meta.pendientes} lampara(s) a mano -> sigue en Pendientes`);
             } else {
                 upd.svgCorteAt = admin.firestore.FieldValue.serverTimestamp();
+                // El pedido quedo completo: se limpia el designForce que hubieran dejado los fallos
+                // (o un empujon manual), para que no quede pegado sin motivo.
+                upd.designForce = admin.firestore.FieldValue.delete();
                 // Los que pidieron VIDEO se quedan en 'Corregir': el pendiente del video sigue vivo
                 // hasta que el equipo lo grabe (misma regla que el corte de corazones). La bandera es
                 // POR PEDIDO: dos pedidos pueden compartir hoja y solo uno ser de video.
