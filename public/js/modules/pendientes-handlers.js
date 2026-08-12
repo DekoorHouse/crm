@@ -479,7 +479,9 @@ function pendCotejarBadge(cotejo, contactId) {
         error:            ['#e5e7eb', '#374151', 'fa-triangle-exclamation','No se pudo cotejar'],
     };
     const [bg, fg, icon, label] = M[cotejo.status] || ['#e5e7eb', '#374151', 'fa-circle-info', cotejo.status || 'Sin cotejar'];
-    return wrap(bg, fg, `<div style="font-weight:700"><i class="fas ${icon}"></i> ${label}${recotejar}</div>${leidoStr}${movStr}`);
+    const efectivoNote = (cotejo.efectivo && (cotejo.status === 'partial' || cotejo.status === 'none'))
+        ? `<div style="margin-top:4px;opacity:.72;font-size:.72rem"><i class="fas fa-circle-info"></i> Pago en efectivo (OXXO cobra comisión: se coteja el neto). El efectivo no se puede atar a un cliente.</div>` : '';
+    return wrap(bg, fg, `<div style="font-weight:700"><i class="fas ${icon}"></i> ${label}${recotejar}</div>${leidoStr}${movStr}${efectivoNote}`);
 }
 
 // Dispara el cotejo de una tarjeta (automático al pintarse; o forzado con el botón ↻). Cachea el OCR

@@ -2764,6 +2764,9 @@ Reglas: "monto" es el importe pagado, SOLO el número (sin $ ni comas ni MXN). "
 /** Busca el abono real que corresponde al comprobante. Devuelve { status, best, candidatos }. */
 async function matchIncomeMovement(ocr, aroundMs) {
     const monto = ocr && ocr.monto != null ? Number(ocr.monto) : null;
+    // OXXO/efectivo COBRA COMISIÓN: el comprobante dice el bruto ($212) pero al banco entra el neto
+    // ($200). Para esos, además del monto exacto se acepta un abono en efectivo un poco menor (neto).
+    const esEfectivo = /efectivo|deposito/.test(_cotejoNorm((ocr && ocr.tipo) || '')) || /oxxo|efectivo/.test(_cotejoNorm((ocr && ocr.bancoOrigen) || ''));
     const baseMs = (ocr && ocr.fecha && !isNaN(Date.parse(ocr.fecha)))
         ? Date.parse(ocr.fecha + 'T12:00:00Z') : (aroundMs || Date.now());
     const day = 86400000;
@@ -2790,11 +2793,17 @@ async function matchIncomeMovement(ocr, aroundMs) {
         const m = doc.data();
         const credit = Number(m.credit) || 0;
         if (credit <= 0) return;
-        const montoOk = monto != null && Math.abs(credit - monto) < 1;
-        if (monto != null && !montoOk) return;             // otro monto → no es este pago
         const concept = _cotejoNorm(m.concept);
+        const esCashMov = /efectivo|comercio|practic|oxxo|deposito/.test(concept);
+        let montoOk = false, montoAprox = false;
+        if (monto != null) {
+            if (Math.abs(credit - monto) < 1) montoOk = true;
+            else if (esEfectivo && esCashMov && credit >= monto - 25 && credit < monto) montoAprox = true;  // neto tras comisión OXXO
+            else return;                                   // otro monto → no es este pago
+        }
         let score = 0; const why = [];
         if (montoOk) { score += 50; why.push('monto'); }
+        else if (montoAprox) { score += 28; why.push('monto~'); }
         if (ocr && ocr.fecha && m.date === ocr.fecha) { score += 15; why.push('fecha'); }
         if (bancoTokens.length && bancoTokens.some(t => t && concept.includes(t))) { score += 20; why.push('banco'); }
         if (remTokens.length && remTokens.some(t => concept.includes(t))) { score += 12; why.push('remitente'); }
@@ -2811,11 +2820,12 @@ async function matchIncomeMovement(ocr, aroundMs) {
     let status;
     const strong = best && (best.why.includes('clave') || best.why.includes('remitente'));
     const bancoUnico = best && best.why.includes('banco') && candidatos.filter(c => c.why.includes('banco')).length === 1;
+    const exacto = best && best.why.includes('monto');
     if (!best) status = 'none';
-    else if (strong || bancoUnico) status = 'match';
-    else if (best.why.includes('monto')) status = 'partial';   // existe un abono del monto/fecha, pero no único → revisar
+    else if (strong || (exacto && bancoUnico)) status = 'match';   // clave/remitente, o monto exacto con banco único
+    else if (exacto || best.why.includes('monto~')) status = 'partial';   // monto existe pero ambiguo, o neto de efectivo → revisar
     else status = 'none';
-    return { status, best, candidatos: candidatos.slice(0, 4) };
+    return { status, best, candidatos: candidatos.slice(0, 4), efectivo: esEfectivo };
 }
 
 /**
