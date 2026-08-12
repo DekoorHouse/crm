@@ -1922,9 +1922,20 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         try {
             const name = (contactData && contactData.name) || contactId;
             const req = String(clientMessage || '').trim().slice(0, 300);
+            // AVISO DE HOJA EN DRIVE (Chris, 2026-08-10): si el SVG de este pedido YA se subió, ese
+            // corte lleva el dato viejo y alguien puede cortarlo en cualquier momento. La hoja suele
+            // llevar DOS pedidos (svgCorteSheetWith), así que NO se borra: se marca. Sin este aviso
+            // nadie se enteraba de que había una hoja esperando (caso DH14404, corregido 13 min
+            // después de subirse). El pedido vuelve solo a Pendientes de Diseño al corregir el dato.
+            let hojaNote = '';
+            if (!isMediaExtra && orderData.svgCorteAt) {
+                const hoja = orderData.svgCorteFileName || '(sin nombre de archivo)';
+                const con = orderData.svgCorteSheetWith ? ` — comparte hoja con *${orderData.svgCorteSheetWith}*, así que NO la borres` : '';
+                hojaNote = `\n\n⚠️ *OJO: este pedido YA tiene su corte en Drive y todavía no se corta.*\nHoja: \`${hoja}\`${con}.\nVe a Drive y renómbrala a *NO CORTAR* antes de que alguien la mande a la láser.${orderData.svgCorteUrl ? `\n${orderData.svgCorteUrl}` : ''}`;
+            }
             const text = isMediaExtra
                 ? `🎥 *Pedido a CORREGIR — pide VIDEO/FOTO extra*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente pide un video o una foto adicional (ej. otro color de luz) de su producto ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nNO hay que re-fabricar nada: graba/toma lo que pide y envíaselo por el chat. Al mandarlo, regresa el pedido a "Foto enviada" para que siga su cobro.`
-                : `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido${req ? `:\n_"${req}"_` : '.'}${datoUpdateNote}\n\nRevisa la conversación${datoUpdateNote ? '.' : ' y corrígelo.'}`;
+                : `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido${req ? `:\n_"${req}"_` : '.'}${datoUpdateNote}${hojaNote}\n\nRevisa la conversación${datoUpdateNote ? '.' : ' y corrígelo.'}`;
             await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
             console.log(`[POSTVENTA] Alerta de ${isVideo ? 'video' : 'corrección'} enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
         } catch (e) {
