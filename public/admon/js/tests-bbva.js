@@ -310,16 +310,18 @@ function caso8_reemplazoPorVentana() {
         plan.from === '2026-08-10' && plan.to === '2026-08-10', `${plan.from} → ${plan.to}`);
 
     const ids = plan.stale.map(e => e.id);
+    const idsConf = plan.staleConfirmed.map(e => e.id);
+    const todos = [...ids, ...idsConf];
     assert('Caso 8.b — la versión En tránsito NO entra (quedó fuera de la ventana)',
-        !ids.includes('doc-transito'), ids.join(','));
+        !todos.includes('doc-transito'), todos.join(','));
     assert('Caso 8.c — el movimiento que el archivo confirma sobrevive',
-        !ids.includes('doc-estable'));
-    assert('Caso 8.d — la captura manual está protegida', !ids.includes('doc-manual'));
-    assert('Caso 8.e — el confirmado por el usuario está protegido',
-        !ids.includes('doc-confirmado'));
-    assert('Caso 8.f — lo de fuera del rango ni se mira', !ids.includes('doc-viejo'));
+        !todos.includes('doc-estable'));
+    assert('Caso 8.d — la captura manual está protegida', !todos.includes('doc-manual'));
+    assert('Caso 8.e — el confirmed_real desplazado va aparte, no protegido',
+        idsConf.includes('doc-confirmado') && !ids.includes('doc-confirmado'), idsConf.join(','));
+    assert('Caso 8.f — lo de fuera del rango ni se mira', !todos.includes('doc-viejo'));
     assert('Caso 8.g — cuenta los confirmados por el archivo', plan.confirmed === 1, plan.confirmed);
-    assert('Caso 8.h — cuenta los protegidos', plan.protectedCount === 2, plan.protectedCount);
+    assert('Caso 8.h — sólo lo manual cuenta como protegido', plan.protectedCount === 1, plan.protectedCount);
 
     // Ahora con el archivo cubriendo también el día del registro en tránsito:
     // ahí sí debe detectarse como desplazado.

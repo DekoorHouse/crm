@@ -469,10 +469,17 @@ export function classifyForImport(newTxs, existingTxs) {
  * categoría, subcategoría y splits.
  *
  * NUNCA se marcan para borrar:
- *   - capturas manuales (`source` 'manual' o 'modified'),
- *   - los que el usuario confirmó explícitamente (`duplicateStatus`
- *     'confirmed_real'),
+ *   - capturas manuales (`source` 'manual' o 'modified'): no vienen de ningún
+ *     estado de cuenta, así que el archivo no puede contradecirlas,
  *   - nada fuera del rango [from, to] del archivo.
+ *
+ * Caso aparte: los `duplicateStatus === 'confirmed_real'`. Esa marca dice
+ * "en la importación revisé este posible duplicado y es real", una afirmación
+ * sobre aquel momento. El estado de cuenta es evidencia posterior y más fuerte:
+ * si el banco ya no lo lista, no puede ser real (típicamente era la versión En
+ * tránsito de un cargo que después se liquidó con otro concepto). Se devuelven
+ * en `staleConfirmed`, separados, para que la UI los muestre marcados y el
+ * usuario vea que está revirtiendo una decisión suya.
  *
  * El cotejo es por multiconjunto de firmas: si el archivo trae 3 copias de una
  * firma y en la base hay 5, sobran 2. Así se limpian también los duplicados
@@ -480,10 +487,10 @@ export function classifyForImport(newTxs, existingTxs) {
  *
  * @param {Array<object>} newTxs       transacciones parseadas del archivo
  * @param {Array<object>} existingTxs  movimientos ya guardados (con id)
- * @returns {{ from:string, to:string, stale:Array<object>, confirmed:number, protectedCount:number }}
+ * @returns {{ from:string, to:string, stale:Array<object>, staleConfirmed:Array<object>, confirmed:number, protectedCount:number }}
  */
 export function planStatementReplace(newTxs, existingTxs) {
-    const vacio = { from: '', to: '', stale: [], confirmed: 0, protectedCount: 0 };
+    const vacio = { from: '', to: '', stale: [], staleConfirmed: [], confirmed: 0, protectedCount: 0 };
     if (!Array.isArray(newTxs) || newTxs.length === 0) return vacio;
 
     const fechas = newTxs.map(t => t && t.date).filter(Boolean).sort();
@@ -498,11 +505,11 @@ export function planStatementReplace(newTxs, existingTxs) {
         enArchivo.set(ss, (enArchivo.get(ss) || 0) + 1);
     }
 
-    const esProtegido = e =>
-        e.source === 'manual' || e.source === 'modified' || e.duplicateStatus === 'confirmed_real';
+    const esProtegido = e => e.source === 'manual' || e.source === 'modified';
 
     const usadas = new Map();
     const stale = [];
+    const staleConfirmed = [];
     let confirmed = 0;
     let protectedCount = 0;
 
@@ -517,12 +524,14 @@ export function planStatementReplace(newTxs, existingTxs) {
         if (yaVistas < permitidas) {
             usadas.set(ss, yaVistas + 1);   // el archivo lo sigue listando → intacto
             confirmed++;
+        } else if (e.duplicateStatus === 'confirmed_real') {
+            staleConfirmed.push(e);          // sobra, pero el usuario lo había confirmado
         } else {
             stale.push(e);                   // el archivo ya no lo lista → sobra
         }
     }
 
-    return { from, to, stale, confirmed, protectedCount };
+    return { from, to, stale, staleConfirmed, confirmed, protectedCount };
 }
 
 // ---------------------------------------------------------------------------

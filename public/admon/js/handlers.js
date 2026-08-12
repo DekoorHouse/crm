@@ -72,35 +72,54 @@ function confirmarReemplazoDeVentana(plan) {
             resolve(valor);
         };
 
-        const filas = plan.stale.slice(0, 12).map(e => {
+        const confirmados = plan.staleConfirmed || [];
+        const total = plan.stale.length + confirmados.length;
+
+        const fila = (e, marcado) => {
             const monto = (parseFloat(e.charge) || 0) > 0
                 ? `-${utils.formatCurrency(parseFloat(e.charge) || 0)}`
                 : utils.formatCurrency(parseFloat(e.credit) || 0);
-            return `<tr>
+            return `<tr${marcado ? ' style="color:var(--danger);"' : ''}>
                         <td style="padding:3px 8px 3px 0; white-space:nowrap;">${e.date}</td>
                         <td style="padding:3px 8px 3px 0; text-align:right; white-space:nowrap;">${monto}</td>
                         <td style="padding:3px 0; font-size:11px;">${String(e.concept || '').replace(/\s+/g, ' ').slice(0, 52)}</td>
                     </tr>`;
-        }).join('');
+        };
 
         ui.showModal({
             title: 'Movimientos desplazados por el estado de cuenta',
             body: `
                 <p>El archivo cubre del <strong>${plan.from}</strong> al <strong>${plan.to}</strong> y en ese rango
-                   hay <strong>${plan.stale.length}</strong> movimiento${plan.stale.length !== 1 ? 's' : ''} guardado${plan.stale.length !== 1 ? 's' : ''}
+                   hay <strong>${total}</strong> movimiento${total !== 1 ? 's' : ''} guardado${total !== 1 ? 's' : ''}
                    que el archivo <strong>ya no lista</strong>.</p>
                 <p style="font-size:13px; color:var(--text-secondary);">
                    Típicamente son registros que estaban <em>En tránsito</em>: al liquidarse, BBVA los reexporta
                    con el concepto completo y otra fecha, así que quedan duplicados. Eliminarlos evita que el
                    saldo estimado se desfase.</p>
-                <div class="table-container" style="max-height:32vh; margin-top:10px;">
-                    <table style="width:100%; border-collapse:collapse; font-size:12px;">${filas}</table>
+                ${plan.stale.length > 0 ? `
+                <div class="table-container" style="max-height:28vh; margin-top:10px;">
+                    <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                        ${plan.stale.slice(0, 12).map(e => fila(e, false)).join('')}
+                    </table>
                 </div>
-                ${plan.stale.length > 12 ? `<p style="font-size:12px; margin-top:6px;">…y ${plan.stale.length - 12} más.</p>` : ''}
+                ${plan.stale.length > 12 ? `<p style="font-size:12px; margin-top:6px;">…y ${plan.stale.length - 12} más.</p>` : ''}` : ''}
+                ${confirmados.length > 0 ? `
+                <div style="margin-top:14px; padding:10px; border:1px solid var(--danger); border-radius:8px;">
+                    <p style="margin:0 0 6px; font-size:13px;">
+                        <i class="fas fa-exclamation-triangle" style="color:var(--danger);"></i>
+                        <strong>${confirmados.length}</strong> de ellos los habías marcado como
+                        <em>"repetido real"</em> al importar. El estado de cuenta ya no los lista,
+                        así que al continuar <strong>se revierte esa decisión</strong>.
+                    </p>
+                    <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                        ${confirmados.slice(0, 8).map(e => fila(e, true)).join('')}
+                    </table>
+                    ${confirmados.length > 8 ? `<p style="font-size:12px; margin:6px 0 0;">…y ${confirmados.length - 8} más.</p>` : ''}
+                </div>` : ''}
                 <p style="font-size:12px; color:var(--text-secondary); margin-top:10px;">
                    Se conservan intactos <strong>${plan.confirmed}</strong> que el archivo sí confirma (con su categoría)
-                   ${plan.protectedCount > 0 ? `y <strong>${plan.protectedCount}</strong> capturados a mano o ya confirmados por ti` : ''}.</p>`,
-            confirmText: `Eliminar ${plan.stale.length}`,
+                   ${plan.protectedCount > 0 ? `y <strong>${plan.protectedCount}</strong> capturados a mano` : ''}.</p>`,
+            confirmText: `Eliminar ${total}`,
             confirmClass: 'btn-danger',
             showCancel: true,
             onConfirm: () => cerrar(true),
@@ -121,10 +140,13 @@ async function persistClassifiedImport(classified) {
     // operaciones que estaban En tránsito). Es opcional: si el usuario cancela,
     // la importación sigue igual que antes.
     let eliminados = 0;
-    if (replacePlan && replacePlan.stale && replacePlan.stale.length > 0) {
+    const desplazados = replacePlan
+        ? [...(replacePlan.stale || []), ...(replacePlan.staleConfirmed || [])]
+        : [];
+    if (desplazados.length > 0) {
         const confirmado = await confirmarReemplazoDeVentana(replacePlan);
         if (confirmado) {
-            eliminados = await services.deleteExpensesBulk(replacePlan.stale.map(e => e.id));
+            eliminados = await services.deleteExpensesBulk(desplazados.map(e => e.id));
         }
     }
 
