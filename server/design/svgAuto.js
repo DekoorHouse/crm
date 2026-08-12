@@ -243,8 +243,13 @@ function itemEspecialPersonaje(datos) {
     // por bueno un "Especial: con su foto" que venía después, y esa lámpara se habría cortado.
     const vals = [...s.matchAll(/especial\s*:\s*([^|\n]+)/gi)].map(m => m[1].trim()).filter(Boolean);
     if (vals.length) {
-        // Basta que UNO no sea pura logística ("recoger en tienda") para mandar el item a manual.
-        if (vals.some(v => !(ESPECIAL_LOGISTICA_RE.test(v) && !ESPECIAL_PERSONAJE_RE.test(v)))) return true;
+        // Manda a manual solo si el "Especial:" pide algo del DISEÑO (foto, grabado, dibujo, frase…).
+        // Antes bastaba con que la nota NO EMPEZARA con una palabra de logística conocida, y eso frenaba
+        // pedidos normales: DH14717 traía "Especial: tocar fuerte en la ventana (no sirve timbre), casa
+        // con reja blanca… Incluir tarjeta", que es una instrucción de ENTREGA y no cambia la lámpara.
+        // La lista de palabras de logística nunca va a cubrir todo lo que la gente escribe ahí; la de
+        // diseño sí es acotada, así que la condición se invierte.
+        if (vals.some(v => ESPECIAL_PERSONAJE_RE.test(v))) return true;
         return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas.replace(/especial\s*:[^|\n]*/gi, ' '));
     }
     return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas);
@@ -268,7 +273,7 @@ function lamparasDeTexto(datos, productoFallback) {
     // El corte solo vale al INICIO de un campo (principio, "|", salto o el punto que separa lámparas
     // apiladas). Con un lookahead pelón, un "nombre:" dentro de un valor libre partía el texto e
     // inventaba una lámpara fantasma que sí se habría cortado.
-    const partes = s.split(/(?<=[|\n.]|^)\s*(?=nombre\s*:)/i).filter(x => /nombre\s*:/i.test(x));
+    const partes = s.split(/(?<=[|\n.;]|^)\s*(?=nombre\s*:)/i).filter(x => /nombre\s*:/i.test(x));
     const limpia = v => String(v || '').split(/\b(?:personaje|especial)\s*:/i)[0].trim().replace(/[.,;]+$/, '').trim();
     return partes.map(p => {
         const mn = /nombre\s*:\s*([^|\n]+)/i.exec(p);
