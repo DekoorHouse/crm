@@ -184,6 +184,7 @@ router.get('/', async (req, res) => {
                     fileType: sr.fileType || null,
                     orderNumber: sr.orderNumber || null,
                     at: tsToMs(sr.at),
+                    cotejo: sr.cotejo || null,       // último veredicto del cotejo contra Ingresos (cacheado)
                 });
             })
             .sort((a, b) => (a.at || a.lastMessageAt || 0) - (b.at || b.lastMessageAt || 0));   // más viejo primero
@@ -410,6 +411,21 @@ router.post('/sospechoso/:contactId/descartar', async (req, res) => {
     } catch (e) {
         console.error('[PENDIENTES/sospechoso-descartar] error:', e.message);
         res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/pendientes/sospechoso/:contactId/cotejar — lee el comprobante (visión) y lo busca entre
+// los INGRESOS reales (colección `expenses` de Admon): monto, fecha, banco, remitente. Devuelve el
+// veredicto. El OCR se cachea; el match se recalcula en vivo. Lo dispara la tarjeta al pintarse.
+router.post('/sospechoso/:contactId/cotejar', async (req, res) => {
+    const { contactId } = req.params;
+    try {
+        const { cotejarSuspiciousReceipt } = require('../services');
+        const r = await cotejarSuspiciousReceipt(contactId, { force: !!(req.body && req.body.force) });
+        res.json({ success: true, ...r });
+    } catch (e) {
+        console.error('[PENDIENTES/sospechoso-cotejar] error:', e.message);
+        res.status(500).json({ ok: false, error: e.message });
     }
 });
 

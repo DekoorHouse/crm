@@ -2711,6 +2711,154 @@ async function buildSafeGeminiMediaPart(buffer, mimeType, type) {
     }
 }
 
+// =================================================================================================
+// === Cotejo de comprobantes SOSPECHOSOS contra INGRESOS (colección `expenses` del módulo Admon) ==
+// =================================================================================================
+// Cuando la IA marca un comprobante /sospechoso, aquí lo LEEMOS con visión (Gemini) para sacarle
+// monto/fecha/banco/remitente/referencia, y lo buscamos entre los movimientos bancarios REALES
+// (abonos = credit>0 en la colección `expenses`, que alimenta el estado de cuenta BBVA de /admon).
+// Veredicto: 'match' (coincide) | 'partial' (monto+fecha pero sin corroborar banco/clave) | 'none'
+// (ningún ingreso coincide → de verdad sospechoso) | not_receipt | unreadable_amount | ocr_error.
+// El OCR se cachea en el contacto (caro y estable); el match se recalcula en vivo (barato) para que
+// un ❌ se vuelva ✅ apenas se importe el estado de cuenta.
+const INCOME_COLLECTION = 'expenses';   // MISMA colección que usa Admon (prod; el server nunca va a _test)
+const _cotejoNorm = (s) => String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+// Alias de bancos/apps → tokens que aparecen en el `concept` del movimiento BBVA ("SPEI RECIBIDONUBANK…").
+const _BANK_ALIASES = {
+    bbva: ['bbva', 'bancomer'], santander: ['santander'], banorte: ['banorte'],
+    banamex: ['banamex', 'citibanamex', 'citi'], hsbc: ['hsbc'], scotiabank: ['scotia'],
+    azteca: ['azteca'], bancoppel: ['bancoppel', 'coppel'], nu: ['nubank', ' nu '],
+    spin: ['spin', 'oxxo'], oxxo: ['oxxo', 'spin'], mercadopago: ['mercado', ' mp '],
+    banregio: ['banregio'], inbursa: ['inbursa'], afirme: ['afirme'], bajio: ['bajio', 'banbajio'],
+    stp: ['stp'], klar: ['klar'], hey: ['hey banco', 'heybanco'], banjercito: ['banjercito'],
+};
+
+/** Lee un comprobante (imagen o PDF) con visión y devuelve sus campos estructurados, o lanza. */
+async function extractReceiptData(fileUrl, fileType) {
+    if (!fileUrl) throw new Error('sin imagen del comprobante');
+    const ft = _cotejoNorm(fileType);
+    let mediaType = 'image', mime = 'image/jpeg';
+    if (ft.includes('pdf')) { mediaType = 'document'; mime = 'application/pdf'; }
+    else if (ft.startsWith('image/')) { mime = ft; }
+    const buffer = Buffer.from((await axios.get(fileUrl, { responseType: 'arraybuffer', timeout: 60000, maxContentLength: Infinity, maxBodyLength: Infinity })).data);
+    const prepared = await buildSafeGeminiMediaPart(buffer, mime, mediaType);
+    if (!prepared || !prepared.part) throw new Error('comprobante no procesable (' + ((prepared && prepared.skipped) || 'desconocido') + ')');
+    const prompt = `Eres un lector de comprobantes de pago mexicanos (SPEI, transferencia, depósito en efectivo/OXXO, tarjeta).
+Lee la imagen/PDF y DEVUELVE SÓLO un objeto JSON (sin texto extra, sin comillas de bloque) con estos campos (usa null si no aparece):
+{"esComprobante":true|false,"monto":number,"fecha":"YYYY-MM-DD","hora":"HH:MM","bancoOrigen":string,"bancoDestino":string,"remitente":string,"beneficiario":string,"referencia":string,"claveRastreo":string,"concepto":string,"tipo":"spei|deposito_efectivo|transferencia|tarjeta|otro"}
+Reglas: "monto" es el importe pagado, SOLO el número (sin $ ni comas ni MXN). "fecha" en formato YYYY-MM-DD (si no aparece el año, asume ${new Date().getFullYear()}). "bancoOrigen" es el banco o app DESDE donde se envió el dinero (ej. BBVA, Santander, Nu, Spin by OXXO, Mercado Pago, Banco Azteca, BanCoppel). Si la imagen NO es un comprobante de pago, pon "esComprobante":false y el resto en null.`;
+    const resp = await generateGeminiResponse(prompt, [prepared.part]);
+    let txt = String((resp && resp.text) || '').trim();
+    const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
+    if (a >= 0 && b > a) txt = txt.slice(a, b + 1);
+    let data;
+    try { data = JSON.parse(txt); } catch (_) { throw new Error('el lector no devolvió JSON válido'); }
+    if (data.monto != null && data.monto !== '') {
+        const n = Number(String(data.monto).replace(/[^0-9.]/g, ''));
+        data.monto = isFinite(n) && n > 0 ? n : null;
+    } else data.monto = null;
+    data.esComprobante = !(data.esComprobante === false || String(data.esComprobante).toLowerCase() === 'false');
+    return data;
+}
+
+/** Busca el abono real que corresponde al comprobante. Devuelve { status, best, candidatos }. */
+async function matchIncomeMovement(ocr, aroundMs) {
+    const monto = ocr && ocr.monto != null ? Number(ocr.monto) : null;
+    const baseMs = (ocr && ocr.fecha && !isNaN(Date.parse(ocr.fecha)))
+        ? Date.parse(ocr.fecha + 'T12:00:00Z') : (aroundMs || Date.now());
+    const day = 86400000;
+    const d0 = new Date(baseMs - 2 * day).toISOString().slice(0, 10);
+    const d1 = new Date(baseMs + 2 * day).toISOString().slice(0, 10);
+    let snap;
+    try {
+        snap = await db.collection(INCOME_COLLECTION).where('date', '>=', d0).where('date', '<=', d1).limit(1000).get();
+    } catch (e) { return { status: 'error', error: e.message }; }
+
+    const bancoTokens = [];
+    if (ocr && ocr.bancoOrigen) {
+        const bo = _cotejoNorm(ocr.bancoOrigen);
+        if (bo.length >= 3) bancoTokens.push(bo);
+        for (const [k, al] of Object.entries(_BANK_ALIASES)) if (bo.includes(k) || al.some(x => bo.includes(x.trim()))) bancoTokens.push(k, ...al.map(x => x.trim()));
+    }
+    const remTokens = _cotejoNorm((ocr && ocr.remitente) || '').split(/\s+/).filter(t => t.length >= 3);
+    const claveDigits = String((ocr && (ocr.claveRastreo || ocr.referencia)) || '').replace(/\D/g, '');
+    const claveTail = claveDigits.length >= 6 ? claveDigits.slice(-7) : '';
+
+    let best = null;
+    const candidatos = [];
+    snap.forEach(doc => {
+        const m = doc.data();
+        const credit = Number(m.credit) || 0;
+        if (credit <= 0) return;
+        const montoOk = monto != null && Math.abs(credit - monto) < 1;
+        if (monto != null && !montoOk) return;             // otro monto → no es este pago
+        const concept = _cotejoNorm(m.concept);
+        let score = 0; const why = [];
+        if (montoOk) { score += 50; why.push('monto'); }
+        if (ocr && ocr.fecha && m.date === ocr.fecha) { score += 15; why.push('fecha'); }
+        if (bancoTokens.length && bancoTokens.some(t => t && concept.includes(t))) { score += 20; why.push('banco'); }
+        if (remTokens.length && remTokens.some(t => concept.includes(t))) { score += 12; why.push('remitente'); }
+        if (claveTail && concept.includes(claveTail)) { score += 18; why.push('clave'); }
+        const cand = { id: doc.id, date: m.date, credit, concept: String(m.concept || '').slice(0, 90), score, why };
+        candidatos.push(cand);
+        if (!best || score > best.score) best = cand;
+    });
+    candidatos.sort((x, y) => y.score - x.score);
+
+    // Confianza: clave/remitente corroboran de forma casi única → 'match'. El banco confirma sólo si el
+    // monto es ÚNICO en la ventana (si hay varios abonos del MISMO monto y banco no se sabe cuál es este
+    // pago → 'partial', para que el operador revise el remitente). Montos comunes ($200/$750) caen aquí.
+    let status;
+    const strong = best && (best.why.includes('clave') || best.why.includes('remitente'));
+    const bancoUnico = best && best.why.includes('banco') && candidatos.filter(c => c.why.includes('banco')).length === 1;
+    if (!best) status = 'none';
+    else if (strong || bancoUnico) status = 'match';
+    else if (best.why.includes('monto')) status = 'partial';   // existe un abono del monto/fecha, pero no único → revisar
+    else status = 'none';
+    return { status, best, candidatos: candidatos.slice(0, 4) };
+}
+
+/**
+ * Coteja el comprobante sospechoso de un contacto contra los ingresos reales.
+ * OCR cacheado en suspiciousReceipt.cotejoOcr; el match (suspiciousReceipt.cotejo) se recalcula.
+ */
+async function cotejarSuspiciousReceipt(contactId, { force = false } = {}) {
+    const ref = db.collection('contacts_whatsapp').doc(String(contactId));
+    const snap = await ref.get();
+    if (!snap.exists) return { ok: false, error: 'contacto no existe' };
+    const c = snap.data() || {};
+    if (!c.suspiciousReceiptPending) return { ok: false, error: 'no está pendiente' };
+    const receipt = c.suspiciousReceipt || {};
+    const saveCotejo = (cotejo) => ref.set({ suspiciousReceipt: { cotejo, cotejoAt: admin.firestore.FieldValue.serverTimestamp() } }, { merge: true });
+
+    // 1) OCR (cacheado).
+    let ocr = (!force && receipt.cotejoOcr) || null;
+    if (!ocr) {
+        if (!receipt.imageUrl) { const cotejo = { status: 'no_image' }; await saveCotejo(cotejo); return { ok: true, ocr: null, cotejo }; }
+        try {
+            ocr = await extractReceiptData(receipt.imageUrl, receipt.fileType);
+            await ref.set({ suspiciousReceipt: { cotejoOcr: ocr, cotejoOcrAt: admin.firestore.FieldValue.serverTimestamp() } }, { merge: true });
+        } catch (e) {
+            const cotejo = { status: 'ocr_error', error: String(e.message || e).slice(0, 160) };
+            await saveCotejo(cotejo); return { ok: true, ocr: null, cotejo };
+        }
+    }
+
+    // 2) Match (en vivo).
+    let cotejo;
+    if (ocr && ocr.esComprobante === false) {
+        cotejo = { status: 'not_receipt' };
+    } else {
+        const at = receipt.at;
+        const aroundMs = (at && at.toMillis) ? at.toMillis() : (at && at._seconds ? at._seconds * 1000 : Date.now());
+        const match = await matchIncomeMovement(ocr, aroundMs);
+        cotejo = { ...match, monto: (ocr && ocr.monto) != null ? ocr.monto : null, fecha: (ocr && ocr.fecha) || null, banco: (ocr && ocr.bancoOrigen) || null, remitente: (ocr && ocr.remitente) || null };
+        if ((ocr && ocr.monto) == null && cotejo.status !== 'match') cotejo.status = 'unreadable_amount';
+    }
+    await saveCotejo(cotejo);
+    return { ok: true, ocr, cotejo };
+}
+
 // Wrapper con candado: si ya hay una generación en curso para el contacto, NO arranca
 // otra en paralelo — reprograma el intento para dentro de 8s (con el historial ya fresco,
 // que incluirá lo que la primera generación haya respondido). El candado caduca solo
@@ -4578,6 +4726,7 @@ module.exports = {
     sendApprovedTemplateMessage,
     notifyGuiaToCustomer,
     markComprobanteValidadoAndSendForm,
+    cotejarSuspiciousReceipt,
     markOrderCorregirForContact,
     markOrderFabricarForContact,
     markOrderReenvioForContact,
