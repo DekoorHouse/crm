@@ -1923,15 +1923,24 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
             const name = (contactData && contactData.name) || contactId;
             const req = String(clientMessage || '').trim().slice(0, 300);
             // AVISO DE HOJA EN DRIVE (Chris, 2026-08-10): si el SVG de este pedido YA se subió, ese
-            // corte lleva el dato viejo y alguien puede cortarlo en cualquier momento. La hoja suele
-            // llevar DOS pedidos (svgCorteSheetWith), así que NO se borra: se marca. Sin este aviso
-            // nadie se enteraba de que había una hoja esperando (caso DH14404, corregido 13 min
-            // después de subirse). El pedido vuelve solo a Pendientes de Diseño al corregir el dato.
+            // corte lleva el dato viejo. La hoja suele llevar DOS pedidos (svgCorteSheetWith), así que
+            // NO se borra: se marca. Sin este aviso nadie se enteraba de que había una hoja esperando
+            // (caso DH14404). El pedido vuelve solo a Pendientes de Diseño al corregir el dato.
+            //
+            // Se dan las DOS salidas a propósito. El worker sube el SVG a una carpeta fija por el Apps
+            // Script (uploadToDrive) y mover la hoja a "cortadas" es un paso MANUAL del taller, así que
+            // desde aquí es IMPOSIBLE saber si ya se cortó. Decir solo "renómbrala a NO CORTAR"
+            // desorienta cuando la corrección llegó tarde: en DH14404 la hoja ya estaba en "cortadas"
+            // y lo que tocaba era reponer la pieza, no frenar nada.
             let hojaNote = '';
             if (!isMediaExtra && orderData.svgCorteAt) {
                 const hoja = orderData.svgCorteFileName || '(sin nombre de archivo)';
-                const con = orderData.svgCorteSheetWith ? ` — comparte hoja con *${orderData.svgCorteSheetWith}*, así que NO la borres` : '';
-                hojaNote = `\n\n⚠️ *OJO: este pedido YA tiene su corte en Drive y todavía no se corta.*\nHoja: \`${hoja}\`${con}.\nVe a Drive y renómbrala a *NO CORTAR* antes de que alguien la mande a la láser.${orderData.svgCorteUrl ? `\n${orderData.svgCorteUrl}` : ''}`;
+                const con = orderData.svgCorteSheetWith ? ` — comparte hoja con *${orderData.svgCorteSheetWith}*, NO la borres` : '';
+                hojaNote = `\n\n⚠️ *OJO: este pedido ya tiene su corte en Drive, hecho con el dato ANTERIOR.*\n`
+                    + `Hoja: \`${hoja}\`${con}.\n`
+                    + `• *Si sigue sin cortar:* renómbrala a *NO CORTAR* antes de que alguien la mande a la láser.\n`
+                    + `• *Si ya está en "cortadas":* la pieza salió con el dato viejo — hay que reponerla.`
+                    + `${orderData.svgCorteUrl ? `\n${orderData.svgCorteUrl}` : ''}`;
             }
             const text = isMediaExtra
                 ? `🎥 *Pedido a CORREGIR — pide VIDEO/FOTO extra*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente pide un video o una foto adicional (ej. otro color de luz) de su producto ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nNO hay que re-fabricar nada: graba/toma lo que pide y envíaselo por el chat. Al mandarlo, regresa el pedido a "Foto enviada" para que siga su cobro.`
