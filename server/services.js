@@ -1061,7 +1061,7 @@ const PAYMENT_PROOF_NOTE = `
 
 **NO TE COMPROMETAS CON TIEMPOS DE ENVÍO:** nunca prometas que el pedido "se manda hoy mismo", "de inmediato" ni una fecha/hora exacta de entrega. Habla en rangos (los dias habiles que manejamos) y sin garantizar el dia exacto de la paqueteria.
 
-**QUE HACER EN ESE CASO (no rechazar, ESCALAR):** dile con calidez que YA ENVIASTE SU COMPROBANTE A REVISION CON UN MIEMBRO DEL EQUIPO y que en cuanto lo confirmen le avisas; NO le digas que esta mal, que no sirve o que falta un dato, y NO le pidas que mande otro. En un mensaje aparte escribe /sospechoso SEGUIDO de un MOTIVO BREVE de por que no lo pudiste validar (comando interno: le hace llegar su comprobante a una persona del equipo para revisarlo; el cliente NO ve ni el comando ni el motivo). El motivo va en la MISMA linea, corto y concreto: ejemplos "/sospechoso el monto no coincide", "/sospechoso falta el folio", "/sospechoso es solo una notificacion del banco sin destinatario", "/sospechoso el destino no coincide". Ejemplo completo: \\"¡Gracias! 🙌 Ya envie tu comprobante a revision con un compañero del equipo y en cuanto me confirmen te aviso enseguida ✨[SPLIT]/sospechoso el monto no coincide con el total\\".`;
+**QUE HACER EN ESE CASO (no rechazar, ESCALAR):** ⚠️ esto aplica SOLO cuando el cliente SI MANDO una imagen/PDF y le falta algun dato. Si NO mando nada —solo dijo \\"le voy a transferir\\", \\"ahorita pago\\", \\"ya te deposite\\" o similar— NO digas que mandaste su comprobante a revision (no hay comprobante que mandar y lo confundes): ahi simplemente pidele con amabilidad la foto o captura cuando la tenga. Cuando SI hay imagen incompleta: dile con calidez que YA ENVIASTE SU COMPROBANTE A REVISION CON UN MIEMBRO DEL EQUIPO y que en cuanto lo confirmen le avisas; NO le digas que esta mal, que no sirve o que falta un dato, y NO le pidas que mande otro. En un mensaje aparte escribe /sospechoso SEGUIDO de un MOTIVO BREVE de por que no lo pudiste validar (comando interno: le hace llegar su comprobante a una persona del equipo para revisarlo; el cliente NO ve ni el comando ni el motivo). El motivo va en la MISMA linea, corto y concreto: ejemplos "/sospechoso el monto no coincide", "/sospechoso falta el folio", "/sospechoso es solo una notificacion del banco sin destinatario", "/sospechoso el destino no coincide". Ejemplo completo: \\"¡Gracias! 🙌 Ya envie tu comprobante a revision con un compañero del equipo y en cuanto me confirmen te aviso enseguida ✨[SPLIT]/sospechoso el monto no coincide con el total\\".`;
 
 const IDENTITY_NOTE = `
 
@@ -4300,11 +4300,34 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         if (formularioPedidos.length > 0) {
             (async () => {
                 for (const num of formularioPedidos) {
+                    // CANDADO (casos DH14711 y DH14778, 12-ago-2026): /formulario forzaba el envío del
+                    // formulario —y con él la GUÍA— SIN revisar el comprobante, así que era la puerta
+                    // trasera del candado de /comprobante: en ambos pedidos el cliente solo había
+                    // pagado el ANTICIPO y su última imagen era de días antes. Se permite solo si
+                    // (a) hay un comprobante RECIENTE del cliente, o (b) ese pedido YA tenía el pago
+                    // validado antes (ahí /formulario solo re-manda el enlace, que es su uso legítimo
+                    // cuando el cliente tiene varios pedidos a direcciones distintas).
+                    let yaValidado = false;
+                    try {
+                        const snap = await db.collection('pedidos')
+                            .where('contactId', '==', contactId)
+                            .where('consecutiveOrderNumber', '==', Number(num)).limit(1).get();
+                        yaValidado = !snap.empty && !!snap.docs[0].data().comprobanteValidadoAt;
+                    } catch (e) { console.warn(`[ENVIOS] no pude revisar el pago de DH${num}:`, e.message); }
+
+                    if (!clienteMandoComprobanteReciente && !yaValidado) {
+                        console.warn(`[ENVIOS] ${contactId}: la IA emitió /formulario DH${num} SIN comprobante reciente y sin pago validado previo; NO se manda el formulario (se pide revisión humana).`);
+                        alertAdminHumanNeeded(contactId, contactData, `La IA intentó mandar el FORMULARIO DE ENVÍO de DH${num} sin que el pago esté validado (el cliente no mandó comprobante reciente). NO se envió: revisa si ya liquidó el total — si solo pagó el anticipo, la guía caducaría.`)
+                            .catch(() => {});
+                        contactRef.update({ needsAttention: true, needsAttentionReason: 'formulario_sin_pago', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() })
+                            .catch(() => {});
+                        continue;
+                    }
                     await markComprobanteValidadoAndSendForm(contactId, contactData, { orderNumber: num, force: true })
                         .catch(e => console.warn(`[ENVIOS] formulario de DH${num} falló:`, e.message));
                     await new Promise(r => setTimeout(r, 1200));
                 }
-                console.log(`[ENVIOS] ${contactId}: formulario(s) enviado(s) para ${formularioPedidos.map(n => 'DH' + n).join(', ')}.`);
+                console.log(`[ENVIOS] ${contactId}: formulario(s) procesado(s) para ${formularioPedidos.map(n => 'DH' + n).join(', ')}.`);
             })().catch(() => {});
         }
 
