@@ -1055,7 +1055,7 @@ const PAYMENT_PROOF_NOTE = `
 
 **UNA IMAGEN NO BASTA — TIENE QUE SER UN COMPROBANTE COMPLETO:** para dar por bueno un pago necesitas LEER en la imagen los CUATRO datos: (1) el DESTINO/beneficiario (a nombre de Christian Morales, cuenta/tarjeta/CLABE terminada en 3262, 0670 o 2629; en OXXO la referencia termina en 9250), (2) el MONTO, (3) el FOLIO o clave de rastreo, y (4) la FECHA reciente. Si te FALTA cualquiera de los cuatro —o la imagen es una simple NOTIFICACION del banco tipo \\"cargo a tu cuenta\\", un aviso de app, un saldo o una captura sin destinatario ni folio— NO lo valides: no es comprobante suficiente, por mas que se vea el monto correcto.
 
-**QUE HACER EN ESE CASO (no rechazar, ESCALAR):** dile con calidez que YA ENVIASTE SU COMPROBANTE A REVISION CON UN MIEMBRO DEL EQUIPO y que en cuanto lo confirmen le avisas; NO le digas que esta mal, que no sirve o que falta un dato, y NO le pidas que mande otro. En un mensaje aparte escribe /sospechoso (comando interno: le hace llegar su comprobante a una persona del equipo para revisarlo; el cliente no lo ve). Ejemplo: \\"¡Gracias! 🙌 Ya envie tu comprobante a revision con un compañero del equipo y en cuanto me confirmen te aviso enseguida ✨[SPLIT]/sospechoso\\".`;
+**QUE HACER EN ESE CASO (no rechazar, ESCALAR):** dile con calidez que YA ENVIASTE SU COMPROBANTE A REVISION CON UN MIEMBRO DEL EQUIPO y que en cuanto lo confirmen le avisas; NO le digas que esta mal, que no sirve o que falta un dato, y NO le pidas que mande otro. En un mensaje aparte escribe /sospechoso SEGUIDO de un MOTIVO BREVE de por que no lo pudiste validar (comando interno: le hace llegar su comprobante a una persona del equipo para revisarlo; el cliente NO ve ni el comando ni el motivo). El motivo va en la MISMA linea, corto y concreto: ejemplos "/sospechoso el monto no coincide", "/sospechoso falta el folio", "/sospechoso es solo una notificacion del banco sin destinatario", "/sospechoso el destino no coincide". Ejemplo completo: \\"¡Gracias! 🙌 Ya envie tu comprobante a revision con un compañero del equipo y en cuanto me confirmen te aviso enseguida ✨[SPLIT]/sospechoso el monto no coincide con el total\\".`;
 
 const IDENTITY_NOTE = `
 
@@ -1273,6 +1273,11 @@ async function markComprobanteValidadoAndSendForm(contactId, contactData = {}, {
     require('./leads/scheduledReminderScheduler')
         .cancelReminderForContact(contactId, 'ya_pago')
         .catch(e => console.warn('[REMINDER] No se pudo cancelar el recordatorio tras el pago:', e.message));
+    // Si el cliente tenía un comprobante marcado SOSPECHOSO, validar uno bueno lo resuelve: se limpia la
+    // bandera para que salga de la columna "Comprobante sospechoso" de Pendientes. Fire-and-forget.
+    db.collection('contacts_whatsapp').doc(String(contactId))
+        .set({ suspiciousReceiptPending: false, suspiciousReceipt: admin.firestore.FieldValue.delete() }, { merge: true })
+        .catch(() => {});
 
     // Idempotencia: si el formulario YA se envió para este pedido (comprobanteValidadoAt existe)
     // y NO es un reenvío deliberado del agente, NO reenvíes el bloque completo del formulario. La
@@ -3594,6 +3599,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // admin para verificación; al cliente solo se le dice que estamos validando. Aplica en
         // fase de pago (post-venta O venta con pedido registrado), igual que /comprobante.
         const suspiciousReceipt = paymentPhaseActive && /\/sospechoso/i.test(aiResponse);
+        // Motivo breve que la IA escribe DESPUÉS de /sospechoso (ej. "/sospechoso el monto no coincide")
+        // para mostrarlo en la columna "Comprobante sospechoso" de Pendientes. El cliente NO lo ve (se
+        // limpia junto con el comando). Si la IA no puso motivo, queda vacío (la tarjeta usa uno genérico).
+        const suspiciousReason = suspiciousReceipt
+            ? String((aiResponse.match(/\/sospechoso\s*:?\s*([^\n]*)/i) || [])[1] || '').trim().slice(0, 240)
+            : '';
         // La IA emite /equipo cuando el cliente pide algo que ella no puede hacer (ej. foto o
         // video de su pedido): se avisa al admin para que un humano lo mande por el chat.
         const humanHelpNeeded = /\/equipo/i.test(aiResponse);
@@ -3673,7 +3684,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
         // (anuncia pedido LISTO + datos de pago); la IA no puede saber si el pedido físico
         // ya está terminado, así que jamás debe enviarlo ni expandirlo.
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').replace(/\/reenvio\b/ig, '').replace(/\/formulario\s*:?\s*(?:DH)?\s*\d{4,6}/ig, '').trim()).filter(m => m.length > 0);
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso[^\n]*/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').replace(/\/reenvio\b/ig, '').replace(/\/formulario\s*:?\s*(?:DH)?\s*\d{4,6}/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -3988,6 +3999,23 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
             alertAdminSuspiciousReceipt(contactId, contactData, comprobante)
                 .catch(e => console.warn('[AI] alertAdminSuspiciousReceipt falló:', e.message));
+            // Persistir para la columna "Comprobante sospechoso" de la sección Pendientes: bandera
+            // consultable (suspiciousReceiptPending) + detalle (motivo + imagen). Se limpia al Aprobar
+            // (endpoint) o al validar después un comprobante bueno (markComprobanteValidadoAndSendForm).
+            (async () => {
+                let ordNum = null;
+                try { const od = await getLatestOrderForContact(contactId); if (od && od.data().consecutiveOrderNumber != null) ordNum = `DH${od.data().consecutiveOrderNumber}`; } catch (_) {}
+                await contactRef.set({
+                    suspiciousReceiptPending: true,
+                    suspiciousReceipt: {
+                        at: admin.firestore.FieldValue.serverTimestamp(),
+                        reason: suspiciousReason || '',
+                        imageUrl: (comprobante && comprobante.fileUrl) || null,
+                        fileType: (comprobante && comprobante.fileType) || null,
+                        orderNumber: ordNum,
+                    },
+                }, { merge: true });
+            })().catch(e => console.warn('[AI] no se pudo persistir el comprobante sospechoso:', e.message));
         }
 
         // Apoyo humano solicitado (/equipo): avisar al admin con lo que pidió el cliente

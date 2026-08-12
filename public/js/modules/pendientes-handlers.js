@@ -18,6 +18,7 @@
 const PEND_COLS = [
     ['video', 'Mandar video', '#e83e8c', 'fa-video'],
     ['mockup', 'Falta mockup', '#6f42c1', 'fa-wand-magic-sparkles'],
+    ['sospechoso', 'Comprobante sospechoso', '#ea580c', 'fa-receipt'],
     ['atencion', 'Apoyo humano', '#0ea5e9', 'fa-hand'],
     ['ia_cola', 'Cola IA +1h', '#f59e0b', 'fa-hourglass-half'],
     ['ia_sin_pedido', 'IA no registró el pedido', '#dc2626', 'fa-triangle-exclamation'],
@@ -185,6 +186,14 @@ function pendContactCard(c, col) {
             ${c.pedido ? 'Su pedido: <b>' + escapeHtml(c.pedido.orderNumber) + '</b> (' + escapeHtml(c.pedido.estatus) + ')' : ''}
             ${c.motivoFalla ? '<br>La IA falló: ' + escapeHtml(c.motivoFalla) : ''}</div>`;
         acciones = `<button onclick="pendIaResolver('${escapeHtml(c.id)}', this)" title="Sácalo de la cola Pendientes IA (ya aplicaste el cambio)" class="pd-btn" style="background:#16a34a;color:#fff"><i class="fas fa-check" style="margin-right:3px"></i>Resuelto</button>`;
+    } else if (col === 'sospechoso') {
+        const motivo = (c.reason && c.reason.trim()) ? c.reason.trim() : 'El comprobante no coincide con nuestros datos (revísalo)';
+        const img = c.imageUrl
+            ? `<div style="margin-top:6px"><img src="${escapeHtml(c.imageUrl)}" alt="Comprobante" onclick="openImageModal(this.src)" onerror="this.parentNode.style.display='none'" style="max-width:100%;max-height:170px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);cursor:pointer;object-fit:contain"></div>`
+            : '';
+        detalle = `<div class="pd-card-sub"><b>Comprobante a revisar${c.orderNumber ? ' · ' + escapeHtml(c.orderNumber) : ''}</b><br>Motivo: ${escapeHtml(motivo)}${img}</div>`;
+        acciones = `<button onclick="pendSospechosoAprobar('${escapeHtml(c.id)}', this)" title="El pago es válido: la conversación sigue su flujo (se le manda el formulario de envío)" class="pd-btn" style="background:#16a34a;color:#fff"><i class="fas fa-check" style="margin-right:3px"></i>Aprobar</button>
+            <button onclick="pendSospechosoDescartar('${escapeHtml(c.id)}', this)" title="El pago NO es válido o ya lo atendiste: quítalo de aquí SIN mandar formulario" class="pd-btn pd-btn-ghost">Descartar</button>`;
     } else {
         detalle = `<div class="pd-card-sub"><b>La IA le dijo “ya registramos tu pedido” y el pedido NO existe.</b>
             ${c.motivoFalla ? '<br>Motivo: ' + escapeHtml(c.motivoFalla) : ''}
@@ -409,6 +418,36 @@ async function pendAtendido(contactId, el) {
     } catch (e) { if (el) el.disabled = false; alert('No se pudo marcar como atendida: ' + (e.message || e)); }
 }
 window.pendAtendido = pendAtendido;
+
+// Aprobar un comprobante sospechoso: valida el pago y la conversación sigue su flujo (backend manda
+// el formulario de envío). No es deshacible desde aquí (ya se validó el pago); si fue error, se maneja en el chat.
+async function pendSospechosoAprobar(contactId, el) {
+    if (el) el.disabled = true;
+    const card = ((window._pendData || {}).sospechoso || []).find(x => x.id === contactId) || {};
+    try {
+        await _pendPost(`pendientes/sospechoso/${contactId}/aprobar`);
+        _pendRemove('sospechoso', contactId);
+        pendToast(`${card.name || contactId}: comprobante aprobado ✅ — la conversación sigue su flujo`, {});
+    } catch (e) {
+        if (el) el.disabled = false;
+        pendToast('No se pudo aprobar: ' + (e.message || e), {});
+    }
+}
+window.pendSospechosoAprobar = pendSospechosoAprobar;
+
+// Descartar: quita el comprobante de la columna SIN validar (pago no bueno o ya atendido por el chat).
+async function pendSospechosoDescartar(contactId, el) {
+    if (el) el.disabled = true;
+    try {
+        await _pendPost(`pendientes/sospechoso/${contactId}/descartar`);
+        _pendRemove('sospechoso', contactId);
+        pendToast('Comprobante quitado de la lista', {});
+    } catch (e) {
+        if (el) el.disabled = false;
+        pendToast('No se pudo quitar: ' + (e.message || e), {});
+    }
+}
+window.pendSospechosoDescartar = pendSospechosoDescartar;
 
 async function pendIaResolver(contactId, el) {
     if (el) el.disabled = true;
