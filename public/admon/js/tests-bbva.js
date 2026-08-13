@@ -334,6 +334,14 @@ function caso8_reemplazoPorVentana() {
         planAmplio.stale.map(e => e.id).join(','));
 
     // Multiconjunto: 3 copias guardadas, 2 en el archivo → sobra 1.
+    // El archivo abarca dos días y su primer día cuadra en conteo con la base,
+    // así que la guarda de truncado no interviene y se ejercita el multiconjunto.
+    const ancla = (id) => attachSignatures({
+        id, date: '2026-08-09', concept: 'ANCLA DEL PRIMER DIA / ref', charge: 10, credit: 0, source: 'xlsx'
+    });
+    const anclaArchivo = () => attachSignatures({
+        date: '2026-08-09', concept: 'ANCLA DEL PRIMER DIA / ref', charge: 10, credit: 0
+    });
     const copia = (id) => attachSignatures({
         id, date: '2026-08-10', concept: 'SU PAGO EN EFECTIVO / 000 EN COMERCIO',
         charge: 0, credit: 650, source: 'xlsx'
@@ -342,16 +350,61 @@ function caso8_reemplazoPorVentana() {
         date: '2026-08-10', concept: 'SU PAGO EN EFECTIVO / 000 EN COMERCIO', charge: 0, credit: 650
     });
     const planCopias = planStatementReplace(
-        [enArchivo(), enArchivo()],
-        [copia('c1'), copia('c2'), copia('c3')]
+        [anclaArchivo(), enArchivo(), enArchivo()],
+        [ancla('c0'), copia('c1'), copia('c2'), copia('c3')]
     );
     assert('Caso 8.j — con 3 guardadas y 2 en el archivo, sobra exactamente 1',
         planCopias.stale.length === 1, planCopias.stale.length);
+    assert('Caso 8.j2 — y no toca el ancla del primer día',
+        !planCopias.stale.some(e => e.id === 'c0'));
 
     // Archivo vacío → plan vacío (jamás borrar por un archivo ilegible).
     const planVacio = planStatementReplace([], [transito, estable]);
     assert('Caso 8.k — archivo sin movimientos no borra nada',
         planVacio.stale.length === 0 && planVacio.from === '');
+
+    // ----------------------------------------------------------------------
+    // Export truncado: BBVA deja bajar "los últimos N movimientos" y ese
+    // archivo arranca a media jornada. Su primer día NO es autoritativo.
+    // Caso real: 17 movimientos del 11-ago en el archivo contra 70 en la base;
+    // sin esta guarda se borraban 53 movimientos legítimos.
+    // ----------------------------------------------------------------------
+    const delDia = (id, n) => attachSignatures({
+        id, date: '2026-08-11', concept: `MOVIMIENTO TEMPRANO ${n} / ref${n}`,
+        charge: 100 + n, credit: 0, source: 'xlsx'
+    });
+    const enBase11 = [delDia('d1', 1), delDia('d2', 2), delDia('d3', 3), delDia('d4', 4)];
+    const colaDelDia = attachSignatures({
+        id: 'd5', date: '2026-08-11', concept: 'MOVIMIENTO TARDIO / ref9', charge: 55, credit: 0, source: 'xlsx'
+    });
+    const staleDel12 = attachSignatures({
+        id: 'd6', date: '2026-08-12', concept: 'VERSION VIEJA', charge: 30, credit: 0, source: 'xlsx'
+    });
+
+    // El archivo sólo trae la cola del 11 (1 de 5) y el 12 completo.
+    const archivoTruncado = [
+        attachSignatures({ date: '2026-08-11', concept: 'MOVIMIENTO TARDIO / ref9', charge: 55, credit: 0 }),
+        attachSignatures({ date: '2026-08-12', concept: 'ALGO DEL 12 / ref', charge: 10, credit: 0 })
+    ];
+    const planTrunc = planStatementReplace(archivoTruncado, [...enBase11, colaDelDia, staleDel12]);
+
+    assert('Caso 8.l — detecta que el primer día viene truncado',
+        planTrunc.primerDiaParcial === true);
+    assert('Caso 8.m — la ventana arranca en el día siguiente',
+        planTrunc.from === '2026-08-12', planTrunc.from);
+    const idsTrunc = [...planTrunc.stale, ...planTrunc.staleConfirmed].map(e => e.id);
+    assert('Caso 8.n — NO borra los movimientos tempranos del día truncado',
+        !['d1', 'd2', 'd3', 'd4'].some(id => idsTrunc.includes(id)), idsTrunc.join(','));
+    assert('Caso 8.o — sí limpia lo desplazado de los días completos',
+        idsTrunc.includes('d6'), idsTrunc.join(','));
+
+    // Si el archivo cubre un solo día y viene truncado, no hay ventana segura.
+    const planUnDia = planStatementReplace(
+        [attachSignatures({ date: '2026-08-11', concept: 'MOVIMIENTO TARDIO / ref9', charge: 55, credit: 0 })],
+        [...enBase11, colaDelDia]
+    );
+    assert('Caso 8.p — archivo de un solo día truncado no borra nada',
+        planUnDia.stale.length === 0 && planUnDia.staleConfirmed.length === 0 && planUnDia.primerDiaParcial === true);
 }
 
 // ---------------------------------------------------------------------------

@@ -116,6 +116,11 @@ function confirmarReemplazoDeVentana(plan) {
                     </table>
                     ${confirmados.length > 8 ? `<p style="font-size:12px; margin:6px 0 0;">…y ${confirmados.length - 8} más.</p>` : ''}
                 </div>` : ''}
+                ${plan.primerDiaParcial ? `
+                <p style="font-size:12px; color:var(--text-secondary); margin-top:10px; padding:8px; border-left:3px solid var(--warning, #f59e0b);">
+                   <i class="fas fa-info-circle"></i> El archivo arranca a media jornada (su primer día trae menos
+                   movimientos de los que ya hay guardados), así que ese día se dejó fuera de la limpieza. Si querías
+                   depurarlo, descarga el corte desde el inicio de ese día.</p>` : ''}
                 <p style="font-size:12px; color:var(--text-secondary); margin-top:10px;">
                    Se conservan intactos <strong>${plan.confirmed}</strong> que el archivo sí confirma (con su categoría)
                    ${plan.protectedCount > 0 ? `y <strong>${plan.protectedCount}</strong> capturados a mano` : ''}.</p>`,

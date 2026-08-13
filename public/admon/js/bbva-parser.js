@@ -487,16 +487,42 @@ export function classifyForImport(newTxs, existingTxs) {
  *
  * @param {Array<object>} newTxs       transacciones parseadas del archivo
  * @param {Array<object>} existingTxs  movimientos ya guardados (con id)
- * @returns {{ from:string, to:string, stale:Array<object>, staleConfirmed:Array<object>, confirmed:number, protectedCount:number }}
+ * @returns {{ from:string, to:string, stale:Array<object>, staleConfirmed:Array<object>, confirmed:number, protectedCount:number, primerDiaParcial:boolean }}
+ *          `from` es el inicio EFECTIVO de la ventana: si el primer día del
+ *          archivo venía truncado se recorre al siguiente y `primerDiaParcial`
+ *          queda en true.
  */
 export function planStatementReplace(newTxs, existingTxs) {
-    const vacio = { from: '', to: '', stale: [], staleConfirmed: [], confirmed: 0, protectedCount: 0 };
+    const vacio = { from: '', to: '', stale: [], staleConfirmed: [], confirmed: 0, protectedCount: 0, primerDiaParcial: false };
     if (!Array.isArray(newTxs) || newTxs.length === 0) return vacio;
 
     const fechas = newTxs.map(t => t && t.date).filter(Boolean).sort();
     if (fechas.length === 0) return vacio;
-    const from = fechas[0];
+    let from = fechas[0];
     const to = fechas[fechas.length - 1];
+
+    // GUARDA CONTRA EXPORTS TRUNCADOS.
+    // BBVA permite bajar "los últimos N movimientos", y ese archivo arranca a
+    // media jornada: su primer día trae sólo la cola del día. Si tomáramos ese
+    // día como autoritativo borraríamos todo lo anterior del mismo día, que es
+    // legítimo. (Caso real: un corte de 100 filas traía 17 movimientos del
+    // 11-ago cuando la base tenía los 70 del día; habría borrado 53 buenos.)
+    //
+    // Regla conservadora: si el archivo trae MENOS movimientos que la base en
+    // su primer día, ese día se considera incompleto y se excluye de la
+    // ventana. Sólo puede dejar basura sin limpiar, nunca borrar de más; el
+    // siguiente corte que cubra el día entero la limpiará.
+    const primerDiaArchivo = newTxs.filter(t => t && t.date === from).length;
+    const primerDiaBase = (existingTxs || []).filter(e =>
+        e && e.date === from && e.source !== 'manual' && e.source !== 'modified'
+    ).length;
+    let primerDiaParcial = false;
+    if (primerDiaBase > primerDiaArchivo) {
+        primerDiaParcial = true;
+        const siguiente = fechas.find(d => d > from);
+        if (!siguiente) return { ...vacio, from, to, primerDiaParcial };  // el archivo cubre un solo día, y parcial
+        from = siguiente;
+    }
 
     // Multiconjunto de firmas del archivo: firma → cuántas veces aparece.
     const enArchivo = new Map();
@@ -531,7 +557,7 @@ export function planStatementReplace(newTxs, existingTxs) {
         }
     }
 
-    return { from, to, stale, staleConfirmed, confirmed, protectedCount };
+    return { from, to, stale, staleConfirmed, confirmed, protectedCount, primerDiaParcial };
 }
 
 // ---------------------------------------------------------------------------
