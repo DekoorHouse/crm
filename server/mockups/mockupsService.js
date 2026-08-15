@@ -652,7 +652,14 @@ Si un texto ocupa dos renglones, pon dos elementos en "renglones" (en orden de a
     // Comparación contra lo pedido (los fields ya traen '\n' si la regla decidió 2 renglones).
     const okNombre1 = sameLines(decideNameLines(fields.nombre1 || ''), izquierdo);
     const okNombre2 = sameLines(decideNameLines(fields.nombre2 || ''), derecho);
-    const okFecha = sameLines(String(fields.fecha || '').split('\n').map(s => s.trim()).filter(Boolean), fecha);
+    // La FECHA se compara por CONTENIDO, no por número de renglones. Una fecha larga se acomoda sola
+    // en dos líneas dentro del mockup ("17 de agosto de 1973 / y 08 de abril de 1976", DH14714) y eso
+    // no es una discrepancia: dice exactamente lo que pidió el cliente. Exigiendo el mismo número de
+    // renglones, el pedido salía 'layout_mismatch' y se frenaba el corte automático sin motivo real.
+    // Si la fecha grabada dijera algo DISTINTO, esta comparación lo sigue detectando.
+    const soloTexto = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toLowerCase().replace(/\s+/g, ' ').trim();
+    const okFecha = soloTexto(String(fields.fecha || '').replace(/\n/g, ' ')) === soloTexto(fecha.join(' '));
     return { izquierdo, derecho, fecha, okNombre1, okNombre2, okFecha, ok: okNombre1 && okNombre2 && okFecha };
 }
 

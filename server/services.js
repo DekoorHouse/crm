@@ -1049,13 +1049,28 @@ const NO_INVENTAR_NOTE = `\n\n**NO OFREZCAS SERVICIOS QUE NO EXISTEN:** ofrece S
 
 **NO PUEDES MANDAR ARCHIVOS TU:** no puedes tomar fotos, grabar videos ni adjuntar nada por tu cuenta (solo los atajos mandan su propio contenido). NUNCA escribas marcadores como \\"[video]\\", \\"[foto]\\", \\"[imagen]\\" ni digas \\"te mando este videito/esta foto\\" si no la estas mandando de verdad: al cliente le llega puro texto y queda esperando algo que nunca llega. Si te pide un VIDEO o una FOTO del producto: dile UNA sola vez, con calidez, que ya se lo pediste al equipo y que se lo hacen llegar en cuanto lo tengan, y escribe /equipo en su propio renglon (comando interno, el cliente no lo ve) para que una persona se lo mande.`;
 
+// NUNCA inventar envíos ni rastreos (caso DH13741, 12-ago-2026): la clienta pagó los $750 completos
+// y su pedido nunca entró a Envíos (la IA agradeció el pago pero no lo registró). Ante su reclamo la
+// IA invento un numero de guia DHL ("9823456712"), invento que habia hablado con DHL, que el paquete
+// "ya estaba en la camioneta de reparto" y que le fabricarian otra lampara. Nunca hubo paquete: el
+// pedido no tenia guia, ni paqueteria, ni datos de envio. La clienta espero 19 dias y pidio reembolso.
+const NO_INVENTAR_ENVIO_NOTE = `\n\n**NUNCA INVENTES GUÍAS NI ESTADOS DE ENVÍO:** el numero de guia y el estatus de rastreo son datos REALES del sistema. Solo puedes darle a un cliente un numero de guia si aparece en la informacion de SU pedido que te llega en este turno; si no viene ahi, ES QUE NO EXISTE. Jamas te inventes un numero de guia, ni digas que "ya se envio", "ya va en camino", "esta en la camioneta de reparto", "ya salio del almacen" ni des fechas de entrega como hechos. TAMPOCO digas que hablaste con la paqueteria, que levantaste un reporte, que revisaste el estatus con DHL ni que van a fabricar una reposicion. Ni siquiera digas \\"ya revise\\", \\"ya lo verifique\\" o \\"ya consulte\\": tu NO puedes consultar el envio — lo correcto es \\"voy a pedirle al equipo que lo revise\\" (en futuro, como algo que vas a pedir, nunca como algo que ya hiciste). Todo eso: tu no puedes hacer nada de eso y esas promesas se convierten en un cliente esperando algo que no existe.
+
+**SI EL CLIENTE RECLAMA QUE NO LE LLEGA SU PEDIDO:** no improvises explicaciones (ni "la paqueteria va demorada", ni "los fines de semana no cuentan") si no tienes el dato real. Discúlpate con calidez, dile con honestidad que vas a pedirle al equipo que revise su envio y que en cuanto tengas informacion le avisas, y escribe /equipo en su propio renglon para que una persona lo atienda de inmediato. Un cliente que ya pago y no ha recibido nada SIEMPRE pasa a una persona: es exactamente el caso donde inventar un rastreo hace perder al cliente.`;
+
 const PAYMENT_PROOF_NOTE = `
 
 **SIN COMPROBANTE NO HAY PAGO:** solo puedes decir que recibimos un pago o un ANTICIPO si en ESTA conversacion el cliente MANDO una IMAGEN o PDF del comprobante y tu lo pudiste ver. Que el cliente ESCRIBA \"ya te deposite\", \"ya hice la transferencia\", \"ya pague\", \"ya quedo\" —o que solo conteste \"ok\", \"va\" o un emoji— NO es comprobante: es texto. En esos casos agradece y PIDE con amabilidad la foto o captura del comprobante; NUNCA escribas \"recibimos tu anticipo\", \"ya nos llego tu pago\" ni digas que ya arrancamos su diseño. Jamas confirmes un pago por tu cuenta ni lo des por hecho porque el cliente prometio pagar.
 
 **UNA IMAGEN NO BASTA — TIENE QUE SER UN COMPROBANTE COMPLETO:** para dar por bueno un pago necesitas LEER en la imagen los CUATRO datos: (1) el DESTINO/beneficiario (a nombre de Christian Morales, cuenta/tarjeta/CLABE terminada en 3262, 0670 o 2629; en OXXO la referencia termina en 9250), (2) el MONTO, (3) el FOLIO o clave de rastreo, y (4) la FECHA reciente. Si te FALTA cualquiera de los cuatro —o la imagen es una simple NOTIFICACION del banco tipo \\"cargo a tu cuenta\\", un aviso de app, un saldo o una captura sin destinatario ni folio— NO lo valides: no es comprobante suficiente, por mas que se vea el monto correcto.
 
-**QUE HACER EN ESE CASO (no rechazar, ESCALAR):** dile con calidez que YA ENVIASTE SU COMPROBANTE A REVISION CON UN MIEMBRO DEL EQUIPO y que en cuanto lo confirmen le avisas; NO le digas que esta mal, que no sirve o que falta un dato, y NO le pidas que mande otro. En un mensaje aparte escribe /sospechoso (comando interno: le hace llegar su comprobante a una persona del equipo para revisarlo; el cliente no lo ve). Ejemplo: \\"¡Gracias! 🙌 Ya envie tu comprobante a revision con un compañero del equipo y en cuanto me confirmen te aviso enseguida ✨[SPLIT]/sospechoso\\".`;
+**ANTICIPO ≠ PAGO COMPLETO — EL FORMULARIO DE ENVÍO SOLO CON EL PEDIDO 100% PAGADO:** los datos de envío se piden HASTA que el cliente liquida el TOTAL. Un ANTICIPO (los ~$200 de personalización especial, los ~$300 de marca o apartado, los ~$500 de 5+ piezas) NO es pago completo, por mas que el comprobante sea valido. Con un anticipo valido: confirmalo, avisa que arranca el diseño/fabricacion y que el RESTO se paga al ver la foto del trabajo terminado — y NADA de datos de envio. ⚠️ **NUNCA emitas /comprobante por un anticipo:** ese comando hace que el SISTEMA le mande solo el formulario de envio y se genere la guia; si el cliente tarda en liquidar, la guia CADUCA. /comprobante es EXCLUSIVO del pago del TOTAL (de una vez, o el restante despues de la foto). Reconocer que es un anticipo y aun asi emitir /comprobante o pedir la direccion es el error a evitar.
+
+**UN COMPROBANTE SE PROCESA UNA SOLA VEZ:** el comprobante que ya confirmaste sigue visible en la conversacion en los turnos siguientes. Si ya lo trataste antes (como anticipo o como pago), NO lo vuelvas a evaluar ni lo reclasifiques: para tratar un pago como liquidacion necesitas un comprobante NUEVO, posterior.
+
+**NO TE COMPROMETAS CON TIEMPOS DE ENVÍO:** nunca prometas que el pedido "se manda hoy mismo", "de inmediato" ni una fecha/hora exacta de entrega. Habla en rangos (los dias habiles que manejamos) y sin garantizar el dia exacto de la paqueteria.
+
+**QUE HACER EN ESE CASO (no rechazar, ESCALAR):** ⚠️ esto aplica SOLO cuando el cliente SI MANDO una imagen/PDF y le falta algun dato. Si NO mando nada —solo dijo \\"le voy a transferir\\", \\"ahorita pago\\", \\"ya te deposite\\" o similar— NO digas que mandaste su comprobante a revision (no hay comprobante que mandar y lo confundes): ahi simplemente pidele con amabilidad la foto o captura cuando la tenga. Cuando SI hay imagen incompleta: dile con calidez que YA ENVIASTE SU COMPROBANTE A REVISION CON UN MIEMBRO DEL EQUIPO y que en cuanto lo confirmen le avisas; NO le digas que esta mal, que no sirve o que falta un dato, y NO le pidas que mande otro. En un mensaje aparte escribe /sospechoso SEGUIDO de un MOTIVO BREVE de por que no lo pudiste validar (comando interno: le hace llegar su comprobante a una persona del equipo para revisarlo; el cliente NO ve ni el comando ni el motivo). El motivo va en la MISMA linea, corto y concreto: ejemplos "/sospechoso el monto no coincide", "/sospechoso falta el folio", "/sospechoso es solo una notificacion del banco sin destinatario", "/sospechoso el destino no coincide". Ejemplo completo: \\"¡Gracias! 🙌 Ya envie tu comprobante a revision con un compañero del equipo y en cuanto me confirmen te aviso enseguida ✨[SPLIT]/sospechoso el monto no coincide con el total\\".`;
 
 const IDENTITY_NOTE = `
 
@@ -1107,7 +1122,7 @@ async function buildStaticContext(botInstructions, isPostVenta = false, paymentP
     }
 
     // Instrucciones van en systemInstruction, no en contents
-    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${isPostVenta ? REENVIO_COMMAND_NOTE : ''}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE : ''}${isPostVenta ? '' : INFANTIL_SPECIAL_NOTE}${DURANGO_NOTE}${NO_PERSONAL_PLANS_NOTE}${IDENTITY_NOTE}${PAYMENT_PROOF_NOTE}${CATALOGO_NOTE}${NO_INVENTAR_NOTE}`;
+    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${isPostVenta ? REENVIO_COMMAND_NOTE : ''}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE : ''}${isPostVenta ? '' : INFANTIL_SPECIAL_NOTE}${DURANGO_NOTE}${NO_PERSONAL_PLANS_NOTE}${IDENTITY_NOTE}${PAYMENT_PROOF_NOTE}${CATALOGO_NOTE}${NO_INVENTAR_NOTE}${NO_INVENTAR_ENVIO_NOTE}`;
 
     // Material de referencia va en contents (como contexto, no como instrucciones)
     const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo:** Si una de estas respuestas aplica perfectamente, puedes enviarla respondiendo ÚNICAMENTE con su atajo (ejemplo: responde exactamente "/ttt" y nada más); el sistema lo reemplazará automáticamente por su contenido completo, incluida cualquier imagen. También puedes escribir el contenido directamente si lo prefieres. NUNCA combines un atajo con más texto en el mismo mensaje.\n\n⚠️ **El cliente NO debe enterarse de que existen los atajos.** Son internos: él solo ve el texto ya expandido. Por eso NUNCA anuncies, presentes ni expliques un atajo, ni antes ni después ni en otro mensaje. PROHIBIDO escribir cosas como "te envío el comando", "te mando este otro", "usamos este comando para checar cobertura", "ahora te comparto la información de..." o dos puntos anunciando lo que sigue. Simplemente escribe el atajo SOLO (ej.: una línea que diga exactamente "/ttt") y nada más: el sistema pone el texto completo por ti y al cliente le llega una conversación natural. Si necesitas mandar dos atajos, ponlos cada uno en su propia línea, sin una sola palabra entre ellos.\n${quickReplies || 'No hay respuestas rápidas.'}`;
@@ -1273,6 +1288,11 @@ async function markComprobanteValidadoAndSendForm(contactId, contactData = {}, {
     require('./leads/scheduledReminderScheduler')
         .cancelReminderForContact(contactId, 'ya_pago')
         .catch(e => console.warn('[REMINDER] No se pudo cancelar el recordatorio tras el pago:', e.message));
+    // Si el cliente tenía un comprobante marcado SOSPECHOSO, validar uno bueno lo resuelve: se limpia la
+    // bandera para que salga de la columna "Comprobante sospechoso" de Pendientes. Fire-and-forget.
+    db.collection('contacts_whatsapp').doc(String(contactId))
+        .set({ suspiciousReceiptPending: false, suspiciousReceipt: admin.firestore.FieldValue.delete() }, { merge: true })
+        .catch(() => {});
 
     // Idempotencia: si el formulario YA se envió para este pedido (comprobanteValidadoAt existe)
     // y NO es un reenvío deliberado del agente, NO reenvíes el bloque completo del formulario. La
@@ -1917,9 +1937,29 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         try {
             const name = (contactData && contactData.name) || contactId;
             const req = String(clientMessage || '').trim().slice(0, 300);
+            // AVISO DE HOJA EN DRIVE (Chris, 2026-08-10): si el SVG de este pedido YA se subió, ese
+            // corte lleva el dato viejo. La hoja suele llevar DOS pedidos (svgCorteSheetWith), así que
+            // NO se borra: se marca. Sin este aviso nadie se enteraba de que había una hoja esperando
+            // (caso DH14404). El pedido vuelve solo a Pendientes de Diseño al corregir el dato.
+            //
+            // Se dan las DOS salidas a propósito. El worker sube el SVG a una carpeta fija por el Apps
+            // Script (uploadToDrive) y mover la hoja a "cortadas" es un paso MANUAL del taller, así que
+            // desde aquí es IMPOSIBLE saber si ya se cortó. Decir solo "renómbrala a NO CORTAR"
+            // desorienta cuando la corrección llegó tarde: en DH14404 la hoja ya estaba en "cortadas"
+            // y lo que tocaba era reponer la pieza, no frenar nada.
+            let hojaNote = '';
+            if (!isMediaExtra && orderData.svgCorteAt) {
+                const hoja = orderData.svgCorteFileName || '(sin nombre de archivo)';
+                const con = orderData.svgCorteSheetWith ? ` — comparte hoja con *${orderData.svgCorteSheetWith}*, NO la borres` : '';
+                hojaNote = `\n\n⚠️ *OJO: este pedido ya tiene su corte en Drive, hecho con el dato ANTERIOR.*\n`
+                    + `Hoja: \`${hoja}\`${con}.\n`
+                    + `• *Si sigue sin cortar:* renómbrala a *NO CORTAR* antes de que alguien la mande a la láser.\n`
+                    + `• *Si ya está en "cortadas":* la pieza salió con el dato viejo — hay que reponerla.`
+                    + `${orderData.svgCorteUrl ? `\n${orderData.svgCorteUrl}` : ''}`;
+            }
             const text = isMediaExtra
                 ? `🎥 *Pedido a CORREGIR — pide VIDEO/FOTO extra*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente pide un video o una foto adicional (ej. otro color de luz) de su producto ya terminado${req ? `:\n_"${req}"_` : '.'}\n\nNO hay que re-fabricar nada: graba/toma lo que pide y envíaselo por el chat. Al mandarlo, regresa el pedido a "Foto enviada" para que siga su cobro.`
-                : `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido${req ? `:\n_"${req}"_` : '.'}${datoUpdateNote}\n\nRevisa la conversación${datoUpdateNote ? '.' : ' y corrígelo.'}`;
+                : `🛠️ *Pedido a CORREGIR*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}\n\nEl cliente reporta un error en su pedido${req ? `:\n_"${req}"_` : '.'}${datoUpdateNote}${hojaNote}\n\nRevisa la conversación${datoUpdateNote ? '.' : ' y corrígelo.'}`;
             await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text });
             console.log(`[POSTVENTA] Alerta de ${isVideo ? 'video' : 'corrección'} enviada al admin (${ADMIN_VERIFY_PHONE}) por ${contactId}.`);
         } catch (e) {
@@ -2693,6 +2733,164 @@ async function buildSafeGeminiMediaPart(buffer, mimeType, type) {
     } catch (e) {
         return { skipped: 'error al procesar: ' + e.message };
     }
+}
+
+// =================================================================================================
+// === Cotejo de comprobantes SOSPECHOSOS contra INGRESOS (colección `expenses` del módulo Admon) ==
+// =================================================================================================
+// Cuando la IA marca un comprobante /sospechoso, aquí lo LEEMOS con visión (Gemini) para sacarle
+// monto/fecha/banco/remitente/referencia, y lo buscamos entre los movimientos bancarios REALES
+// (abonos = credit>0 en la colección `expenses`, que alimenta el estado de cuenta BBVA de /admon).
+// Veredicto: 'match' (coincide) | 'partial' (monto+fecha pero sin corroborar banco/clave) | 'none'
+// (ningún ingreso coincide → de verdad sospechoso) | not_receipt | unreadable_amount | ocr_error.
+// El OCR se cachea en el contacto (caro y estable); el match se recalcula en vivo (barato) para que
+// un ❌ se vuelva ✅ apenas se importe el estado de cuenta.
+const INCOME_COLLECTION = 'expenses';   // MISMA colección que usa Admon (prod; el server nunca va a _test)
+const _cotejoNorm = (s) => String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+// Alias de bancos/apps → tokens que aparecen en el `concept` del movimiento BBVA ("SPEI RECIBIDONUBANK…").
+const _BANK_ALIASES = {
+    bbva: ['bbva', 'bancomer'], santander: ['santander'], banorte: ['banorte'],
+    banamex: ['banamex', 'citibanamex', 'citi'], hsbc: ['hsbc'], scotiabank: ['scotia'],
+    azteca: ['azteca'], bancoppel: ['bancoppel', 'coppel'], nu: ['nubank', ' nu '],
+    spin: ['spin', 'oxxo'], oxxo: ['oxxo', 'spin'], mercadopago: ['mercado', ' mp '],
+    banregio: ['banregio'], inbursa: ['inbursa'], afirme: ['afirme'], bajio: ['bajio', 'banbajio'],
+    stp: ['stp'], klar: ['klar'], hey: ['hey banco', 'heybanco'], banjercito: ['banjercito'],
+};
+
+/** Lee un comprobante (imagen o PDF) con visión y devuelve sus campos estructurados, o lanza. */
+async function extractReceiptData(fileUrl, fileType) {
+    if (!fileUrl) throw new Error('sin imagen del comprobante');
+    const ft = _cotejoNorm(fileType);
+    let mediaType = 'image', mime = 'image/jpeg';
+    if (ft.includes('pdf')) { mediaType = 'document'; mime = 'application/pdf'; }
+    else if (ft.startsWith('image/')) { mime = ft; }
+    const buffer = Buffer.from((await axios.get(fileUrl, { responseType: 'arraybuffer', timeout: 60000, maxContentLength: Infinity, maxBodyLength: Infinity })).data);
+    const prepared = await buildSafeGeminiMediaPart(buffer, mime, mediaType);
+    if (!prepared || !prepared.part) throw new Error('comprobante no procesable (' + ((prepared && prepared.skipped) || 'desconocido') + ')');
+    const prompt = `Eres un lector de comprobantes de pago mexicanos (SPEI, transferencia, depósito en efectivo/OXXO, tarjeta).
+Lee la imagen/PDF y DEVUELVE SÓLO un objeto JSON (sin texto extra, sin comillas de bloque) con estos campos (usa null si no aparece):
+{"esComprobante":true|false,"monto":number,"fecha":"YYYY-MM-DD","hora":"HH:MM","bancoOrigen":string,"bancoDestino":string,"remitente":string,"beneficiario":string,"referencia":string,"claveRastreo":string,"concepto":string,"tipo":"spei|deposito_efectivo|transferencia|tarjeta|otro"}
+Reglas: "monto" es el importe pagado, SOLO el número (sin $ ni comas ni MXN). "fecha" en formato YYYY-MM-DD (si no aparece el año, asume ${new Date().getFullYear()}). "bancoOrigen" es el banco o app DESDE donde se envió el dinero (ej. BBVA, Santander, Nu, Spin by OXXO, Mercado Pago, Banco Azteca, BanCoppel). Si la imagen NO es un comprobante de pago, pon "esComprobante":false y el resto en null.`;
+    const resp = await generateGeminiResponse(prompt, [prepared.part]);
+    let txt = String((resp && resp.text) || '').trim();
+    const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
+    if (a >= 0 && b > a) txt = txt.slice(a, b + 1);
+    let data;
+    try { data = JSON.parse(txt); } catch (_) { throw new Error('el lector no devolvió JSON válido'); }
+    if (data.monto != null && data.monto !== '') {
+        const n = Number(String(data.monto).replace(/[^0-9.]/g, ''));
+        data.monto = isFinite(n) && n > 0 ? n : null;
+    } else data.monto = null;
+    data.esComprobante = !(data.esComprobante === false || String(data.esComprobante).toLowerCase() === 'false');
+    return data;
+}
+
+/** Busca el abono real que corresponde al comprobante. Devuelve { status, best, candidatos }. */
+async function matchIncomeMovement(ocr, aroundMs) {
+    const monto = ocr && ocr.monto != null ? Number(ocr.monto) : null;
+    // OXXO/efectivo COBRA COMISIÓN: el comprobante dice el bruto ($212) pero al banco entra el neto
+    // ($200). Para esos, además del monto exacto se acepta un abono en efectivo un poco menor (neto).
+    const esEfectivo = /efectivo|deposito/.test(_cotejoNorm((ocr && ocr.tipo) || '')) || /oxxo|efectivo/.test(_cotejoNorm((ocr && ocr.bancoOrigen) || ''));
+    const baseMs = (ocr && ocr.fecha && !isNaN(Date.parse(ocr.fecha)))
+        ? Date.parse(ocr.fecha + 'T12:00:00Z') : (aroundMs || Date.now());
+    const day = 86400000;
+    const d0 = new Date(baseMs - 2 * day).toISOString().slice(0, 10);
+    const d1 = new Date(baseMs + 2 * day).toISOString().slice(0, 10);
+    let snap;
+    try {
+        snap = await db.collection(INCOME_COLLECTION).where('date', '>=', d0).where('date', '<=', d1).limit(1000).get();
+    } catch (e) { return { status: 'error', error: e.message }; }
+
+    const bancoTokens = [];
+    if (ocr && ocr.bancoOrigen) {
+        const bo = _cotejoNorm(ocr.bancoOrigen);
+        if (bo.length >= 3) bancoTokens.push(bo);
+        for (const [k, al] of Object.entries(_BANK_ALIASES)) if (bo.includes(k) || al.some(x => bo.includes(x.trim()))) bancoTokens.push(k, ...al.map(x => x.trim()));
+    }
+    const remTokens = _cotejoNorm((ocr && ocr.remitente) || '').split(/\s+/).filter(t => t.length >= 3);
+    const claveDigits = String((ocr && (ocr.claveRastreo || ocr.referencia)) || '').replace(/\D/g, '');
+    const claveTail = claveDigits.length >= 6 ? claveDigits.slice(-7) : '';
+
+    let best = null;
+    const candidatos = [];
+    snap.forEach(doc => {
+        const m = doc.data();
+        const credit = Number(m.credit) || 0;
+        if (credit <= 0) return;
+        const concept = _cotejoNorm(m.concept);
+        const esCashMov = /efectivo|comercio|practic|oxxo|deposito/.test(concept);
+        let montoOk = false, montoAprox = false;
+        if (monto != null) {
+            if (Math.abs(credit - monto) < 1) montoOk = true;
+            else if (esEfectivo && esCashMov && credit >= monto - 25 && credit < monto) montoAprox = true;  // neto tras comisión OXXO
+            else return;                                   // otro monto → no es este pago
+        }
+        let score = 0; const why = [];
+        if (montoOk) { score += 50; why.push('monto'); }
+        else if (montoAprox) { score += 28; why.push('monto~'); }
+        if (ocr && ocr.fecha && m.date === ocr.fecha) { score += 15; why.push('fecha'); }
+        if (bancoTokens.length && bancoTokens.some(t => t && concept.includes(t))) { score += 20; why.push('banco'); }
+        if (remTokens.length && remTokens.some(t => concept.includes(t))) { score += 12; why.push('remitente'); }
+        if (claveTail && concept.includes(claveTail)) { score += 18; why.push('clave'); }
+        const cand = { id: doc.id, date: m.date, credit, concept: String(m.concept || '').slice(0, 90), score, why };
+        candidatos.push(cand);
+        if (!best || score > best.score) best = cand;
+    });
+    candidatos.sort((x, y) => y.score - x.score);
+
+    // Confianza: clave/remitente corroboran de forma casi única → 'match'. El banco confirma sólo si el
+    // monto es ÚNICO en la ventana (si hay varios abonos del MISMO monto y banco no se sabe cuál es este
+    // pago → 'partial', para que el operador revise el remitente). Montos comunes ($200/$750) caen aquí.
+    let status;
+    const strong = best && (best.why.includes('clave') || best.why.includes('remitente'));
+    const bancoUnico = best && best.why.includes('banco') && candidatos.filter(c => c.why.includes('banco')).length === 1;
+    const exacto = best && best.why.includes('monto');
+    if (!best) status = 'none';
+    else if (strong || (exacto && bancoUnico)) status = 'match';   // clave/remitente, o monto exacto con banco único
+    else if (exacto || best.why.includes('monto~')) status = 'partial';   // monto existe pero ambiguo, o neto de efectivo → revisar
+    else status = 'none';
+    return { status, best, candidatos: candidatos.slice(0, 4), efectivo: esEfectivo };
+}
+
+/**
+ * Coteja el comprobante sospechoso de un contacto contra los ingresos reales.
+ * OCR cacheado en suspiciousReceipt.cotejoOcr; el match (suspiciousReceipt.cotejo) se recalcula.
+ */
+async function cotejarSuspiciousReceipt(contactId, { force = false } = {}) {
+    const ref = db.collection('contacts_whatsapp').doc(String(contactId));
+    const snap = await ref.get();
+    if (!snap.exists) return { ok: false, error: 'contacto no existe' };
+    const c = snap.data() || {};
+    if (!c.suspiciousReceiptPending) return { ok: false, error: 'no está pendiente' };
+    const receipt = c.suspiciousReceipt || {};
+    const saveCotejo = (cotejo) => ref.set({ suspiciousReceipt: { cotejo, cotejoAt: admin.firestore.FieldValue.serverTimestamp() } }, { merge: true });
+
+    // 1) OCR (cacheado).
+    let ocr = (!force && receipt.cotejoOcr) || null;
+    if (!ocr) {
+        if (!receipt.imageUrl) { const cotejo = { status: 'no_image' }; await saveCotejo(cotejo); return { ok: true, ocr: null, cotejo }; }
+        try {
+            ocr = await extractReceiptData(receipt.imageUrl, receipt.fileType);
+            await ref.set({ suspiciousReceipt: { cotejoOcr: ocr, cotejoOcrAt: admin.firestore.FieldValue.serverTimestamp() } }, { merge: true });
+        } catch (e) {
+            const cotejo = { status: 'ocr_error', error: String(e.message || e).slice(0, 160) };
+            await saveCotejo(cotejo); return { ok: true, ocr: null, cotejo };
+        }
+    }
+
+    // 2) Match (en vivo).
+    let cotejo;
+    if (ocr && ocr.esComprobante === false) {
+        cotejo = { status: 'not_receipt' };
+    } else {
+        const at = receipt.at;
+        const aroundMs = (at && at.toMillis) ? at.toMillis() : (at && at._seconds ? at._seconds * 1000 : Date.now());
+        const match = await matchIncomeMovement(ocr, aroundMs);
+        cotejo = { ...match, monto: (ocr && ocr.monto) != null ? ocr.monto : null, fecha: (ocr && ocr.fecha) || null, banco: (ocr && ocr.bancoOrigen) || null, remitente: (ocr && ocr.remitente) || null };
+        if ((ocr && ocr.monto) == null && cotejo.status !== 'match') cotejo.status = 'unreadable_amount';
+    }
+    await saveCotejo(cotejo);
+    return { ok: true, ocr, cotejo };
 }
 
 // Wrapper con candado: si ya hay una generación en curso para el contacto, NO arranca
@@ -3594,6 +3792,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // admin para verificación; al cliente solo se le dice que estamos validando. Aplica en
         // fase de pago (post-venta O venta con pedido registrado), igual que /comprobante.
         const suspiciousReceipt = paymentPhaseActive && /\/sospechoso/i.test(aiResponse);
+        // Motivo breve que la IA escribe DESPUÉS de /sospechoso (ej. "/sospechoso el monto no coincide")
+        // para mostrarlo en la columna "Comprobante sospechoso" de Pendientes. El cliente NO lo ve (se
+        // limpia junto con el comando). Si la IA no puso motivo, queda vacío (la tarjeta usa uno genérico).
+        const suspiciousReason = suspiciousReceipt
+            ? String((aiResponse.match(/\/sospechoso\s*:?\s*([^\n]*)/i) || [])[1] || '').trim().slice(0, 240)
+            : '';
         // La IA emite /equipo cuando el cliente pide algo que ella no puede hacer (ej. foto o
         // video de su pedido): se avisa al admin para que un humano lo mande por el chat.
         const humanHelpNeeded = /\/equipo/i.test(aiResponse);
@@ -3673,7 +3877,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
         // (anuncia pedido LISTO + datos de pago); la IA no puede saber si el pedido físico
         // ya está terminado, así que jamás debe enviarlo ni expandirlo.
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').replace(/\/reenvio\b/ig, '').replace(/\/formulario\s*:?\s*(?:DH)?\s*\d{4,6}/ig, '').trim()).filter(m => m.length > 0);
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso[^\n]*/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').replace(/\/reenvio\b/ig, '').replace(/\/formulario\s*:?\s*(?:DH)?\s*\d{4,6}/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -3988,6 +4192,23 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
             alertAdminSuspiciousReceipt(contactId, contactData, comprobante)
                 .catch(e => console.warn('[AI] alertAdminSuspiciousReceipt falló:', e.message));
+            // Persistir para la columna "Comprobante sospechoso" de la sección Pendientes: bandera
+            // consultable (suspiciousReceiptPending) + detalle (motivo + imagen). Se limpia al Aprobar
+            // (endpoint) o al validar después un comprobante bueno (markComprobanteValidadoAndSendForm).
+            (async () => {
+                let ordNum = null;
+                try { const od = await getLatestOrderForContact(contactId); if (od && od.data().consecutiveOrderNumber != null) ordNum = `DH${od.data().consecutiveOrderNumber}`; } catch (_) {}
+                await contactRef.set({
+                    suspiciousReceiptPending: true,
+                    suspiciousReceipt: {
+                        at: admin.firestore.FieldValue.serverTimestamp(),
+                        reason: suspiciousReason || '',
+                        imageUrl: (comprobante && comprobante.fileUrl) || null,
+                        fileType: (comprobante && comprobante.fileType) || null,
+                        orderNumber: ordNum,
+                    },
+                }, { merge: true });
+            })().catch(e => console.warn('[AI] no se pudo persistir el comprobante sospechoso:', e.message));
         }
 
         // Apoyo humano solicitado (/equipo): avisar al admin con lo que pidió el cliente
@@ -4088,11 +4309,34 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         if (formularioPedidos.length > 0) {
             (async () => {
                 for (const num of formularioPedidos) {
+                    // CANDADO (casos DH14711 y DH14778, 12-ago-2026): /formulario forzaba el envío del
+                    // formulario —y con él la GUÍA— SIN revisar el comprobante, así que era la puerta
+                    // trasera del candado de /comprobante: en ambos pedidos el cliente solo había
+                    // pagado el ANTICIPO y su última imagen era de días antes. Se permite solo si
+                    // (a) hay un comprobante RECIENTE del cliente, o (b) ese pedido YA tenía el pago
+                    // validado antes (ahí /formulario solo re-manda el enlace, que es su uso legítimo
+                    // cuando el cliente tiene varios pedidos a direcciones distintas).
+                    let yaValidado = false;
+                    try {
+                        const snap = await db.collection('pedidos')
+                            .where('contactId', '==', contactId)
+                            .where('consecutiveOrderNumber', '==', Number(num)).limit(1).get();
+                        yaValidado = !snap.empty && !!snap.docs[0].data().comprobanteValidadoAt;
+                    } catch (e) { console.warn(`[ENVIOS] no pude revisar el pago de DH${num}:`, e.message); }
+
+                    if (!clienteMandoComprobanteReciente && !yaValidado) {
+                        console.warn(`[ENVIOS] ${contactId}: la IA emitió /formulario DH${num} SIN comprobante reciente y sin pago validado previo; NO se manda el formulario (se pide revisión humana).`);
+                        alertAdminHumanNeeded(contactId, contactData, `La IA intentó mandar el FORMULARIO DE ENVÍO de DH${num} sin que el pago esté validado (el cliente no mandó comprobante reciente). NO se envió: revisa si ya liquidó el total — si solo pagó el anticipo, la guía caducaría.`)
+                            .catch(() => {});
+                        contactRef.update({ needsAttention: true, needsAttentionReason: 'formulario_sin_pago', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() })
+                            .catch(() => {});
+                        continue;
+                    }
                     await markComprobanteValidadoAndSendForm(contactId, contactData, { orderNumber: num, force: true })
                         .catch(e => console.warn(`[ENVIOS] formulario de DH${num} falló:`, e.message));
                     await new Promise(r => setTimeout(r, 1200));
                 }
-                console.log(`[ENVIOS] ${contactId}: formulario(s) enviado(s) para ${formularioPedidos.map(n => 'DH' + n).join(', ')}.`);
+                console.log(`[ENVIOS] ${contactId}: formulario(s) procesado(s) para ${formularioPedidos.map(n => 'DH' + n).join(', ')}.`);
             })().catch(() => {});
         }
 
@@ -4539,6 +4783,7 @@ module.exports = {
     sendApprovedTemplateMessage,
     notifyGuiaToCustomer,
     markComprobanteValidadoAndSendForm,
+    cotejarSuspiciousReceipt,
     markOrderCorregirForContact,
     markOrderFabricarForContact,
     markOrderReenvioForContact,

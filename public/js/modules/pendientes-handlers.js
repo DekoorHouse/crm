@@ -18,6 +18,7 @@
 const PEND_COLS = [
     ['video', 'Mandar video', '#e83e8c', 'fa-video'],
     ['mockup', 'Falta mockup', '#6f42c1', 'fa-wand-magic-sparkles'],
+    ['sospechoso', 'Comprobante sospechoso', '#ea580c', 'fa-receipt'],
     ['atencion', 'Apoyo humano', '#0ea5e9', 'fa-hand'],
     ['ia_cola', 'Cola IA +1h', '#f59e0b', 'fa-hourglass-half'],
     ['ia_sin_pedido', 'IA no registró el pedido', '#dc2626', 'fa-triangle-exclamation'],
@@ -185,6 +186,15 @@ function pendContactCard(c, col) {
             ${c.pedido ? 'Su pedido: <b>' + escapeHtml(c.pedido.orderNumber) + '</b> (' + escapeHtml(c.pedido.estatus) + ')' : ''}
             ${c.motivoFalla ? '<br>La IA falló: ' + escapeHtml(c.motivoFalla) : ''}</div>`;
         acciones = `<button onclick="pendIaResolver('${escapeHtml(c.id)}', this)" title="Sácalo de la cola Pendientes IA (ya aplicaste el cambio)" class="pd-btn" style="background:#16a34a;color:#fff"><i class="fas fa-check" style="margin-right:3px"></i>Resuelto</button>`;
+    } else if (col === 'sospechoso') {
+        const motivo = (c.reason && c.reason.trim()) ? c.reason.trim() : 'El comprobante no coincide con nuestros datos (revísalo)';
+        const img = c.imageUrl
+            ? `<div style="margin-top:6px"><img src="${escapeHtml(c.imageUrl)}" alt="Comprobante" onclick="openImageModal(this.src)" onerror="this.parentNode.style.display='none'" style="max-width:100%;max-height:170px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);cursor:pointer;object-fit:contain"></div>`
+            : '';
+        const cotejoSlot = `<div class="pd-cotejo-slot" data-cotejar="${escapeHtml(c.id)}">${pendCotejarBadge(c.cotejo, c.id)}</div>`;
+        detalle = `<div class="pd-card-sub"><b>Comprobante a revisar${c.orderNumber ? ' · ' + escapeHtml(c.orderNumber) : ''}</b><br>Motivo: ${escapeHtml(motivo)}${img}</div>${cotejoSlot}`;
+        acciones = `<button onclick="pendSospechosoAprobar('${escapeHtml(c.id)}', this)" title="El pago es válido: la conversación sigue su flujo (se le manda el formulario de envío)" class="pd-btn" style="background:#16a34a;color:#fff"><i class="fas fa-check" style="margin-right:3px"></i>Aprobar</button>
+            <button onclick="pendSospechosoDescartar('${escapeHtml(c.id)}', this)" title="El pago NO es válido o ya lo atendiste: quítalo de aquí SIN mandar formulario" class="pd-btn pd-btn-ghost">Descartar</button>`;
     } else {
         detalle = `<div class="pd-card-sub"><b>La IA le dijo “ya registramos tu pedido” y el pedido NO existe.</b>
             ${c.motivoFalla ? '<br>Motivo: ' + escapeHtml(c.motivoFalla) : ''}
@@ -226,6 +236,9 @@ function _paintPendientes() {
     container.innerHTML = PEND_CSS + `<div class="pd-board">${cols}</div>`;
     _pendFitHeight();
     PEND_COLS.forEach(([k]) => { const el = document.getElementById('pd-col-' + k); if (el && saved[k] != null) el.scrollTop = saved[k]; });
+    // Cotejo automático contra Ingresos: cada comprobante sospechoso se coteja solo al pintarse (una
+    // vez por sesión; el OCR se cachea en el server). pendCotejar se salta los ya cotejados.
+    container.querySelectorAll('.pd-cotejo-slot[data-cotejar]').forEach(el => pendCotejar(el.getAttribute('data-cotejar')));
     if (!window._pendResizeBound) {
         window._pendResizeBound = true;
         window.addEventListener('resize', () => _pendFitHeight());
@@ -409,6 +422,88 @@ async function pendAtendido(contactId, el) {
     } catch (e) { if (el) el.disabled = false; alert('No se pudo marcar como atendida: ' + (e.message || e)); }
 }
 window.pendAtendido = pendAtendido;
+
+// Aprobar un comprobante sospechoso: valida el pago y la conversación sigue su flujo (backend manda
+// el formulario de envío). No es deshacible desde aquí (ya se validó el pago); si fue error, se maneja en el chat.
+async function pendSospechosoAprobar(contactId, el) {
+    if (el) el.disabled = true;
+    const card = ((window._pendData || {}).sospechoso || []).find(x => x.id === contactId) || {};
+    try {
+        await _pendPost(`pendientes/sospechoso/${contactId}/aprobar`);
+        _pendRemove('sospechoso', contactId);
+        pendToast(`${card.name || contactId}: comprobante aprobado ✅ — la conversación sigue su flujo`, {});
+    } catch (e) {
+        if (el) el.disabled = false;
+        pendToast('No se pudo aprobar: ' + (e.message || e), {});
+    }
+}
+window.pendSospechosoAprobar = pendSospechosoAprobar;
+
+// Descartar: quita el comprobante de la columna SIN validar (pago no bueno o ya atendido por el chat).
+async function pendSospechosoDescartar(contactId, el) {
+    if (el) el.disabled = true;
+    try {
+        await _pendPost(`pendientes/sospechoso/${contactId}/descartar`);
+        _pendRemove('sospechoso', contactId);
+        pendToast('Comprobante quitado de la lista', {});
+    } catch (e) {
+        if (el) el.disabled = false;
+        pendToast('No se pudo quitar: ' + (e.message || e), {});
+    }
+}
+window.pendSospechosoDescartar = pendSospechosoDescartar;
+
+// Pinta el veredicto del cotejo contra Ingresos (colección `expenses` de Admon). El encabezado es
+// clic-para-recotejar (útil tras importar un estado de cuenta nuevo). cotejo=null -> "Cotejando…".
+function pendCotejarBadge(cotejo, contactId) {
+    const money = (n) => '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const wrap = (bg, fg, inner) => `<div class="pd-cotejo" style="margin-top:7px;padding:7px 9px;border-radius:8px;font-size:.78rem;line-height:1.35;background:${bg};color:${fg}">${inner}</div>`;
+    if (!cotejo) return wrap('#eef2ff', '#3730a3', `<i class="fas fa-circle-notch fa-spin"></i> Cotejando con Ingresos…`);
+    const recotejar = contactId ? ` <span onclick="pendCotejar('${escapeHtml(contactId)}', true)" title="Volver a cotejar contra Ingresos" style="cursor:pointer;opacity:.7;margin-left:4px"><i class="fas fa-rotate-right"></i></span>` : '';
+    const leido = [];
+    if (cotejo.monto != null) leido.push(money(cotejo.monto));
+    if (cotejo.fecha) leido.push(escapeHtml(cotejo.fecha));
+    if (cotejo.banco) leido.push(escapeHtml(cotejo.banco));
+    const leidoStr = leido.length ? `<div style="margin-top:3px;opacity:.85">Comprobante: ${leido.join(' · ')}</div>` : '';
+    const best = cotejo.best;
+    const movStr = (best && (cotejo.status === 'match' || cotejo.status === 'partial'))
+        ? `<div style="margin-top:3px">Ingreso: <b>${money(best.credit)}</b> · ${escapeHtml(best.date)}<br><span style="opacity:.72">${escapeHtml(best.concept || '')}</span></div>` : '';
+    const M = {
+        match:            ['#dcfce7', '#166534', 'fa-circle-check',        'Coincide en Ingresos'],
+        partial:          ['#fef9c3', '#854d0e', 'fa-circle-exclamation',  'Coincide monto/fecha, sin confirmar banco'],
+        none:             ['#fee2e2', '#991b1b', 'fa-circle-xmark',        'Sin ingreso que coincida'],
+        not_receipt:      ['#e5e7eb', '#374151', 'fa-image',               'La imagen no parece un comprobante'],
+        unreadable_amount:['#e5e7eb', '#374151', 'fa-circle-question',     'No se pudo leer el monto del comprobante'],
+        no_image:         ['#e5e7eb', '#374151', 'fa-image',              'Sin imagen para cotejar'],
+        ocr_error:        ['#e5e7eb', '#374151', 'fa-triangle-exclamation','No se pudo leer el comprobante'],
+        error:            ['#e5e7eb', '#374151', 'fa-triangle-exclamation','No se pudo cotejar'],
+    };
+    const [bg, fg, icon, label] = M[cotejo.status] || ['#e5e7eb', '#374151', 'fa-circle-info', cotejo.status || 'Sin cotejar'];
+    const efectivoNote = (cotejo.efectivo && (cotejo.status === 'partial' || cotejo.status === 'none'))
+        ? `<div style="margin-top:4px;opacity:.72;font-size:.72rem"><i class="fas fa-circle-info"></i> Pago en efectivo (OXXO cobra comisión: se coteja el neto). El efectivo no se puede atar a un cliente.</div>` : '';
+    return wrap(bg, fg, `<div style="font-weight:700"><i class="fas ${icon}"></i> ${label}${recotejar}</div>${leidoStr}${movStr}${efectivoNote}`);
+}
+
+// Dispara el cotejo de una tarjeta (automático al pintarse; o forzado con el botón ↻). Cachea el OCR
+// en el server; sólo re-cotejo por sesión salvo force. Actualiza el panel in situ sin re-pintar todo.
+async function pendCotejar(contactId, force) {
+    if (!contactId) return;
+    window._pendCotejadas = window._pendCotejadas || new Set();
+    if (!force && window._pendCotejadas.has(contactId)) return;
+    window._pendCotejadas.add(contactId);
+    const slotOf = () => [...document.querySelectorAll('.pd-cotejo-slot[data-cotejar]')].find(el => el.getAttribute('data-cotejar') === String(contactId));
+    if (force) { const s = slotOf(); if (s) s.innerHTML = pendCotejarBadge(null, contactId); }
+    try {
+        const r = await _pendPost(`pendientes/sospechoso/${contactId}/cotejar`, force ? { force: true } : null);
+        const cotejo = (r && r.cotejo) || { status: 'error' };
+        const item = ((window._pendData || {}).sospechoso || []).find(x => x.id === contactId);
+        if (item) item.cotejo = cotejo;                         // persistir en el cache local para el próximo re-pinta
+        const s = slotOf(); if (s) s.innerHTML = pendCotejarBadge(cotejo, contactId);
+    } catch (e) {
+        const s = slotOf(); if (s) s.innerHTML = pendCotejarBadge({ status: 'error' }, contactId);
+    }
+}
+window.pendCotejar = pendCotejar;
 
 async function pendIaResolver(contactId, el) {
     if (el) el.disabled = true;

@@ -33,7 +33,7 @@ const { spawnSync } = require('child_process');
 const { db, admin } = require('../server/config');
 const { recomputeForContact } = require('../server/design/designPending');
 const { svgAutoEligibility, forcedDesignFields, isVideoCorregir,
-        autoBlocked, ESTATUS_TERMINAL, AUTO_DESDE_MS,
+        autoBlocked, ESTATUS_TERMINAL, AUTO_DESDE_MS, invalidaMarcasAnteriores,
         personajeEligibility, PLANTILLAS_PERSONAJE, quejaDeDatosAbierta } = require('../server/design/svgAuto');
 const { uploadPublicImage } = require('../server/mockups/mockupsService');
 
@@ -70,6 +70,16 @@ function log(msg) {
 }
 
 const ms = v => { if (!v) return 0; if (v.toMillis) return v.toMillis(); const t = Date.parse(v); return isNaN(t) ? 0 : t; };
+
+// ¿El SVG que ya está en Drive sigue sirviendo? NO si DESPUÉS se repuso el pedido (reenvioAt) o el
+// cliente corrigió un dato (datoCorregidoAt): ese corte lleva el dato viejo y hay que rehacerlo.
+// Sin esta distinción, un pedido corregido después de cortar era IMPOSIBLE de rediseñar: el botón
+// "Diseñar con IA" del CRM parecía funcionar y el worker borraba la petición en silencio (DH14404).
+const corteVigente = (o) => {
+    const desde = invalidaMarcasAnteriores(o);
+    const corte = ms(o.svgCorteAt);
+    return corte > 0 && (!desde || corte > desde);
+};
 const dhOf = o => 'DH' + (o.consecutiveOrderNumber || o.id);
 
 // Sube un archivo a Drive vía el Apps Script del usuario (misma vía que upload-drive.js).
@@ -387,7 +397,8 @@ async function processForcedDesigns() {
             if (!DRY) await doc.ref.update({ iaForce: admin.firestore.FieldValue.delete() });
             continue;
         }
-        if (o.svgCorteAt) { if (!DRY) await doc.ref.update({ iaForce: admin.firestore.FieldValue.delete() }); continue; }
+        // Ya subido a Drive -> no se re-sube. Salvo que ese corte esté INVALIDADO (reenvío/corrección).
+        if (corteVigente(o)) { if (!DRY) await doc.ref.update({ iaForce: admin.firestore.FieldValue.delete() }); continue; }
         const svg = f.svgLocalPath;
         if (!svg || !fs.existsSync(svg)) {
             log(`  ~ ${dh} forzado aprobado pero sin SVG staged (${svg || 'null'}) -> reencolo`);
@@ -433,7 +444,9 @@ async function processForcedDesigns() {
             if (!DRY) await doc.ref.update({ 'iaForce.status': 'error', 'iaForce.error': 'El pedido se quitó de Envíos o está cancelado.' });
             continue;
         }
-        if (o.svgCorteAt) { if (!DRY) await doc.ref.update({ iaForce: admin.firestore.FieldValue.delete() }); continue; }
+        // Ya cortado -> se descarta el forzado. Salvo que el corte esté INVALIDADO por un reenvío o
+        // por una corrección de datos posterior: ahí SÍ hay que rehacerlo (ver corteVigente).
+        if (corteVigente(o)) { if (!DRY) await doc.ref.update({ iaForce: admin.firestore.FieldValue.delete() }); continue; }
         // Campos (nombres/fecha) + imagen de preview: del mockup aprobado si hay; si no, del texto de datos.
         const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
         const previews = prev.exists ? (prev.data().previews || []) : [];
@@ -538,6 +551,10 @@ async function findPersonajeLamps() {
         const prev = await db.collection('mockup_previews').doc(String(o.id)).get();
         const previews = prev.exists ? (prev.data().previews || []) : [];
         if (o.svgCorteParcialAt) continue;                                    // ya se le corto su parte
+        // Deja de intentar un caso imposible. El contador ya mandaba el pedido a Pendientes a los 3
+        // fallos, pero NADA impedia volver a intentarlo: DH14600 acumulo 73 intentos, o sea horas de
+        // Corel cada 15 min sobre una hoja que nunca iba a salir. Ahora tambien se salta.
+        if ((Number(o.svgCortePersonajeFails) || 0) >= 3) continue;
         const el = personajeEligibility(o, previews);
         if (!el.eligible) continue;
         // Pedido MIXTO: se corta lo que la skill sabe y queda pendiente SOLO lo que no (Chris, 2026-08-07).
@@ -711,6 +728,9 @@ async function processPersonajeSheets(sheets) {
                 log(`  ! ${dhOf(o)} cortado a medias a proposito: le quedan ${meta.pendientes} lampara(s) a mano -> sigue en Pendientes`);
             } else {
                 upd.svgCorteAt = admin.firestore.FieldValue.serverTimestamp();
+                // El pedido quedo completo: se limpia el designForce que hubieran dejado los fallos
+                // (o un empujon manual), para que no quede pegado sin motivo.
+                upd.designForce = admin.firestore.FieldValue.delete();
                 // Los que pidieron VIDEO se quedan en 'Corregir': el pendiente del video sigue vivo
                 // hasta que el equipo lo grabe (misma regla que el corte de corazones). La bandera es
                 // POR PEDIDO: dos pedidos pueden compartir hoja y solo uno ser de video.

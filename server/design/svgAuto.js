@@ -157,15 +157,27 @@ function boardTerminado(o) {
 // nunca volvió a diseño porque conservaba el svgCorteAt del corte original.
 // Se apoya en `reenvioAt` y NO en el estatus a propósito: al generar la guía nueva el estatus se fuerza
 // a 'Pagado' (apiRoutes:9209), así que 'Reenvio' se pierde a los minutos; el sello de tiempo no.
+// --- CORRECCIÓN DE DATOS DESPUÉS DE CORTAR (Chris, 2026-08-10) -------------------------------------
+// Mismo problema que el reenvío, otra causa: si el cliente corrige un nombre/fecha CUANDO el SVG ya
+// se subió a Drive, el corte que está allá lleva el dato viejo. Sin invalidarlo, `svgCorteAt` marcaba
+// el pedido como "ya diseñado" para siempre: no volvía a ninguna cola y "Diseñar con IA" lo tiraba en
+// silencio (svg-corte-worker: processForcedDesigns). Caso DH14404, corregido 13 min después de cortar.
+// Se usa datoCorregidoAt (el dato YA arreglado) y no datosReportadoAt (la queja): mientras la queja
+// siga abierta no hay nada bueno que cortar, y de eso ya se encarga quejaDeDatosAbierta.
+// Ojo: una corrección ANTERIOR al corte no invalida nada — ese corte ya salió con el dato bueno.
+function invalidaMarcasAnteriores(o) {
+    return Math.max(tsMs(o.reenvioAt), tsMs(o.datoCorregidoAt));
+}
+
 function disenoYaHecho(o) {
     if (!o) return false;
-    const re = tsMs(o.reenvioAt);
-    const vigente = ts => ts > 0 && (!re || ts > re);      // marca anterior al reenvío -> ya no cuenta
+    const re = invalidaMarcasAnteriores(o);
+    const vigente = ts => ts > 0 && (!re || ts > re);      // marca anterior al reenvío/corrección -> ya no cuenta
     if (vigente(tsMs(o.svgCorteAt))) return true;
     if (vigente(tsMs(o.disenoListoAt))) return true;
     if (boardTerminado(o)) {
-        // Sin reenvío la columna del tablero cuenta aunque no traiga fecha (conservador, protege lo
-        // fabricado a mano). Con reenvío, solo si se movió DESPUÉS de él.
+        // Sin reenvío/corrección la columna del tablero cuenta aunque no traiga fecha (conservador,
+        // protege lo fabricado a mano). Con uno de los dos, solo si se movió DESPUÉS.
         const bts = tsMs(o.disenoBoardColAt);
         if (!re || (bts && bts > re)) return true;
     }
@@ -231,8 +243,13 @@ function itemEspecialPersonaje(datos) {
     // por bueno un "Especial: con su foto" que venía después, y esa lámpara se habría cortado.
     const vals = [...s.matchAll(/especial\s*:\s*([^|\n]+)/gi)].map(m => m[1].trim()).filter(Boolean);
     if (vals.length) {
-        // Basta que UNO no sea pura logística ("recoger en tienda") para mandar el item a manual.
-        if (vals.some(v => !(ESPECIAL_LOGISTICA_RE.test(v) && !ESPECIAL_PERSONAJE_RE.test(v)))) return true;
+        // Manda a manual solo si el "Especial:" pide algo del DISEÑO (foto, grabado, dibujo, frase…).
+        // Antes bastaba con que la nota NO EMPEZARA con una palabra de logística conocida, y eso frenaba
+        // pedidos normales: DH14717 traía "Especial: tocar fuerte en la ventana (no sirve timbre), casa
+        // con reja blanca… Incluir tarjeta", que es una instrucción de ENTREGA y no cambia la lámpara.
+        // La lista de palabras de logística nunca va a cubrir todo lo que la gente escribe ahí; la de
+        // diseño sí es acotada, así que la condición se invierte.
+        if (vals.some(v => ESPECIAL_PERSONAJE_RE.test(v))) return true;
         return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas.replace(/especial\s*:[^|\n]*/gi, ' '));
     }
     return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas);
@@ -256,7 +273,7 @@ function lamparasDeTexto(datos, productoFallback) {
     // El corte solo vale al INICIO de un campo (principio, "|", salto o el punto que separa lámparas
     // apiladas). Con un lookahead pelón, un "nombre:" dentro de un valor libre partía el texto e
     // inventaba una lámpara fantasma que sí se habría cortado.
-    const partes = s.split(/(?<=[|\n.]|^)\s*(?=nombre\s*:)/i).filter(x => /nombre\s*:/i.test(x));
+    const partes = s.split(/(?<=[|\n.;]|^)\s*(?=nombre\s*:)/i).filter(x => /nombre\s*:/i.test(x));
     const limpia = v => String(v || '').split(/\b(?:personaje|especial)\s*:/i)[0].trim().replace(/[.,;]+$/, '').trim();
     return partes.map(p => {
         const mn = /nombre\s*:\s*([^|\n]+)/i.exec(p);
@@ -491,7 +508,7 @@ function forcedDesignFields(o, previews) {
 module.exports = {
     svgAutoEligibility, isAutoWaiting, isVideoCorregir, isVideoAutoWaiting, forcedDesignFields,
     parseDatosFields, SPECIAL_RE, MANUAL_SPECIAL_RE, esEspecial, SIN_FECHA_RE, productOf, datosOf, isCorazon,
-    boardTerminado, disenoYaHecho, autoBlocked, AUTO_DESDE_MS, ESTATUS_AUTO, ESTATUS_TERMINAL,
+    boardTerminado, disenoYaHecho, invalidaMarcasAnteriores, autoBlocked, AUTO_DESDE_MS, ESTATUS_AUTO, ESTATUS_TERMINAL,
     personajeEligibility, isPersonajeAutoWaiting, plantillaDePersonaje, lamparasDeTexto, ES_INFANTIL_RE,
     PLANTILLAS_PERSONAJE, quejaDeDatosAbierta,
 };
