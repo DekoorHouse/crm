@@ -483,6 +483,19 @@ async function handlePostalCodeAuto(message, contactRef, from) {
 
 // --- WEBHOOK ENDPOINTS ---
 
+// ¿El error que tumbó al webhook es de INFRAESTRUCTURA (transitorio) o de LÓGICA (permanente)?
+// De la respuesta depende si Meta reintenta o si el mensaje se pierde para siempre.
+// Códigos gRPC de Firestore: 4 DEADLINE_EXCEEDED · 8 RESOURCE_EXHAUSTED · 10 ABORTED ·
+// 13 INTERNAL · 14 UNAVAILABLE. Se suman los errores de red de Node.
+const CODIGOS_INFRA = new Set([4, 8, 10, 13, 14]);
+const TEXTO_INFRA = /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|socket hang up|RESOURCE_EXHAUSTED|UNAVAILABLE|DEADLINE_EXCEEDED|Quota exceeded/i;
+
+function esFallaDeInfraestructura(error) {
+    if (!error) return false;
+    if (typeof error.code === 'number' && CODIGOS_INFRA.has(error.code)) return true;
+    return TEXTO_INFRA.test(`${error.code || ''} ${error.message || ''} ${error.details || ''}`);
+}
+
 // Verification endpoint
 router.get('/', (req, res) => {
     const mode = req.query['hub.mode'];
@@ -1328,6 +1341,20 @@ router.post('/', async (req, res) => {
 
     } catch (error) {
         console.error('❌ ERROR CRÍTICO EN EL WEBHOOK:', error);
+        // Si la falla es de INFRAESTRUCTURA (Firestore sin cuota, caído, timeout de red) hay que
+        // contestarle 500 a Meta para que REINTENTE: el mensaje entra solo en cuanto el servicio
+        // se recupera. Antes se contestaba 200 SIEMPRE, y ese 200 le dice a Meta "recibido, no lo
+        // mandes de nuevo": el mensaje se perdía para siempre. Pasó el 16-ago-2026 — la cuenta de
+        // facturación se suspendió, Firestore se quedó sin cuota de lecturas y se perdieron ~7
+        // horas de mensajes de clientes.
+        // Reintentar es SEGURO porque el guardado es idempotente: usa el wamid como ID del
+        // documento con create(), y un reenvío se detecta como duplicado y se ignora.
+        // Para fallas de LÓGICA se mantiene el 200: un 500 ahí haría que Meta reintente
+        // eternamente algo que nunca va a funcionar.
+        if (!res.headersSent && esFallaDeInfraestructura(error)) {
+            console.error(`[WEBHOOK] Falla de INFRAESTRUCTURA (${error.code || 'sin código'}): se responde 500 para que Meta reintente este mensaje.`);
+            return res.sendStatus(500);
+        }
     } finally {
         // CORRECCIÓN APLICADA: Verificar si los headers ya fueron enviados antes de intentar responder
         if (!res.headersSent) {
@@ -1416,4 +1443,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 // sendQueuedMessages se exporta para que el webhook de Messenger/Instagram también vacíe la cola
 // cuando el cliente responde (antes solo lo hacía WhatsApp y esas colas nunca se entregaban).
-module.exports = { router, sendQueuedMessages };
+// esFallaDeInfraestructura se exporta para que el webhook de Messenger/Instagram use EXACTAMENTE
+// el mismo criterio: un solo lugar decide qué error merece que Meta reintente.
+module.exports = { router, sendQueuedMessages, esFallaDeInfraestructura };
