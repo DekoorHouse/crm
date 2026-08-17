@@ -2947,90 +2947,13 @@ function actualizarContadorNoLeidos(precomputedCount = null) {
     }
 }
 
-// Renderiza la ventana principal de chat (cabecera, mensajes/notas, footer)
-function renderChatWindow(options = {}) {
-    if (state.activeView !== 'chats' && !state.chatModalOpen) return; // permite pintar en el modal de Envíos
-
-    const chatPanelEl = document.getElementById('chat-panel');
-    if (!chatPanelEl) return;
-
-    // Capturamos el scroll ANTES de borrar el contenido
-    const messagesContainer = document.getElementById('messages-container');
-    const savedScrollTop = messagesContainer ? messagesContainer.scrollTop : null;
-
-    // Busca el contacto seleccionado actualmente en el estado global
-    const contact = state.contacts.find(c => c.id === state.selectedContactId);
-    
-    // Renderiza la plantilla de la ventana de chat
-    chatPanelEl.innerHTML = ChatWindowTemplate(contact);
-
-    // Añade listener al input de búsqueda de contactos
-    const searchInput = document.getElementById('search-contacts-input');
-    if (searchInput) {
-        searchInput.addEventListener('input', handleSearchInput);
-    }
-
-    // Si hay un contacto seleccionado, renderiza sus componentes específicos
-    if (contact) {
-        // Renderiza los botones de estado/etiqueta
-        const statusWrapper = document.getElementById('contact-status-wrapper');
-        if (statusWrapper) { statusWrapper.innerHTML = StatusButtonsTemplate(contact); }
-
-        // Si la pestaña activa es 'chat'
-        if (state.activeTab === 'chat') {
-            // Configurar opciones de renderizado
-            const renderMsgOptions = {};
-            
-            // Si se pide preservar el scroll, desactivamos explicitamente scrollToBottom
-            // y restauramos la posición si la tenemos
-            if (options.preserveScroll) {
-                renderMsgOptions.scrollToBottom = false;
-                if (savedScrollTop !== null) {
-                    renderMsgOptions.scrollTop = savedScrollTop;
-                }
-            }
-            
-            renderMessages(renderMsgOptions);
-
-            // Añade listener de scroll para la cabecera de fecha flotante
-            const messagesContainerNew = document.getElementById('messages-container');
-            if (messagesContainerNew) { 
-                messagesContainerNew.addEventListener('scroll', () => { 
-                    if (!ticking) { 
-                        window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); 
-                        ticking = true; 
-                    } 
-                }); 
-            }
-
-            // Añade listeners al formulario de envío de mensajes
-            const messageForm = document.getElementById('message-form');
-            const messageInput = document.getElementById('message-input');
-            if (messageForm) messageForm.addEventListener('submit', handleSendMessage);
-            if (messageInput) {
-                messageInput.addEventListener('paste', handlePaste); 
-                messageInput.addEventListener('input', handleQuickReplyInput);
-                messageInput.addEventListener('keydown', handleMessageInputKeyDown);
-
-                // Ajustar altura del textarea dinámicamente
-                messageInput.addEventListener('input', () => {
-                    messageInput.style.height = 'auto';
-                    let newHeight = messageInput.scrollHeight;
-                    if (newHeight > 120) {
-                        newHeight = 120;
-                    }
-                    messageInput.style.height = newHeight + 'px';
-                });
-
-                messageInput.focus();
-            }
-
-        } else if (state.activeTab === 'notes') {
-            renderNotes(); 
-            document.getElementById('note-form').addEventListener('submit', handleSaveNote);
-        }
-    }
-}
+// renderChatWindow VIVE EN chat-handlers.js, no aqui.
+// Aqui habia un GEMELO de esa funcion, muerto: chat-handlers.js carga despues en index.html y
+// sobrescribe la global, asi que esta version no se ejecutaba nunca. No era inofensivo — era el
+// UNICO lugar que leia options.preserveScroll, y al duplicarse la funcion la copia viva perdio esa
+// traduccion. Resultado: 8 llamadas pasaban { preserveScroll: true }, nadie lo leia, y el chat se
+// iba al fondo en cada re-render; el operador no podia subir a leer el historial (arreglado en
+// chat-handlers.js, 2026-08-14). Si necesitas tocar renderChatWindow, hazlo alla.
 
 // --- NUEVO: Renderiza la tabla de departamentos ---
 function renderDepartmentsView() {
