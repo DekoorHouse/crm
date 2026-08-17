@@ -294,6 +294,95 @@ router.get('/', async (req, res) => {
     }
 });
 
+// GET /api/pendientes/revision — AUDITORÍA retrospectiva de "lo que NOSOTROS debemos", agrupada por
+// MES. A diferencia de GET / (las colas operativas "qué trabajar ahora"), esto barre TODO el histórico
+// de pedidos para cazar cabos sueltos: sin foto/mockup, video pedido sin enviar, pagado sin diseñar,
+// pagó y no se cerró la venta, corrección/reenvío/fabricar pendientes. Reusa los detectores reales de
+// designPending para no partir las reglas. Solo lectura; pensado para revisar y limpiar, no tiempo real.
+router.get('/revision', async (req, res) => {
+    try {
+        const dp = require('../design/designPending');
+        const { AUTO_DESDE_MS } = require('../design/svgAuto');
+        const CUTOFF = new Date(AUTO_DESDE_MS);   // corte de fecha del motivo 'corte' (pagado sin diseñar)
+        // "Pagó y no se cerró": pago validado pero el estatus sigue en pre-venta (categoría propia).
+        const PRESALE = ['foto enviada', 'sin estatus', 'esperando pago', 'esperando anticipo'];
+
+        // Union de queries que cubren TODOS los motivos (dedup por id). El grueso es "pagado desde el
+        // corte" (para 'corte'/'venta_sin_cerrar'); el resto son buckets chicos por estatus.
+        const [sPaid, sSin, sCor, sFab, sReen, sProd] = await Promise.all([
+            db.collection('pedidos').where('comprobanteValidadoAt', '>=', CUTOFF).get(),
+            db.collection('pedidos').where('estatus', '==', 'Sin estatus').get(),
+            db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
+            db.collection('pedidos').where('estatus', '==', 'Fabricar').get(),
+            db.collection('pedidos').where('estatus', '==', 'Reenvio').get(),
+            db.collection('pedidos').where('productoAgregadoPostPagoAt', '>', new Date(0)).get(),
+        ]);
+        const docs = new Map();
+        [sPaid, sSin, sCor, sFab, sReen, sProd].forEach(s => s.forEach(d => docs.set(d.id, d)));
+
+        // ¿ya tiene mockup? solo hace falta para los 'Sin estatus' (los demás no dependen de eso).
+        const sinIds = sSin.docs.map(d => d.id);
+        const hasMockupMap = new Map();
+        for (let i = 0; i < sinIds.length; i += 300) {
+            const refs = sinIds.slice(i, i + 300).map(id => db.collection('mockup_previews').doc(String(id)));
+            const md = await db.getAll(...refs);
+            md.forEach(m => hasMockupMap.set(m.id, m.exists && Array.isArray(m.data().previews) && m.data().previews.length > 0));
+        }
+
+        const pend = [];
+        for (const doc of docs.values()) {
+            const d = doc.data();
+            const est = String(d.estatus || 'Sin estatus').trim().toLowerCase();
+            const set = new Set([
+                ...dp.reasonsForOrderData(d),
+                ...dp.pendientesReasonsForOrderData(d, hasMockupMap.get(doc.id) || false),
+            ]);
+            if (set.has('corte') && PRESALE.includes(est)) { set.delete('corte'); set.add('venta_sin_cerrar'); }
+            const reasons = [...set];
+            if (reasons.length) pend.push({ id: doc.id, d, reasons });
+        }
+
+        // Nombres de contacto (lote).
+        const cids = [...new Set(pend.map(p => p.d.contactId || p.d.telefono).filter(Boolean))].map(String);
+        const nameMap = new Map();
+        for (let i = 0; i < cids.length; i += 300) {
+            const refs = cids.slice(i, i + 300).map(id => db.collection('contacts_whatsapp').doc(id));
+            const cd = await db.getAll(...refs);
+            cd.forEach(c => nameMap.set(c.id, c.exists ? (c.data().name || c.id) : c.id));
+        }
+
+        const monthsMap = new Map();
+        const totByReason = {};
+        for (const p of pend) {
+            const m = tsToMs(p.d.createdAt);
+            const mo = m ? new Date(m).toISOString().slice(0, 7) : 'sin-fecha';
+            if (!monthsMap.has(mo)) monthsMap.set(mo, { month: mo, total: 0, byReason: {}, orders: [] });
+            const bucket = monthsMap.get(mo);
+            bucket.total++;
+            p.reasons.forEach(r => { bucket.byReason[r] = (bucket.byReason[r] || 0) + 1; totByReason[r] = (totByReason[r] || 0) + 1; });
+            const num = p.d.consecutiveOrderNumber;
+            const cid = p.d.contactId || p.d.telefono;
+            bucket.orders.push({
+                id: p.id,
+                orderNumber: num != null ? `DH${num}` : (p.d.numeroPedido || p.id),
+                contactId: cid || null,
+                name: nameMap.get(String(cid)) || cid || p.id,
+                estatus: p.d.estatus || 'Sin estatus',
+                producto: p.d.producto || (Array.isArray(p.d.items) && p.d.items[0] ? p.d.items[0].producto : '') || '',
+                createdAt: m,
+                reasons: p.reasons,
+            });
+        }
+        const months = [...monthsMap.values()].sort((a, b) => (a.month < b.month ? 1 : -1));  // recientes primero
+        months.forEach(mo => mo.orders.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)));  // dentro del mes, más viejo arriba
+
+        res.json({ success: true, generatedAt: Date.now(), totals: { total: pend.length, byReason: totByReason }, months });
+    } catch (e) {
+        console.error('[PENDIENTES/revision] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // POST /api/pendientes/video/:orderId/enviado — "✓ Video enviado": cierra el pendiente del video.
 // NO toca el estatus del pedido (sigue en 'Corregir' hasta que su flujo lo cambie) ni la marca de
 // diseño de Erika (disenoListoAt): son dos pendientes distintos de dos personas distintas.

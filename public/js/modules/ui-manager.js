@@ -141,6 +141,13 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = PendientesViewTemplate();
             renderPendientesView();
             break;
+        case 'revision':
+            // Auditoría retrospectiva por MESES de todo lo que quedó pendiente de nuestro lado
+            // (sin foto, video sin enviar, pagado sin diseñar, ventas sin cerrar…). Solo lectura,
+            // para revisar y cerrar cabos sueltos. Ver js/modules/revision-handlers.js.
+            mainViewContainer.innerHTML = RevisionViewTemplate();
+            renderRevisionView();
+            break;
         default:
             mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
     }
