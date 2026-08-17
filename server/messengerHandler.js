@@ -316,15 +316,16 @@ router.post('/', async (req, res) => {
         }
     } catch (error) {
         console.error('❌ [WEBHOOK] ERROR CRÍTICO:', error);
-        // Mismo criterio que el webhook de WhatsApp (ver whatsappHandler.js): ante una falla de
-        // INFRAESTRUCTURA se contesta 500 para que Meta reintente y el mensaje no se pierda.
-        // Con 200 —lo que se hacía siempre— Meta lo da por entregado y no lo vuelve a mandar.
+        // Mismo criterio que el webhook de WhatsApp (ver whatsappHandler.js): salvo que el error
+        // sea permanente por el payload, se contesta 500 para que Meta reintente y el mensaje no
+        // se pierda. Con 200 —lo que se hacía siempre— Meta lo da por entregado y no lo reenvía.
         // require perezoso, igual que el de sendQueuedMessages más arriba: evita cualquier ciclo.
-        const { esFallaDeInfraestructura } = require('./whatsappHandler');
-        if (!res.headersSent && esFallaDeInfraestructura(error)) {
-            console.error(`[WEBHOOK] Falla de INFRAESTRUCTURA (${error.code || 'sin código'}): se responde 500 para que Meta reintente este mensaje.`);
+        const { debeReintentar } = require('./whatsappHandler');
+        if (!res.headersSent && debeReintentar(error)) {
+            console.error(`[WEBHOOK] Falla recuperable (${error.code || 'sin código'}): se responde 500 para que Meta reintente este mensaje.`);
             return res.sendStatus(500);
         }
+        console.error(`[WEBHOOK] Falla PERMANENTE (${error.code || 'sin código'}): se responde 200; reintentar no serviría de nada.`);
     } finally {
         if (!res.headersSent) {
             res.sendStatus(200);

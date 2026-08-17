@@ -30,6 +30,9 @@ const PEND_ATTN_REASONS = {
     equipo: 'El cliente pidió algo que la IA no puede dar',
     pago_sin_comprobante: 'Dice que pagó y no mandó comprobante',
     pago_no_registrado: 'Dice que pagó y no encontramos el pago',
+    // Lo pone el barrido de server/monitoring/mensajesSinAtender.js: con la IA encendida no salió
+    // nada después del mensaje del cliente. Si aparece, algo del sistema falló.
+    sin_respuesta: 'La IA estaba encendida y aun así nadie contestó',
 };
 
 const PEND_CSS = `

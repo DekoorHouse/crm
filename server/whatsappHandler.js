@@ -483,17 +483,38 @@ async function handlePostalCodeAuto(message, contactRef, from) {
 
 // --- WEBHOOK ENDPOINTS ---
 
-// ¿El error que tumbó al webhook es de INFRAESTRUCTURA (transitorio) o de LÓGICA (permanente)?
-// De la respuesta depende si Meta reintenta o si el mensaje se pierde para siempre.
-// Códigos gRPC de Firestore: 4 DEADLINE_EXCEEDED · 8 RESOURCE_EXHAUSTED · 10 ABORTED ·
-// 13 INTERNAL · 14 UNAVAILABLE. Se suman los errores de red de Node.
-const CODIGOS_INFRA = new Set([4, 8, 10, 13, 14]);
-const TEXTO_INFRA = /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|socket hang up|RESOURCE_EXHAUSTED|UNAVAILABLE|DEADLINE_EXCEEDED|Quota exceeded/i;
+// ¿Hay que pedirle a Meta que REINTENTE este webhook (500) o darlo por procesado (200)?
+// De esta decisión depende que un mensaje del cliente se recupere solo o se pierda para siempre.
+//
+// El default es REINTENTAR. La versión anterior tenía una lista blanca de códigos "de
+// infraestructura" (4, 8, 10, 13, 14) y todo lo demás se daba por procesado con 200 — o sea,
+// cualquier forma de caída que no estuviera en la lista perdía mensajes. El caso concreto que
+// se colaba: si suspenden la facturación y el proyecto queda deshabilitado, Firestore no
+// contesta RESOURCE_EXHAUSTED sino PERMISSION_DENIED (código 7), que NO estaba en la lista.
+// Es la misma falla del 16-ago-2026 (~7 h de mensajes perdidos) con otro código.
+//
+// Ahora solo se da por procesado lo que sabemos que NUNCA va a funcionar por más que se repita,
+// que es siempre algo del payload en sí, no del entorno. Reintentar es seguro porque el guardado
+// es idempotente: usa el wamid como ID del documento con create(), así que un reenvío se detecta
+// como duplicado y se ignora.
+//
+// Códigos gRPC permanentes: 3 INVALID_ARGUMENT (el dato no es válido y no lo será) ·
+// 5 NOT_FOUND (el documento/colección destino no existe) · 6 ALREADY_EXISTS (ya se procesó).
+// Nota deliberada: 9 FAILED_PRECONDITION (típicamente "falta el índice") NO está aquí. Es
+// permanente hasta que alguien crea el índice, y justamente por eso conviene que Meta siga
+// reintentando: si el índice se crea dentro de la ventana de reintentos, los mensajes entran
+// solos en lugar de perderse.
+const CODIGOS_PERMANENTES = new Set([3, 5, 6]);
+const TEXTO_PERMANENTE = /INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS/;
 
-function esFallaDeInfraestructura(error) {
-    if (!error) return false;
-    if (typeof error.code === 'number' && CODIGOS_INFRA.has(error.code)) return true;
-    return TEXTO_INFRA.test(`${error.code || ''} ${error.message || ''} ${error.details || ''}`);
+function debeReintentar(error) {
+    if (!error) return false; // Sin error no hay nada que reintentar.
+    if (typeof error.code === 'number') return !CODIGOS_PERMANENTES.has(error.code);
+    // Sin código numérico (errores de red de Node, TypeError de nuestro propio código, fallas de
+    // axios): se reintenta salvo que el texto delate un error permanente de Firestore. Un bug
+    // nuestro se reintentará unas horas y quedará ruidoso en los logs — preferible a perder el
+    // mensaje del cliente, porque si el fix se despliega dentro de la ventana, el mensaje entra.
+    return !TEXTO_PERMANENTE.test(`${error.code || ''} ${error.message || ''} ${error.details || ''}`);
 }
 
 // Verification endpoint
@@ -1341,20 +1362,20 @@ router.post('/', async (req, res) => {
 
     } catch (error) {
         console.error('❌ ERROR CRÍTICO EN EL WEBHOOK:', error);
-        // Si la falla es de INFRAESTRUCTURA (Firestore sin cuota, caído, timeout de red) hay que
-        // contestarle 500 a Meta para que REINTENTE: el mensaje entra solo en cuanto el servicio
-        // se recupera. Antes se contestaba 200 SIEMPRE, y ese 200 le dice a Meta "recibido, no lo
-        // mandes de nuevo": el mensaje se perdía para siempre. Pasó el 16-ago-2026 — la cuenta de
-        // facturación se suspendió, Firestore se quedó sin cuota de lecturas y se perdieron ~7
-        // horas de mensajes de clientes.
+        // Ante casi cualquier falla se contesta 500 para que Meta REINTENTE: el mensaje entra solo
+        // en cuanto el servicio se recupera. Antes se contestaba 200 SIEMPRE, y ese 200 le dice a
+        // Meta "recibido, no lo mandes de nuevo": el mensaje se perdía para siempre. Pasó el
+        // 16-ago-2026 — la cuenta de facturación se suspendió, Firestore se quedó sin cuota de
+        // lecturas y se perdieron ~7 horas de mensajes de clientes.
         // Reintentar es SEGURO porque el guardado es idempotente: usa el wamid como ID del
         // documento con create(), y un reenvío se detecta como duplicado y se ignora.
-        // Para fallas de LÓGICA se mantiene el 200: un 500 ahí haría que Meta reintente
-        // eternamente algo que nunca va a funcionar.
-        if (!res.headersSent && esFallaDeInfraestructura(error)) {
-            console.error(`[WEBHOOK] Falla de INFRAESTRUCTURA (${error.code || 'sin código'}): se responde 500 para que Meta reintente este mensaje.`);
+        // Solo se responde 200 cuando el error es permanente por el payload (ver debeReintentar):
+        // ahí un 500 haría que Meta reintente eternamente algo que nunca va a funcionar.
+        if (!res.headersSent && debeReintentar(error)) {
+            console.error(`[WEBHOOK] Falla recuperable (${error.code || 'sin código'}): se responde 500 para que Meta reintente este mensaje.`);
             return res.sendStatus(500);
         }
+        console.error(`[WEBHOOK] Falla PERMANENTE (${error.code || 'sin código'}): se responde 200; reintentar no serviría de nada.`);
     } finally {
         // CORRECCIÓN APLICADA: Verificar si los headers ya fueron enviados antes de intentar responder
         if (!res.headersSent) {
@@ -1443,6 +1464,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 // sendQueuedMessages se exporta para que el webhook de Messenger/Instagram también vacíe la cola
 // cuando el cliente responde (antes solo lo hacía WhatsApp y esas colas nunca se entregaban).
-// esFallaDeInfraestructura se exporta para que el webhook de Messenger/Instagram use EXACTAMENTE
+// debeReintentar se exporta para que el webhook de Messenger/Instagram use EXACTAMENTE
 // el mismo criterio: un solo lugar decide qué error merece que Meta reintente.
-module.exports = { router, sendQueuedMessages, esFallaDeInfraestructura };
+module.exports = { router, sendQueuedMessages, debeReintentar };

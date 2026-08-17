@@ -1715,11 +1715,19 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
     const anticipoBadge = contact.anticipoTest === 'A'
         ? `<span class="dp-badge" style="background:#d9770622;color:#d97706;border:1px solid #d9770666" title="Prueba de anticipo (grupo A): registra su pedido solo con anticipo de $300 pagado; el resto al ver la foto">🪙 $300</span>`
         : '';
-    // NECESITA ATENCIÓN: la IA no pudo ayudar (/equipo) o está apagada y el cliente escribió.
+    // NECESITA ATENCIÓN: la IA no pudo ayudar (/equipo), está apagada y el cliente escribió, o
+    // la IA estaba encendida y aun así nadie contestó (sin_respuesta, lo detecta el barrido de
+    // server/monitoring/mensajesSinAtender.js — ahí sí falló algo del sistema).
     // La fila se fija arriba (sort en chat-handlers) y parpadea azul navy (.needs-attention en style.css).
+    const ATTN_TITULOS = {
+        ai_off: 'la IA está apagada y el cliente escribió',
+        sin_respuesta: 'la IA estaba encendida y aun así nadie contestó',
+        pago_sin_comprobante: 'dice que pagó y no mandó comprobante',
+        pago_no_registrado: 'dice que pagó y no encontramos el pago'
+    };
     const attnClass = contact.needsAttention === true ? 'needs-attention' : '';
     const attnBadge = contact.needsAttention === true
-        ? `<span class="dp-badge attn-badge" title="Necesita atención humana: ${contact.needsAttentionReason === 'ai_off' ? 'la IA está apagada y el cliente escribió' : 'el cliente pidió algo que la IA no puede dar'}">🔵 Atender</span>`
+        ? `<span class="dp-badge attn-badge" title="Necesita atención humana: ${ATTN_TITULOS[contact.needsAttentionReason] || 'el cliente pidió algo que la IA no puede dar'}">🔵 Atender</span>`
         : '';
 
     const mainContent = `

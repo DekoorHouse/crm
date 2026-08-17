@@ -33,6 +33,8 @@ const { startCobranzaScheduler } = require('./cobranza/cobranzaScheduler');
 const { startDesignApprovalPoller } = require('./design/designApprovalPoller');
 const { startMessageSearchIndexer } = require('./search/messageSearch');
 const { startPendientesIaWatchdog } = require('./orders/pendientesIaWatchdog');
+const { startFirebaseWatchdog } = require('./monitoring/firebaseWatchdog');
+const { startMensajesSinAtenderScheduler } = require('./monitoring/mensajesSinAtender');
 const orderFollowupRouter = require('./leads/orderFollowupRoutes');
 const scheduledReminderRouter = require('./leads/scheduledReminderRoutes');
 const path = require('path');
@@ -88,6 +90,8 @@ app.use('/api/repartos-dgo', repartosDgoRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
 // Panel "Negocio" de la sección Métricas (conversaciones nuevas, embudo, ventanas de pago…)
 app.use('/api/business-metrics', require('./metrics/businessMetrics').router);
+// Diagnóstico de las redes de seguridad: watchdog de Firebase y mensajes sin atender.
+app.use('/api/monitoring', require('./monitoring/monitoringRoutes'));
 
 // --- Facebook Login for Business (OAuth para App Review) ---
 app.use('/auth/facebook', require('./facebookAuth'));
@@ -597,6 +601,12 @@ function startSchedulers() {
   startMessageSearchIndexer();
   // Vigilante de Pendientes IA (cada 30 min): avisa ventas cerradas que llevan >1 h sin pedido registrado
   startPendientesIaWatchdog();
+  // Watchdog de Firebase (cada 2 min): si Firestore deja de responder, avisa por WhatsApp en
+  // minutos. La caída del 16-ago-2026 duró ~7 h sobre todo porque nadie se enteró.
+  startFirebaseWatchdog();
+  // Red de seguridad genérica (cada 15 min): conversaciones donde el cliente escribió, la IA
+  // estaba encendida y aun así no salió nada. Atrapa fallas que no anticipamos.
+  startMensajesSinAtenderScheduler();
 }
 
 // --- INICIO DEL SERVIDOR ---
