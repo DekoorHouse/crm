@@ -258,6 +258,21 @@ function renderChatWindow(options = {}) {
         focused: document.activeElement === _prevInput
     } : null;
 
+    // POSICIÓN DEL SCROLL antes de destruir el panel (Chris, 2026-08-14).
+    // renderChatWindow recrea TODO con innerHTML, así que #messages-content queda vacío y
+    // renderMessages calcula isFirstPaint=true -> se va al fondo A LA FUERZA. Con los eventos en
+    // vivo (cambios de contacto, recibos de leído) disparando seguido, el operador no podía subir
+    // a leer el historial: cualquier re-render lo regresaba abajo, y por eso "no cargaban las
+    // conversaciones completas". Las 8 llamadas que pasan { preserveScroll: true } NO servían de
+    // nada: esa opción solo la leía el renderChatWindow GEMELO de ui-manager.js, que quedó muerto
+    // (chat-handlers.js carga después y lo sobrescribe). Aquí se re-implementa la traducción.
+    const _prevMsgs = document.getElementById('messages-container');
+    const _savedScrollTop = _prevMsgs ? _prevMsgs.scrollTop : null;
+    // Si ya estaba pegado abajo, quedarse abajo es lo correcto (mensaje nuevo entrante).
+    const _wasAtBottom = _prevMsgs
+        ? (_prevMsgs.scrollHeight - _prevMsgs.scrollTop - _prevMsgs.clientHeight < 150)
+        : true;
+
     const contact = state.contacts.find(c => c.id === state.selectedContactId);
     chatPanelEl.innerHTML = ChatWindowTemplate(contact);
 
@@ -284,8 +299,14 @@ function renderChatWindow(options = {}) {
         const statusWrapper = document.getElementById('contact-status-wrapper');
         if (statusWrapper) { statusWrapper.innerHTML = StatusButtonsTemplate(contact); }
         if (state.activeTab === 'chat') {
-            // MODIFICADO: Pasar las opciones a renderMessages para que maneje el scroll correctamente
-            renderMessages(options);
+            // renderMessages NO entiende `preserveScroll`: hay que traducirlo a las opciones que sí
+            // lee (scrollToBottom / scrollTop). Sin esta traducción la opción se ignoraba en silencio.
+            const renderMsgOptions = Object.assign({}, options);
+            if (options.preserveScroll && _savedScrollTop !== null && !_wasAtBottom) {
+                renderMsgOptions.scrollToBottom = false;
+                renderMsgOptions.scrollTop = _savedScrollTop;
+            }
+            renderMessages(renderMsgOptions);
             
             const messagesContainer = document.getElementById('messages-container');
             if (messagesContainer) {
