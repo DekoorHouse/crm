@@ -2938,7 +2938,13 @@ function actualizarContadorNoLeidos(precomputedCount = null) {
     }
 
     if (total > 0) {
-        badge.textContent = total;
+        // El listener trae hasta TOPE_NO_LEIDOS chats (ver listenForUnreadCount): arriba de eso
+        // el número exacto costaba ~22 MB por recarga y no le servía a nadie. El "+" avisa que
+        // hay más, en vez de mostrar un número cerrado que sería mentira.
+        badge.textContent = state.unreadCountCapped ? `${total}+` : total;
+        badge.title = state.unreadCountCapped
+            ? `Más de ${total} chats sin leer (el contador se detiene aquí para que el CRM cargue rápido)`
+            : `${total} chats sin leer`;
         badge.classList.remove('hidden');
         badge.style.display = 'inline-block';
     } else {

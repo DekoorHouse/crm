@@ -16,6 +16,15 @@ function startApp() {
     if (typeof checkMetricasHash === 'function') checkMetricasHash();
 
 
+    // Los contadores del header van PRIMERO y en este orden a propósito.
+    // Firestore multiplexa todos los listeners sobre una sola conexión, así que el primero que se
+    // registra es el primero que recibe su snapshot. El de pedidos de hoy pesa ~25 KB y el de no
+    // leídos es el más pesado de todos; con el orden invertido, el badge del header tardaba
+    // segundos en aparecer esperando detrás de él.
+    listenForDailyOrderCount(); // Listener en tiempo real para el conteo de pedidos de hoy
+    listenForPendingAiCount(); // Listener en tiempo real para el conteo de IA
+    listenForUnreadCount(); // Listener en tiempo real para el conteo de No leídos
+
     // Start all data listeners
     fetchAllUsers(); // Carga todos los usuarios del sistema
     fetchInitialContacts(); // Carga inicial paginada de contactos
@@ -35,9 +44,7 @@ function startApp() {
     // --- NUEVOS LISTENERS PARA DEPARTAMENTOS Y REGLAS ---
     listenForDepartments();
     listenForAdRoutingRules();
-    listenForPendingAiCount(); // Listener en tiempo real para el conteo de IA
-    listenForUnreadCount(); // Listener en tiempo real para el conteo de No leídos
-    listenForDailyOrderCount(); // Listener en tiempo real para el conteo de pedidos de hoy
+    // Los tres contadores del header ya se registraron arriba, antes que todo lo demás.
     // ----------------------------------------------------
 
     // Fetch initial non-realtime data

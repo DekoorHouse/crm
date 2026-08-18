@@ -108,6 +108,7 @@ let state = {
     activeDepartmentFilters: [], // IDs de departamento activos en la lista de chats (vacío = todos)
     pendingAiCount: 0, // Conteo global de chats pendientes de IA
     unreadTotalCount: 0, // Conteo global de chats no leídos (para el badge de "No leídos")
+    unreadCountCapped: false, // true si el listener topó su límite: hay más y el badge muestra "N+"
 
     // --- NUEVO: Estado para Entrenamiento de IA ---
     aiKnowledgeBase: [], // Documentos de la base de conocimiento

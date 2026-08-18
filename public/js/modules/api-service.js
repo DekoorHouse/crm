@@ -384,17 +384,28 @@ function listenForPendingAiCount() {
 }
 
 let unsubscribeUnreadCountListener = null;
+// Tope del listener de no leídos. Sin él, el badge exacto costaba bajar el documento COMPLETO de
+// cada chat sin leer: 7,550 contactos × ~3.1 KB = ~22 MB en CADA recarga, por la única conexión
+// que Firestore comparte entre todos los listeners. El contador de pedidos del header (25 KB)
+// esperaba detrás de esa descarga, y en celular eran 22 MB de datos cada vez.
+// El número exacto arriba del tope no le sirve a nadie: no se actúa distinto con 7,540 que con
+// "500+". Debajo del tope sigue siendo exacto y en tiempo real, que es donde sí importa.
+const TOPE_NO_LEIDOS = 500;
+
 /**
  * Listener en tiempo real del conteo de chats NO leídos (unreadCount > 0), excluyendo archivados.
  * Actualiza el badge del chip "No leídos" automáticamente.
  */
 function listenForUnreadCount() {
     if (unsubscribeUnreadCountListener) unsubscribeUnreadCountListener();
-    const query = db.collection('contacts_whatsapp').where('unreadCount', '>', 0);
+    const query = db.collection('contacts_whatsapp').where('unreadCount', '>', 0).limit(TOPE_NO_LEIDOS);
     unsubscribeUnreadCountListener = query.onSnapshot(snapshot => {
         let n = 0;
         snapshot.forEach(doc => { if (!doc.data().archived) n++; }); // no contar archivados
         state.unreadTotalCount = n;
+        // Si la consulta llegó al tope hay más de los que se ven: el badge lo dice con un "+" en
+        // vez de mentir con un número cerrado.
+        state.unreadCountCapped = snapshot.size >= TOPE_NO_LEIDOS;
         if (typeof actualizarContadorNoLeidos === 'function') actualizarContadorNoLeidos(n);
     }, error => {
         console.error("Error en real-time listener de conteo No leídos:", error);
