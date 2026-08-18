@@ -2028,6 +2028,55 @@ async function markOrderCancelledForContact(contactId) {
 }
 
 /**
+ * El cliente (en post-venta) confirma que YA RECIBIÓ su pedido ("ya me llegó", "me acaba de llegar")
+ * → avanza el estatus del pedido más reciente a "Entregado", para que salga de los pendientes en vez
+ * de quedarse con el estatus viejo (Fabricar/Pagado). Guardarraíles:
+ *   - Solo avanza desde estados PRODUCIDOS/en camino; nunca desde pre-venta (Sin estatus, Foto enviada,
+ *     Esperando…) ni desde terminales (ya Entregado/Cancelado/Devolución).
+ *   - CONFIRMA con la IA (lee la conversación + el mensaje actual) antes de mover: no marca por error
+ *     (ej. "ya me llegó el mockup/la info" NO es entrega). Si la IA no lo confirma (o duda), no avanza.
+ *   - NO manda nada al cliente (cambio interno). Idempotente y fire-and-forget: nunca lanza.
+ * Si el modo falla o la IA no confirma, el pedido simplemente sigue pendiente (lo cacha la "Revisión").
+ * dryRun=true devuelve lo que HARÍA sin escribir (para probar sin tocar datos).
+ */
+async function markOrderEntregadoForContact(contactId, contactData = {}, clientMessage = '', { dryRun = false } = {}) {
+    try {
+        const orderDoc = await getLatestOrderForContact(contactId);
+        if (!orderDoc) return null;
+        const o = orderDoc.data();
+        const orderNumber = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : `(pedido ${orderDoc.id})`;
+        const cur = String(o.estatus || 'Sin estatus').trim().toLowerCase();
+        const PRESALE = ['sin estatus', 'foto enviada', 'esperando anticipo', 'esperando pago', 'esperando confirmacion', 'pendiente transferencia'];
+        if (/cancel|entregad|devol|amenaz/.test(cur) || PRESALE.includes(cur)) {
+            return { orderNumber, advanced: false, motivo: `estatus "${o.estatus}" no admite avance a Entregado` };
+        }
+        // Confirmación con IA (lee la conversación + el mensaje actual que acaba de llegar).
+        const r = await revisarPendienteConIA(orderDoc.id, { force: true, extraUserMessage: clientMessage });
+        const v = (r && r.verdict) || {};
+        if (!v.resuelto || v.confianza === 'baja') {
+            console.log(`[ENTREGA] ${orderNumber}: la IA no confirmó entrega (resuelto=${v.resuelto}, confianza=${v.confianza}); no se avanza.`);
+            return { orderNumber, advanced: false, motivo: 'la IA no confirmó la entrega', verdict: v };
+        }
+        if (dryRun) {
+            console.log(`[ENTREGA] (dry-run) ${orderNumber} → SÍ se marcaría Entregado (señal: "${(v.senal || '').slice(0, 60)}").`);
+            return { orderNumber, advanced: true, dryRun: true, verdict: v };
+        }
+        await orderDoc.ref.update({
+            estatus: 'Entregado',
+            entregadoAt: admin.firestore.FieldValue.serverTimestamp(),
+            entregadoBy: 'auto-ia',
+            entregaSenal: String(v.senal || clientMessage || '').slice(0, 200),
+        });
+        console.log(`[ENTREGA] ${orderNumber} (${orderDoc.id}) → Entregado AUTOMÁTICO (cliente confirmó recepción: "${(v.senal || '').slice(0, 60)}").`);
+        try { await require('./design/designPending').recomputeForContact(o.contactId || o.telefono); } catch (_) {}
+        return { orderNumber, advanced: true, verdict: v };
+    } catch (e) {
+        console.warn('[ENTREGA] markOrderEntregadoForContact falló:', e.message);
+        return null;
+    }
+}
+
+/**
  * Campos que dejan un pedido listo para RE-ENVIARSE (reposición). FUENTE DE VERDAD ÚNICA del estatus
  * "Reenvio": la usan el cambio de estatus MANUAL (apiRoutes /change-status) y la detección de la IA
  * (markOrderReenvioForContact), para que ambos caminos hagan exactamente lo mismo.
@@ -2913,7 +2962,7 @@ const REV_REASON_LABELS = {
     manual: 'marcado a mano como pendiente',
 };
 
-async function revisarPendienteConIA(orderId, { force = false } = {}) {
+async function revisarPendienteConIA(orderId, { force = false, extraUserMessage = null } = {}) {
     const oref = db.collection('pedidos').doc(String(orderId));
     const osnap = await oref.get();
     if (!osnap.exists) return { ok: false, error: 'pedido no existe' };
@@ -2941,7 +2990,11 @@ async function revisarPendienteConIA(orderId, { force = false } = {}) {
         if (tms > lastMsgMs) lastMsgMs = tms;
         if (t) rows.push(`${String(m.from || '') === String(contactId) ? 'Cliente' : 'Negocio'}: ${t.slice(0, 300)}`);
     });
-    const transcript = rows.reverse().join('\n').slice(0, 6000);
+    const rowsOrdered = rows.reverse();   // lo más nuevo al final
+    // Mensaje actual (desde el webhook): puede que aún no esté en la query; se anexa para asegurar que
+    // la IA lo vea (ver markOrderEntregadoForContact). Duplicarlo si ya estaba es inofensivo.
+    if (extraUserMessage) rowsOrdered.push(`Cliente: ${String(extraUserMessage).replace(/\s+/g, ' ').trim().slice(0, 300)}`);
+    const transcript = rowsOrdered.join('\n').slice(-6000);   // conservar lo MÁS NUEVO (el final)
 
     // Caché: no re-llamar a la IA si no hay mensajes nuevos desde la última revisión.
     if (!force && o.revisionIa && o.revisionIa.lastMsgMs === lastMsgMs) return { ok: true, verdict: o.revisionIa, cached: true };
@@ -4904,6 +4957,7 @@ module.exports = {
     markComprobanteValidadoAndSendForm,
     cotejarSuspiciousReceipt,
     revisarPendienteConIA,
+    markOrderEntregadoForContact,
     markOrderCorregirForContact,
     markOrderFabricarForContact,
     markOrderReenvioForContact,

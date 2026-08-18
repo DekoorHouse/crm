@@ -2,7 +2,8 @@ const express = require('express');
 const axios = require('axios');
 // SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendConversionEvent
 const { db, admin, bucket } = require('./config');
-const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent, transcribeIncomingAudioMessage, markOrderCorregirForContact, markOrderFabricarForContact } = require('./services');
+const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent, transcribeIncomingAudioMessage, markOrderCorregirForContact, markOrderFabricarForContact, markOrderEntregadoForContact } = require('./services');
+const { aiReplyDelayMs } = require('./ai/replyDelay');
 const { armLeadFollowup } = require('./leads/leadReactivationScheduler');
 const { armOrderFollowup } = require('./leads/orderFollowupScheduler');
 const { markOrderFollowupReplied } = require('./leads/orderFollowupMetrics');
@@ -1090,6 +1091,22 @@ router.post('/', async (req, res) => {
                     markOrderCorregirForContact(from, updatedContactData, body, 'foto_especial')
                         .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact (foto especial) falló:', e.message));
                 }
+
+                // --- Cliente CONFIRMA que YA RECIBIÓ su pedido → avanzar estatus a "Entregado" ---
+                // En post-venta, si el cliente dice que su pedido ya le llegó, avanzamos su estatus a
+                // "Entregado" para que salga de los pendientes (antes se quedaba en Fabricar/Pagado con el
+                // estatus viejo — caso DH14660). El regex es solo el DISPARADOR barato; markOrderEntregado
+                // CONFIRMA con la IA (lee la conversación) antes de mover, para no marcar por error. NO
+                // manda nada al cliente. Kill-switch: crm_settings/general.deliveryToEntregadoActive = false.
+                const deliveryActive = !(generalSettingsDoc.exists && generalSettingsDoc.data().deliveryToEntregadoActive === false);
+                const confirmaEntrega = /\b(ya|por fin)\b.{0,15}(lleg[oó]|recib[ií]|ll[eé]go)|acaba(n)? de llegar|me lleg[oó]|ya (lo|la|los|las) (tengo|recib[ií]|ten[ií]a)|ya est[aá] (aqu[ií]|conmigo)|lleg[oó] (mi|el|la|mi pedido|mi l[aá]mpara|mi encargo|todo)/i.test(body);
+                // Excluye lo que NO es el producto físico (mensaje/mockup/foto/pago/guía) y preguntas/negaciones.
+                const entregaDescartada = /(mensaje|informaci|correo|link|enlace|mockup|dise[nñ]o|foto|imagen|comprobante|dep[oó]sito|pago|c[oó]digo|contrase|gu[ií]a|rastreo|paqueter|cu[aá]ndo|cuando lleg|no me ha|no ha lleg|todav[ií]a no|a[uú]n no|sigue sin|\?)/i.test(body);
+                if (deliveryActive && confirmaEntrega && !entregaDescartada) {
+                    console.log(`[ENTREGA] ${from} dice que su pedido ya llegó → confirmando con IA para avanzar a "Entregado".`);
+                    markOrderEntregadoForContact(from, updatedContactData, body)
+                        .catch(e => console.warn('[ENTREGA] markOrderEntregadoForContact falló:', e.message));
+                }
             }
 
             if (!AI_ALWAYS_ON && !isWithinBusinessHours() && awayMessageActive) {
@@ -1251,17 +1268,10 @@ router.post('/', async (req, res) => {
             // antes el contacto existente que escribía desde un anuncio nuevo recibía la respuesta
             // del anuncio Y 20s después la de la IA al MISMO mensaje (doble respuesta).
             if (updatedContactData.botActive && !isNewContact && !adResponseSent) {
-                let delay = 20000; // Delay estándar de 20s para conversaciones en curso
-                // Si la IA ya pidió los datos de envío (awaitingShippingData), damos 10 min a que el
-                // cliente termine de mandarlos en partes antes de que la IA le pida lo que falte —
-                // EXCEPTO si el cliente pregunta qué falta / si ya está completo: ahí respondemos rápido.
-                if (updatedContactData.awaitingShippingData) {
-                    const incomingText = (message.text?.body || '').toLowerCase();
-                    const asksWhatsMissing = /(falta|faltan|qu[eé] m[aá]s|qu[eé] datos|cu[aá]l|es todo|eso es todo|ya (?:te )?(?:lo|los|las|le)?\s*(?:di|mand|envi|env[ií]|pas)|ya est|ya qued|list[oa]|complet|algo m[aá]s)/i.test(incomingText);
-                    if (!asksWhatsMissing) {
-                        delay = 10 * 60 * 1000; // 10 min: esperar a que el cliente complete sus datos
-                    }
-                }
+                // 20 s normal; 10 min si la IA está esperando los datos de envío (el cliente los manda
+                // en partes). El escape —preguntas de "¿qué falta?" y AHORA también problemas/rastreo—
+                // vive en server/ai/replyDelay.js, compartido con Messenger para que no se separen.
+                const delay = aiReplyDelayMs(updatedContactData, message.text?.body);
                 console.log(`[AI] Programando respuesta de IA para ${from} en ${delay/1000}s (Bot activo: ${updatedContactData.botActive}${updatedContactData.awaitingShippingData ? ', esperando datos de envío' : ''})`);
                 triggerAutoReplyAI(message, contactRef, updatedContactData, delay).catch(err => {
                     console.error('[WEBHOOK] Error asíncrono en respuesta de IA:', err);

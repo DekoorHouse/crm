@@ -6036,6 +6036,26 @@ router.get('/debug/shipping-digest-run', async (req, res) => {
 // GET /api/debug/ai-order-extract?contactId=521... → DRY-RUN del extractor de pedidos de la IA:
 // reconstruye el transcript del contacto y muestra qué pedido registraría, SIN crear nada.
 // Sirve para probar el registro automático (orders/aiOrderRegistration.js) contra chats reales.
+// POST /api/debug/delivery-detect { contactId, message } → DRY-RUN del avance automático a "Entregado":
+// corre el regex del webhook + la confirmación con IA y dice si AVANZARÍA el pedido, SIN escribir nada.
+// Sirve para probar la detección "ya me llegó → Entregado" contra un contacto real.
+router.post('/debug/delivery-detect', async (req, res) => {
+    try {
+        const { contactId, message } = req.body || {};
+        if (!contactId) return res.status(400).json({ error: 'falta contactId' });
+        const body = String(message || '');
+        const confirmaEntrega = /\b(ya|por fin)\b.{0,15}(lleg[oó]|recib[ií]|ll[eé]go)|acaba(n)? de llegar|me lleg[oó]|ya (lo|la|los|las) (tengo|recib[ií]|ten[ií]a)|ya est[aá] (aqu[ií]|conmigo)|lleg[oó] (mi|el|la|mi pedido|mi l[aá]mpara|mi encargo|todo)/i.test(body);
+        const entregaDescartada = /(mensaje|informaci|correo|link|enlace|mockup|dise[nñ]o|foto|imagen|comprobante|dep[oó]sito|pago|c[oó]digo|contrase|gu[ií]a|rastreo|paqueter|cu[aá]ndo|cuando lleg|no me ha|no ha lleg|todav[ií]a no|a[uú]n no|sigue sin|\?)/i.test(body);
+        const regexGate = confirmaEntrega && !entregaDescartada;
+        const { markOrderEntregadoForContact } = require('./services');
+        const result = message ? (regexGate ? await markOrderEntregadoForContact(contactId, {}, body, { dryRun: true }) : { advanced: false, motivo: 'el regex no disparó con ese mensaje' })
+            : await markOrderEntregadoForContact(contactId, {}, '', { dryRun: true });   // sin message: prueba solo la confirmación IA
+        res.json({ regexGate: { confirmaEntrega, entregaDescartada, dispara: regexGate }, result });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // GET /api/debug/gemini-models → diagnóstico del modelo (incidente 30-jul-2026): lista modelos
 // disponibles + ping al modelo actual con el error crudo. Confirma si el nombre del modelo caducó.
 router.get('/debug/gemini-models', async (_req, res) => {
