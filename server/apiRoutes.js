@@ -6036,6 +6036,12 @@ router.get('/debug/shipping-digest-run', async (req, res) => {
 // GET /api/debug/ai-order-extract?contactId=521... → DRY-RUN del extractor de pedidos de la IA:
 // reconstruye el transcript del contacto y muestra qué pedido registraría, SIN crear nada.
 // Sirve para probar el registro automático (orders/aiOrderRegistration.js) contra chats reales.
+// GET /api/debug/version → marcador de build + uptime del proceso. Sirve para saber con certeza qué
+// versión está viva (uptime bajo = recién desplegado) sin adivinar por endpoints nuevos.
+router.get('/debug/version', (_req, res) => {
+    res.json({ marker: 'entrega-auto-v1', uptimeSec: Math.round(process.uptime()), now: Date.now() });
+});
+
 // POST /api/debug/delivery-detect { contactId, message } → DRY-RUN del avance automático a "Entregado":
 // corre el regex del webhook + la confirmación con IA y dice si AVANZARÍA el pedido, SIN escribir nada.
 // Sirve para probar la detección "ya me llegó → Entregado" contra un contacto real.
