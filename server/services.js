@@ -4375,6 +4375,33 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
         }
 
+        // --- VIGILANTE DE PEDIDO NO ACTUALIZADO (caso DH14925, 17-ago-2026) ---
+        // El cliente agrego una 2a lampara y la IA contesto "con gusto las agregamos, serian 2 por
+        // $1200"... pero NUNCA emitio /registrar. El pedido se quedo con 1 item y $750: el CRM mostro
+        // el total mal y el worker de corte diseño solo una lampara, con el cliente ya pagado.
+        // La regla del prompt no basta (medido: el modelo actualiza 1 de 6 veces), asi que aqui se
+        // contrasta lo que la IA DICE contra lo que el sistema tiene. No se bloquea el mensaje: se
+        // avisa y se fija la conversacion en ATENCION. Fire-and-forget.
+        const claimsOrderChange = /(l[ao]s? agregamos|agregamos (la|el|otra|otro|un|una)|lo agrego a tu pedido|actualic[eé] tu pedido|actualizo tu pedido|qued[oó] actualizado tu pedido|ser[ií]an? \d+ l[aá]mparas|quedar[ií]an? \d+ l[aá]mparas|\d+ l[aá]mparas en total)/i.test(aiResponse);
+        if (claimsOrderChange && !registerOrderCmd && !isPostVenta) {
+            (async () => {
+                const snap = await db.collection('pedidos').where('contactId', '==', contactId).get();
+                let best = null, bestMs = 0;
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    if (String(d.estatus || '').toLowerCase() === 'cancelado') return;
+                    const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
+                    if (ms > bestMs) { bestMs = ms; best = d; }
+                });
+                if (!best) return;   // sin pedido registrado no hay nada que actualizar
+                const num = best.consecutiveOrderNumber != null ? `DH${best.consecutiveOrderNumber}` : '(sin numero)';
+                const piezas = Array.isArray(best.items) ? best.items.reduce((n, it) => n + (Number(it.cantidad) || 1), 0) : 1;
+                console.warn(`[PEDIDO] ${contactId}: la IA hablo de AGREGAR/CAMBIAR piezas pero NO emitio /registrar; ${num} sigue con ${piezas} pieza(s) y $${best.precio}. Se pide revision humana.`);
+                await alertAdminHumanNeeded(contactId, contactData, `La IA le dijo al cliente que le AGREGA o CAMBIA piezas a su pedido, pero NO actualizo ${num} en el sistema: sigue con ${piezas} pieza(s) y un total de $${best.precio}. Revisa el chat y corrige el pedido — si no, se fabrica de menos y el cobro sale mal.`);
+                await contactRef.update({ needsAttention: true, needsAttentionReason: 'pedido_no_actualizado', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() });
+            })().catch(e => console.warn('[PEDIDO] vigilante de actualizacion fallo:', e.message));
+        }
+
         // Híbrido: si el pedido NO se acaba de registrar, etiquetar "en vivo" el estado
         // del pedido (pendiente de foto, etc.) reutilizando el historial ya armado. El
         // scheduler de order_followup leerá esta etiqueta y se ahorrará una clasificación.
