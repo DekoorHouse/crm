@@ -2899,6 +2899,92 @@ async function cotejarSuspiciousReceipt(contactId, { force = false } = {}) {
     return { ok: true, ocr, cotejo };
 }
 
+// =================================================================================================
+// === Revisión con IA: ¿la CONVERSACIÓN dice que un pendiente ya está resuelto? ====================
+// =================================================================================================
+// Para la sección "Revisión por meses". Un pedido puede figurar pendiente (p.ej. 'Fabricar' = falta
+// producir) pero el cliente ya escribió "ya me llegó" → en realidad ya se produjo y entregó, y el
+// estatus quedó viejo. Aquí la IA LEE la conversación reciente y juzga si el pendiente ya se cumplió.
+const REV_REASON_LABELS = {
+    corte: 'pagado, falta el diseño de corte', fabricar: 'pagado, falta PRODUCIR la lámpara',
+    mockup: 'falta enviarle su foto/mockup', datos: 'una corrección que pidió el cliente',
+    video: 'pidió un VIDEO de su lámpara y falta enviárselo', reenvio: 'reposición: hay que rehacerlo y reenviarlo',
+    venta_sin_cerrar: 'pagó pero la venta no se cerró', segundo_producto: 'agregó un 2º producto tras pagar',
+    manual: 'marcado a mano como pendiente',
+};
+
+async function revisarPendienteConIA(orderId, { force = false } = {}) {
+    const oref = db.collection('pedidos').doc(String(orderId));
+    const osnap = await oref.get();
+    if (!osnap.exists) return { ok: false, error: 'pedido no existe' };
+    const o = osnap.data();
+    const contactId = o.contactId || o.telefono;
+    if (!contactId) return { ok: false, error: 'pedido sin contacto' };
+    const orderNumber = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : String(orderId);
+
+    // Motivos actuales del pendiente (reusa los detectores reales de diseño).
+    const dp = require('./design/designPending');
+    const est = String(o.estatus || 'Sin estatus').trim().toLowerCase();
+    const hasMockup = est === 'sin estatus' ? await dp.orderHasMockup(orderId) : false;
+    const reasons = [...new Set([...dp.reasonsForOrderData(o), ...dp.pendientesReasonsForOrderData(o, hasMockup)])];
+    const reasonText = reasons.map(r => REV_REASON_LABELS[r] || r).join('; ') || 'algún pendiente de nuestro lado';
+
+    // Conversación reciente (lo más nuevo al final).
+    const msnap = await db.collection('contacts_whatsapp').doc(String(contactId)).collection('messages')
+        .orderBy('timestamp', 'desc').limit(30).get();
+    const rows = [];
+    let lastMsgMs = 0;
+    msnap.docs.forEach(d => {
+        const m = d.data();
+        const t = String(m.text || m.transcription || (m.fileUrl ? '[archivo/imagen]' : '') || '').replace(/\s+/g, ' ').trim();
+        const tms = m.timestamp && m.timestamp.toMillis ? m.timestamp.toMillis() : 0;
+        if (tms > lastMsgMs) lastMsgMs = tms;
+        if (t) rows.push(`${String(m.from || '') === String(contactId) ? 'Cliente' : 'Negocio'}: ${t.slice(0, 300)}`);
+    });
+    const transcript = rows.reverse().join('\n').slice(0, 6000);
+
+    // Caché: no re-llamar a la IA si no hay mensajes nuevos desde la última revisión.
+    if (!force && o.revisionIa && o.revisionIa.lastMsgMs === lastMsgMs) return { ok: true, verdict: o.revisionIa, cached: true };
+    if (!transcript) {
+        const verdict = { resuelto: false, confianza: 'baja', senal: null, explicacion: 'Sin conversación para revisar.', lastMsgMs, at: Date.now() };
+        await oref.set({ revisionIa: verdict }, { merge: true });
+        return { ok: true, verdict };
+    }
+
+    const prompt = `Eres auditor de pedidos de DekoorHouse (lámparas personalizadas). El pedido ${orderNumber} figura como PENDIENTE de NUESTRO lado por: ${reasonText}.
+Lee la conversación reciente y decide si ese pendiente EN REALIDAD ya está resuelto.
+Señales de que YA se resolvió:
+- El cliente confirma que YA RECIBIÓ su pedido ("ya me llegó", "me acaba de llegar", "ya lo recibí", agradece el producto que le llegó) => ya se produjo y ENTREGÓ.
+- Se le envió el VIDEO que pedía / el cliente agradece el video.
+- La corrección o el dato que pidió ya se atendió y quedó conforme.
+Si NO hay evidencia CLARA en la conversación de que esté resuelto, responde resuelto=false (que siga pendiente).
+Devuelve SOLO un objeto JSON, sin texto extra: {"resuelto": true|false, "estadoSugerido": "Entregado" u otro estatus o null, "confianza": "alta|media|baja", "senal": "cita textual breve del mensaje que lo prueba, o null", "explicacion": "una frase corta"}.
+
+CONVERSACIÓN (lo más nuevo al final):
+${transcript}`;
+
+    let verdict;
+    try {
+        const resp = await generateGeminiResponse(prompt);
+        let txt = String((resp && resp.text) || '').trim();
+        const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
+        if (a >= 0 && b > a) txt = txt.slice(a, b + 1);
+        const j = JSON.parse(txt);
+        verdict = {
+            resuelto: j.resuelto === true || String(j.resuelto).toLowerCase() === 'true',
+            estadoSugerido: j.estadoSugerido && String(j.estadoSugerido).toLowerCase() !== 'null' ? String(j.estadoSugerido) : null,
+            confianza: j.confianza || 'media',
+            senal: j.senal ? String(j.senal).slice(0, 200) : null,
+            explicacion: String(j.explicacion || '').slice(0, 240),
+            reasonText, lastMsgMs, at: Date.now(),
+        };
+    } catch (e) {
+        verdict = { resuelto: false, confianza: 'baja', senal: null, explicacion: 'No se pudo interpretar la conversación.', error: String(e.message || e).slice(0, 120), lastMsgMs, at: Date.now() };
+    }
+    await oref.set({ revisionIa: verdict }, { merge: true });
+    return { ok: true, verdict };
+}
+
 // Wrapper con candado: si ya hay una generación en curso para el contacto, NO arranca
 // otra en paralelo — reprograma el intento para dentro de 8s (con el historial ya fresco,
 // que incluirá lo que la primera generación haya respondido). El candado caduca solo
@@ -4817,6 +4903,7 @@ module.exports = {
     notifyGuiaToCustomer,
     markComprobanteValidadoAndSendForm,
     cotejarSuspiciousReceipt,
+    revisarPendienteConIA,
     markOrderCorregirForContact,
     markOrderFabricarForContact,
     markOrderReenvioForContact,

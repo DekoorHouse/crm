@@ -371,6 +371,7 @@ router.get('/revision', async (req, res) => {
                 producto: p.d.producto || (Array.isArray(p.d.items) && p.d.items[0] ? p.d.items[0].producto : '') || '',
                 createdAt: m,
                 reasons: p.reasons,
+                revisionIa: p.d.revisionIa || null,   // último veredicto de la revisión con IA (cacheado)
             });
         }
         const months = [...monthsMap.values()].sort((a, b) => (a.month < b.month ? 1 : -1));  // recientes primero
@@ -380,6 +381,20 @@ router.get('/revision', async (req, res) => {
     } catch (e) {
         console.error('[PENDIENTES/revision] error:', e.message);
         res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// POST /api/pendientes/revision/:orderId/revisar-ia — lee la conversación reciente con IA y juzga si
+// el pendiente ya está resuelto (p.ej. el cliente dijo "ya me llegó" ⇒ ya se produjo y entregó, el
+// estatus quedó viejo). Cachea el veredicto en el pedido; re-llama solo si hay mensajes nuevos.
+router.post('/revision/:orderId/revisar-ia', async (req, res) => {
+    try {
+        const { revisarPendienteConIA } = require('../services');
+        const r = await revisarPendienteConIA(req.params.orderId, { force: !!(req.body && req.body.force) });
+        res.json({ success: true, ...r });
+    } catch (e) {
+        console.error('[REVISION/revisar-ia] error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
