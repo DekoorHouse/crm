@@ -7273,6 +7273,43 @@ function actualizarBadgePedidosHoy(count) {
     });
 })();
 
+// --- BADGE DE SALDO DE OPENROUTER ---
+// Con ese saldo prepagado contesta Andrea: si se acaba, deja de responderle a los clientes.
+// Verlo junto a los pedidos del día evita enterarse hasta que ya no contesta.
+(function initOpenRouterBadge() {
+    const badge = document.getElementById('openrouter-badge');
+    if (!badge) return;
+    const TOPUP_URL = 'https://openrouter.ai/settings/credits';
+    const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    async function update() {
+        try {
+            const res = await fetch('/api/openrouter/saldo');
+            const d = await res.json();
+            if (!d || !d.ok) { badge.style.display = 'none'; return; }
+            badge.textContent = `OR ${fmt(d.remaining)}`;
+            // Mismos umbrales que la alerta por WhatsApp: ámbar a los $20, rojo a los $5.
+            const bajo = d.remaining <= 20, critico = d.remaining <= 5;
+            badge.style.color = critico ? '#dc2626' : (bajo ? '#b45309' : 'var(--color-text-light)');
+            badge.style.background = critico ? '#fef2f2' : (bajo ? '#fffbeb' : 'var(--color-subtle-bg)');
+            badge.style.borderColor = critico ? '#fecaca' : (bajo ? '#fde68a' : 'var(--color-border)');
+            badge.style.fontWeight = bajo ? '700' : '600';
+            const dias = d.daysLeft != null
+                ? (d.daysLeft < 1 ? ' (menos de 1 día)' : ` (~${Math.round(d.daysLeft)} día(s))`)
+                : '';
+            badge.title = [
+                `Saldo de OpenRouter — con esto contesta Andrea: ${fmt(d.remaining)} USD`,
+                d.burnPerDay > 0 ? `Ritmo: ~${fmt(d.burnPerDay)}/día${dias}` : '',
+                `Gastado: ${fmt(d.usage)} de ${fmt(d.credits)} abonados`,
+                'Clic para recargar ↗',
+            ].filter(Boolean).join('\n');
+            badge.style.display = 'inline-block';
+        } catch (e) { /* ignore */ }
+    }
+    badge.addEventListener('click', () => window.open(TOPUP_URL, '_blank', 'noopener'));
+    update();
+    setInterval(update, 5 * 60 * 1000);   // el servidor cachea 5 min: una llamada real por ventana
+})();
+
 /**
  * Cierra la ventana de chat en móviles para volver a la lista de contactos.
  */

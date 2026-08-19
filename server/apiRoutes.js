@@ -6073,6 +6073,42 @@ router.get('/debug/gemini-models', async (_req, res) => {
     }
 });
 
+// GET /api/openrouter/saldo → saldo disponible de OpenRouter (los créditos con los que Andrea
+// contesta; si se acaban, deja de responderle a los clientes). Lo pinta el badge del header.
+// Cachea 5 min en memoria: cada CRM abierto lo pide cada rato y la API de créditos es lenta;
+// así todas las pestañas comparten UNA llamada real a OpenRouter. ?force=1 salta el caché.
+let _orSaldoCache = { at: 0, data: null };
+router.get('/openrouter/saldo', async (req, res) => {
+    try {
+        if (!process.env.OPENROUTER_API_KEY) return res.json({ ok: false, reason: 'sin_OPENROUTER_API_KEY' });
+        const force = req.query.force === '1';
+        if (!force && _orSaldoCache.data && Date.now() - _orSaldoCache.at < 5 * 60 * 1000) {
+            return res.json({ ..._orSaldoCache.data, cached: true });
+        }
+        const { fetchOpenRouterBalance } = require('./ai/openRouterCreditAlert');
+        const { credits, usage, remaining } = await fetchOpenRouterBalance();
+        // El ritmo de gasto lo mide el scheduler de alertas cada 3 h; lo reusamos para el tooltip.
+        let burnPerDay = 0;
+        try {
+            const st = await db.collection('crm_settings').doc('openrouter_credit_alert').get();
+            if (st.exists) burnPerDay = Number(st.data().burnPerDay || 0);
+        } catch (_) { /* el saldo no debe fallar por el ritmo */ }
+        const data = {
+            ok: true,
+            remaining: Number(remaining.toFixed(4)),
+            credits: Number(credits.toFixed(4)),
+            usage: Number(usage.toFixed(4)),
+            burnPerDay,
+            daysLeft: burnPerDay > 0 ? Number((remaining / burnPerDay).toFixed(1)) : null,
+            at: Date.now(),
+        };
+        _orSaldoCache = { at: Date.now(), data };
+        res.json(data);
+    } catch (e) {
+        res.json({ ok: false, error: e.message });
+    }
+});
+
 // GET /api/debug/openrouter-credit-alert?test=1  → manda el WhatsApp de PRUEBA al admin
 // GET /api/debug/openrouter-credit-alert          → barrido en dryRun (reporta saldo/días, NO envía)
 // GET /api/debug/openrouter-credit-alert?force=1  → barrido REAL forzado (envía aunque ya se avisó)

@@ -239,4 +239,5 @@ module.exports = {
     startOpenRouterCreditAlertScheduler,
     runOpenRouterCreditAlertSweep,
     sendOpenRouterCreditTestAlert,
+    fetchOpenRouterBalance,
 };
