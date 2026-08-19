@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const { db, admin, bucket } = require('./config');
 const { triggerAutoReplyAI, sendMessengerMessage, cancelPendingAiTimer, transcribeIncomingAudioMessage, sendConversionEvent } = require('./services');
+const { aiReplyDelayMs } = require('./ai/replyDelay');
 
 const router = express.Router();
 
@@ -817,17 +818,10 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
     // AI auto-reply
     if (updatedContactData.botActive) {
         const incomingMsg = { type: 'text', text: { body: messageData.text } };
-        let delay = 20000;
-        // Igual que WhatsApp: si la IA ya pidió los datos de envío (awaitingShippingData),
-        // dar 10 min a que el cliente los mande en partes antes de pedirle lo que falta —
-        // EXCEPTO si pregunta qué falta / si ya está completo: ahí se responde rápido.
-        if (updatedContactData.awaitingShippingData) {
-            const incomingText = (messageData.text || '').toLowerCase();
-            const asksWhatsMissing = /(falta|faltan|qu[eé] m[aá]s|qu[eé] datos|cu[aá]l|es todo|eso es todo|ya (?:te )?(?:lo|los|las|le)?\s*(?:di|mand|envi|env[ií]|pas)|ya est|ya qued|list[oa]|complet|algo m[aá]s)/i.test(incomingText);
-            if (!asksWhatsMissing) {
-                delay = 10 * 60 * 1000;
-            }
-        }
+        // Misma regla que WhatsApp (20 s normal, 10 min esperando datos de envio, con escape
+        // para "que falta?" y para problemas/rastreo). Vive en server/ai/replyDelay.js
+        // justamente para que los dos canales no se separen.
+        const delay = aiReplyDelayMs(updatedContactData, messageData.text);
         console.log(`[${logPrefix} AI] Programando respuesta de IA para ${contactId} en ${delay/1000}s${updatedContactData.awaitingShippingData ? ' (esperando datos de envío)' : ''}`);
         triggerAutoReplyAI(incomingMsg, contactRef, updatedContactData, delay).catch(err => {
             console.error(`[${logPrefix}] Error asíncrono en respuesta de IA:`, err);
