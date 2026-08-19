@@ -4075,7 +4075,13 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // Si la IA respondió SOLO con un atajo de respuesta rápida (ej. "/ttt"), expandirlo
             // a su contenido real (texto + archivo) en vez de mandar el atajo crudo al cliente.
             let qrFileUrl = null, qrFileType = null;
-            const shortcutMatch = msgText.match(/^\/(.+)$/); // permite atajos con espacios ("/mas modelos")
+            // La IA a veces emite el atajo con el formato de WhatsApp pegado ("*/cp*", "_/ttt_") o
+            // entre comillas — sobre todo cuando el mensaje anterior del mismo turno llevaba negritas.
+            // Eso no hacía match y al cliente le llegaba el atajo CRUDO (caso real: */cp* el 19-ago,
+            // 3:54 PM). Se despoja el envoltorio antes de buscar: si lo que queda no es una quick
+            // reply real, findQuickReplyByShortcut devuelve null y el texto se manda tal cual.
+            const bareText = msgText.trim().replace(/^[*_~`"'\s]+|[*_~`"'\s]+$/g, '');
+            const shortcutMatch = bareText.match(/^\/(.+)$/); // permite atajos con espacios ("/mas modelos")
 
             // CANDADO de /pagado: ese atajo confirma "llenaste correctamente el formulario", y la IA
             // lo emitía con solo que el cliente DIJERA que ya lo llenó. Antes de mandarlo, se verifica
