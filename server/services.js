@@ -2133,8 +2133,23 @@ async function markOrderReenvioForContact(contactId, contactData, clientMessage)
         }
         const orderData = orderDoc.data();
         const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : `(pedido ${orderDoc.id})`;
+        // ¿Ya hay una reposición ABIERTA para este pedido? Mirar el ESTATUS no alcanza: 'Reenvio' dura
+        // minutos —el worker lo pasa a "Diseñado por IA" al cortar, y al sacar la guía nueva se fuerza a
+        // 'Pagado'—, así que a los 15 min el candado ya no existía y CADA mensaje nuevo del cliente
+        // molesto abría otra reposición completa: borraba la marca de corte, el worker volvía a cortar y
+        // se subía otra hoja a Drive, más otra alerta al admin.
+        // Medido: DH14814 se cortó 9 veces (8 el mismo día) y DH14877 (Luca y Lester) 3 veces, y en ese
+        // caso ni siquiera había defecto — el cliente no había sacado la mica del empaque.
+        // La señal DURABLE es reenvioAt, que es lo que el resto del código ya usa (ver svgAuto.js).
+        const reenvioMs = (v => !v ? 0 : (v.toMillis ? v.toMillis() : (v._seconds ? v._seconds * 1000 : (Date.parse(v) || 0))))(orderData.reenvioAt);
+        const HORAS_MISMA_REPOSICION = 24;
         if (String(orderData.estatus || '').toLowerCase() === 'reenvio') {
             console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Reenvio; no se repite el aviso.`);
+            return null;
+        }
+        if (reenvioMs && Date.now() - reenvioMs < HORAS_MISMA_REPOSICION * 3600 * 1000) {
+            const horas = ((Date.now() - reenvioMs) / 3600000).toFixed(1);
+            console.log(`[POSTVENTA] Pedido ${orderNumber} ya tiene una reposición abierta (hace ${horas}h); es el MISMO caso, no se abre otra.`);
             return null;
         }
         await orderDoc.ref.update(reenvioResetFields(orderData));
