@@ -8741,6 +8741,72 @@ router.post('/design-pending/:orderId/comentario', async (req, res) => {
     }
 });
 
+// POST /api/corte-laser — La MÁQUINA LÁSER avisa que YA CORTÓ una hoja.
+//
+// Hasta ahora el CRM no tenía forma de saber qué se cortó de verdad: usaba como proxy la columna
+// "Terminado" del tablero, que la pone una persona ANTES de cortar. Por eso pedidos ya "terminados"
+// nunca llegaban a Drive, y por eso no había manera de cachar una hoja cortada dos veces.
+// Esta es la señal REAL, y la manda cada láser por su cuenta (son dos máquinas, en dos PC distintas).
+//
+// Body: { archivo, maquina?, at? }
+//   archivo — nombre del SVG cortado. De ahí salen los pedidos: las hojas se llaman
+//             "DH14788-spiderman-Santy-Andre-20260814-160234.svg" y pueden traer VARIOS DH.
+//   maquina — cuál de las dos láser (texto libre; sirve para saber dónde se hizo cada pieza).
+//   at      — ISO del corte. Si no viene se usa el momento de la petición.
+//
+// Es IDEMPOTENTE por archivo: si la misma máquina reporta dos veces el MISMO archivo (un reintento,
+// o el script corriendo de nuevo), no cuenta como segundo corte. Solo un archivo DISTINTO sobre un
+// pedido ya cortado marca `cortadoLaserVeces > 1`, que es justo la señal de corte duplicado.
+router.post('/corte-laser', async (req, res) => {
+    const archivo = String((req.body && req.body.archivo) || '').trim();
+    if (!archivo) return res.status(400).json({ success: false, message: 'Falta el nombre del archivo.' });
+    const maquina = String((req.body && req.body.maquina) || '').trim() || null;
+    const cuando = (() => {
+        const t = Date.parse(String((req.body && req.body.at) || ''));
+        return isNaN(t) ? new Date() : new Date(t);
+    })();
+
+    const dhs = [...new Set((archivo.match(/DH\d+/gi) || []).map(s => s.toUpperCase()))];
+    if (!dhs.length) {
+        // No se pierde: se responde claro para que el script del láser lo registre y se pueda revisar.
+        console.warn(`[corte-laser] "${archivo}" no trae ningún DH en el nombre; no se marcó nada.`);
+        return res.json({ success: true, archivo, pedidos: [], sinPedido: true,
+            message: 'El nombre del archivo no trae ningún número de pedido.' });
+    }
+
+    try {
+        const resultado = [];
+        for (const dh of dhs) {
+            const num = parseInt(dh.slice(2), 10);
+            const snap = await db.collection('pedidos').where('consecutiveOrderNumber', '==', num).limit(1).get();
+            if (snap.empty) { resultado.push({ dh, ok: false, motivo: 'no encontrado' }); continue; }
+            const doc = snap.docs[0];
+            const o = doc.data();
+            const previos = Array.isArray(o.cortadoLaserArchivos) ? o.cortadoLaserArchivos : [];
+            if (previos.includes(archivo)) {
+                resultado.push({ dh, ok: true, repetido: true, motivo: 'ese archivo ya estaba registrado' });
+                continue;
+            }
+            const veces = previos.length + 1;
+            const upd = {
+                cortadoLaserUltimoAt: cuando,
+                cortadoLaserArchivos: admin.firestore.FieldValue.arrayUnion(archivo),
+                cortadoLaserVeces: veces,
+            };
+            if (maquina) upd.cortadoLaserMaquina = maquina;
+            if (!o.cortadoLaserAt) upd.cortadoLaserAt = cuando;   // el PRIMER corte real de la pieza
+            await doc.ref.update(upd);
+            resultado.push({ dh, ok: true, veces, duplicado: veces > 1 });
+            if (veces > 1) console.warn(`[corte-laser] ${dh} se ha cortado ${veces} veces (ahora "${archivo}"). Revisar.`);
+        }
+        const dobles = resultado.filter(r => r.duplicado).map(r => r.dh);
+        return res.json({ success: true, archivo, maquina, pedidos: resultado, duplicados: dobles });
+    } catch (e) {
+        console.error('[corte-laser] error:', e.message);
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // POST /api/design-pending/force — Empuja (o quita) un pedido a Pendientes de Diseño desde la sección
 // Mockup (botón "A Diseño"). Espejo inverso de /api/mockups/force-order. NO toca el estatus; solo pone/
 // quita la marca `designForce`, que hace que /design-pending lo incluya (motivo 'manual'). Body: { orderId, enabled }.
