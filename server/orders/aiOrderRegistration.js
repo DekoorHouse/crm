@@ -51,6 +51,12 @@ const EXTRACTOR_REINTENTO_MS = 1500;
 // conflicto, se avisa al admin en vez de crear a ciegas.
 const RECENT_ORDER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Si el extractor marca esAdicional=true PERO el pedido vigente se creo hace muy poco y sigue
+// editable, casi siempre NO es otro pedido: es el mismo cliente AGREGANDO una pieza en la misma
+// conversacion. Casos reales: DH15441/42/43 (3 lamparas -> 3 pedidos, una quedo sin fabricar al
+// cancelar los duplicados) y DH15017/18/19. Dentro de esta ventana se FUSIONA en el vigente.
+const ADICIONAL_MERGE_WINDOW_MS = 6 * 60 * 60 * 1000;
+
 const DEFAULT_CONFIG = {
     enabled: false,
     // Confianza mínima (0-100) del extractor para crear el pedido; abajo de esto se
@@ -452,8 +458,22 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
         //    NO se toca ni se crea nada: se avisa al admin para que decida. (Tradeoff consciente:
         //    el cliente ya recibió la frase de cierre, pero un cambio a un pedido "bloqueado" es
         //    justo lo que un humano debe mirar; el contacto además queda en pendientes_ia.)
-        // Si esAdicional=true, es un pedido NUEVO legítimo y sigue al camino de crear.
-        const recent = extraction.esAdicional ? null : await findRecentOrderForContact(contactId);
+        // esAdicional=true YA NO se salta la busqueda: antes creaba otro DH a ciegas y partia en
+        // varios pedidos lo que el cliente pidio como uno solo. Ahora, si el pedido vigente es
+        // reciente y editable, se FUSIONA; si es viejo o ya no se puede tocar, si es uno nuevo.
+        let recent = await findRecentOrderForContact(contactId);
+        let mergeAdicional = false;
+        if (recent && extraction.esAdicional) {
+            const rd = recent.data;
+            const createdMs = rd.createdAt && rd.createdAt.toMillis ? rd.createdAt.toMillis() : 0;
+            const estA = rd.estatus || 'Sin estatus';
+            const editableA = rd.registeredByAI === true && rd.aiReviewStatus === 'pending' && (estA === 'Sin estatus' || estA === 'Esperando anticipo');
+            if (createdMs && (Date.now() - createdMs) <= ADICIONAL_MERGE_WINDOW_MS && editableA) {
+                mergeAdicional = true;
+            } else {
+                recent = null;   // pedido viejo o bloqueado: si es una compra nueva de verdad
+            }
+        }
         if (recent) {
             const r = recent.data;
             const rNum = r.consecutiveOrderNumber != null ? `DH${r.consecutiveOrderNumber}` : recent.id;
@@ -472,14 +492,24 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
 
             // Actualizar el pedido IA pendiente con la última versión confirmada.
             const { computeOrderMainFields } = require('./createOrderCore');
-            const { totalValue, mainProducto, mainDatosProducto } = computeOrderMainFields(extraction.items);
+            // Al FUSIONAR se conservan las piezas que ya tenia el pedido y se suman las nuevas. El
+            // dedupe por producto+datos cubre los dos comportamientos del extractor: si devolvio solo
+            // lo nuevo, se agrega; si devolvio TODO, no se duplica.
+            let itemsFinales = extraction.items;
+            if (mergeAdicional) {
+                const claveItem = (it) => `${String(it.producto || '').trim().toLowerCase()}|${String(it.datosProducto || '').trim().toLowerCase()}`;
+                const previos = Array.isArray(r.items) ? r.items : [];
+                const vistos = new Set(previos.map(claveItem));
+                itemsFinales = [...previos, ...extraction.items.filter(it => !vistos.has(claveItem(it)))];
+            }
+            const { totalValue, mainProducto, mainDatosProducto } = computeOrderMainFields(itemsFinales);
             // Comentario sin acumular: se reemplaza la línea de actualización anterior (si la hay).
             const comentarioBase = (r.comentarios || '').split('\n').filter(l => !/^Actualizado por la IA:/.test(l.trim())).join('\n').trim();
             const updatePayload = {
-                items: extraction.items,
+                items: itemsFinales,
                 producto: mainProducto,
                 precio: totalValue,
-                datosProducto: extraction.items.length > 1 ? mainDatosProducto : extraction.items[0].datosProducto,
+                datosProducto: itemsFinales.length > 1 ? mainDatosProducto : itemsFinales[0].datosProducto,
                 aiConfidence: extraction.confianza,
                 aiUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 comentarios: `${comentarioBase}\nActualizado por la IA: el cliente cambió su pedido (confianza ${extraction.confianza}%).`.trim()
