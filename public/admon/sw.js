@@ -7,7 +7,7 @@
 // v14 (2026-06-13): pestana Campanas gana boton "Exportar" — descarga el
 // reporte por region a Excel (2 hojas: Por Region + Por Campana) desde los
 // datos del ultimo Calcular, sin re-llamar al backend.
-const CACHE_VERSION = 'admon-v15';
+const CACHE_VERSION = 'admon-v16';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 

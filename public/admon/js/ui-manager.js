@@ -155,6 +155,12 @@ export function renderTable(expenses) {
             categoryHtml = displayCategory;
         }
 
+        // Un traspaso (dinero de paso) no tiene categoría: no es venta ni gasto.
+        // Se marca visualmente para distinguirlo de un 'N/A' cualquiera.
+        if (expense.type === 'traspaso') {
+            categoryHtml = '<span style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; background:rgba(99,102,241,0.12); color:var(--primary);">Dinero de paso</span>';
+        }
+
         let subcategoryHtml = 'N/A';
         const categoriesWithoutSubcategory = ['Alex', 'Chris', 'Publicidad'];
 
@@ -229,6 +235,28 @@ export function updateSummary(getFilteredExpenses) {
         return acc;
     }, { TotalCargos: 0, TotalIngresos: 0 });
 
+    // ===== Dinero de paso (type 'traspaso') =====
+    // Dinero que sólo cruzó la cuenta: un cliente depositó por error y se le
+    // devolvió, o un préstamo que se regresó. No es ingreso ni gasto, pero SÍ
+    // se movió en el banco — por eso más abajo sigue contando en el saldo, y en
+    // la conciliación.
+    //
+    // Regla simétrica: el movimiento marcado ya quedó fuera de su propio lado
+    // (el filtro de arriba excluye 'traspaso') y además cancela el mismo importe
+    // del lado contrario. Da igual cuál de las dos patas se marque y no hace
+    // falta encontrar la gemela: para los totales sólo importa que el importe
+    // coincida.
+    //
+    // Hay que marcar UNA sola pata; marcar las dos aplica la corrección doble.
+    // El modal avisa si ya existe otra marcada del mismo importe cerca.
+    const traspasos = getFilteredExpenses().filter(e => e.type === 'traspaso');
+    if (traspasos.length > 0) {
+        const cancelaIngresos = traspasos.reduce((s, e) => s + (parseFloat(e.charge) || 0), 0);
+        const cancelaCargos   = traspasos.reduce((s, e) => s + (parseFloat(e.credit) || 0), 0);
+        summaryData.TotalIngresos = Math.max(0, summaryData.TotalIngresos - cancelaIngresos);
+        summaryData.TotalCargos   = Math.max(0, summaryData.TotalCargos   - cancelaCargos);
+    }
+
     // Utilidad Operativa: desde marzo 2026 (los meses anteriores tienen datos incorrectos)
     // hasta hoy. Incluye 'ajuste_saldo' (saldo previo + conciliación) pero se excluye
     // de Ingresos/Cargos individuales.
@@ -236,7 +264,7 @@ export function updateSummary(getFilteredExpenses) {
     const today = new Date();
     const NETO_TO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const netoExpenses = state.expenses.filter(e =>
-        (e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses' || e.type === 'ajuste_saldo') &&
+        (e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses' || e.type === 'ajuste_saldo' || e.type === 'traspaso') &&
         e.date >= NETO_FROM && e.date <= NETO_TO
     );
     const totalOverallIncome = netoExpenses.reduce((sum, exp) => sum + (parseFloat(exp.credit) || 0), 0);
@@ -664,6 +692,18 @@ export function openExpenseModal(expense = {}) {
                         <label for="expense-credit">Ingreso ($)</label>
                         <input type="number" step="0.01" id="expense-credit" class="modal-input" placeholder="$0.00" value="${expense.credit || ''}">
                     </div>
+                    <div class="form-group" style="border-top:1px solid var(--border-color); padding-top:14px;">
+                        <label for="expense-traspaso" style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                            <input type="checkbox" id="expense-traspaso" ${expense.type === 'traspaso' ? 'checked' : ''} style="width:17px; height:17px; cursor:pointer; margin:0;">
+                            <span>Dinero de paso (no es venta ni gasto)</span>
+                        </label>
+                        <p style="font-size:12px; color:var(--text-secondary); margin:6px 0 0 27px; line-height:1.5;">
+                            Para dinero que sólo cruzó la cuenta: un cliente depositó por error y se lo devolviste,
+                            o un préstamo que regresaste. Se descuenta de Ingresos y de Cargos por igual, y sigue
+                            contando en el saldo del banco. <strong>Marca sólo una de las dos patas.</strong>
+                        </p>
+                        <p id="traspaso-aviso" style="display:none; font-size:12px; color:var(--danger); margin:8px 0 0 27px; line-height:1.5;"></p>
+                    </div>
                     <div class="form-group" id="category-form-group">
                         <label for="expense-category">Categoría</label>
                         <select id="expense-category" class="modal-input">${categoryOptions}</select>
@@ -692,7 +732,12 @@ export function openExpenseModal(expense = {}) {
                     concept: document.getElementById('expense-concept').value,
                     charge: parseFloat(document.getElementById('expense-charge').value) || 0,
                     credit: creditValue,
-                    type: expense.type || 'operativo',
+                    type: (() => {
+                        const marcado = document.getElementById('expense-traspaso')?.checked;
+                        if (marcado) return 'traspaso';
+                        // Desmarcarlo lo regresa a operativo; cualquier otro tipo se respeta.
+                        return expense.type === 'traspaso' ? 'operativo' : (expense.type || 'operativo');
+                    })(),
                     category: '',
                     subcategory: document.getElementById('expense-subcategory')?.value || '',
                     channel: document.getElementById('expense-channel')?.value || '',
@@ -720,6 +765,38 @@ export function openExpenseModal(expense = {}) {
             const conceptInput = document.getElementById('expense-concept');
             const creditInput = document.getElementById('expense-credit');
             const channelGroup = document.getElementById('channel-form-group');
+            const traspasoCheck = document.getElementById('expense-traspaso');
+            const traspasoAviso = document.getElementById('traspaso-aviso');
+
+            // Marcar las DOS patas del mismo dinero de paso aplica la corrección
+            // por partida doble. Al marcar, buscamos si ya hay otro traspaso del
+            // mismo importe en fechas cercanas y avisamos.
+            const revisarPataDuplicada = () => {
+                if (!traspasoCheck || !traspasoAviso) return;
+                if (!traspasoCheck.checked) { traspasoAviso.style.display = 'none'; return; }
+                const monto = (parseFloat(document.getElementById('expense-charge').value) || 0)
+                            || (parseFloat(document.getElementById('expense-credit').value) || 0);
+                const fecha = document.getElementById('expense-date').value;
+                if (!monto || !fecha) { traspasoAviso.style.display = 'none'; return; }
+                const LIMITE = 15 * 24 * 60 * 60 * 1000;
+                const cerca = (state.expenses || []).filter(e =>
+                    e.type === 'traspaso' && e.id !== expense.id && e.date &&
+                    Math.abs(Date.parse(e.date + 'T00:00:00Z') - Date.parse(fecha + 'T00:00:00Z')) <= LIMITE &&
+                    (Math.abs((parseFloat(e.charge) || 0) - monto) < 0.005 ||
+                     Math.abs((parseFloat(e.credit) || 0) - monto) < 0.005)
+                );
+                if (cerca.length === 0) { traspasoAviso.style.display = 'none'; return; }
+                traspasoAviso.innerHTML =
+                    '<strong>Ojo:</strong> ya hay ' + cerca.length + ' movimiento' + (cerca.length !== 1 ? 's' : '') +
+                    ' marcado' + (cerca.length !== 1 ? 's' : '') + ' como dinero de paso por el mismo importe (' +
+                    cerca.map(e => e.date).join(', ') + '). Si es la otra pata del mismo dinero, ' +
+                    '<strong>no la marques</strong>: con una basta, y marcar las dos descuadra al doble.';
+                traspasoAviso.style.display = 'block';
+            };
+            if (traspasoCheck) {
+                traspasoCheck.addEventListener('change', revisarPataDuplicada);
+                revisarPataDuplicada();
+            }
 
             const populateSubcategories = () => {
                 const selectedCategory = categorySelect.value;
@@ -2152,7 +2229,8 @@ export function openReconciliationModal({ getExpenses, calculateExpectedBalance,
                 // Excluir ajustes y financieros del cálculo de saldo bancario;
                 // BBVA refleja entradas/salidas de efectivo, no ajustes contables.
                 const banking = inRange.filter(e =>
-                    e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses'
+                    e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses' ||
+                    e.type === 'traspaso'   // el dinero de paso SÍ entró y salió del banco
                 );
                 const opening = parseFloat($opening.value) || 0;
                 const real = parseFloat($real.value) || 0;

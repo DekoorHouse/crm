@@ -398,6 +398,35 @@ function caso8_reemplazoPorVentana() {
     assert('Caso 8.o — sí limpia lo desplazado de los días completos',
         idsTrunc.includes('d6'), idsTrunc.join(','));
 
+    // ----------------------------------------------------------------------
+    // Un movimiento IMPORTADO que después se editó queda con source 'manual' o
+    // 'modified', pero sigue siendo un movimiento del banco: si el estado de
+    // cuenta ya no lo lista, sobra igual. Sólo es intocable lo que jamás vino
+    // de un archivo. (Caso real: una versión En tránsito de $68 editada para
+    // cambiarle la categoría quedó inmune a la limpieza y desfasó el saldo.)
+    // ----------------------------------------------------------------------
+    const importadoYEditado = attachSignatures({
+        id: 'd7', date: '2026-08-12', concept: 'VERSION EN TRANSITO', charge: 68, credit: 0,
+        source: 'manual', sourceFileName: 'movimientos (14).xlsx', importBatchId: 'imp_abc'
+    });
+    const capturaPura = attachSignatures({
+        id: 'd8', date: '2026-08-12', concept: 'GASTO CAPTURADO A MANO', charge: 500, credit: 0,
+        source: 'manual'
+    });
+    const planEditado = planStatementReplace(
+        [attachSignatures({ date: '2026-08-11', concept: 'ANCLA / ref', charge: 1, credit: 0 }),
+         attachSignatures({ date: '2026-08-12', concept: 'OTRA COSA / ref', charge: 5, credit: 0 })],
+        [attachSignatures({ id: 'a1', date: '2026-08-11', concept: 'ANCLA / ref', charge: 1, credit: 0, source: 'xlsx' }),
+         importadoYEditado, capturaPura]
+    );
+    const idsEd = [...planEditado.stale, ...planEditado.staleConfirmed].map(e => e.id);
+    assert('Caso 8.q — un importado que se editó SÍ se puede desplazar',
+        idsEd.includes('d7'), idsEd.join(','));
+    assert('Caso 8.r — una captura hecha a mano desde cero sigue intocable',
+        !idsEd.includes('d8'), idsEd.join(','));
+    assert('Caso 8.s — sólo la captura pura cuenta como protegida',
+        planEditado.protectedCount === 1, planEditado.protectedCount);
+
     // Si el archivo cubre un solo día y viene truncado, no hay ventana segura.
     const planUnDia = planStatementReplace(
         [attachSignatures({ date: '2026-08-11', concept: 'MOVIMIENTO TARDIO / ref9', charge: 55, credit: 0 })],

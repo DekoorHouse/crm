@@ -531,7 +531,14 @@ export function planStatementReplace(newTxs, existingTxs) {
         enArchivo.set(ss, (enArchivo.get(ss) || 0) + 1);
     }
 
-    const esProtegido = e => e.source === 'manual' || e.source === 'modified';
+    // Protegido = capturado a mano desde cero. Un movimiento que vino de una
+    // importación y luego se editó también queda con source 'manual'/'modified',
+    // pero ÉSE sigue siendo un movimiento del banco: si el estado de cuenta ya
+    // no lo lista, sobra igual. (Caso real: una versión En tránsito de $68 que
+    // se editó para cambiarle la categoría quedó inmune a la limpieza y desfasó
+    // el saldo por ese monto.) Lo intocable es lo que jamás vino de un archivo.
+    const esProtegido = e =>
+        (e.source === 'manual' || e.source === 'modified') && !e.importBatchId && !e.sourceFileName;
 
     const usadas = new Map();
     const stale = [];
