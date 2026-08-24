@@ -96,7 +96,20 @@ async function uploadToDrive(filePath) {
         body: JSON.stringify(payload),
         redirect: 'follow',
     });
-    const data = JSON.parse(await res.text());
+    const texto = await res.text();
+    let data;
+    try {
+        data = JSON.parse(texto);
+    } catch (_) {
+        // El Apps Script a veces contesta una PÁGINA HTML en vez de JSON (error temporal suyo, un
+        // redirect, cuota). OJO: eso NO significa que el archivo no haya subido — el 2026-08-24 la hoja
+        // DH15450-DH15420 SÍ llegó a Drive y aun así la respuesta fue HTML. Como el worker lo tomaba
+        // por fallo y no marcaba el pedido, en la siguiente corrida lo volvía a cortar y subir: tres
+        // copias del mismo archivo. Por eso se marca como DUDOSA y NO se reintenta sola.
+        const e = new Error(`El Apps Script no respondió JSON (HTTP ${res.status}): ${texto.slice(0, 120).replace(/\s+/g, ' ')}`);
+        e.subidaDudosa = true;
+        throw e;
+    }
     if (!data.ok) throw new Error('Drive: ' + (data.error || 'respuesta no ok'));
     return data; // { ok, id, name, webViewLink }
 }
@@ -693,22 +706,31 @@ async function processPersonajeSheets(sheets) {
             continue;
         }
 
+        // Si una subida truena, NO se deja el pedido sin marcar: la hoja PUEDE haber llegado a Drive
+        // igual (ver uploadToDrive), y dejarlo sin marca es justo lo que produce copias — el worker lo
+        // vuelve a cortar y a subir cada 15 min. Se marca como cortado + `svgCorteSubidaDudosa` con el
+        // archivo local, para que una persona confirme en Drive en vez de acumular duplicados.
         const subidas = [];
+        let dudosa = null;
         for (const g of generadas) {
-            const up = await uploadToDrive(g.svg);
-            subidas.push({ up, cdr: g.cdr });
-            log(`  OK ${up.name} -> ${up.webViewLink}`);
-            ok++;
+            try {
+                const up = await uploadToDrive(g.svg);
+                subidas.push({ up, cdr: g.cdr });
+                log(`  OK ${up.name} -> ${up.webViewLink}`);
+                ok++;
+            } catch (e) {
+                dudosa = { archivo: path.basename(g.svg), local: g.svg, motivo: e.message };
+                log(`  !! NO se pudo confirmar la subida de ${path.basename(g.svg)}: ${e.message}`);
+                log('     Puede que SÍ esté en Drive. No se reintenta solo (duplicaría): revísalo.');
+            }
         }
+        if (!subidas.length && !dudosa) { log('  (no se subió ninguna hoja del bloque)'); continue; }
 
         for (const [id, o] of pedidos) {
             const otros = dhs.filter(d => d !== dhOf(o));
             const meta = info.get(id);
             const mixto = !meta.completo;
             const upd = {
-                svgCorteUrl: subidas[0].up.webViewLink,
-                svgCorteFileName: subidas[0].up.name,
-                svgCorteCdrLocal: subidas[0].cdr,
                 // Los DH que comparten hoja (el CRM lo imprime tal cual en el tooltip), NO las URLs.
                 svgCorteSheetWith: otros.length ? otros.join(',') : null,
                 svgCorteUrls: subidas.length > 1 ? subidas.map(s => s.up.webViewLink).join(',') : null,
@@ -716,6 +738,17 @@ async function processPersonajeSheets(sheets) {
                 svgCorteStartedAt: admin.firestore.FieldValue.delete(),
                 svgCortePersonajeFails: admin.firestore.FieldValue.delete(),
             };
+            if (subidas.length) {
+                upd.svgCorteUrl = subidas[0].up.webViewLink;
+                upd.svgCorteFileName = subidas[0].up.name;
+                upd.svgCorteCdrLocal = subidas[0].cdr;
+            }
+            if (dudosa) {
+                // Quedó cortado, pero Drive no confirmó. Se marca igual (para NO volver a cortarlo) y
+                // se deja la pista de qué archivo hay que buscar.
+                upd.svgCorteSubidaDudosa = dudosa.archivo;
+                upd.svgCorteSubidaDudosaMotivo = String(dudosa.motivo).slice(0, 300);
+            }
             if (mixto) {
                 // CORTE PARCIAL. NO se escribe svgCorteAt: esa es la marca global de "este pedido ya
                 // esta diseñado" y desarmaria faltaCorte / autoBlocked / disenoYaHecho para el pedido

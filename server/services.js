@@ -1847,6 +1847,60 @@ async function markOrderFabricarForContact(contactId, contactData, addressText, 
  *    manda desde el mismo tablero de "Corregir".
  * No re-avisa si el pedido ya estaba en Corregir (idempotente). Fire-and-forget: nunca lanza.
  */
+/**
+ * Intenta aplicar al pedido el dato corregido que el cliente dio en la conversación. Se re-extrae con
+ * el MISMO extractor de ventas (ya entiende "el cliente cambió X → devuelve el pedido corregido"), y
+ * solo se escribe con confianza alta y si de verdad cambió algo. Se guarda el valor anterior.
+ * Devuelve { cambiado, nota, antes, ahora } y NUNCA lanza: el aviso al admin no depende de esto.
+ *
+ * Vive aparte porque hay que llamarlo DOS veces. El cliente casi nunca da el dato nuevo en el mismo
+ * mensaje en el que se queja: primero dice "me pueden cambiar el nombre?" y el valor llega en el
+ * SIGUIENTE mensaje. Como el pedido ya quedó en 'Corregir' con el primero, el segundo salía por un
+ * return temprano y el dato nuevo no se aplicaba nunca — caso DH15317: a las 12:21 pidió el cambio,
+ * a las 12:23 dijo "Es Rosvelt", y el pedido se quedó con "Rosbert" (Chris, 2026-08-24).
+ */
+async function intentarAplicarDatoCorregido(orderDoc, orderData, contactId, contactData, conversationText, orderNumber) {
+    if (!conversationText) return { cambiado: false, nota: '' };
+    try {
+        const aiOrderReg = require('./orders/aiOrderRegistration');
+        const cfg = await aiOrderReg.getAiOrderConfig();
+        const curDatos = (Array.isArray(orderData.items) && orderData.items.length)
+            ? (orderData.items.length > 1 ? orderData.items.map(it => it.datosProducto).filter(Boolean).join(' || ') : (orderData.items[0].datosProducto || ''))
+            : (orderData.datosProducto || '');
+        const extraction = await aiOrderReg.extractOrderFromChat({
+            conversationText,
+            name: (contactData && contactData.name) || contactId,
+            catalogText: cfg.catalogText,
+            existingOrder: { num: orderNumber, datosProducto: curDatos, precio: orderData.precio }
+        });
+        if (extraction && Array.isArray(extraction.items) && extraction.items.length && extraction.confianza >= 70 && !extraction.esAdicional) {
+            const { computeOrderMainFields } = require('./orders/createOrderCore');
+            const { mainDatosProducto } = computeOrderMainFields(extraction.items);
+            const newDatos = (extraction.items.length > 1 ? mainDatosProducto : extraction.items[0].datosProducto) || '';
+            if (newDatos.trim() && newDatos.trim() !== String(curDatos).trim()) {
+                const upd = { datosProducto: newDatos, datosProductoAnterior: curDatos, datoCorregidoAt: admin.firestore.FieldValue.serverTimestamp() };
+                if (Array.isArray(orderData.items) && orderData.items.length === extraction.items.length) {
+                    upd.items = orderData.items.map((it, i) => ({ ...it, datosProducto: extraction.items[i].datosProducto || it.datosProducto }));
+                }
+                await orderDoc.ref.update(upd);
+                console.log(`[POSTVENTA] Pedido ${orderNumber}: datosProducto corregido en la lista (confianza ${extraction.confianza}%).`);
+                return {
+                    cambiado: true, antes: curDatos, ahora: newDatos,
+                    nota: `\n\n✅ *Dato ya actualizado en la lista* (verifícalo):\n• Antes: ${String(curDatos).slice(0, 180)}\n• Ahora: ${newDatos.slice(0, 180)}`,
+                };
+            }
+            return { cambiado: false, nota: '' };   // extrajo lo mismo: no hay nada que cambiar
+        }
+        return {
+            cambiado: false,
+            nota: extraction ? `\n\n⚠️ No pude actualizar el dato automáticamente (confianza ${extraction.confianza || 0}%). Corrígelo a mano en la lista de pedidos.` : '',
+        };
+    } catch (e) {
+        console.warn('[POSTVENTA] No se pudo auto-actualizar el dato del pedido:', e.message);
+        return { cambiado: false, nota: '' };
+    }
+}
+
 async function markOrderCorregirForContact(contactId, contactData, clientMessage, reason = 'error', conversationText = '') {
     const isVideo = reason === 'video';
     // Foto ESPECIAL (apagada, de otro ángulo, de cerca…) se comporta IGUAL que el video: para dársela
@@ -1880,6 +1934,21 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
             upd.pendienteDisenoAt = admin.firestore.FieldValue.serverTimestamp();
             await orderDoc.ref.update(upd)
                 .catch(e => console.warn('[POSTVENTA] No se pudo sellar el pendiente:', e.message));
+            // El dato nuevo casi siempre llega en un mensaje POSTERIOR al de la queja, cuando el pedido
+            // YA está en 'Corregir'. Por eso se vuelve a intentar aquí: antes, este camino solo renovaba
+            // el pendiente y el valor corregido no se aplicaba nunca (DH15317 se quedó con "Rosbert"
+            // cuando el cliente ya había dicho "Es Rosvelt").
+            if (!isMediaExtra) {
+                const r = await intentarAplicarDatoCorregido(orderDoc, orderData, contactId, contactData, conversationText, orderNumber);
+                if (r.cambiado) {
+                    try { await require('./design/designPending').recomputeForContact(contactId); } catch (_) {}
+                    try {
+                        const name = (contactData && contactData.name) || contactId;
+                        await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text:
+                            `✏️ *Dato corregido en un pedido que ya estaba en Corregir*\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n*Pedido:* ${orderNumber}${r.nota}` });
+                    } catch (e) { console.warn('[POSTVENTA] No se pudo avisar del dato corregido:', e.message); }
+                }
+            }
             try { await require('./design/designPending').recomputeForContact(contactId); } catch (_) {}
             console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Corregir; no se repite el aviso (pendiente renovado).`);
             return null;
@@ -1908,38 +1977,13 @@ async function markOrderCorregirForContact(contactId, contactData, clientMessage
         // devuelve el pedido corregido"). Se PRESERVAN precios/cantidades: una corrección de nombre/fecha
         // no cambia el precio. Solo con confianza alta y si de verdad cambió; se guarda el valor anterior
         // y el equipo lo verifica (el pedido queda en "Corregir"). Nunca bloquea la alerta.
+        // Intento de aplicar el dato corregido que dio el cliente. La MISMA rutina corre también
+        // cuando el pedido ya estaba en 'Corregir' (arriba): el valor nuevo suele llegar en un
+        // mensaje posterior al de la queja.
         let datoUpdateNote = '';
-        if (!isMediaExtra && conversationText) {
-            try {
-                const aiOrderReg = require('./orders/aiOrderRegistration');
-                const cfg = await aiOrderReg.getAiOrderConfig();
-                const curDatos = (Array.isArray(orderData.items) && orderData.items.length)
-                    ? (orderData.items.length > 1 ? orderData.items.map(it => it.datosProducto).filter(Boolean).join(' || ') : (orderData.items[0].datosProducto || ''))
-                    : (orderData.datosProducto || '');
-                const extraction = await aiOrderReg.extractOrderFromChat({
-                    conversationText,
-                    name: (contactData && contactData.name) || contactId,
-                    catalogText: cfg.catalogText,
-                    existingOrder: { num: orderNumber, datosProducto: curDatos, precio: orderData.precio }
-                });
-                if (extraction && Array.isArray(extraction.items) && extraction.items.length && extraction.confianza >= 70 && !extraction.esAdicional) {
-                    const { computeOrderMainFields } = require('./orders/createOrderCore');
-                    const { mainDatosProducto } = computeOrderMainFields(extraction.items);
-                    const newDatos = (extraction.items.length > 1 ? mainDatosProducto : extraction.items[0].datosProducto) || '';
-                    if (newDatos.trim() && newDatos.trim() !== String(curDatos).trim()) {
-                        const upd = { datosProducto: newDatos, datosProductoAnterior: curDatos, datoCorregidoAt: admin.firestore.FieldValue.serverTimestamp() };
-                        // Solo si el nº de items coincide, actualiza cada item preservando su precio/cantidad.
-                        if (Array.isArray(orderData.items) && orderData.items.length === extraction.items.length) {
-                            upd.items = orderData.items.map((it, i) => ({ ...it, datosProducto: extraction.items[i].datosProducto || it.datosProducto }));
-                        }
-                        await orderDoc.ref.update(upd);
-                        datoUpdateNote = `\n\n✅ *Dato ya actualizado en la lista* (verifícalo):\n• Antes: ${String(curDatos).slice(0, 180)}\n• Ahora: ${newDatos.slice(0, 180)}`;
-                        console.log(`[POSTVENTA] Pedido ${orderNumber}: datosProducto corregido en la lista (confianza ${extraction.confianza}%).`);
-                    }
-                } else if (extraction) {
-                    datoUpdateNote = `\n\n⚠️ No pude actualizar el dato automáticamente (confianza ${extraction.confianza || 0}%). Corrígelo a mano en la lista de pedidos.`;
-                }
-            } catch (e) { console.warn('[POSTVENTA] No se pudo auto-actualizar el dato del pedido:', e.message); }
+        if (!isMediaExtra) {
+            const r = await intentarAplicarDatoCorregido(orderDoc, orderData, contactId, contactData, conversationText, orderNumber);
+            datoUpdateNote = r.nota;
         }
 
         try {
