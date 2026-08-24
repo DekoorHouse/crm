@@ -12,7 +12,8 @@ const firebaseAuth = firebase.auth();
 const db = firebase.firestore();
 const functions = firebase.functions();
 
-const ADMIN_PIN = "0809";
+// El PIN de admin ya NO vive aquí (antes era visible para cualquiera). Se valida contra el servidor
+// (POST /api/checador/verify-admin-pin) y los datos solo se cargan tras validarlo (ver startPanelData).
 
 let logsCache = [];
 let employeesCache = [];
@@ -24,49 +25,56 @@ let weekOffset = 0; // 0 = semana actual, -1 = anterior, etc.
 // AUTH
 // =====================
 firebaseAuth.onAuthStateChanged(user => {
-    if (!user) {
-        window.location.href = '/checador/';
-    } else {
-        db.collection('checador_logs').orderBy('timestamp', 'desc')
-            .onSnapshot(snap => {
-                logsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
-                if (document.getElementById('panel-content').style.display !== 'none') {
-                    renderAdminLogs();
-                    renderResumen();
-                }
-            });
-        db.collection('checador_employees')
-            .onSnapshot(snap => {
-                employeesCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
-                // Auto-asignar PIN a empleados que no tengan
-                employeesCache.forEach(emp => {
-                    if (!emp.pin) {
-                        const pin = generatePin();
-                        db.collection('checador_employees').doc(emp._docId).update({ pin });
-                    }
-                });
-                if (document.getElementById('panel-content').style.display !== 'none') {
-                    renderAdminEmployees();
-                }
-            });
-        db.collection('checador_adjustments')
-            .onSnapshot(snap => {
-                adjustmentsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
-                if (document.getElementById('panel-content').style.display !== 'none') {
-                    renderAdminLogs();
-                }
-            });
-        db.collection('checador_holidays')
-            .onSnapshot(snap => {
-                holidaysCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
-                if (document.getElementById('panel-content').style.display !== 'none') {
-                    renderAdminLogs();
-                    renderResumen();
-                    renderHolidays();
-                }
-            });
-    }
+    if (!user) { window.location.href = '/checador/'; return; }
+    // Los datos del panel ya NO se cargan al autenticarse. Se cargan en startPanelData(), que se llama
+    // SOLO después de validar el PIN de admin contra el servidor. Antes se cargaban aquí, así que un
+    // empleado con la sesión del kiosco podía leerlos en la consola sin poner el PIN.
 });
+
+// Suscribe a las colecciones del panel. Se llama UNA vez, tras validar el PIN de admin (ver pin-submit).
+let panelDataStarted = false;
+function startPanelData() {
+    if (panelDataStarted) return;
+    panelDataStarted = true;
+    db.collection('checador_logs').orderBy('timestamp', 'desc')
+        .onSnapshot(snap => {
+            logsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+            if (document.getElementById('panel-content').style.display !== 'none') {
+                renderAdminLogs();
+                renderResumen();
+            }
+        });
+    db.collection('checador_employees')
+        .onSnapshot(snap => {
+            employeesCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+            // Auto-asignar PIN a empleados que no tengan
+            employeesCache.forEach(emp => {
+                if (!emp.pin) {
+                    const pin = generatePin();
+                    db.collection('checador_employees').doc(emp._docId).update({ pin });
+                }
+            });
+            if (document.getElementById('panel-content').style.display !== 'none') {
+                renderAdminEmployees();
+            }
+        });
+    db.collection('checador_adjustments')
+        .onSnapshot(snap => {
+            adjustmentsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+            if (document.getElementById('panel-content').style.display !== 'none') {
+                renderAdminLogs();
+            }
+        });
+    db.collection('checador_holidays')
+        .onSnapshot(snap => {
+            holidaysCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+            if (document.getElementById('panel-content').style.display !== 'none') {
+                renderAdminLogs();
+                renderResumen();
+                renderHolidays();
+            }
+        });
+}
 
 // =====================
 // PIN
@@ -75,16 +83,35 @@ document.getElementById('admin-pin').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('pin-submit').click();
 });
 
-document.getElementById('pin-submit').addEventListener('click', () => {
-    if (document.getElementById('admin-pin').value === ADMIN_PIN) {
-        document.getElementById('pin-view').style.display = 'none';
-        document.getElementById('panel-content').style.display = 'block';
-        renderAdminLogs();
-        renderAdminEmployees();
-        renderResumen();
-    } else {
-        showNotification('PIN Incorrecto', 'danger');
-        document.getElementById('admin-pin').focus();
+document.getElementById('pin-submit').addEventListener('click', async () => {
+    const input = document.getElementById('admin-pin');
+    const btn = document.getElementById('pin-submit');
+    const pin = input.value;
+    if (!pin) { input.focus(); return; }
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/checador/verify-admin-pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) {
+            document.getElementById('pin-view').style.display = 'none';
+            document.getElementById('panel-content').style.display = 'block';
+            startPanelData();          // recién aquí se cargan los datos
+            renderAdminLogs();
+            renderAdminEmployees();
+            renderResumen();
+        } else {
+            showNotification(data.message || 'PIN Incorrecto', 'danger');
+            input.value = '';
+            input.focus();
+        }
+    } catch (e) {
+        showNotification('No se pudo validar el PIN (revisa tu conexión).', 'danger');
+    } finally {
+        btn.disabled = false;
     }
 });
 

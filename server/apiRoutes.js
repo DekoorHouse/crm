@@ -267,6 +267,28 @@ async function getCheckadorConfig() {
     }
 }
 
+// POST /api/checador/verify-admin-pin — valida el PIN del panel de admin CONTRA EL SERVIDOR. Antes el
+// PIN estaba ESCRITO en public/checador/panel.js (lo veía cualquiera que abriera el código o el
+// inspector). Ahora vive en la env var CHECADOR_ADMIN_PIN (o "0809" por defecto, del lado del server,
+// nunca servido al navegador). Rate-limit por IP para frenar la fuerza bruta de un PIN de 4 dígitos.
+const _checadorPinLimiter = require('express-rate-limit')({
+    windowMs: 10 * 60 * 1000, max: 12,
+    standardHeaders: true, legacyHeaders: false,
+    message: { ok: false, message: 'Demasiados intentos, espera unos minutos.' },
+});
+router.post('/checador/verify-admin-pin', _checadorPinLimiter, (req, res) => {
+    try {
+        const pin = String((req.body && req.body.pin) || '');
+        const real = String(process.env.CHECADOR_ADMIN_PIN || '0809');
+        const crypto = require('crypto');
+        const a = Buffer.from(pin), b = Buffer.from(real);
+        const ok = a.length === b.length && crypto.timingSafeEqual(a, b);   // compara en tiempo constante
+        res.json({ ok });
+    } catch (e) {
+        res.status(500).json({ ok: false, message: e.message });
+    }
+});
+
 function getCheckadorClientIp(req) {
     const xff = req.headers['x-forwarded-for'];
     if (xff) {
