@@ -10,7 +10,11 @@
 // "Algo especial" (foto/logo/grabado/frase/dibujo/…) -> diseño MANUAL, no lo toca la IA AUTOMÁTICA.
 // Mismo criterio que el auto-mockup (mockupsService) y el que tenía el worker inline. Lo usa el corte
 // AUTOMÁTICO (svgAutoEligibility), que es conservador: cualquier "Especial:" lo manda a revisión humana.
-const SPECIAL_RE = /foto|imagen|graba|logo|escudo|especial|personaje|mascota|dibuj|dise[nñ]|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
+// OJO con las fronteras de palabra: sin ellas, 'adicional' pegaba dentro de "Spiderman TRADICIONAL"
+// y 'logo' dentro de "catáLOGO", y esos pedidos —perfectamente normales— se iban a diseño manual
+// (caso DH15215, 2026-08-21). Las demás palabras SÍ deben pegar por dentro ('graba' -> "grabado",
+// 'dibuj' -> "dibujo", 'dise[nñ]' -> "diseñar").
+const SPECIAL_RE = /foto|imagen|graba|\blogo|escudo|especial|personaje|mascota|dibuj|dise[nñ]|frase|leyenda|\badicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
 
 // Subconjunto de "especial" que el botón "Diseñar con IA" NO puede resolver ni forzándolo: requiere
 // grabar una IMAGEN (foto/logo/dibujo/escudo/símbolo…) que la lámpara infinito no lleva. Esos SIEMPRE
@@ -22,7 +26,7 @@ const SPECIAL_RE = /foto|imagen|graba|logo|escudo|especial|personaje|mascota|dib
 // el mockup NO incorporó la frase (p.ej. la pidieron ADEMÁS de la fecha, DH13603), el corte saldrá sin
 // ella y el usuario lo verá en el preview antes de subir -> rehace el mockup con la frase o lo hace a
 // mano. Tampoco incluye 'especial'/'diseño' genéricos.
-const MANUAL_SPECIAL_RE = /foto|imagen|graba|logo|escudo|personaje|mascota|dibuj|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
+const MANUAL_SPECIAL_RE = /foto|imagen|graba|\blogo|escudo|personaje|mascota|dibuj|\badicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
 
 const productOf = o => String(o.producto || (o.items && o.items[0] && o.items[0].producto) || '').toLowerCase();
 const datosOf = o => (Array.isArray(o.items) ? o.items : []).map(it => it.datosProducto).filter(Boolean).join('\n') || o.datosProducto || o.producto || '';
@@ -230,7 +234,7 @@ const PLANTILLAS_PERSONAJE = [...new Set(PERSONAJE_ALIAS.map(a => a.tpl))];
 
 // "Algo especial" para una lámpara infantil. NO se puede usar SPECIAL_RE tal cual: incluye la palabra
 // "personaje", y estos datos SIEMPRE traen la etiqueta "Personaje:", así que TODO pedido daría especial.
-const ESPECIAL_PERSONAJE_RE = /foto|imagen|graba|logo|escudo|mascota|dibuj|dise[nñ]|frase|leyenda|adicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
+const ESPECIAL_PERSONAJE_RE = /foto|imagen|graba|\blogo|escudo|mascota|dibuj|dise[nñ]|frase|leyenda|\badicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
 
 // ¿Este item lleva algo que la plantilla no puede? Mira el texto COMPLETO, no solo el valor de la
 // etiqueta "Especial:": hay pedidos que lo piden en texto libre, y además todo lo que va ANTES del
