@@ -73,24 +73,23 @@ async function loginWithPin(nameInput, pinInput, isAutoLogin) {
         return false;
     }
 
-    const snap = await db.collection('checador_employees').get();
-    const employees = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
-    const match = employees.find(e => e.name.toLowerCase() === nameInput.toLowerCase());
-
-    if (!match) {
-        if (!isAutoLogin) errorEl.textContent = 'No encontrado.';
-        else localStorage.removeItem('checador_session');
-        return false;
-    }
-
-    if (!match.pin) {
-        if (!isAutoLogin) errorEl.textContent = 'No tienes un PIN asignado. Contacta al administrador.';
-        else localStorage.removeItem('checador_session');
-        return false;
-    }
-
-    if (match.pin !== pinInput) {
-        if (!isAutoLogin) errorEl.textContent = 'PIN incorrecto.';
+    // Validación CONTRA EL SERVER: ya no descargamos toda la lista de empleados con sus PINs.
+    let match;
+    try {
+        const resp = await fetch('/api/checador/employee-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: nameInput, pin: pinInput }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!data.ok) {
+            if (!isAutoLogin) errorEl.textContent = data.message || 'No se pudo validar.';
+            else localStorage.removeItem('checador_session');
+            return false;
+        }
+        match = data.employee;
+    } catch (e) {
+        if (!isAutoLogin) errorEl.textContent = 'No se pudo validar (revisa tu conexión).';
         else localStorage.removeItem('checador_session');
         return false;
     }

@@ -289,6 +289,90 @@ router.post('/checador/verify-admin-pin', _checadorPinLimiter, (req, res) => {
     }
 });
 
+// --- PINs de empleados: fuera del alcance del cliente ------------------------------------------------
+// Antes el PIN de cada empleado vivía en checador_employees (leíble por cualquier sesión) y mi-perfil
+// bajaba TODA la colección para validar en el navegador. Ahora el PIN se valida en el SERVER y vive en
+// `checador_pins` (reglas: deny a clientes). Estos endpoints reemplazan esa lógica.
+function _checadorAdminPinOk(pin) {
+    try {
+        const real = String(process.env.CHECADOR_ADMIN_PIN || '0809');
+        const a = Buffer.from(String(pin || '')), b = Buffer.from(real);
+        return a.length === b.length && require('crypto').timingSafeEqual(a, b);
+    } catch (_) { return false; }
+}
+const _genCheckadorPin = () => String(Math.floor(1000 + Math.random() * 9000));
+
+// mi-perfil: valida nombre+PIN CONTRA EL SERVER. Rate-limited. Devuelve el empleado SIN el PIN.
+const _empLoginLimiter = require('express-rate-limit')({
+    windowMs: 10 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+    message: { ok: false, message: 'Demasiados intentos, espera unos minutos.' },
+});
+router.post('/checador/employee-login', _empLoginLimiter, async (req, res) => {
+    try {
+        const name = String((req.body && req.body.name) || '').trim();
+        const pin = String((req.body && req.body.pin) || '').trim();
+        if (!name || !pin) return res.json({ ok: false, message: 'Ingresa tu nombre y PIN.' });
+        const snap = await db.collection('checador_employees').get();
+        const doc = snap.docs.find(d => String(d.data().name || '').trim().toLowerCase() === name.toLowerCase());
+        if (!doc) return res.json({ ok: false, message: 'No encontrado.' });
+        const emp = doc.data();
+        // PIN: primero checador_pins (nuevo); si no, el viejo en el propio empleado (transición).
+        const pinDoc = await db.collection('checador_pins').doc(doc.id).get();
+        const realPin = (pinDoc.exists && pinDoc.data().pin) || emp.pin || null;
+        if (!realPin) return res.json({ ok: false, message: 'No tienes un PIN asignado. Contacta al administrador.' });
+        const a = Buffer.from(String(pin)), b = Buffer.from(String(realPin));
+        const match = a.length === b.length && require('crypto').timingSafeEqual(a, b);
+        if (!match) return res.json({ ok: false, message: 'PIN incorrecto.' });
+        const safe = { ...emp }; delete safe.pin;   // NUNCA devolver el PIN al cliente
+        res.json({ ok: true, employee: { _docId: doc.id, ...safe } });
+    } catch (e) {
+        console.error('[CHECADOR/employee-login]', e.message);
+        res.status(500).json({ ok: false, message: e.message });
+    }
+});
+
+// Panel (admin): lista los PINs de todos los empleados y ASIGNA los que falten. Requiere el PIN de admin.
+// De paso MIGRA el PIN viejo (checador_employees.pin) a checador_pins y lo BORRA del empleado, para que
+// deje de ser leíble por el cliente. Con esto, abrir el panel una vez completa la mudanza.
+router.post('/checador/admin/employee-pins', async (req, res) => {
+    try {
+        if (!_checadorAdminPinOk(req.body && req.body.adminPin)) return res.status(403).json({ ok: false, message: 'PIN de admin inválido.' });
+        const snap = await db.collection('checador_employees').get();
+        const out = {};
+        for (const d of snap.docs) {
+            const data = d.data();
+            const pinDoc = await db.collection('checador_pins').doc(d.id).get();
+            let pin = (pinDoc.exists && pinDoc.data().pin) || data.pin || _genCheckadorPin();
+            if (!pinDoc.exists || pinDoc.data().pin !== pin) {
+                await db.collection('checador_pins').doc(d.id).set({ pin, name: data.name || '' }, { merge: true });
+            }
+            if (data.pin) await d.ref.update({ pin: admin.firestore.FieldValue.delete() });   // sacarlo del cliente
+            out[d.id] = pin;
+        }
+        res.json({ ok: true, pins: out });
+    } catch (e) {
+        console.error('[CHECADOR/admin/employee-pins]', e.message);
+        res.status(500).json({ ok: false, message: e.message });
+    }
+});
+
+// Panel (admin): regenera el PIN de un empleado. Requiere el PIN de admin.
+router.post('/checador/admin/regenerate-pin', async (req, res) => {
+    try {
+        if (!_checadorAdminPinOk(req.body && req.body.adminPin)) return res.status(403).json({ ok: false, message: 'PIN de admin inválido.' });
+        const docId = String((req.body && req.body.docId) || '');
+        if (!docId) return res.status(400).json({ ok: false, message: 'Falta docId.' });
+        const pin = _genCheckadorPin();
+        const empDoc = await db.collection('checador_employees').doc(docId).get();
+        await db.collection('checador_pins').doc(docId).set({ pin, name: (empDoc.exists && empDoc.data().name) || '' }, { merge: true });
+        if (empDoc.exists && empDoc.data().pin) await empDoc.ref.update({ pin: admin.firestore.FieldValue.delete() });
+        res.json({ ok: true, pin });
+    } catch (e) {
+        console.error('[CHECADOR/admin/regenerate-pin]', e.message);
+        res.status(500).json({ ok: false, message: e.message });
+    }
+});
+
 function getCheckadorClientIp(req) {
     const xff = req.headers['x-forwarded-for'];
     if (xff) {

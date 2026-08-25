@@ -118,6 +118,13 @@ service cloud.firestore {
       allow write: if isAuthenticated();
     }
 
+    // --- PINs de empleados del checador: SOLO el servidor (admin SDK) los toca ---
+    // Se validan/asignan vía /api/checador/* con la llave de servicio (que ignora estas reglas).
+    // Denegar a TODO cliente evita que una sesión del checador lea los PINs de todos.
+    match /checador_pins/{docId} {
+      allow read, write: if false;
+    }
+
     // --- Catch-all: denegar por defecto ---
     match /{document=**} {
       allow read, write: if isAuthenticated();

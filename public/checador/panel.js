@@ -19,6 +19,8 @@ let logsCache = [];
 let employeesCache = [];
 let adjustmentsCache = [];
 let holidaysCache = [];
+let adminPin = null;      // PIN de admin validado (se guarda en memoria para las llamadas al server)
+let pinsCache = {};       // { docId -> pin } de empleados, obtenido del server (ya no vive en el cliente)
 let weekOffset = 0; // 0 = semana actual, -1 = anterior, etc.
 
 // =====================
@@ -47,15 +49,11 @@ function startPanelData() {
     db.collection('checador_employees')
         .onSnapshot(snap => {
             employeesCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
-            // Auto-asignar PIN a empleados que no tengan
-            employeesCache.forEach(emp => {
-                if (!emp.pin) {
-                    const pin = generatePin();
-                    db.collection('checador_employees').doc(emp._docId).update({ pin });
-                }
-            });
+            // Los PINs ya NO viven aquí ni se asignan en el cliente: los trae/asigna el server
+            // (loadEmployeePins → /api/checador/admin/employee-pins).
             if (document.getElementById('panel-content').style.display !== 'none') {
                 renderAdminEmployees();
+                loadEmployeePins();
             }
         });
     db.collection('checador_adjustments')
@@ -97,9 +95,11 @@ document.getElementById('pin-submit').addEventListener('click', async () => {
         });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.ok) {
+            adminPin = pin;            // se guarda para las llamadas admin al server (PINs de empleados)
             document.getElementById('pin-view').style.display = 'none';
             document.getElementById('panel-content').style.display = 'block';
             startPanelData();          // recién aquí se cargan los datos
+            loadEmployeePins();        // trae los PINs (y migra los viejos) desde el server
             renderAdminLogs();
             renderAdminEmployees();
             renderResumen();
@@ -658,8 +658,20 @@ document.getElementById('save-edit-log').addEventListener('click', saveEditChang
 // =====================
 // EMPLEADOS
 // =====================
-function generatePin() {
-    return String(Math.floor(1000 + Math.random() * 9000));
+// Trae del server los PINs de todos los empleados (y migra/asigna los que falten). El PIN de admin va
+// en el body. Guarda el resultado en pinsCache y re-pinta la tabla.
+let _loadingPins = false;
+async function loadEmployeePins() {
+    if (!adminPin || _loadingPins) return;
+    _loadingPins = true;
+    try {
+        const resp = await fetch('/api/checador/admin/employee-pins', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ adminPin }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (data.ok) { pinsCache = data.pins || {}; renderAdminEmployees(); }
+    } catch (_) { /* silencioso */ } finally { _loadingPins = false; }
 }
 
 async function saveEmployee(name, phone) {
@@ -667,16 +679,24 @@ async function saveEmployee(name, phone) {
         showNotification("Nombre duplicado", "danger");
         return false;
     }
-    const pin = generatePin();
-    await db.collection('checador_employees').add({ name, id: Date.now().toString(), phone, pin });
-    showNotification(`PIN asignado: ${pin}`);
+    const ref = await db.collection('checador_employees').add({ name, id: Date.now().toString(), phone });
+    await loadEmployeePins();   // el server le asigna el PIN
+    const pin = pinsCache[ref.id];
+    showNotification(pin ? `PIN asignado: ${pin}` : 'Empleado agregado');
     return true;
 }
 
 async function regeneratePin(docId) {
-    const pin = generatePin();
-    await db.collection('checador_employees').doc(docId).update({ pin });
-    showNotification(`Nuevo PIN: ${pin}`);
+    if (!adminPin) return showNotification('Vuelve a entrar con tu PIN de admin', 'danger');
+    try {
+        const resp = await fetch('/api/checador/admin/regenerate-pin', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ adminPin, docId }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (data.ok) { pinsCache[docId] = data.pin; renderAdminEmployees(); showNotification(`Nuevo PIN: ${data.pin}`); }
+        else showNotification(data.message || 'No se pudo regenerar', 'danger');
+    } catch (_) { showNotification('Error de conexión', 'danger'); }
 }
 
 async function deleteEmployee(docId) {
@@ -727,7 +747,7 @@ function renderAdminEmployees() {
                 onfocus="this.style.borderColor='var(--primary)'; this.style.background='rgba(255,255,255,0.08)'"
                 onblur="this.style.borderColor='transparent'; this.style.background='transparent'"></td>
             <td style="text-align:center;">
-                <span style="font-family:monospace; font-size:1rem; letter-spacing:2px; color:var(--primary); font-weight:700;">${emp.pin || '—'}</span>
+                <span style="font-family:monospace; font-size:1rem; letter-spacing:2px; color:var(--primary); font-weight:700;">${pinsCache[emp._docId] || '—'}</span>
                 <button class="btn-small" onclick="regeneratePin('${emp._docId}')" style="margin-left:6px; padding:4px 8px; font-size:0.7rem;" title="Generar nuevo PIN">🔄</button>
             </td>
             <td style="text-align:center;">
