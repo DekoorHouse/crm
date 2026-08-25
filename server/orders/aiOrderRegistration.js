@@ -487,6 +487,25 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
                 console.warn(`[AI_ORDER] ${contactId} confirmó un cambio pero ${rNum} ya no es editable (${r.vendedor || 'manual'}, ${r.estatus}, review: ${r.aiReviewStatus || '-'}). Se avisa al admin.`);
                 await logFailure(contactId, name, `cambio_no_aplicado: ${rNum} ya no es editable (${r.estatus}${r.registeredByAI ? ', IA' : ', manual'})`);
                 await alertAdmin(`⚠️ *El cliente cambió/confirmó un pedido, pero ya existe ${rNum} reciente* (${r.estatus || 'Sin estatus'}${r.registeredByAI ? ', registrado por IA' : ', registrado manual'}${r.aiReviewStatus === 'approved' ? ', ya revisado' : ''}).\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nLo que el cliente confirmó ahora:\n${itemsTxt}\nTotal: $${extraction.total}\n\nRevisa el chat y edita/registra tú desde el CRM. La IA no creó ni modificó nada.`);
+                // El cambio NO se aplico (el pedido ya avanzo), asi que lo GUARDADO ya no es lo que el
+                // cliente quiere. Dos protecciones, porque el WhatsApp al admin solo no basta —caso real
+                // DH15142: el cliente pidio cambiar T-Rex por Spiderman, se aviso 2 veces, nadie lo vio y
+                // el worker corto el diseño VIEJO (T-Rex):
+                //  1. datosReportadoAt sella el pedido para que el corte AUTOMATICO no lo toque
+                //     (mismo candado que una queja de datos; se libera con datoCorregidoAt).
+                //  2. La conversacion se fija en ATENCION para que el pendiente sea visible en el CRM.
+                try {
+                    await recent.ref.update({
+                        datosReportadoAt: admin.firestore.FieldValue.serverTimestamp(),
+                        comentarios: `${(r.comentarios || '').trim()}
+CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de fabricar.`.trim(),
+                    });
+                    await db.collection('contacts_whatsapp').doc(contactId).update({
+                        needsAttention: true,
+                        needsAttentionReason: 'cambio_no_aplicado',
+                        needsAttentionAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                } catch (e) { console.warn('[AI_ORDER] no pude sellar el cambio no aplicado:', e.message); }
                 return null;
             }
 
