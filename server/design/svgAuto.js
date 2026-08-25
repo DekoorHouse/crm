@@ -39,19 +39,24 @@ const datosOf = o => (Array.isArray(o.items) ? o.items : []).map(it => it.datosP
 // grabado...), SPECIAL_RE lo detecta igual y el pedido sigue siendo manual.
 const ESPECIAL_LOGISTICA_RE = /^\W*(env[ií]os?|expr[eé]s|dhl|estafeta|paqueter|recoger|ocurre|sucursal|entrega|domicilio|urgente|factura|tarjeta)\b/i;
 
-// ¿El pedido lleva algo ESPECIAL que obliga a diseño manual? Evalúa el VALOR del campo "Especial",
-// no su etiqueta, y descarta las notas de logística.
+// Palabras que de verdad hablan del DISEÑO de la lámpara. Es SPECIAL_RE sin las ETIQUETAS del propio
+// formato ('especial', 'personaje'): que el pedido TENGA un campo "Especial:" no lo vuelve especial —
+// lo que cuenta es lo que ese campo DICE.
+const SPECIAL_DISENO_RE = /foto|imagen|graba|\blogo|escudo|mascota|dibuj|dise[nñ]|frase|leyenda|\badicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
+
+// ¿El pedido lleva algo ESPECIAL que obliga a diseño manual?
+// Se mira el VALOR de cada "Especial:", nunca la etiqueta. Antes el último test corría sobre el texto
+// COMPLETO —etiqueta incluida— y como SPECIAL_RE contiene la palabra 'especial', CUALQUIER pedido con
+// ese campo lleno se iba a manual aunque la nota no tocara el diseño: DH15415 traía "Especial: incluye
+// base con acabado tipo madera gratis", que es la BASE de la lámpara, y nunca llegó a Drive.
+// La lista de palabras de logística jamás va a cubrir todo lo que la gente escribe ahí; la de diseño
+// sí es acotada, así que la condición se invierte (mismo criterio que la ruta de personaje).
 function esEspecial(o) {
     const datos = String(datosOf(o) || '');
-    const m = /especial\s*:\s*([^|\n]+)/i.exec(datos);
-    if (m) {
-        const valor = m[1].trim();
-        // Nota de logística y sin ninguna palabra de diseño -> NO es especial
-        if (ESPECIAL_LOGISTICA_RE.test(valor) && !SPECIAL_RE.test(valor)) {
-            return SPECIAL_RE.test(datos.replace(/especial\s*:[^|\n]*/gi, ' '));
-        }
-    }
-    return SPECIAL_RE.test(datos);
+    const valores = [...datos.matchAll(/especial\s*:\s*([^|\n]+)/gi)].map(m => m[1].trim()).filter(Boolean);
+    if (valores.some(v => SPECIAL_DISENO_RE.test(v))) return true;
+    // Y el resto del texto (fuera de las notas "Especial:"), por si lo piden en texto libre.
+    return SPECIAL_DISENO_RE.test(datos.replace(/especial\s*:[^|\n]*/gi, ' '));
 }
 
 // Quita acentos para comparaciones robustas ("Corazón" -> "Corazon").
@@ -104,7 +109,8 @@ function svgAutoEligibility(o, previews) {
     // pedido (DH13941: el cliente cambió la fecha tras aprobar el mockup y pagó).
     if (mockupObsoletoPorCorreccion(o, last)) {
         const ff = fieldsFromDatos(o);
-        if (!ff.nombre1 || !ff.nombre2 || !ff.fecha) return { eligible: false, reason: 'incomplete_fields' };
+        if (!ff.nombre1 || !ff.nombre2) return { eligible: false, reason: 'incomplete_fields' };
+        if (!ff.fecha && !SIN_FECHA_RE.test(datosOf(o))) return { eligible: false, reason: 'incomplete_fields' };
         return { eligible: true, reason: 'ok', fields: ff, layoutVerificado: false };
     }
     const f = last.fields || {};
@@ -118,7 +124,11 @@ function svgAutoEligibility(o, previews) {
     const nombre1 = titleCaseName(lay ? conLineas(lay.izquierdo, f.nombre1) : String(f.nombre1 || ''));
     const nombre2 = titleCaseName(lay ? conLineas(lay.derecho, f.nombre2) : String(f.nombre2 || ''));
     const fecha = lay ? conLineas(lay.fecha, f.fecha) : String(f.fecha || '');   // la fecha NO se title-casea
-    if (!nombre1 || !nombre2 || !fecha) return { eligible: false, reason: 'incomplete_fields' };
+    // "Sin fecha" es una respuesta VÁLIDA del cliente, no un dato faltante: se graba en blanco (misma
+    // regla que el mockup y que el botón "Diseñar con IA"). El corte automático era más estricto que el
+    // botón y por eso DH15383 ("Fecha: sin fecha") nunca llegaba a Drive.
+    if (!nombre1 || !nombre2) return { eligible: false, reason: 'incomplete_fields' };
+    if (!fecha && !SIN_FECHA_RE.test(datosOf(o))) return { eligible: false, reason: 'incomplete_fields' };
     return { eligible: true, reason: 'ok', fields: { nombre1, nombre2, fecha }, layoutVerificado: !!lay };
 }
 
@@ -234,7 +244,7 @@ const PLANTILLAS_PERSONAJE = [...new Set(PERSONAJE_ALIAS.map(a => a.tpl))];
 
 // "Algo especial" para una lámpara infantil. NO se puede usar SPECIAL_RE tal cual: incluye la palabra
 // "personaje", y estos datos SIEMPRE traen la etiqueta "Personaje:", así que TODO pedido daría especial.
-const ESPECIAL_PERSONAJE_RE = /foto|imagen|graba|\blogo|escudo|mascota|dibuj|dise[nñ]|frase|leyenda|\badicional|s[ií]mbolo|\bpng\b|\bjpg\b/i;
+const ESPECIAL_PERSONAJE_RE = SPECIAL_DISENO_RE;   // misma lista; se deja el nombre por claridad de uso
 
 // ¿Este item lleva algo que la plantilla no puede? Mira el texto COMPLETO, no solo el valor de la
 // etiqueta "Especial:": hay pedidos que lo piden en texto libre, y además todo lo que va ANTES del

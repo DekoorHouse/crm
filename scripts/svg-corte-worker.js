@@ -239,7 +239,16 @@ async function findCandidates(cfg) {
             continue;
         }
         const paidMs = ms(o.comprobanteValidadoAt) || ms(o.confirmedAt) || ms(o.createdAt);
-        out.push({ o, fields: el.fields, paidMs, layoutVerificado: el.layoutVerificado, video });
+        // CANTIDAD: un pedido puede llevar 2 lámparas IGUALES ("Nombres: Ivan y Denisse", cantidad 2).
+        // Antes se emitía una sola entrada y el cliente recibía la mitad de lo que pagó — DH15353 salió
+        // con una pieza debiendo dos. Se emite una entrada por pieza y el emparejado normal las acomoda
+        // (dos iguales llenan una hoja completa).
+        const piezas = Math.max(1, Math.min(6, (Array.isArray(o.items) && o.items.length === 1)
+            ? (parseInt(o.items[0].cantidad, 10) || 1) : 1));
+        if (piezas > 1) log(`  · ${dhOf(o)} lleva ${piezas} lámparas iguales`);
+        for (let i = 0; i < piezas; i++) {
+            out.push({ o, fields: el.fields, paidMs, layoutVerificado: el.layoutVerificado, video, pieza: i + 1, piezas });
+        }
     }
     // Los que piden VIDEO van PRIMERO (Chris, 2026-08-01): el cliente está esperando el video de una
     // lámpara que todavía no existe, así que es lo más urgente de la cola. Entre iguales, más antiguos
@@ -285,7 +294,8 @@ async function unclaim(entries) {
 }
 
 async function processSheet(entries) {
-    const label = entries.map(e => dhOf(e.o)).join('-');
+    // Sin el dedupe, un pedido de DOS piezas iguales genera la etiqueta "DH15353-DH15353".
+    const label = [...new Set(entries.map(e => dhOf(e.o)))].join('-');
     const vis = e => (e.layoutVerificado ? '' : ' [sin visión]') + (e.video ? ' [pide video]' : '');
     log(`> Hoja ${label}: ` + entries.map(e => `${e.fields.nombre1.replace(/\n/g, '⏎')} y ${e.fields.nombre2.replace(/\n/g, '⏎')} (${e.fields.fecha.replace(/\n/g, '⏎')})${vis(e)}`).join(' | '));
     if (DRY) return;
@@ -295,7 +305,9 @@ async function processSheet(entries) {
         const { svg, cdr } = runCorel(label, entries.map(e => e.fields));
         const up = await uploadToDrive(svg);
         for (const e of entries) {
-            const otros = entries.filter(x => x !== e).map(x => dhOf(x.o));
+            // Los OTROS pedidos de la hoja. Se excluye el propio: si las dos piezas son del mismo
+            // pedido, no tiene sentido decir que 'comparte hoja consigo mismo'.
+            const otros = [...new Set(entries.map(x => dhOf(x.o)))].filter(d => d !== dhOf(e.o));
             const upd = {
                 svgCorteAt: admin.firestore.FieldValue.serverTimestamp(),
                 svgCorteUrl: up.webViewLink,
