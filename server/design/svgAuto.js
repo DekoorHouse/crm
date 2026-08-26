@@ -263,7 +263,16 @@ function itemEspecialPersonaje(datos) {
         // con reja blanca… Incluir tarjeta", que es una instrucción de ENTREGA y no cambia la lámpara.
         // La lista de palabras de logística nunca va a cubrir todo lo que la gente escribe ahí; la de
         // diseño sí es acotada, así que la condición se invierte.
-        if (vals.some(v => ESPECIAL_PERSONAJE_RE.test(v))) return true;
+        // "Especial: logo" A SECAS no es un diseño especial: en estas lámparas el cliente le dice
+        // "logo" a la FIGURA que ya viene en "Personaje:" ("Marco Tadeo y del hombre araña logo",
+        // DH15427; "cambiar el logo de la lámpara a un hombre araña", DH15142). Se quedó 2 días
+        // pagado y sin cortar por esa palabra. Solo pasa la palabra SOLA: en 120 días los otros 20
+        // "Especial:" con "logo" sí pedían un logotipo de verdad ("Logotipo Kenworth 92", "Logo de
+        // F1", "Logo de cardiología personalizado") y siguen yendo a manual, que es la dirección
+        // segura — cortar de más tira acrílico y le llega al cliente algo que no pidió.
+        const utiles = vals.filter(v => !/^(?:el\s+|su\s+)?logo(?:tipo)?\.?$/i.test(v.trim()));
+        if (utiles.some(v => ESPECIAL_PERSONAJE_RE.test(v))) return true;
+        if (utiles.length !== vals.length && !utiles.length) return false;
         return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas.replace(/especial\s*:[^|\n]*/gi, ' '));
     }
     return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas);
