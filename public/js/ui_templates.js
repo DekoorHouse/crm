@@ -2067,21 +2067,85 @@ const LocalFilePreviewTemplate = (files) => {
     return `<div class="file-preview-grid">${items}</div>`;
 };
 
-const RemoteFilePreviewTemplate = (file) => {
-    const isImage = file.type.startsWith('image/');
-    const isVideo = file.type.startsWith('video/');
-    const isAudio = file.type.startsWith('audio/');
-    let previewElement;
-    if (isImage) {
-        previewElement = `<img src="${file.url}" alt="Vista previa">`;
-    } else if (isVideo) {
-        previewElement = `<video src="${file.url}" alt="Vista previa"></video>`;
-    } else if (isAudio) {
-        previewElement = `<div class="p-3"><i class="fas fa-music text-2xl text-gray-500"></i></div>`;
+// Archivos que ya viven en una URL (respuesta rápida o banco de imágenes): se mandan por
+// enlace, sin volver a subirlos. Acepta un arreglo para poder adjuntar varias fotos de la
+// galería de una sola vez; se sigue admitiendo un objeto suelto por compatibilidad.
+const RemoteFilePreviewTemplate = (files) => {
+    if (!Array.isArray(files)) files = files ? [files] : [];
+    const items = files.map((file, index) => {
+        const tipo = file.type || '';
+        let thumb;
+        if (tipo.startsWith('image/')) {
+            thumb = `<img src="${file.thumbUrl || file.url}" alt="Vista previa" class="file-thumb">`;
+        } else if (tipo.startsWith('video/')) {
+            thumb = `<div class="file-thumb file-thumb-icon video"><i class="fas fa-play"></i></div>`;
+        } else if (tipo.startsWith('audio/')) {
+            thumb = `<div class="file-thumb file-thumb-icon audio"><i class="fas fa-music"></i></div>`;
+        } else {
+            thumb = `<div class="file-thumb file-thumb-icon doc"><i class="fas fa-file-alt"></i></div>`;
+        }
+        const nombre = file.name || 'Archivo adjunto';
+        const corto = nombre.length > 18 ? nombre.substring(0, 15) + '...' : nombre;
+        return `<div class="file-preview-item">
+            <button type="button" class="file-remove-btn" onclick="removeStagedRemoteFile(${index})" title="Quitar"><i class="fas fa-times"></i></button>
+            ${thumb}
+            <div class="file-preview-info">
+                <span class="file-preview-name" title="${String(nombre).replace(/"/g, '&quot;')}">${corto}</span>
+            </div>
+        </div>`;
+    }).join('');
+    return `<div class="file-preview-grid">${items}</div>`;
+};
+
+/**
+ * Selector del BANCO DE IMÁGENES dentro del chat.
+ * `items` ya viene filtrado por el buscador; `seleccionados` es el arreglo de ids marcados.
+ * Las miniaturas salen del bucket público, así que se muestran sin pasar por el servidor.
+ */
+const GalleryPickerTemplate = (items, seleccionados, cargando) => {
+    const n = seleccionados.length;
+
+    let cuerpo;
+    if (cargando) {
+        cuerpo = `<div class="gallery-picker-msg"><i class="fas fa-circle-notch fa-spin"></i> Cargando la galería…</div>`;
+    } else if (!items.length) {
+        cuerpo = `<div class="gallery-picker-msg">
+            <i class="fas fa-camera-retro"></i>
+            <span>${state.galleryQuery ? `Nada para “${String(state.galleryQuery).replace(/[<>]/g, '')}”. Prueba con una palabra más general.` : 'La galería está vacía.'}</span>
+        </div>`;
     } else {
-        previewElement = `<div class="p-3"><i class="fas fa-file text-2xl text-gray-500"></i></div>`;
+        cuerpo = `<div class="gallery-picker-grid">${items.map(f => {
+            const orden = seleccionados.indexOf(f.id);
+            const marcada = orden > -1;
+            return `<button type="button" class="gallery-item ${marcada ? 'marcada' : ''}"
+                        onclick="toggleGalleryItem('${f.id}')"
+                        title="${String(f.titulo || '').replace(/"/g, '&quot;')}">
+                    <img src="${f.thumbUrl || f.url}" alt="" loading="lazy">
+                    ${marcada ? `<span class="gallery-item-orden">${orden + 1}</span>` : ''}
+                    <span class="gallery-item-titulo">${String(f.titulo || 'Sin título').replace(/[<>]/g, '')}</span>
+                </button>`;
+        }).join('')}</div>`;
     }
-    return ` <div class="file-preview-content"> <div id="cancel-file-btn" onclick="cancelStagedFile()"><i class="fas fa-times"></i></div> ${previewElement} <div class="ml-3 text-sm text-gray-600 truncate"> <p class="font-semibold">${file.name || 'Archivo adjunto'}</p></div> </div>`;
+
+    return `
+        <div class="gallery-picker-head">
+            <div class="gallery-picker-buscador">
+                <i class="fas fa-magnifying-glass"></i>
+                <input type="search" id="gallery-search" placeholder="Busca lo que pide el cliente: perro, virgen, graduación…"
+                       value="${String(state.galleryQuery || '').replace(/"/g, '&quot;')}" autocomplete="off">
+            </div>
+            <button type="button" class="gallery-picker-cerrar" onclick="toggleGalleryPicker()" title="Cerrar"><i class="fas fa-times"></i></button>
+        </div>
+        ${cuerpo}
+        <div class="gallery-picker-pie">
+            <span class="gallery-picker-cuenta">${n === 0 ? 'Toca las fotos que quieras mandar' : (n === 1 ? '1 foto elegida' : `${n} fotos elegidas`)}</span>
+            <div class="gallery-picker-acciones">
+                ${n ? `<button type="button" class="gallery-btn-sec" onclick="clearGallerySelection()">Quitar</button>` : ''}
+                <button type="button" class="gallery-btn-pri" onclick="stageGallerySelection()" ${n ? '' : 'disabled'}>
+                    <i class="fas fa-paperclip"></i> Adjuntar${n ? ` ${n}` : ''}
+                </button>
+            </div>
+        </div>`;
 };
 
 const StatusButtonsTemplate = (contact) => {
@@ -2371,6 +2435,7 @@ const ChatWindowTemplate = (contact) => {
         <form id="message-form" class="flex items-center space-x-3">
              <label for="file-input" class="cursor-pointer p-2 chat-icon-btn"><i class="fas fa-paperclip text-xl"></i></label>
              <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*,audio/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" multiple>
+             <button type="button" id="gallery-toggle-btn" onclick="toggleGalleryPicker()" class="p-2 chat-icon-btn" title="Banco de imágenes — fotos de trabajos anteriores"><i class="fas fa-images text-xl"></i></button>
              <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
              ${contact.channel !== 'messenger' ? '<button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>' : ''}
              <button type="button" id="schedule-toggle-btn" onclick="toggleScheduleMode()" class="p-2 chat-icon-btn ${scheduleActive ? 'schedule-active' : ''}" title="Programar envío"><i class="fas fa-clock text-xl"></i></button>
@@ -2402,6 +2467,7 @@ const ChatWindowTemplate = (contact) => {
                     </button>
                 </div>
              </div>
+             <button id="scroll-to-bottom-btn" type="button" onclick="chatScrollToBottom()" title="Ir al último mensaje" style="display:none; position:absolute; bottom:16px; right:16px; z-index:20; width:42px; height:42px; border-radius:9999px; align-items:center; justify-content:center; background:var(--color-card-bg,#ffffff); color:var(--color-primary,#163C51); border:1px solid var(--color-border,#e5e7eb); box-shadow:0 4px 14px rgba(0,0,0,0.22); cursor:pointer; font-size:1.05rem;"><i class="fas fa-chevron-down"></i></button>
            </div>`;
 
     const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
@@ -2524,6 +2590,7 @@ const ChatWindowTemplate = (contact) => {
             ${scheduleBarHTML}
             <div id="quick-reply-picker" class="picker-container hidden"></div>
             <div id="template-picker" class="picker-container hidden"></div>
+            <div id="gallery-picker" class="picker-container gallery-picker hidden"></div>
             <div id="upload-progress" class="text-center text-sm text-yellow-600 mb-2 hidden"></div>
             ${footerContent}
             <div id="emoji-picker" class="hidden"></div>

@@ -5091,11 +5091,33 @@ function renderSidebarNotes() {
     }
 }
 
+// Botón flotante "ir al último mensaje": visible SOLO si el operador está leyendo mensajes viejos
+// (lejos del fondo). Se recalcula desde handleScroll, que corre al scrollear Y en cada render de
+// mensajes (renderMessages lo llama al final), así que cubre scroll manual y mensajes nuevos.
+function updateScrollToBottomBtn() {
+    const c = document.getElementById('messages-container');
+    const btn = document.getElementById('scroll-to-bottom-btn');
+    if (!c || !btn) return;
+    const dist = c.scrollHeight - c.scrollTop - c.clientHeight;   // distancia al fondo
+    btn.style.display = dist > 300 ? 'flex' : 'none';
+}
+window.updateScrollToBottomBtn = updateScrollToBottomBtn;
+
+// Clic del botón: baja al último mensaje (suave, y re-asegura el fondo por si crece la media).
+function chatScrollToBottom() {
+    const c = document.getElementById('messages-container');
+    if (!c) return;
+    c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' });
+    setTimeout(() => { c.scrollTop = c.scrollHeight; updateScrollToBottomBtn(); }, 400);
+}
+window.chatScrollToBottom = chatScrollToBottom;
+
 /**
  * Muestra una cabecera de fecha flotante mientras el usuario se desplaza
  * por la lista de mensajes.
  */
 function handleScroll() {
+    updateScrollToBottomBtn();   // mostrar/ocultar la flecha "ir al último mensaje"
     const messagesContainer = document.getElementById('messages-container');
     const stickyHeader = document.getElementById('sticky-date-header');
     if (!messagesContainer || !stickyHeader) return;
