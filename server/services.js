@@ -1007,7 +1007,11 @@ const INFANTIL_SPECIAL_NOTE = `\n\n**LÁMPARAS INFANTILES — CUÁNDO LLEVAN ANT
 
 // Cliente de Durango (recoger en tienda / pago al entregar) + dirección exacta. Fix 31-jul-2026:
 // Andrea a veces le decía al cliente "eres de aquí de Durango" sin que el cliente lo hubiera dicho.
-const DURANGO_NOTE = `\n\n**SI EL CLIENTE ES DE DURANGO (recoger en tienda / pago al entregar):** Fabricamos en Durango capital, y un cliente que ES de Durango puede pasar a recoger su pedido y pagar al entregar. Pero NUNCA le digas al cliente que "es de aquí" ni des por hecho que vive en Durango: trátalo como local SOLO si ÉL te lo dijo. Si sospechas que PODRÍA ser de Durango (por ejemplo por una nota interna sobre su lada), NO lo asumas: PREGÚNTALE con calidez si es de Durango para confirmarlo, y solo entonces ofrécele recoger en tienda o pagar al entregar. Si el cliente PIDE la dirección exacta de la tienda, dásela con gusto: *Hilario Moreno #206, Col. Azteca*, Durango 📍 https://maps.app.goo.gl/HHZUz7w423r9mUFC8`;
+const DURANGO_NOTE = `\n\n**SI EL CLIENTE ES DE DURANGO (recoger en tienda / pago al entregar):** Fabricamos en Durango capital, y un cliente que ES de Durango puede pasar a recoger su pedido y pagar al entregar. Pero NUNCA le digas al cliente que "es de aquí" ni des por hecho que vive en Durango: trátalo como local SOLO si ÉL te lo dijo. Si sospechas que PODRÍA ser de Durango (por ejemplo por una nota interna sobre su lada), NO lo asumas: PREGÚNTALE con calidez si es de Durango para confirmarlo, y solo entonces ofrécele recoger en tienda o pagar al entregar. Si el cliente PIDE la dirección exacta de la tienda, dásela con gusto: *Hilario Moreno #206, Col. Azteca*, Durango 📍 https://maps.app.goo.gl/HHZUz7w423r9mUFC8
+
+**HORARIO PARA RECOGER EN EL LOCAL:** de *10:00 am a 3:00 pm*. Dilo cuando el cliente vaya a pasar por su pedido o pregunte a qué hora puede ir. Si te pide otro horario, no se lo prometas: dile que ese es el horario y que lo confirmas con el equipo si necesita algo distinto (escribe /equipo).
+
+**TELÉFONO DE EMERGENCIA — SOLO SI EL CLIENTE YA ESTÁ AFUERA DEL NEGOCIO:** existe un número de apoyo, *618 299 7167*, y es EXCLUSIVAMENTE para eso: que un cliente que YA LLEGÓ y está afuera del local pueda avisar que está ahí. NO lo des para nada más — ni para dudas, ni para pagos, ni para rastreo, ni porque el cliente lo pida en general, ni \"por si algo se ofrece\". Si no está afuera del negocio en ese momento, ese número NO existe para ti. ⚠️ NUNCA lo des CONDICIONADO (\"si ya estás afuera, marca al...\"): eso es darlo igual. O el cliente YA dijo que está afuera —y entonces se lo das—, o no lo mencionas para nada. Si te piden \"un número para llamarles\" y NO están afuera del local, la respuesta es que por aquí, por WhatsApp, lo atiendes con mucho gusto — sin dar ningún teléfono. Cuando SÍ aplique, dáselo y agrégale que **si no le contestan la llamada, mande WhatsApp a ese mismo número**.`;
 
 // GUARDARRAÍL (caso DH14292, 2 ago 2026): un cliente coqueteó y Andrea aceptó "llevarlo a cabañas",
 // un "picnic al atardecer" y un VIAJE de 5 días a Chiapas ("¡acepto! me encantaría conocerlo
@@ -3944,7 +3948,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         }
         } // fin de la ruta Gemini (ver SWITCH DE PROVEEDOR arriba)
 
-        const aiResponse = aiResult.text;
+        let aiResponse = aiResult.text;   // 'let': el candado del telefono de emergencia puede recortarla
         
         // Registrar uso de tokens en Firestore, etiquetado como fuente 'bot' (la respuesta de
         // Andrea al cliente). El desglose por fuente vive en bySource; los totales se conservan.
@@ -3970,6 +3974,29 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() });
             return;
         }
+
+        // CANDADO DEL TELEFONO DE EMERGENCIA (peticion de Chris): ese numero es SOLO para un cliente
+        // que YA esta afuera del local. El prompt solo no basta —medido: se filtraba en 2 de 12,
+        // dandolo "condicionado" ("si ya estas afuera, marca al...")—, asi que aqui se borra la frase
+        // que lo contiene salvo que el cliente haya dicho en sus ultimos mensajes que ya llego.
+        try {
+            const TEL_EMERGENCIA_RE = /618\s*-?\s*299\s*-?\s*7167|6182997167/;
+            if (TEL_EMERGENCIA_RE.test(aiResponse)) {
+                const ultimosCliente = messagesSnapshot.docs
+                    .filter(md => md.data().from === contactId).slice(0, 3)
+                    .map(md => String(md.data().text || '')).join(' | ');
+                const yaLlego = /(estoy|ya estoy|aqui estoy|ya llegu[eé]|ya vine|estoy en la puerta|estoy afuera|afuera del (local|negocio)|ya ando por|estoy en el local|aqui afuera)/i.test(ultimosCliente);
+                if (!yaLlego) {
+                    aiResponse = aiResponse
+                        .split(/(?<=[.!?\n])/)
+                        .filter(frag => !TEL_EMERGENCIA_RE.test(frag))
+                        .join('')
+                        .replace(/[ 	]{2,}/g, ' ')
+                        .trim();
+                    console.warn(`[TEL] ${contactId}: la IA iba a dar el telefono de emergencia sin que el cliente estuviera afuera del local; se elimino de la respuesta.`);
+                }
+            }
+        } catch (e) { console.warn('[TEL] candado del telefono fallo (se continua):', e.message); }
 
         // Separar la respuesta en múltiples mensajes si contiene [SPLIT]
         let aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);
