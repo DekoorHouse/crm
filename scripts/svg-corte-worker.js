@@ -690,6 +690,7 @@ async function processPersonajeSheets(sheets) {
 
         const generadas = [];
         let fallo = null;
+        let culpables = null;   // ids de los pedidos a los que SI se les cuenta el fallo (ver abajo)
         for (const h of bloque.hojas) {
             const label = [...new Set(h.map(l => dhOf(l.o)))].join('-');
             try {
@@ -702,7 +703,22 @@ async function processPersonajeSheets(sheets) {
                 const holgura = /holgura final: ([^\n]+)/.exec(r.out);
                 if (holgura) log(`    ${holgura[1]}`);
                 generadas.push(r);
-            } catch (e) { fallo = `${label}: ${e.message}`; break; }
+            } catch (e) {
+                fallo = `${label}: ${e.message}`;
+                // A QUIEN se le cuenta. El bloque es todo-o-nada al SUBIR (un pedido con lámparas en
+                // dos hojas no puede quedar a medias), pero el CASTIGO no tiene por qué ser colectivo:
+                // el 2026-08-24 un nombre imposible de DH15257 mandó a manual también a DH15343 y
+                // DH15426, que estaban bien. Se culpa solo a quien hoja-personaje.js señala; si no
+                // señala a nadie, a los pedidos de la hoja que reventó (nunca a los de las otras).
+                const m = /CULPABLES:\s*([^\n]+)/.exec(String(e.message || ''));
+                const nombresMalos = m ? m[1].split('||').map(s => s.trim()).filter(Boolean) : [];
+                // Los nombres viajan al driver con los renglones como token literal \n (ver `enc` en
+                // runCorelPersonaje), así que se compara en esa misma forma y no contra el salto real.
+                const comoSeMando = s => String(s).replace(/\n/g, '\\n');
+                const deLaHoja = h.filter(l => !nombresMalos.length || nombresMalos.includes(comoSeMando(l.nombre)));
+                culpables = new Set((deLaHoja.length ? deLaHoja : h).map(l => String(l.o.id)));
+                break;
+            }
         }
 
         if (fallo) {
@@ -710,9 +726,15 @@ async function processPersonajeSheets(sheets) {
             // de esconderse en "SVG IA" (designForce) para que una persona lo vea en Pendientes.
             log(`  ERROR generando el bloque ${dhs.join('-')}: ${fallo} -> no se sube nada`);
             for (const [id, o] of pedidos) {
-                const fails = (Number(o.svgCortePersonajeFails) || 0) + 1;
-                const upd = { svgCorteStartedAt: admin.firestore.FieldValue.delete(), svgCortePersonajeFails: fails };
-                if (fails >= 3) { upd.designForce = true; log(`  ! ${dhOf(o)} lleva ${fails} intentos fallidos -> se manda a Pendientes manual`); }
+                // El claim se libera SIEMPRE; el contador de fallos solo al culpable. Un pedido sano
+                // que compartía bloque vuelve a la cola con su contador intacto y, en cuanto el
+                // culpable llegue a 3 y salga de la fila, se empareja con otro y se corta.
+                const upd = { svgCorteStartedAt: admin.firestore.FieldValue.delete() };
+                if (!culpables || culpables.has(String(id))) {
+                    const fails = (Number(o.svgCortePersonajeFails) || 0) + 1;
+                    upd.svgCortePersonajeFails = fails;
+                    if (fails >= 3) { upd.designForce = true; log(`  ! ${dhOf(o)} lleva ${fails} intentos fallidos -> se manda a Pendientes manual`); }
+                } else log(`  ~ ${dhOf(o)} compartía bloque pero su hoja no falló -> no se le cuenta el intento`);
                 try { await db.collection('pedidos').doc(String(id)).update(upd); } catch (_) {}
             }
             continue;

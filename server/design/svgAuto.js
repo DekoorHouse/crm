@@ -358,7 +358,17 @@ function personajeEligibility(o, previews) {
         // ambiguo y va a manual: DH14426 pide cantidad=2 con un solo "Nombre: Yandel y Roman" — ¿son dos
         // lámparas iguales, o una para cada niño? No se adivina.
         const cant = Math.max(1, parseInt(it.cantidad, 10) || 1);
-        if (cant !== ls.length) { manuales.push({ nombre: ls.map(x => x.nombre).join('/'), personaje: prod, motivo: `cantidad_${cant}_vs_${ls.length}` }); continue; }
+        if (cant !== ls.length) {
+            // Cantidad N con UN SOLO nombre = N piezas IGUALES. Es el caso normal del "llévate 2":
+            // DH15327 pidió 2 spiderman y el cliente escribió textualmente "MARCOS LAS 2", pero el
+            // pedido se iba entero a manual y nunca llegó a Drive.
+            // Se replica solo cuando el nombre es de UN niño: con "y"/"e"/coma vuelve a ser ambiguo
+            // (DH14426, cantidad 2 con "Nombre: Yandel y Roman": ¿dos iguales, o una de cada uno?),
+            // y ahí sigue yendo a manual porque eso no se adivina.
+            const unico = ls.length === 1 && !/(^|\s)[ye](\s|$)|[,&/]/i.test(String(ls[0].nombre || ''));
+            if (unico && cant > ls.length) { for (let k = ls.length; k < cant; k++) ls.push({ ...ls[0] }); }
+            else { manuales.push({ nombre: ls.map(x => x.nombre).join('/'), personaje: prod, motivo: `cantidad_${cant}_vs_${ls.length}` }); continue; }
+        }
         for (const l of ls) {
             const tpl = plantillaDePersonaje(l.personaje);
             if (!l.nombre) manuales.push({ ...l, motivo: 'sin_nombre' });

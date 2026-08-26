@@ -189,6 +189,19 @@ function verificar(pngPath, holgura) {
     if (!res || !res.ok) {
         console.error(`\nNO LOGRE que el nombre librara las lineas con ${holgura} mm en ${INTENTOS} intentos.`);
         console.error('Revisalo a mano: puede que el nombre sea larguisimo o que el acomodo del mockup no quepa.');
+        // QUIEN tiene la culpa. Sin esto el worker solo sabe "la hoja fallo" y le suma el fallo a los
+        // DOS pedidos: el 2026-08-24 la hoja spiderman DH15426-DH15257 murio por el "Adolfo⏎Ángel" de
+        // DH15257 (dos renglones no libran el corredor de la mano) y se llevo entre las patas a
+        // DH15426 ("Adán", que cabe de sobra) hasta mandarlo a manual con 3 fallos.
+        // El verificador etiqueta por GEOMETRIA sobre el PNG de revision, que sale apaisado: '1a' es
+        // la mitad IZQUIERDA y '2a' la DERECHA. En esa vista el nombre de la izquierda es el SEGUNDO
+        // argumento (las plantillas ya vienen giradas -90 para produccion), asi que el orden se
+        // invierte respecto a como se pasaron los nombres. Verificado sobre las hojas
+        // DH15343-DH15257-rex y DH15426-DH15257-spiderman del 2026-08-26.
+        const culpables = (res.lamparasConToque || [])
+            .map(l => (l === '1a' ? nombres[nombres.length - 1] : nombres[0]))
+            .filter(Boolean);
+        if (culpables.length) console.error('CULPABLES: ' + [...new Set(culpables)].join(' || '));
         process.exit(1);
     }
 
