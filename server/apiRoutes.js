@@ -9153,6 +9153,18 @@ router.get('/debug/mockup-ref', async (req, res) => {
 // completo. Los más viejos solo entran si siguen sin guía (ver el barrido de abajo).
 const ENVIOS_RECIENTES = 300;
 
+// La palomita del Purchase se puede sellar A MANO sin mandarle nada a Meta cuando el evento no
+// puede salir: contacto ORGÁNICO (sin señal de anuncio) o compra que Meta RECHAZA (típico: la
+// página que corrió el anuncio no está conectada al dataset). Se guarda cuál de los dos fue para
+// que el tooltip nunca diga que la compra sí se reportó.
+const NO_APLICA_ORGANICO = 'no_aplica_organico';
+const NO_APLICA_RECHAZADO = 'no_aplica_rechazado';
+const noAplicaMotivo = (marca) => {
+    const v = typeof marca === 'string' ? marca : '';
+    if (!v.startsWith('no_aplica')) return null;
+    return v === NO_APLICA_RECHAZADO ? 'rechazado' : 'organico';
+};
+
 router.get('/envios', async (_req, res) => {
     try {
         const [recientesSnap, datosSnap, manualSnap, reenvioSnap] = await Promise.all([
@@ -9218,10 +9230,10 @@ router.get('/envios', async (_req, res) => {
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
             // metaPurchaseSentAt: sello de cuándo se mandó el evento Purchase a Meta (null = nunca se mandó).
             const metaSent = p.metaPurchaseSentAt && p.metaPurchaseSentAt.toDate ? p.metaPurchaseSentAt.toDate().toISOString() : (p.metaPurchaseSentAt ? String(p.metaPurchaseSentAt) : null);
-            // Sellado a mano como "no aplica" (contacto orgánico): la palomita se pone en verde para
-            // que deje de salir pendiente, pero el tooltip NO debe decir que se reportó a Meta.
-            const metaNoAplica = p.metaPurchaseManual === 'no_aplica_organico';
-            if (num != null) pedidosByNum.set(String(num), { id: doc.id, estatus: p.estatus || null, metaPurchaseSentAt: metaSent, metaPurchaseNoAplica: metaNoAplica });
+            // Sellado a mano como "no aplica" (orgánico o rechazado por Meta): la palomita se pone
+            // en verde para que deje de salir pendiente, pero el tooltip NO debe decir que se reportó.
+            const metaMotivo = noAplicaMotivo(p.metaPurchaseManual);
+            if (num != null) pedidosByNum.set(String(num), { id: doc.id, estatus: p.estatus || null, metaPurchaseSentAt: metaSent, metaPurchaseNoAplica: !!metaMotivo, metaPurchaseMotivo: metaMotivo });
             if (p.ocultoDeEnvios) return null; // el operador lo quitó de Envíos (el pedido sigue intacto)
             const orderNumber = num != null ? `DH${num}` : (p.numeroPedido || doc.id);
             const de = datosByOrder.get(norm(num));
@@ -9253,7 +9265,8 @@ router.get('/envios', async (_req, res) => {
                 contactId: p.contactId || null, // para abrir la conversación en Chats
                 orderDocId: doc.id,  // id del pedido para cambiar su estatus
                 metaPurchaseSentAt: metaSent, // ISO si ya se mandó el Purchase a Meta; null si no
-                metaPurchaseNoAplica: metaNoAplica, // se marcó a mano como "no aplica" (orgánico)
+                metaPurchaseNoAplica: !!metaMotivo, // se selló a mano SIN mandar el evento
+                metaPurchaseMotivo: metaMotivo,     // 'organico' | 'rechazado' | null
                 guiaEnvio: serGuia(p.guiaEnvio),
             };
         }).filter(Boolean);
@@ -9280,6 +9293,7 @@ router.get('/envios', async (_req, res) => {
                 manualId: doc.id,    // permite borrarla desde el CRM
                 metaPurchaseSentAt: null, // se llena abajo si la línea enlaza con un pedido real
                 metaPurchaseNoAplica: false,
+                metaPurchaseMotivo: null,
                 guiaEnvio: serGuia(m.guiaEnvio),
             };
         });
@@ -9296,7 +9310,7 @@ router.get('/envios', async (_req, res) => {
         }
         manuales.forEach(m => {
             const ped = pedidosByNum.get(norm(m.orderNumber));
-            if (ped) { m.orderDocId = ped.id; m.estatus = ped.estatus; m.metaPurchaseSentAt = ped.metaPurchaseSentAt || null; m.metaPurchaseNoAplica = !!ped.metaPurchaseNoAplica; }
+            if (ped) { m.orderDocId = ped.id; m.estatus = ped.estatus; m.metaPurchaseSentAt = ped.metaPurchaseSentAt || null; m.metaPurchaseNoAplica = !!ped.metaPurchaseNoAplica; m.metaPurchaseMotivo = ped.metaPurchaseMotivo || null; }
         });
 
         // Manuales primero (recién agregadas), luego los pedidos con comprobante validado.
@@ -9474,7 +9488,8 @@ router.get('/envios/meta-purchase/:docId', async (req, res) => {
         res.json({
             success: true,
             metaPurchaseSentAt: t && t.toDate ? t.toDate().toISOString() : (t || null),
-            metaPurchaseNoAplica: p.metaPurchaseManual === 'no_aplica_organico',
+            metaPurchaseNoAplica: !!noAplicaMotivo(p.metaPurchaseManual),
+            metaPurchaseMotivo: noAplicaMotivo(p.metaPurchaseManual),
         });
     } catch (error) {
         console.error('[META EVENT] Error consultando meta-purchase:', error.message);
@@ -9490,6 +9505,9 @@ router.get('/envios/meta-purchase/:docId', async (req, res) => {
 //   - Si el contacto es ORGÁNICO (sin ctwa_clid / ad_id) responde 409 y NO sella la bandera:
 //     sendConversionEvent se salta esos casos sin lanzar, y sellar dejaría la palomita verde
 //     mintiendo. Con `force:true` se sella como "no aplica" para dejar de verlo pendiente.
+//   - Si Meta RECHAZA el evento (p. ej. la página que corrió el anuncio no está conectada al
+//     dataset) responde 409 con rechazado:true en vez de 502: reintentar no sirve de nada, así que
+//     con `force:true` se sella como "no aplica" SIN volver a llamar a Meta.
 router.post('/envios/meta-purchase', async (req, res) => {
     try {
         const docId = String((req.body && req.body.docId) || '').trim();
@@ -9517,6 +9535,18 @@ router.post('/envios/meta-purchase', async (req, res) => {
         const referral = pickAdReferralForConversion(contactData, { attributedAdId: p.attributedAdId, before: p.createdAt });
         const value = Number(p.precio) || 0;
 
+        // "Marcar sin mandar": sella la palomita en verde SIN tocar a Meta. Es para los pedidos cuyo
+        // evento NO puede salir (orgánico, o Meta ya lo rechazó): dejan de contar como pendientes
+        // sin que el tooltip mienta diciendo que la compra se reportó.
+        const marcarNoAplica = async (marca, texto) => {
+            await ref.update({
+                metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp(),
+                metaPurchaseManual: marca,
+            });
+            console.log(`[META EVENT] ${orderNumber} marcado como "no aplica" (${marca}) a mano desde Envíos.`);
+            return res.json({ success: true, noAplica: true, message: texto, metaPurchaseSentAt: new Date().toISOString(), metaPurchaseNoAplica: true, metaPurchaseMotivo: noAplicaMotivo(marca) });
+        };
+
         // ¿Meta puede atribuir esta compra? Misma lógica que usa el envío automático.
         const identity = resolveMessagingIdentity(eventInfo, referral, 'Purchase');
         if (!identity) {
@@ -9526,16 +9556,24 @@ router.post('/envios/meta-purchase', async (req, res) => {
                     message: `${orderNumber} viene de un contacto ORGÁNICO (sin señal de anuncio). Meta no puede atribuir esta compra, así que mandarla no sirve de nada.`
                 });
             }
-            await ref.update({
-                metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp(),
-                metaPurchaseManual: 'no_aplica_organico',
-            });
-            console.log(`[META EVENT] ${orderNumber} marcado como "no aplica" (orgánico) a mano desde Envíos.`);
-            return res.json({ success: true, noAplica: true, message: `${orderNumber} marcado como "no aplica" (contacto orgánico).`, metaPurchaseSentAt: new Date().toISOString() });
+            return marcarNoAplica(NO_APLICA_ORGANICO, `${orderNumber} marcado como "no aplica" (contacto orgánico).`);
+        }
+        // El pedido SÍ trae señal de anuncio, pero el operador ya vio el rechazo de Meta y pidió
+        // sellarlo de todas formas: no se reintenta el envío, solo se marca.
+        if (req.body.force === true) {
+            return marcarNoAplica(NO_APLICA_RECHAZADO, `${orderNumber} marcado como "no aplica": la compra NO se reportó a Meta.`);
         }
 
         console.log(`[META EVENT] Envío MANUAL de Purchase desde Envíos: ${orderNumber} (${docId}), contacto ${p.contactId}, valor $${value}, anuncio ${referral.source_id || '—'}`);
-        await sendConversionEvent('Purchase', eventInfo, referral, { value, currency: 'MXN' });
+        try {
+            await sendConversionEvent('Purchase', eventInfo, referral, { value, currency: 'MXN' });
+        } catch (e) {
+            // Meta rechazó el evento. No es una falla del CRM ni se arregla reintentando, así que se
+            // responde 409 (rechazado) para que Envíos ofrezca marcarlo sin mandar, igual que el orgánico.
+            const motivo = String(e.message || '').replace(/^Falló el envío del evento '[^']*' a Meta:\s*/, '');
+            console.warn(`[META EVENT] ${orderNumber}: Meta rechazó el Purchase manual — ${motivo}`);
+            return res.status(409).json({ success: false, rechazado: true, message: `Meta rechazó la compra de ${orderNumber}: ${motivo}` });
+        }
         await ref.update({
             metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp(),
             metaPurchaseManual: true, // se mandó a mano, no por el cambio a "Fabricar"

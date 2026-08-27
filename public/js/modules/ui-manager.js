@@ -1324,12 +1324,14 @@ function _fechaCortaEnvio(iso) {
     return ` (${d.toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })})`;
 }
 
-// Texto del tooltip de la palomita verde. "No aplica" (contacto orgánico) NO debe decir que se
-// reportó a Meta: la palomita se puso verde solo para que deje de salir pendiente.
-function _tipPalomitaMeta(iso, noAplica) {
-    return noAplica
-        ? 'No aplica: contacto orgánico (sin anuncio), Meta no puede atribuir esta compra'
-        : 'Compra ya reportada a Meta' + _fechaCortaEnvio(iso);
+// Texto del tooltip de la palomita verde. "No aplica" NO debe decir que se reportó a Meta: la
+// palomita se puso verde a mano solo para que deje de salir pendiente. Son dos casos distintos:
+// contacto orgánico (Meta no lo puede atribuir) o compra que Meta rechazó al mandarla.
+function _tipPalomitaMeta(iso, noAplica, motivo) {
+    if (!noAplica) return 'Compra ya reportada a Meta' + _fechaCortaEnvio(iso);
+    return motivo === 'rechazado'
+        ? 'No aplica: Meta RECHAZÓ esta compra y no se reportó — se marcó a mano para que deje de salir pendiente'
+        : 'No aplica: contacto orgánico (sin anuncio), Meta no puede atribuir esta compra';
 }
 
 // Pinta la tabla de Envíos desde window._enviosData (SIN volver a consultar) -> refrescos instantáneos.
@@ -1390,7 +1392,7 @@ function _paintEnvios() {
             //   VERDE = la compra ya se reportó a Meta · GRIS = todavía no (clic = mandarla a mano).
             // Las líneas manuales sin pedido enlazado no llevan palomita: no hay de dónde leer la bandera.
             const palomita = !e.orderDocId ? '' : (e.metaPurchaseSentAt
-                ? `<i class="fas fa-check-circle" data-meta-order="${escapeHtml(e.orderDocId)}" title="${escapeHtml(_tipPalomitaMeta(e.metaPurchaseSentAt, e.metaPurchaseNoAplica))}" style="color:#16a34a;font-size:13px;margin-left:7px"></i>`
+                ? `<i class="fas fa-check-circle" data-meta-order="${escapeHtml(e.orderDocId)}" title="${escapeHtml(_tipPalomitaMeta(e.metaPurchaseSentAt, e.metaPurchaseNoAplica, e.metaPurchaseMotivo))}" style="color:#16a34a;font-size:13px;margin-left:7px"></i>`
                 : `<i class="fas fa-check-circle envio-meta-pend" data-meta-order="${escapeHtml(e.orderDocId)}" onclick="event.stopPropagation();sendMetaPurchase('${escapeHtml(e.orderDocId)}')" title="Todavía NO se reporta la compra a Meta — clic para mandarla a mano" style="color:#cbd5e1;font-size:13px;margin-left:7px;cursor:pointer"></i>`);
             // Celda del pedido: copiable (la palomita no copia: para el clic con stopPropagation).
             const pedidoCell = `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;white-space:nowrap;font-weight:700;color:var(--color-primary)">${escapeHtml(e.orderNumber)}${palomita}</td>`;
@@ -1772,7 +1774,7 @@ async function _refrescarPalomitaMeta(orderDocId, intentos = 3) {
             const res = await fetch(`${API_BASE_URL}/api/envios/meta-purchase/${encodeURIComponent(orderDocId)}`);
             const d = await res.json();
             if (!d.success) break;
-            if (d.metaPurchaseSentAt) { _marcarPalomitaMeta(orderDocId, d.metaPurchaseSentAt, d.metaPurchaseNoAplica); return; }
+            if (d.metaPurchaseSentAt) { _marcarPalomitaMeta(orderDocId, d.metaPurchaseSentAt, d.metaPurchaseNoAplica, d.metaPurchaseMotivo); return; }
         } catch (_) { break; }
     }
 }
@@ -1793,11 +1795,13 @@ async function sendMetaPurchase(orderDocId) {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docId: orderDocId })
         });
         const d = await r.json().catch(() => ({}));
-        // Contacto orgánico: Meta no puede atribuirlo. Se ofrece marcarlo como "no aplica" para
-        // que deje de aparecer pendiente, en vez de sellar la palomita mintiendo.
-        if (r.status === 409 && d.organico) {
+        // La compra NO se puede reportar: contacto orgánico (Meta no lo puede atribuir) o Meta
+        // rechazó el evento (p. ej. la página que corrió el anuncio no está conectada al dataset).
+        // En los dos casos se ofrece marcarlo como "no aplica" para que deje de aparecer pendiente,
+        // en vez de dejar la palomita gris para siempre o sellarla mintiendo.
+        if (r.status === 409 && (d.organico || d.rechazado)) {
             const marcar = await showConfirmModal(
-                `${escapeHtml(d.message || '')}<br><span style="display:block;margin-top:8px;color:var(--color-text-light,#64748b);font-size:12.5px">¿Lo marco como <b>“no aplica”</b> para que deje de salir pendiente?</span>`,
+                `${escapeHtml(d.message || '')}<br><span style="display:block;margin-top:8px;color:var(--color-text-light,#64748b);font-size:12.5px">¿Lo marco como <b>“no aplica”</b> para que deje de salir pendiente? <b>No</b> se manda nada a Meta.</span>`,
                 { icon: 'warning', confirmText: 'Marcar no aplica' }
             );
             if (!marcar) return;
@@ -1806,7 +1810,7 @@ async function sendMetaPurchase(orderDocId) {
             });
             const d2 = await r2.json().catch(() => ({}));
             if (!r2.ok || d2.success === false) throw new Error(d2.message || ('HTTP ' + r2.status));
-            _marcarPalomitaMeta(orderDocId, d2.metaPurchaseSentAt, true);
+            _marcarPalomitaMeta(orderDocId, d2.metaPurchaseSentAt, true, d2.metaPurchaseMotivo);
             showError(d2.message || `${num} marcado como no aplica.`, 'success');
             return;
         }
@@ -1820,12 +1824,13 @@ async function sendMetaPurchase(orderDocId) {
 window.sendMetaPurchase = sendMetaPurchase;
 
 // Pone la palomita en verde EN SU LUGAR (no se repinta la tabla: repintar perdería el scroll).
-function _marcarPalomitaMeta(orderDocId, iso, noAplica = false) {
+function _marcarPalomitaMeta(orderDocId, iso, noAplica = false, motivo = null) {
     const stamp = iso || new Date().toISOString();
     (window._enviosData || []).forEach(x => {
         if (x.orderDocId !== orderDocId) return;
         x.metaPurchaseSentAt = stamp;
         x.metaPurchaseNoAplica = !!noAplica;
+        x.metaPurchaseMotivo = motivo || null;
     });
     document.querySelectorAll(`#envios-container [data-meta-order="${orderDocId}"]`).forEach(el => {
         el.classList.remove('envio-meta-pend');
@@ -1833,7 +1838,7 @@ function _marcarPalomitaMeta(orderDocId, iso, noAplica = false) {
         el.onclick = null;
         el.style.color = '#16a34a';
         el.style.cursor = 'default';
-        el.title = _tipPalomitaMeta(stamp, noAplica);
+        el.title = _tipPalomitaMeta(stamp, noAplica, motivo);
     });
 }
 
