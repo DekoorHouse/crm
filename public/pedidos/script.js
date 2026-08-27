@@ -227,19 +227,31 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function preloadImage(src) { const img = new Image(); img.src = src; }
 
+    // Timestamp de Firestore (o su forma serializada) -> Date. null si no se puede.
+    function timestampADate(timestamp) {
+        if (!timestamp) return null;
+        try {
+            if (typeof timestamp.toDate === 'function') return timestamp.toDate();
+            if (timestamp._seconds != null) return new Date(timestamp._seconds * 1000);
+        } catch (e) { /* fecha corrupta: se trata como si no hubiera */ }
+        return null;
+    }
     function formatFirebaseTimestamp(timestamp) {
-         if (!timestamp) return 'Fecha inválida';
-         try {
-             let date;
-             if (typeof timestamp.toDate === 'function') {
-                 date = timestamp.toDate();
-             } else if (timestamp._seconds != null) {
-                 date = new Date(timestamp._seconds * 1000);
-             } else {
-                 return 'Fecha inválida';
-             }
-             return date.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-         } catch (e) { return 'Fecha inválida'; }
+         const date = timestampADate(timestamp);
+         if (!date) return 'Fecha inválida';
+         return date.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+    // Fecha de registro compacta para la lista: "27 ago, 11:51". La columna mide 136px, así que
+    // no cabe la fecha completa (esa sigue en el panel de detalle). Los meses van a mano y no
+    // por toLocaleDateString: cada navegador arma el "27-ago"/"27 ago" a su manera.
+    const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    function formatFechaCorta(timestamp) {
+        const date = timestampADate(timestamp);
+        if (!date) return '';
+        const dia = `${date.getDate()} ${MESES_CORTOS[date.getMonth()]}`;
+        // De otro año la hora ya no dice nada: se cambia por el año, que sí ubica el pedido.
+        if (date.getFullYear() !== new Date().getFullYear()) return `${dia} ${date.getFullYear()}`;
+        return `${dia}, ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
     }
     function formatCurrency(value) {
         const number = Number(value);
@@ -1056,7 +1068,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Red de seguridad: pedidos registrados automáticamente por la IA. Mientras nadie
         // los revise (aiReviewStatus === 'pending') la fila queda resaltada y el badge 🤖
         // es un botón para marcarlos como revisados; ya aprobados, queda el badge informativo.
-        const numeroTd = createTd(consecutiveOrderNumber !== 'N/A' ? `DH${consecutiveOrderNumber}` : 'N/A');
+        const numeroTd = createTd('');
+        numeroTd.className = 'celda-num';
+        const numSpan = document.createElement('span');
+        numSpan.className = 'cn-num';
+        numSpan.textContent = consecutiveOrderNumber !== 'N/A' ? `DH${consecutiveOrderNumber}` : 'N/A';
+        numeroTd.appendChild(numSpan);
         if (pedido.registeredByAI === true) {
             if (pedido.aiReviewStatus === 'pending') {
                 tr.classList.add('ai-pending-review');
@@ -1077,6 +1094,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 aiTag.title = 'Pedido registrado por la IA (ya revisado).';
                 numeroTd.appendChild(aiTag);
             }
+        }
+        // Fecha de registro debajo del número (el badge de la IA ya se agregó, así que esto
+        // cae en el segundo renglón). La fecha completa sigue en el panel de detalle.
+        const fechaCortaTexto = formatFechaCorta(pedido.createdAt);
+        if (fechaCortaTexto) {
+            const fechaSpan = document.createElement('span');
+            fechaSpan.className = 'cn-fecha';
+            fechaSpan.textContent = fechaCortaTexto;
+            fechaSpan.title = `Registrado el ${fechaFormateada}`;
+            numeroTd.appendChild(fechaSpan);
         }
         tr.appendChild(numeroTd);
 
@@ -1118,7 +1145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // comentario dejaría de encontrar filas que sí coinciden.
         tr.dataset.searchText = [
             collectSearchText(tr),
-            telefonoOriginal, comentarios, fechaFormateada, vendedor, datosPromocionTexto
+            telefonoOriginal, comentarios, fechaFormateada, fechaCortaTexto, vendedor, datosPromocionTexto
         ].join(' ').toLowerCase();
 
         return tr;

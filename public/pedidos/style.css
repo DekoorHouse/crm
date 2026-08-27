@@ -665,6 +665,20 @@ body.dark-mode .modal-image-nav-btn:disabled { background-color: #4a6572; }
 #tablaPedidos th:nth-child(4), #tablaPedidos td:nth-child(4) { width: 94px; text-align: right; }
 #tablaPedidos tbody tr { height: 54px; }
 
+/* Número del pedido arriba y fecha de registro abajo, con el mismo criterio que la celda
+   de producto: dos renglones apretados para que la fila siga midiendo ~54px. El badge de la
+   IA es inline-block, así que se queda pegado al número y la fecha cae sola al renglón de abajo. */
+.celda-num { line-height: 1.3; }
+/* Su alto entraba completo en el renglón y empujaba la fila de 54px a 60px. Los márgenes
+   negativos lo sacan de esa cuenta sin encogerlo, para no achicarle el área de clic. */
+.celda-num .ai-order-badge { margin-top: -4px; margin-bottom: -4px; vertical-align: middle; }
+.celda-num .cn-fecha {
+    display: block;
+    font-size: 0.78em;
+    color: var(--color-text-light);
+    overflow: hidden; text-overflow: ellipsis;
+}
+
 /* Producto arriba, datos del pedido abajo: dos renglones recortados, nunca más.
    El line-height apretado es lo que mantiene la fila en ~54px; con el 1.6 heredado
    del body cada fila crecía a 60. */
