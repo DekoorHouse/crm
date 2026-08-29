@@ -1,0 +1,334 @@
+/* Corte — biblioteca de SVG para la cortadora láser.
+   Es una pantalla de OPERAR, no de leer: densa, con la miniatura como ancla visual y
+   todo lo importante (buscar, seleccionar, bajar) a un clic. Por eso no usa la paleta
+   verde del CRM: aquí el color solo marca lo seleccionado y lo que se puede tocar. */
+:root {
+    --azul: #1f6feb;
+    --azul-oscuro: #0a3d91;
+    --azul-suave: #ddeafe;
+    --texto: #1f2328;
+    --apagado: #57606a;
+    --borde: #d8dee4;
+    --borde-claro: #eef1f4;
+    --fondo: #f6f8fa;
+    --rojo: #cf222e;
+    --rojo-suave: #ffebe9;
+    --radio: 8px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: 'Roboto', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    color: var(--texto);
+    background: #fff;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.oculto { display: none !important; }
+.ico { width: 16px; height: 16px; flex: none; display: block; }
+button { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+
+#loading-overlay {
+    position: fixed; inset: 0; z-index: 999;
+    background: rgba(255,255,255,.95);
+    display: flex; align-items: center; justify-content: center;
+}
+.loading-logo { width: 64px; height: 64px; animation: pulso 1.5s ease-in-out infinite; }
+@keyframes pulso { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: .7; } }
+
+/* ===================== LOGIN ===================== */
+.login-container {
+    max-width: 400px; margin: 80px auto;
+    padding: 32px; border: 1px solid var(--borde); border-radius: 12px;
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,.06);
+}
+.login-container h1 {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    margin: 0 0 24px; font-size: 22px; color: var(--texto);
+}
+.login-container h1 .ico { width: 20px; height: 20px; color: var(--azul); }
+.login-container > form > div { margin-bottom: 16px; }
+.login-container label { display: block; font-weight: 500; margin-bottom: 5px; }
+.login-container input {
+    width: 100%; padding: 10px 12px; font: inherit;
+    border: 1px solid var(--borde); border-radius: var(--radio);
+}
+.login-container button {
+    width: 100%; padding: 12px; border: 0; cursor: pointer; font: inherit; font-weight: 500;
+    background: var(--azul); color: #fff; border-radius: var(--radio); font-size: 15px;
+}
+.login-container button:hover { background: var(--azul-oscuro); }
+#mensajeError { color: var(--rojo); min-height: 20px; font-size: 13px; }
+
+/* ===================== ESTRUCTURA ===================== */
+#seccionApp { display: grid; grid-template-columns: 212px minmax(0, 1fr); height: 100vh; }
+
+.rail {
+    border-right: 1px solid var(--borde); background: var(--fondo);
+    padding: 14px 12px; display: flex; flex-direction: column; gap: 14px; min-height: 0;
+}
+.rail-marca {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 16px; font-weight: 700; letter-spacing: -.01em; padding: 2px 4px;
+}
+.rail-marca .ico { color: var(--azul); }
+.btn-subir {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    border: 0; cursor: pointer; background: var(--azul); color: #fff;
+    font-size: 13.5px; font-weight: 500; padding: 10px; border-radius: var(--radio);
+}
+.btn-subir:hover { background: var(--azul-oscuro); }
+.btn-subir[disabled] { opacity: .6; cursor: progress; }
+
+.carpetas { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.carpeta {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    padding: 8px 10px; border: 0; background: none; border-radius: 7px; cursor: pointer;
+    color: var(--apagado); font-size: 13.5px;
+}
+.carpeta .n { margin-left: auto; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.carpeta:hover { background: #eaeef2; }
+.carpeta[aria-pressed="true"] { background: var(--azul-suave); color: var(--azul-oscuro); font-weight: 500; }
+
+.rail-pie { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--borde); }
+.resumen { font-size: 11.5px; color: var(--apagado); line-height: 1.6; margin-bottom: 10px; }
+.btn-salir {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    border: 1px solid var(--borde); background: #fff; border-radius: 7px;
+    padding: 7px 10px; font-size: 13px; color: var(--apagado); cursor: pointer;
+}
+.btn-salir:hover { background: #eaeef2; }
+
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+
+/* ===================== ENCABEZADO ===================== */
+.head { border-bottom: 1px solid var(--borde); padding: 12px 18px; background: #fff; }
+.head-row { display: flex; align-items: center; gap: 12px; }
+.buscador {
+    flex: 1; max-width: 520px; display: flex; align-items: center; gap: 9px;
+    background: var(--fondo); border: 1px solid var(--borde); border-radius: var(--radio);
+    padding: 8px 12px;
+}
+.buscador .ico { color: var(--apagado); }
+.buscador input { border: 0; background: none; flex: 1; font: inherit; outline: none; color: inherit; }
+.btn-limpiar { border: 0; background: none; cursor: pointer; color: var(--apagado); padding: 0; display: flex; }
+.vista { display: flex; margin-left: auto; border: 1px solid var(--borde); border-radius: var(--radio); overflow: hidden; }
+.vista button {
+    border: 0; background: #fff; padding: 7px 10px; cursor: pointer;
+    color: var(--apagado); border-left: 1px solid var(--borde);
+}
+.vista button:first-child { border-left: 0; }
+.vista button[aria-pressed="true"] { background: var(--azul-suave); color: var(--azul-oscuro); }
+.ruta { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--apagado); margin-top: 11px; }
+.ruta .ico { width: 15px; height: 15px; }
+.ruta b { color: var(--texto); font-weight: 500; }
+
+/* ===================== CONTENIDO ===================== */
+.contenido { flex: 1; overflow: auto; min-height: 0; }
+
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+thead th {
+    position: sticky; top: 0; z-index: 2; background: #fff;
+    text-align: left; font-size: 11.5px; font-weight: 500; color: var(--apagado);
+    text-transform: uppercase; letter-spacing: .05em;
+    padding: 10px 12px; border-bottom: 1px solid var(--borde); white-space: nowrap;
+}
+thead th.ordenable { cursor: pointer; user-select: none; }
+thead th.ordenable:hover { color: var(--texto); }
+thead th .flecha { font-size: 9px; margin-left: 3px; }
+/* nowrap: sin esto "338 B" y "Hoy, 12:24 p.m." se parten en dos renglones y la fila crece. */
+td { padding: 8px 12px; border-bottom: 1px solid var(--borde-claro); vertical-align: middle; white-space: nowrap; }
+tbody tr:hover td { background: #f6f9fd; }
+tbody tr[data-sel="1"] td { background: #eef5ff; }
+.col-check { width: 38px; }
+.col-check input { width: 15px; height: 15px; accent-color: var(--azul); cursor: pointer; }
+.col-acciones { width: 108px; }
+
+.celda-archivo { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.mini {
+    width: 42px; height: 42px; flex: none; border: 1px solid var(--borde); border-radius: 6px;
+    background: #fff; object-fit: contain; padding: 2px; cursor: zoom-in;
+}
+.mini-vacia {
+    width: 42px; height: 42px; flex: none; border: 1px solid var(--borde); border-radius: 6px;
+    display: grid; place-items: center; color: #8c959f; font-size: 9px; font-weight: 500;
+    background: var(--fondo); letter-spacing: .04em;
+}
+/* max-width para que el nombre largo se corte con "…" en vez de estirar la tabla a lo
+   ancho (el nombre completo queda en el title y en la vista previa). */
+.nombre-archivo { min-width: 0; max-width: 360px; }
+.nombre-archivo .n {
+    font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nombre-archivo .sub { font-size: 11.5px; color: var(--apagado); }
+.dh {
+    font-family: 'Roboto Mono', monospace; font-size: 12px;
+    color: var(--azul-oscuro); background: var(--azul-suave); border-radius: 4px; padding: 2px 6px;
+}
+.dh.vacio { color: var(--apagado); background: var(--fondo); }
+.acciones { display: flex; gap: 4px; justify-content: flex-end; opacity: 0; }
+tr:hover .acciones, tr:focus-within .acciones { opacity: 1; }
+.acciones button {
+    border: 1px solid var(--borde); background: #fff; border-radius: 6px;
+    width: 30px; height: 30px; cursor: pointer; color: var(--apagado); display: grid; place-items: center;
+}
+.acciones button:hover { background: var(--azul-suave); color: var(--azul-oscuro); border-color: #a6c8f5; }
+.acciones button.peligro:hover { background: var(--rojo-suave); color: var(--rojo); border-color: #ffc1bc; }
+.acciones .ico { width: 14px; height: 14px; }
+
+/* Cuadrícula */
+.cuadricula { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; padding: 18px; }
+.tarjeta {
+    border: 1px solid var(--borde); border-radius: 10px; overflow: hidden;
+    display: flex; flex-direction: column; background: #fff;
+}
+.tarjeta:hover { border-color: #a6c8f5; box-shadow: 0 6px 16px -10px rgba(31,35,40,.5); }
+.tarjeta[data-sel="1"] { border-color: var(--azul); box-shadow: 0 0 0 1px var(--azul); }
+.tarjeta-mini { aspect-ratio: 1; padding: 10px; border-bottom: 1px solid var(--borde); position: relative; cursor: zoom-in; }
+.tarjeta-mini img { width: 100%; height: 100%; object-fit: contain; }
+.tarjeta-mini .mini-vacia { width: 100%; height: 100%; border: 0; font-size: 12px; }
+.tarjeta-check { position: absolute; top: 8px; left: 8px; }
+.tarjeta-check input { width: 16px; height: 16px; accent-color: var(--azul); cursor: pointer; }
+.tarjeta-cuerpo { padding: 10px 11px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.tarjeta-cuerpo .n {
+    font-size: 12.5px; line-height: 1.35; font-weight: 500;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tarjeta-meta { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--apagado); margin-top: auto; }
+.tarjeta-pie { display: flex; gap: 6px; padding: 8px 11px; border-top: 1px solid var(--borde-claro); }
+.tarjeta-pie button {
+    flex: 1; border: 1px solid var(--borde); background: #fff; border-radius: 6px; padding: 6px;
+    font-size: 12px; color: var(--apagado); cursor: pointer; display: inline-flex;
+    align-items: center; justify-content: center; gap: 6px;
+}
+.tarjeta-pie button:hover { background: var(--azul-suave); color: var(--azul-oscuro); }
+.tarjeta-pie .ico { width: 13px; height: 13px; }
+
+/* Estados */
+.vacio-total { padding: 70px 24px; text-align: center; color: var(--apagado); }
+.vacio-total b { display: block; font-size: 16px; color: var(--texto); margin-bottom: 6px; font-weight: 500; }
+.vacio-total button {
+    margin-top: 16px; border: 0; background: var(--azul); color: #fff; cursor: pointer;
+    padding: 10px 18px; border-radius: var(--radio); font: inherit; font-weight: 500;
+}
+.cargando { padding: 40px; text-align: center; color: var(--apagado); }
+
+/* ===================== SELECCIÓN ===================== */
+.barra-seleccion {
+    position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px; z-index: 5;
+    background: #1f2328; color: #fff; border-radius: 10px; padding: 10px 14px;
+    box-shadow: 0 10px 30px -12px rgba(0,0,0,.7); font-size: 13px; white-space: nowrap;
+}
+/* Los tres botones de acción se usan en dos lugares (la barra de selección y el pie del
+   visor), así que la forma va en las clases y no en ".barra-seleccion button". */
+.bs-primario, .bs-borrar, .bs-ghost {
+    border: 0; border-radius: 7px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 500;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+}
+.bs-primario { background: #fff; color: #1f2328; }
+.bs-primario:hover { background: #e6eaef; }
+.bs-borrar { background: transparent; color: #ff9c95; box-shadow: inset 0 0 0 1px #57606a; }
+.bs-borrar:hover { background: var(--rojo); color: #fff; box-shadow: none; }
+.bs-ghost { background: transparent; color: #c9d1d9; padding: 7px 4px; }
+.bs-ghost:hover { color: #fff; }
+.barra-seleccion .ico { width: 14px; height: 14px; }
+
+/* ===================== ARRASTRAR Y SOLTAR ===================== */
+.zona-soltar {
+    position: fixed; inset: 0; z-index: 60; display: none;
+    background: rgba(31,111,235,.10); backdrop-filter: blur(2px);
+    align-items: center; justify-content: center;
+}
+.zona-soltar.activa { display: flex; }
+.zs-caja {
+    background: #fff; border: 2px dashed var(--azul); border-radius: 14px;
+    padding: 40px 56px; text-align: center; color: var(--azul-oscuro);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.zs-caja .ico { width: 30px; height: 30px; }
+.zs-caja b { font-size: 18px; }
+.zs-caja span { font-size: 13px; color: var(--apagado); }
+
+/* ===================== VISOR ===================== */
+.visor {
+    position: fixed; inset: 0; z-index: 70; background: rgba(31,35,40,.72);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.visor-caja {
+    background: #fff; border-radius: 12px; width: min(860px, 100%); max-height: 100%;
+    display: flex; flex-direction: column; overflow: hidden;
+}
+.visor-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--borde); }
+.visor-head h2 { margin: 0 0 4px; font-size: 16px; font-weight: 500; word-break: break-word; }
+.visor-datos { font-size: 12.5px; color: var(--apagado); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.btn-icono { border: 0; background: none; cursor: pointer; color: var(--apagado); padding: 4px; margin-left: auto; }
+.btn-icono:hover { color: var(--texto); }
+.visor-lienzo {
+    flex: 1; min-height: 0; padding: 22px; background:
+        linear-gradient(45deg, #f2f4f7 25%, transparent 25%, transparent 75%, #f2f4f7 75%),
+        linear-gradient(45deg, #f2f4f7 25%, #fff 25%, #fff 75%, #f2f4f7 75%);
+    background-size: 18px 18px; background-position: 0 0, 9px 9px;
+    display: flex; align-items: center; justify-content: center;
+}
+.visor-lienzo img { max-width: 100%; max-height: 58vh; object-fit: contain; background: #fff; }
+.visor-pie { display: flex; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--borde); }
+.visor-pie .bs-primario { background: var(--azul); color: #fff; }
+.visor-pie .bs-primario:hover { background: var(--azul-oscuro); }
+.visor-pie .bs-borrar { color: var(--rojo); box-shadow: inset 0 0 0 1px var(--borde); }
+
+/* ===================== AVISOS ===================== */
+.aviso {
+    position: fixed; bottom: 20px; right: 20px; z-index: 80; max-width: 380px;
+    background: #1f2328; color: #fff; border-radius: 10px; padding: 12px 16px; font-size: 13.5px;
+    box-shadow: 0 10px 30px -12px rgba(0,0,0,.7); line-height: 1.5;
+}
+.aviso.error { background: var(--rojo); }
+.aviso b { font-weight: 500; }
+
+@media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* Al angostarse se van primero las columnas que menos ayudan a decidir. La miniatura, el
+   nombre y el pedido son lo último que se toca. */
+@media (max-width: 1040px) {
+    .celda-oculta-movil { display: none; }
+    .nombre-archivo { max-width: min(360px, 34vw); }
+}
+@media (max-width: 880px) {
+    .col-peso { display: none; }
+}
+
+/* En tablet (la que está junto a la máquina) el rail estorba: se vuelve una fila que se
+   desliza. Se van las columnas que no ayudan a decidir —peso y quién subió— pero los
+   botones de descargar y ver se QUEDAN: en la tablet son la razón de entrar. */
+@media (max-width: 760px) {
+    #seccionApp { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    .rail {
+        flex-direction: row; align-items: center; gap: 10px; padding: 10px 12px;
+        overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--borde);
+    }
+    .rail-marca, .resumen { display: none; }
+    .btn-subir { flex: none; }
+    .carpetas { flex-direction: row; gap: 6px; overflow: visible; }
+    .carpeta { white-space: nowrap; width: auto; border: 1px solid var(--borde); background: #fff; }
+    .carpeta .n { margin-left: 6px; }
+    .rail-pie { margin: 0; padding: 0; border: 0; flex: none; }
+    .btn-salir { white-space: nowrap; }
+    .col-peso, .celda-oculta-movil { display: none; }
+    .nombre-archivo { max-width: 38vw; }
+    .acciones { opacity: 1; }
+    .acciones button { width: 34px; height: 34px; }
+    /* Borrar con el dedo, en una fila de 34 px y sin hover que avise, es un accidente
+       esperando: en pantalla chica se borra desde la vista previa. */
+    .acciones .peligro { display: none; }
+    .col-acciones { width: 82px; }
+    td, thead th { padding: 8px; }
+    .barra-seleccion { left: 12px; right: 12px; transform: none; justify-content: center; flex-wrap: wrap; }
+}

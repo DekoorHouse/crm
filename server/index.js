@@ -15,6 +15,7 @@ const carritosRouter = require('./carritos/carritosRoutes');
 const pagadosRouter = require('./pagados/pagadosRoutes');
 const leadsRouter = require('./leads/leadReactivationRoutes');
 const galeriaRouter = require('./galeria/galeriaRoutes');
+const corteRouter = require('./corte/corteRoutes');
 const repartosMtyRouter = require('./repartos/repartosRoutes');
 const repartosDgoRouter = require('./repartos/dgoRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
@@ -85,6 +86,7 @@ app.use('/api/leads', leadsRouter);
 app.use('/api/order-followup', orderFollowupRouter);
 app.use('/api/reminders', scheduledReminderRouter);
 app.use('/api/galeria', galeriaRouter);
+app.use('/api/corte', corteRouter);
 app.use('/api/repartos-mty', repartosMtyRouter);
 app.use('/api/repartos-dgo', repartosDgoRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
@@ -418,6 +420,10 @@ app.get('/checador/mi-perfil', (req, res) => {
 
 app.get('/laser', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'laser', 'index.html'));
+});
+
+app.get('/corte', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'corte', 'index.html'));
 });
 
 app.get('/envios', (req, res) => {
