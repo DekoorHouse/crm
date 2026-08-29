@@ -2799,6 +2799,72 @@ function setCachedDeptImage(url, prepared) {
     deptImageCache.set(url, { prepared, at: Date.now() });
 }
 
+// CATÁLOGO DE MODELOS DISPONIBLES.
+// Leonel tiene que distinguir dos cosas que se cobran distinto: pedir un modelo que YA
+// tenemos hecho —aunque sea el de OTRO anuncio: llegó por el perrito y quiere el gatito—
+// es pedido ESTÁNDAR de $750 sin anticipo; pedir uno que NO tenemos sí es diseño desde
+// cero y lleva el anticipo de $200. Sin la lista no puede distinguirlos y termina
+// cobrando anticipo por un cambio de personaje normal, que mata la venta.
+//
+// La lista NO se escribe a mano: se deriva de los nombres de las RI (ad_responses), que
+// es justo lo que ya se da de alta por cada modelo nuevo. Así lanzar un modelo son dos
+// pasos de CRM y CERO ediciones al prompt. Solo cuentan las RI con al menos un Ad ID (las
+// de cero son borradores y pruebas). Se sesga a INCLUIR: un modelo de más en la lista no
+// hace daño (nadie va a pedir una lámpara de "Mrts"), uno de menos sí cobra un anticipo
+// indebido. Escotilla manual en crm_settings/ai_model_catalog: { excluir: [], extra: [] }.
+const MODELOS_CACHE_TTL_MS = 30 * 60 * 1000;
+let _modelosCache = null; // { lista: string[], at: number }
+
+const PALABRAS_NO_MODELO = new Set(['nacional', 'monterrey', 'mty', 'durango', 'saltillo', 'cdmx', 'queretaro', 'local', 'ventas', 'interaccion', 'retargeting', 'tst', 'test', 'crm', 'lampara', 'lamparas', 'lamp', 'api', 'old', 'pro', 'gemini', 'up', 'ja', 'ad', 'the']);
+const sinAcentos = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+// Un modelo es básicamente UNA palabra (unicornio, dinosaurio, nube). Tomando el primer
+// token útil, "Nacional Unicornios", "Unicornio Tierno" y "Unicornio Feroz" colapsan a uno.
+function modeloDeNombreRI(raw) {
+    const tokens = String(raw || '').replace(/\/\//g, ' ').replace(/[_\-–—:.]+/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
+    for (const tok of tokens) {
+        const limpio = tok.replace(/[^\p{L}\p{N}]/gu, '');
+        if (!limpio || /\d/.test(limpio) || limpio.length < 4) continue; // fechas, folios, "m7"
+        if (PALABRAS_NO_MODELO.has(sinAcentos(limpio).toLowerCase())) continue;
+        return limpio;
+    }
+    return '';
+}
+
+async function getModelosDisponibles() {
+    if (_modelosCache && (Date.now() - _modelosCache.at) <= MODELOS_CACHE_TTL_MS) return _modelosCache.lista;
+    try {
+        const [riSnap, cfgSnap] = await Promise.all([
+            db.collection('ad_responses').get(),
+            db.collection('crm_settings').doc('ai_model_catalog').get()
+        ]);
+        const cfg = cfgSnap.exists ? (cfgSnap.data() || {}) : {};
+        const excluir = new Set((Array.isArray(cfg.excluir) ? cfg.excluir : []).map(s => sinAcentos(s).toLowerCase()));
+        const vistos = new Map(); // clave sin acentos ni plural -> nombre a mostrar
+        const agrega = (nombre) => {
+            if (!nombre) return;
+            const clave = sinAcentos(nombre).toLowerCase().replace(/(es|s)$/, '');
+            if (!clave || excluir.has(clave) || excluir.has(sinAcentos(nombre).toLowerCase())) return;
+            const prev = vistos.get(clave);
+            if (!prev || nombre.length < prev.length) vistos.set(clave, nombre);
+        };
+        for (const doc of riSnap.docs) {
+            const d = doc.data();
+            if (!Array.isArray(d.adIds) || d.adIds.length === 0) continue;
+            agrega(modeloDeNombreRI(d.adName));
+        }
+        (Array.isArray(cfg.extra) ? cfg.extra : []).forEach(s => agrega(String(s || '').trim()));
+        const lista = [...vistos.values()].sort((a, b) => a.localeCompare(b, 'es'));
+        _modelosCache = { lista, at: Date.now() };
+        console.log(`[AI] Catálogo de modelos derivado de las RI: ${lista.length} modelos.`);
+        return lista;
+    } catch (e) {
+        // Sin lista es mejor omitir la nota que darle una incompleta (cobraría anticipos de más).
+        console.warn('[AI] No se pudo armar el catálogo de modelos:', e.message);
+        return _modelosCache ? _modelosCache.lista : [];
+    }
+}
+
 // Ventana de contexto de la IA: cuántos mensajes del historial ve y qué tan viejos
 // pueden ser los archivos que se le re-adjuntan. Mandar el historial completo hacía
 // que el modelo "re-resumiera" información ya dada; adjuntar multimedia vieja hacía
@@ -3176,6 +3242,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         let departmentReferenceImages = []; // Imágenes estáticas del departamento como contexto
         let departmentNote = "";              // Le dice a la IA de QUÉ modelo/línea es este cliente
         let riNote = "";                      // Le dice CUÁL RI recibió (el modelo exacto, no solo la línea)
+        let catalogoNote = "";                // Le dice QUÉ modelos ya existen (para no cobrar anticipo de más)
 
         // ¿El contacto ya cerró su venta y está en etapa 2 (post-venta)?
         const isPostVenta = postSaleStageActive && contactData.aiStage === 'postventa';
@@ -3279,6 +3346,17 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     console.log(`[AI] Contacto ${contactId} recibió la RI "${riAdName}" (señal de modelo para el prompt).`);
                 }
             } catch (e) { console.warn('[AI] No se pudo resolver la RI del contacto:', e.message); }
+
+            // QUÉ MODELOS TENEMOS. Sin esto, un cliente que llegó por el anuncio del perrito y
+            // pide el gatito (que también es nuestro) cae en "el cliente pide algo distinto" de
+            // las reglas de anticipo y Leonel le cobra los $200 de personalización especial.
+            // Cambiar de personaje entre modelos que ya existen es un pedido estándar.
+            try {
+                const modelos = await getModelosDisponibles();
+                if (modelos.length) {
+                    catalogoNote = `\n\n**Dato INTERNO (no es un mensaje para el cliente):** estos son los modelos de lámpara que YA tenemos hechos y podemos entregar sin diseñar nada desde cero: ${modelos.join(', ')}.\nPara qué sirve: si el cliente pide CUALQUIERA de estos —aunque NO sea el modelo de su anuncio, por ejemplo llegó por uno y te pide otro— es un pedido ESTÁNDAR y normal: cotízalo con las reglas de arriba y NUNCA le pidas anticipo por cambiar de modelo, porque cambiar de personaje NO es una personalización especial. El anticipo de $200 es por el TIPO de trabajo (una fotografía grabada, un logotipo, una frase muy larga, cambiar la cantidad de corazones) o por un personaje que NO esté en esta lista, nunca por cuál personaje eligió.\nEsta lista es SOLO para ti: NUNCA se la enumeres al cliente, no le ofrezcas modelos que no pidió y no le hables de "catálogo". Si te pregunta si hacemos algo en particular, respóndele únicamente por eso que preguntó.`;
+                }
+            } catch (e) { console.warn('[AI] No se pudo agregar el catálogo de modelos:', e.message); }
         }
 
         // --- Contenido dinámico (cambia en cada petición) ---
@@ -3884,7 +3962,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
         } catch (e) { console.warn('[AI] aviso pago-sin-comprobante falló (se continúa):', e.message); }
 
-        const finalUserText = `${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
