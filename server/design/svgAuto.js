@@ -193,9 +193,32 @@ function disenoYaHecho(o) {
         // Sin reenvío/corrección la columna del tablero cuenta aunque no traiga fecha (conservador,
         // protege lo fabricado a mano). Con uno de los dos, solo si se movió DESPUÉS.
         const bts = tsMs(o.disenoBoardColAt);
-        if (!re || (bts && bts > re)) return true;
+        if (!re || (bts && bts > re)) {
+            // ...PERO en las lámparas de PERSONAJE la columna no prueba nada (Chris, 2026-08-31).
+            // Medido sobre 45 días: de 483 tarjetas en "Terminado" SIN corte, solo 11 traían
+            // ✓Diseñado y 13 estaban entregadas — y 62 eran pedidos CANCELADOS. Nadie diseña un
+            // pedido cancelado: la columna significa "ya lo atendí, fuera de mi tablero", no "la
+            // pieza está hecha". Las tarjetas se mueven en tanda de 9am a 3pm, y de las que sí
+            // tienen corte, 44 de 151 se movieron ANTES de cortarlo. Como candado dejaba pedidos
+            // pagados sin cortar y sin que nadie los viera; se fueron encontrando de uno en uno
+            // (DH15607, DH15496, DH15427, DH15343, DH15257, DH15426, DH15327...).
+            // Se acota A PERSONAJE a propósito: lo que el diseñador hace A MANO son los ESPECIALES,
+            // y ahí la marca sigue valiendo igual que antes — que es lo que protege del incidente
+            // del 2026-07-30 (4 piezas ya cortadas a mano que se re-cortaron y se subieron
+            // duplicadas). Riesgo residual: una lámpara de plantilla hecha a mano SIN marcar
+            // ✓Diseñado se puede re-cortar; la señal correcta para eso es ✓Diseñado (o el registro
+            // de la láser, cuando el K40 empiece a reportar), no una columna del kanban.
+            if (!esPersonajeDePlantilla(o)) return true;
+        }
     }
     return false;
+}
+
+// ¿Todo lo cortable de este pedido son lámparas de personaje con plantilla? Se usa solo para decidir
+// si la columna del tablero cuenta como "ya diseñado" (ver disenoYaHecho). Un pedido MIXTO también
+// entra: su parte especial la sigue haciendo una persona y el corte parcial no la toca.
+function esPersonajeDePlantilla(o) {
+    try { return !!personajeEligibility(o, []).eligible; } catch (_) { return false; }
 }
 
 function autoBlocked(o) {
