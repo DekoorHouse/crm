@@ -353,8 +353,12 @@ app.get('/pedidos-new/login', (req, res) => res.redirect('/login'));
 app.get('/pedidos', (req, res) => {
     res.sendFile(path.join(nextjsDir, 'pedidos.html'));
 });
+app.get('/desglose', (req, res) => {
+    res.sendFile(path.join(nextjsDir, 'desglose.html'));
+});
+// Ruta anterior del desglose: se conserva como redirect para links viejos.
 app.get('/pedidos/desglose', (req, res) => {
-    res.sendFile(path.join(nextjsDir, 'pedidos', 'desglose.html'));
+    res.redirect(301, '/desglose');
 });
 app.get('/login', (req, res) => {
     res.sendFile(path.join(nextjsDir, 'login.html'));

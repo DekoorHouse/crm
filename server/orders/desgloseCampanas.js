@@ -1,5 +1,5 @@
 /**
- * Agregación de pedidos por CAMPAÑA de Meta Ads para /pedidos/desglose.
+ * Agregación de pedidos por CAMPAÑA de Meta Ads para /desglose.
  *
  * Lógica pura (no toca Firestore ni la Graph API) para poder probarla: recibe
  * los `data()` de los pedidos ya filtrados y el mapa adId -> campaña ya resuelto,

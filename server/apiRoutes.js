@@ -1310,7 +1310,7 @@ router.get('/orders/count', async (req, res) => {
 });
 
 // --- Endpoint GET /api/orders/desglose (Piezas por producto o por campaña dentro del filtro) ---
-// Alimenta /pedidos/desglose. Agrega del lado del servidor porque el front tendría
+// Alimenta /desglose. Agrega del lado del servidor porque el front tendría
 // que paginar de 50 en 50 para llegar al mismo total, y con "este mes" eso son
 // decenas de peticiones para un puñado de números.
 //

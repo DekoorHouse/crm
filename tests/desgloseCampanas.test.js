@@ -1,5 +1,5 @@
 /**
- * Pruebas del desglose por campaña de /pedidos/desglose
+ * Pruebas del desglose por campaña de /desglose
  * (server/orders/desgloseCampanas.js). Lógica pura: no toca Firestore ni Meta.
  */
 const { agregarPorCampana } = require('../server/orders/desgloseCampanas');

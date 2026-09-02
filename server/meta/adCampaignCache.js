@@ -3,7 +3,7 @@
  *
  * El desglose por campaña necesita traducir el `attributedAdId` de cada pedido a
  * su campaña, y eso es una llamada a la Graph API. Sin caché, cada vez que
- * alguien abre /pedidos/desglose y cambia de filtro se le vuelve a pegar a Meta
+ * alguien abre /desglose y cambia de filtro se le vuelve a pegar a Meta
  * por los mismos 20-60 anuncios.
  *
  * Un anuncio nunca cambia de campaña, así que el positivo se puede guardar

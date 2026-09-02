@@ -1,5 +1,5 @@
 /**
- * Pruebas del desglose por producto de /pedidos/desglose
+ * Pruebas del desglose por producto de /desglose
  * (server/orders/desgloseProductos.js). Lógica pura: no toca Firestore.
  */
 const { agregarPorProducto, folioDelPedido, contactoDelPedido } = require('../server/orders/desgloseProductos');

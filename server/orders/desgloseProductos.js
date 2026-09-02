@@ -1,5 +1,5 @@
 /**
- * Agregación de piezas por producto para /pedidos/desglose.
+ * Agregación de piezas por producto para /desglose.
  *
  * Lógica pura (no toca Firestore) para poder probarla: recibe los `data()` de los
  * pedidos ya filtrados y devuelve el conteo por producto.

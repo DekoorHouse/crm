@@ -65,7 +65,7 @@ export default function Navbar({ viewMode, onViewModeChange, onNewOrder, onExpor
 
         {/* Desglose por producto */}
         <Link
-          href="/pedidos/desglose"
+          href="/desglose"
           className="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-all"
           title="Desglose por producto"
         >
