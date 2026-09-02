@@ -582,16 +582,20 @@ async function findPersonajeLamps() {
         if ((Number(o.svgCortePersonajeFails) || 0) >= 3) continue;
         const el = personajeEligibility(o, previews);
         if (!el.eligible) continue;
-        // Pedido MIXTO: se corta lo que la skill sabe y queda pendiente SOLO lo que no (Chris, 2026-08-07).
-        // EXCEPCION: si ademas pidio VIDEO, NO se corta a medias. En un pedido 'Corregir' por video,
-        // reasonsForOrderData (designPending.js:142) hace `return []` ANTES de mirar designForce, asi
-        // que el pendiente de la lampara especial no aparece en NINGUNA lista y se pierde para siempre.
-        // Mientras ese hueco siga ahi, un video mixto se trata como todo-o-nada.
-        if (!el.completo && video) {
-            log(`  ~ ${dhOf(o)} es mixto Y pidio video -> a manual entero (el pendiente del especial no se veria)`);
+        // Pedido MIXTO (una lámpara especial + una de plantilla): TODO a manual (Chris, 2026-09-02).
+        // Del 2026-08-07 al 2026-09-02 el worker cortaba la mitad de plantilla y dejaba solo el
+        // especial a mano. En la práctica el diseñador, al hacer el especial, hace LAS DOS lámparas
+        // del cliente en la misma hoja —es lo natural: mismo pedido, mismo paquete— y la mitad que
+        // cortaba el worker salía DOBLE. Cinco de los duplicados del 31/08 fueron justo esto
+        // (DH15593 Michelle+Daphne, DH15650 Ricardo+Cuchu, DH15622 Alex+Valentina, DH15844 Ángel
+        // planetas+Ángel Spiderman, DH14743 Nathalie+Papoi). No hubo error de nadie: eran dos reglas
+        // correctas chocando. Se pierde algo de automatización; se elimina esa clase entera de dobles.
+        // El CRM ya lo trataba así (isPersonajeAutoWaiting exige `completo`), así que el mixto SIEMPRE
+        // estuvo a la vista del diseñador en Pendientes: aquí solo se deja de competir con él.
+        if (!el.completo) {
+            log(`  ~ ${dhOf(o)} es mixto (${el.manuales.map(m => m.motivo).join(',')}) -> entero a manual, lo hace el diseñador con el especial`);
             continue;
         }
-        if (!el.completo) log(`  ~ ${dhOf(o)} es mixto: se cortan ${el.lamparas.length} lámpara(s) y queda(n) ${el.manuales.length} a mano (${el.manuales.map(m => m.motivo).join(',')})`);
         const paidMs = ms(o.comprobanteValidadoAt) || ms(o.confirmedAt) || ms(o.createdAt);
         el.lamparas.forEach((l, i) => lamps.push({ o, video, completo: el.completo, pendientes: el.manuales.length,
             tpl: l.tpl, nombre: l.nombre, delMockup: l.delMockup, paidMs, i, total: el.lamparas.length }));
@@ -784,6 +788,9 @@ async function processPersonajeSheets(sheets) {
                 upd.svgCorteSubidaDudosaMotivo = String(dudosa.motivo).slice(0, 300);
             }
             if (mixto) {
+                // Desde el 2026-09-02 los mixtos ya no entran a la cola (ver findPersonajeLamps), así
+                // que esta rama no debería ejecutarse. Se conserva por si algún camino la alcanza:
+                // la marca parcial sigue siendo la única que no da por diseñado el pedido ENTERO.
                 // CORTE PARCIAL. NO se escribe svgCorteAt: esa es la marca global de "este pedido ya
                 // esta diseñado" y desarmaria faltaCorte / autoBlocked / disenoYaHecho para el pedido
                 // ENTERO, dejando sin red de seguridad a la lampara que falta. Se sella en su propio

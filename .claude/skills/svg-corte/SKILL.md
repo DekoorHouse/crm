@@ -296,7 +296,10 @@ El worker corta y sube las lamparas de personaje solo, igual que el infinito. Ki
 - El worker usa **`hoja-personaje.js`, no el .vbs pelon**: solo ese driver garantiza que el nombre no
   toque las lineas. Corre con `--close` para no dejar documentos abiertos acumulandose en Corel.
 - **Solo entran pedidos donde TODAS sus lamparas son cortables** (`completo`). Si una lleva foto
-  grabada o un personaje sin plantilla, el pedido ENTERO se va a manual. Asi nunca queda a medias ni
+  grabada o un personaje sin plantilla, el pedido ENTERO se va a manual. **NO reintroducir el corte
+  parcial** (existio del 2026-08-07 al 2026-09-02 y se quito por dobles): el diseñador, al hacer el
+  especial, hace las DOS lamparas del cliente en la misma hoja, y la mitad que cortaba el worker
+  salia repetida (DH15593, DH15650, DH15622, DH15844, DH14743 el 31/08). Asi nunca queda a medias ni
   hace falta un estado intermedio de "medio diseñado".
 - Emparejado: 2 lamparas por hoja **del mismo modelo**; una suelta espera pareja hasta
   `SINGLE_AFTER_HOURS` (12 h) y luego sale en media hoja, igual que el infinito.
