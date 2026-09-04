@@ -296,8 +296,11 @@ function lamparasDeTexto(datos, productoFallback) {
     // El corte solo vale al INICIO de un campo (principio, "|", salto o el punto que separa lámparas
     // apiladas). Con un lookahead pelón, un "nombre:" dentro de un valor libre partía el texto e
     // inventaba una lámpara fantasma que sí se habría cortado.
-    const partes = s.split(/(?<=[|\n.;]|^)\s*(?=nombre\s*:)/i).filter(x => /nombre\s*:/i.test(x));
-    const limpia = v => String(v || '').split(/\b(?:personaje|especial)\s*:/i)[0].trim().replace(/[.,;]+$/, '').trim();
+    // Tambien corta tras ":" — la IA a veces anida el producto DENTRO del item: "Nombre: Iker |
+    // Personaje: Spiderman Lámpara infantil Spiderman: Nombre: Julián | ..." (DH15900, 2026-09-02).
+    // Sin ese corte solo se veia a Iker, cantidad=2 lo duplico y el worker corto DOS Iker y ningun Julián.
+    const partes = s.split(/(?<=[|\n.;:]|^)\s*(?=nombre\s*:)/i).filter(x => /nombre\s*:/i.test(x));
+    const limpia = v => String(v || '').split(/\b(?:personaje|especial)\s*:/i)[0].trim().replace(/[.,;:]+$/, '').trim();
     return partes.map(p => {
         const mn = /nombre\s*:\s*([^|\n]+)/i.exec(p);
         const mp = /personaje\s*:\s*([^|\n]+)/i.exec(p);
@@ -374,7 +377,11 @@ function personajeEligibility(o, previews) {
             // Se replica solo cuando el nombre es de UN niño: con "y"/"e"/coma vuelve a ser ambiguo
             // (DH14426, cantidad 2 con "Nombre: Yandel y Roman": ¿dos iguales, o una de cada uno?),
             // y ahí sigue yendo a manual porque eso no se adivina.
-            const unico = ls.length === 1 && !/(^|\s)[ye](\s|$)|[,&/]/i.test(String(ls[0].nombre || ''));
+            // ...y solo si el texto CRUDO trae un solo "Nombre:". Si trae dos y el parser vio uno, es un
+            // fallo de lectura, no dos piezas iguales: DH15900 ("Nombre: Iker | ... Spiderman: Nombre:
+            // Julián") salio como Iker+Iker y Julián nunca se corto. Ante la duda, a manual.
+            const nombresCrudos = (String(it.datosProducto || '').match(/nombre\s*:/gi) || []).length;
+            const unico = ls.length === 1 && nombresCrudos <= 1 && !/(^|\s)[ye](\s|$)|[,&/]/i.test(String(ls[0].nombre || ''));
             if (unico && cant > ls.length) { for (let k = ls.length; k < cant; k++) ls.push({ ...ls[0] }); }
             else { manuales.push({ nombre: ls.map(x => x.nombre).join('/'), personaje: prod, motivo: `cantidad_${cant}_vs_${ls.length}` }); continue; }
         }

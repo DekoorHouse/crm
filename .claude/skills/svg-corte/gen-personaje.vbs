@@ -354,7 +354,34 @@ Function NormalizarNombre(txt)
             upNext = False
         End If
     Next
-    NormalizarNombre = out
+    NormalizarNombre = BajaParticulas(out)
+End Function
+
+' Las particulas del español ("de", "del", "la", "y"...) van en MINUSCULA cuando no abren el nombre:
+' "Jose de Jesús Jr", no "Jose De Jesús Jr". Caso DH15254 (2026-09-04): el mockup que aprobo la
+' cliente decia "Jose de" y la hoja salio "Jose De". EL MOCKUP MANDA. Misma lista que nameLayout.js.
+Function BajaParticulas(txt)
+    Dim lineas, li, partes, i, w, out, primera, linea
+    ' Los renglones ya vienen separados por vbCr cuando se llama (GrabarNombre convierte antes).
+    lineas = Split(txt, vbCr)
+    out = ""
+    For li = 0 To UBound(lineas)
+        partes = Split(lineas(li), " ")
+        primera = True
+        linea = ""
+        For i = 0 To UBound(partes)
+            w = partes(i)
+            If w <> "" Then
+                If Not primera And InStr(1, " de del la las los y e da di do dos das van von ", " " & LCase(w) & " ") > 0 Then w = LCase(w)
+                primera = False
+            End If
+            If i > 0 Then linea = linea & " "
+            linea = linea & w
+        Next
+        If li > 0 Then out = out & vbCr
+        out = out & linea
+    Next
+    BajaParticulas = out
 End Function
 
 Function Pad2(n)

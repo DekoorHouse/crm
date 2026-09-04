@@ -276,7 +276,42 @@ Function NormalizarNombre(txt)
             upNext = False
         End If
     Next
-    NormalizarNombre = out
+    NormalizarNombre = BajaParticulas(out)
+End Function
+
+' Las particulas del español ("de", "del", "la", "y"...) van en MINUSCULA cuando no abren el nombre
+' ni el renglon: "Jose de Jesús Jr", no "Jose De Jesús Jr" (caso DH15254, 2026-09-04: el mockup
+' aprobado decia "Jose de" y la hoja salio "Jose De"; EL MOCKUP MANDA). Misma lista que
+' nameLayout.js y gen-personaje.vbs. Los renglones se separan por vbCr, vbLf o el token literal \n.
+Function BajaParticulas(txt)
+    Dim lineas, li, partes, i, w, out, primera, linea, tmp
+    tmp = Replace(Replace(Replace(txt, vbCrLf, vbCr), vbLf, vbCr), "\n", vbCr & "\n" & vbCr)
+    lineas = Split(tmp, vbCr)
+    out = ""
+    For li = 0 To UBound(lineas)
+        If lineas(li) = "\n" Then
+            out = out & "\n"
+        Else
+            partes = Split(lineas(li), " ")
+            primera = True
+            linea = ""
+            For i = 0 To UBound(partes)
+                w = partes(i)
+                If w <> "" Then
+                    If Not primera And InStr(1, " de del la las los y e da di do dos das van von ", " " & LCase(w) & " ") > 0 Then w = LCase(w)
+                    primera = False
+                End If
+                If i > 0 Then linea = linea & " "
+                linea = linea & w
+            Next
+            ' VBScript NO cortocircuita el And: con li=0 evaluaria lineas(-1) y truena. Anidado a proposito.
+            If li > 0 Then
+                If lineas(li - 1) <> "\n" Then out = out & vbCr
+            End If
+            out = out & linea
+        End If
+    Next
+    BajaParticulas = out
 End Function
 
 Function Pad2(n)

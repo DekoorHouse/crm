@@ -24,7 +24,25 @@ function titleCaseName(s) {
     t = t.replace(/[^\S\n]+/g, ' ').replace(/ *\n */g, '\n').trim(); // colapsa espacios, respeta '\n'
     // Inicial mayúscula tras inicio, espacio, '\n', apóstrofe, guión o punto; el resto en minúscula
     // ("jesús" -> "Jesús", "MARIA" -> "Maria"). \p{L} + flag u para manejar acentos.
-    return t.toLowerCase().replace(/(^|[\s'.\-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+    return bajaParticulas(t.toLowerCase().replace(/(^|[\s'.\-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase()));
+}
+
+// Las partículas del español ("de", "del", "la", "y"…) van en MINÚSCULA cuando no abren el nombre ni
+// el renglón: "Jose de Jesús Jr", no "Jose De Jesús Jr". Caso DH15254 (2026-09-04): la cliente
+// escribió "Jose de Jesús Jr", el mockup salió así y la hoja de corte salió "Jose De". EL MOCKUP
+// MANDA. Misma lista que BajaParticulas en los .vbs de la skill svg-corte.
+const PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'di', 'do', 'dos', 'das', 'van', 'von']);
+function bajaParticulas(t) {
+    return String(t).split('\n').map(linea => {
+        let primera = true;
+        return linea.split(' ').map(w => {
+            if (!w) return w;
+            const lw = w.toLowerCase();
+            const out = (!primera && PARTICULAS.has(lw)) ? lw : w;
+            primera = false;
+            return out;
+        }).join(' ');
+    }).join('\n');
 }
 
 // Devuelve los renglones decididos para un nombre: ["Rosa", "María"] o ["Héctor"].
