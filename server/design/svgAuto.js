@@ -234,8 +234,12 @@ const ES_INFANTIL_RE = /l[aá]mpara\s+infantil/i;
 // contra el mockup de DH14328). `no` son las trampas: "Dino cuello largo" es otra silueta y
 // "dinosaurio bebé" está SIN CONFIRMAR, así que ninguno de los dos se corta solo.
 // `\bdino` con frontera al INICIO: sin ella, /dino/ pegaba dentro de cualquier palabra ("aladino").
+// 'tirano' cubre "Tiranosaurio"/"Tiranosaurio Rex": es la MISMA silueta del T-Rex y el cliente la
+// pide asi (DH16082, 2026-09-04: "el tiranosaurio llevaría el nombre de Alejandro"; Andrea misma lo
+// resumio como "Dinosaurio (T-Rex)"). Sin el alias el pedido salia 'sin_plantilla' y, por ser mixto,
+// se iba ENTERO a manual arrastrando tambien la lampara de Spiderman del mismo pedido.
 const PERSONAJE_ALIAS = [
-    { tpl: 'rex', re: /\bt-?rex\b|\brex\b|\bdino/, no: /cuello\s*largo|bebe/ },
+    { tpl: 'rex', re: /\bt-?rex\b|\brex\b|\bdino|\btirano/, no: /cuello\s*largo|bebe/ },
     { tpl: 'spiderman', re: /spider|hombre\s*ara/ },
 ];
 // Lista de plantillas que el worker sabe emparejar. Se deriva de PERSONAJE_ALIAS para que no se
