@@ -341,6 +341,10 @@ let _dpRefetchTimer = null;
 let _dpReintentoTimer = null;
 let _dpRefetchPendiente = false;
 let _dpUltimoRefetch = 0;
+// > 0 mientras se está guardando el movimiento de una tarjeta. Ese guardado son DOS llamadas (cambio de
+// estatus + columna) y un refresco en medio pintaría el estado a medias: la tarjeta se vería saltar de
+// vuelta a Pendientes y quedarse ahí hasta el siguiente refresco.
+let _dpGuardando = 0;
 const DP_REFETCH_MIN_MS = 5000; // piso entre refrescos: /api/design-pending lee ~2 mil docs por llamada
 
 function _dpDesuscribir() {
@@ -411,6 +415,7 @@ function _dpRefetchDebounced(origen) {
 // escribiendo una nota: el repintado rehace el innerHTML y le borraría la nota a medias, le cortaría
 // el arrastre o le cerraría el modal encima.
 function _dpOcupado() {
+    if (_dpGuardando > 0) return true;                                       // movimiento a medio guardar
     if (document.getElementById('design-review-overlay')) return true;        // modal "Revisar"
     if (document.querySelector('.dp-card-ghost, .dp-card-drag')) return true; // arrastre en curso
     const modales = ['chat-envios-modal', 'image-modal'];
@@ -673,12 +678,49 @@ function _dpToast(msg, ms) {
 // Persiste el movimiento de una tarjeta (optimista: el DOM ya lo movió Sortable). Revierte si falla.
 async function dpMoveCard(orderId, col, fromCol) {
     const o = (window._designPendingData || []).find(x => x.id === orderId);
+    _dpGuardando++;
+    try {
+        await _dpMoveCardInterno(o, orderId, col, fromCol);
+    } finally {
+        _dpGuardando--;
+    }
+}
+window.dpMoveCard = dpMoveCard;
+
+async function _dpMoveCardInterno(o, orderId, col, fromCol) {
+    // "Esperando pago" es la SALIDA de una corrección: ya se atendió lo que el cliente reclamó y ahora
+    // falta que pague. Soltar ahí la tarjeta cambia el ESTATUS REAL del pedido a 'Esperando pago'
+    // (Chris, 2026-09-09), y con eso deja de ser una corrección abierta y la tarjeta se queda en la
+    // columna en lugar de rebotar a Pendientes. Es el ÚNICO arrastre de este tablero que toca el
+    // estatus; se eligió porque 'Esperando pago' no dispara nada más —ni descuento de inventario, ni
+    // evento Purchase a Meta, ni mensaje al cliente— así que arrastrar no puede provocar un efecto caro.
+    // Solo aplica a 'Corregir': cualquier otro pedido se mueve sin tocar su estatus, como siempre.
+    if (o && col === 'esperando_pago' && String(o.estatus || '').trim().toLowerCase() === 'corregir') {
+        const eraVideo = (o.reasons || []).includes('video');
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/orders/${orderId}/change-status`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newStatus: 'Esperando pago' }),
+            });
+            const d = await res.json();
+            if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+            o.estatus = 'Esperando pago';
+            o.correccionAbierta = false;   // ya no está clavada en Pendientes
+            // El aviso del video no es de adorno: al dejar de ser 'Corregir' el pedido también sale de la
+            // cola de videos de la sección Pendientes, y ahí es donde alguien lo iba a grabar.
+            _dpToast(`${o.orderNumber}: estatus cambiado a “Esperando pago”.`
+                + (eraVideo ? ' Ojo: con esto también sale de la cola de videos de la sección Pendientes.' : ''), 5000);
+        } catch (e) {
+            _dpToast(`No se pudo cambiar el estatus de ${o.orderNumber}: ${e.message || e}`);
+            _paintDesignBoard();   // re-render: la tarjeta regresa a su columna
+            return;
+        }
+    }
     // Corrección abierta: el servidor la devuelve SIEMPRE en "Pendientes" (ver correccionAbierta en
     // server/design/designPending.js), así que moverla solo se vería un momento y rebotaría al siguiente
     // refresco — y ahora el refresco es en vivo, o sea casi inmediato. Mejor no dejarla salir y decir
     // cómo se cierra de verdad. Chris, 2026-09-09.
     if (o && o.correccionAbierta && col !== 'pendientes') {
-        _dpToast(`${o.orderNumber} tiene una corrección abierta del cliente: se queda en Pendientes hasta que lo marques “✓ Diseñado” (pestaña Pendientes, o el botón Diseñado dentro del chat) o le cambies el estatus.`);
+        _dpToast(`${o.orderNumber} tiene una corrección abierta del cliente: se queda en Pendientes. Para cerrarla, arrástralo a “Esperando pago” (le cambia el estatus), márcalo “✓ Diseñado” (pestaña Pendientes o el botón Diseñado dentro del chat), o cámbiale el estatus a mano.`, 7000);
         _paintDesignBoard();   // re-render: la tarjeta regresa a su columna
         return;
     }
@@ -696,7 +738,6 @@ async function dpMoveCard(orderId, col, fromCol) {
         _paintDesignBoard();   // re-render: restaura la posición real
     }
 }
-window.dpMoveCard = dpMoveCard;
 
 function setDesignPendingFilter(f) { window._designPendingFilter = f; _paintDesignPending(); }
 window.setDesignPendingFilter = setDesignPendingFilter;
