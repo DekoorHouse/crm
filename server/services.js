@@ -1327,7 +1327,20 @@ async function markComprobanteValidadoAndSendForm(contactId, contactData = {}, {
     if (!alreadySent) {
         // Marcar el pedido para la sección Envíos (refresca la fecha si ya estaba marcado).
         try {
-            await orderDoc.ref.update({ comprobanteValidadoAt: admin.firestore.FieldValue.serverTimestamp() });
+            const upd = { comprobanteValidadoAt: admin.firestore.FieldValue.serverTimestamp() };
+            // PAGAR RESUCITA UN PEDIDO CANCELADO (Chris, 2026-09-09). El recordatorio de "solo lo
+            // guardamos hasta mañana; si no recibimos tu pago se cancelará automáticamente" deja el
+            // pedido en 'Cancelado'. Cuando el cliente PAGA después —que es justo lo que ese mensaje
+            // busca— nada revertía el estatus: el pedido seguía su curso (formulario, guía, envío)
+            // pero 'Cancelado' es TERMINAL para el corte, así que la pieza no se fabricaba y nadie
+            // se enteraba hasta que el cliente reclamaba. Casos: DH15354 (cortado a mano el 08/09) y
+            // DH15696 (el 09/09); el barrido encontró 6 pedidos cancelados con pago validado.
+            // Se hace aquí, en el mismo update que ya marca el pago, para que no puedan divergir.
+            if (String(orderData.estatus || '').trim().toLowerCase() === 'cancelado') {
+                upd.estatus = 'Pagado';
+                console.log(`[ENVIOS] ${orderNumber} estaba 'Cancelado' y el cliente pagó -> se regresa a 'Pagado'.`);
+            }
+            await orderDoc.ref.update(upd);
         } catch (e) {
             console.warn(`[ENVIOS] No se pudo marcar comprobanteValidadoAt en ${orderDoc.id}:`, e.message);
         }

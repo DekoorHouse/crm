@@ -102,6 +102,15 @@ function fieldsFromDatos(o) {
 function svgAutoEligibility(o, previews) {
     if (!isCorazon(o)) return { eligible: false, reason: 'not_corazon' };
     if (esEspecial(o)) return { eligible: false, reason: 'special' };
+    // VARIAS LÁMPARAS DE CORAZONES EN UN PEDIDO -> a manual (Chris, 2026-09-09).
+    // Esta función devuelve UN solo juego de datos, tomado del ÚLTIMO mockup, y el worker corta una
+    // sola pieza y sella el pedido como diseñado. Con 2+ lámparas eso significa cortar una y dar el
+    // pedido por completo: DH16268 se cortó solo "Kmila y Aisdany" y "Sujeyly y Arnay" nunca salió;
+    // DH15019 y DH14820 se ENVIARON así en agosto (una pieza de dos). Hasta que el corte sepa emitir
+    // una entrada por lámpara —como ya hace la ruta de personaje— es más barato mandarlo al
+    // diseñador que fabricar la mitad de un pedido y marcarlo terminado.
+    const nCorazon = (Array.isArray(o.items) ? o.items : []).filter(i => /corazon/i.test(sinAcentos(i && i.producto))).length;
+    if (nCorazon > 1) return { eligible: false, reason: `varias_lamparas_${nCorazon}` };
     previews = Array.isArray(previews) ? previews : [];
     if (!previews.length) return { eligible: false, reason: 'no_mockup' };
     const last = previews[previews.length - 1];
