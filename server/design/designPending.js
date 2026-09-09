@@ -9,12 +9,15 @@
 //   - fabricar         -> pedido 'Fabricar' (pagó y hay que producir) -> falta el diseño en Corel para
 //                         corte. Aparece aunque ya tenga mockup.
 //   - datos            -> estatus 'Corregir' porque el cliente reportó un DATO MAL.
+//   - video            -> estatus 'Corregir' porque el cliente pidió el VIDEO de su lámpara.
 //   - segundo_producto -> agregó un producto DESPUÉS de haber pagado (productoAgregadoPostPagoAt).
 // Se limpian solas al llegar a un estatus "terminado", tener guía/quitarse de Envíos, o marca ✓ Diseñado.
 //
-// MOCKUP y VIDEO ya NO son de Diseño (Chris, 2026-08-06): son otro puesto (Lupita) y viven en la
-// sección "Pendientes" (server/pendientes/pendientesRoutes.js). Su lógica sigue AQUÍ —
+// MOCKUP ya NO es de Diseño (Chris, 2026-08-06): es otro puesto (Lupita) y vive en la sección
+// "Pendientes" (server/pendientes/pendientesRoutes.js). Su lógica sigue AQUÍ —
 // pendientesReasonsForOrderData, al final del archivo— para no partir en dos las reglas de un pedido.
+// El VIDEO se fue con él ese día, pero VOLVIÓ el 2026-09-09: ahora sale en las dos secciones (Lupita
+// lo graba, Diseño lo corta). Es la ÚNICA superposición a propósito entre los dos tableros.
 const { db, admin } = require('../config');
 
 // Estatus "terminado" para diseño: si el pedido está aquí, NO hay pendiente (limpia la bandera).
@@ -28,8 +31,10 @@ const DONE = new Set([
     'cancelado', 'entregado', 'devolución', 'devolucion', 'mns amenazador',
 ]);
 
-const REASONS = ['fabricar', 'corte', 'datos', 'segundo_producto', 'manual', 'reenvio'];
-// Motivos de la OTRA sección ("Pendientes", Lupita). Nunca se mezclan con los de arriba.
+const REASONS = ['fabricar', 'corte', 'datos', 'video', 'segundo_producto', 'manual', 'reenvio'];
+// Motivos de la OTRA sección ("Pendientes", Lupita). 'video' vive en las DOS listas a propósito
+// desde el 2026-09-09: ahí lo graba y lo manda Lupita, aquí se ve como corrección abierta (ver
+// reasonsForOrderData). Es el único motivo compartido.
 const PENDIENTES_REASONS = ['mockup', 'video'];
 
 // --- Motivo 'corte': el HUECO por el que se colaban pedidos sin diseñar (detectado 2026-07-27) -----
@@ -134,15 +139,16 @@ function reasonsForOrderData(d) {
     const reasons = [];
 
     if (estatus === 'corregir') {
-        // VIDEO -> no es de Diseño: es de la sección "Pendientes" (grabar y mandar el video). Sale
-        // ENTERO de esta cola —con return, no con un simple "no pushear"— para que tampoco lo recoja
-        // la red de seguridad 'corte' de abajo; si no, el mismo pedido aparecería en los DOS tableros.
-        // Ahí también se puede cortar con la skill (el botón "Diseñar con IA" vive en esa sección).
-        // Chris, 2026-08-06.
-        if (String(d.corregirMotivo || '').toLowerCase() === 'video') return [];
         // Corrección pedida por el cliente y AÚN no resuelta (las ya marcadas se filtran arriba). Aparece
         // aunque ya se hubiera enviado. El motivo lo persiste markOrderCorregirForContact.
-        reasons.push('datos');
+        // VIDEO: del 2026-08-06 al 2026-09-09 salía ENTERO de esta cola (return []) para que un pedido
+        // no apareciera en los DOS tableros. Chris pidió lo contrario: TODA corrección abierta se ve en
+        // Diseño, la de video incluida. El video lo sigue grabando y mandando Lupita desde la sección
+        // "Pendientes" —ahí sigue saliendo—, pero aquí se ve porque a Diseño le toca el corte. El badge
+        // "Corte IA en cola" (autoCutQueued) avisa cuándo el worker ya lo tiene, para no cortarlo dos veces.
+        // Al empujar un motivo, la red de seguridad 'corte' de abajo ya no lo recoge (mismo efecto que
+        // el return viejo).
+        reasons.push(String(d.corregirMotivo || '').toLowerCase() === 'video' ? 'video' : 'datos');
     } else if (estatus === 'reenvio') {
         // REPOSICIÓN: el pedido se vuelve a hacer desde el principio (Chris, 2026-08-01). Además de
         // re-meterse a Envíos, REACTIVA el diseño: reaparece en Pendientes (motivo 'reenvio') aunque el
@@ -170,6 +176,23 @@ function reasonsForOrderData(d) {
     if (!reasons.length && d.designForce) reasons.push('manual');
 
     return reasons;
+}
+
+// ¿El cliente pidió una corrección que TODAVÍA nadie cerró? = estatus 'Corregir' sin una marca
+// "✓ Diseñado" POSTERIOR a la última petición. Es exactamente la condición con la que
+// reasonsForOrderData deja el pedido en la cola; se expone aparte porque el TABLERO la necesita para
+// clavar la tarjeta en la columna "Pendientes" (Chris, 2026-09-09): de las 26 correcciones vivas ese
+// día, 14 estaban escondidas en la columna "Terminado" porque alguien había arrastrado la tarjeta
+// después de que el cliente reportara el problema, y nadie las volvía a ver.
+// El candado de rebote que se quitó el 2026-08-01 era por ESTATUS pelado (cualquier 'Corregir'
+// regresaba a Pendientes para siempre, ni el botón ✓ Diseñado lo sacaba: caso DH13603). Este mira la
+// marca de la diseñadora, así que "✓ Diseñado" sigue siendo la salida — y si el cliente vuelve a
+// pedir algo después, pendienteRenovadoMs la invalida y la tarjeta regresa sola.
+function correccionAbierta(d) {
+    if (!d) return false;
+    if (String(d.estatus || '').trim().toLowerCase() !== 'corregir') return false;
+    const hecho = disenoMarcadoHechoMs(d);
+    return !(hecho && hecho >= pendienteRenovadoMs(d));
 }
 
 // Último pedido del contacto (mismo criterio que services.getLatestOrderForContact: por telefono y
@@ -294,7 +317,7 @@ function pendientesReasonsForOrderData(d, hasMockup) {
 
 module.exports = {
     recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, pendienteRenovadoMs,
-    disenoMarcadoHechoMs, orderHasMockup, REASONS, DONE,
+    disenoMarcadoHechoMs, correccionAbierta, orderHasMockup, REASONS, DONE,
     // Sección "Pendientes"
     pendientesReasonsForOrderData, esVideoPendiente, faltaMockup, PENDIENTES_REASONS,
 };

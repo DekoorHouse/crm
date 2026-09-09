@@ -8559,7 +8559,7 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
 // motivos + nombre/canal del cliente. La lista de la sección "Pendientes de Diseño" del CRM la usa.
 router.get('/design-pending', async (req, res) => {
     try {
-        const { reasonsForOrderData, pendienteRenovadoMs } = require('./design/designPending');
+        const { reasonsForOrderData, pendienteRenovadoMs, correccionAbierta } = require('./design/designPending');
         const { isAutoWaiting, isVideoAutoWaiting, svgAutoEligibility, MANUAL_SPECIAL_RE, isCorazon, datosOf, AUTO_DESDE_MS } = require('./design/svgAuto');
         const { decideNameLines } = require('./mockups/nameLayout');
         const tsToMs = (t) => (t && t.toMillis) ? t.toMillis() : (t && t._seconds ? t._seconds * 1000 : null);
@@ -8634,6 +8634,15 @@ router.get('/design-pending', async (req, res) => {
                 // video), la columna manual ya no vale y la tarjeta regresa sola a Pendientes — si no,
                 // un pedido parado en "Terminado" se quedaba ahí para siempre (caso DH13817).
                 boardCol: (() => {
+                    // CORRECCIÓN ABIERTA -> siempre "Pendientes", esté donde esté la tarjeta (Chris,
+                    // 2026-09-09). Medido ese día: de 26 pedidos en 'Corregir', 14 vivían escondidos en la
+                    // columna "Terminado" —alguien arrastró la tarjeta DESPUÉS de que el cliente reportara
+                    // el problema, así que la reactivación de abajo (que compara fechas) no los rescataba—
+                    // y ahí nadie los volvía a mirar. Una corrección se ve o no se atiende.
+                    // NO es el candado por estatus que se quitó el 2026-08-01 (ese ignoraba el ✓ Diseñado y
+                    // hacía rebotar la tarjeta para siempre, DH13603): correccionAbierta mira la marca de la
+                    // diseñadora, así que "✓ Diseñado" —o cambiar el estatus— la sigue cerrando.
+                    if (correccionAbierta(p)) return 'pendientes';
                     // REACTIVACIÓN (única regla que puede regresar una tarjeta a Pendientes): la columna
                     // manual solo vale mientras el cliente no haya pedido algo DESPUÉS de moverla. Si pidió
                     // (otro video, otra corrección…), la marca queda vieja y la tarjeta vuelve sola.
@@ -8648,6 +8657,10 @@ router.get('/design-pending', async (req, res) => {
                     const movidaMs = tsToMs(p.disenoBoardColAt);
                     return (movidaMs && pendienteRenovadoMs(p) > movidaMs) ? 'pendientes' : p.disenoBoardCol;
                 })(),
+                // ¿Corrección del cliente todavía sin cerrar? El tablero la clava en "Pendientes" (arriba)
+                // y el front usa esta bandera para no dejar arrastrarla a otra columna: se vería moverse y
+                // rebotaría al siguiente refresco.
+                correccionAbierta: correccionAbierta(p),
                 // Datos de personalización (nombres/fecha): lo que el diseñador necesita a la vista.
                 datos: (Array.isArray(p.items) ? p.items.map(i => i.datosProducto).filter(Boolean).join(' | ') : '') || p.datosProducto || '',
                 ...(extra || {}),
@@ -8750,15 +8763,19 @@ router.get('/design-pending', async (req, res) => {
                 const reasons = reasonsForOrderData(p);
                 if (!reasons.length) continue;
                 // Los que el worker corta solo (Fabricar auto-elegible, esperando pareja) NO son diseño
-                // manual: se muestran en la pestaña "SVG IA", no en Pendientes. EXCEPCIÓN: si el operador
-                // lo empujó a mano ("A Diseño", designForce), se respeta y se queda en Pendientes.
-                if (isAutoWaiting(p, prevMap.get(doc.id)) && !p.designForce) continue;
-                // Los 'Corregir' que pidieron VIDEO sí se quedan aquí (el pendiente del video es manual),
-                // pero se marcan para que el diseñador NO los corte a mano: el worker ya los tiene en cola.
-                // Si ya hay un iaForce en curso (Chris lo forzó a mano) NO se marca: ese pedido ya muestra
-                // su propia UI de "Diseñar con IA" (thumbnail + Subir a Drive) y no está en la cola automática.
+                // manual: se muestran en la pestaña "SVG IA", no en Pendientes. DOS EXCEPCIONES, las dos
+                // porque hay un humano esperando: si el operador lo empujó a mano ("A Diseño", designForce),
+                // y si el cliente tiene una CORRECCIÓN abierta (Chris, 2026-09-09) — que la IA vaya a cortar
+                // no cierra la queja del cliente, y esconderlo en otra pestaña es justo lo que se quiere evitar.
+                if (isAutoWaiting(p, prevMap.get(doc.id)) && !p.designForce && !correccionAbierta(p)) continue;
+                // Los 'Corregir' se quedan aquí (el pendiente es de un humano: grabar el video, rehacer el
+                // dato), pero se marcan para que el diseñador NO los corte a mano: el worker ya los tiene en
+                // cola. Si ya hay un iaForce en curso (Chris lo forzó a mano) NO se marca: ese pedido ya
+                // muestra su propia UI de "Diseñar con IA" (thumbnail + Subir a Drive) y no está en la cola
+                // automática.
                 orders.push(mapOrder(doc, reasons, {
-                    autoCutQueued: !p.iaForce && isVideoAutoWaiting(p, prevMap.get(doc.id)),
+                    autoCutQueued: !p.iaForce && (isVideoAutoWaiting(p, prevMap.get(doc.id))
+                        || (correccionAbierta(p) && isAutoWaiting(p, prevMap.get(doc.id)))),
                     reviewInfo: buildReviewInfo(p, prevMap.get(doc.id)),
                 }));
             }
@@ -8823,7 +8840,15 @@ router.get('/design-pending', async (req, res) => {
         } else if (doneMode) orders.sort((a, b) => (b.disenoListoAt || b.svgCorteAt || 0) - (a.disenoListoAt || a.svgCorteAt || 0));
         else orders.sort((a, b) => (b.corregirAt || b.comprobanteValidadoAt || b.createdAt || 0) - (a.corregirAt || a.comprobanteValidadoAt || a.createdAt || 0));
 
-        res.json({ success: true, total: orders.length, orders: orders.slice(0, 500) });
+        // Tope de la respuesta. El TABLERO suma hasta 500 tarjetas "decorativas" (movidas a mano a otra
+        // columna, ya sin ningún pendiente vivo) encima de los pendientes reales, y el 2026-09-09 ya iban
+        // 645 en total: el corte plano se estaba comiendo pendientes por antigüedad y desaparecían del
+        // tablero 4 correcciones abiertas de agosto (DH14125/14293/14312/14353). Ahora lo que tiene un
+        // motivo NO se recorta nunca —es trabajo por hacer— y el tope solo aplica a las decorativas.
+        const conMotivo = orders.reduce((n, o) => n + ((o.reasons || []).length ? 1 : 0), 0);
+        let huecos = 500 - conMotivo;   // puede quedar en negativo: entonces solo van los pendientes
+        const payload = orders.filter(o => (o.reasons || []).length || huecos-- > 0);
+        res.json({ success: true, total: orders.length, orders: payload });
     } catch (e) {
         console.error('[design-pending] error:', e.message);
         res.status(500).json({ success: false, message: e.message });

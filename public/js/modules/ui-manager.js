@@ -44,6 +44,8 @@ function navigateTo(viewName, force = false) {
     // Al salir de Envíos se cortan sus listeners en vivo (si no, siguen cobrando lecturas
     // de Firestore y pidiendo /api/envios en una sección que ya no se está viendo).
     if (viewName !== 'envios' && typeof _enviosDesuscribir === 'function') _enviosDesuscribir();
+    // Lo mismo al salir de Pendientes de Diseño.
+    if (viewName !== 'pendientes-diseno' && typeof _dpDesuscribir === 'function') _dpDesuscribir();
 
     state.activeView = viewName;
 
@@ -292,7 +294,8 @@ function DesignPendingViewTemplate() {
     return `<div id="design-pending-view" class="p-4 md:p-6 h-full overflow-auto">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
             <h1 class="text-2xl font-bold" style="margin:0"><i class="fas fa-palette mr-2" style="color:#6f42c1"></i>Pendientes de Diseño</h1>
-            <button onclick="renderDesignPendingView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
+            <span id="dp-vivo" title="La lista se actualiza sola cuando algo cambia (no hace falta recargar)" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:700;color:var(--color-text-light,#94a3b8);transition:color .3s"><i class="fas fa-circle" style="font-size:6px"></i>En vivo</span>
+            <button onclick="renderDesignPendingView()" class="btn btn-outline btn-sm" title="Actualizar"><i class="fas fa-rotate"></i></button>
         </div>
         <p class="text-sm text-gray-500 mb-4"><b>Pendientes</b> = diseño MANUAL (corte especial, correcciones de datos, reenvíos). <b>SVG IA</b> = lo que corta la IA sola (ya diseñados + en cola esperando pareja). <b>Diseñados ✓</b> = marcados a mano.<br>Los mockups que faltan y los videos por mandar están en la sección <a onclick="navigateTo('pendientes')" style="color:#0ea5e9;font-weight:600;cursor:pointer">Pendientes</a>.</p>
         <div id="design-pending-container"></div>
@@ -317,12 +320,131 @@ async function renderDesignPendingView(silent) {
         window._designPendingTotal = data.total != null ? data.total : window._designPendingData.length;
         if (tab === 'tablero') _paintDesignBoard(); else _paintDesignPending();
         if (silent && sc) sc.scrollTop = scrollTop;
+        _dpSuscribir();   // de aqui en adelante la lista se actualiza sola (es idempotente)
     } catch (e) {
         container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los datos: ${escapeHtml(e.message || String(e))}</p>
             <button class="btn btn-outline btn-sm mt-2" onclick="renderDesignPendingView()">Reintentar</button>`;
     }
 }
 window.renderDesignPendingView = renderDesignPendingView;
+
+// --- Pendientes de Diseño en vivo ---------------------------------------------------------------
+// Antes la página solo se refrescaba con F5 o con el botón "Actualizar", así que un pedido que entraba
+// a Corregir/Fabricar —o una tarjeta que otra persona movía— no se veía hasta que alguien recargara.
+// Ahora, mientras estés en la sección, unos listeners de Firestore AVISAN que algo cambió y se vuelve
+// a pedir /api/design-pending. El listener es SOLO la señal: la fuente de verdad sigue siendo el
+// endpoint, que es el que aplica reasonsForOrderData, la cola de la IA y el cruce con mockup_previews.
+// Rearmar ese cálculo en el cliente sería una segunda implementación que se desincroniza.
+// Mismo patrón (y mismas precauciones) que la tabla de Envíos, más abajo en este archivo.
+window._dpUnsub = [];
+let _dpRefetchTimer = null;
+let _dpReintentoTimer = null;
+let _dpRefetchPendiente = false;
+let _dpUltimoRefetch = 0;
+const DP_REFETCH_MIN_MS = 5000; // piso entre refrescos: /api/design-pending lee ~2 mil docs por llamada
+
+function _dpDesuscribir() {
+    (window._dpUnsub || []).forEach(u => { try { u(); } catch (_) {} });
+    window._dpUnsub = [];
+    clearTimeout(_dpRefetchTimer);
+    clearTimeout(_dpReintentoTimer);
+    _dpRefetchPendiente = false;
+}
+window._dpDesuscribir = _dpDesuscribir;
+
+// Idempotente: se llama en CADA render (incluido el silencioso) pero solo engancha la primera vez.
+// Reenganchar en cada refresco volvería a leer de golpe todos los documentos de cada listener.
+function _dpSuscribir() {
+    if (window._dpUnsub && window._dpUnsub.length) return;          // ya está enganchado
+    if (typeof db === 'undefined' || !db || !db.collection) return; // sin SDK: queda el botón manual
+    // El primer snapshot es la carga inicial (ya la trajo el fetch): se ignora.
+    const señal = (origen) => {
+        let primera = true;
+        return (snap) => {
+            if (primera) { primera = false; return; }
+            if (snap.docChanges && !snap.docChanges().length) return; // cambio de metadata, no de datos
+            _dpRefetchDebounced(origen);
+        };
+    };
+    const err = (origen) => (e) => console.warn(`[DISEÑO] Listener de ${origen} falló (se sigue con el botón Actualizar):`, e.message);
+    try {
+        window._dpUnsub = [
+            // Los estatus que ALIMENTAN esta página. Un pedido que entra o sale de cualquiera de ellos
+            // cambia la lista; y como los que ya están dentro también viven aquí, este mismo listener
+            // avisa de lo que les pasa encima (✓ Diseñado, iaForce, svgCorteAt, nota interna…).
+            // Son ~70 documentos en total: un solo `in` sobre UN campo, así que no pide índice compuesto.
+            db.collection('pedidos').where('estatus', 'in', ['Fabricar', 'Corregir', 'Reenvio', 'Diseñado por IA'])
+                .onSnapshot(señal('estatus'), err('estatus')),
+            // Pago recién validado -> aparece el pendiente de corte. Ventana chica: como SEÑAL basta con
+            // los últimos (el endpoint ya trae los 400 que le tocan). orderBy de un campo -> sin índice.
+            db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').limit(150)
+                .onSnapshot(señal('pagos'), err('pagos')),
+            // Alguien movió una tarjeta desde OTRA computadora: se ve el cambio de columna al momento.
+            db.collection('pedidos').orderBy('disenoBoardColAt', 'desc').limit(60)
+                .onSnapshot(señal('tablero'), err('tablero')),
+            // Empujado a mano desde la sección Mockup con el botón "A Diseño".
+            db.collection('pedidos').where('designForce', '==', true).limit(200)
+                .onSnapshot(señal('designForce'), err('designForce')),
+        ];
+        console.log('[DISEÑO] Actualización en vivo activa.');
+    } catch (e) {
+        console.warn('[DISEÑO] No se pudo activar la actualización en vivo:', e.message);
+        _dpDesuscribir();
+    }
+}
+
+function _dpRefetchDebounced(origen) {
+    if (!document.getElementById('design-pending-container')) return; // ya no estamos en la sección
+    clearTimeout(_dpRefetchTimer);
+    // Un cambio suele venir en ráfaga (estatus + comprobante + inventario del mismo pedido): se juntan
+    // en uno. Y si acabamos de refrescar, se espera el resto del piso para no encadenar llamadas caras.
+    const desdeUltimo = Date.now() - _dpUltimoRefetch;
+    const espera = Math.max(1200, DP_REFETCH_MIN_MS - desdeUltimo);
+    _dpRefetchTimer = setTimeout(() => {
+        if (_dpOcupado()) { _dpRefetchPendiente = true; _dpReintentarPendiente(); return; }
+        _dpRefetchPendiente = false;
+        _dpRefetchSilencioso(origen);
+    }, espera);
+}
+
+// NO repintar si hay un modal abierto, si se está arrastrando una tarjeta o si el diseñador está
+// escribiendo una nota: el repintado rehace el innerHTML y le borraría la nota a medias, le cortaría
+// el arrastre o le cerraría el modal encima.
+function _dpOcupado() {
+    if (document.getElementById('design-review-overlay')) return true;        // modal "Revisar"
+    if (document.querySelector('.dp-card-ghost, .dp-card-drag')) return true; // arrastre en curso
+    const modales = ['chat-envios-modal', 'image-modal'];
+    if (modales.some(id => { const m = document.getElementById(id); return m && m.style.display !== 'none' && !m.classList.contains('hidden'); })) return true;
+    const cont = document.getElementById('design-pending-container');
+    const a = document.activeElement;
+    if (cont && a && a !== document.body && cont.contains(a)) return true;
+    return false;
+}
+
+// Reintenta el refresco diferido hasta que el diseñador suelte el campo o cierre el modal. Se hace con
+// un timer y NO con el evento focusout: si la ventana no tiene el foco del sistema, el focusout puede
+// no llegar nunca y el refresco se quedaría colgado para siempre. Solo revisa una bandera: no cuesta
+// lecturas ni llamadas mientras no se pueda aplicar.
+function _dpReintentarPendiente() {
+    clearTimeout(_dpReintentoTimer);
+    _dpReintentoTimer = setTimeout(() => {
+        if (!_dpRefetchPendiente) return;
+        if (!document.getElementById('design-pending-container')) { _dpRefetchPendiente = false; return; }
+        if (_dpOcupado()) { _dpReintentarPendiente(); return; }
+        _dpRefetchPendiente = false;
+        _dpRefetchSilencioso('pendiente');
+    }, 2500);
+}
+
+// Refresca sin el "Cargando…" y conservando el scroll (el de la página y el de cada columna: eso ya lo
+// hace _paintDesignBoard). Parpadea el punto "En vivo" para que se note que la lista se movió sola.
+async function _dpRefetchSilencioso(origen) {
+    _dpUltimoRefetch = Date.now();
+    await renderDesignPendingView(true);
+    const vivo = document.getElementById('dp-vivo');
+    if (vivo) { vivo.style.color = '#16a34a'; setTimeout(() => { vivo.style.color = ''; }, 900); }
+    console.log(`[DISEÑO] Lista actualizada en vivo (cambió ${origen}).`);
+}
 
 // ===== TABLERO Kanban (drag & drop) de Pendientes de Diseño ==============================
 // 5 columnas. Arrastrar una tarjeta SOLO la mueve de columna (guarda disenoBoardCol); NO cambia el
@@ -411,6 +533,12 @@ function dpBoardCard(o, checkedSet) {
     const datosTxt = datosCompactos || (o.clienteName || '');
     const motivos = (o.reasons || []).map(r => { const m = DP_MOTIVOS[r]; return m ? `<span style="display:inline-block;background:${m[1]}22;color:${m[1]};border:1px solid ${m[1]}66;font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:5px;white-space:nowrap"><i class="fas ${m[2]}" style="margin-right:2px"></i>${m[0]}</span>` : ''; }).join('');
     const iaBadge = o.svgCorteUrl ? `<a href="${escapeHtml(o.svgCorteUrl)}" target="_blank" rel="noopener" title="Diseñado por IA — abrir el SVG en Drive" style="display:inline-block;background:#e83e8c22;color:#e83e8c;border:1px solid #e83e8c66;font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:5px;text-decoration:none"><i class="fas fa-robot"></i> IA</a>` : '';
+    // "Corte IA en cola": el worker ya va a diseñar y subir este pedido solo. Antes solo salía en la
+    // TABLA, pero desde que las correcciones abiertas se quedan en el tablero (Chris, 2026-09-09) hay
+    // tarjetas aquí que la IA ya tiene en cola: sin el aviso alguien las cortaría a mano por segunda vez.
+    const colaBadge = (o.autoCutQueued && !o.svgCorteUrl)
+        ? `<span title="El worker de corte lo va a diseñar y subir a Drive solo (≤15 min). No lo cortes a mano." style="display:inline-block;background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed66;font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:5px;white-space:nowrap"><i class="fas fa-wand-magic-sparkles" style="margin-right:2px"></i>Corte IA en cola</span>`
+        : '';
     const chk = `<input type="checkbox"${checkedSet && checkedSet.has(o.id) ? ' checked' : ''} data-dp-check="${o.id}" onchange="toggleDesignVisualCheck('${o.id}', this)" title="Marca visual (se guarda en este navegador)" style="width:15px;height:15px;cursor:pointer;accent-color:#16a34a">`;
     const chatBtn = o.contactId ? `<button onclick="openDesignPendingChat('${o.id}')" title="Ver conversación (← → para navegar)" class="dp-icon-btn"><i class="fas fa-comments"></i></button>` : '';
     // Burbuja: el cliente escribió DESPUÉS de lo último que le mandé YO (no la IA) — p.ej. respondió
@@ -427,7 +555,7 @@ function dpBoardCard(o, checkedSet) {
         </div>
         <div class="dp-card-datos" title="Cliente: ${escapeHtml(o.clienteName || '')} — ${escapeHtml(o.datos || '')}">${chan} ${escapeHtml(datosTxt)}</div>
         <div class="dp-card-prod">${escapeHtml(o.producto || '')}${o.itemCount > 1 ? ' <span style="color:#94a3b8">+' + (o.itemCount - 1) + '</span>' : ''}</div>
-        ${(motivos || iaBadge) ? `<div class="dp-card-motivos">${motivos}${iaBadge}</div>` : ''}
+        ${(motivos || iaBadge || colaBadge) ? `<div class="dp-card-motivos">${motivos}${iaBadge}${colaBadge}</div>` : ''}
         ${(ia || mockupBtn) ? `<div class="dp-ia-row">${ia}${mockupBtn}</div>` : ''}
         <textarea class="dp-card-note" data-dp-comment="${o.id}" onblur="changeDesignComentario('${o.id}', this)" placeholder="Nota interna…" title="Notas del diseñador (solo para el equipo)">${escapeHtml(o.comentarioDiseno || '')}</textarea>
     </div>`;
@@ -525,9 +653,35 @@ function _dpUpdateColCounts() {
     window._designShownOrders = flat;
 }
 
+// Aviso corto que no interrumpe (a diferencia de alert()): se pone arriba del tablero y se va solo.
+function _dpToast(msg, ms) {
+    let t = document.getElementById('dp-toast');
+    if (!t) {
+        t = document.createElement('div');
+        t.id = 'dp-toast';
+        t.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:12000;max-width:min(560px,92vw);'
+            + 'background:#1e293b;color:#fff;padding:11px 16px;border-radius:10px;font-size:13px;font-weight:600;line-height:1.4;'
+            + 'box-shadow:0 10px 30px rgba(0,0,0,.35)';
+        document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.display = 'block';
+    clearTimeout(window._dpToastTimer);
+    window._dpToastTimer = setTimeout(() => { t.style.display = 'none'; }, ms || 6000);
+}
+
 // Persiste el movimiento de una tarjeta (optimista: el DOM ya lo movió Sortable). Revierte si falla.
 async function dpMoveCard(orderId, col, fromCol) {
     const o = (window._designPendingData || []).find(x => x.id === orderId);
+    // Corrección abierta: el servidor la devuelve SIEMPRE en "Pendientes" (ver correccionAbierta en
+    // server/design/designPending.js), así que moverla solo se vería un momento y rebotaría al siguiente
+    // refresco — y ahora el refresco es en vivo, o sea casi inmediato. Mejor no dejarla salir y decir
+    // cómo se cierra de verdad. Chris, 2026-09-09.
+    if (o && o.correccionAbierta && col !== 'pendientes') {
+        _dpToast(`${o.orderNumber} tiene una corrección abierta del cliente: se queda en Pendientes hasta que lo marques “✓ Diseñado” (pestaña Pendientes, o el botón Diseñado dentro del chat) o le cambies el estatus.`);
+        _paintDesignBoard();   // re-render: la tarjeta regresa a su columna
+        return;
+    }
     if (o) o.boardCol = col;
     _dpUpdateColCounts();
     try {
