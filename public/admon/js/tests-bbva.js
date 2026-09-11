@@ -437,6 +437,87 @@ function caso8_reemplazoPorVentana() {
 }
 
 // ---------------------------------------------------------------------------
+//  Caso 9: un pendiente que se liquidó FUERA de la ventana del archivo.
+//          El corte empieza a media jornada, así que el registro "En tránsito"
+//          queda antes del rango — pero el archivo trae su versión liquidada.
+//          Caso real: dos Google One (199 y 395) guardados En tránsito el
+//          31-ago y el 1-sep que se liquidaron el 3-sep con concepto completo.
+// ---------------------------------------------------------------------------
+
+function caso9_pendienteLiquidadoFueraDeVentana() {
+    // El archivo arranca el 2-sep y trae la versión liquidada del 3-sep.
+    const archivo = [
+        attachSignatures({ date: '2026-09-02', concept: 'ALGO DEL DIA / ref', charge: 10, credit: 0 }),
+        attachSignatures({ date: '2026-09-03', concept: 'Google One / ******8493 RFC: 12:15 AUT: 293985', charge: 199, credit: 0 }),
+    ];
+
+    const pendiente = attachSignatures({
+        id: 'p1', date: '2026-08-31', concept: 'Google One', charge: 199, credit: 0,
+        source: 'xlsx', pending: true
+    });
+    const pendienteSinGemelo = attachSignatures({
+        id: 'p2', date: '2026-08-31', concept: 'OTRO COMERCIO', charge: 50, credit: 0,
+        source: 'xlsx', pending: true
+    });
+    const noPendiente = attachSignatures({
+        id: 'p3', date: '2026-08-31', concept: 'Google One', charge: 199, credit: 0,
+        source: 'xlsx'   // sin pending: el banco nunca dijo que fuera provisional
+    });
+
+    const plan = planStatementReplace(archivo, [pendiente, pendienteSinGemelo, noPendiente]);
+    const liq = (plan.staleLiquidados || []).map(e => e.id);
+
+    assert('Caso 9.a — el pendiente con gemelo liquidado se detecta',
+        liq.includes('p1'), liq.join(','));
+    assert('Caso 9.b — trae la fecha en que se liquidó',
+        (plan.staleLiquidados.find(e => e.id === 'p1') || {})._liquidadoEn === '2026-09-03');
+    assert('Caso 9.c — un pendiente sin gemelo no se toca', !liq.includes('p2'));
+    assert('Caso 9.d — un registro que NO venía marcado como pendiente no se toca',
+        !liq.includes('p3'), liq.join(','));
+    assert('Caso 9.e — no entra en la lista normal de desplazados',
+        !plan.stale.some(e => e.id === 'p1'));
+
+    // Concepto truncado: el pendiente es prefijo del liquidado.
+    const truncado = attachSignatures({
+        id: 'p4', date: '2026-09-01', concept: 'MERPAGO*MERCADOLI', charge: 3194.47, credit: 0,
+        source: 'xlsx', pending: true
+    });
+    const planTrunc = planStatementReplace(
+        [attachSignatures({ date: '2026-09-02', concept: 'X / ref', charge: 1, credit: 0 }),
+         attachSignatures({ date: '2026-09-04', concept: 'MERPAGO*MERCADOLIBRE / ******8493 RFC: 18:02', charge: 3194.47, credit: 0 })],
+        [truncado]
+    );
+    assert('Caso 9.f — empareja el concepto truncado con el completo',
+        (planTrunc.staleLiquidados || []).map(e => e.id).includes('p4'));
+
+    // Un solo gemelo no puede servir a dos pendientes.
+    const dos = ['q1', 'q2'].map(id => attachSignatures({
+        id, date: '2026-08-31', concept: 'Google One', charge: 199, credit: 0, source: 'xlsx', pending: true
+    }));
+    const planDos = planStatementReplace(archivo, dos);
+    assert('Caso 9.g — un solo liquidado no desplaza a dos pendientes',
+        (planDos.staleLiquidados || []).length === 1, (planDos.staleLiquidados || []).length);
+
+    // Si la fila del archivo también viene En tránsito, no es la versión final.
+    const planPend = planStatementReplace(
+        [attachSignatures({ date: '2026-09-02', concept: 'X / ref', charge: 1, credit: 0 }),
+         attachSignatures({ date: '2026-09-03', concept: 'Google One / ****8493 AUT: 1', charge: 199, credit: 0, pending: true })],
+        [pendiente]
+    );
+    assert('Caso 9.h — si el gemelo sigue En tránsito, no se desplaza nada',
+        (planPend.staleLiquidados || []).length === 0);
+
+    // Demasiado lejos en el tiempo: fuera del margen.
+    const planLejos = planStatementReplace(
+        [attachSignatures({ date: '2026-09-02', concept: 'X / ref', charge: 1, credit: 0 }),
+         attachSignatures({ date: '2026-09-30', concept: 'Google One / ****8493 AUT: 1', charge: 199, credit: 0 })],
+        [attachSignatures({ id: 'p5', date: '2026-09-01', concept: 'Google One', charge: 199, credit: 0, source: 'xlsx', pending: true })]
+    );
+    assert('Caso 9.i — un liquidado muy posterior no se empareja',
+        (planLejos.staleLiquidados || []).length === 0, (planLejos.staleLiquidados || []).length);
+}
+
+// ---------------------------------------------------------------------------
 //  Runner público
 // ---------------------------------------------------------------------------
 
@@ -452,6 +533,7 @@ export function runAllTests() {
     test('Caso 6: detección robusta de encabezados BBVA', caso6_deteccionEncabezadosRobusta);
     test('Caso 7: columna SALDO y etiqueta "En tránsito"', caso7_columnaSaldoYPendiente);
     test('Caso 8: reemplazo por ventana (tránsito → liquidado)', caso8_reemplazoPorVentana);
+    test('Caso 9: pendiente liquidado fuera de la ventana', caso9_pendienteLiquidadoFueraDeVentana);
 
     const pass = results.filter(r => r.ok).length;
     const fail = results.length - pass;

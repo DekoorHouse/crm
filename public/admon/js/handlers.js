@@ -73,7 +73,8 @@ function confirmarReemplazoDeVentana(plan) {
         };
 
         const confirmados = plan.staleConfirmed || [];
-        const total = plan.stale.length + confirmados.length;
+        const liquidados = plan.staleLiquidados || [];
+        const total = plan.stale.length + confirmados.length + liquidados.length;
 
         const fila = (e, marcado) => {
             const monto = (parseFloat(e.charge) || 0) > 0
@@ -85,6 +86,24 @@ function confirmarReemplazoDeVentana(plan) {
                         <td style="padding:3px 0; font-size:11px;">${String(e.concept || '').replace(/\s+/g, ' ').slice(0, 52)}</td>
                     </tr>`;
         };
+
+        // Bloque de los pendientes que se liquidaron fuera de la ventana. Se
+        // arma aquí, con concatenación simple, para no anidar plantillas dentro
+        // del cuerpo del modal.
+        let htmlLiquidados = '';
+        if (liquidados.length > 0) {
+            htmlLiquidados =
+                '<div style="margin-top:14px; padding:10px; border:1px solid var(--border-color); border-radius:8px;">' +
+                '<p style="margin:0 0 6px; font-size:13px;"><strong>' + liquidados.length + '</strong> de ellos estaban guardados como <em>En tránsito</em> ' +
+                'y este archivo ya trae su versión liquidada, con el concepto completo y otra fecha. ' +
+                'Quedan fuera del rango que el corte cubre, pero el banco los marcó como provisionales, ' +
+                'así que su versión vieja sobra igual.</p>' +
+                '<table style="width:100%; border-collapse:collapse; font-size:12px;">' +
+                liquidados.slice(0, 8).map(e => fila(e, false)).join('') +
+                '</table>' +
+                (liquidados.length > 8 ? '<p style="font-size:12px; margin:6px 0 0;">…y ' + (liquidados.length - 8) + ' más.</p>' : '') +
+                '</div>';
+        }
 
         ui.showModal({
             title: 'Movimientos desplazados por el estado de cuenta',
@@ -116,6 +135,7 @@ function confirmarReemplazoDeVentana(plan) {
                     </table>
                     ${confirmados.length > 8 ? `<p style="font-size:12px; margin:6px 0 0;">…y ${confirmados.length - 8} más.</p>` : ''}
                 </div>` : ''}
+                ${htmlLiquidados}
                 ${plan.primerDiaParcial ? `
                 <p style="font-size:12px; color:var(--text-secondary); margin-top:10px; padding:8px; border-left:3px solid var(--warning, #f59e0b);">
                    <i class="fas fa-info-circle"></i> El archivo arranca a media jornada (su primer día trae menos
@@ -146,7 +166,7 @@ async function persistClassifiedImport(classified) {
     // la importación sigue igual que antes.
     let eliminados = 0;
     const desplazados = replacePlan
-        ? [...(replacePlan.stale || []), ...(replacePlan.staleConfirmed || [])]
+        ? [...(replacePlan.stale || []), ...(replacePlan.staleConfirmed || []), ...(replacePlan.staleLiquidados || [])]
         : [];
     if (desplazados.length > 0) {
         const confirmado = await confirmarReemplazoDeVentana(replacePlan);

@@ -487,13 +487,13 @@ export function classifyForImport(newTxs, existingTxs) {
  *
  * @param {Array<object>} newTxs       transacciones parseadas del archivo
  * @param {Array<object>} existingTxs  movimientos ya guardados (con id)
- * @returns {{ from:string, to:string, stale:Array<object>, staleConfirmed:Array<object>, confirmed:number, protectedCount:number, primerDiaParcial:boolean }}
+ * @returns {{ from:string, to:string, stale:Array<object>, staleConfirmed:Array<object>, staleLiquidados:Array<object>, confirmed:number, protectedCount:number, primerDiaParcial:boolean }}
  *          `from` es el inicio EFECTIVO de la ventana: si el primer día del
  *          archivo venía truncado se recorre al siguiente y `primerDiaParcial`
  *          queda en true.
  */
 export function planStatementReplace(newTxs, existingTxs) {
-    const vacio = { from: '', to: '', stale: [], staleConfirmed: [], confirmed: 0, protectedCount: 0, primerDiaParcial: false };
+    const vacio = { from: '', to: '', stale: [], staleConfirmed: [], staleLiquidados: [], confirmed: 0, protectedCount: 0, primerDiaParcial: false };
     if (!Array.isArray(newTxs) || newTxs.length === 0) return vacio;
 
     const fechas = newTxs.map(t => t && t.date).filter(Boolean).sort();
@@ -564,7 +564,63 @@ export function planStatementReplace(newTxs, existingTxs) {
         }
     }
 
-    return { from, to, stale, staleConfirmed, confirmed, protectedCount, primerDiaParcial };
+    // ----------------------------------------------------------------------
+    // Segundo pase: pendientes que se liquidaron FUERA de la ventana.
+    //
+    // El corte del banco suele empezar a media jornada, así que la ventana deja
+    // fuera el primer día (y todo lo anterior). Ahí quedan varados los registros
+    // guardados "En tránsito" que en este archivo ya aparecen liquidados, con el
+    // concepto completo y otra fecha.
+    //
+    // Aquí el emparejamiento sí es seguro, y por una razón concreta: el propio
+    // BBVA marcó esos movimientos como provisionales (pending=true), o sea que
+    // declaró que su concepto y su fecha no eran definitivos. Es una señal
+    // explícita del banco, no una suposición nuestra. Se exige además importe
+    // idéntico, que el comercio del archivo empiece con el del registro (el
+    // pendiente viene truncado: "MERPAGO*MERCADOLI" -> "MERPAGO*MERCADOLIBRE"),
+    // que la fila del archivo NO sea a su vez un pendiente, y que la fecha
+    // liquidada sea posterior y dentro de un margen corto.
+    //
+    // Van en su propia lista porque caen fuera del rango que el archivo dice
+    // cubrir, y la UI tiene que decirlo.
+    const MARGEN_MS = 10 * 24 * 60 * 60 * 1000;
+    const dia = f => Date.parse(String(f) + 'T00:00:00Z');
+    const desde = new Date(dia(fechas[0]) - MARGEN_MS).toISOString().slice(0, 10);
+
+    // Copias de cada firma del archivo que quedaron libres tras el pase anterior.
+    const libres = new Map(enArchivo);
+    for (const [s, n] of usadas) libres.set(s, (libres.get(s) || 0) - n);
+
+    const staleLiquidados = [];
+    const consumidas = new Set();
+    for (const e of (existingTxs || [])) {
+        if (!e || e.pending !== true) continue;
+        if (!e.date || e.date < desde || e.date >= from) continue;   // lo de dentro de la ventana ya se resolvió
+        if (esProtegido(e)) continue;
+
+        const comercio = getMerchantKey(e.concept);
+        if (comercio.length < 6) continue;   // prefijos muy cortos son ambiguos
+
+        const idx = newTxs.findIndex((m, i) => {
+            if (consumidas.has(i)) return false;
+            if (m.pending === true) return false;
+            const ss = m.strictSignature || getStrictSignature(m);
+            if ((libres.get(ss) || 0) <= 0) return false;
+            if ((Number(m.charge) || 0) !== (Number(e.charge) || 0)) return false;
+            if ((Number(m.credit) || 0) !== (Number(e.credit) || 0)) return false;
+            if (!getMerchantKey(m.concept).startsWith(comercio)) return false;
+            const d = dia(m.date) - dia(e.date);
+            return d >= 0 && d <= MARGEN_MS;
+        });
+        if (idx < 0) continue;
+
+        consumidas.add(idx);
+        const ss = newTxs[idx].strictSignature || getStrictSignature(newTxs[idx]);
+        libres.set(ss, (libres.get(ss) || 0) - 1);
+        staleLiquidados.push(Object.assign({}, e, { _liquidadoEn: newTxs[idx].date }));
+    }
+
+    return { from, to, stale, staleConfirmed, staleLiquidados, confirmed, protectedCount, primerDiaParcial };
 }
 
 // ---------------------------------------------------------------------------
