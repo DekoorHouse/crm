@@ -11,7 +11,7 @@ https://articulo.mercadolibre.com.mx/MLM-3964079726#origin%3Dshare%26sid%3Dshare
 ¡Cualquier duda, aquí estoy! ✨
 - pago, anticipo, número de cuenta, cómo pagar, transferencia, oxxo: ¡Claro! 🥰 Te enviaremos la información de pago junto con la foto de tu pedido terminado 💳✨✅
 - precio, costo, cuánto cuesta, valor, información: Cada lámpara cuesta $750 🎁✨ con envío GRATIS a todo México 🚚. Somos de Durango capital 📍 y cada lámpara es única 😍.
-- referencias, opiniones, clientes, confianza: ¡Te entiendo perfecto! La confianza es lo más importante. Puedes ver lo que dicen nuestros más de 6,000 clientes felices aquí en nuestro grupo de referencias 🥰: https://chat.whatsapp.com/KigCQpjsXFI0i57XtRzOIa
+- referencias, opiniones, clientes, confianza: ¡Te entiendo perfecto! La confianza es lo más importante 🥰 Puedes ver las opiniones y fotos de nuestros más de 6,000 clientes felices aquí: https://app.dekoormx.com/referencias/
 - Se paga al recibir, pago contra entrega: ¡Hola! 😊✨ Sabemos que a veces da desconfianza pagar antes 😅💳, por eso te damos una opción 100% segura 🛡️:
 
 En Mercado Libre 🛒 tu dinero queda protegido y solo se libera cuando recibes tu pedido 📦✅. Así compras con toda la tranquilidad del mundo 😍💖

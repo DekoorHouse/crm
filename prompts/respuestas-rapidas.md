@@ -59,10 +59,14 @@ Por favor, verifique.
 - 1e: Muy bien. Vamos a checar si tenemos envío gratis 🚚💨 hasta tu ciudad 🏙️
 - 1pago: Gracias,Tu pago seria por medio de deposito en oxxo o transferencia bancaria?
 - 222: 🔑✨ El pedido se entregará por DHL ✈️ en un plazo de 3 a 5 días hábiles⏳. Este tiempo no incluye sábados ni domingos y el tiempo comenzará a contar al día siguiente de que *recibas la guía de rastreo* 📦📨.
-- 2referencia: En este grupo de WhatsApp hay mas de *600 personas que ya compraon con nosotros*  ✅ Si gustas puedes escribir para preguntar si es segura la compra. Lo checas y me dices si continuamos con tu pedido 😀 
+- 2referencia: Entendemos tu preocupación 😊 Aquí puedes ver las opiniones y fotos de *más de 6,000 personas que ya compraron con nosotros* ✅
 
-https://chat.whatsapp.com/KigCQpjsXFI0i57XtRzOIa
-- 500 personas: Si gustas, también te puedo pasar un grupo de WhatsApp 💬 donde hay más de *500 personas* que ya compraron 🎁🙌.
+https://app.dekoormx.com/referencias/
+
+Lo checas y me dices si continuamos con tu pedido 😀
+- 500 personas: Si gustas, te paso las opiniones de las *más de 6,000 personas* que ya compraron con nosotros 🎁🙌
+
+https://app.dekoormx.com/referencias/
 - a1: Hola, para preguntar cuando podriamos recibir tu pago? y mientras guardar tu pedido 👍🏻
 - a2: Hola 👋🏻 quedamos al pendiente de tu pago el dia de hoy. Cualquier duda con gusto la checamos ❤️
 - a3: Buen día. Todo bien con tu pedido? Estuvimos esperando tu respuesta 😔
@@ -168,6 +172,7 @@ Teléfono:
 Es IMPORTANTE que en la dirección que nos mandes haya gente durante el dia  la paquetería no tiene una hora exacta de entrega. En caso de proporcionar algún dato incorrecto o incompleto no se hará valida ninguna garantía de entrega. Para evitar errores por favor manda tus datos por escrito y no en foto.
 - dgui: Hola, buen día! 📦
 Tu guía de envío ya está lista con DHL. Enseguida te comparto el link para rastrear tu paquete 👇
+https://www.dhl.com/mx-es/home/rastreo.html
 
 Los paquetes salen a las 6pm; por el momento te aparecerá en preparación cuando lo cheques.
 
@@ -267,8 +272,6 @@ Te dejo tu numero de guía, es de *J&T Express*, puedes rastrear el paquete en e
 ⚠️ *Los paquetes salen a las 6pm por el momento te aparecerá en preparación cuando lo cheques.*
 
 *Por favor nos avisas en cuanto te llegue tu pedido 🙏*
-Te recordamos que en nuestro grupo de WhatsApp regalamos productos cada mes 
-https://chat.whatsapp.com/KigCQpjsXFI0i57XtRzOIa
 ❤️
 - lamento: Lamento informarte que no tenemos cobertura de envios para tu domicilio  😞
 Pero si cuentas con otro codigo postal en otra zona podemos verificar la cobertura.
@@ -304,7 +307,7 @@ Así aseguras la promocion de envio gratis y tu pieza personalizada. ✅
 - mama: Tambien llevaria el corazón con mamá? 😊
 - mas modelos: Te dejamos más modelos que ya nos han pedido anteriormente 💖✨ Si te gusta alguno que no esté aquí, ¡con gusto te lo podemos hacer a tu estilo! 🎁🖌️
 
-https://photos.app.goo.gl/XRbVZUY418cbggqWA
+https://app.dekoormx.com/sitio/catalogo/
 - mdiseño: Por el momento tenemos ese diseño,pero podemos hacer uno especial de un personaje que tú nos indiques. *De qué te gustaría?* 😃 Para mandarte un previo
 - medida lamp cora: La base es de 9cm de diametro y el acrlico es de 16 x16 CM  😀
 - mercado libre: Para que tu dinero esté 100% seguro puedes pagar a través de Mercado Pago, que es la plataforma que usa Mercado Libre para procesar pagos ✔️
@@ -397,9 +400,9 @@ Antes de salir por tu paquete te recomiendo verificar en la plataforma si ya est
 - oxxo: Claro, te dejo la info para pago en oxxo. Solo les mencionas que vas a hacer un deposito a ese numero de cuenta Spin
 - pagado: Llenaste correctamente el formulario, ahora preparamos tu envío, en cuanto tenga la guía te la envío para que puedas rastrear tu paquete 😀 *Puede tardar 24-36hrs (habiles) en llegarte el numero de guia*
 
-💥Mientras Te invitamos a unirte a nuestro grupo exclusivo de clientes donde lanzamos nuevos productos con descuento a las personas que ya realizaron alguna compra  ✅
+💥 Mientras tanto, síguenos en Instagram 📸 ahí lanzamos los nuevos productos y los descuentos para nuestros clientes ✅
 
-https://chat.whatsapp.com/KigCQpjsXFI0i57XtRzOIa
+https://www.instagram.com/dekoor_mx
 - pago: *¡Muchísimas gracias por tu pago! 🙌✨* Ya recibimos tu confirmación.
 
 Enseguida te pedire tus datos de envio
@@ -500,12 +503,11 @@ El ENVÍO ES GRATIS por DHL ✈️ y *tu pedido llegará en 3 a 5 días hábiles
 📸 Pagas al ver la foto de tu pedido terminado, antes de enviarlo
 
 *¿Qué nombre quieres que lleve la suya? 😃*
-- vip: ✨ ¡También quiero invitarte a nuestra comunidad exclusiva de WhatsApp! 💬
-Es un grupo solo para personas que ya recibieron su pedido 🎁
+- vip: ✨ ¡También quiero invitarte a seguirnos en Instagram! 📸
 
-Ahí compartimos 💡 _nuevas ideas de regalos_, 🎉 _descuentos especiales_
+Ahí publicamos 💡 _nuevas ideas de regalos_, 🎉 _descuentos especiales_
 e incluso 🎁 _regalamos productos._
 
 *Te dejo el link*
 
-https://chat.whatsapp.com/LdB2DyY1BSYDMkOcj4yISj
+https://www.instagram.com/dekoor_mx
