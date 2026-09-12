@@ -164,3 +164,41 @@ describe('saneaExtraccion', () => {
         expect(r.items).toHaveLength(1);
     });
 });
+
+describe('pedido previo CERRADO / post-venta (segundo pedido de un cliente que ya pagó)', () => {
+    const { buildRegistrationRule } = require('../server/orders/aiOrderRegistration');
+    const previo = { num: 'DH16334', datosProducto: 'Nombre: Diego | Personaje: Spiderman', precio: 750, estatus: 'Pagado' };
+
+    test('pedido previo pagado: se le dice al extractor que es un pedido NUEVO (solo productos nuevos)', async () => {
+        mockGemini.mockResolvedValue({ text: JSON_BUENO });
+        await extractOrderDetailed({ ...args(), existingOrder: { ...previo, done: true } });
+        const sys = mockGemini.mock.calls[0][2];
+        expect(sys).toContain('DH16334');
+        expect(sys).toContain('Estatus: Pagado');
+        expect(sys).toContain('YA ESTÁ CERRADO');
+        expect(sys).toContain('esAdicional=true');
+    });
+
+    test('cliente en post-venta con pedido en Foto enviada: también se trata como cerrado', async () => {
+        mockGemini.mockResolvedValue({ text: JSON_BUENO });
+        await extractOrderDetailed({ ...args(), existingOrder: { ...previo, estatus: 'Foto enviada', done: false, postventa: true } });
+        const sys = mockGemini.mock.calls[0][2];
+        expect(sys).toContain('YA ESTÁ CERRADO');
+        expect(sys).toContain('post-venta');
+    });
+
+    test('pedido previo editable: se conserva la decisión cambio vs adicional', async () => {
+        mockGemini.mockResolvedValue({ text: JSON_BUENO });
+        await extractOrderDetailed({ ...args(), existingOrder: { ...previo, estatus: 'Sin estatus', done: false, postventa: false } });
+        const sys = mockGemini.mock.calls[0][2];
+        expect(sys).not.toContain('YA ESTÁ CERRADO');
+        expect(sys).toContain('Decide con la conversación');
+    });
+
+    test('la regla de cierre en post-venta se acota a pedidos NUEVOS', () => {
+        const cfg = { catalogText: '- "Lámpara de corazones" — $750' };
+        expect(buildRegistrationRule(cfg, { postventa: true })).toContain('ESTÁS EN POST-VENTA');
+        expect(buildRegistrationRule(cfg)).not.toContain('ESTÁS EN POST-VENTA');
+        expect(buildRegistrationRule(cfg, { postventa: true })).toContain('/registrar');
+    });
+});

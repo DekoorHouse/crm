@@ -73,7 +73,7 @@ PEDIDO LISTO / ENVÍO: si el cliente pregunta por el estatus, dale una respuesta
 
 ENTREGA: coordina dirección, horario o punto de recolección según aplique.
 
-NUEVO PEDIDO: si el cliente quiere comprar otra cosa o hacer OTRO pedido, salúdalo con entusiasmo (ej. "¡Claro que sí! 🎉 Con gusto te ayudo con tu nuevo pedido") y escribe al final de tu mensaje el comando /nuevopedido. Ese comando regresa la conversación al área de ventas y NO lo ve el cliente.
+NUEVO PEDIDO: si el cliente quiere comprar otra cosa o hacer OTRO pedido (otra lámpara, una más para otra persona), salúdalo con entusiasmo (ej. "¡Claro que sí! 🎉 Con gusto te ayudo con tu nuevo pedido") y escribe /nuevopedido en su propio mensaje. Ese comando regresa la conversación al área de ventas y NO lo ve el cliente. En ese mismo turno pregúntale qué modelo quiere y los datos de personalización. Si el cliente te da todos los datos y confirma el resumen, sigue la "Regla Especial de Cierre y Registro de Pedido" (al final de tus instrucciones) y emite /registrar: NUNCA le digas "ya le pedí al equipo" ni "ya lo anotamos" sin haber emitido /registrar, porque el pedido NO existe hasta que lo emites. No inventes precios ni "totales especiales": usa los del catálogo de esa regla.
 
 QUÉ NO HACES:
 - No inventes montos, fechas, folios, números de guía ni estatus que no tengas confirmados.
@@ -1122,25 +1122,28 @@ async function buildStaticContext(botInstructions, isPostVenta = false, paymentP
         .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
         .join('\n');
 
-    // La regla de cierre SOLO aplica en etapa de venta: en post-venta el pedido ya cerró
-    // y esta regla hacía que el modelo repitiera "Ya registramos tu pedido" en cada mensaje.
     // Con el registro automático por IA activo (crm_settings/ai_order_registration), la regla
-    // se REEMPLAZA por el protocolo de validación + /registrar (ver orders/aiOrderRegistration.js):
+    // clásica se REEMPLAZA por el protocolo de validación + /registrar (ver orders/aiOrderRegistration.js):
     // la IA valida el resumen con el cliente y, al confirmar, el sistema registra el pedido solo.
     // El texto entra al hash del Context Cache, así que encender/apagar el flag renueva el caché.
+    //
+    // POST-VENTA: antes la regla no se inyectaba aquí (la clásica hacía que el modelo repitiera
+    // "Ya registramos tu pedido" en cada mensaje) y /registrar se descartaba. Consecuencia real:
+    // un cliente con su lámpara ya lista/pagada pedía OTRA y la IA "la anotaba" en el chat sin que
+    // existiera ningún pedido (caso 5219961058060: Bluey para los gemelos Alan y Eithan, nunca se
+    // registró). Ahora el protocolo de /registrar se inyecta también en post-venta, acotado a
+    // pedidos NUEVOS; la regla clásica (solo la frase) sigue sin aplicar en post-venta.
     let closingRule = '';
-    if (!isPostVenta) {
-        let aiOrderCfg = null;
-        try {
-            const aiOrderReg = require('./orders/aiOrderRegistration');
-            aiOrderCfg = await aiOrderReg.getAiOrderConfig();
-            if (aiOrderCfg.enabled) closingRule = aiOrderReg.buildRegistrationRule(aiOrderCfg);
-        } catch (e) {
-            console.warn('[AI_ORDER] No se pudo leer la config del registro automático; se usa la regla de cierre clásica:', e.message);
-        }
-        if (!closingRule) {
-            closingRule = `\n\n**Regla Especial de Cierre de Pedido:** Cuando el usuario haya proporcionado todos los datos necesarios y el pedido esté listo para ser procesado por un humano, debes responder ÚNICAMENTE incluyendo la frase exacta "Ya registramos tu pedido" seguido de cualquier instrucción adicional de despedida. Esta frase es un comando interno para el sistema.`;
-        }
+    let aiOrderCfg = null;
+    try {
+        const aiOrderReg = require('./orders/aiOrderRegistration');
+        aiOrderCfg = await aiOrderReg.getAiOrderConfig();
+        if (aiOrderCfg.enabled) closingRule = aiOrderReg.buildRegistrationRule(aiOrderCfg, { postventa: isPostVenta });
+    } catch (e) {
+        console.warn('[AI_ORDER] No se pudo leer la config del registro automático; se usa la regla de cierre clásica:', e.message);
+    }
+    if (!closingRule && !isPostVenta) {
+        closingRule = `\n\n**Regla Especial de Cierre de Pedido:** Cuando el usuario haya proporcionado todos los datos necesarios y el pedido esté listo para ser procesado por un humano, debes responder ÚNICAMENTE incluyendo la frase exacta "Ya registramos tu pedido" seguido de cualquier instrucción adicional de despedida. Esta frase es un comando interno para el sistema.`;
     }
 
     // Instrucciones van en systemInstruction, no en contents
@@ -4149,10 +4152,15 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // el enlace del formulario de datos de envío (ver el manejo después del loop). Si en el mismo
         // turno también salió /sospechoso, MANDA la sospecha (no validamos): son excluyentes.
         const comprobanteValidado = !suspiciousReceipt && /\/comprobante/i.test(aiResponse);
-        // En ETAPA 1, la IA emite /registrar cuando el cliente CONFIRMÓ el resumen de su pedido:
-        // el sistema extrae los datos de la conversación y registra el pedido en el CRM
+        // La IA emite /registrar cuando el cliente CONFIRMÓ el resumen de su pedido: el sistema
+        // extrae los datos de la conversación y registra el pedido en el CRM
         // (orders/aiOrderRegistration.js). Si algo falla, cae al flujo manual (pendientes_ia).
-        const registerOrderCmd = !isPostVenta && /\/registrar\b/i.test(aiResponse);
+        // Aplica TAMBIÉN en ETAPA 2 (post-venta): ahí es un pedido NUEVO de un cliente que ya
+        // cerró el anterior. Antes se descartaba en silencio y el segundo pedido se perdía.
+        const registerOrderCmd = /\/registrar\b/i.test(aiResponse);
+        if (registerOrderCmd && isPostVenta) {
+            console.log(`[AI_ORDER] /registrar en POST-VENTA para ${contactId}: pedido nuevo de un cliente con pedido cerrado; se registra y regresa a ETAPA 1 (venta).`);
+        }
         // La IA emite /esperaanticipo (venta) cuando pide el ANTICIPO de un pedido ESPECIAL. Si el
         // cliente ya tenía un pedido registrado que ahora se volvió especial, ese pedido se saca de
         // la fila de mockups moviéndolo a "Esperando anticipo" (ver el manejo después del loop).
@@ -4426,11 +4434,13 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             console.log(`[AI] Venta cerrada para ${contactId}. Moviendo a Pendientes IA; la IA sigue en etapa de venta (la post-venta arranca con /cuatro).`);
         }
 
-        if (wantsNewOrder) {
-            // El cliente quiere otro pedido: regresar a ETAPA 1 (venta). El bot sigue
-            // activo y el próximo turno lo atiende la IA de ventas (prompt por anuncio/depto).
+        if (wantsNewOrder || (isPostVenta && registerOrderCmd)) {
+            // El cliente quiere otro pedido (o la IA de post-venta ya lo registró): regresar a
+            // ETAPA 1 (venta). El bot sigue activo y el próximo turno lo atiende la IA de ventas
+            // (prompt por anuncio/depto), que sabe acompañar el pedido nuevo (foto, cobro, /cuatro
+            // lo regresa a post-venta cuando esté listo).
             updateData.aiStage = 'venta';
-            console.log(`[AI] Cliente ${contactId} quiere un nuevo pedido. Regresando a ETAPA 1 (venta).`);
+            console.log(`[AI] Cliente ${contactId} ${wantsNewOrder ? 'quiere un nuevo pedido' : 'registró un pedido nuevo desde post-venta'}. Regresando a ETAPA 1 (venta).`);
         } else if (shouldDeactivate) {
             // Etapa 2 apagada (kill-switch): comportamiento anterior, se desactiva el bot.
             updateData.botActive = false;

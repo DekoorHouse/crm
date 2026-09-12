@@ -51,6 +51,14 @@ const EXTRACTOR_REINTENTO_MS = 1500;
 // conflicto, se avisa al admin en vez de crear a ciegas.
 const RECENT_ORDER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Estatus en los que el pedido ya quedó CERRADO (cobrado y/o enviado): un /registrar posterior
+// de ese cliente es un pedido NUEVO, nunca un "cambio". Antes estos pedidos bloqueaban el
+// registro igual que uno en Fabricar (cambio_no_aplicado) y el segundo pedido se perdía.
+const ORDER_DONE_STATUSES = new Set(['Pagado', 'Enviado', 'Entregado', 'Devolucion', 'Devolución']);
+function isOrderDone(orderData = {}) {
+    return ORDER_DONE_STATUSES.has(String(orderData.estatus || '').trim());
+}
+
 // Si el extractor marca esAdicional=true PERO el pedido vigente se creo hace muy poco y sigue
 // editable, casi siempre NO es otro pedido: es el mismo cliente AGREGANDO una pieza en la misma
 // conversacion. Casos reales: DH15441/42/43 (3 lamparas -> 3 pedidos, una quedo sin fabricar al
@@ -166,8 +174,13 @@ async function getAiOrderConfig() {
  * cuando el registro automático está activo (ver buildStaticContext en services.js).
  * Protocolo: validar el resumen con el cliente → confirmación explícita → cierre + /registrar.
  */
-function buildRegistrationRule(cfg) {
-    return `\n\n**Regla Especial de Cierre y Registro de Pedido:**
+function buildRegistrationRule(cfg, { postventa = false } = {}) {
+    // En post-venta el pedido anterior YA cerró: la regla aplica SOLO a un pedido NUEVO. Sin esta
+    // acotación el modelo tiende a "re-registrar" el pedido que ya tiene el cliente.
+    const postventaNote = postventa ? `
+⚠️ ESTÁS EN POST-VENTA: el pedido que este cliente ya tiene está cerrado (fabricado, en cobro o enviado) y NO se registra otra vez ni se modifica con esta regla. Esta regla aplica ÚNICAMENTE si el cliente quiere comprar OTRA lámpara / hacer un pedido NUEVO. Si no está pidiendo algo nuevo, ignórala por completo y NUNCA emitas /registrar.
+` : '';
+    return `\n\n**Regla Especial de Cierre y Registro de Pedido:**${postventaNote}
 Catálogo y datos requeridos por producto (los precios aquí son de referencia: si tus instrucciones o el anuncio manejan un precio o promoción DISTINTOS, el de tus instrucciones MANDA):
 ${cfg.catalogText}
 
@@ -282,9 +295,16 @@ async function extractOrderDetailed({ conversationText, name, catalogText, exist
     // require perezoso para evitar ciclo de módulos services <-> aiOrderRegistration
     const { generateGeminiResponse } = require('../services');
 
+    // Si el pedido previo ya está CERRADO (pagado/enviado) o el cliente está en post-venta (su
+    // lámpara ya está hecha), lo que confirme ahora solo puede ser un pedido ADICIONAL: se le
+    // dice al extractor con todas sus letras para que no lo devuelva como "cambio" con los items
+    // viejos incluidos (eso duplicaría la lámpara anterior en el pedido nuevo).
+    const cerrado = existingOrder && (existingOrder.done || existingOrder.postventa);
     const existingOrderNote = existingOrder ? `
-PEDIDO YA REGISTRADO en el sistema para este cliente: ${existingOrder.num} — ${String(existingOrder.datosProducto || '').replace(/\s+/g, ' ').slice(0, 300)} — Total registrado: $${existingOrder.precio}.
-Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelve el pedido COMPLETO como debe quedar al final (todos sus items, esAdicional=false). Si el cliente pidió OTRO pedido independiente además de aquel, devuelve SOLO los productos nuevos (esAdicional=true).
+PEDIDO YA REGISTRADO en el sistema para este cliente: ${existingOrder.num} — ${String(existingOrder.datosProducto || '').replace(/\s+/g, ' ').slice(0, 300)} — Total registrado: $${existingOrder.precio}${existingOrder.estatus ? ` — Estatus: ${existingOrder.estatus}` : ''}.
+${cerrado
+        ? `Ese pedido YA ESTÁ CERRADO (${existingOrder.done ? 'pagado/enviado' : 'la lámpara ya está fabricada y el cliente está en post-venta'}): NO se puede modificar. Todo lo que el cliente confirmó DESPUÉS de ese pedido es un pedido NUEVO e independiente: devuelve SOLO los productos nuevos (esAdicional=true) y NO incluyas los del pedido ya registrado. Si el cliente no confirmó ningún producto nuevo (solo habla del pedido que ya tiene), responde listo=false y explícalo en "faltante".`
+        : `Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelve el pedido COMPLETO como debe quedar al final (todos sus items, esAdicional=false). Si el cliente pidió OTRO pedido independiente además de aquel, devuelve SOLO los productos nuevos (esAdicional=true).`}
 ` : '';
 
     const prompt = `Cliente: ${name || 'desconocido'}\n\nConversación (más antiguo arriba):\n${conversationText}\n\nDevuelve solo el JSON.`;
@@ -419,6 +439,9 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
         const adPersonaje = detectAdPersonaje(contactData, cfg.adProductHints);
         if (adPersonaje) console.log(`[AI_ORDER] ${contactId} llegó por anuncio de "${adPersonaje}"; se usa como personaje por defecto.`);
 
+        // Último pedido no cancelado de los últimos 7 días (si hay). Se consulta UNA vez: sirve de
+        // contexto al extractor y luego para decidir si es cambio, fusión o pedido nuevo.
+        const existingRec = await findRecentOrderForContact(contactId).catch(() => null);
         const { extraction, motivo: motivoExtraccion } = await extractOrderDetailed({
             conversationText,
             name,
@@ -426,11 +449,14 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             adPersonaje,
             // Contexto del pedido ya registrado (si hay uno reciente): el extractor decide si la
             // conversación lo CAMBIA (devuelve el pedido completo actualizado) o es uno ADICIONAL.
-            existingOrder: await findRecentOrderForContact(contactId).then(rec => rec ? {
-                num: rec.data.consecutiveOrderNumber != null ? `DH${rec.data.consecutiveOrderNumber}` : rec.id,
-                datosProducto: rec.data.datosProducto || rec.data.producto || '',
-                precio: rec.data.precio
-            } : null).catch(() => null)
+            existingOrder: existingRec ? {
+                num: existingRec.data.consecutiveOrderNumber != null ? `DH${existingRec.data.consecutiveOrderNumber}` : existingRec.id,
+                datosProducto: existingRec.data.datosProducto || existingRec.data.producto || '',
+                precio: existingRec.data.precio,
+                estatus: existingRec.data.estatus || 'Sin estatus',
+                done: isOrderDone(existingRec.data),
+                postventa: contactData.aiStage === 'postventa'
+            } : null
         });
 
         if (!extraction) throw new Error(motivoExtraccion || 'el extractor no devolvió nada');
@@ -461,8 +487,16 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
         // esAdicional=true YA NO se salta la busqueda: antes creaba otro DH a ciegas y partia en
         // varios pedidos lo que el cliente pidio como uno solo. Ahora, si el pedido vigente es
         // reciente y editable, se FUSIONA; si es viejo o ya no se puede tocar, si es uno nuevo.
-        let recent = await findRecentOrderForContact(contactId);
+        let recent = existingRec;
         let mergeAdicional = false;
+        // Pedido previo ya CERRADO (pagado/enviado): no se puede "cambiar", así que lo que el cliente
+        // confirmó es un pedido NUEVO. Se crea aparte sin pasar por el aviso de cambio_no_aplicado
+        // (que era donde se perdía el segundo pedido de un cliente que ya había pagado el primero).
+        if (recent && isOrderDone(recent.data)) {
+            const rNumDone = recent.data.consecutiveOrderNumber != null ? `DH${recent.data.consecutiveOrderNumber}` : recent.id;
+            console.log(`[AI_ORDER] ${contactId} ya tiene ${rNumDone} en "${recent.data.estatus}" (cerrado): el /registrar se trata como pedido NUEVO.`);
+            recent = null;
+        }
         if (recent && extraction.esAdicional) {
             const rd = recent.data;
             const createdMs = rd.createdAt && rd.createdAt.toMillis ? rd.createdAt.toMillis() : 0;
@@ -555,6 +589,23 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
             await alertAdmin(`🤖 *Pedido ACTUALIZADO por la IA (el cliente lo cambió)*\n\n*${rNum}* — Total: $${totalValue} (antes $${r.precio})\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nAntes: ${oldDatos || '-'}\n\nVersión nueva:\n${itemsTxt}${metaNote}\n\n_Confianza: ${extraction.confianza}%._ Sigue pendiente de tu revisión en el CRM → Pedidos.`);
             console.log(`[AI_ORDER] ✏️ Pedido ${rNum} ACTUALIZADO para ${contactId} (cambio del cliente, confianza ${extraction.confianza}%).`);
             return rNum;
+        }
+
+        // Candado anti-duplicado: si lo extraído es EXACTAMENTE lo que ya tiene el pedido previo
+        // (mismo producto + mismos datos), no es un pedido nuevo: es la IA re-emitiendo /registrar
+        // (o el extractor repitiendo el pedido viejo). Antes, con el pedido previo fuera de la
+        // ventana de bloqueo, esto habría creado un DH duplicado; ahora cae a la bitácora.
+        if (existingRec && Array.isArray(existingRec.data.items) && existingRec.data.items.length) {
+            const claveDup = (it) => `${String(it.producto || '').trim().toLowerCase()}|${String(it.datosProducto || '').trim().toLowerCase()}`;
+            const previos = new Set(existingRec.data.items.map(claveDup));
+            if (extraction.items.every(it => previos.has(claveDup(it)))) {
+                const numPrev = existingRec.data.consecutiveOrderNumber != null ? `DH${existingRec.data.consecutiveOrderNumber}` : existingRec.id;
+                // No es una falla que deba ir a Pendientes IA (alguien registraría el duplicado a
+                // mano): queda en la bitácora y se devuelve el pedido que ya existe.
+                console.warn(`[AI_ORDER] ${contactId}: lo extraído es idéntico a ${numPrev} (${existingRec.data.estatus || 'Sin estatus'}); no se crea otro pedido.`);
+                await logFailure(contactId, name, `duplicado_evitado: lo extraído es idéntico a ${numPrev} (${existingRec.data.estatus || 'Sin estatus'})`);
+                return numPrev;
+            }
         }
 
         // require perezoso (mismo motivo que arriba)
