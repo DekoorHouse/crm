@@ -25,7 +25,8 @@ import {
     reconcileBalance,
     detectBBVAHeader,
     parseBBVARow,
-    planStatementReplace
+    planStatementReplace,
+    parseBalance
 } from './bbva-parser.js';
 
 // ---------------------------------------------------------------------------
@@ -518,6 +519,65 @@ function caso9_pendienteLiquidadoFueraDeVentana() {
 }
 
 // ---------------------------------------------------------------------------
+//  Caso 10: filas con la misma firma que SÍ son movimientos distintos.
+//           Caso real: dos viajes de Bolt de $29 el mismo día, los dos En
+//           tránsito. Sin AUT quedaban idénticos y el segundo se omitía como
+//           "fila repetida" — el saldo quedaba $29 arriba del real.
+// ---------------------------------------------------------------------------
+
+function caso10_mismaFirmaMovimientosDistintos() {
+    const bolt = (extra) => attachSignatures(Object.assign({
+        date: '2026-09-11', concept: 'DLO*SOFT BOLT', charge: 29, credit: 0
+    }, extra));
+
+    // a) Dos En tránsito idénticos: los dos son reales.
+    const r1 = classifyForImport([bolt({ pending: true, bankBalance: null }), bolt({ pending: true, bankBalance: null })], []);
+    assert('Caso 10.a — dos En tránsito idénticos se importan ambos',
+        r1.newUnique.length === 2 && r1.intraFileDuplicates.length === 0,
+        `newUnique=${r1.newUnique.length} intra=${r1.intraFileDuplicates.length}`);
+
+    // b) Dos liquidados idénticos con SALDOS DISTINTOS: dos movimientos.
+    const r2 = classifyForImport([bolt({ pending: false, bankBalance: 27554.41 }), bolt({ pending: false, bankBalance: 27583.41 })], []);
+    assert('Caso 10.b — liquidados con saldos distintos se importan ambos',
+        r2.newUnique.length === 2 && r2.intraFileDuplicates.length === 0);
+
+    // c) Dos liquidados idénticos con el MISMO saldo: fila repetida.
+    const r3 = classifyForImport([bolt({ pending: false, bankBalance: 27554.41 }), bolt({ pending: false, bankBalance: 27554.41 })], []);
+    assert('Caso 10.c — liquidados con el mismo saldo: sólo uno, el otro es repetido',
+        r3.newUnique.length === 1 && r3.intraFileDuplicates.length === 1);
+
+    // d) Se cuenta contra la base: hay 1 guardado y el archivo trae 2 reales.
+    const guardado = bolt({ pending: true, bankBalance: null });
+    const r4 = classifyForImport([bolt({ pending: true, bankBalance: null }), bolt({ pending: true, bankBalance: null })], [guardado]);
+    assert('Caso 10.d — con 1 guardado y 2 reales en el archivo, entra 1 nuevo',
+        r4.newUnique.length === 1 && r4.existingExact.length === 1,
+        `newUnique=${r4.newUnique.length} existing=${r4.existingExact.length}`);
+
+    // e) Lo mismo en recurrentes: antes bastaba con que la firma existiera
+    //    para descartar TODAS las copias.
+    const efectivo = () => attachSignatures({
+        date: '2026-09-08', concept: 'SU PAGO EN EFECTIVO / 000000000000000 EN COMERCIO', charge: 0, credit: 750
+    });
+    const r5 = classifyForImport([efectivo(), efectivo(), efectivo()], [efectivo(), efectivo()]);
+    assert('Caso 10.e — recurrente: 2 guardados y 3 en el archivo, entra el tercero',
+        r5.newUnique.length === 1 && r5.existingExact.length === 2,
+        `newUnique=${r5.newUnique.length} existing=${r5.existingExact.length}`);
+
+    // f) parseBBVARow llena bankBalance.
+    const det = detectBBVAHeader([['FECHA', 'DESCRIPCIÓN', 'CARGO', 'ABONO', 'SALDO']]);
+    const liq = parseBBVARow(['11/09/2026', 'DLO*SOFT BOLT / ****8493 AUT: 1', '-29.00', '', '27,554.41'], 1, det.columnMap, {});
+    const pen = parseBBVARow(['11/09/2026', 'DLO*SOFT BOLT', '-29.00', '', 'En tránsito'], 2, det.columnMap, {});
+    assert('Caso 10.f — liquidado trae su saldo como número', liq && liq.bankBalance === 27554.41, liq && liq.bankBalance);
+    assert('Caso 10.g — En tránsito no trae saldo', pen && pen.bankBalance === null);
+
+    // g) parseBalance
+    assert('Caso 10.h — parseBalance respeta miles y centavos', parseBalance('27,554.41') === 27554.41);
+    assert('Caso 10.i — parseBalance conserva el signo', parseBalance('-1,200.50') === -1200.5);
+    assert('Caso 10.j — parseBalance: vacío o texto es null',
+        parseBalance('') === null && parseBalance('En tránsito') === null && parseBalance(null) === null);
+}
+
+// ---------------------------------------------------------------------------
 //  Runner público
 // ---------------------------------------------------------------------------
 
@@ -534,6 +594,7 @@ export function runAllTests() {
     test('Caso 7: columna SALDO y etiqueta "En tránsito"', caso7_columnaSaldoYPendiente);
     test('Caso 8: reemplazo por ventana (tránsito → liquidado)', caso8_reemplazoPorVentana);
     test('Caso 9: pendiente liquidado fuera de la ventana', caso9_pendienteLiquidadoFueraDeVentana);
+    test('Caso 10: misma firma, movimientos distintos', caso10_mismaFirmaMovimientosDistintos);
 
     const pass = results.filter(r => r.ok).length;
     const fail = results.length - pass;

@@ -87,6 +87,28 @@ export function normalizeAmount(value) {
     return Number.isFinite(n) ? Math.abs(n) : 0;
 }
 
+/**
+ * Convierte el saldo de la columna SALDO a número CON signo, redondeado a
+ * centavos para poder compararlo por igualdad. A diferencia de
+ * `normalizeAmount` no aplica valor absoluto: un saldo negativo es otro saldo.
+ *
+ * @param {*} value
+ * @returns {number|null}  null si la celda está vacía o no es un número
+ */
+export function parseBalance(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
+    let s = String(value).trim();
+    if (!s || !/\d/.test(s)) return null;
+    const lastDot = s.lastIndexOf('.');
+    const lastComma = s.lastIndexOf(',');
+    if (lastComma > lastDot && lastComma > -1) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(/,/g, '');
+    s = s.replace(/[^0-9.\-]/g, '');
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+}
+
 // ---------------------------------------------------------------------------
 //  Fechas
 // ---------------------------------------------------------------------------
@@ -246,6 +268,10 @@ export function parseBBVARow(row, sourceRowIndex, columnMap, importMeta = {}) {
     // mismo cargo entra dos veces si sólo se importa lo "nuevo".
     const rawBalance = (columnMap && columnMap.balance >= 0) ? row[columnMap.balance] : '';
     const pending = /tr[aá]nsito/i.test(String(rawBalance == null ? '' : rawBalance).trim());
+    // Saldo corrido que dejó este movimiento (null si está En tránsito o si el
+    // archivo no trae SALDO). Es la única prueba que da el archivo para saber
+    // si dos filas idénticas son dos movimientos o la misma fila repetida.
+    const bankBalance = pending ? null : parseBalance(rawBalance);
 
     const date = toISODate(rawDate);
     const concept = String(rawConcept || '').trim();
@@ -269,6 +295,7 @@ export function parseBBVARow(row, sourceRowIndex, columnMap, importMeta = {}) {
         type: 'operativo',
         sub_type: '',
         pending,              // true = "En tránsito", el concepto puede cambiar al liquidarse
+        bankBalance,          // saldo corrido tras el movimiento; null si está En tránsito o no hay SALDO
         source: importMeta.sourceFileExt || 'xls',
 
         // --- Metadata de importación (auditoría) ---
@@ -364,12 +391,16 @@ export function attachSignatures(tx) {
  * }}
  */
 export function classifyForImport(newTxs, existingTxs) {
-    // Indexar existentes por firma estricta
-    const existingByStrict = new Set();
+    // Cuántas copias de cada firma ya hay en la base. Se CUENTA, no se pregunta
+    // si existe: si la base guarda 1 y el archivo trae 2 movimientos reales con
+    // la misma firma, el segundo es nuevo. (Antes bastaba con que la firma
+    // existiera para descartar TODAS las copias del archivo, y el segundo
+    // movimiento se perdía — incluso en los recurrentes como SU PAGO EN EFECTIVO.)
+    const existingCount = new Map();
     const existingBySoft = new Map(); // softSig → cantidad
     for (const e of existingTxs) {
         const ss = e.strictSignature || getStrictSignature(e);
-        existingByStrict.add(ss);
+        existingCount.set(ss, (existingCount.get(ss) || 0) + 1);
         const sf = e.softSignature || getSoftSignature(e);
         existingBySoft.set(sf, (existingBySoft.get(sf) || 0) + 1);
     }
@@ -396,33 +427,57 @@ export function classifyForImport(newTxs, existingTxs) {
     const existingExact = [];
 
     for (const [ss, group] of newByStrict.entries()) {
-        const first = group[0];
-        const inDB = existingByStrict.has(ss);
-
-        if (isSpecial(first.concept)) {
-            // Permitir todas las copias para movimientos recurrentes conocidos.
-            // Aún así, si todas ya están en DB las marcamos como omitidas.
-            if (inDB) {
-                group.forEach(tx => existingExact.push({ expense: tx, sig: ss }));
-            } else {
-                group.forEach(tx => newUnique.push(tx));
-            }
-            continue;
-        }
-
-        if (inDB) {
-            group.forEach(tx => existingExact.push({ expense: tx, sig: ss }));
+        // 1) ¿Cuántas filas del grupo son movimientos DISTINTOS?
+        //
+        // Misma firma no implica misma operación. Pruebas, en orden:
+        //   - Recurrentes conocidos (SPECIAL_RECURRING): todas son reales.
+        //   - En tránsito: BBVA todavía no les pone el AUT que las distinguiría,
+        //     así que dos viajes de Bolt de $29 el mismo día quedan idénticos.
+        //     Se cuentan como distintas. Es autocorregible: al liquidarse cada
+        //     una trae su AUT y la limpieza por pendientes quita las versiones
+        //     viejas.
+        //   - Liquidadas con columna SALDO: saldos distintos son dos movimientos;
+        //     el mismo saldo es la misma fila repetida.
+        // Sin columna SALDO no hay prueba posible y se conserva el
+        // comportamiento histórico: la primera cuenta, el resto son repetidas.
+        const distintos = [];
+        const repetidas = [];
+        if (isSpecial(group[0].concept)) {
+            distintos.push(...group);
         } else {
-            newUnique.push(first);
-            for (let i = 1; i < group.length; i++) {
-                intraFileDuplicates.push({
-                    expense: group[i],
-                    sig: ss,
-                    copyIndex: i + 1,
-                    totalCopies: group.length
-                });
+            const saldosVistos = new Set();
+            const sinPrueba = [];
+            for (const tx of group) {
+                if (tx.pending === true) {
+                    distintos.push(tx);
+                } else if (typeof tx.bankBalance === 'number' && Number.isFinite(tx.bankBalance)) {
+                    if (saldosVistos.has(tx.bankBalance)) {
+                        repetidas.push(tx);
+                    } else {
+                        saldosVistos.add(tx.bankBalance);
+                        distintos.push(tx);
+                    }
+                } else {
+                    sinPrueba.push(tx);
+                }
+            }
+            if (sinPrueba.length > 0) {
+                distintos.push(sinPrueba[0]);
+                repetidas.push(...sinPrueba.slice(1));
             }
         }
+
+        // 2) Descontar las copias que ya están guardadas.
+        const yaGuardadas = Math.min(existingCount.get(ss) || 0, distintos.length);
+        distintos.slice(0, yaGuardadas).forEach(tx => existingExact.push({ expense: tx, sig: ss }));
+        distintos.slice(yaGuardadas).forEach(tx => newUnique.push(tx));
+
+        repetidas.forEach(tx => intraFileDuplicates.push({
+            expense: tx,
+            sig: ss,
+            copyIndex: group.indexOf(tx) + 1,
+            totalCopies: group.length
+        }));
     }
 
     // Detectar suspects: entre los movimientos que SÍ vamos a importar (newUnique)
