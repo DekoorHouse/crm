@@ -1056,10 +1056,16 @@ Reglas: elige por lo que el cliente YA te dijo (si viene por una lámpara de ni�
 // Dos alucinaciones del caso DH14717 (10-ago-2026), ambas en etapa de VENTA —donde no existian las
 // reglas equivalentes del prompt de post-venta—:
 //  (1) Leonel OFRECIO "una tarjeta de regalo personalizada con el nombre de quien se la entrega".
-//      La tarjeta existe (quick reply /tarjeta) pero va INCLUIDA y en blanco: la escribe el CLIENTE.
-//      Nosotros no personalizamos ni imprimimos nada ahi.
+//      El servicio de tarjeta NO EXISTE (Chris, 12-sep-2026: "ese servicio no lo manejamos"). La
+//      primera version de esta nota decia que la lampara "SI incluye una tarjeta en blanco" (salia
+//      del atajo /tarjeta, hoy oculto a la IA con aiHidden) y eso basto para que Leonel la siguiera
+//      ofreciendo: el 11-sep le propuso a un cliente "una tarjeta impresa con dedicatoria", tomo nota
+//      de la frase, y el equipo tuvo que fabricar la tarjeta a mano para cumplir la promesa. Para que
+//      NO ofrezca algo, la nota no debe describirlo como existente: se declara que no hay tarjeta.
 //  (2) Escribio "[video]" como si adjuntara uno, y solo mando texto. No puede adjuntar archivos.
-const NO_INVENTAR_NOTE = `\n\n**NO OFREZCAS SERVICIOS QUE NO EXISTEN:** ofrece SOLO lo que aparece en tus instrucciones. NUNCA inventes extras, cortesias ni personalizaciones para adornar la venta. En concreto: la lampara SI incluye una tarjeta impresa, pero va EN BLANCO para que el CLIENTE le escriba su dedicatoria — nosotros NO la personalizamos, NO le imprimimos nombres ni mensajes y NO es un extra que se "agregue" al pedido. Asi que JAMAS ofrezcas "agregarle una tarjeta personalizada con el nombre" ni nada por el estilo; si el cliente pregunta por la tarjeta, explicale que viene incluida para que el la escriba. Ante cualquier otra cosa que no sepas si se puede: NO la prometas — dile que lo confirmas con el equipo y escribe /equipo.
+const NO_INVENTAR_NOTE = `\n\n**NO OFREZCAS SERVICIOS QUE NO EXISTEN:** ofrece SOLO lo que aparece en tus instrucciones. NUNCA inventes extras, cortesias ni personalizaciones para adornar la venta ni para "cerrar": si no esta en tus instrucciones, NO existe. Ante cualquier cosa que no sepas si se puede: NO la prometas — dile que lo confirmas con el equipo y escribe /equipo.
+
+**NO MANEJAMOS TARJETAS DE REGALO NI DEDICATORIAS IMPRESAS:** la lampara NO incluye ninguna tarjeta (ni en blanco, ni impresa, ni "de cortesia") y NO ofrecemos ese servicio. NUNCA lo ofrezcas ni lo menciones, NUNCA "tomes nota" de una frase para una tarjeta ni digas que la incluiras. Si el cliente pregunta por una tarjeta o quiere mandar una dedicatoria aparte, dile con amabilidad que no manejamos tarjetas ni dedicatorias impresas, y sigue con el pedido.
 
 **NO PUEDES MANDAR ARCHIVOS TU:** no puedes tomar fotos, grabar videos ni adjuntar nada por tu cuenta (solo los atajos mandan su propio contenido). NUNCA escribas marcadores como \\"[video]\\", \\"[foto]\\", \\"[imagen]\\" ni digas \\"te mando este videito/esta foto\\" si no la estas mandando de verdad: al cliente le llega puro texto y queda esperando algo que nunca llega. Si te pide un VIDEO o una FOTO del producto: dile UNA sola vez, con calidez, que ya se lo pediste al equipo y que se lo hacen llegar en cuanto lo tengan, y escribe /equipo en su propio renglon (comando interno, el cliente no lo ve) para que una persona se lo mande.`;
 
