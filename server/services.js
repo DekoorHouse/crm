@@ -54,13 +54,13 @@ ANTI-REPETICIÓN (muy importante — revisa tus mensajes anteriores antes de esc
 
 DATOS DE PAGO (compártelos cuando el cliente pregunte cómo pagar — solo los que apliquen — y pídele que te envíe su comprobante al pagar):
 - Transferencia BBVA, a nombre de Christian Morales: cuenta terminación 3262 o tarjeta terminación 0670.
-- Pago en OXXO: depósito a tarjeta terminación 9250.
+- Pago en OXXO: depósito a tarjeta terminación 9250. Si el cliente dice que NO PUDO pagar con esa referencia (la tarjeta está al límite, "no se puede", se lo rechazaron), NO se la repitas: usa el comando /oxxomp con el monto que le corresponde (ver "Referencia OXXO nueva por Mercado Pago").
 
 VALIDACIÓN DE COMPROBANTES (cuando el cliente envíe una imagen o PDF de su pago):
 Analízalo y extrae: monto, fecha y hora, banco, folio o clave de rastreo, y la cuenta/tarjeta DESTINO (a quién se le pagó, NO la del cliente). Luego verifica:
 1) DESTINO correcto:
    - Si es TRANSFERENCIA: debe ir a Christian Morales y la cuenta terminar en 3262 o la tarjeta en 0670.
-   - Si es TICKET DE OXXO: la tarjeta/cuenta destino debe terminar en 9250.
+   - Si es TICKET DE OXXO: la tarjeta/cuenta destino debe terminar en 9250, O ser el ticket de una referencia de Mercado Pago que generaste con /oxxomp (esa no termina en 9250 y es válida si el monto coincide).
    - Si el destino NO coincide (otro nombre u otra terminación), NO confirmes el pago: dile con amabilidad que el comprobante no coincide con nuestros datos y que un agente lo revisará. No acuses ni regañes, solo escala.
 2) MONTO: compáralo con el total acordado en la conversación. Si es menor, indícale cuánto falta. Si no hay un total claro, no lo inventes.
 3) FOLIO y FECHA: deben estar presentes y la fecha ser reciente/coherente. Si falta el folio, la imagen está ilegible, o el PDF viene protegido y no puedes leerlo, pide amablemente que reenvíe el comprobante como captura clara.
@@ -983,6 +983,17 @@ Reglas:
    · Si su pago AÚN no está validado, enfócate primero en el pago; dile que en cuanto se valide le llega el formulario para capturar sus datos de envío. NO tomes los datos por texto todavía.
 - EXCEPCIÓN (única forma de tomarlos por texto): SOLO si el cliente dice claramente que NO PUEDE abrir o llenar el formulario (ej. "no me abre el link", "no me deja", "no puedo llenarlo", "desde aquí no puedo"). Entonces recíbelos por texto: 1) Nombre completo, 2) Calle y número (int/ext), 3) Colonia/Fraccionamiento, 4) C.P., 5) Entre calles, 6) Referencia del domicilio, 7) Estado y Municipio, 8) Teléfono. Junta lo que haya escrito en varios mensajes. Si faltan, pídele SOLO los que falten. Cuando los tengas TODOS, confírmaselos ordenados, dile que un compañero del equipo termina de registrar su envío enseguida, y al FINAL de tu mensaje escribe el comando /equipo (el cliente NO lo ve; avisa a un humano para que capture sus datos y genere la guía). Emítelo UNA sola vez.`;
 
+// Referencia OXXO por Mercado Pago (/oxxomp). La referencia fija de siempre (depósito a la
+// tarjeta terminación 9250) es un depósito a tarjeta: cuando la tarjeta llega a su límite de
+// depósitos en OXXO, el cajero lo rechaza ("no se puede", "está al límite"). Para esos casos la
+// IA pide una referencia NUEVA de Mercado Pago (código de barras propio, con el monto exacto) y
+// el sistema le manda la imagen al cliente (ver generateAndSendOxxoMpReference).
+const OXXO_MP_COMMAND_NOTE = `\n\n**Referencia OXXO nueva por Mercado Pago (comando /oxxomp):**
+- Si el cliente dice que NO PUDO pagar en OXXO con la referencia de siempre —"la tarjeta está al límite", "llegó al límite", "no se puede", "no me lo aceptaron", "me lo rechazaron", "no pasa", "el cajero dijo que no", "marca error"— o pide una referencia con código de barras, NO le repitas la misma referencia ni le insistas con la tarjeta: dile en UNA línea, con calidez, que le generas una referencia nueva de OXXO (por Mercado Pago) que sí le van a aceptar, y escribe en su PROPIO mensaje el comando /oxxomp seguido del monto que le corresponde pagar EN ESTE MOMENTO del flujo (el total, el anticipo o el restante, según el caso). Ejemplo: "/oxxomp 750". Emítelo UNA sola vez por cobro.
+- El sistema genera la referencia y le manda al cliente la IMAGEN con el código de barras, el monto y la fecha de vencimiento (3 días). Tú NO escribas números de referencia ni montos "de cabeza" en ese mensaje, ni prometas que ya la mandaste: el sistema la manda solo.
+- Si el cliente vuelve a pedirla porque no la vio, dile que revise el mensaje con la imagen; solo vuelve a emitir /oxxomp si ya pasaron los 3 días (venció) o si el monto cambió.
+- Cuando pague con esa referencia, el sistema lo detecta automáticamente y se lo confirma; el cliente NO necesita mandar comprobante. Si aun así manda la foto del ticket de OXXO de esa referencia, dalo por válido si el monto coincide (esa referencia NO termina en 9250: NO lo marques como sospechoso por eso) y responde ÚNICAMENTE con /comprobante si cubre el total.`;
+
 const COMPROBANTE_COMMAND_NOTE = `\n\n**Comprobante de pago y formulario de envío:**
 - Cuando el cliente te MANDE su comprobante de pago (imagen o PDF) y verifiques que es GENUINO (el destino y el monto coinciden con lo esperado), responde ÚNICAMENTE con el comando /comprobante (SOLO eso, sin ningún otro texto ni saludo). NO escribas tú la confirmación, NO le pidas los datos de envío por texto y NO le mandes ningún enlace: al recibir /comprobante, el SISTEMA le manda automáticamente el mensaje de confirmación ("ya validamos tu pago") junto con el formulario de envío. Emítelo UNA sola vez por pedido.
 - ⚠️ ANTICIPO ≠ PAGO COMPLETO — NO EMITAS /comprobante POR UN ANTICIPO: si el comprobante es solo el ANTICIPO (diseño ESPECIAL: $300 por lámpara —foto, logo, modificación o personaje fuera de catálogo—; pedido de 5+ piezas ~$500; o el APARTADO de tu departamento acordado en ESTA conversación), NUNCA emitas /comprobante, NO le pidas datos de envío y NO le mandes el formulario. Ese comando GENERA LA GUÍA de envío, y si el pedido no está pagado por completo la guía caduca antes de que el cliente liquide. Con un anticipo válido: solo confírmalo con calidez y avisa que ARRANCA la fabricación/diseño y que el RESTO se paga al ver la foto del trabajo terminado (ej.: "¡Listo, recibimos tu anticipo! 🎉 Ya arrancamos tu diseño. En cuanto esté te mando la foto para que liquides el resto y generamos tu guía ✨"). Reconocer que es un anticipo y AUN ASÍ emitir /comprobante o pedir datos de envío es el error a evitar. /comprobante y el formulario son EXCLUSIVOS del pago COMPLETO: cuando el cliente liquida el TOTAL (todo de una vez, o el RESTANTE después de ver la foto).
@@ -1153,7 +1164,7 @@ async function buildStaticContext(botInstructions, isPostVenta = false, paymentP
     }
 
     // Instrucciones van en systemInstruction, no en contents
-    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${isPostVenta ? REENVIO_COMMAND_NOTE : ''}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE : ''}${isPostVenta ? '' : INFANTIL_SPECIAL_NOTE}${DURANGO_NOTE}${NO_PERSONAL_PLANS_NOTE}${IDENTITY_NOTE}${PAYMENT_PROOF_NOTE}${CATALOGO_NOTE}${NO_INVENTAR_NOTE}${NO_INVENTAR_ENVIO_NOTE}`;
+    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${isPostVenta ? REENVIO_COMMAND_NOTE : ''}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE + OXXO_MP_COMMAND_NOTE : ''}${isPostVenta ? '' : INFANTIL_SPECIAL_NOTE}${DURANGO_NOTE}${NO_PERSONAL_PLANS_NOTE}${IDENTITY_NOTE}${PAYMENT_PROOF_NOTE}${CATALOGO_NOTE}${NO_INVENTAR_NOTE}${NO_INVENTAR_ENVIO_NOTE}`;
 
     // Material de referencia va en contents (como contexto, no como instrucciones)
     const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo:** Si una de estas respuestas aplica perfectamente, puedes enviarla respondiendo ÚNICAMENTE con su atajo (ejemplo: responde exactamente "/ttt" y nada más); el sistema lo reemplazará automáticamente por su contenido completo, incluida cualquier imagen. También puedes escribir el contenido directamente si lo prefieres. NUNCA combines un atajo con más texto en el mismo mensaje.\n\n⚠️ **El cliente NO debe enterarse de que existen los atajos.** Son internos: él solo ve el texto ya expandido. Por eso NUNCA anuncies, presentes ni expliques un atajo, ni antes ni después ni en otro mensaje. PROHIBIDO escribir cosas como "te envío el comando", "te mando este otro", "usamos este comando para checar cobertura", "ahora te comparto la información de..." o dos puntos anunciando lo que sigue. Simplemente escribe el atajo SOLO (ej.: una línea que diga exactamente "/ttt") y nada más: el sistema pone el texto completo por ti y al cliente le llega una conversación natural. Si necesitas mandar dos atajos, ponlos cada uno en su propia línea, sin una sola palabra entre ellos.\n${quickReplies || 'No hay respuestas rápidas.'}`;
@@ -1280,6 +1291,87 @@ const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://app.dekoormx.com').re
  * Devuelve el número de pedido (DHxxxx), o null si el contacto no tiene pedido registrado.
  * Nunca lanza: atrapa y loguea sus errores.
  */
+/**
+ * /oxxomp: genera una referencia OXXO por Mercado Pago para el pedido vigente del contacto y le
+ * manda la imagen (código de barras + monto + vencimiento). Lo dispara la IA cuando el cliente NO
+ * pudo pagar con la referencia fija de siempre (tarjeta al límite, "no se puede"). Nunca lanza.
+ *
+ * requestedAmount: el monto que la IA cree que corresponde (total, anticipo o restante). El
+ * servidor lo acota al total del pedido (resolveOxxoAmount); sin monto válido cobra el total.
+ * Si el pedido ya tiene una referencia PENDIENTE del mismo monto y vigente, se reenvía esa en
+ * vez de generar otra (cada referencia es un pago distinto en MP).
+ */
+const OXXO_MP_THROTTLE_MS = 2 * 60 * 1000;
+async function generateAndSendOxxoMpReference(contactId, contactData = {}, requestedAmount = null) {
+    const name = contactData.name || contactId;
+    const contactRef = db.collection('contacts_whatsapp').doc(String(contactId));
+    try {
+        // Solo WhatsApp (el ticket se manda por número): en Messenger/IG que lo atienda una persona.
+        if (!/^\d{10,15}$/.test(String(contactId))) {
+            await alertAdminHumanNeeded(contactId, contactData, 'El cliente necesita una referencia OXXO nueva (Mercado Pago) pero no es un contacto de WhatsApp; genérala desde el CRM y mándasela.');
+            return null;
+        }
+        // Candado anti-doble: la IA a veces repite el comando en turnos seguidos.
+        const lastMs = contactData.oxxoMpLastAt && contactData.oxxoMpLastAt.toMillis ? contactData.oxxoMpLastAt.toMillis() : 0;
+        if (lastMs && (Date.now() - lastMs) < OXXO_MP_THROTTLE_MS) {
+            console.log(`[OXXO MP] ${contactId}: /oxxomp repetido en menos de 2 min; se ignora.`);
+            return null;
+        }
+        await contactRef.set({ oxxoMpLastAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+
+        const mp = require('./mercadopago/mercadopagoRoutes');
+        const info = await getOrdersInfoForContact(contactId);
+        const orderDoc = (info.active && info.active[0]) || null;
+        if (!orderDoc) {
+            await alertAdminHumanNeeded(contactId, contactData, 'El cliente necesita una referencia OXXO nueva (Mercado Pago) pero no tiene un pedido vigente en el CRM; revisa y genérala a mano si aplica.');
+            return null;
+        }
+        const order = orderDoc.data();
+        const orderNumber = order.consecutiveOrderNumber != null ? `DH${order.consecutiveOrderNumber}` : null;
+        if (!orderNumber) throw new Error(`pedido ${orderDoc.id} sin consecutiveOrderNumber`);
+        const amount = mp.resolveOxxoAmount({ requested: requestedAmount, orderTotal: order.precio });
+        if (!amount) throw new Error(`monto inválido (IA: ${requestedAmount}, pedido: ${order.precio})`);
+        if (requestedAmount && Math.abs(Number(requestedAmount) - amount) >= 1) {
+            console.warn(`[OXXO MP] ${contactId}: la IA pidió $${requestedAmount} pero se cobra $${amount} (total de ${orderNumber}: $${order.precio}).`);
+        }
+
+        // ¿Ya hay una referencia pendiente, vigente y del mismo monto? Reenviarla.
+        const ox = order.oxxo || null;
+        let externalReference = null, expirationDate = null, reused = false;
+        if (ox && ox.status === 'pending' && ox.externalReference && ox.ticketImageUrl && Math.abs(Number(ox.amount) - amount) < 1) {
+            const exp = ox.expirationDate && ox.expirationDate.toDate ? ox.expirationDate.toDate() : (ox.expirationDate ? new Date(ox.expirationDate) : null);
+            if (exp && exp.getTime() - Date.now() > 12 * 60 * 60 * 1000) {
+                externalReference = ox.externalReference; expirationDate = exp; reused = true;
+            }
+        }
+        if (!externalReference) {
+            const out = await mp.createOxxoReference({
+                amount,
+                customerName: contactData.name || '',
+                customerPhone: contactId,
+                orderNumber,
+                productName: `Pedido ${orderNumber} - Dekoor`,
+                note: `Generada por la IA (/oxxomp) porque el cliente no pudo pagar con la referencia fija.`,
+                source: 'ai_oxxo'
+            });
+            externalReference = out.externalReference;
+            expirationDate = new Date(out.expirationDate);
+        }
+        await mp.sendOxxoTicketToCustomer(externalReference, contactId);
+
+        const venceTxt = expirationDate ? expirationDate.toLocaleDateString('es-MX', { day: '2-digit', month: 'long' }) : '';
+        console.log(`[OXXO MP] ✅ ${contactId}: referencia ${reused ? 'REENVIADA' : 'generada'} $${amount} para ${orderNumber} (${externalReference}).`);
+        try {
+            await sendAdvancedWhatsAppMessage(ADMIN_VERIFY_PHONE, { text: `🏪 *Referencia OXXO (Mercado Pago) ${reused ? 'reenviada' : 'generada'} por la IA*\n\n*${orderNumber}* — $${amount}${order.precio && Number(order.precio) !== amount ? ` (total del pedido $${order.precio})` : ''}\n*Cliente:* ${name}\n*Tel:* ${contactId}${venceTxt ? `\n*Vence:* ${venceTxt}` : ''}\n\nEl cliente dijo que no pudo pagar con la referencia de siempre. Cuando MP acredite el pago, el sistema lo confirma solo.` });
+        } catch (_) {}
+        return externalReference;
+    } catch (e) {
+        console.error(`[OXXO MP] ${contactId}: no se pudo generar/enviar la referencia:`, e.response?.data || e.message);
+        await alertAdminHumanNeeded(contactId, contactData, `La IA intentó generar una referencia OXXO por Mercado Pago y FALLÓ (${e.message}). El cliente no pudo pagar con la referencia de siempre: genérasela desde el CRM.`).catch(() => {});
+        return null;
+    }
+}
+
 async function markComprobanteValidadoAndSendForm(contactId, contactData = {}, { force = false, orderNumber: targetOrderNumber = null } = {}) {
     // targetOrderNumber (ej. "DH13870" o 13870): manda el formulario de UN pedido concreto en vez del
     // más reciente. Lo usa el comando /formulario DHxxxx cuando el cliente tiene VARIOS pedidos en
@@ -4135,6 +4227,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // admin para verificación; al cliente solo se le dice que estamos validando. Aplica en
         // fase de pago (post-venta O venta con pedido registrado), igual que /comprobante.
         const suspiciousReceipt = paymentPhaseActive && /\/sospechoso/i.test(aiResponse);
+        // La IA emite "/oxxomp <monto>" cuando el cliente NO pudo pagar con la referencia OXXO de
+        // siempre (tarjeta al límite, "no se puede"): el sistema genera una referencia de Mercado
+        // Pago con el monto que corresponde y le manda la imagen (ver el manejo después del loop).
+        // Solo en fase de pago: sin pedido registrado no hay nada que cobrar.
+        const oxxoMpMatch = paymentPhaseActive ? aiResponse.match(/\/oxxomp\b[^\S\n]*:?[^\S\n]*\$?[^\S\n]*(\d[\d,]*(?:\.\d+)?)?/i) : null;
+        const oxxoMpAmount = oxxoMpMatch && oxxoMpMatch[1] ? Number(oxxoMpMatch[1].replace(/,/g, '')) : null;
         // Motivo breve que la IA escribe DESPUÉS de /sospechoso (ej. "/sospechoso el monto no coincide")
         // para mostrarlo en la columna "Comprobante sospechoso" de Pendientes. El cliente NO lo ve (se
         // limpia junto con el comando). Si la IA no puso motivo, queda vacío (la tarjeta usa uno genérico).
@@ -4225,7 +4323,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
         // (anuncia pedido LISTO + datos de pago); la IA no puede saber si el pedido físico
         // ya está terminado, así que jamás debe enviarlo ni expandirlo.
-        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso[^\n]*/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').replace(/\/reenvio\b/ig, '').replace(/\/formulario\s*:?\s*(?:DH)?\s*\d{4,6}/ig, '').trim()).filter(m => m.length > 0);
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').replace(/\/nuevopedido/ig, '').replace(/\/sospechoso[^\n]*/ig, '').replace(/\/oxxomp\b[^\n]*/ig, '').replace(/\/datoscompletos/ig, '').replace(/\/equipo/ig, '').replace(/\/cancelado/ig, '').replace(/\/comprobante/ig, '').replace(/\/registrar\b/ig, '').replace(/\/esperaanticipo\b/ig, '').replace(/\/anticipopagado\b/ig, '').replace(/\/cuatro\b/ig, '').replace(/\/corregir\b/ig, '').replace(/\/pidevideo\b/ig, '').replace(/\/reenvio\b/ig, '').replace(/\/formulario\s*:?\s*(?:DH)?\s*\d{4,6}/ig, '').trim()).filter(m => m.length > 0);
 
         // Si dentro de una burbuja viene una línea que es SOLO un atajo (ej. el modelo puso
         // "/ttt\n/qqq" sin [SPLIT]), separar esa línea en su propia burbuja para que se
@@ -4641,6 +4739,13 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 
         // Comprobante validado (/comprobante): marcar el pedido para la sección "Envíos" y mandarle
         // al cliente el enlace del formulario de datos de envío. Fire-and-forget.
+        // /oxxomp <monto>: referencia OXXO nueva por Mercado Pago. Fire-and-forget: la imagen
+        // llega en un mensaje aparte unos segundos después del texto de la IA.
+        if (oxxoMpMatch) {
+            generateAndSendOxxoMpReference(contactId, contactData, oxxoMpAmount)
+                .catch(e => console.warn('[OXXO MP] generateAndSendOxxoMpReference falló:', e.message));
+        }
+
         if (comprobanteValidado) {
             // SALVAGUARDA anti-validación-falsa: solo validar si el cliente REALMENTE mandó una
             // imagen/PDF (su comprobante). Evita que la IA marque "pagado" y mande el formulario
