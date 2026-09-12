@@ -1,5 +1,5 @@
 import { elements, state } from './state.js';
-import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange, getActiveKeywordRules, categorizeWithTrace, buildRegionReport, getRegionConfig } from './utils.js';
+import { formatCurrency, autoCategorize, autoCategorizeWithRulesOnly, extractMerchantKey, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange, getActiveKeywordRules, categorizeWithTrace, buildRegionReport, getRegionConfig } from './utils.js';
 import * as services from './services.js';
 import { isTestMode, setTestMode, isDevMode, setDevMode, describeMode } from './config.js';
 
@@ -660,6 +660,93 @@ export function openSplitModal(expense) {
     });
 }
 
+/**
+ * Después de recategorizar UN movimiento, pregunta si extender la categoría a
+ * todo el comercio. Antes esto pasaba en silencio y un solo cambio creaba un
+ * override permanente que le ganaba a las reglas.
+ *
+ * No pregunta cuando no hay nada que decidir (el resto del comercio ya está en
+ * esa categoría y lo que se importe después también iría ahí), ni para
+ * transferencias bancarias, cuyo "comercio" es el banco y no el destinatario.
+ *
+ * La opción segura ("Sólo este movimiento") es el botón principal: Enter y Esc
+ * nunca recategorizan en masa por accidente.
+ */
+export async function ofrecerAplicarAComercio({ concept, categoriaNueva, categoriaAnterior, expenseId }) {
+    const comercio = extractMerchantKey(concept);
+    if (!comercio || !categoriaNueva || categoriaNueva === 'SinCategorizar') return;
+    if ((categoriaAnterior || 'SinCategorizar') === categoriaNueva) return;
+    const TRANSFERENCIAS = ['spei enviado', 'spei recibido', 'pago cuenta de tercero', 'spei retornado'];
+    if (TRANSFERENCIAS.some(p => comercio.startsWith(p))) return;
+
+    const otros = (state.expenses || []).filter(e =>
+        e.id !== expenseId &&
+        extractMerchantKey(e.concept) === comercio &&
+        (parseFloat(e.charge) || 0) > 0 &&
+        !(Array.isArray(e.splits) && e.splits.length > 0) &&
+        e.type !== 'traspaso'
+    );
+    const aMover = otros.filter(e => (e.category || 'SinCategorizar') !== categoriaNueva);
+    const override = state.manualCategories ? state.manualCategories.get(comercio) : null;
+    const futuro = override || autoCategorizeWithRulesOnly(concept);
+    if (aMover.length === 0 && futuro === categoriaNueva) return;
+
+    const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const nombre = String(concept || '').split('/')[0].trim() || comercio;
+    const desglose = {};
+    aMover.forEach(e => { const k = e.category || 'SinCategorizar'; desglose[k] = (desglose[k] || 0) + 1; });
+    const textoDesglose = Object.entries(desglose).sort((a, b) => b[1] - a[1])
+        .map(([k, n]) => n + ' en ' + esc(k)).join(', ');
+
+    const eleccion = await new Promise(resolve => {
+        let listo = false;
+        const cerrar = (valor) => { if (listo) return; listo = true; showModal({ show: false }); resolve(valor); };
+        showModal({
+            title: '¿Sólo este movimiento o todo el comercio?',
+            body:
+                '<p>Cambiaste <strong>' + esc(nombre) + '</strong> a <strong>' + esc(categoriaNueva) + '</strong>.</p>' +
+                (aMover.length > 0
+                    ? '<p>Hay <strong>' + aMover.length + '</strong> movimiento' + (aMover.length !== 1 ? 's' : '') +
+                      ' más de este comercio en otra categoría (' + textoDesglose + ').</p>'
+                    : '') +
+                (futuro !== categoriaNueva
+                    ? '<p>Los que se importen después irán a <strong>' + esc(futuro) + '</strong>' +
+                      (override ? ', por una regla de comercio que ya existe' : ', según tus reglas') + '.</p>'
+                    : '') +
+                '<p style="font-size:12px; color:var(--text-secondary); line-height:1.6; margin-top:12px;">' +
+                '<strong>Sólo este movimiento:</strong> cambia únicamente éste.<br>' +
+                '<strong>Aplicar a todo el comercio:</strong> cambia los que ya están guardados y hace que los ' +
+                'próximos de ' + esc(nombre) + ' entren como ' + esc(categoriaNueva) + '.</p>',
+            confirmText: 'Sólo este movimiento',
+            showCancel: false,
+            onConfirm: () => cerrar('solo'),
+            onModalOpen: () => {
+                // Esc hace clic en Cancelar aunque esté oculto: que cuente como "sólo este".
+                elements.modalCancelBtn.onclick = () => cerrar('solo');
+                const footer = elements.modal.querySelector('.modal-footer');
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn btn-outline';
+                btn.textContent = aMover.length > 0
+                    ? 'Aplicar a los ' + (aMover.length + 1) + ' de ' + nombre
+                    : 'Aplicar a ' + nombre + ' en adelante';
+                btn.addEventListener('click', () => cerrar('todos'));
+                footer.insertBefore(btn, elements.modalConfirmBtn);
+            }
+        });
+    });
+    if (eleccion !== 'todos') return;
+
+    try {
+        const n = await services.aplicarCategoriaAComercio(comercio, categoriaNueva, concept, aMover.map(e => e.id));
+        showToast(n > 0
+            ? categoriaNueva + ' aplicado a ' + (n + 1) + ' movimientos de ' + nombre
+            : nombre + ' entrará como ' + categoriaNueva + ' en las próximas importaciones', 'success');
+    } catch (err) {
+        showToast(err.message || 'No se pudo aplicar al comercio', 'error');
+    }
+}
+
 export function openExpenseModal(expense = {}) {
     const isEditing = !!expense.id;
     const title = isEditing ? 'Editar Movimiento' : 'Agregar Movimiento Operativo';
@@ -754,7 +841,17 @@ export function openExpenseModal(expense = {}) {
                 
                 if (isEditing) expenseData.id = expense.id;
                 
-                services.saveExpense(expenseData, originalCategory);
+                // Guardar primero (sólo este movimiento) y después ofrecer
+                // extenderlo al comercio. Se espera al guardado porque
+                // saveExpense cierra el modal al terminar y cerraría la pregunta.
+                services.saveExpense(expenseData, originalCategory).then(() =>
+                    ofrecerAplicarAComercio({
+                        concept: expenseData.concept,
+                        categoriaNueva: expenseData.category,
+                        categoriaAnterior: originalCategory,
+                        expenseId: expenseData.id
+                    })
+                );
             }
         },
         onModalOpen: () => {

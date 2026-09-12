@@ -1467,7 +1467,8 @@ async function handleCategoryChange(e) {
             const trimmedName = newCategoryName.trim();
             await services.saveNewCategory(trimmedName);
             if (expense) {
-                services.saveExpense({...expense, category: trimmedName, subcategory: ''}, expense.category);
+                await services.saveExpense({...expense, category: trimmedName, subcategory: ''}, expense.category);
+                await ui.ofrecerAplicarAComercio({ concept: expense.concept, categoriaNueva: trimmedName, categoriaAnterior: expense.category, expenseId: expense.id });
             }
         } else {
             select.value = expense ? (expense.category || 'SinCategorizar') : 'SinCategorizar';
@@ -1477,7 +1478,8 @@ async function handleCategoryChange(e) {
 
     if(expense) {
         // When category changes, reset subcategory
-        services.saveExpense({...expense, category: newCategory, subcategory: ''}, expense.category);
+        await services.saveExpense({...expense, category: newCategory, subcategory: ''}, expense.category);
+        await ui.ofrecerAplicarAComercio({ concept: expense.concept, categoriaNueva: newCategory, categoriaAnterior: expense.category, expenseId: expense.id });
     }
 }
 

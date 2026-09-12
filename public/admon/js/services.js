@@ -567,45 +567,65 @@ export async function commitRuleApplication(expenseIds, targetCategory) {
 
 // --- OPERACIONES CRUD ---
 
+/**
+ * Extiende una categoría a TODO un comercio: a los movimientos ya guardados y a
+ * los que se importen después. Sólo se llama cuando el usuario lo elige
+ * explícitamente en la pregunta que aparece al recategorizar un movimiento.
+ *
+ * @param {string} merchantKey          comercio normalizado (parte antes del "/")
+ * @param {string} categoria            categoría destino
+ * @param {string} conceptoReferencia   concepto del movimiento que se editó
+ * @param {Array<string>} ids           movimientos guardados a recategorizar
+ * @returns {Promise<number>}           cuántos movimientos se actualizaron
+ */
+export async function aplicarCategoriaAComercio(merchantKey, categoria, conceptoReferencia, ids) {
+    if (!merchantKey || !categoria) return 0;
+    saveStateToHistory();
+    try {
+        // 1) Lo que se importe después. Si las reglas ya lo mandan a esa
+        //    categoría no hace falta override: basta con quitar el que la pise.
+        const concepto = String(conceptoReferencia || '').toLowerCase();
+        if (categoria === autoCategorizeWithRulesOnly(concepto)) {
+            try { await deleteDoc(doc(db, "manualCategories", hashCode(merchantKey))); } catch (_) {}
+            try { await deleteDoc(doc(db, "manualCategories", hashCode(concepto))); } catch (_) {}
+        } else {
+            await setDoc(doc(db, "manualCategories", hashCode(merchantKey)), {
+                concept: merchantKey,
+                category: categoria,
+                kind: 'merchant'
+            });
+        }
+
+        // 2) Lo que ya está guardado.
+        const limpios = (ids || []).filter(Boolean);
+        const CHUNK_SIZE = 400;
+        for (let i = 0; i < limpios.length; i += CHUNK_SIZE) {
+            const batch = writeBatch(db);
+            limpios.slice(i, i + CHUNK_SIZE).forEach(id => {
+                batch.update(doc(db, EXP(), id), { category: categoria, subcategory: '' });
+            });
+            await batch.commit();
+        }
+        return limpios.length;
+    } catch (error) {
+        console.error("Error aplicando la categoría al comercio:", error);
+        actionHistory.pop();
+        throw new Error("No se pudo aplicar la categoría a todo el comercio.");
+    }
+}
+
 export async function saveExpense(expenseData, originalCategory) {
     saveStateToHistory();
     try {
-        const rawConcept = expenseData.concept || '';
-        const concept = rawConcept.toLowerCase();
-        const merchantKey = extractMerchantKey(rawConcept);
-        const newCategory = expenseData.category;
-        const categoryChanged = originalCategory !== newCategory;
+        // El cambio de categoría se guarda SÓLO en este movimiento. Antes, además,
+        // se creaba en silencio un override para todo el comercio: una sola
+        // recategorización mandaba para siempre a otra categoría todos los
+        // movimientos futuros de ese comercio, y el override le ganaba a las
+        // reglas sin verse en ningún lado. Así nacieron "pago cuenta de tercero
+        // -> Envios" y "dlo*soft bolt -> Chris". Extenderlo al comercio es ahora
+        // una decisión explícita del usuario: ver aplicarCategoriaAComercio y la
+        // pregunta ofrecerAplicarAComercio en ui-manager.
 
-        // Persistir el cambio manual de categoría POR COMERCIO (parte antes de "/").
-        // Asi una sola categorizacion aplica a todos los movimientos del mismo
-        // comercio aunque cada uno tenga AUT/RFC distinto en el concepto.
-        //
-        // FIX RAIZ (2026-05-27): los conceptos de transferencia bancaria NO
-        // generan override de comercio. Su "comercio" (ej. "spei enviado albo")
-        // es el BANCO, no el destinatario — un override ahí captura TODAS las
-        // transferencias de ese banco sin importar a quién van (causa del bug
-        // albo→Alex que mandaba transferencias de chris y jovita a Alex).
-        // El movimiento individual SÍ conserva la categoría que el usuario
-        // eligió; sólo se omite la regla automática de comercio.
-        const BANK_TRANSFER_PREFIXES = ['spei enviado', 'spei recibido', 'pago cuenta de tercero', 'spei retornado'];
-        const isBankTransfer = merchantKey && BANK_TRANSFER_PREFIXES.some(p => merchantKey.startsWith(p));
-
-        if (newCategory && newCategory !== 'SinCategorizar' && categoryChanged && merchantKey) {
-            const ruleBasedCategory = autoCategorizeWithRulesOnly(concept);
-            if (newCategory !== ruleBasedCategory && !isBankTransfer) {
-                await setDoc(doc(db, "manualCategories", hashCode(merchantKey)), {
-                    concept: merchantKey,
-                    category: newCategory,
-                    kind: 'merchant'
-                });
-            } else {
-                // Si el usuario vuelve a la categoría que la regla ya produce,
-                // elimina cualquier override previo (tanto merchant como exacto).
-                try { await deleteDoc(doc(db, "manualCategories", hashCode(merchantKey))); } catch (_) {}
-                try { await deleteDoc(doc(db, "manualCategories", hashCode(concept))); } catch (_) {}
-            }
-        }
-        
         const dataToSave = { ...expenseData };
         if (dataToSave.splits === null && dataToSave.id) {
             dataToSave.splits = deleteField();
