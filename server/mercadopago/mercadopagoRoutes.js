@@ -383,156 +383,187 @@ async function generateOxxoTicketImage({ barcodeContent, amount, customerName, e
 }
 
 // =====================================================================
-// POST /api/mercadopago/oxxo
-// Genera una referencia OXXO directa via /v1/payments (sin Checkout Pro).
-// Pensado para uso interno desde el CRM: el admin captura monto + datos
-// del cliente, recibe la referencia y la comparte por WhatsApp.
+// Referencia OXXO directa via /v1/payments (sin Checkout Pro).
+// createOxxoReference es el núcleo compartido por:
+//   - POST /api/mercadopago/oxxo (el admin la genera a mano desde el CRM), y
+//   - la IA (comando /oxxomp en services.js) cuando el cliente dice que NO pudo
+//     pagar con la referencia fija de siempre (tarjeta al límite, "no se puede").
+// Genera el pago en MP, la imagen tipo ticket con código de barras, y la guarda
+// en mp_orders (+ pedido.oxxo si viene número de pedido). Lanza si algo falla.
 // =====================================================================
+/**
+ * Monto que se cobra en la referencia. La IA manda el que "corresponde" (total, anticipo
+ * o restante); el servidor lo acota al total del pedido para que un error del modelo no
+ * genere un cobro de más. Sin monto válido, se cobra el total. Exportada para pruebas.
+ */
+function resolveOxxoAmount({ requested, orderTotal }) {
+    const total = Number(orderTotal) || 0;
+    const req = Number(requested) || 0;
+    const MIN = 50; // debajo de esto no es un cobro real (OXXO cobra comisión)
+    if (req >= MIN && (total <= 0 || req <= total)) return Math.round(req * 100) / 100;
+    if (total >= MIN) return Math.round(total * 100) / 100;
+    return null;
+}
+
+/**
+ * Referencia al documento REAL del pedido "DH1234". Los docs de `pedidos` tienen id aleatorio
+ * (el número vive en consecutiveOrderNumber); antes se escribía en pedidos/DH1234 y eso creaba
+ * un documento suelto con solo el campo `oxxo`, así que el pedido de verdad nunca se enteraba
+ * de su referencia ni de que se pagó. Si no hay pedido con ese número, devuelve null.
+ */
+async function findPedidoRefByNumber(orderNumber) {
+    const num = Number(String(orderNumber || '').replace(/\D/g, ''));
+    if (!Number.isFinite(num) || num <= 0) return null;
+    const snap = await db.collection('pedidos').where('consecutiveOrderNumber', '==', num).limit(1).get();
+    return snap.empty ? null : snap.docs[0].ref;
+}
+
+async function createOxxoReference({ amount, customerName, customerPhone, orderNumber, productName, note, source = 'crm_oxxo_manual' }) {
+    if (!MP_ACCESS_TOKEN) throw new Error('Pasarela de pago no configurada');
+
+    const monto = Number(amount);
+    if (!monto || isNaN(monto) || monto <= 0) throw new Error('Monto invalido');
+
+    // Limpia telefono: 10 digitos + lada Mexico
+    let phone = (customerPhone || '').replace(/\D/g, '');
+    if (phone.length === 10) phone = '52' + phone;
+
+    // Split nombre
+    const cleanName = (customerName || 'Cliente Dekoor').trim();
+    const nameParts = cleanName.split(' ');
+    const firstName = nameParts[0] || cleanName;
+    const lastName = nameParts.slice(1).join(' ') || nameParts[0] || 'Dekoor';
+
+    // External reference para vincular webhook con esta orden
+    const externalReference = `oxxo_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    // OXXO expira en 3 dias (default MP). Configurable por env si hace falta.
+    const expirationDays = parseInt(process.env.OXXO_EXPIRATION_DAYS) || 3;
+    const expirationDate = new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000);
+
+    const description = productName ||
+        (orderNumber ? `Pedido ${orderNumber} - Dekoor` : 'Pago Dekoor');
+
+    const paymentPayload = {
+        transaction_amount: Math.round(monto * 100) / 100,
+        description,
+        payment_method_id: 'oxxo',
+        external_reference: externalReference,
+        date_of_expiration: expirationDate.toISOString().replace('Z', '-06:00'),
+        notification_url: `${BASE_URL}/api/mercadopago/webhook`,
+        payer: {
+            email: OXXO_GENERIC_EMAIL,
+            first_name: firstName,
+            last_name: lastName,
+            identification: { type: 'RFC', number: 'XAXX010101000' }
+        },
+        metadata: {
+            source,
+            order_number: orderNumber || '',
+            customer_phone: phone,
+            customer_name: cleanName,
+            note: note || ''
+        }
+    };
+
+    console.log(`[MP OXXO] Generando referencia $${monto} para ${cleanName} (${phone}) pedido=${orderNumber || 'N/A'}`);
+
+    // Idempotency-Key obligatoria para /v1/payments
+    const idempotencyKey = crypto.randomUUID();
+
+    const response = await axios.post(`${MP_API}/v1/payments`, paymentPayload, {
+        headers: {
+            ...mpHeaders(),
+            'X-Idempotency-Key': idempotencyKey
+        }
+    });
+
+    const pago = response.data;
+
+    // Extrae datos del voucher OXXO
+    const voucherUrl = pago?.transaction_details?.external_resource_url || null;
+    const barcodeContent = pago?.barcode?.content || null;
+
+    // Genera imagen tipo "ticket" con codigo de barras y subela a Storage
+    const ticketImageUrl = await generateOxxoTicketImage({
+        barcodeContent,
+        amount: monto,
+        customerName: cleanName,
+        expirationDate,
+        orderNumber
+    });
+
+    // Guarda en mp_orders para que el webhook pueda hacer match
+    await db.collection('mp_orders').doc(externalReference).set({
+        externalReference,
+        paymentId: pago.id,
+        paymentMethod: 'oxxo',
+        paymentType: 'ticket',
+        customerName: cleanName,
+        customerPhone: phone,
+        customerEmail: OXXO_GENERIC_EMAIL,
+        productName: description,
+        qty: 1,
+        subtotal: monto,
+        shippingCost: 0,
+        total: monto,
+        address: null,
+        status: pago.status || 'pending',
+        source,
+        crmOrderNumber: orderNumber || null,
+        voucherUrl,
+        barcodeContent,
+        ticketImageUrl,
+        expirationDate,
+        note: note || '',
+        createdAt: new Date()
+    });
+
+    // Si viene de un pedido del CRM, lo marcamos para verlo en el pedido (en su doc REAL).
+    const pedidoRef = orderNumber ? await findPedidoRefByNumber(orderNumber).catch(() => null) : null;
+    if (orderNumber && !pedidoRef) console.warn(`[MP OXXO] No existe un pedido con número ${orderNumber}; la referencia queda solo en mp_orders.`);
+    if (pedidoRef) {
+        await pedidoRef.set({
+            oxxo: {
+                paymentId: pago.id,
+                externalReference,
+                voucherUrl,
+                barcodeContent,
+                ticketImageUrl,
+                amount: monto,
+                status: pago.status || 'pending',
+                createdAt: new Date(),
+                expirationDate
+            }
+        }, { merge: true }).catch(err => {
+            console.warn('[MP OXXO] No se pudo actualizar pedido', orderNumber, err.message);
+        });
+    }
+
+    return {
+        paymentId: pago.id,
+        externalReference,
+        status: pago.status,
+        voucherUrl,
+        barcodeContent,
+        ticketImageUrl,
+        amount: monto,
+        expirationDate: expirationDate.toISOString(),
+        customerPhone: phone,
+        customerName: cleanName
+    };
+}
+
+// POST /api/mercadopago/oxxo — el admin captura monto + datos del cliente desde el CRM,
+// recibe la referencia y la comparte por WhatsApp (o con /oxxo/send-to-customer).
 router.post('/oxxo', async (req, res) => {
     try {
-        if (!MP_ACCESS_TOKEN) {
-            return res.status(500).json({ error: 'Pasarela de pago no configurada' });
-        }
-
-        const {
-            amount,                 // Monto a cobrar (MXN)
-            customerName,           // Nombre del cliente (opcional)
-            customerPhone,          // Telefono (para vincular al pedido)
-            orderNumber,            // # de pedido del CRM (DH1234) si aplica
-            productName,            // Concepto/descripcion del cobro
-            note                    // Nota interna (opcional)
-        } = req.body;
-
+        const { amount, customerName, customerPhone, orderNumber, productName, note } = req.body;
+        if (!MP_ACCESS_TOKEN) return res.status(500).json({ error: 'Pasarela de pago no configurada' });
         const monto = Number(amount);
-        if (!monto || isNaN(monto) || monto <= 0) {
-            return res.status(400).json({ error: 'Monto invalido' });
-        }
-
-        // Limpia telefono: 10 digitos + lada Mexico
-        let phone = (customerPhone || '').replace(/\D/g, '');
-        if (phone.length === 10) phone = '52' + phone;
-
-        // Split nombre
-        const cleanName = (customerName || 'Cliente Dekoor').trim();
-        const nameParts = cleanName.split(' ');
-        const firstName = nameParts[0] || cleanName;
-        const lastName = nameParts.slice(1).join(' ') || nameParts[0] || 'Dekoor';
-
-        // External reference para vincular webhook con esta orden
-        const externalReference = `oxxo_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-
-        // OXXO expira en 3 dias (default MP). Configurable por env si hace falta.
-        const expirationDays = parseInt(process.env.OXXO_EXPIRATION_DAYS) || 3;
-        const expirationDate = new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000);
-
-        const description = productName ||
-            (orderNumber ? `Pedido ${orderNumber} - Dekoor` : 'Pago Dekoor');
-
-        const paymentPayload = {
-            transaction_amount: Math.round(monto * 100) / 100,
-            description,
-            payment_method_id: 'oxxo',
-            external_reference: externalReference,
-            date_of_expiration: expirationDate.toISOString().replace('Z', '-06:00'),
-            notification_url: `${BASE_URL}/api/mercadopago/webhook`,
-            payer: {
-                email: OXXO_GENERIC_EMAIL,
-                first_name: firstName,
-                last_name: lastName,
-                identification: { type: 'RFC', number: 'XAXX010101000' }
-            },
-            metadata: {
-                source: 'crm_oxxo_manual',
-                order_number: orderNumber || '',
-                customer_phone: phone,
-                customer_name: cleanName,
-                note: note || ''
-            }
-        };
-
-        console.log(`[MP OXXO] Generando referencia $${monto} para ${cleanName} (${phone}) pedido=${orderNumber || 'N/A'}`);
-
-        // Idempotency-Key obligatoria para /v1/payments
-        const idempotencyKey = crypto.randomUUID();
-
-        const response = await axios.post(`${MP_API}/v1/payments`, paymentPayload, {
-            headers: {
-                ...mpHeaders(),
-                'X-Idempotency-Key': idempotencyKey
-            }
-        });
-
-        const pago = response.data;
-
-        // Extrae datos del voucher OXXO
-        const voucherUrl = pago?.transaction_details?.external_resource_url || null;
-        const barcodeContent = pago?.barcode?.content || null;
-
-        // Genera imagen tipo "ticket" con codigo de barras y subela a Storage
-        const ticketImageUrl = await generateOxxoTicketImage({
-            barcodeContent,
-            amount: monto,
-            customerName: cleanName,
-            expirationDate,
-            orderNumber
-        });
-
-        // Guarda en mp_orders para que el webhook pueda hacer match
-        await db.collection('mp_orders').doc(externalReference).set({
-            externalReference,
-            paymentId: pago.id,
-            paymentMethod: 'oxxo',
-            paymentType: 'ticket',
-            customerName: cleanName,
-            customerPhone: phone,
-            customerEmail: OXXO_GENERIC_EMAIL,
-            productName: description,
-            qty: 1,
-            subtotal: monto,
-            shippingCost: 0,
-            total: monto,
-            address: null,
-            status: pago.status || 'pending',
-            source: 'crm_oxxo_manual',
-            crmOrderNumber: orderNumber || null,
-            voucherUrl,
-            barcodeContent,
-            ticketImageUrl,
-            expirationDate,
-            note: note || '',
-            createdAt: new Date()
-        });
-
-        // Si viene de un pedido del CRM, lo marcamos para verlo en el pedido
-        if (orderNumber) {
-            await db.collection('pedidos').doc(orderNumber).set({
-                oxxo: {
-                    paymentId: pago.id,
-                    externalReference,
-                    voucherUrl,
-                    barcodeContent,
-                    ticketImageUrl,
-                    amount: monto,
-                    status: pago.status || 'pending',
-                    createdAt: new Date(),
-                    expirationDate
-                }
-            }, { merge: true }).catch(err => {
-                console.warn('[MP OXXO] No se pudo actualizar pedido', orderNumber, err.message);
-            });
-        }
-
-        res.json({
-            paymentId: pago.id,
-            externalReference,
-            status: pago.status,
-            voucherUrl,
-            barcodeContent,
-            ticketImageUrl,
-            amount: monto,
-            expirationDate: expirationDate.toISOString()
-        });
-
+        if (!monto || isNaN(monto) || monto <= 0) return res.status(400).json({ error: 'Monto invalido' });
+        const out = await createOxxoReference({ amount: monto, customerName, customerPhone, orderNumber, productName, note, source: 'crm_oxxo_manual' });
+        res.json(out);
     } catch (error) {
         console.error('[MP OXXO] Error:', error.response?.data || error.message);
         res.status(500).json({
@@ -685,12 +716,13 @@ router.post('/webhook', async (req, res) => {
         // Si es un OXXO generado manualmente desde el CRM, NO creamos un pedido nuevo
         // (ya existe en la coleccion pedidos). Solo actualizamos el pedido y alertamos
         // al admin de que el pago se acredito.
-        if (mpData.source === 'crm_oxxo_manual') {
-            console.log(`[MP WEBHOOK] OXXO manual del CRM acreditado: ${externalReference} (pedido ${mpData.crmOrderNumber || 'N/A'})`);
+        if (mpData.source === 'crm_oxxo_manual' || mpData.source === 'ai_oxxo') {
+            console.log(`[MP WEBHOOK] OXXO ${mpData.source === 'ai_oxxo' ? 'generado por la IA' : 'manual del CRM'} acreditado: ${externalReference} (pedido ${mpData.crmOrderNumber || 'N/A'})`);
 
             // Actualizar el pedido del CRM con el estatus "Pagado"
-            if (mpData.crmOrderNumber) {
-                await db.collection('pedidos').doc(mpData.crmOrderNumber).set({
+            const pedidoRefPago = mpData.crmOrderNumber ? await findPedidoRefByNumber(mpData.crmOrderNumber).catch(() => null) : null;
+            if (pedidoRefPago) {
+                await pedidoRefPago.set({
                     'oxxo.status': 'approved',
                     'oxxo.paidAt': new Date(),
                     pagoOxxoAcreditado: true,
@@ -708,6 +740,17 @@ router.post('/webhook', async (req, res) => {
                 orderNumber: mpData.crmOrderNumber,
                 paymentId
             }).catch(err => console.error('[MP WEBHOOK] Error alertando admin:', err.message));
+
+            // Referencia generada por la IA (/oxxomp): el cliente NO va a mandar comprobante (la
+            // imagen prometía "en cuanto se acredite te aviso"), así que se cierra el cobro solo:
+            //  - si cubre el total del pedido → mismo camino que /comprobante validado
+            //    (confirmación + formulario de datos de envío);
+            //  - si es parcial (anticipo/restante) → solo se le confirma la recepción.
+            // Las referencias manuales del CRM NO entran aquí: ese cobro lo cierra el equipo.
+            if (mpData.source === 'ai_oxxo' && mpData.customerPhone) {
+                await notifyCustomerAiOxxoApproved(mpData, paymentId)
+                    .catch(err => console.error('[MP WEBHOOK] Error avisando al cliente del OXXO IA:', err.message));
+            }
 
             return;
         }
@@ -835,20 +878,57 @@ async function notifyAdminOxxoApproved({ amount, customerName, customerPhone, or
 // POST /api/mercadopago/oxxo/send-to-customer
 // Envia la imagen del ticket OXXO al WhatsApp del cliente directamente,
 // con un caption corto. Usa sendAdvancedWhatsAppMessage del services.
-router.post('/oxxo/send-to-customer', async (req, res) => {
-    try {
-        const { externalReference, customerPhone } = req.body;
-        if (!externalReference) return res.status(400).json({ error: 'externalReference requerido' });
+/**
+ * Cierra el cobro de una referencia OXXO generada por la IA (/oxxomp) cuando MP la acredita.
+ * Total cubierto → markComprobanteValidadoAndSendForm (confirmación + formulario de envío, con
+ * el pedido correcto). Parcial → solo un mensaje de "recibimos tu pago". Nunca lanza hacia el
+ * webhook (el que llama hace catch).
+ */
+async function notifyCustomerAiOxxoApproved(mpData, paymentId) {
+    const phone = String(mpData.customerPhone || '').replace(/\D/g, '');
+    const services = require('../services');
+    const contactSnap = await db.collection('contacts_whatsapp').doc(phone).get();
+    const contactData = contactSnap.exists ? contactSnap.data() : {};
+    let orderTotal = 0;
+    if (mpData.crmOrderNumber) {
+        const ref = await findPedidoRefByNumber(mpData.crmOrderNumber).catch(() => null);
+        const od = ref ? await ref.get().catch(() => null) : null;
+        if (od && od.exists) orderTotal = Number(od.data().precio) || 0;
+    }
+    const monto = Number(mpData.total) || 0;
+    const montoFmt = monto.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const cubreTotal = orderTotal > 0 && monto + 1 >= orderTotal;
+    if (cubreTotal) {
+        console.log(`[MP WEBHOOK] OXXO IA ${paymentId} cubre el total de ${mpData.crmOrderNumber} ($${monto} de $${orderTotal}): se valida como comprobante y se manda el formulario.`);
+        await services.markComprobanteValidadoAndSendForm(phone, contactData, { orderNumber: mpData.crmOrderNumber });
+        return;
+    }
+    const text = `¡Gracias! 🙌 Ya nos llegó tu pago en OXXO por *$${montoFmt}* ✅${orderTotal > 0 ? `\n\nQueda pendiente el resto de tu pedido: *$${(orderTotal - monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}*. Cuando te toque liquidarlo te aviso por aquí.` : ''}`;
+    await services.sendAdvancedWhatsAppMessage(phone, { text });
+    await db.collection('contacts_whatsapp').doc(phone).collection('messages').add({
+        from_me: true, text, type: 'text', timestamp: new Date(), status: 'sent', origin: 'ai_oxxo_paid'
+    }).catch(() => {});
+    await db.collection('contacts_whatsapp').doc(phone).set({ lastMessage: text.slice(0, 80), lastMessageTimestamp: new Date() }, { merge: true }).catch(() => {});
+}
+
+/**
+ * Manda al WhatsApp del cliente la imagen del ticket OXXO de una referencia ya generada
+ * (mp_orders/{externalReference}) con un caption corto, y guarda el mensaje en el chat del
+ * CRM. Compartida por el botón del CRM y por la IA (/oxxomp). Lanza si algo falla.
+ */
+async function sendOxxoTicketToCustomer(externalReference, customerPhone) {
+    {
+        if (!externalReference) throw new Error('externalReference requerido');
 
         const doc = await db.collection('mp_orders').doc(externalReference).get();
-        if (!doc.exists) return res.status(404).json({ error: 'Orden no encontrada' });
+        if (!doc.exists) throw new Error('Orden no encontrada');
 
         const o = doc.data();
         const phone = (customerPhone || o.customerPhone || '').replace(/\D/g, '');
-        if (!phone) return res.status(400).json({ error: 'Telefono del cliente no disponible' });
+        if (!phone) throw new Error('Telefono del cliente no disponible');
 
         if (!o.ticketImageUrl) {
-            return res.status(400).json({ error: 'Esta orden no tiene imagen del ticket. Vuelve a generarla.' });
+            throw new Error('Esta orden no tiene imagen del ticket. Vuelve a generarla.');
         }
 
         const venceTxt = o.expirationDate
@@ -904,11 +984,21 @@ router.post('/oxxo/send-to-customer', async (req, res) => {
         } catch (e) {
             console.warn('[OXXO SEND] No se pudo guardar mensaje en CRM:', e.message);
         }
+        return { success: true, phone, ticketImageUrl: o.ticketImageUrl };
+    }
+}
 
-        res.json({ success: true });
+// POST /api/mercadopago/oxxo/send-to-customer — botón del CRM.
+router.post('/oxxo/send-to-customer', async (req, res) => {
+    try {
+        const { externalReference, customerPhone } = req.body;
+        if (!externalReference) return res.status(400).json({ error: 'externalReference requerido' });
+        const out = await sendOxxoTicketToCustomer(externalReference, customerPhone);
+        res.json({ success: out.success });
     } catch (error) {
         console.error('[OXXO SEND] Error:', error.message);
-        res.status(500).json({ error: error.message });
+        const code = /no encontrada/i.test(error.message) ? 404 : /requerido|no disponible|no tiene imagen/i.test(error.message) ? 400 : 500;
+        res.status(code).json({ error: error.message });
     }
 });
 
@@ -1000,3 +1090,7 @@ router.get('/order/:ref', async (req, res) => {
 });
 
 module.exports = router;
+// Núcleo reutilizable (la IA lo usa desde services.js con el comando /oxxomp).
+router.createOxxoReference = createOxxoReference;
+router.sendOxxoTicketToCustomer = sendOxxoTicketToCustomer;
+router.resolveOxxoAmount = resolveOxxoAmount;
