@@ -5,8 +5,20 @@
     const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const money = value => value == null ? 'Costo no reportado' : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 4 }).format(value)} USD`;
     function notice(text = '', error = false) { $('notice').textContent = text; $('notice').hidden = !text; $('notice').classList.toggle('error', error); }
+    function requireSession() {
+        state.connected = false;
+        $('session-required').hidden = false;
+        $('connection').className = 'connection error';
+        $('connection').innerHTML = '<span></span>Inicia sesión';
+        if (!state.models.length) {
+            $('model').replaceChildren(new Option('Inicia sesión para elegir un modelo', ''));
+            $('model').disabled = true;
+        }
+        renderOptions();
+    }
     async function api(path, options = {}) {
         const response = await fetch(`/api/imagenes${path}`, options);
+        if (response.status === 401) requireSession();
         let data;
         try { data = await response.json(); } catch (_) { throw new Error('No se pudo leer la respuesta del servidor. Intenta de nuevo.'); }
         if (!response.ok || data.success === false) throw Object.assign(new Error(data.error || 'No se pudo completar la operación.'), { status: response.status });
@@ -14,6 +26,7 @@
     }
     function model() { return state.models.find(m => m.id === $('model').value); }
     function applyModels(data) {
+        $('session-required').hidden = true;
         Object.assign(state, { models: data.models, linkedIds: data.linkedIds, connected: data.connected });
         const previous = $('model').value || localStorage.getItem('imageStudioModel');
         const linked = state.models.filter(m => state.linkedIds.includes(m.id));
@@ -227,7 +240,12 @@
         if (!user || state.started) return; state.started = true;
         $('prompt').value = localStorage.getItem('imageStudioPrompt') || ''; $('prompt').dispatchEvent(new Event('input'));
         const results = await Promise.allSettled([api('/models').then(applyModels), loadGallery()]);
-        results.forEach(result => { if (result.status === 'rejected') notice(result.reason.message, true); });
+        results.forEach(result => { if (result.status === 'rejected' && result.reason.status !== 401) notice(result.reason.message, true); });
+        if (results[0].status === 'rejected' && results[0].reason.status !== 401) {
+            $('connection').className = 'connection error';
+            $('connection').innerHTML = '<span></span>Sin conexión';
+            $('model').replaceChildren(new Option('No se pudo cargar · pulsa Vincular para reintentar', ''));
+        }
         const activeId = localStorage.getItem('imageStudioActive');
         if (activeId) {
             try { const { job } = await api(`/generations/${activeId}`); if (job.status === 'generating') track(job); else { localStorage.removeItem('imageStudioActive'); showJob(job); } }

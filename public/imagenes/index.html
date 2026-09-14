@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/imagenes/style.css?v=1">
-    <link rel="stylesheet" href="/imagenes/lab.css?v=1">
+    <link rel="stylesheet" href="/imagenes/lab.css?v=2">
 </head>
 <body>
     <div id="loading-overlay"><img src="/favicon.png" width="44" height="44" alt="Dekoor"><p>Abriendo tu estudio…</p></div>
@@ -24,6 +24,7 @@
         <div class="page-heading"><div><p class="eyebrow"><span class="live-dot"></span> TU LABORATORIO VISUAL / IA</p><h1>De idea a <span>imagen.</span></h1><p class="subtitle">Explora modelos. Experimenta con estilos. Crea algo que todavía no existe.</p></div><button id="manage-models" class="button secondary"><i class="fa-solid fa-sliders" aria-hidden="true"></i> Gestionar modelos</button></div>
         <nav class="tabs" aria-label="Secciones de Imágenes"><button id="tab-create" class="tab active" aria-selected="true"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Crear imagen</button><button id="tab-gallery" class="tab" aria-selected="false"><i class="fa-regular fa-images" aria-hidden="true"></i> Mi galería <span id="gallery-count">0</span></button><span class="powered">Conectado con OpenRouter <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></span></nav>
         <div id="notice" class="notice" role="status" hidden></div>
+        <div id="session-required" class="session-required" role="status" hidden><div><strong>Entra con tu cuenta de Dekoor</strong><p>Inicia sesión con tu cuenta del CRM para usar tus modelos y guardar imágenes.</p></div><a class="button primary" href="/login?redirect=%2Fimagenes">Iniciar sesión <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
         <section id="create-view" class="studio-layout" aria-label="Crear imagen">
             <form id="generate-form" class="composer">
                 <div class="composer-body">
@@ -60,6 +61,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="/js/auth-guard.js"></script>
     <script src="/js/auth-fetch.js?v=1"></script>
-    <script src="/imagenes/script.js?v=1"></script>
+    <script src="/imagenes/script.js?v=2"></script>
 </body>
 </html>
