@@ -19,13 +19,18 @@ function purchaseState(p) {
     };
 }
 
+function isAutomaticPurchaseEligible(p) {
+    return !!p.comprobanteValidadoAt && !p.ocultoDeEnvios
+        && !/cancel|devuelt|devol|reembols/i.test(p.estatus || '');
+}
+
 // Todos los envíos por pedido comparten la reserva: Envíos, registro y Fabricar.
 // La llamada a Meta queda FUERA de la transacción (Firestore puede repetir su callback).
 async function sendOrderPurchase(docId, { source = 'envios_manual', force = false } = {}) {
     if (typeof docId !== 'string' || !docId.trim() || docId.includes('/')) {
         return { status: 400, success: false, message: 'Falta un docId válido.' };
     }
-    const automatic = source === 'envios_auto';
+    const automatic = source === 'envios_auto' || source === 'envios_scheduler';
     if (automatic && force) return { status: 400, success: false, message: 'El envío automático no puede marcar no aplica.' };
     const ref = db.collection('pedidos').doc(docId.trim());
     const token = randomUUID();
@@ -36,7 +41,7 @@ async function sendOrderPurchase(docId, { source = 'envios_manual', force = fals
         if (p.metaPurchaseSentAt) return { result: { success: true, already: true, ...purchaseState(p) } };
         // Una línea manual sin pago validado, un anticipo o una reposición sin pago no
         // deben convertirse automáticamente en ventas por el simple hecho de aparecer aquí.
-        if (automatic && (!p.comprobanteValidadoAt || p.ocultoDeEnvios || /cancel|devuelt|devol|reembols/i.test(p.estatus || ''))) {
+        if (automatic && !isAutomaticPurchaseEligible(p)) {
             return { result: { success: false, skipped: true, message: 'El pedido no tiene un pago validado vigente en Envíos.' } };
         }
         const now = Date.now();
@@ -125,4 +130,4 @@ async function sendOrderPurchase(docId, { source = 'envios_manual', force = fals
     }
 }
 
-module.exports = { sendOrderPurchase, noAplicaMotivo };
+module.exports = { sendOrderPurchase, noAplicaMotivo, isAutomaticPurchaseEligible };

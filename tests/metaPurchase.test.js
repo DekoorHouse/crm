@@ -100,6 +100,7 @@ test('dos pestañas y Fabricar comparten reserva; solo sale un Purchase', async 
     const rest = await Promise.all([
         sendOrderPurchase('p1', automatic), sendOrderPurchase('p1', { source: 'fabricar' }),
         sendOrderPurchase('p1', { source: 'registration' }), sendOrderPurchase('p1'),
+        sendOrderPurchase('p1', { source: 'envios_scheduler' }),
     ]);
     expect(rest.every(r => r.inProgress && !r.success)).toBe(true);
     expect(services.sendConversionEvent).toHaveBeenCalledTimes(1);
@@ -166,4 +167,19 @@ test('la reserva expira si un proceso muere antes de enviar', async () => {
     order().metaPurchaseLeaseToken = 'proceso-anterior';
     order().metaPurchaseLeaseUntil = mockTimestamp(Date.now() - 1);
     expect(await sendOrderPurchase('p1', automatic)).toMatchObject({ success: true });
+});
+
+test('el scheduler respeta la validación de pago y la espera entre reintentos', async () => {
+    const background = { source: 'envios_scheduler' };
+    order().comprobanteValidadoAt = null;
+    expect(await sendOrderPurchase('p1', background)).toMatchObject({ skipped: true });
+    expect(services.sendConversionEvent).not.toHaveBeenCalled();
+    order().comprobanteValidadoAt = mockTimestamp(Date.now());
+    services.sendConversionEvent.mockRejectedValueOnce(new Error('timeout'));
+    expect(await sendOrderPurchase('p1', background)).toMatchObject({ success: false });
+    expect(await sendOrderPurchase('p1', background)).toMatchObject({ deferred: true });
+    expect(await sendOrderPurchase('p1', { ...background, force: true })).toMatchObject({ status: 400 });
+    jest.advanceTimersByTime(300001);
+    expect(await sendOrderPurchase('p1', background)).toMatchObject({ success: true });
+    expect(order().metaPurchaseSource).toBe('envios_scheduler');
 });

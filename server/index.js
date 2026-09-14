@@ -27,6 +27,7 @@ const { startOrderFollowupScheduler } = require('./leads/orderFollowupScheduler'
 const { startScheduledReminderScheduler } = require('./leads/scheduledReminderScheduler');
 const { startScheduledMessagesScheduler } = require('./scheduledMessages/scheduledMessagesScheduler');
 const { startShippingDigestScheduler } = require('./shipping/shippingDigestScheduler');
+const { startMetaPurchaseScheduler } = require('./orders/metaPurchaseScheduler');
 const { startSpendCapAlertScheduler } = require('./meta/spendCapAlertScheduler');
 const { startOpenRouterCreditAlertScheduler } = require('./ai/openRouterCreditAlert');
 const { startMockupAutoScheduler } = require('./mockups/mockupAutoScheduler');
@@ -595,6 +596,8 @@ function startSchedulers() {
   startScheduledMessagesScheduler();
   // Iniciar scheduler del resumen diario de pedidos listos para guía (1:30 pm MX)
   startShippingDigestScheduler();
+  // Recuperar Purchase pendientes de Envíos aunque nadie tenga abierto el CRM.
+  startMetaPurchaseScheduler();
   // Iniciar scheduler de alerta de límite publicitario Meta Ads (cada 30 min)
   startSpendCapAlertScheduler();
   // Iniciar scheduler de alerta de saldo bajo de OpenRouter (cada 3 h; solo si el chat usa openrouter)

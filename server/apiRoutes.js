@@ -9176,9 +9176,14 @@ router.get('/debug/mockup-ref', async (req, res) => {
 
 // Cuántos pedidos recientes (por fecha de comprobante validado) trae Envíos con el documento
 // completo. Los más viejos solo entran si siguen sin guía (ver el barrido de abajo).
-const ENVIOS_RECIENTES = 300;
+const { ENVIOS_RECIENTES, getMetaPurchaseSchedulerStatus } = require('./orders/metaPurchaseScheduler');
 
 const { sendOrderPurchase, noAplicaMotivo } = require('./orders/metaPurchase');
+
+// Diagnóstico sin datos de clientes ni envíos a Meta; usa la autenticación normal de /api.
+router.get('/envios/meta-purchase-scheduler', (_req, res) => {
+    res.json({ success: true, ...getMetaPurchaseSchedulerStatus() });
+});
 
 router.get('/envios', async (_req, res) => {
     try {

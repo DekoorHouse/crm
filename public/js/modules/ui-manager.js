@@ -1657,7 +1657,7 @@ function _paintEnvios() {
             </div>
             <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo. · La palomita junto al pedido dice si la compra ya se reportó a Meta:
               <i class="fas fa-check-circle" style="color:#16a34a"></i> ya se mandó ·
-              <i class="fas fa-check-circle" style="color:#cbd5e1"></i> pendientes <span id="envios-meta-pendientes">${metaPend}</span> — se envían automáticamente. Si hay un problema, pasa el cursor sobre la palomita para ver el motivo.</p>
+              <i class="fas fa-check-circle" style="color:#cbd5e1"></i> pendientes <span id="envios-meta-pendientes">${metaPend}</span> — se envían al detectar el pedido, aunque esta página esté cerrada. Los fallos se reintentan automáticamente. Pasa el cursor sobre la palomita para ver el motivo.</p>
             <div style="position:relative">
             <div id="envios-scroll" style="overflow:auto">
               <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
