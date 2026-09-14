@@ -40,8 +40,16 @@ async function getCatalog() {
 }
 
 function defaultModels(catalog) {
-    const preferred = [process.env.OPENROUTER_IMAGE_MODEL, 'google/gemini-3-pro-image-preview', 'google/gemini-3.1-flash-image', 'openai/gpt-image-2'].filter(Boolean);
-    return [...new Set(preferred)].filter(id => catalog.some(model => model.id === id)).slice(0, 3);
+    // Presets verificados en el catálogo de imágenes de OpenRouter (14-sep-2026).
+    // Las selecciones guardadas por el equipo se conservan en configuredIds.
+    const preferred = [
+        process.env.OPENROUTER_IMAGE_MODEL,
+        'openai/gpt-image-2.5-sunburst', 'openai/gpt-image-2.5-flare', 'openai/gpt-5.4-image-2',
+        'bytedance-seed/seedream-5-0-pro', 'bytedance-seed/seedream-5-0-lite',
+        'qwen/qwen-image-3-pro', 'qwen/qwen-image-3',
+        'google/gemini-3-pro-image-preview', 'google/gemini-3.1-flash-image', 'openai/gpt-image-2',
+    ].filter(Boolean);
+    return [...new Set(preferred)].filter(id => catalog.some(model => model.id === id));
 }
 function configuredIds(data, catalog) {
     return Array.isArray(data?.modelIds) ? data.modelIds : defaultModels(catalog);

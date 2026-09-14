@@ -40,7 +40,7 @@
     }
     function renderOptions() {
         const selected = model();
-        const labels = { auto: 'Automático', low: 'Baja', medium: 'Media', high: 'Alta', '1:1': '1:1 · Cuadrado', '16:9': '16:9 · Horizontal', '9:16': '9:16 · Vertical', '4:3': '4:3 · Horizontal', '3:4': '3:4 · Vertical', '4:5': '4:5 · Retrato' };
+        const labels = { auto: 'Automático', low: 'Baja', medium: 'Media', high: 'Alta', xhigh: 'Muy alta', max: 'Máxima', '1:1': '1:1 · Cuadrado', '16:9': '16:9 · Horizontal', '9:16': '9:16 · Vertical', '4:3': '4:3 · Horizontal', '3:4': '3:4 · Vertical', '4:5': '4:5 · Retrato' };
         for (const [key, container] of [['aspect_ratio', 'aspect-field'], ['resolution', 'resolution-field'], ['quality', 'quality-field']]) {
             const values = selected?.parameters[key]?.values || [];
             const previous = $(key).value;
