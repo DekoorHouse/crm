@@ -2,6 +2,7 @@
     'use strict';
     const $ = id => document.getElementById(id);
     const state = { models: [], linkedIds: [], connected: false, references: [], jobs: [], nextCursor: null, active: null, current: null, polling: null, busy: false, started: false };
+    const portal = window.createImageStudioPortal({ canvas: $('generation-portal'), field: $('generation-portal-field'), pauseButton: $('generation-pause'), pauseStatus: $('generation-motion-status') });
     const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const money = value => value == null ? 'Costo no reportado' : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 4 }).format(value)} USD`;
     function notice(text = '', error = false) { $('notice').textContent = text; $('notice').hidden = !text; $('notice').classList.toggle('error', error); }
@@ -75,6 +76,7 @@
     }
     function showTab(tab) {
         $('create-view').hidden = tab !== 'create'; $('gallery-view').hidden = tab !== 'gallery';
+        portal.setVisible(tab === 'create');
         for (const name of ['create', 'gallery']) { $(`tab-${name}`).classList.toggle('active', name === tab); $(`tab-${name}`).setAttribute('aria-selected', String(name === tab)); }
         if (tab === 'gallery') loadGallery().catch(err => notice(err.message, true));
     }
@@ -104,6 +106,7 @@
         state.current = job;
         const generating = job.status === 'generating';
         $('empty-preview').hidden = true; $('generating-preview').hidden = !generating; $('result-preview').hidden = generating;
+        portal.setActive(generating);
         $('result-footer').hidden = generating;
         $('preview-badge').textContent = generating ? 'En proceso' : job.status === 'completed' ? 'Lista para descargar' : 'Generación no completada';
         if (generating) { $('generating-model').textContent = job.modelName; return; }
@@ -137,6 +140,7 @@
             }
         } catch (err) {
             if (err.status === 404 || err.status === 401) {
+                showJob({ ...state.active, status: 'failed', error: err.status === 404 ? 'La solicitud no se registró. Puedes volver a generar.' : err.message });
                 state.active = null; localStorage.removeItem('imageStudioActive'); setBusy(false);
                 notice(err.status === 404 ? 'La solicitud no se registró. Puedes volver a generar.' : err.message, true);
                 return;

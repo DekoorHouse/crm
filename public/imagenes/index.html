@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/imagenes/style.css?v=1">
     <link rel="stylesheet" href="/imagenes/lab.css?v=4">
+    <link rel="stylesheet" href="/imagenes/portal.css?v=1">
 </head>
 <body>
     <div id="loading-overlay"><img src="/favicon.png" width="44" height="44" alt="Dekoor"><p>Abriendo tu estudio…</p></div>
@@ -46,7 +47,17 @@
                 <div class="preview-header"><span><i class="fa-regular fa-image" aria-hidden="true"></i> Vista previa</span><span id="preview-badge" class="small-badge">Tu espacio para crear</span></div>
                 <div id="preview" class="preview-canvas">
                     <div id="empty-preview" class="empty-preview"><div class="portal-art" aria-hidden="true"><svg viewBox="0 0 320 240" fill="none"><defs><linearGradient id="portal-edge" x1="50" y1="30" x2="260" y2="210" gradientUnits="userSpaceOnUse"><stop stop-color="#c8fa7a"/><stop offset=".55" stop-color="#6bd9c8"/><stop offset="1" stop-color="#a0a0ff"/></linearGradient><linearGradient id="portal-fill" x1="120" y1="30" x2="210" y2="190" gradientUnits="userSpaceOnUse"><stop stop-color="#c8fa7a" stop-opacity=".12"/><stop offset="1" stop-color="#a0a0ff" stop-opacity=".03"/></linearGradient></defs><ellipse cx="160" cy="185" rx="118" ry="32" stroke="#353941"/><ellipse cx="160" cy="185" rx="92" ry="24" stroke="#252a30"/><path d="M160 7V27M160 214V233M26 120H44M277 120H295" stroke="#68735d"/><path d="M84 58L194 24L250 66L140 102Z" fill="url(#portal-fill)" stroke="url(#portal-edge)"/><path d="M84 58V153L140 195V102M250 66V161L140 195" stroke="url(#portal-edge)"/><path d="M194 24V118L84 153M194 118L250 161" stroke="url(#portal-edge)" opacity=".35" stroke-dasharray="3 5"/><path d="M117 99L171 82L210 111L156 128Z" fill="url(#portal-fill)" stroke="url(#portal-edge)"/><path d="M117 99V127L156 157V128M210 111V140L156 157" stroke="url(#portal-edge)" opacity=".7"/><circle cx="194" cy="24" r="3" fill="#c8fa7a"/><circle cx="140" cy="195" r="3" fill="#a0a0ff"/><circle cx="250" cy="66" r="3" fill="#82e4c1"/><path d="M61 52L61 63M55.5 57.5H66.5M267 173V185M261 179H273" stroke="#c8fa7a"/></svg><span class="portal-coordinate left">X 00.00</span><span class="portal-coordinate right">Y 00.00</span></div><span class="canvas-label">EL LIENZO ES TUYO</span><h2>Imagina lo que sigue.</h2><p>Escribe una idea. Elige tu modelo.<br>El siguiente paso es crear.</p><span class="empty-caption"><span class="live-dot"></span> Listo para tu primera generación</span></div>
-                    <div id="generating-preview" class="generating-preview" hidden><div class="generation-orbit"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i></div><h2>Tu idea está tomando forma</h2><p id="generating-model"></p><span id="elapsed" class="elapsed">00:00</span><p class="muted">Puedes cambiar de sección. El resultado se guarda en tu galería.</p></div>
+                    <div id="generating-preview" class="generating-preview" hidden>
+                        <div class="generation-status" role="status"><span class="live-dot" aria-hidden="true"></span>Tu imagen se está generando</div>
+                        <div id="generation-portal-field" class="generation-portal-field">
+                            <canvas id="generation-portal" aria-hidden="true"></canvas>
+                            <span id="generation-motion-status" class="generation-motion-status" role="status" hidden>Animación en pausa</span>
+                        </div>
+                        <div class="generation-info">
+                            <div class="generation-meta"><div><h2>Tu idea está tomando forma</h2><p id="generating-model"></p></div><span id="elapsed" class="elapsed">00:00</span></div>
+                            <div class="generation-controls"><p>Puedes cambiar de sección. El resultado se guarda en tu galería.</p><button id="generation-pause" class="button secondary" type="button">Pausar animación</button></div>
+                        </div>
+                    </div>
                     <div id="result-preview" class="result-preview" hidden><img id="result-image" alt="Imagen generada"><div id="result-error" class="result-error" hidden></div></div>
                 </div>
                 <div id="result-footer" class="result-footer" hidden><div><strong id="result-model"></strong><span id="result-details"></span></div><div class="result-actions"><button id="reuse-prompt" class="button secondary" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Reutilizar</button><button id="download" class="button primary" type="button"><i class="fa-solid fa-download" aria-hidden="true"></i> Descargar</button></div></div>
@@ -61,6 +72,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="/js/auth-guard.js"></script>
     <script src="/js/auth-fetch.js?v=1"></script>
-    <script src="/imagenes/script.js?v=4"></script>
+    <script src="/imagenes/portal.js?v=1"></script>
+    <script src="/imagenes/script.js?v=5"></script>
 </body>
 </html>
