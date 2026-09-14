@@ -1521,10 +1521,16 @@ function _fechaCortaEnvio(iso) {
 }
 
 function _metaPurchaseStamp(e) { return e.metaPurchaseResolvedAt || e.metaPurchaseSentAt; }
-function _metaPurchasePendiente(e) { return e.orderDocId && !_metaPurchaseStamp(e) && !e.metaPurchaseRejectedAt; }
+function _metaPurchaseReviewAt(e) { return e.metaPurchaseNeedsReviewAt || e.metaPurchaseRejectedAt; }
+function _metaPurchasePendiente(e) { return e.orderDocId && !_metaPurchaseStamp(e) && !_metaPurchaseReviewAt(e); }
 function _colorPalomitaMeta(e) {
     if (_metaPurchaseStamp(e)) return e.metaPurchaseMotivo === 'organico' ? '#2563eb' : '#16a34a';
-    return e.metaPurchaseRejectedAt ? '#dc2626' : '#cbd5e1';
+    return _metaPurchaseReviewAt(e) ? '#dc2626' : '#cbd5e1';
+}
+
+function _tipRevisionMeta(e) {
+    return (e.metaPurchaseRejectedAt ? 'Rechazada por Meta: ' : 'No se pudo reportar la compra: ')
+        + (e.metaPurchaseError || 'requiere revisión manual') + ' — clic para revisar';
 }
 
 // Una resolución orgánica o manual no equivale a un evento recibido por Meta.
@@ -1532,7 +1538,7 @@ function _tipPalomitaMeta(iso, noAplica, motivo) {
     if (!noAplica) return 'Compra ya reportada a Meta' + _fechaCortaEnvio(iso);
     return motivo === 'organico'
         ? 'Compra orgánica (sin señal de anuncio). No se envió Purchase a Meta' + _fechaCortaEnvio(iso)
-        : 'Revisada manualmente y marcada en verde después de un rechazo. No se reportó a Meta' + _fechaCortaEnvio(iso);
+        : 'Revisada manualmente y marcada en verde. No se reportó a Meta' + _fechaCortaEnvio(iso);
 }
 
 // Pinta la tabla de Envíos desde window._enviosData (SIN volver a consultar) -> refrescos instantáneos.
@@ -1558,7 +1564,7 @@ function _paintEnvios() {
         const guiaCount = envios.length - pendCount;
         const cotizables = envios.filter(e => e.datos && e.datos.codigoPostal && !e._hasGuia).length; // pendientes CON datos -> cotizables en lote
         const metaPend = envios.filter(_metaPurchasePendiente).length;
-        const metaRech = envios.filter(e => e.orderDocId && !_metaPurchaseStamp(e) && e.metaPurchaseRejectedAt).length;
+        const metaRech = envios.filter(e => e.orderDocId && !_metaPurchaseStamp(e) && _metaPurchaseReviewAt(e)).length;
         const filter = window._enviosFilter || 'all';
         const _ts = (e) => (e.comprobanteValidadoAt ? new Date(e.comprobanteValidadoAt).getTime() : 0);
         const ordered = envios.slice().sort((a, b) => _ts(a) - _ts(b)); // ascendente: nuevos al final
@@ -1591,11 +1597,11 @@ function _paintEnvios() {
                 dataCells = `<td colspan="${DATA_COLS}" style="padding:10px 0;color:#b45309;font-weight:600">Pendiente — aún no llena el formulario</td>`;
             }
             // Palomita del evento Purchase a Meta, a un lado del número de pedido:
-            // Verde: enviada/revisada; azul: orgánica; rojo: rechazo pendiente de revisión; gris: pendiente.
+            // Verde: enviada/revisada; azul: orgánica; rojo: requiere revisión; gris: pendiente.
             // Las líneas manuales sin pedido enlazado no llevan palomita: no hay de dónde leer la bandera.
             const palomita = !e.orderDocId ? '' : (_metaPurchaseStamp(e)
                 ? `<i class="fas fa-check-circle" data-meta-order="${escapeHtml(e.orderDocId)}" title="${escapeHtml(_tipPalomitaMeta(_metaPurchaseStamp(e), e.metaPurchaseNoAplica, e.metaPurchaseMotivo))}" style="color:${_colorPalomitaMeta(e)};font-size:13px;margin-left:7px"></i>`
-                : `<i class="fas fa-check-circle envio-meta-pend" data-meta-order="${escapeHtml(e.orderDocId)}" onclick="event.stopPropagation();sendMetaPurchase('${escapeHtml(e.orderDocId)}')" title="${escapeHtml(e.metaPurchaseRejectedAt ? 'Rechazada por Meta: ' + (e.metaPurchaseError || 'sin detalle') + ' — clic para revisar' : 'Pendiente de envío automático a Meta — clic para reintentar ahora')}" style="color:${_colorPalomitaMeta(e)};font-size:13px;margin-left:7px;cursor:pointer"></i>`);
+                : `<i class="fas fa-check-circle envio-meta-pend" data-meta-order="${escapeHtml(e.orderDocId)}" onclick="event.stopPropagation();sendMetaPurchase('${escapeHtml(e.orderDocId)}')" title="${escapeHtml(_metaPurchaseReviewAt(e) ? _tipRevisionMeta(e) : 'Pendiente de envío automático a Meta — clic para reintentar ahora')}" style="color:${_colorPalomitaMeta(e)};font-size:13px;margin-left:7px;cursor:pointer"></i>`);
             // Celda del pedido: copiable (la palomita no copia: para el clic con stopPropagation).
             const pedidoCell = `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;white-space:nowrap;font-weight:700;color:var(--color-primary)">${escapeHtml(e.orderNumber)}${palomita}</td>`;
             // Acciones: si ya hay guía, mostrarla (guía + etiqueta + rastreo); si hay datos, botón para crear guía.
@@ -1664,8 +1670,8 @@ function _paintEnvios() {
             <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo. · Estado de la compra:
               <i class="fas fa-check-circle" style="color:#16a34a"></i> enviada o revisada ·
               <i class="fas fa-check-circle" style="color:#2563eb"></i> orgánica ·
-              <i class="fas fa-check-circle" style="color:#dc2626"></i> rechazada <span id="envios-meta-rechazadas">${metaRech}</span> (clic para revisar) ·
-              <i class="fas fa-check-circle" style="color:#cbd5e1"></i> pendiente <span id="envios-meta-pendientes">${metaPend}</span>.<br>Se procesan al detectar el pedido, aunque esta página esté cerrada. Los rechazos requieren revisión manual. Pasa el cursor sobre la palomita para ver el detalle.</p>
+              <i class="fas fa-check-circle" style="color:#dc2626"></i> requiere revisión <span id="envios-meta-rechazadas">${metaRech}</span> (clic para revisar) ·
+              <i class="fas fa-check-circle" style="color:#cbd5e1"></i> pendiente <span id="envios-meta-pendientes">${metaPend}</span>.<br>Se procesan al detectar el pedido, aunque esta página esté cerrada. Los errores de datos y los rechazos requieren revisión manual. Pasa el cursor sobre la palomita para ver el detalle.</p>
             <div style="position:relative">
             <div id="envios-scroll" style="overflow:auto">
               <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
@@ -1982,7 +1988,7 @@ async function _refrescarPalomitaMeta(orderDocId, intentos = 3) {
             const d = await res.json();
             if (!d.success) break;
             if (_metaPurchaseStamp(d)) { _marcarPalomitaMeta(orderDocId, _metaPurchaseStamp(d), d.metaPurchaseNoAplica, d.metaPurchaseMotivo); return; }
-            if (d.metaPurchaseRejectedAt) { _marcarPalomitaMetaRechazada(orderDocId, d); return; }
+            if (_metaPurchaseReviewAt(d)) { _marcarPalomitaMetaRechazada(orderDocId, d); return; }
         } catch (_) { break; }
     }
 }
@@ -2000,7 +2006,7 @@ function _enviosPintarEstadoMeta(orderDocId, estado) {
         _marcarPalomitaMeta(orderDocId, _metaPurchaseStamp(confirmed), confirmed.metaPurchaseNoAplica, confirmed.metaPurchaseMotivo);
         return;
     }
-    const rejected = (window._enviosData || []).find(e => e.orderDocId === orderDocId && e.metaPurchaseRejectedAt);
+    const review = (window._enviosData || []).find(e => e.orderDocId === orderDocId && _metaPurchaseReviewAt(e));
     document.querySelectorAll(`#envios-container [data-meta-order="${orderDocId}"]`).forEach(el => {
         if (estado.sending) {
             el.className = 'fas fa-spinner fa-spin';
@@ -2008,13 +2014,13 @@ function _enviosPintarEstadoMeta(orderDocId, estado) {
             el.style.cursor = 'wait';
             el.removeAttribute('onclick');
             el.onclick = null;
-            el.title = rejected ? 'Guardando revisión…' : 'Procesando compra…';
+            el.title = review ? 'Guardando revisión…' : 'Procesando compra…';
         } else {
             el.className = 'fas fa-check-circle envio-meta-pend';
-            el.style.color = rejected ? '#dc2626' : '#cbd5e1';
+            el.style.color = review ? '#dc2626' : '#cbd5e1';
             el.style.cursor = 'pointer';
             el.onclick = event => { event.stopPropagation(); sendMetaPurchase(orderDocId); };
-            el.title = rejected ? 'Rechazada por Meta: ' + (rejected.metaPurchaseError || 'sin detalle') + ' — clic para revisar' : estado.message || 'Pendiente de envío automático a Meta';
+            el.title = review ? _tipRevisionMeta(review) : estado.message || 'Pendiente de envío automático a Meta';
         }
     });
 }
@@ -2024,7 +2030,7 @@ function _enviosRestaurarEstadoMeta() {
         // Conserva confirmaciones recibidas mientras una consulta anterior estaba en vuelo.
         if (estado.sentAt) _marcarPalomitaMeta(id, estado.sentAt, estado.noAplica, estado.motivo);
         else if (estado.sending) _enviosPintarEstadoMeta(id, estado);
-        else if (estado.rejectedAt) _marcarPalomitaMetaRechazada(id, { metaPurchaseRejectedAt: estado.rejectedAt, metaPurchaseError: estado.message });
+        else if (estado.reviewAt) _marcarPalomitaMetaRechazada(id, { metaPurchaseNeedsReviewAt: estado.reviewAt, metaPurchaseRejectedAt: estado.rejectedAt, metaPurchaseError: estado.message });
         else if ((window._enviosData || []).some(e => e.orderDocId === id && !_metaPurchaseStamp(e))) _enviosPintarEstadoMeta(id, estado);
     });
 }
@@ -2039,7 +2045,7 @@ async function _enviosEnviarPurchasePendientes() {
         while (document.getElementById('envios-container')) {
             const pendiente = (window._enviosData || []).find(e => _metaPurchasePendiente(e)
                 && !_enviosMetaEstados.get(e.orderDocId)?.sentAt
-                && !_enviosMetaEstados.get(e.orderDocId)?.rejectedAt
+                && !_enviosMetaEstados.get(e.orderDocId)?.reviewAt
                 && !_enviosMetaEstados.get(e.orderDocId)?.sending
                 && !(_enviosMetaEstados.get(e.orderDocId)?.retryAt > Date.now()));
             if (!pendiente) break;
@@ -2058,7 +2064,7 @@ async function _enviosEnviarPurchasePendientes() {
                     _marcarPalomitaMeta(id, _metaPurchaseStamp(d), d.metaPurchaseNoAplica, d.metaPurchaseMotivo);
                     continue;
                 }
-                if (d.rechazado || d.metaPurchaseRejectedAt) { _marcarPalomitaMetaRechazada(id, d); continue; }
+                if (d.needsReview || d.rechazado || _metaPurchaseReviewAt(d)) { _marcarPalomitaMetaRechazada(id, d); continue; }
                 estado.retryAt = Date.now() + Math.max(10000, Number(d.retryAfterMs) || ENVIOS_META_RETRY_MS);
                 estado.message = d.message || `No se pudo enviar a Meta (HTTP ${res.status}). Se reintentará automáticamente.`;
             } catch (_) {
@@ -2083,19 +2089,20 @@ async function sendMetaPurchase(orderDocId) {
     if (_enviosMetaEstados.get(orderDocId)?.sending) return;
     const linea = (window._enviosData || []).find(x => x.orderDocId === orderDocId);
     if (linea && _metaPurchaseStamp(linea)) return;
-    const rejected = !!(linea?.metaPurchaseRejectedAt || _enviosMetaEstados.get(orderDocId)?.rejectedAt);
+    const needsReview = !!((linea && _metaPurchaseReviewAt(linea)) || _enviosMetaEstados.get(orderDocId)?.reviewAt);
     const num = linea ? linea.orderNumber : orderDocId;
     const valTxt = (linea && linea.montoPagado != null) ? `$${Number(linea.montoPagado).toLocaleString('es-MX')} MXN` : 'el valor real del pedido';
     const ok = await showConfirmModal(
-        rejected
-            ? `<b>Compra rechazada: ${escapeHtml(num)}</b><br><span style="display:block;margin-top:8px">${escapeHtml(linea?.metaPurchaseError || _enviosMetaEstados.get(orderDocId)?.message || 'Meta rechazó esta compra.')}</span><br>Si ya la revisaste y la compra es correcta, puedes marcarla en verde. Quedará registrada como <b>revisada manualmente</b>. Esta acción no envía un evento a Meta.`
+        needsReview
+            ? `<b>Compra por revisar: ${escapeHtml(num)}</b><br><span style="display:block;margin-top:8px">${escapeHtml(linea?.metaPurchaseError || _enviosMetaEstados.get(orderDocId)?.message || 'No se pudo reportar esta compra.')}</span><br>Si ya la revisaste y la compra es correcta, puedes marcarla en verde. Quedará registrada como <b>revisada manualmente</b>. Esta acción no envía un evento a Meta.`
             : `¿Mandar a Meta la compra de <b>${escapeHtml(num)}</b>?<br><span style="display:block;margin-top:8px;color:var(--color-text-light,#64748b);font-size:12.5px">Se reporta el evento <b>Purchase</b> por ${escapeHtml(valTxt)} con la señal del anuncio que trajo a este cliente.</span>`,
-        rejected ? { icon: 'fa-clipboard-check', confirmText: 'Ya la revisé, marcar verde', cancelText: 'Dejar en rojo' }
+        needsReview ? { icon: 'fa-clipboard-check', confirmText: 'Ya la revisé, marcar verde', cancelText: 'Dejar en rojo' }
             : { icon: 'fa-bullseye', confirmText: 'Mandar a Meta' }
     );
     if (!ok) return;
     if (_enviosMetaEstados.get(orderDocId)?.sending || _enviosMetaEstados.get(orderDocId)?.sentAt) return;
-    const estado = { sending: true, ...(rejected ? {
+    const estado = { sending: true, ...(needsReview ? {
+        reviewAt: (linea && _metaPurchaseReviewAt(linea)) || _enviosMetaEstados.get(orderDocId)?.reviewAt,
         rejectedAt: linea?.metaPurchaseRejectedAt || _enviosMetaEstados.get(orderDocId)?.rejectedAt,
         message: linea?.metaPurchaseError || _enviosMetaEstados.get(orderDocId)?.message,
     } : {}) };
@@ -2103,20 +2110,20 @@ async function sendMetaPurchase(orderDocId) {
     _enviosPintarEstadoMeta(orderDocId, estado);
     try {
         const r = await fetch(`${API_BASE_URL}/api/envios/meta-purchase`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docId: orderDocId, ...(rejected ? { force: true } : {}) })
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docId: orderDocId, ...(needsReview ? { force: true } : {}) })
         });
         const d = await r.json().catch(() => ({}));
         if (d.inProgress) { _refrescarPalomitaMeta(orderDocId); return; }
-        if (d.rechazado || d.metaPurchaseRejectedAt) {
+        if (d.needsReview || d.rechazado || _metaPurchaseReviewAt(d)) {
             _marcarPalomitaMetaRechazada(orderDocId, d);
-            showError(d.message || 'Meta rechazó la compra. Haz clic en la palomita roja para revisarla.');
+            showError((d.message || 'No se pudo reportar la compra.') + ' Haz clic en la palomita roja para revisarla.');
             return;
         }
         if (!r.ok || !d.success || !_metaPurchaseStamp(d)) throw new Error(d.message || ('HTTP ' + r.status));
         _marcarPalomitaMeta(orderDocId, _metaPurchaseStamp(d), d.metaPurchaseNoAplica, d.metaPurchaseMotivo);
         showError(d.message || `Compra de ${num} actualizada.`, 'success');
     } catch (e) {
-        if (!rejected) estado.message = e.message || String(e);
+        if (!needsReview) estado.message = e.message || String(e);
         showError('No se pudo actualizar la compra: ' + (e.message || String(e)));
     } finally {
         if (_enviosMetaEstados.get(orderDocId) === estado) {
@@ -2138,6 +2145,7 @@ function _marcarPalomitaMeta(orderDocId, iso, noAplica = false, motivo = null) {
         x.metaPurchaseSentAt = noAplica ? null : stamp;
         x.metaPurchaseResolvedAt = stamp;
         x.metaPurchaseRejectedAt = null;
+        x.metaPurchaseNeedsReviewAt = null;
         x.metaPurchaseNoAplica = !!noAplica;
         x.metaPurchaseMotivo = motivo || null;
     });
@@ -2156,11 +2164,13 @@ function _marcarPalomitaMetaRechazada(orderDocId, d) {
     const confirmed = (window._enviosData || []).find(e => e.orderDocId === orderDocId && _metaPurchaseStamp(e));
     if (confirmed) { _marcarPalomitaMeta(orderDocId, _metaPurchaseStamp(confirmed), confirmed.metaPurchaseNoAplica, confirmed.metaPurchaseMotivo); return; }
     if (_enviosMetaEstados.get(orderDocId)?.sentAt) return;
-    const estado = { rejectedAt: d.metaPurchaseRejectedAt || new Date().toISOString(), message: d.metaPurchaseError || d.message || 'Meta rechazó esta compra.' };
+    const stamp = _metaPurchaseReviewAt(d) || new Date().toISOString();
+    const estado = { reviewAt: stamp, rejectedAt: d.metaPurchaseRejectedAt || (d.rechazado ? stamp : null), message: d.metaPurchaseError || d.message || 'No se pudo reportar esta compra.' };
     _enviosMetaEstados.set(orderDocId, estado);
     (window._enviosData || []).forEach(e => {
         if (e.orderDocId !== orderDocId) return;
         e.metaPurchaseRejectedAt = estado.rejectedAt;
+        e.metaPurchaseNeedsReviewAt = estado.reviewAt;
         e.metaPurchaseError = estado.message;
     });
     _enviosPintarEstadoMeta(orderDocId, estado);
@@ -2172,7 +2182,7 @@ function _actualizarContadoresMeta() {
     const pendientes = document.getElementById('envios-meta-pendientes');
     if (pendientes) pendientes.textContent = envios.filter(_metaPurchasePendiente).length;
     const rechazadas = document.getElementById('envios-meta-rechazadas');
-    if (rechazadas) rechazadas.textContent = envios.filter(e => e.orderDocId && !_metaPurchaseStamp(e) && e.metaPurchaseRejectedAt).length;
+    if (rechazadas) rechazadas.textContent = envios.filter(e => e.orderDocId && !_metaPurchaseStamp(e) && _metaPurchaseReviewAt(e)).length;
 }
 
 // Guarda la NOTA INTERNA de una línea de Envíos (no sale en la guía). Guarda al salir del campo.

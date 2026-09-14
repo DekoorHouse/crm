@@ -93,6 +93,7 @@ test('omite enviados, no aplica, ocultos, cancelados, anticipos sin pago y reser
         paid('organico', { metaPurchaseResolvedAt: '2026-09-14T12:00:00Z', metaPurchaseResolution: 'organico' }),
         paid('revisado', { metaPurchaseResolvedAt: '2026-09-14T12:00:00Z', metaPurchaseResolution: 'revisado' }),
         paid('rechazado', { metaPurchaseRejectedAt: '2026-09-14T12:00:00Z' }),
+        paid('sin-contacto', { metaPurchaseNeedsReviewAt: '2026-09-14T12:00:00Z' }),
         paid('oculto', { ocultoDeEnvios: true }), paid('cancelado', { estatus: 'Cancelado' }),
         paid('sin-pago', { comprobanteValidadoAt: null }), paid('devuelto', { estatus: 'Devuelto' }),
         paid('reservado', { metaPurchaseLeaseUntil: future }), paid('en-espera', { metaPurchaseNextAttemptAt: future }),
@@ -164,7 +165,7 @@ test('el listener distingue orgánicos y no reenvía rechazos ni revisados', asy
     mockSend.mockResolvedValue({ success: true, metaPurchaseNoAplica: true, metaPurchaseMotivo: 'organico' });
     const listener = mockSubscriptions.find(s => s.name === 'pedidos' && !s.filters.length);
     const stamp = new Date().toISOString();
-    listener.next({ docChanges: () => [paid('organico'), paid('rechazado', { metaPurchaseRejectedAt: stamp }),
+    listener.next({ docChanges: () => [paid('organico'), paid('rechazado', { metaPurchaseRejectedAt: stamp }), paid('sin-contacto', { metaPurchaseNeedsReviewAt: stamp }),
         paid('revisado', { metaPurchaseResolvedAt: stamp })].map(doc => ({ type: 'added', doc })) });
     await new Promise(setImmediate);
     expect(mockSend.mock.calls.map(args => args[0])).toEqual(['organico']);

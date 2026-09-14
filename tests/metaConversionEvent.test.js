@@ -34,7 +34,7 @@ test('sin credenciales no comunica éxito ni hace peticiones', async () => {
     delete process.env.META_CAPI_ACCESS_TOKEN;
     jest.resetModules();
     const service = require('../server/services');
-    expect(await service.sendConversionEvent('Purchase', {}, {})).toMatchObject({ sent: false });
+    expect(await service.sendConversionEvent('Purchase', {}, {})).toMatchObject({ sent: false, needsReview: true });
     expect(require('axios').post).not.toHaveBeenCalled();
 });
 

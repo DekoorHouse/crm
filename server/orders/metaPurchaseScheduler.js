@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const { db } = require('../config');
-const { sendOrderPurchase, isPurchaseResolved, isAutomaticPurchaseEligible } = require('./metaPurchase');
+const { sendOrderPurchase, isPurchaseResolved, purchaseNeedsReview, isAutomaticPurchaseEligible } = require('./metaPurchase');
 
 // Misma ventana que Envíos. Fuera de ella se recuperan pendientes sin guía,
 // reposiciones y pedidos enlazados por una línea manual, no todo el historial enviado.
@@ -27,7 +27,7 @@ const listenerRetries = {};
 const manualOrderNumbers = new Map();
 
 function readyToSend(p) {
-    return !isPurchaseResolved(p) && !p.metaPurchaseRejectedAt && isAutomaticPurchaseEligible(p)
+    return !isPurchaseResolved(p) && !purchaseNeedsReview(p) && isAutomaticPurchaseEligible(p)
         && millis(p.metaPurchaseNextAttemptAt) <= Date.now()
         && millis(p.metaPurchaseLeaseUntil) <= Date.now();
 }
@@ -121,7 +121,7 @@ async function runMetaPurchaseSweep() {
         // Pagina por el comprobante (inmutable durante el envío), no por una bandera que
         // cambiamos al procesar. No necesita índices nuevos ni campos que falten en pedidos viejos.
         const query = db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').select(
-            'comprobanteValidadoAt', 'metaPurchaseSentAt', 'metaPurchaseResolvedAt', 'metaPurchaseRejectedAt', 'metaPurchaseNextAttemptAt',
+            'comprobanteValidadoAt', 'metaPurchaseSentAt', 'metaPurchaseResolvedAt', 'metaPurchaseRejectedAt', 'metaPurchaseNeedsReviewAt', 'metaPurchaseNextAttemptAt',
             'metaPurchaseLeaseUntil', 'ocultoDeEnvios', 'estatus', 'guiaEnvio.guia', 'consecutiveOrderNumber'
         ).limit(PAGE_SIZE);
         let cursor = null;

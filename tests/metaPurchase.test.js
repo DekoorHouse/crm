@@ -115,6 +115,8 @@ test('un fallo mantiene pendiente, aplica espera compartida y reintenta con el m
     expect(await sendOrderPurchase('p1', automatic)).toMatchObject({ success: false, rechazado: false, retryAfterMs: 300000 });
     expect(order().metaPurchaseSentAt).toBeUndefined();
     expect(await sendOrderPurchase('p1', automatic)).toMatchObject({ deferred: true });
+    expect(order().metaPurchaseNeedsReviewAt).toBeUndefined();
+    expect(order().metaPurchaseRejectedAt).toBeUndefined();
     expect(services.sendConversionEvent).toHaveBeenCalledTimes(1);
     jest.advanceTimersByTime(300001);
     expect(await sendOrderPurchase('p1', automatic)).toMatchObject({ success: true });
@@ -164,6 +166,7 @@ test.each(['order', 'referral', 'history', 'leadSource'])('una señal de anuncio
     expect(order().metaPurchaseSentAt).toBeUndefined();
     expect(order().metaPurchaseResolvedAt).toBeUndefined();
     expect(order().metaPurchaseRejectedAt).toBeUndefined();
+    expect(order().metaPurchaseNeedsReviewAt).toBeTruthy();
     expect(services.sendConversionEvent).not.toHaveBeenCalled();
 });
 
@@ -194,6 +197,49 @@ test('un rechazo se guarda, detiene reintentos y solo pasa a revisado por acció
 test('no permite aprobar una compra sin rechazo registrado', async () => {
     expect(await sendOrderPurchase('p1', { force: true })).toMatchObject({ status: 409, success: false });
     expect(order().metaPurchaseResolvedAt).toBeUndefined();
+    expect(services.sendConversionEvent).not.toHaveBeenCalled();
+});
+
+test.each([
+    ['sin contacto', () => { order().contactId = null; }],
+    ['contacto eliminado', () => { mockDocs.delete('contacts_whatsapp/c1'); }],
+    ['sin identificador de mensajería', () => { mockDocs.get('contacts_whatsapp/c1').wa_id = null; }],
+    ['importe inválido', () => { order().precio = 0; }],
+    ['atribución incompleta', () => { services.resolveMessagingIdentity.mockReturnValue(null); }],
+])('error antes de Meta (%s): queda en revisión, detiene reintentos y permite aprobación manual', async (_label, prepare) => {
+    prepare();
+    const result = await sendOrderPurchase('p1', automatic);
+    expect(result).toMatchObject({ success: false, needsReview: true, rechazado: false,
+        metaPurchaseNeedsReviewAt: expect.any(String), metaPurchaseError: expect.any(String) });
+    expect(order().metaPurchaseSentAt).toBeUndefined();
+    expect(order().metaPurchaseResolvedAt).toBeUndefined();
+    expect(order().metaPurchaseRejectedAt).toBeUndefined();
+    expect(order().metaPurchaseNeedsReviewAt).toBeTruthy();
+    expect(order().metaPurchaseNextAttemptAt).toBeUndefined();
+    expect(purchaseState(order())).toMatchObject({ metaPurchaseNeedsReviewAt: expect.any(String), metaPurchaseError: result.message });
+    jest.advanceTimersByTime(600001);
+    expect(await sendOrderPurchase('p1', { source: 'envios_scheduler' })).toMatchObject({ needsReview: true, rechazado: false });
+    expect(await sendOrderPurchase('p1', { ...automatic, force: true })).toMatchObject({ status: 400 });
+    expect(await sendOrderPurchase('p1', { force: true })).toMatchObject({ success: true, metaPurchaseMotivo: 'revisado', metaPurchaseSentAt: null });
+    expect(order().metaPurchaseReviewedAt).toBeTruthy();
+    expect(order().metaPurchaseReviewReason).toBe(result.message);
+    expect(purchaseState(order())).toMatchObject({ metaPurchaseNeedsReviewAt: null, metaPurchaseRejectedAt: null, metaPurchaseSentAt: null });
+    expect(services.sendConversionEvent).not.toHaveBeenCalled();
+});
+
+test('la falta de configuración reportada por el servicio también requiere revisión', async () => {
+    services.sendConversionEvent.mockResolvedValue({ sent: false, needsReview: true, reason: 'faltan credenciales de Meta' });
+    expect(await sendOrderPurchase('p1', automatic)).toMatchObject({ needsReview: true, rechazado: false });
+    expect(order().metaPurchaseNeedsReviewAt).toBeTruthy();
+    expect(order().metaPurchaseSentAt).toBeUndefined();
+    expect(order().metaPurchaseRejectedAt).toBeUndefined();
+});
+
+test('permite revisar un rechazo guardado con el formato anterior', async () => {
+    order().metaPurchaseRejectedAt = mockTimestamp(Date.now());
+    order().metaPurchaseRejectionReason = 'Página no conectada';
+    expect(purchaseState(order())).toMatchObject({ metaPurchaseNeedsReviewAt: expect.any(String), metaPurchaseError: 'Página no conectada' });
+    expect(await sendOrderPurchase('p1', { force: true })).toMatchObject({ success: true, metaPurchaseMotivo: 'revisado' });
     expect(services.sendConversionEvent).not.toHaveBeenCalled();
 });
 

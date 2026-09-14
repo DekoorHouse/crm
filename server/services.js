@@ -5055,7 +5055,7 @@ async function getPageIdForAd(adId) {
 async function sendConversionEvent(eventName, contactInfo, referralInfo, customData = {}, options = {}) {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn(`[META CAPI] Faltan credenciales. PIXEL_ID=${!!META_PIXEL_ID}, TOKEN=${!!META_CAPI_ACCESS_TOKEN}. No se enviará evento '${eventName}'.`);
-        return { sent: false, reason: 'faltan credenciales de Meta' };
+        return { sent: false, needsReview: true, reason: 'faltan credenciales de Meta' };
     }
 
     // El ctwa_clid y el id del anuncio salen del MISMO referral, así que la página que resolvemos es
@@ -5064,7 +5064,7 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
 
     // Arma user_data + messaging_channel según el canal del contacto (WA/Messenger/IG).
     const identity = resolveMessagingIdentity(contactInfo, referralInfo, eventName, adPageId);
-    if (!identity) return { sent: false, reason: 'sin atribución de anuncio o configuración de canal' };
+    if (!identity) return { sent: false, needsReview: true, reason: 'sin atribución de anuncio o configuración de canal' };
 
     const url = `https://graph.facebook.com/v22.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);

@@ -19,12 +19,17 @@ function purchaseState(p) {
         metaPurchaseNoAplica: !!motivo,
         metaPurchaseMotivo: motivo || null,
         metaPurchaseRejectedAt: isPurchaseResolved(p) ? null : iso(p.metaPurchaseRejectedAt),
-        metaPurchaseError: p.metaPurchaseRejectionReason || p.metaPurchaseLastError || null,
+        metaPurchaseNeedsReviewAt: isPurchaseResolved(p) ? null : iso(p.metaPurchaseNeedsReviewAt || p.metaPurchaseRejectedAt),
+        metaPurchaseError: p.metaPurchaseReviewReason || p.metaPurchaseRejectionReason || p.metaPurchaseLastError || null,
     };
 }
 
 function isPurchaseResolved(p) {
     return !!(p.metaPurchaseSentAt || p.metaPurchaseResolvedAt);
+}
+
+function purchaseNeedsReview(p) {
+    return !isPurchaseResolved(p) && !!(p.metaPurchaseNeedsReviewAt || p.metaPurchaseRejectedAt);
 }
 
 // No confundir falta de ctwa_clid/IG_BUSINESS_ID con origen orgánico:
@@ -55,12 +60,12 @@ async function sendOrderPurchase(docId, { source = 'envios_manual', force = fals
         if (!snap.exists) return { result: { status: 404, success: false, message: 'El pedido no existe.' } };
         const p = snap.data();
         if (isPurchaseResolved(p)) return { result: { success: true, already: true, ...purchaseState(p) } };
-        if (p.metaPurchaseRejectedAt && !force) return { result: {
-            status: 409, success: false, rechazado: true, ...purchaseState(p),
-            message: p.metaPurchaseRejectionReason || p.metaPurchaseLastError || 'Meta rechazó la compra. Requiere revisión manual.',
+        if (purchaseNeedsReview(p) && !force) return { result: {
+            status: 409, success: false, needsReview: true, rechazado: !!p.metaPurchaseRejectedAt, ...purchaseState(p),
+            message: purchaseState(p).metaPurchaseError || 'No se pudo reportar la compra. Requiere revisión manual.',
         } };
-        if (force && !p.metaPurchaseRejectedAt) return { result: {
-            status: 409, success: false, message: 'Solo se puede marcar como revisada una compra rechazada por Meta.',
+        if (force && !purchaseNeedsReview(p)) return { result: {
+            status: 409, success: false, message: 'Solo se puede marcar como revisada una compra con un error que requiere revisión manual.',
         } };
         // Una línea manual sin pago validado, un anticipo o una reposición sin pago no
         // deben convertirse automáticamente en ventas por el simple hecho de aparecer aquí.
@@ -96,13 +101,30 @@ async function sendOrderPurchase(docId, { source = 'envios_manual', force = fals
             tx.update(ref, {
                 metaPurchaseLeaseToken: admin.firestore.FieldValue.delete(),
                 metaPurchaseLeaseUntil: admin.firestore.FieldValue.delete(),
-                metaPurchaseNextAttemptAt: result.success || result.rechazado ? admin.firestore.FieldValue.delete() : admin.firestore.Timestamp.fromMillis(Date.now() + RETRY_MS),
+                metaPurchaseNextAttemptAt: result.success || result.needsReview ? admin.firestore.FieldValue.delete() : admin.firestore.Timestamp.fromMillis(Date.now() + RETRY_MS),
                 metaPurchaseLastError: result.success ? admin.firestore.FieldValue.delete() : result.message,
                 ...fields,
             });
         });
         if (current) return current;
-        return { ...result, ...(!result.success && !result.rechazado ? { retryAfterMs: RETRY_MS } : {}) };
+        return { ...result, ...(!result.success && !result.needsReview ? { retryAfterMs: RETRY_MS } : {}) };
+    }
+
+    // Un error de datos/configuración bloquea antes de llegar a Meta. También requiere
+    // revisión, pero no se registra como un rechazo de Meta ni como una compra enviada.
+    function finishNeedsReview(message, status, rechazado = false) {
+        return finish({
+            status, success: false, needsReview: true, rechazado, message,
+            metaPurchaseNeedsReviewAt: new Date().toISOString(), metaPurchaseError: message,
+            ...(rechazado ? { metaPurchaseRejectedAt: new Date().toISOString() } : {}),
+        }, {
+            metaPurchaseNeedsReviewAt: admin.firestore.FieldValue.serverTimestamp(),
+            metaPurchaseReviewReason: message,
+            ...(rechazado ? {
+                metaPurchaseRejectedAt: admin.firestore.FieldValue.serverTimestamp(),
+                metaPurchaseRejectionReason: message,
+            } : {}),
+        });
     }
 
     try {
@@ -117,15 +139,15 @@ async function sendOrderPurchase(docId, { source = 'envios_manual', force = fals
                 metaPurchaseResolution: 'revisado', metaPurchaseSource: source,
             });
         }
-        if (!p.contactId) return await finish({ status: 400, success: false, message: `${orderNumber} no tiene contacto ligado.` });
+        if (!p.contactId) return await finishNeedsReview(`${orderNumber} no tiene contacto ligado.`, 400);
         const contactSnap = await db.collection('contacts_whatsapp').doc(p.contactId).get();
-        if (!contactSnap.exists) return await finish({ status: 404, success: false, message: `El contacto de ${orderNumber} ya no existe.` });
+        if (!contactSnap.exists) return await finishNeedsReview(`El contacto de ${orderNumber} ya no existe.`, 404);
         // Requerimiento perezoso para compartir este servicio con services.js sin ciclo de carga.
         const { messagingContactInfo, pickAdReferralForConversion, resolveMessagingIdentity, sendConversionEvent } = require('../services');
         const contact = contactSnap.data();
         const eventInfo = messagingContactInfo(contact);
         if (!eventInfo.wa_id && !eventInfo.psid && !eventInfo.igsid) {
-            return await finish({ status: 400, success: false, message: `${orderNumber}: el contacto no tiene identificador de mensajería.` });
+            return await finishNeedsReview(`${orderNumber}: el contacto no tiene identificador de mensajería.`, 400);
         }
         const referral = pickAdReferralForConversion(contact, { attributedAdId: p.attributedAdId, before: p.createdAt });
         if (!hasPurchaseAdSignal(p, contact, referral)) {
@@ -140,12 +162,13 @@ async function sendOrderPurchase(docId, { source = 'envios_manual', force = fals
             });
         }
         const identity = resolveMessagingIdentity(eventInfo, referral, 'Purchase');
-        if (!identity) return await finish({ status: 503, success: false, message: `${orderNumber}: hay señal de anuncio, pero falta el identificador de atribución o la configuración del canal. No se marcó como orgánico.` });
+        if (!identity) return await finishNeedsReview(`${orderNumber}: hay señal de anuncio, pero falta el identificador de atribución o la configuración del canal. No se marcó como orgánico.`, 503);
         const value = Number(p.precio);
-        if (!Number.isFinite(value) || value <= 0) return await finish({ status: 400, success: false, message: `${orderNumber} no tiene un importe de compra válido.` });
+        if (!Number.isFinite(value) || value <= 0) return await finishNeedsReview(`${orderNumber} no tiene un importe de compra válido.`, 400);
 
         const result = await sendConversionEvent('Purchase', eventInfo, referral, { value, currency: 'MXN' }, { eventId: `Purchase_pedido_${ref.id}` });
         if (!result || !result.sent) {
+            if (result?.needsReview) return await finishNeedsReview(`${orderNumber}: ${result.reason}.`, 503);
             return await finish({ status: 503, success: false, message: `${orderNumber}: no se confirmó la recepción en Meta (${result?.reason || 'sin confirmación'}).` });
         }
         const response = await finish({
@@ -160,15 +183,12 @@ async function sendOrderPurchase(docId, { source = 'envios_manual', force = fals
         return response;
     } catch (error) {
         console.warn(`[META EVENT] Purchase pendiente (${source}), pedido ${orderNumber}:`, error.message);
+        if (error.metaRejected) return finishNeedsReview(error.message, 409, true);
         return finish({
-            status: error.metaRejected ? 409 : 502, success: false, rechazado: !!error.metaRejected,
-            ...(error.metaRejected ? { metaPurchaseRejectedAt: new Date().toISOString(), metaPurchaseError: error.message } : {}),
+            status: 502, success: false, rechazado: false,
             message: `No se pudo reportar la compra de ${orderNumber}: ${error.message}`,
-        }, error.metaRejected ? {
-            metaPurchaseRejectedAt: admin.firestore.FieldValue.serverTimestamp(),
-            metaPurchaseRejectionReason: error.message,
-        } : {});
+        });
     }
 }
 
-module.exports = { sendOrderPurchase, noAplicaMotivo, purchaseState, isPurchaseResolved, isAutomaticPurchaseEligible };
+module.exports = { sendOrderPurchase, noAplicaMotivo, purchaseState, isPurchaseResolved, purchaseNeedsReview, isAutomaticPurchaseEligible };

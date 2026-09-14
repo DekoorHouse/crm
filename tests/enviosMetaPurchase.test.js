@@ -134,6 +134,63 @@ test('una respuesta de rechazo vieja no borra una revisión confirmada por otra 
     expect(icons.get('1').style.color).toBe('#16a34a');
     expect(ui.window._enviosData[0].metaPurchaseRejectedAt).toBeNull();
 });
+
+test.each([false, true])('DH1663 sin contacto: rojo antes de Meta, se conserva al refrescar y aprobación=%s', async confirm => {
+    ui.window._enviosData = [row('1663'), row('1663')];
+    ui.fetch.mockResolvedValueOnce(reply({ success: false, needsReview: true, rechazado: false,
+        metaPurchaseNeedsReviewAt: success.metaPurchaseSentAt, metaPurchaseError: 'DH1663 no tiene contacto ligado.',
+        message: 'DH1663 no tiene contacto ligado.' }, 400));
+    await ui._enviosEnviarPurchasePendientes();
+    expect(icons.get('1663').style.color).toBe('#dc2626');
+    expect(icons.get('1663').title).toContain('no tiene contacto ligado');
+    expect(icons.get('1663').title).not.toContain('Rechazada por Meta');
+    expect(ui.window._enviosData.every(e => e.metaPurchaseNeedsReviewAt && !e.metaPurchaseRejectedAt && !e.metaPurchaseSentAt)).toBe(true);
+    expect(counter.textContent).toBe(0);
+    expect(rejectedCounter.textContent).toBe(2);
+    ui.window._enviosData = [row('1663')];
+    ui._enviosRestaurarEstadoMeta();
+    await jest.advanceTimersByTimeAsync(600000);
+    await ui._enviosEnviarPurchasePendientes();
+    expect(ui.fetch).toHaveBeenCalledTimes(1);
+    expect(icons.get('1663').style.color).toBe('#dc2626');
+    ui.showConfirmModal.mockResolvedValue(confirm);
+    ui.fetch.mockResolvedValue(reply({ success: true, metaPurchaseSentAt: null,
+        metaPurchaseResolvedAt: success.metaPurchaseSentAt, metaPurchaseNoAplica: true, metaPurchaseMotivo: 'revisado' }));
+    await ui.sendMetaPurchase('1663');
+    expect(ui.showConfirmModal.mock.calls[0][0]).toContain('DH1663 no tiene contacto ligado.');
+    expect(ui.showConfirmModal.mock.calls[0][1].confirmText).toBe('Ya la revisé, marcar verde');
+    if (confirm) {
+        expect(JSON.parse(ui.fetch.mock.calls[1][1].body)).toEqual({ docId: '1663', force: true });
+        expect(icons.get('1663').style.color).toBe('#16a34a');
+        expect(ui.window._enviosData[0].metaPurchaseNeedsReviewAt).toBeNull();
+        expect(ui.window._enviosData[0].metaPurchaseSentAt).toBeNull();
+    } else {
+        expect(ui.fetch).toHaveBeenCalledTimes(1);
+        expect(icons.get('1663').style.color).toBe('#dc2626');
+    }
+});
+
+test('una sesión nueva muestra en rojo un error anterior a Meta almacenado en el servidor', () => {
+    ui.window._enviosData = [{ ...row('1663'), metaPurchaseNeedsReviewAt: success.metaPurchaseSentAt,
+        metaPurchaseError: 'DH1663 no tiene contacto ligado.' }];
+    ui._paintEnvios();
+    expect(container.innerHTML).toMatch(/data-meta-order="1663"[^>]*color:#dc2626/);
+    expect(container.innerHTML).toContain('DH1663 no tiene contacto ligado.');
+    expect(container.innerHTML).not.toContain('Rechazada por Meta:');
+    expect(container.innerHTML).toContain('sendMetaPurchase');
+});
+
+test('un intento manual gris con error de datos se vuelve rojo y ofrece revisión al volver a tocarlo', async () => {
+    ui.window._enviosData = [row('1663')];
+    ui.showConfirmModal.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    ui.fetch.mockResolvedValueOnce(reply({ success: false, needsReview: true, rechazado: false,
+        metaPurchaseNeedsReviewAt: success.metaPurchaseSentAt, message: 'DH1663 no tiene contacto ligado.' }, 400));
+    await ui.sendMetaPurchase('1663');
+    expect(icons.get('1663').style.color).toBe('#dc2626');
+    await ui.sendMetaPurchase('1663');
+    expect(ui.showConfirmModal.mock.calls[1][1].confirmText).toBe('Ya la revisé, marcar verde');
+    expect(ui.fetch).toHaveBeenCalledTimes(1);
+});
 afterEach(() => jest.useRealTimers());
 
 test('envía todos los pendientes una vez aunque haya filtros y líneas duplicadas', async () => {

@@ -9504,7 +9504,7 @@ router.get('/envios/meta-purchase/:docId', async (req, res) => {
 });
 
 // Comparte reserva e idempotencia con los disparadores de Fabricar y registro.
-// automatic:true recupera pagados y distingue orgánicos; los rechazos requieren revisión manual.
+// automatic:true recupera pagados y distingue orgánicos; errores de datos y rechazos requieren revisión manual.
 router.post('/envios/meta-purchase', async (req, res) => {
     try {
         const body = req.body || {};
