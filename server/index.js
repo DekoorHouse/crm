@@ -332,6 +332,10 @@ app.get('/sitio/coleccion/:id', (req, res, next) => {
 // CSS/JS 1 hora (el sitio además se actualiza vía CACHE_NAME del service worker).
 app.use(express.static(path.join(__dirname, '..', 'public'), {
     setHeaders: (res, filePath) => {
+        if (filePath.startsWith(path.join(__dirname, '..', 'public', 'imagenes') + path.sep)) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            return;
+        }
         if (/\.(webp|jpe?g|png|gif|svg|ico|woff2?|ttf)$/i.test(filePath)) {
             res.setHeader('Cache-Control', 'public, max-age=604800');
         } else if (/\.(css|js)$/i.test(filePath)) {

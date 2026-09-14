@@ -48,6 +48,7 @@ self.addEventListener('fetch', (event) => {
   // NO interferir, o esta PWA (scope "/") secuestraría su navegación e instalación
   // y se instalarían con el nombre/ícono equivocados. Cada una gestiona lo suyo.
   if (url.pathname.startsWith('/pendientes/')) return;
+  if (url.pathname === '/imagenes' || url.pathname.startsWith('/imagenes/')) return;
 
   // APIs siempre a red, sin cache
   if (url.pathname.startsWith('/api/')) return;

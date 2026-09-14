@@ -34,6 +34,9 @@ self.addEventListener('fetch', event => {
     // Skip non-GET requests
     if (event.request.method !== 'GET') return;
 
+    // El estudio debe cargar la versión actual junto con sus rutas de generación.
+    if (url.pathname === '/imagenes' || url.pathname.startsWith('/imagenes/')) return;
+
     // Skip API calls, webhooks, and external URLs
     if (url.pathname.startsWith('/api/') ||
         url.pathname.startsWith('/webhook') ||
