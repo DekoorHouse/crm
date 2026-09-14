@@ -1504,6 +1504,7 @@ async function renderEnviosView() {
         window._enviosOmitidos = Number(data.omitidos) || 0; // envíos viejos ya despachados que no se traen
         _paintEnvios();
         _enviosSuscribir(); // de aquí en adelante la tabla se actualiza sola cuando la lista cambie
+        _enviosEnviarPurchasePendientes();
     } catch (e) {
         container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los envíos: ${escapeHtml(e.message || String(e))}</p>
             <button class="btn btn-outline btn-sm mt-2" onclick="renderEnviosView()">Reintentar</button>`;
@@ -1588,7 +1589,7 @@ function _paintEnvios() {
             // Las líneas manuales sin pedido enlazado no llevan palomita: no hay de dónde leer la bandera.
             const palomita = !e.orderDocId ? '' : (e.metaPurchaseSentAt
                 ? `<i class="fas fa-check-circle" data-meta-order="${escapeHtml(e.orderDocId)}" title="${escapeHtml(_tipPalomitaMeta(e.metaPurchaseSentAt, e.metaPurchaseNoAplica, e.metaPurchaseMotivo))}" style="color:#16a34a;font-size:13px;margin-left:7px"></i>`
-                : `<i class="fas fa-check-circle envio-meta-pend" data-meta-order="${escapeHtml(e.orderDocId)}" onclick="event.stopPropagation();sendMetaPurchase('${escapeHtml(e.orderDocId)}')" title="Todavía NO se reporta la compra a Meta — clic para mandarla a mano" style="color:#cbd5e1;font-size:13px;margin-left:7px;cursor:pointer"></i>`);
+                : `<i class="fas fa-check-circle envio-meta-pend" data-meta-order="${escapeHtml(e.orderDocId)}" onclick="event.stopPropagation();sendMetaPurchase('${escapeHtml(e.orderDocId)}')" title="Pendiente de envío automático a Meta — clic para reintentar ahora" style="color:#cbd5e1;font-size:13px;margin-left:7px;cursor:pointer"></i>`);
             // Celda del pedido: copiable (la palomita no copia: para el clic con stopPropagation).
             const pedidoCell = `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;white-space:nowrap;font-weight:700;color:var(--color-primary)">${escapeHtml(e.orderNumber)}${palomita}</td>`;
             // Acciones: si ya hay guía, mostrarla (guía + etiqueta + rastreo); si hay datos, botón para crear guía.
@@ -1656,7 +1657,7 @@ function _paintEnvios() {
             </div>
             <p class="text-xs text-gray-400 mb-2"><i class="fas fa-hand-pointer mr-1"></i> Haz clic en cualquier dato para copiarlo. · La palomita junto al pedido dice si la compra ya se reportó a Meta:
               <i class="fas fa-check-circle" style="color:#16a34a"></i> ya se mandó ·
-              <i class="fas fa-check-circle" style="color:#cbd5e1"></i> todavía no${metaPend ? ` (${metaPend})` : ''} — clic en la palomita gris para mandarla a mano.</p>
+              <i class="fas fa-check-circle" style="color:#cbd5e1"></i> pendientes <span id="envios-meta-pendientes">${metaPend}</span> — se envían automáticamente. Si hay un problema, pasa el cursor sobre la palomita para ver el motivo.</p>
             <div style="position:relative">
             <div id="envios-scroll" style="overflow:auto">
               <table style="width:100%;border-collapse:collapse;font-size:0.875rem">
@@ -1685,6 +1686,7 @@ function _paintEnvios() {
             <button id="envios-ir-abajo" onclick="enviosIrAlFinal()" title="Ir al final de la lista (los pedidos más nuevos están abajo)" style="position:absolute;right:20px;bottom:28px;z-index:3;display:none;background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:999px;padding:8px 15px;font-size:.8rem;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22);white-space:nowrap"><i class="fas fa-arrow-down mr-1"></i>Ir al final</button>
             </div>
             <p class="text-xs text-gray-400 mt-3">${shown.length} de ${envios.length} línea(s)${manualCount ? ` · ${manualCount} manual(es)` : ''} · ${pendCount} pendiente(s) de guía · ${guiaCount} con guía${(window._enviosOmitidos || 0) ? ` · ${window._enviosOmitidos} envío(s) viejo(s) ya despachado(s) no se muestran` : ''}.</p>`;
+    _enviosRestaurarEstadoMeta();
     requestAnimationFrame(() => { _ajustarAltoEnvios(); _enviosEngancharScroll(); }); // scroll dentro de la tabla: barra horizontal visible + header sticky
 }
 window._paintEnvios = _paintEnvios;
@@ -1735,6 +1737,7 @@ function _enviosDesuscribir() {
     window._enviosUnsub = [];
     clearTimeout(_enviosRefetchTimer);
     clearTimeout(_enviosReintentoTimer);
+    clearTimeout(_enviosMetaTimer);
     _enviosRefetchPendiente = false;
 }
 window._enviosDesuscribir = _enviosDesuscribir;
@@ -1827,6 +1830,7 @@ async function _enviosRefetchSilencioso(origen) {
         window._enviosData = data.envios || [];
         window._enviosOmitidos = Number(data.omitidos) || 0;
         _paintEnvios();
+        _enviosEnviarPurchasePendientes();
         requestAnimationFrame(() => {
             const nuevo = document.getElementById('envios-scroll');
             if (!nuevo) return;
@@ -1951,7 +1955,7 @@ async function changeEnvioStatus(orderId, newStatus, sel) {
         if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
         if (sel) { const c = sel.style.borderColor; sel.style.borderColor = '#16a34a'; setTimeout(() => { sel.style.borderColor = c || 'var(--color-border,#e5e7eb)'; }, 800); }
         // Pasar a "Fabricar" es lo que dispara el Purchase a Meta: refrescamos la palomita para VER
-        // si de verdad salió. Si sigue gris, el evento falló y se puede mandar a mano con un clic.
+        // si de verdad salió. Envíos recupera automáticamente los pendientes si falla.
         if (/fabricar/i.test(newStatus)) _refrescarPalomitaMeta(orderId);
     } catch (e) {
         if (window.showError) showError('No se pudo cambiar el estatus: ' + (e.message || e)); else alert('No se pudo cambiar el estatus: ' + (e.message || e));
@@ -1974,9 +1978,95 @@ async function _refrescarPalomitaMeta(orderDocId, intentos = 3) {
     }
 }
 
+// Recupera los pendientes de TODA la lista, independientemente del filtro de guías.
+// Una petición a la vez por pestaña; el servidor reserva cada pedido entre pestañas/procesos.
+const _enviosMetaEstados = new Map();
+let _enviosMetaEnCurso = false;
+let _enviosMetaTimer = null;
+const ENVIOS_META_RETRY_MS = 5 * 60 * 1000;
+
+function _enviosPintarEstadoMeta(orderDocId, estado) {
+    const confirmed = (window._enviosData || []).find(e => e.orderDocId === orderDocId && e.metaPurchaseSentAt);
+    if (confirmed) {
+        _marcarPalomitaMeta(orderDocId, confirmed.metaPurchaseSentAt, confirmed.metaPurchaseNoAplica, confirmed.metaPurchaseMotivo);
+        return;
+    }
+    document.querySelectorAll(`#envios-container [data-meta-order="${orderDocId}"]`).forEach(el => {
+        if (estado.sending) {
+            el.className = 'fas fa-spinner fa-spin';
+            el.style.color = '#b38d52';
+            el.style.cursor = 'wait';
+            el.removeAttribute('onclick');
+            el.onclick = null;
+            el.title = 'Enviando compra a Meta automáticamente…';
+        } else {
+            el.className = 'fas fa-check-circle envio-meta-pend';
+            el.style.color = '#cbd5e1';
+            el.style.cursor = 'pointer';
+            el.onclick = event => { event.stopPropagation(); sendMetaPurchase(orderDocId); };
+            el.title = estado.message || 'Pendiente de envío automático a Meta';
+        }
+    });
+}
+
+function _enviosRestaurarEstadoMeta() {
+    _enviosMetaEstados.forEach((estado, id) => {
+        // Conserva confirmaciones recibidas mientras una consulta anterior estaba en vuelo.
+        if (estado.sentAt) _marcarPalomitaMeta(id, estado.sentAt, estado.noAplica, estado.motivo);
+        else if ((window._enviosData || []).some(e => e.orderDocId === id && !e.metaPurchaseSentAt)) _enviosPintarEstadoMeta(id, estado);
+    });
+}
+
+async function _enviosEnviarPurchasePendientes() {
+    clearTimeout(_enviosMetaTimer);
+    if (_enviosMetaEnCurso || !document.getElementById('envios-container')) return;
+    _enviosMetaEnCurso = true;
+    try {
+        // La lista se vuelve a consultar en cada paso para incorporar pedidos nuevos y evitar
+        // enviar filas que ya desaparecieron mientras Meta respondía.
+        while (document.getElementById('envios-container')) {
+            const pendiente = (window._enviosData || []).find(e => e.orderDocId && !e.metaPurchaseSentAt
+                && !_enviosMetaEstados.get(e.orderDocId)?.sentAt
+                && !(_enviosMetaEstados.get(e.orderDocId)?.retryAt > Date.now()));
+            if (!pendiente) break;
+            const id = pendiente.orderDocId;
+            const estado = { sending: true };
+            _enviosMetaEstados.set(id, estado);
+            _enviosPintarEstadoMeta(id, estado);
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/envios/meta-purchase`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ docId: id, automatic: true }),
+                });
+                const d = await res.json();
+                if (_enviosMetaEstados.get(id)?.sentAt) continue;
+                if (res.ok && d.success && d.metaPurchaseSentAt) {
+                    _marcarPalomitaMeta(id, d.metaPurchaseSentAt, d.metaPurchaseNoAplica, d.metaPurchaseMotivo);
+                    continue;
+                }
+                estado.retryAt = Date.now() + Math.max(10000, Number(d.retryAfterMs) || ENVIOS_META_RETRY_MS);
+                estado.message = d.message || `No se pudo enviar a Meta (HTTP ${res.status}). Se reintentará automáticamente.`;
+            } catch (_) {
+                estado.retryAt = Date.now() + ENVIOS_META_RETRY_MS;
+                estado.message = 'No se pudo conectar con Meta. Se reintentará automáticamente.';
+            }
+            estado.sending = false;
+            _enviosPintarEstadoMeta(id, estado);
+        }
+    } finally {
+        _enviosMetaEnCurso = false;
+        if (document.getElementById('envios-container')) {
+            const retries = (window._enviosData || []).filter(e => e.orderDocId && !e.metaPurchaseSentAt)
+                .map(e => _enviosMetaEstados.get(e.orderDocId)?.retryAt || (Date.now() + ENVIOS_META_RETRY_MS));
+            if (retries.length) _enviosMetaTimer = setTimeout(_enviosEnviarPurchasePendientes, Math.max(10000, Math.min(...retries) - Date.now()));
+        }
+    }
+}
+
 // Manda el Purchase a Meta A MANO para un pedido cuyo evento nunca salió (palomita gris).
 // Usa el valor real del pedido; el servidor no repite si ya se había mandado.
 async function sendMetaPurchase(orderDocId) {
+    if (_enviosMetaEstados.get(orderDocId)?.sending) return;
     const linea = (window._enviosData || []).find(x => x.orderDocId === orderDocId);
     const num = linea ? linea.orderNumber : orderDocId;
     const valTxt = (linea && linea.montoPagado != null) ? `$${Number(linea.montoPagado).toLocaleString('es-MX')} MXN` : 'el valor real del pedido';
@@ -1990,6 +2080,7 @@ async function sendMetaPurchase(orderDocId) {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docId: orderDocId })
         });
         const d = await r.json().catch(() => ({}));
+        if (d.inProgress) { _refrescarPalomitaMeta(orderDocId); return; }
         // La compra NO se puede reportar: contacto orgánico (Meta no lo puede atribuir) o Meta
         // rechazó el evento (p. ej. la página que corrió el anuncio no está conectada al dataset).
         // En los dos casos se ofrece marcarlo como "no aplica" para que deje de aparecer pendiente,
@@ -2004,13 +2095,14 @@ async function sendMetaPurchase(orderDocId) {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docId: orderDocId, force: true })
             });
             const d2 = await r2.json().catch(() => ({}));
+            if (d2.inProgress) { _refrescarPalomitaMeta(orderDocId); return; }
             if (!r2.ok || d2.success === false) throw new Error(d2.message || ('HTTP ' + r2.status));
-            _marcarPalomitaMeta(orderDocId, d2.metaPurchaseSentAt, true, d2.metaPurchaseMotivo);
+            _marcarPalomitaMeta(orderDocId, d2.metaPurchaseSentAt, d2.metaPurchaseNoAplica, d2.metaPurchaseMotivo);
             showError(d2.message || `${num} marcado como no aplica.`, 'success');
             return;
         }
         if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status));
-        _marcarPalomitaMeta(orderDocId, d.metaPurchaseSentAt);
+        _marcarPalomitaMeta(orderDocId, d.metaPurchaseSentAt, d.metaPurchaseNoAplica, d.metaPurchaseMotivo);
         showError(d.message || `Compra de ${num} enviada a Meta.`, 'success');
     } catch (e) {
         showError('No se pudo mandar la compra a Meta: ' + (e.message || e));
@@ -2020,7 +2112,9 @@ window.sendMetaPurchase = sendMetaPurchase;
 
 // Pone la palomita en verde EN SU LUGAR (no se repinta la tabla: repintar perdería el scroll).
 function _marcarPalomitaMeta(orderDocId, iso, noAplica = false, motivo = null) {
-    const stamp = iso || new Date().toISOString();
+    if (!iso) return; // Solo una confirmación del servidor puede ponerla en verde.
+    const stamp = iso;
+    _enviosMetaEstados.set(orderDocId, { sentAt: stamp, noAplica, motivo });
     (window._enviosData || []).forEach(x => {
         if (x.orderDocId !== orderDocId) return;
         x.metaPurchaseSentAt = stamp;
@@ -2028,13 +2122,15 @@ function _marcarPalomitaMeta(orderDocId, iso, noAplica = false, motivo = null) {
         x.metaPurchaseMotivo = motivo || null;
     });
     document.querySelectorAll(`#envios-container [data-meta-order="${orderDocId}"]`).forEach(el => {
-        el.classList.remove('envio-meta-pend');
+        el.className = 'fas fa-check-circle';
         el.removeAttribute('onclick');
         el.onclick = null;
         el.style.color = '#16a34a';
         el.style.cursor = 'default';
         el.title = _tipPalomitaMeta(stamp, noAplica, motivo);
     });
+    const counter = document.getElementById('envios-meta-pendientes');
+    if (counter) counter.textContent = (window._enviosData || []).filter(e => e.orderDocId && !e.metaPurchaseSentAt).length;
 }
 
 // Guarda la NOTA INTERNA de una línea de Envíos (no sale en la guía). Guarda al salir del campo.

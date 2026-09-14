@@ -95,7 +95,7 @@ async function createOrder({
 
     // require perezoso: services.js requiere (indirectamente) este módulo para el registro
     // automático por IA; requerir services arriba del archivo crearía un ciclo de módulos.
-    const { getPedidoAttribution, sendConversionEvent, messagingContactInfo, getPurchaseEventTrigger, pickAdReferralForConversion } = require('../services');
+    const { getPedidoAttribution, getPurchaseEventTrigger } = require('../services');
 
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     const orderCounterRef = db.collection('counters').doc('orders');
@@ -322,21 +322,7 @@ async function createOrder({
     // evita duplicados si después cambia el estatus.
     try {
         if ((await getPurchaseEventTrigger()) === 'registration' && contactRef) {
-            const contactSnap = await contactRef.get();
-            const cData = contactSnap.exists ? contactSnap.data() : null;
-            // Multicanal: WhatsApp (wa_id), Messenger (psid) o Instagram (igsid).
-            const eventInfo = cData ? messagingContactInfo(cData) : null;
-            if (eventInfo && (eventInfo.wa_id || eventInfo.psid || eventInfo.igsid)) {
-                const customData = { value: totalValue, currency: 'MXN' };
-                // El anuncio con el que COMPRÓ, no el primero que lo trajo (pickAdReferralForConversion).
-                const referral = pickAdReferralForConversion(cData, { attributedAdId, before: new Date() });
-                console.log(`[META EVENT] Enviando Purchase por registro de pedido DH${newOrderNumber}, contacto ${contactId}, anuncio ${referral.source_id || '—'}`);
-                await sendConversionEvent('Purchase', eventInfo, referral, customData);
-                await newOrderRef.update({ metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp() });
-                console.log(`[META EVENT] ✅ Evento Purchase enviado por registro, pedido DH${newOrderNumber}, valor $${totalValue}`);
-            } else {
-                console.warn(`[META EVENT] Contacto ${contactId} sin identificador de mensajería. No se envió Purchase por registro.`);
-            }
+            await require('./metaPurchase').sendOrderPurchase(newOrderRef.id, { source: 'registration' });
         }
     } catch (metaError) {
         console.error('[META EVENT] Error al enviar Purchase por registro:', metaError.message);

@@ -1516,23 +1516,7 @@ async function sendPurchaseEventOnFabricar(orderId, orderData, oldStatusLower) {
         if (!orderData.contactId) return;
         if ((await getPurchaseEventTrigger()) !== 'fabricar') return; // el ajuste lo cambió a "registro"
 
-        const contactSnap = await db.collection('contacts_whatsapp').doc(orderData.contactId).get();
-        const contactData = contactSnap.exists ? contactSnap.data() : null;
-        if (!contactData) return;
-        // Multicanal: WhatsApp (wa_id), Messenger (psid) o Instagram (igsid). sendConversionEvent
-        // arma el user_data correcto por canal y descarta a los contactos sin señal de anuncio.
-        const eventInfo = messagingContactInfo(contactData);
-        if (!eventInfo.wa_id && !eventInfo.psid && !eventInfo.igsid) {
-            console.warn(`[META EVENT] Contacto ${orderData.contactId} sin identificador de mensajería (wa_id/psid/igsid). No se envió Purchase (pedido ${orderId}).`);
-            return;
-        }
-        const customData = { value: Number(orderData.precio) || 0, currency: 'MXN' };
-        // El anuncio con el que COMPRÓ, no el primero que lo trajo (ver pickAdReferralForConversion).
-        const referral = pickAdReferralForConversion(contactData, { attributedAdId: orderData.attributedAdId, before: orderData.createdAt });
-        console.log(`[META EVENT] Enviando Purchase por cambio a Fabricar, pedido ${orderId}, contacto ${orderData.contactId}, anuncio ${referral.source_id || '—'}`);
-        await sendConversionEvent('Purchase', eventInfo, referral, customData);
-        await db.collection('pedidos').doc(orderId).update({ metaPurchaseSentAt: admin.firestore.FieldValue.serverTimestamp() });
-        console.log(`[META EVENT] ✅ Evento Purchase enviado por Fabricar, pedido ${orderId}, valor $${Number(orderData.precio) || 0}`);
+        await require('./orders/metaPurchase').sendOrderPurchase(orderId, { source: 'fabricar' });
     } catch (metaError) {
         console.error(`[META EVENT] Error al enviar Purchase por Fabricar (pedido ${orderId}):`, metaError.message);
         if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
@@ -5040,7 +5024,8 @@ async function getPageIdForAd(adId) {
     }
     try {
         const { data } = await axios.get(`https://graph.facebook.com/v22.0/${encodeURIComponent(key)}`, {
-            params: { fields: 'creative{object_story_spec{page_id},effective_object_story_id}', access_token: token }
+            params: { fields: 'creative{object_story_spec{page_id},effective_object_story_id}', access_token: token },
+            timeout: 15000,
         });
         // object_story_spec.page_id es lo directo; effective_object_story_id viene como "<pageId>_<postId>".
         const spec = data && data.creative && data.creative.object_story_spec;
@@ -5067,10 +5052,10 @@ async function getPageIdForAd(adId) {
     }
 }
 
-async function sendConversionEvent(eventName, contactInfo, referralInfo, customData = {}) {
+async function sendConversionEvent(eventName, contactInfo, referralInfo, customData = {}, options = {}) {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn(`[META CAPI] Faltan credenciales. PIXEL_ID=${!!META_PIXEL_ID}, TOKEN=${!!META_CAPI_ACCESS_TOKEN}. No se enviará evento '${eventName}'.`);
-        return;
+        return { sent: false, reason: 'faltan credenciales de Meta' };
     }
 
     // El ctwa_clid y el id del anuncio salen del MISMO referral, así que la página que resolvemos es
@@ -5079,7 +5064,7 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
 
     // Arma user_data + messaging_channel según el canal del contacto (WA/Messenger/IG).
     const identity = resolveMessagingIdentity(contactInfo, referralInfo, eventName, adPageId);
-    if (!identity) return; // el motivo ya quedó registrado
+    if (!identity) return { sent: false, reason: 'sin atribución de anuncio o configuración de canal' };
 
     const url = `https://graph.facebook.com/v22.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);
@@ -5087,7 +5072,7 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
     const eventData = {
         event_name: eventName,
         event_time: eventTime,
-        event_id: `${eventName}_${identity.userRef}_${eventTime}`,
+        event_id: options.eventId || `${eventName}_${identity.userRef}_${eventTime}`,
         action_source: 'business_messaging',
         messaging_channel: identity.messagingChannel,
         user_data: identity.userData,
@@ -5102,8 +5087,12 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
 
     try {
         console.log(`[META CAPI] Enviando '${eventName}' (${identity.messagingChannel}) al dataset ${META_PIXEL_ID}. ref=${identity.userRef} page_id=${identity.userData.page_id || identity.userData.instagram_business_account_id || '—'}${adPageId ? ' (resuelto del anuncio)' : ' (del env)'}`);
-        const response = await axios.post(url, payload, { headers });
+        const response = await axios.post(url, payload, { headers, timeout: 30000 });
+        if (!(Number(response.data?.events_received) > 0)) {
+            return { sent: false, reason: 'Meta no confirmó eventos recibidos' };
+        }
         console.log(`[META CAPI] ✅ Evento '${eventName}' enviado. Respuesta:`, JSON.stringify(response.data));
+        return { sent: true };
     } catch (error) {
         console.error(`[META CAPI] ❌ Error al enviar evento '${eventName}'. HTTP ${error.response?.status || 'N/A'}`,
             error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
@@ -5111,7 +5100,10 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
         // "falló el envío" y se perdía el diagnóstico (p.ej. "Page Id y Ctwa Clid no coinciden").
         const err = (error.response && error.response.data && error.response.data.error) || {};
         const motivo = err.error_user_title || err.error_user_msg || err.message || error.message;
-        throw new Error(`Falló el envío del evento '${eventName}' a Meta: ${motivo}`);
+        const failure = new Error(`Falló el envío del evento '${eventName}' a Meta: ${motivo}`);
+        failure.metaRejected = !!error.response && error.response.status >= 400 && error.response.status < 500
+            && error.response.status !== 429 && !err.is_transient && ![1, 2, 4, 17, 32, 613].includes(err.code);
+        throw failure;
     }
 }
 
