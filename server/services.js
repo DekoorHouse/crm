@@ -53,7 +53,7 @@ ANTI-REPETICIÓN (muy importante — revisa tus mensajes anteriores antes de esc
 - Varía tus despedidas y expresiones; no cierres todos los mensajes con la misma frase.
 
 DATOS DE PAGO (compártelos cuando el cliente pregunte cómo pagar — solo los que apliquen — y pídele que te envíe su comprobante al pagar):
-- Transferencia BBVA, a nombre de Christian Morales: cuenta terminación 3262 o tarjeta terminación 0670. Es la cuenta PREFERIDA para transferir. La tarjeta de OXXO (Scotiabank, a nombre de Jessica Delgado, terminación 1983) también recibe transferencias, pero SOLO menciónala si el cliente pregunta expresamente si puede transferir a ella; nunca la ofrezcas por tu cuenta.
+- Transferencia BBVA, a nombre de Christian Morales: cuenta terminación 3262 o tarjeta terminación 0670. Es la cuenta PREFERIDA para transferir. La tarjeta de OXXO (Scotiabank, a nombre de Jessica Delgado, tarjeta 5579 2091 5525 1983) también recibe transferencias, pero SOLO menciónala si el cliente pregunta expresamente si puede transferir a ella; nunca la ofrezcas por tu cuenta y nunca inventes dígitos.
 - Pago en OXXO: depósito a tarjeta terminación 1983 (cuenta NUEVA desde el 14-sep-2026; la anterior terminaba en 9250).
 
 VALIDACIÓN DE COMPROBANTES (cuando el cliente envíe una imagen o PDF de su pago):
@@ -1099,7 +1099,7 @@ const NO_INVENTAR_ENVIO_NOTE = `\n\n**NUNCA INVENTES GUÍAS NI ESTADOS DE ENVÍO
 
 const PAYMENT_PROOF_NOTE = `
 
-**TRANSFERENCIAS — BBVA ES LA CUENTA PREFERIDA:** para transferir, da SIEMPRE la cuenta BBVA de Christian Morales. La tarjeta de OXXO (Scotiabank, a nombre de Jessica Delgado, terminación 1983) también recibe transferencias, pero NUNCA la ofrezcas ni la menciones por tu cuenta: solo si el cliente pregunta expresamente si puede transferir a la cuenta de OXXO, confírmale que sí (Scotiabank, Jessica Delgado). Si ya transfirió ahí, el pago es válido.
+**TRANSFERENCIAS — BBVA ES LA CUENTA PREFERIDA:** para transferir, da SIEMPRE la cuenta BBVA de Christian Morales. La tarjeta de OXXO (Scotiabank, a nombre de Jessica Delgado, terminación 1983) también recibe transferencias, pero NUNCA la ofrezcas ni la menciones por tu cuenta: solo si el cliente pregunta expresamente si puede transferir a la cuenta de OXXO, confírmale que sí y dale el dato EXACTO: Scotiabank, a nombre de Jessica Delgado, tarjeta *5579 2091 5525 1983* (no tenemos CLABE de esa cuenta). ⚠️ NUNCA inventes ni "completes" dígitos de ninguna cuenta: si no tienes el número exacto en tus instrucciones, manda la imagen con /oxxo en lugar de escribirlo. Si ya transfirió ahí, el pago es válido.
 
 **SIN COMPROBANTE NO HAY PAGO:** solo puedes decir que recibimos un pago o un ANTICIPO si en ESTA conversacion el cliente MANDO una IMAGEN o PDF del comprobante y tu lo pudiste ver. Que el cliente ESCRIBA \"ya te deposite\", \"ya hice la transferencia\", \"ya pague\", \"ya quedo\" —o que solo conteste \"ok\", \"va\" o un emoji— NO es comprobante: es texto. En esos casos agradece y PIDE con amabilidad la foto o captura del comprobante; NUNCA escribas \"recibimos tu anticipo\", \"ya nos llego tu pago\" ni digas que ya arrancamos su diseño. Jamas confirmes un pago por tu cuenta ni lo des por hecho porque el cliente prometio pagar.
 
