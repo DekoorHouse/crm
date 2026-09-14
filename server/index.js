@@ -78,6 +78,7 @@ app.use('/api/fb-group', fbGroupRouter);
 app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
+app.use('/api/imagenes', require('./imagenes/imageStudioRoutes'));
 app.use('/api/pendientes', pendientesRouter);
 app.use('/api/mercadopago', mercadopagoRouter);
 app.use('/api/pagos/transferencia', transferenciasRouter);
@@ -453,6 +454,10 @@ app.get('/meta', (req, res) => {
 
 app.get('/mockups', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'mockups', 'index.html'));
+});
+
+app.get('/imagenes', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'imagenes', 'index.html'));
 });
 
 app.get('/ps', (req, res) => {

@@ -222,4 +222,15 @@ if (MODE === 'enforce' && !WORKER_KEY) {
     console.warn('[api-auth] enforce SIN WORKER_API_KEY: los scripts locales (send-design-approval, gen-grabado, fb/wa-publish) van a recibir 401.');
 }
 
-module.exports = { apiAuth, API_AUTH_MODE: MODE };
+// Para herramientas nuevas con consumo de créditos, exigir la misma identidad permitida
+// incluso mientras el resto de la API está en modo de observación.
+async function requireApiUser(req, res, next) {
+    try {
+        const cred = ['token', 'session', 'worker-key'].includes(req.apiAuth?.via)
+            ? req.apiAuth : await resolveCredential(req);
+        if (!cred.error) { req.apiAuth = cred; return next(); }
+    } catch (_) {}
+    return res.status(401).json({ success: false, code: 'AUTH_REQUIRED', error: 'Inicia sesión con tu cuenta del CRM para continuar.' });
+}
+
+module.exports = { apiAuth, requireApiUser, API_AUTH_MODE: MODE };
