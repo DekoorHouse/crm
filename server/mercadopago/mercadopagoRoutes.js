@@ -420,6 +420,17 @@ async function findPedidoRefByNumber(orderNumber) {
 
 async function createOxxoReference({ amount, customerName, customerPhone, orderNumber, productName, note, source = 'crm_oxxo_manual' }) {
     if (!MP_ACCESS_TOKEN) throw new Error('Pasarela de pago no configurada');
+    // Kill-switch (Chris, 14-sep-2026): con la cuenta OXXO nueva (tarjeta terminación 1983 en los
+    // atajos /cuatro y /oxxo) ya NO se mandan referencias OXXO de Mercado Pago a los clientes, ni
+    // desde el botón del CRM (source crm_oxxo_manual) ni desde la IA (/oxxomp, source ai_oxxo).
+    // Vive en el núcleo compartido para que no dependa de la caché del navegador ni del prompt.
+    // Para reactivarlas: crm_settings/general.mpOxxoReferencesActive = true.
+    const generalCfg = (await db.collection('crm_settings').doc('general').get()).data() || {};
+    if (generalCfg.mpOxxoReferencesActive !== true) {
+        const off = new Error('Las referencias OXXO de Mercado Pago están apagadas: manda el atajo /oxxo (o /cuatro) con la imagen de la cuenta nueva (terminación 1983). Para reactivarlas, pon mpOxxoReferencesActive en true en crm_settings/general.');
+        off.statusCode = 409;
+        throw off;
+    }
 
     const monto = Number(amount);
     if (!monto || isNaN(monto) || monto <= 0) throw new Error('Monto invalido');
@@ -566,8 +577,9 @@ router.post('/oxxo', async (req, res) => {
         res.json(out);
     } catch (error) {
         console.error('[MP OXXO] Error:', error.response?.data || error.message);
-        res.status(500).json({
-            error: 'Error al generar referencia OXXO',
+        // 409 = apagadas por el kill-switch: el modal del CRM muestra `error`, así que ahí va la explicación.
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Error al generar referencia OXXO',
             details: error.response?.data || error.message
         });
     }
