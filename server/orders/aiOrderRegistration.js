@@ -273,6 +273,30 @@ function saneaExtraccion(parsed) {
     };
 }
 
+// Confirmar otra vez un pedido no es cambiarlo (DH16731, anticipo ya en Fabricar).
+// Compara TODAS las piezas, cantidades, precios y datos; un subconjunto no basta.
+// Solo ignora formato: conserva acentos, signos y cualquier dato de personalización.
+function sameRegisteredOrder(order, extraction) {
+    if (!Array.isArray(order.items) || !order.items.length || Number(order.precio) !== extraction.total) return false;
+    const textKey = value => String(value || '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
+    const itemsKey = items => {
+        const quantities = new Map();
+        for (const item of items) {
+            if (!item || !item.producto) return null;
+            const quantity = Number(item.cantidad);
+            const price = Number(item.precio);
+            if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(price) || price <= 0) return null;
+            const details = normalizarFechaEnDatos(String(item.datosProducto || ''))
+                .split('|').map(part => textKey(part).replace(/\s*:\s*/g, ':')).sort();
+            const key = JSON.stringify([textKey(item.producto), price, details]);
+            quantities.set(key, (quantities.get(key) || 0) + quantity);
+        }
+        return JSON.stringify([...quantities].sort(([a], [b]) => a.localeCompare(b)));
+    };
+    const previous = itemsKey(order.items);
+    return previous !== null && previous === itemsKey(extraction.items);
+}
+
 /**
  * Extrae el pedido de la conversación. Devuelve { extraction, motivo }: si `extraction`
  * viene null, `motivo` dice POR QUÉ.
@@ -302,6 +326,7 @@ async function extractOrderDetailed({ conversationText, name, catalogText, exist
     const cerrado = existingOrder && (existingOrder.done || existingOrder.postventa);
     const existingOrderNote = existingOrder ? `
 PEDIDO YA REGISTRADO en el sistema para este cliente: ${existingOrder.num} — ${String(existingOrder.datosProducto || '').replace(/\s+/g, ' ').slice(0, 300)} — Total registrado: $${existingOrder.precio}${existingOrder.estatus ? ` — Estatus: ${existingOrder.estatus}` : ''}.
+${!cerrado && Array.isArray(existingOrder.items) && existingOrder.items.length ? `Productos guardados (JSON): ${JSON.stringify(existingOrder.items)}\nConserva exactamente producto, datosProducto, cantidad y precio de cada pieza que el cliente NO haya cambiado. No reformules sus datos. Si solo confirma de nuevo el mismo pedido o su anticipo, devuelve estos mismos items y total, con esAdicional=false.` : ''}
 ${cerrado
         ? `Ese pedido YA ESTÁ CERRADO (${existingOrder.done ? 'pagado/enviado' : 'la lámpara ya está fabricada y el cliente está en post-venta'}): NO se puede modificar. Todo lo que el cliente confirmó DESPUÉS de ese pedido es un pedido NUEVO e independiente: devuelve SOLO los productos nuevos (esAdicional=true) y NO incluyas los del pedido ya registrado. Si el cliente no confirmó ningún producto nuevo (solo habla del pedido que ya tiene), responde listo=false y explícalo en "faltante".`
         : `Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelve el pedido COMPLETO como debe quedar al final (todos sus items, esAdicional=false). Si el cliente pidió OTRO pedido independiente además de aquel, devuelve SOLO los productos nuevos (esAdicional=true).`}
@@ -391,6 +416,19 @@ async function logFailure(contactId, name, motivo) {
     }
 }
 
+// La frase de cierre puede reabrir Pendientes IA antes de llamar al registro.
+// Un pedido idéntico ya registrado no necesita que alguien lo capture otra vez.
+async function clearRepeatedRegistrationPending(contactRef) {
+    try {
+        await db.runTransaction(async tx => {
+            const snap = await tx.get(contactRef);
+            if (snap.exists && snap.data().status === 'pendientes_ia') tx.update(contactRef, { status: null });
+        });
+    } catch (e) {
+        console.warn('[AI_ORDER] No se pudo limpiar Pendientes IA tras confirmación repetida:', e.message);
+    }
+}
+
 /**
  * Punto de entrada desde services.js cuando la IA emite /registrar.
  * Devuelve el número de pedido ("DH####") si se registró, o null si no
@@ -453,6 +491,7 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
                 num: existingRec.data.consecutiveOrderNumber != null ? `DH${existingRec.data.consecutiveOrderNumber}` : existingRec.id,
                 datosProducto: existingRec.data.datosProducto || existingRec.data.producto || '',
                 precio: existingRec.data.precio,
+                items: existingRec.data.items,
                 estatus: existingRec.data.estatus || 'Sin estatus',
                 done: isOrderDone(existingRec.data),
                 postventa: contactData.aiStage === 'postventa'
@@ -518,6 +557,12 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             const estActual = r.estatus || 'Sin estatus';
             const editable = r.registeredByAI === true && r.aiReviewStatus === 'pending' && (estActual === 'Sin estatus' || estActual === 'Esperando anticipo');
             if (!editable) {
+                if (sameRegisteredOrder(r, extraction)) {
+                    // No modificar el pedido ni borrar alertas anteriores: este intento no cambió nada.
+                    console.log(`[AI_ORDER] Confirmación repetida de ${rNum} (${estActual}); se conserva sin pedir atención.`);
+                    await clearRepeatedRegistrationPending(contactRef);
+                    return rNum;
+                }
                 console.warn(`[AI_ORDER] ${contactId} confirmó un cambio pero ${rNum} ya no es editable (${r.vendedor || 'manual'}, ${r.estatus}, review: ${r.aiReviewStatus || '-'}). Se avisa al admin.`);
                 await logFailure(contactId, name, `cambio_no_aplicado: ${rNum} ya no es editable (${r.estatus}${r.registeredByAI ? ', IA' : ', manual'})`);
                 await alertAdmin(`⚠️ *El cliente cambió/confirmó un pedido, pero ya existe ${rNum} reciente* (${r.estatus || 'Sin estatus'}${r.registeredByAI ? ', registrado por IA' : ', registrado manual'}${r.aiReviewStatus === 'approved' ? ', ya revisado' : ''}).\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nLo que el cliente confirmó ahora:\n${itemsTxt}\nTotal: $${extraction.total}\n\nRevisa el chat y edita/registra tú desde el CRM. La IA no creó ni modificó nada.`);
@@ -592,18 +637,17 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
         }
 
         // Candado anti-duplicado: si lo extraído es EXACTAMENTE lo que ya tiene el pedido previo
-        // (mismo producto + mismos datos), no es un pedido nuevo: es la IA re-emitiendo /registrar
+        // (mismos productos, datos, cantidades y precios), no es un pedido nuevo: es la IA re-emitiendo /registrar
         // (o el extractor repitiendo el pedido viejo). Antes, con el pedido previo fuera de la
         // ventana de bloqueo, esto habría creado un DH duplicado; ahora cae a la bitácora.
-        if (existingRec && Array.isArray(existingRec.data.items) && existingRec.data.items.length) {
-            const claveDup = (it) => `${String(it.producto || '').trim().toLowerCase()}|${String(it.datosProducto || '').trim().toLowerCase()}`;
-            const previos = new Set(existingRec.data.items.map(claveDup));
-            if (extraction.items.every(it => previos.has(claveDup(it)))) {
+        if (existingRec) {
+            if (sameRegisteredOrder(existingRec.data, extraction)) {
                 const numPrev = existingRec.data.consecutiveOrderNumber != null ? `DH${existingRec.data.consecutiveOrderNumber}` : existingRec.id;
                 // No es una falla que deba ir a Pendientes IA (alguien registraría el duplicado a
                 // mano): queda en la bitácora y se devuelve el pedido que ya existe.
                 console.warn(`[AI_ORDER] ${contactId}: lo extraído es idéntico a ${numPrev} (${existingRec.data.estatus || 'Sin estatus'}); no se crea otro pedido.`);
                 await logFailure(contactId, name, `duplicado_evitado: lo extraído es idéntico a ${numPrev} (${existingRec.data.estatus || 'Sin estatus'})`);
+                await clearRepeatedRegistrationPending(contactRef);
                 return numPrev;
             }
         }
