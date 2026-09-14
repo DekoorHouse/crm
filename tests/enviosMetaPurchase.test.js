@@ -2,7 +2,7 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-let ui, active, icons, counter;
+let ui, active, icons, counter, rejectedCounter, container;
 const success = { success: true, metaPurchaseSentAt: '2026-09-14T12:00:00Z' };
 const reply = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 const row = id => ({ orderDocId: id, orderNumber: `DH${id}`, metaPurchaseSentAt: null });
@@ -12,11 +12,13 @@ beforeEach(() => {
     active = true;
     icons = new Map();
     counter = { textContent: '' };
+    rejectedCounter = { textContent: '' };
+    container = { innerHTML: '' };
     ui = {
         window: { addEventListener() {}, _enviosData: [] },
         document: {
             addEventListener() {},
-            getElementById: id => id === 'envios-container' && active ? {} : id === 'envios-meta-pendientes' ? counter : null,
+            getElementById: id => id === 'envios-container' && active ? container : id === 'envios-meta-pendientes' ? counter : id === 'envios-meta-rechazadas' ? rejectedCounter : null,
             querySelectorAll: selector => {
                 const id = selector.match(/data-meta-order="([^"]+)"/)?.[1];
                 if (!icons.has(id)) icons.set(id, { style: {}, removeAttribute() {} });
@@ -34,6 +36,103 @@ beforeEach(() => {
     // Se carga el archivo real del navegador, sin Firebase, credenciales ni conexiones.
     vm.createContext(ui);
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js/modules/ui-manager.js'), 'utf8'), ui);
+    ui.showError = jest.fn();
+});
+
+test('un orgánico se resuelve en azul sin afirmar que fue enviado y conserva el estado al refrescar', async () => {
+    ui.window._enviosData = [row('1'), row('1')];
+    ui.fetch.mockResolvedValue(reply({ success: true, metaPurchaseSentAt: null,
+        metaPurchaseResolvedAt: success.metaPurchaseSentAt, metaPurchaseNoAplica: true, metaPurchaseMotivo: 'organico' }));
+    await ui._enviosEnviarPurchasePendientes();
+    expect(icons.get('1').style.color).toBe('#2563eb');
+    expect(icons.get('1').title).toContain('No se envió Purchase a Meta');
+    expect(ui.window._enviosData.every(e => e.metaPurchaseResolvedAt && !e.metaPurchaseSentAt)).toBe(true);
+    expect(counter.textContent).toBe(0);
+    ui.window._enviosData = [row('1')];
+    ui._enviosRestaurarEstadoMeta();
+    await ui._enviosEnviarPurchasePendientes();
+    expect(ui.fetch).toHaveBeenCalledTimes(1);
+    expect(ui.window._enviosData[0].metaPurchaseMotivo).toBe('organico');
+});
+
+test('un rechazo automático queda rojo, muestra motivo y espera revisión sin bloquear otras compras', async () => {
+    ui.window._enviosData = [row('1'), row('2')];
+    ui.fetch.mockResolvedValueOnce(reply({ success: false, rechazado: true, metaPurchaseRejectedAt: success.metaPurchaseSentAt, message: 'Página no conectada' }, 409));
+    await ui._enviosEnviarPurchasePendientes();
+    expect(icons.get('1').style.color).toBe('#dc2626');
+    expect(icons.get('1').title).toContain('Página no conectada');
+    expect(icons.get('2').style.color).toBe('#16a34a');
+    expect(ui.showConfirmModal).not.toHaveBeenCalled();
+    expect(rejectedCounter.textContent).toBe(1);
+    expect(counter.textContent).toBe(0);
+    ui.window._enviosData[0] = row('1');
+    ui._enviosRestaurarEstadoMeta();
+    await jest.advanceTimersByTimeAsync(600000);
+    await ui._enviosEnviarPurchasePendientes();
+    expect(ui.fetch).toHaveBeenCalledTimes(2);
+});
+
+test.each([false, true])('revisión de una roja, confirmar=%s: solo cambia a verde al guardar en el servidor', async confirm => {
+    ui.window._enviosData = [row('1')];
+    ui._marcarPalomitaMetaRechazada('1', { metaPurchaseRejectedAt: success.metaPurchaseSentAt, metaPurchaseError: 'Página no conectada' });
+    ui.showConfirmModal.mockResolvedValue(confirm);
+    ui.fetch.mockResolvedValue(reply({ success: true, metaPurchaseSentAt: null, metaPurchaseResolvedAt: success.metaPurchaseSentAt,
+        metaPurchaseNoAplica: true, metaPurchaseMotivo: 'revisado' }));
+    await ui.sendMetaPurchase('1');
+    expect(ui.showConfirmModal.mock.calls[0][0]).toContain('Página no conectada');
+    expect(ui.showConfirmModal.mock.calls[0][1]).toMatchObject({ confirmText: 'Ya la revisé, marcar verde', cancelText: 'Dejar en rojo' });
+    if (!confirm) {
+        expect(ui.fetch).not.toHaveBeenCalled();
+        expect(icons.get('1').style.color).toBe('#dc2626');
+    } else {
+        expect(JSON.parse(ui.fetch.mock.calls[0][1].body)).toEqual({ docId: '1', force: true });
+        expect(icons.get('1').style.color).toBe('#16a34a');
+        expect(icons.get('1').title).toContain('Revisada manualmente');
+        expect(icons.get('1').title).toContain('No se reportó a Meta');
+        expect(ui.window._enviosData[0].metaPurchaseSentAt).toBeNull();
+        expect(ui.window._enviosData[0].metaPurchaseRejectedAt).toBeNull();
+        expect(rejectedCounter.textContent).toBe(0);
+        await ui._enviosEnviarPurchasePendientes();
+        expect(ui.fetch).toHaveBeenCalledTimes(1);
+    }
+});
+
+test('si falla guardar la revisión, conserva la palomita roja', async () => {
+    ui.window._enviosData = [row('1')];
+    ui._marcarPalomitaMetaRechazada('1', { metaPurchaseRejectedAt: success.metaPurchaseSentAt, metaPurchaseError: 'rechazo' });
+    ui.showConfirmModal.mockResolvedValue(true);
+    ui.fetch.mockRejectedValue(new Error('red caída'));
+    await ui.sendMetaPurchase('1');
+    expect(icons.get('1').style.color).toBe('#dc2626');
+    expect(ui.window._enviosData[0].metaPurchaseResolvedAt).toBeUndefined();
+    expect(ui.showError).toHaveBeenCalledWith(expect.stringContaining('red caída'));
+    ui.window._enviosData = [row('1')];
+    ui._enviosRestaurarEstadoMeta();
+    expect(icons.get('1').style.color).toBe('#dc2626');
+    expect(icons.get('1').title).toContain('rechazo');
+    await ui._enviosEnviarPurchasePendientes();
+    expect(ui.fetch).toHaveBeenCalledTimes(1);
+});
+
+test('la tabla distingue los cuatro estados al cargar de nuevo', () => {
+    const stamp = success.metaPurchaseSentAt;
+    ui.window._enviosData = [row('pendiente'), { ...row('enviado'), metaPurchaseSentAt: stamp },
+        { ...row('organico'), metaPurchaseResolvedAt: stamp, metaPurchaseNoAplica: true, metaPurchaseMotivo: 'organico' },
+        { ...row('rechazado'), metaPurchaseRejectedAt: stamp, metaPurchaseError: 'Página no conectada' },
+        { ...row('revisado'), metaPurchaseResolvedAt: stamp, metaPurchaseNoAplica: true, metaPurchaseMotivo: 'revisado' }];
+    ui._paintEnvios();
+    for (const [id, color] of [['pendiente', '#cbd5e1'], ['enviado', '#16a34a'], ['organico', '#2563eb'], ['rechazado', '#dc2626'], ['revisado', '#16a34a']]) {
+        expect(container.innerHTML).toMatch(new RegExp(`data-meta-order="${id}"[^>]*color:${color}`));
+    }
+    expect(container.innerHTML).toContain('Página no conectada');
+    expect(container.innerHTML).toContain('Revisada manualmente');
+});
+
+test('una respuesta de rechazo vieja no borra una revisión confirmada por otra pestaña', () => {
+    ui.window._enviosData = [{ ...row('1'), metaPurchaseResolvedAt: success.metaPurchaseSentAt, metaPurchaseNoAplica: true, metaPurchaseMotivo: 'revisado' }];
+    ui._marcarPalomitaMetaRechazada('1', { rechazado: true, message: 'respuesta anterior' });
+    expect(icons.get('1').style.color).toBe('#16a34a');
+    expect(ui.window._enviosData[0].metaPurchaseRejectedAt).toBeNull();
 });
 afterEach(() => jest.useRealTimers());
 

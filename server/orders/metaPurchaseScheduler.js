@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const { db } = require('../config');
-const { sendOrderPurchase, isAutomaticPurchaseEligible } = require('./metaPurchase');
+const { sendOrderPurchase, isPurchaseResolved, isAutomaticPurchaseEligible } = require('./metaPurchase');
 
 // Misma ventana que Envíos. Fuera de ella se recuperan pendientes sin guía,
 // reposiciones y pedidos enlazados por una línea manual, no todo el historial enviado.
@@ -19,6 +19,7 @@ const liveQueue = new Set();
 let liveInFlight = null;
 let liveRunning = false;
 let liveSent = 0;
+let liveOrganic = 0;
 let lastLiveCompletedAt = null;
 const listeners = {};
 const listenerErrors = {};
@@ -26,13 +27,13 @@ const listenerRetries = {};
 const manualOrderNumbers = new Map();
 
 function readyToSend(p) {
-    return !p.metaPurchaseSentAt && isAutomaticPurchaseEligible(p)
+    return !isPurchaseResolved(p) && !p.metaPurchaseRejectedAt && isAutomaticPurchaseEligible(p)
         && millis(p.metaPurchaseNextAttemptAt) <= Date.now()
         && millis(p.metaPurchaseLeaseUntil) <= Date.now();
 }
 
 function enqueueLivePurchase(id, p) {
-    if (!process.env.META_PIXEL_ID || !process.env.META_CAPI_ACCESS_TOKEN || !readyToSend(p)) return;
+    if (!readyToSend(p)) return;
     if (liveInFlight === id) return;
     liveQueue.add(id);
     void drainLiveQueue();
@@ -48,7 +49,10 @@ async function drainLiveQueue() {
             liveInFlight = id;
             try {
                 const result = await sendOrderPurchase(id, { source: 'envios_scheduler' });
-                if (result.success && !result.already) liveSent++;
+                if (result.success && !result.already) {
+                    if (result.metaPurchaseMotivo === 'organico') liveOrganic++;
+                    else if (!result.metaPurchaseNoAplica) liveSent++;
+                }
             } catch (e) {
                 // El barrido de respaldo lo recupera sin necesitar otra modificación del pedido.
                 console.warn(`[META PURCHASE LIVE] Pedido ${id}:`, e.message);
@@ -109,20 +113,15 @@ async function runMetaPurchaseSweep() {
     if (running) return { skipped: 'already_running' };
     running = true;
     lastStartedAt = new Date().toISOString();
-    const result = { scanned: 0, attempted: 0, sent: 0, pending: 0 };
+    const result = { scanned: 0, attempted: 0, sent: 0, organic: 0, pending: 0 };
     try {
-        // Evita reservar y escribir fallos en cientos de pedidos si falta configuración.
-        if (!process.env.META_PIXEL_ID || !process.env.META_CAPI_ACCESS_TOKEN) {
-            result.skipped = 'missing_credentials';
-            return result;
-        }
         const manual = await db.collection('envios_manuales').orderBy('createdAt', 'desc')
             .limit(300).select('orderNumber').get();
         const manualNumbers = new Set(manual.docs.map(d => norm(d.data().orderNumber)).filter(Boolean));
         // Pagina por el comprobante (inmutable durante el envío), no por una bandera que
         // cambiamos al procesar. No necesita índices nuevos ni campos que falten en pedidos viejos.
         const query = db.collection('pedidos').orderBy('comprobanteValidadoAt', 'desc').select(
-            'comprobanteValidadoAt', 'metaPurchaseSentAt', 'metaPurchaseNextAttemptAt',
+            'comprobanteValidadoAt', 'metaPurchaseSentAt', 'metaPurchaseResolvedAt', 'metaPurchaseRejectedAt', 'metaPurchaseNextAttemptAt',
             'metaPurchaseLeaseUntil', 'ocultoDeEnvios', 'estatus', 'guiaEnvio.guia', 'consecutiveOrderNumber'
         ).limit(PAGE_SIZE);
         let cursor = null;
@@ -139,7 +138,10 @@ async function runMetaPurchaseSweep() {
                     // El servicio vuelve a leer y reservar el pedido en una transacción:
                     // comparte exclusión con otra instancia, Fabricar y cualquier pestaña abierta.
                     const sent = await sendOrderPurchase(doc.id, { source: 'envios_scheduler' });
-                    if (sent.success && !sent.already) result.sent++;
+                    if (sent.success && !sent.already) {
+                        if (sent.metaPurchaseMotivo === 'organico') result.organic++;
+                        else if (!sent.metaPurchaseNoAplica) result.sent++;
+                    }
                     else if (!sent.success) result.pending++;
                 } catch (e) {
                     result.pending++;
@@ -175,7 +177,7 @@ function getMetaPurchaseSchedulerStatus() {
     return {
         started: !!task, running, intervalMinutes: 5, lastStartedAt, lastCompletedAt, lastResult, lastError,
         realtime: { listeners: { ...listeners }, errors: { ...listenerErrors }, running: liveRunning,
-            queued: liveQueue.size, sent: liveSent, lastCompletedAt: lastLiveCompletedAt },
+            queued: liveQueue.size, sent: liveSent, organic: liveOrganic, lastCompletedAt: lastLiveCompletedAt },
     };
 }
 

@@ -45,7 +45,7 @@ jest.mock('../server/services', () => ({
     sendConversionEvent: jest.fn(),
 }));
 
-const { sendOrderPurchase } = require('../server/orders/metaPurchase');
+const { sendOrderPurchase, purchaseState } = require('../server/orders/metaPurchase');
 const services = require('../server/services');
 const automatic = { source: 'envios_auto' };
 const order = () => mockDocs.get('pedidos/p1');
@@ -64,6 +64,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     services.sendConversionEvent.mockReset().mockResolvedValue({ sent: true });
     services.resolveMessagingIdentity.mockReturnValue({ messagingChannel: 'whatsapp' });
+    services.pickAdReferralForConversion.mockReturnValue({ source_id: 'ad-correcto', ctwa_clid: 'clid' });
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -135,22 +136,65 @@ test.each([undefined, { sent: false, reason: 'faltan credenciales' }])('sin conf
     expect(order().metaPurchaseSentAt).toBeUndefined();
 });
 
-test('orgánicos y rechazos quedan pendientes; jamás se marcan no aplica automáticamente', async () => {
+test.each(['envios_auto', 'envios_scheduler'])('marca orgánicos automáticamente sin enviar un evento (%s)', async source => {
+    delete order().attributedAdId;
+    order().leadSource = 'organic';
+    services.pickAdReferralForConversion.mockReturnValue({});
     services.resolveMessagingIdentity.mockReturnValue(null);
-    expect(await sendOrderPurchase('p1', automatic)).toMatchObject({ organico: true, success: false });
+    expect(await sendOrderPurchase('p1', { source })).toMatchObject({
+        success: true, metaPurchaseSentAt: null, metaPurchaseResolvedAt: expect.any(String),
+        metaPurchaseNoAplica: true, metaPurchaseMotivo: 'organico',
+    });
     expect(order().metaPurchaseSentAt).toBeUndefined();
+    expect(order().metaPurchaseResolvedAt).toBeTruthy();
+    expect(order().metaPurchaseResolution).toBe('organico');
     expect(services.sendConversionEvent).not.toHaveBeenCalled();
-    expect(await sendOrderPurchase('p1', { ...automatic, force: true })).toMatchObject({ status: 400 });
-    expect(order().metaPurchaseSentAt).toBeUndefined();
-    expect(await sendOrderPurchase('p1', { force: true })).toMatchObject({ success: true, metaPurchaseNoAplica: true, metaPurchaseMotivo: 'organico' });
+    expect(await sendOrderPurchase('p1', { source })).toMatchObject({ success: true, already: true, metaPurchaseMotivo: 'organico' });
+    expect(purchaseState(order())).toMatchObject({ metaPurchaseSentAt: null, metaPurchaseResolvedAt: expect.any(String) });
 });
 
-test('un rechazo de Meta conserva el motivo y permite la acción manual existente', async () => {
+test.each(['order', 'referral', 'history', 'leadSource'])('una señal de anuncio en %s evita confundir falta de configuración/identidad con orgánico', async signal => {
+    delete order().attributedAdId;
+    services.pickAdReferralForConversion.mockReturnValue(signal === 'referral' ? { ctwa_clid: 'clid' } : {});
+    if (signal === 'order') order().attributedAdId = 'anuncio';
+    if (signal === 'history') mockDocs.get('contacts_whatsapp/c1').adReferralHistory = [{ source_id: 'anuncio' }];
+    if (signal === 'leadSource') order().leadSource = 'ad';
+    services.resolveMessagingIdentity.mockReturnValue(null);
+    expect(await sendOrderPurchase('p1', automatic)).toMatchObject({ success: false, status: 503 });
+    expect(order().metaPurchaseSentAt).toBeUndefined();
+    expect(order().metaPurchaseResolvedAt).toBeUndefined();
+    expect(order().metaPurchaseRejectedAt).toBeUndefined();
+    expect(services.sendConversionEvent).not.toHaveBeenCalled();
+});
+
+test('un rechazo se guarda, detiene reintentos y solo pasa a revisado por acción manual', async () => {
     services.sendConversionEvent.mockRejectedValue(Object.assign(new Error('página no conectada'), { metaRejected: true }));
     expect(await sendOrderPurchase('p1', automatic)).toMatchObject({ status: 409, rechazado: true, success: false });
     expect(order().metaPurchaseSentAt).toBeUndefined();
-    expect(await sendOrderPurchase('p1', { force: true })).toMatchObject({ metaPurchaseNoAplica: true, metaPurchaseMotivo: 'rechazado' });
+    expect(order().metaPurchaseResolvedAt).toBeUndefined();
+    expect(order().metaPurchaseRejectedAt).toBeTruthy();
+    expect(order().metaPurchaseNextAttemptAt).toBeUndefined();
+    expect(purchaseState(order())).toMatchObject({ metaPurchaseRejectedAt: expect.any(String), metaPurchaseError: 'página no conectada' });
+    jest.advanceTimersByTime(600001);
+    expect(await sendOrderPurchase('p1', automatic)).toMatchObject({ status: 409, rechazado: true });
+    expect(await sendOrderPurchase('p1', { source: 'fabricar' })).toMatchObject({ status: 409, rechazado: true });
+    expect(await sendOrderPurchase('p1', { ...automatic, force: true })).toMatchObject({ status: 400 });
+    expect(order().metaPurchaseResolvedAt).toBeUndefined();
+    // La revisión no depende de que la configuración externa se haya corregido.
+    services.resolveMessagingIdentity.mockReturnValue(null);
+    expect(await sendOrderPurchase('p1', { force: true })).toMatchObject({ metaPurchaseSentAt: null, metaPurchaseNoAplica: true, metaPurchaseMotivo: 'revisado' });
+    expect(order().metaPurchaseReviewedAt).toBeTruthy();
+    expect(order().metaPurchaseRejectionReason).toBe('página no conectada');
+    expect(order().metaPurchaseSentAt).toBeUndefined();
+    expect(purchaseState(order())).toMatchObject({ metaPurchaseRejectedAt: null, metaPurchaseMotivo: 'revisado' });
+    expect(await sendOrderPurchase('p1', automatic)).toMatchObject({ already: true, metaPurchaseMotivo: 'revisado' });
     expect(services.sendConversionEvent).toHaveBeenCalledTimes(1);
+});
+
+test('no permite aprobar una compra sin rechazo registrado', async () => {
+    expect(await sendOrderPurchase('p1', { force: true })).toMatchObject({ status: 409, success: false });
+    expect(order().metaPurchaseResolvedAt).toBeUndefined();
+    expect(services.sendConversionEvent).not.toHaveBeenCalled();
 });
 
 test.each([

@@ -90,6 +90,9 @@ test('omite enviados, no aplica, ocultos, cancelados, anticipos sin pago y reser
     mockOrders = [
         paid('enviado', { metaPurchaseSentAt: '2026-09-14T12:00:00Z' }),
         paid('no-aplica', { metaPurchaseSentAt: '2026-09-14T12:00:00Z', metaPurchaseManual: 'no_aplica_organico' }),
+        paid('organico', { metaPurchaseResolvedAt: '2026-09-14T12:00:00Z', metaPurchaseResolution: 'organico' }),
+        paid('revisado', { metaPurchaseResolvedAt: '2026-09-14T12:00:00Z', metaPurchaseResolution: 'revisado' }),
+        paid('rechazado', { metaPurchaseRejectedAt: '2026-09-14T12:00:00Z' }),
         paid('oculto', { ocultoDeEnvios: true }), paid('cancelado', { estatus: 'Cancelado' }),
         paid('sin-pago', { comprobanteValidadoAt: null }), paid('devuelto', { estatus: 'Devuelto' }),
         paid('reservado', { metaPurchaseLeaseUntil: future }), paid('en-espera', { metaPurchaseNextAttemptAt: future }),
@@ -131,11 +134,16 @@ test('el siguiente ciclo se recupera tras una falla al leer Firestore', async ()
     expect(scheduler.getMetaPurchaseSchedulerStatus().lastError).toBeNull();
 });
 
-test('no intenta enviar cuando faltan credenciales de Meta', async () => {
+test('puede resolver orgánicos sin credenciales de Meta y no los cuenta como enviados', async () => {
     delete process.env.META_CAPI_ACCESS_TOKEN;
     mockOrders = [paid('p1')];
-    expect(await scheduler.runMetaPurchaseSweep()).toMatchObject({ skipped: 'missing_credentials', attempted: 0 });
-    expect(mockSend).not.toHaveBeenCalled();
+    mockSend.mockImplementation(async () => {
+        mockOrders[0].data().metaPurchaseResolvedAt = new Date().toISOString();
+        return { success: true, metaPurchaseNoAplica: true, metaPurchaseMotivo: 'organico' };
+    });
+    expect(await scheduler.runMetaPurchaseSweep()).toMatchObject({ attempted: 1, sent: 0, organic: 1 });
+    expect(await scheduler.runMetaPurchaseSweep()).toMatchObject({ attempted: 0 });
+    expect(mockSend).toHaveBeenCalledTimes(1);
 });
 
 test('un pago nuevo dispara el envío desde Firestore sin esperar el cron', async () => {
@@ -148,6 +156,19 @@ test('un pago nuevo dispara el envío desde Firestore sin esperar el cron', asyn
     await new Promise(setImmediate);
     expect(mockSend).toHaveBeenCalledWith('nuevo-pago', { source: 'envios_scheduler' });
     expect(scheduler.getMetaPurchaseSchedulerStatus().realtime).toMatchObject({ listeners: { pedidos: true }, sent: 1 });
+});
+
+test('el listener distingue orgánicos y no reenvía rechazos ni revisados', async () => {
+    scheduler.startMetaPurchaseScheduler();
+    await new Promise(setImmediate);
+    mockSend.mockResolvedValue({ success: true, metaPurchaseNoAplica: true, metaPurchaseMotivo: 'organico' });
+    const listener = mockSubscriptions.find(s => s.name === 'pedidos' && !s.filters.length);
+    const stamp = new Date().toISOString();
+    listener.next({ docChanges: () => [paid('organico'), paid('rechazado', { metaPurchaseRejectedAt: stamp }),
+        paid('revisado', { metaPurchaseResolvedAt: stamp })].map(doc => ({ type: 'added', doc })) });
+    await new Promise(setImmediate);
+    expect(mockSend.mock.calls.map(args => args[0])).toEqual(['organico']);
+    expect(scheduler.getMetaPurchaseSchedulerStatus().realtime).toMatchObject({ sent: 0, organic: 1 });
 });
 
 test('los avisos duplicados y los cambios del propio envío no vuelven a mandar el evento', async () => {

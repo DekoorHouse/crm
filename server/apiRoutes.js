@@ -9178,7 +9178,7 @@ router.get('/debug/mockup-ref', async (req, res) => {
 // completo. Los más viejos solo entran si siguen sin guía (ver el barrido de abajo).
 const { ENVIOS_RECIENTES, getMetaPurchaseSchedulerStatus } = require('./orders/metaPurchaseScheduler');
 
-const { sendOrderPurchase, noAplicaMotivo } = require('./orders/metaPurchase');
+const { sendOrderPurchase, purchaseState } = require('./orders/metaPurchase');
 
 // Diagnóstico sin datos de clientes ni envíos a Meta; usa la autenticación normal de /api.
 router.get('/envios/meta-purchase-scheduler', (_req, res) => {
@@ -9248,12 +9248,8 @@ router.get('/envios', async (_req, res) => {
         const envios = pedidosDocs.map(doc => {
             const p = doc.data();
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
-            // metaPurchaseSentAt: sello de cuándo se mandó el evento Purchase a Meta (null = nunca se mandó).
-            const metaSent = p.metaPurchaseSentAt && p.metaPurchaseSentAt.toDate ? p.metaPurchaseSentAt.toDate().toISOString() : (p.metaPurchaseSentAt ? String(p.metaPurchaseSentAt) : null);
-            // Sellado a mano como "no aplica" (orgánico o rechazado por Meta): la palomita se pone
-            // en verde para que deje de salir pendiente, pero el tooltip NO debe decir que se reportó.
-            const metaMotivo = noAplicaMotivo(p.metaPurchaseManual);
-            if (num != null) pedidosByNum.set(String(num), { id: doc.id, estatus: p.estatus || null, metaPurchaseSentAt: metaSent, metaPurchaseNoAplica: !!metaMotivo, metaPurchaseMotivo: metaMotivo });
+            const metaState = purchaseState(p);
+            if (num != null) pedidosByNum.set(String(num), { id: doc.id, estatus: p.estatus || null, metaState });
             if (p.ocultoDeEnvios) return null; // el operador lo quitó de Envíos (el pedido sigue intacto)
             const orderNumber = num != null ? `DH${num}` : (p.numeroPedido || doc.id);
             const de = datosByOrder.get(norm(num));
@@ -9284,9 +9280,7 @@ router.get('/envios', async (_req, res) => {
                 manualId: null,      // no es una línea manual
                 contactId: p.contactId || null, // para abrir la conversación en Chats
                 orderDocId: doc.id,  // id del pedido para cambiar su estatus
-                metaPurchaseSentAt: metaSent, // ISO si ya se mandó el Purchase a Meta; null si no
-                metaPurchaseNoAplica: !!metaMotivo, // se selló a mano SIN mandar el evento
-                metaPurchaseMotivo: metaMotivo,     // 'organico' | 'rechazado' | null
+                ...metaState,
                 guiaEnvio: serGuia(p.guiaEnvio),
             };
         }).filter(Boolean);
@@ -9311,9 +9305,7 @@ router.get('/envios', async (_req, res) => {
                 datos,
                 tieneDatos,
                 manualId: doc.id,    // permite borrarla desde el CRM
-                metaPurchaseSentAt: null, // se llena abajo si la línea enlaza con un pedido real
-                metaPurchaseNoAplica: false,
-                metaPurchaseMotivo: null,
+                ...purchaseState({}), // se llena abajo si la línea enlaza con un pedido real
                 guiaEnvio: serGuia(m.guiaEnvio),
             };
         });
@@ -9325,12 +9317,12 @@ router.get('/envios', async (_req, res) => {
             if (!chunk.length) continue;
             try {
                 const snap = await db.collection('pedidos').where('consecutiveOrderNumber', 'in', chunk).get();
-                snap.docs.forEach(d => { const dd = d.data(); if (dd.consecutiveOrderNumber != null) pedidosByNum.set(String(dd.consecutiveOrderNumber), { id: d.id, estatus: dd.estatus || null, metaPurchaseSentAt: dd.metaPurchaseSentAt && dd.metaPurchaseSentAt.toDate ? dd.metaPurchaseSentAt.toDate().toISOString() : null, metaPurchaseNoAplica: !!noAplicaMotivo(dd.metaPurchaseManual), metaPurchaseMotivo: noAplicaMotivo(dd.metaPurchaseManual) }); });
+                snap.docs.forEach(d => { const dd = d.data(); if (dd.consecutiveOrderNumber != null) pedidosByNum.set(String(dd.consecutiveOrderNumber), { id: d.id, estatus: dd.estatus || null, metaState: purchaseState(dd) }); });
             } catch (e) { console.warn('[ENVIOS] resolver manual->pedido:', e.message); }
         }
         manuales.forEach(m => {
             const ped = pedidosByNum.get(norm(m.orderNumber));
-            if (ped) { m.orderDocId = ped.id; m.estatus = ped.estatus; m.metaPurchaseSentAt = ped.metaPurchaseSentAt || null; m.metaPurchaseNoAplica = !!ped.metaPurchaseNoAplica; m.metaPurchaseMotivo = ped.metaPurchaseMotivo || null; }
+            if (ped) { m.orderDocId = ped.id; m.estatus = ped.estatus; Object.assign(m, ped.metaState); }
         });
 
         // Manuales primero (recién agregadas), luego los pedidos con comprobante validado.
@@ -9504,13 +9496,7 @@ router.get('/envios/meta-purchase/:docId', async (req, res) => {
         const snap = await db.collection('pedidos').doc(String(req.params.docId || '').trim()).get();
         if (!snap.exists) return res.status(404).json({ success: false, message: 'El pedido no existe.' });
         const p = snap.data();
-        const t = p.metaPurchaseSentAt;
-        res.json({
-            success: true,
-            metaPurchaseSentAt: t && t.toDate ? t.toDate().toISOString() : (t || null),
-            metaPurchaseNoAplica: !!noAplicaMotivo(p.metaPurchaseManual),
-            metaPurchaseMotivo: noAplicaMotivo(p.metaPurchaseManual),
-        });
+        res.json({ success: true, ...purchaseState(p) });
     } catch (error) {
         console.error('[META EVENT] Error consultando meta-purchase:', error.message);
         res.status(500).json({ success: false, message: error.message });
@@ -9518,7 +9504,7 @@ router.get('/envios/meta-purchase/:docId', async (req, res) => {
 });
 
 // Comparte reserva e idempotencia con los disparadores de Fabricar y registro.
-// automatic:true recupera los pendientes pagados; nunca marca "no aplica" por su cuenta.
+// automatic:true recupera pagados y distingue orgánicos; los rechazos requieren revisión manual.
 router.post('/envios/meta-purchase', async (req, res) => {
     try {
         const body = req.body || {};
