@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { db, admin } = require('../config');
-const { processReceipt, deliverForm, discoverReceipts } = require('./paymentWorkflow');
-const { ms, cancelled, terminal } = require('./paymentPolicy');
+const { processReceipt, deliverForm, discoverReceipts, refreshReportedPayment } = require('./paymentWorkflow');
+const { ms, canRequestShippingForm } = require('./paymentPolicy');
 
 router.post('/receipts/:id/review', async (req, res) => {
     try {
@@ -17,8 +17,12 @@ router.post('/receipts/:id/review', async (req, res) => {
             await db.runTransaction(async tx => {
                 const r = (await tx.get(ref)).data();
                 if (!r?.open || ms(r.leaseUntil) > Date.now()) throw new Error('El comprobante ya se resolvió o se está procesando. Actualiza la lista.');
+                const orderRef = r.orderId ? db.collection('pedidos').doc(r.orderId) : null;
+                const order = orderRef ? await tx.get(orderRef) : null;
                 tx.update(ref, { status: 'rejected', open: false, reason: 'Comprobante descartado por el operador.', reviewedBy: 'manual', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+                if (order?.exists) tx.update(orderRef, { paymentFormNeedsAssessment: true });
             });
+            if (receipt.orderId) await refreshReportedPayment(receipt.orderId);
             return res.json({ success: true });
         }
         if (!(Number(amount) > 0) || !Number.isFinite(Number(amount))) return res.status(400).json({ success: false, message: 'Confirma el importe que aparece en el comprobante.' });
@@ -53,7 +57,7 @@ router.post('/forms/:id/confirm-sent', async (req, res) => {
         const ref = db.collection('pedidos').doc(req.params.id);
         await db.runTransaction(async tx => {
             const order = (await tx.get(ref)).data();
-            if (!order?.comprobanteValidadoAt || cancelled(order) || terminal(order)) throw new Error('El pedido no tiene un pago completo validado y vigente.');
+            if (!canRequestShippingForm(order)) throw new Error('Los comprobantes todavía no cubren el total del pedido.');
             if (ms(order.shippingFormLeaseUntil) > Date.now()) throw new Error('El formulario se está enviando. Actualiza en unos segundos.');
             tx.update(ref, { shippingFormStatus: 'sent', shippingFormSentAt: order.shippingFormSentAt || admin.firestore.FieldValue.serverTimestamp(), shippingFormReviewedBy: 'manual', shippingFormReason: 'El operador confirmó en el chat que el cliente recibió el formulario.', shippingFormLeaseUntil: null });
         });

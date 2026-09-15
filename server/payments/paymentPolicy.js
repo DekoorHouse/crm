@@ -7,6 +7,11 @@ const hash = value => crypto.createHash('sha256').update(String(value)).digest('
 const cents = value => Math.round(Number(value) * 100);
 const terminal = order => /entregad|devol/i.test(order.estatus || '');
 const cancelled = order => /cancel/i.test(order.estatus || '');
+const awaitingPaymentApproval = order => !!order.shippingFormRequestedBeforeApproval && !order.comprobanteValidadoAt;
+const canRequestShippingForm = order => !!order && !terminal(order) && (
+    (!!order.comprobanteValidadoAt && !cancelled(order)) ||
+    (order.paymentReportedComplete === true && !order.paymentFormNeedsAssessment)
+);
 
 // Los destinos admitidos son los mismos que se comunican en el protocolo de pagos.
 const DESTINATIONS = ['3262', '0670', '2629', '1983', '9250'];
@@ -55,8 +60,37 @@ function paymentDecision(order, amountCents, manual = false) {
     return { status: received >= total ? 'paid' : 'partial', receivedCents: received, remainingCents: Math.max(0, total - received) };
 }
 
+// Pedir una dirección no acredita dinero. Sumamos importes legibles aun si falta
+// validar el folio, el destino o reactivar el pedido; nunca operaciones fallidas.
+function reportedPaymentCents(order, jobs, creditedKeys = new Set()) {
+    const groups = [];
+    for (const job of jobs) {
+        const keys = receiptKeys(job.ocr || {});
+        if (!keys.length) continue;
+        const matches = groups.filter(g => keys.some(k => g.keys.has(k)));
+        const group = { keys: new Set(keys), jobs: [job] };
+        for (const match of matches) {
+            match.keys.forEach(k => group.keys.add(k));
+            group.jobs.push(...match.jobs);
+            groups.splice(groups.indexOf(match), 1);
+        }
+        groups.push(group);
+    }
+    let total = Number(order.paymentReceivedCents) || 0;
+    for (const group of groups) {
+        if ([...group.keys].some(k => creditedKeys.has(k)) || group.jobs.some(j => ['applied', 'duplicate', 'rejected'].includes(j.status))) continue;
+        const candidates = group.jobs.filter(j => ['review', 'pending', 'processing'].includes(j.status)
+            && j.ocr?.esComprobante === true && j.ocr.pagoRealizado !== false
+            && (!j.ocr.moneda || j.ocr.moneda === 'MXN')
+            && Number.isFinite(cents(j.ocr.monto)) && cents(j.ocr.monto) > 0);
+        candidates.sort((a, b) => ms(a.receivedAt) - ms(b.receivedAt));
+        if (candidates.length) total += cents(candidates[0].ocr.monto);
+    }
+    return total;
+}
+
 function claimsPayment(text) {
     return /(?:ya\s+(?:valid[aá](?:mos|do)|valid[eé]|confirm[aá](?:mos|do)|verifiqu[eé]|verificamos)|(?:recibimos|recib[ií]|recibido|gracias)[^.!?\n]{0,65})(?:[^.!?\n]{0,65})(?:pago|comprobante|dep[oó]sito|transferencia|anticipo)|(?:pedido|pago)[^.!?\n]{0,35}(?:liquidado|pagado|validado|confirmado)/i.test(text);
 }
 
-module.exports = { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, validateReceipt, paymentDecision, claimsPayment };
+module.exports = { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, validateReceipt, paymentDecision, claimsPayment, reportedPaymentCents, canRequestShippingForm, awaitingPaymentApproval };

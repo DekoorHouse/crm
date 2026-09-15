@@ -1,5 +1,5 @@
 const { db, admin } = require('../config');
-const { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, validateReceipt, paymentDecision } = require('./paymentPolicy');
+const { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, validateReceipt, paymentDecision, reportedPaymentCents, canRequestShippingForm, awaitingPaymentApproval } = require('./paymentPolicy');
 const stamp = () => admin.firestore.FieldValue.serverTimestamp();
 const date = n => admin.firestore.Timestamp.fromMillis(n);
 const receipts = () => db.collection('payment_receipts');
@@ -51,7 +51,10 @@ async function reviewReceipt(ref, reason, extra = {}) {
     return db.runTransaction(async tx => {
         const current = (await tx.get(ref)).data();
         if (!current || ['applied', 'duplicate', 'ignored', 'rejected'].includes(current.status)) return { status: current?.status || 'missing' };
+        const orderRef = current.orderId ? db.collection('pedidos').doc(current.orderId) : null;
+        const order = orderRef ? await tx.get(orderRef) : null;
         tx.update(ref, { status: 'review', open: true, reason, leaseUntil: null, updatedAt: stamp(), ...extra });
+        if (order?.exists) tx.update(orderRef, { paymentFormNeedsAssessment: true });
         return { status: 'review', reason };
     });
 }
@@ -83,9 +86,10 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
         if (!keys.length) return { status: 'review', reason: 'No se pudo identificar el comprobante para evitar duplicados.' };
         const decision = paymentDecision(order, cents(manual ? amount : receipt.monto), manual);
         if (decision.status === 'review') return decision;
-        const fields = { paymentReceivedCents: decision.receivedCents, paymentUpdatedAt: stamp() };
+        const fields = { paymentReceivedCents: decision.receivedCents, paymentUpdatedAt: stamp(), paymentFormNeedsAssessment: true };
         if (decision.status === 'paid') {
-            Object.assign(fields, { comprobanteValidadoAt: stamp(), shippingFormStatus: 'pending', shippingFormNextAttemptAt: stamp(), shippingFormReason: 'Pago validado; formulario pendiente.', paymentValidatedBy: manual ? 'manual' : 'receipt' });
+            Object.assign(fields, { comprobanteValidadoAt: stamp(), paymentValidatedBy: manual ? 'manual' : 'receipt' });
+            if (!order.shippingFormStatus && !order.shippingFormSentAt) Object.assign(fields, { shippingFormStatus: 'pending', shippingFormNextAttemptAt: stamp(), shippingFormReason: 'Pago validado; formulario pendiente.' });
             if (cancelled(order)) Object.assign(fields, { estatus: 'Pagado', paymentReactivatedAt: stamp(), paymentPreviousStatus: order.estatus });
         }
         for (const keyRef of keyRefs) tx.set(keyRef, { orderId: r.orderId, receiptId: ref.id, amountCents: cents(manual ? amount : receipt.monto), createdAt: stamp() });
@@ -146,10 +150,58 @@ async function processReceipt(id, options = {}) {
         await db.runTransaction(async tx => {
             const current = (await tx.get(ref)).data();
             if (current?.status !== 'processing') return;
+            const orderRef = current.orderId ? db.collection('pedidos').doc(current.orderId) : null;
+            const order = orderRef ? await tx.get(orderRef) : null;
             tx.update(ref, { status: attempts >= 5 ? 'review' : 'pending', open: true, reason: 'No se pudo procesar el comprobante: ' + error.message.slice(0, 200), leaseUntil: null, nextAttemptAt: date(Date.now() + Math.min(attempts * 60000, 15 * 60000)), updatedAt: stamp() });
+            if (order?.exists) tx.update(orderRef, { paymentFormNeedsAssessment: true });
         });
         return { status: 'review', reason: 'El comprobante sigue pendiente de revisión.' };
+    } finally {
+        if (claimed.orderId) await refreshReportedPayment(claimed.orderId).catch(e => console.warn('[PAYMENTS] Datos por solicitar:', e.message));
     }
+}
+
+async function refreshReportedPayment(orderId) {
+    const ref = db.collection('pedidos').doc(orderId);
+    await db.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return;
+        const order = snap.data();
+        const rs = await tx.get(receipts().where('orderId', '==', orderId));
+        const jobs = rs.docs.map(d => d.data()).filter(r => r.contactId === order.contactId);
+        const keys = [...new Set(jobs.flatMap(r => receiptKeys(r.ocr || {})))];
+        const credited = new Set();
+        for (const key of keys) if ((await tx.get(db.collection('payment_receipt_keys').doc(key))).exists) credited.add(key);
+        const reported = reportedPaymentCents(order, jobs, credited);
+        const complete = cents(order.precio) > 0 && reported >= cents(order.precio);
+        const fields = { paymentReportedCents: reported, paymentReportedComplete: complete, paymentFormNeedsAssessment: false };
+        if (complete && !terminal(order)) {
+            if (!order.comprobanteValidadoAt) fields.shippingFormRequestedBeforeApproval = true;
+            if (!order.shippingFormStatus && !order.shippingFormSentAt) Object.assign(fields, {
+                shippingFormStatus: 'pending', shippingFormEligibleAt: stamp(), shippingFormNextAttemptAt: stamp(),
+                shippingFormReason: 'Los comprobantes cubren el total; solicitar datos sin esperar la aprobación.',
+            });
+        }
+        tx.update(ref, fields);
+    });
+    return deliverForm(orderId);
+}
+
+async function recordShippingDataForOrder(orderNumber) {
+    const num = Number(String(orderNumber).replace(/\D/g, ''));
+    if (!num) return;
+    const orders = await db.collection('pedidos').where('consecutiveOrderNumber', '==', num).limit(1).get();
+    if (orders.empty) return;
+    const ref = orders.docs[0].ref;
+    await db.runTransaction(async tx => {
+        const order = (await tx.get(ref)).data();
+        if (!order) return;
+        const fields = { shippingDataReceivedAt: stamp() };
+        // Mantener la compatibilidad de formularios antiguos. Los enviados por
+        // comprobantes por aprobar jamás sellan el pago ni reactivan el pedido.
+        if (!order.comprobanteValidadoAt && !awaitingPaymentApproval(order)) fields.comprobanteValidadoAt = stamp();
+        tx.update(ref, fields);
+    });
 }
 
 async function deliverForm(orderId, { force = false } = {}) {
@@ -160,7 +212,7 @@ async function deliverForm(orderId, { force = false } = {}) {
         const snap = await tx.get(orderRef);
         if (!snap.exists) return null;
         const order = snap.data();
-        if (!order.comprobanteValidadoAt || terminal(order) || cancelled(order)) return null;
+        if (!canRequestShippingForm(order)) return null;
         if (!force && (!order.shippingFormStatus || order.shippingFormSentAt || ['sent', 'review'].includes(order.shippingFormStatus))) return null;
         if (ms(order.shippingFormLeaseUntil) > Date.now()) return null;
         if (!force && ms(order.shippingFormNextAttemptAt) > Date.now()) {
@@ -190,7 +242,9 @@ async function deliverForm(orderId, { force = false } = {}) {
         }
         const number = `DH${claimed.consecutiveOrderNumber}`;
         const base = (process.env.APP_BASE_URL || 'https://app.dekoormx.com').replace(/\/$/, '');
-        const text = `¡Gracias! 🙌 Ya validamos tu pago completo de ${number} ✅\n\nAhora llena tus datos de envío en este formulario 👇\n${base}/datos-estafeta/${number}\n\n📌 Usa una dirección donde haya alguien todo el día para recibir el paquete. En cuanto completes tus datos preparamos el envío 📦✨`;
+        const text = awaitingPaymentApproval(claimed)
+            ? `¡Gracias por compartir tu comprobante de ${number}! 🙌\n\nPara adelantar tus datos de envío, llena este formulario 👇\n${base}/datos-estafeta/${number}\n\n📌 Usa una dirección donde haya alguien todo el día para recibir el paquete. Mientras tanto, el equipo revisará tu pago.`
+            : `¡Gracias! 🙌 Ya validamos tu pago completo de ${number} ✅\n\nAhora llena tus datos de envío en este formulario 👇\n${base}/datos-estafeta/${number}\n\n📌 Usa una dirección donde haya alguien todo el día para recibir el paquete. En cuanto completes tus datos preparamos el envío 📦✨`;
         const channel = cd.channel || 'whatsapp';
         sending = true;
         const sent = channel === 'messenger' || channel === 'instagram'
@@ -224,16 +278,18 @@ async function manualValidateAndSend(contactId, { orderNumber = null, force = fa
     if (!order) throw new Error('Selecciona el pedido exacto para validar su pago.');
     if (!force && !order.data().comprobanteValidadoAt) throw new Error('El pago todavía requiere validación.');
     if (cancelled(order.data()) && !force) throw new Error('El pedido está cancelado.');
-    await db.runTransaction(async tx => {
+    const keepExistingForm = await db.runTransaction(async tx => {
         const fresh = (await tx.get(order.ref)).data();
         if (!fresh || terminal(fresh) || fresh.contactId !== contactId) throw new Error('El pedido cambió. Actualiza antes de validar.');
         if (ms(fresh.shippingFormLeaseUntil) > Date.now()) throw new Error('El formulario ya se está enviando. Actualiza en unos segundos.');
         if (!force && (!fresh.comprobanteValidadoAt || cancelled(fresh))) throw new Error('El pago todavía requiere validación.');
-        tx.update(order.ref, { comprobanteValidadoAt: fresh.comprobanteValidadoAt || stamp(), paymentValidatedBy: 'manual', shippingFormStatus: 'pending', shippingFormNextAttemptAt: stamp(), ...(cancelled(fresh) ? { estatus: 'Pagado', paymentReactivatedAt: stamp() } : {}) });
+        const keepForm = fresh.shippingFormRequestedBeforeApproval && (fresh.shippingFormSentAt || ['sent', 'review'].includes(fresh.shippingFormStatus));
+        tx.update(order.ref, { comprobanteValidadoAt: fresh.comprobanteValidadoAt || stamp(), paymentValidatedBy: 'manual', ...(!keepForm ? { shippingFormStatus: 'pending', shippingFormNextAttemptAt: stamp() } : {}), ...(cancelled(fresh) ? { estatus: 'Pagado', paymentReactivatedAt: stamp() } : {}) });
+        return keepForm ? fresh.shippingFormStatus : null;
     });
     await require('../leads/scheduledReminderScheduler').cancelReminderForContact(contactId, 'ya_pago').catch(() => {});
     await require('../design/designPending').recomputeForContact(contactId).catch(() => {});
-    const result = await deliverForm(order.id, { force });
+    const result = keepExistingForm ? { status: keepExistingForm } : await deliverForm(order.id, { force });
     if (result.status !== 'sent') throw new Error('Pago registrado; el formulario quedó pendiente en Pendientes.');
     return `DH${order.data().consecutiveOrderNumber}`;
 }
@@ -251,7 +307,7 @@ async function paymentContext(contactId, { discover = false, process = false, or
     const latest = selected?.data();
     const hasPaid = latest?.comprobanteValidadoAt && !cancelled(latest);
     return { hasPaid: !!hasPaid, partialCents: latest?.paymentReceivedCents || 0, totalCents: cents(latest?.precio) || 0,
-        formSent: !!latest?.shippingFormSentAt, pending: pending.length,
+        formSent: !!latest?.shippingFormSentAt, reportedComplete: !!latest?.paymentReportedComplete && !latest?.paymentFormNeedsAssessment, reportedCents: latest?.paymentReportedCents || 0, pending: pending.length,
         reason: pending.find(d => d.data().status === 'review')?.data().reason || latest?.shippingFormReason || '',
         ambiguous: orders.length > 1 && !selected,
         orderId: selected?.id, orderNumber: latest?.consecutiveOrderNumber ? `DH${latest.consecutiveOrderNumber}` : null };
@@ -279,17 +335,20 @@ async function pendingPayments() {
         db.collection('pedidos').where('shippingFormStatus', 'in', ['pending', 'sending', 'retry', 'review']).get(),
     ]);
     const pago_revision = [], pago_cancelado = [], pago_formulario = [];
+    const orderIds = [...new Set(rs.docs.map(r => r.data().orderId).filter(Boolean))];
+    const orders = new Map(await Promise.all(orderIds.map(async id => [id, (await db.collection('pedidos').doc(id).get()).data() || {}])));
     for (const r of rs.docs) {
         const d = r.data();
-        const row = { id: r.id, contactId: d.contactId, name: d.orderNumber || d.contactId, orderNumber: d.orderNumber, orderId: d.orderId, at: ms(d.receivedAt), reason: d.reason, imageUrl: d.fileUrl, amount: d.ocr?.monto || null, status: d.status };
+        const order = orders.get(d.orderId) || {};
+        const row = { id: r.id, contactId: d.contactId, name: d.orderNumber || d.contactId, orderNumber: d.orderNumber, orderId: d.orderId, at: ms(d.receivedAt), reason: d.reason, imageUrl: d.fileUrl, amount: d.ocr?.monto || null, status: d.status, formSent: !!order.shippingFormSentAt, shippingDataReceived: !!order.shippingDataReceivedAt };
         (/cancelad/i.test(d.reason || '') ? pago_cancelado : pago_revision).push(row);
     }
     for (const o of forms.docs) {
         const d = o.data();
-        if (terminal(d) || cancelled(d)) continue;
-        pago_formulario.push({ id: o.id, contactId: d.contactId, name: `DH${d.consecutiveOrderNumber}`, at: ms(d.comprobanteValidadoAt), reason: d.shippingFormReason, status: d.shippingFormStatus });
+        if (!canRequestShippingForm(d)) continue;
+        pago_formulario.push({ id: o.id, contactId: d.contactId, name: `DH${d.consecutiveOrderNumber}`, at: ms(d.shippingFormEligibleAt || d.comprobanteValidadoAt), reason: d.shippingFormReason, status: d.shippingFormStatus });
     }
     return { pago_revision, pago_cancelado, pago_formulario };
 }
 
-module.exports = { enqueueReceipt, discoverReceipts, processReceipt, creditReceipt, deliverForm, manualValidateAndSend, paymentContext, recordProviderPayment, pendingPayments, ordersForContact };
+module.exports = { enqueueReceipt, discoverReceipts, processReceipt, creditReceipt, deliverForm, manualValidateAndSend, paymentContext, recordProviderPayment, pendingPayments, ordersForContact, refreshReportedPayment, recordShippingDataForOrder };

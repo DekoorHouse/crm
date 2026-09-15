@@ -1786,6 +1786,10 @@ async function markOrderFabricarForContact(contactId, contactData, addressText, 
     }
 
     // --- Flujo NORMAL de venta confirmada (countSale=true) ---
+    if (require('./payments/paymentPolicy').awaitingPaymentApproval(orderData)) {
+        console.log(`[POSTVENTA] ${orderNumber}: datos solicitados, pero el pago sigue por aprobar; no se libera producción.`);
+        return null;
+    }
     // Solo se salta si YA está en Fabricar Y la venta YA se contó. Si llegó a Fabricar por foto-reverso
     // (fabricarSinVenta), NO se salta: hay que contar la venta ahora (Meta, inventario, corona, guía).
     if (yaEnFabricar && !fabricarSinVenta) {
@@ -3785,7 +3789,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
             if (lastOrderDoc) {
                 const paymentOrder = lastOrderDoc.data();
-                orderInfoNote += `\n\n**Estado de pago comprobado por el sistema:** pago completo validado: ${paymentOrder.comprobanteValidadoAt ? 'sí' : 'no'}; abonos registrados: $${(Number(paymentOrder.paymentReceivedCents || 0) / 100).toFixed(2)}; formulario enviado: ${paymentOrder.shippingFormSentAt ? 'sí' : 'sin confirmación'}. No confundas un agradecimiento, el estatus Pagado/Fabricar ni una foto con la validación. /comprobante solicita revisión; no autoriza aprobar el pago. El sistema revisa los comprobantes pendientes aunque hayan llegado hace días. No afirmes que el formulario ya se envió sin confirmación.`;
+                orderInfoNote += `\n\n**Estado de pago comprobado por el sistema:** pago completo validado: ${paymentOrder.comprobanteValidadoAt ? 'sí' : 'no'}; abonos aprobados: $${(Number(paymentOrder.paymentReceivedCents || 0) / 100).toFixed(2)}; los comprobantes presentados cubren el total: ${paymentOrder.paymentReportedComplete ? 'sí' : 'no'}; formulario enviado: ${paymentOrder.shippingFormSentAt ? 'sí' : 'sin confirmación'}. En cuanto los comprobantes cubren el total, el sistema pide los datos de envío aunque el pago siga por aprobar. No vuelvas a cobrar el saldo si los comprobantes ya cubren el total. Recibir los datos no aprueba el pago ni libera la producción. No confundas un agradecimiento, el estatus Pagado/Fabricar ni una foto con la validación. /comprobante solicita revisión; no autoriza aprobar el pago. El sistema revisa los comprobantes pendientes aunque hayan llegado hace días. No afirmes que el formulario ya se envió sin confirmación.`;
             }
             // --- ¿YA LLENÓ el formulario de datos de envío? ---
             // El cliente dice "ya llené el formulario" y la IA lo daba por cierto (emitía /pagado) sin
@@ -3796,10 +3800,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (lastOrderDoc) {
                 const o = lastOrderDoc.data();
                 const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : null;
-                if (num && o.comprobanteValidadoAt) {
+                if (num && (o.comprobanteValidadoAt || o.shippingFormRequestedBeforeApproval)) {
                     const de = await getShippingDataForOrder(num);
                     const formUrl = `${APP_BASE_URL}/datos-estafeta/${num}`;
-                    if (de) {
+                    if (de && require('./payments/paymentPolicy').awaitingPaymentApproval(o)) {
+                        shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS.** Agradece que los completó; el pago sigue pendiente de aprobación. NO emitas /pagado ni /datoscompletos, no prometas la salida del envío ni pidas el formulario otra vez.`;
+                    } else if (de) {
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS en el sistema** (a nombre de ${de.nombreCompleto || 'el cliente'}). Si el cliente te confirma que llenó el formulario, respóndele ÚNICAMENTE con /pagado. NO le pidas que lo llene otra vez ni le mandes el enlace de nuevo.`;
                     } else {
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: NO aparecen en el sistema** (el formulario NO se ha llenado, o quedó a medias). Si el cliente dice que YA lo llenó, NO lo des por hecho y NO emitas /pagado: agradécele, dile con amabilidad que sus datos todavía no nos llegaron (a veces el formulario no alcanza a guardarse) y pídele que por favor lo llene otra vez en este enlace, asegurándose de tocar el botón de enviar hasta el final: ${formUrl} — Este dato es del SISTEMA y manda sobre lo que diga el cliente.`;
@@ -4200,14 +4206,18 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     aiMessages = [p.formSent ? 'Tu pago ya está registrado ✅. El formulario de envío está en esta conversación.' : 'Tu pago completo ya está registrado ✅. Estamos preparando el envío de tu formulario; si requiere revisión, el equipo le dará seguimiento.'];
                 } else if (p.ambiguous) {
                     aiMessages = ['Estamos revisando a cuál de tus pedidos corresponde el pago para registrarlo correctamente. El equipo dará seguimiento.'];
+                } else if (p.reportedComplete) {
+                    const delivery = await require('./payments/paymentWorkflow').deliverForm(p.orderId);
+                    p.formSent = p.formSent || delivery.status === 'sent';
+                    aiMessages = [p.formSent ? 'Gracias por compartir tu comprobante. Ya te compartimos el formulario para adelantar tus datos de envío; el equipo revisará tu pago.' : 'Gracias por compartir tu comprobante. Vamos a solicitar tus datos de envío mientras el equipo revisa tu pago.'];
                 } else if (p.partialCents > 0) {
                     aiMessages = [`Tu abono registrado es de $${(p.partialCents / 100).toLocaleString('es-MX')}. Faltan $${(Math.max(0, p.totalCents - p.partialCents) / 100).toLocaleString('es-MX')} para liquidar el pedido. Los datos de envío se piden al completar el pago.`];
                 } else {
-                    aiMessages = [p.pending ? 'Recibimos tu comprobante y está en revisión. En cuanto quede confirmado el pago completo, te compartiremos el formulario de envío.' : 'Para confirmar tu pago necesitamos revisar la foto o el PDF del comprobante. ¿Nos lo compartes por aquí, por favor?'];
+                    aiMessages = [p.pending ? 'Recibimos tu comprobante y está en revisión. Solicitamos tus datos de envío en cuanto los importes de los comprobantes cubran el total, aunque la aprobación siga pendiente.' : 'Para confirmar tu pago necesitamos revisar la foto o el PDF del comprobante. ¿Nos lo compartes por aquí, por favor?'];
                 }
             } catch (error) {
                 // Nunca enviar la confirmación original si la comprobación del sistema falló.
-                aiMessages = ['Tu pago necesita revisión del equipo antes de continuar con los datos de envío. Te daremos seguimiento por aquí.'];
+                aiMessages = ['Recibimos tu comprobante. El equipo revisará el importe y dará seguimiento a tus datos de envío por aquí.'];
                 await contactRef.set({ needsAttention: true, needsAttentionReason: 'payment_review', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
                 console.warn('[PAYMENTS] No se pudo comprobar el pago:', error.message);
             }
@@ -4291,7 +4301,10 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const lastOrderNum = lastOrder && lastOrder.data().consecutiveOrderNumber;
                 const orderNumber = lastOrderNum != null ? `DH${lastOrderNum}` : null;
                 const de = orderNumber ? await getShippingDataForOrder(orderNumber) : null;
-                if (orderNumber && !de) {
+                if (de && require('./payments/paymentPolicy').awaitingPaymentApproval(lastOrder.data())) {
+                    msgText = '¡Gracias! Tus datos de envío ya quedaron guardados. El equipo dará seguimiento a la revisión de tu pago.';
+                    skipShortcutExpansion = true;
+                } else if (orderNumber && !de) {
                     console.warn(`[ENVIOS] ${contactId} dijo que llenó el formulario, pero ${orderNumber} NO tiene datos en datos_envio; se le pide de nuevo (no se manda /pagado).`);
                     msgText = `¡Gracias! 🙌 Solo que tus datos de envío todavía no nos llegan al sistema 😕 A veces el formulario no alcanza a guardarse.\n\n¿Me haces el favor de llenarlo otra vez aquí? 👇 (tu número de pedido ya viene cargado)\n${APP_BASE_URL}/datos-estafeta/${orderNumber}\n\nAsegúrate de tocar el botón de enviar hasta el final ✅ En cuanto me lleguen, preparamos tu envío 📦✨`;
                     skipShortcutExpansion = true; // el texto ya quedó resuelto: no expandir el atajo

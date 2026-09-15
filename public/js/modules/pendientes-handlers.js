@@ -18,7 +18,7 @@
 const PEND_COLS = [
     ['pago_revision', 'Comprobante por revisar', '#d97706', 'fa-receipt'],
     ['pago_cancelado', 'Pago en pedido cancelado', '#dc2626', 'fa-circle-exclamation'],
-    ['pago_formulario', 'Pagado sin formulario', '#2563eb', 'fa-file-lines'],
+    ['pago_formulario', 'Formulario por enviar', '#2563eb', 'fa-file-lines'],
     ['video', 'Mandar video', '#e83e8c', 'fa-video'],
     ['mockup', 'Falta mockup', '#6f42c1', 'fa-wand-magic-sparkles'],
     ['sospechoso', 'Comprobante sospechoso', '#ea580c', 'fa-receipt'],
@@ -187,6 +187,7 @@ function pendContactCard(c, col) {
     if (col.startsWith('pago_')) {
         const image = c.imageUrl ? `<a href="${escapeHtml(c.imageUrl)}" target="_blank" rel="noopener" class="pd-btn pd-btn-ghost">Ver comprobante</a>` : '';
         detalle = `<div class="pd-card-sub"><b>${escapeHtml(c.orderNumber || c.name || '')}</b><br>${escapeHtml(c.reason || 'Pendiente de procesamiento')}${c.amount ? '<br>Importe leído: $' + escapeHtml(String(c.amount)) : ''}</div>`;
+        if (col !== 'pago_formulario' && (c.formSent || c.shippingDataReceived)) detalle += `<div class="pd-card-sub" style="color:#2563eb">${c.shippingDataReceived ? 'Datos de envío recibidos' : 'Datos de envío solicitados'} · comprobante por revisar</div>`;
         acciones = col === 'pago_formulario'
             ? `<button onclick="pendPaymentRetry('${escapeHtml(c.id)}', this)" class="pd-btn">Revisar y reintentar</button><button onclick="pendPaymentConfirmSent('${escapeHtml(c.id)}', this)" class="pd-btn pd-btn-ghost">Ya lo recibió</button>`
             : `${image}<button onclick="pendPaymentReview('${escapeHtml(c.id)}', '${col}', this)" class="pd-btn" style="background:#16a34a;color:white">Validar importe</button><button onclick="pendPaymentReject('${escapeHtml(c.id)}', this)" class="pd-btn pd-btn-ghost">Descartar</button>`;
@@ -308,7 +309,7 @@ async function pendPaymentReview(id, col, button) {
         ${receipt.imageUrl ? `<a href="${escapeHtml(receipt.imageUrl)}" target="_blank" rel="noopener">Abrir comprobante</a>` : ''}
         ${!receipt.orderId ? `<label>Pedido de este contacto<input name="orderNumber" required placeholder="DH12345" pattern="[Dd]?[Hh]?[0-9]+" style="${fieldStyle}"></label>` : ''}
         <label>Importe recibido en este comprobante (MXN)<input name="amount" type="number" min="0.01" step="0.01" required value="${escapeHtml(String(receipt.amount || ''))}" style="${fieldStyle}"></label>
-        <p style="font-size:14px;line-height:1.5">Se sumará este abono. El formulario sólo se envía al liquidar el total del pedido.</p>
+        <p style="font-size:14px;line-height:1.5">Se aprobará este abono. Los datos de envío se solicitan cuando los comprobantes cubren el total, aunque la aprobación siga pendiente.</p>
         <label style="display:flex;gap:8px;line-height:1.4"><input type="checkbox" required name="reviewed"> Confirmo que revisé el comprobante y recibimos este importe.${reactivate ? ' Autorizo reactivar el pedido cancelado cuando quede liquidado.' : ''}</label>`, 'Validar importe');
     if (!values) return;
     await _pendPaymentAction(`payments/receipts/${encodeURIComponent(id)}/review`, { amount: Number(values.amount), reactivate, orderNumber: receipt.orderNumber || values.orderNumber }, button);

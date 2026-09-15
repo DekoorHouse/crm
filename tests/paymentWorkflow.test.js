@@ -34,15 +34,18 @@ test('DH16368: worker processes a receipt five days later with chat IA off', asy
     expect(mockSend.mock.calls[0][1].text).toContain('/datos-estafeta/DH16368');
 });
 
-test('DH16328: unknown cancellation remains visible and cannot auto-reactivate', async () => {
+test('DH16328: asks shipping data while cancellation remains pending, approval does not resend', async () => {
     mockDb.seed('pedidos/order', { ...order(), consecutiveOrderNumber: 16328, estatus: 'Cancelado' });
     const id = await enqueue(); await flow.processReceipt(id);
     expect(job(id)).toMatchObject({ status: 'review', open: true });
     expect(order().comprobanteValidadoAt).toBeUndefined();
     expect((await flow.pendingPayments()).pago_cancelado).toHaveLength(1);
-    expect(mockSend).not.toHaveBeenCalled();
+    expect(order()).toMatchObject({ estatus: 'Cancelado', shippingFormStatus: 'sent', shippingFormRequestedBeforeApproval: true });
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockSend.mock.calls[0][1].text).not.toMatch(/validamos|preparamos el envío/);
     await flow.processReceipt(id, { manual: true, amount: 1200, reactivate: true });
     expect(order()).toMatchObject({ estatus: 'Pagado', shippingFormStatus: 'sent' });
+    expect(mockSend).toHaveBeenCalledTimes(1);
 });
 
 test('only an automatic cancellation reactivates with a verified full payment', async () => {
@@ -70,9 +73,10 @@ test('DH16295: receipt after 20h is not expired, but 2100 versus 1950 requires r
     await flow.processReceipt(id);
     expect(job(id).reason).toMatch(/supera el total/);
     expect(order().comprobanteValidadoAt).toBeUndefined();
-    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledTimes(1);
     await flow.processReceipt(id, { manual: true, amount: 2100 });
     expect(order().shippingFormStatus).toBe('sent');
+    expect(mockSend).toHaveBeenCalledTimes(1);
 });
 
 test('300 deposit + duplicate + 900 remainder sends exactly one form', async () => {
@@ -128,14 +132,15 @@ test.each(['timeout', 'storage-after-ack'])('ambiguous delivery %s goes to manua
     expect((await flow.pendingPayments()).pago_formulario).toHaveLength(1);
 });
 
-test('failed payment transaction never records validation or sends a confirmation', async () => {
+test('failed payment transaction does not validate but still asks for shipping data', async () => {
     const id = await enqueue();
     mockDb.failNext('update', 'pedidos/order');
     await flow.processReceipt(id);
     expect(job(id).open).toBe(true);
     expect(order().comprobanteValidadoAt).toBeUndefined();
     expect(mockDb.all('payment_receipt_keys')).toHaveLength(0);
-    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockSend.mock.calls[0][1].text).not.toMatch(/validamos tu pago/);
 });
 
 test('form failure after committed payment cannot reopen or re-credit the receipt', async () => {
@@ -185,10 +190,96 @@ test('approved OXXO provider deposits use the same ledger without requiring an i
     expect(order().shippingFormStatus).toBe('sent'); expect(mockOcr).not.toHaveBeenCalled();
 });
 
-test.each([{ cuentaDestino: '9999' }, { moneda: 'USD' }, { pagoRealizado: false }, { referencia: null }, { fecha: '2020-01-01' }, { monto: 0 }])('unverifiable receipt remains visible: %j', async changes => {
+test.each([{ moneda: 'USD' }, { pagoRealizado: false }, { monto: 0 }])('receipt without a usable paid amount remains pending without a form: %j', async changes => {
     mockOcr.mockResolvedValue(ocr(changes));
     const id = await enqueue(); await flow.processReceipt(id);
     expect(job(id).status).toBe('review'); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test.each([{ cuentaDestino: '9999' }, { referencia: null }, { fecha: null, referencia: null }, { fecha: '2020-01-01' }])('full reported amount asks data while preserving payment review: %j', async changes => {
+    mockOcr.mockResolvedValue(ocr(changes));
+    const id = await enqueue(); await flow.processReceipt(id);
+    expect(job(id).status).toBe('review');
+    expect(order().comprobanteValidadoAt).toBeUndefined();
+    expect(order()).toMatchObject({ paymentReportedComplete: true, shippingFormStatus: 'sent' });
+    expect(mockSend).toHaveBeenCalledTimes(1);
+});
+
+test('pending 300 + repeated 300 + 900 asks once, approvals do not double count or resend', async () => {
+    mockOcr.mockResolvedValue(ocr({ monto: 300, fecha: null, referencia: null }));
+    const first = await enqueue('deposit'); await flow.processReceipt(first);
+    await flow.processReceipt(await enqueue('repeated'));
+    expect(order().paymentReportedCents).toBe(30000); expect(mockSend).not.toHaveBeenCalled();
+    mockOcr.mockResolvedValue(ocr({ monto: 900, fecha: null, referencia: null, imageHash: 'remaining' }));
+    const second = await enqueue('remaining'); await flow.processReceipt(second);
+    expect(order()).toMatchObject({ paymentReportedCents: 120000, paymentReportedComplete: true, shippingFormStatus: 'sent' });
+    expect(order().comprobanteValidadoAt).toBeUndefined();
+    expect(await flow.paymentContext('customer')).toMatchObject({ hasPaid: false, reportedComplete: true, formSent: true });
+    await flow.processReceipt(first, { manual: true, amount: 300 });
+    expect(order().paymentReportedCents).toBe(120000);
+    await flow.processReceipt(second, { manual: true, amount: 900 });
+    expect(order().paymentReceivedCents).toBe(120000);
+    expect(order().comprobanteValidadoAt).toBeTruthy();
+    expect(mockSend).toHaveBeenCalledTimes(1);
+});
+
+test('approved deposit plus pending remainder counts each payment once', async () => {
+    mockOcr.mockResolvedValue(ocr({ monto: 300 }));
+    await flow.processReceipt(await enqueue('deposit'));
+    mockOcr.mockResolvedValue(ocr({ monto: 900, referencia: null, imageHash: 'remaining' }));
+    await flow.processReceipt(await enqueue('remaining'));
+    expect(order()).toMatchObject({ paymentReceivedCents: 30000, paymentReportedCents: 120000, shippingFormStatus: 'sent' });
+    expect(order().comprobanteValidadoAt).toBeUndefined();
+    expect(mockSend).toHaveBeenCalledTimes(1);
+});
+
+test('a receipt credited to another order cannot trigger a preapproval form', async () => {
+    const id = await enqueue();
+    mockDb.seed('payment_receipt_keys/' + receiptKeys(ocr())[0], { orderId: 'other' });
+    await flow.processReceipt(id);
+    expect(job(id).status).toBe('review');
+    expect(order().paymentReportedComplete).toBe(false);
+    expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('scheduler recovers preapproval data request after interrupted assessment', async () => {
+    const id = await enqueue();
+    mockDb.seed('payment_receipts/' + id, { ...job(id), status: 'review', ocr: ocr({ fecha: null }) });
+    mockDb.seed('pedidos/order', { ...order(), paymentFormNeedsAssessment: true });
+    await runPaymentSweep(); await runPaymentSweep();
+    expect(order()).toMatchObject({ paymentFormNeedsAssessment: false, shippingFormStatus: 'sent' });
+    expect(mockSend).toHaveBeenCalledTimes(1);
+});
+
+test('shipping data submission keeps cancellation and payment approval separate', async () => {
+    mockDb.seed('pedidos/order', { ...order(), estatus: 'Cancelado' });
+    await flow.processReceipt(await enqueue());
+    await flow.recordShippingDataForOrder('DH16368');
+    expect(order().shippingDataReceivedAt).toBeTruthy();
+    expect(order().estatus).toBe('Cancelado');
+    expect(order().comprobanteValidadoAt).toBeUndefined();
+    expect(mockDesign).not.toHaveBeenCalled();
+    expect((await flow.pendingPayments()).pago_cancelado[0]).toMatchObject({ formSent: true, shippingDataReceived: true });
+});
+
+test('legacy manual approval preserves an already sent preapproval form', async () => {
+    mockOcr.mockResolvedValue(ocr({ fecha: null }));
+    await flow.processReceipt(await enqueue());
+    await flow.manualValidateAndSend('customer', { orderNumber: 'DH16368', force: true });
+    expect(order().comprobanteValidadoAt).toBeTruthy();
+    expect(mockSend).toHaveBeenCalledTimes(1);
+});
+
+test('rejecting a receipt before the messaging window reopens removes form eligibility', async () => {
+    mockDb.seed('contacts_whatsapp/customer', { lastClientMsgAt: new Date(now() - 2 * DAY) });
+    mockOcr.mockResolvedValue(ocr({ fecha: null }));
+    const id = await enqueue(); await flow.processReceipt(id);
+    expect(order()).toMatchObject({ paymentReportedComplete: true, shippingFormStatus: 'retry' });
+    expect((await post(`/receipts/${id}/review`, { action: 'reject' })).status).toBe(200);
+    mockDb.seed('contacts_whatsapp/customer', { lastClientMsgAt: new Date() });
+    await runPaymentSweep();
+    expect(order().paymentReportedComplete).toBe(false);
+    expect(mockSend).not.toHaveBeenCalled();
 });
 
 test('design image and unpaid reference are not payments', async () => {
