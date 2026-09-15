@@ -3975,6 +3975,7 @@ async function activateAiAndAnswerPending(contactRef, snap, extraUpdate = {}) {
     const contactId = contactRef.id;
     const update = { botActive: true, ...extraUpdate };
     await contactRef.update(update);
+    await require('./payments/paymentWorkflow').discoverReceipts(contactId);
 
     let answering = false;
     const lastSnap = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(1).get();
@@ -6663,6 +6664,11 @@ router.put('/orders/:orderId', async (req, res) => {
         // Registrar confirmedAt cuando el pedido se confirma por primera vez vía API
         if (updateData.estatus) {
             const newStatus = (updateData.estatus || '').toLowerCase();
+            if (/cancel/.test(newStatus)) {
+                updateData.canceladoPorCobranza = false;
+                updateData.canceladoOrigen = 'manual';
+                updateData.canceladoAt = admin.firestore.FieldValue.serverTimestamp();
+            }
             const oldStatus = (existingData.estatus || '').toLowerCase();
             const isConfirming = newStatus.includes('fabricar') || newStatus.includes('pagado');
             const wasConfirmed = oldStatus.includes('fabricar') || oldStatus.includes('pagado');
@@ -6770,6 +6776,9 @@ router.post('/orders/:orderId/change-status', async (req, res) => {
         const orderData = orderDoc.data();
         const oldStatus = (orderData.estatus || 'Sin estatus').toLowerCase();
         const updatePayload = { estatus: newStatus };
+        if (/cancel/i.test(newStatus)) {
+            Object.assign(updatePayload, { canceladoPorCobranza: false, canceladoOrigen: 'manual', canceladoAt: admin.firestore.FieldValue.serverTimestamp() });
+        }
 
         // Registrar confirmedAt cuando el pedido se confirma por primera vez
         const isConfirming = newStatus.toLowerCase().includes('fabricar') || newStatus.toLowerCase().includes('pagado');
@@ -8539,7 +8548,7 @@ router.post('/envio/send-form/:contactId', async (req, res) => {
         const contactData = cDoc.exists ? cDoc.data() : {};
         // force=true: el agente pidió reenviar el formulario a propósito (aunque ya se haya
         // enviado antes). La IA no fuerza — así no reenvía el formulario en cada turno.
-        const orderNumber = await markComprobanteValidadoAndSendForm(contactId, contactData, { force: true });
+        const orderNumber = await markComprobanteValidadoAndSendForm(contactId, contactData, { force: true, orderNumber: req.body?.orderNumber });
         if (!orderNumber) {
             return res.status(400).json({ success: false, message: 'El contacto no tiene un pedido registrado para enviarle el formulario.' });
         }

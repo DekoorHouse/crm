@@ -16,6 +16,9 @@
 // del cache local). El backend es quien decide qué entra en cada columna; aquí solo se pinta.
 
 const PEND_COLS = [
+    ['pago_revision', 'Comprobante por revisar', '#d97706', 'fa-receipt'],
+    ['pago_cancelado', 'Pago en pedido cancelado', '#dc2626', 'fa-circle-exclamation'],
+    ['pago_formulario', 'Pagado sin formulario', '#2563eb', 'fa-file-lines'],
     ['video', 'Mandar video', '#e83e8c', 'fa-video'],
     ['mockup', 'Falta mockup', '#6f42c1', 'fa-wand-magic-sparkles'],
     ['sospechoso', 'Comprobante sospechoso', '#ea580c', 'fa-receipt'],
@@ -69,8 +72,8 @@ function PendientesViewTemplate() {
             <span id="pend-updated" style="font-size:.75rem;color:var(--color-text-light,#94a3b8)"></span>
             <button onclick="renderPendientesView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
         </div>
-        <p class="text-sm text-gray-500 mb-4">Todo lo que hay que atender y no es diseño: videos por mandar, mockups que faltan, clientes que necesitan una persona y ventas que la IA dejó a medias.
-            <span style="white-space:nowrap"><i class="fas fa-rotate-left" style="margin:0 4px 0 6px"></i>¿Quitaste una tarjeta sin querer? <b>Ctrl+Z</b> la regresa.</span></p>
+        <p class="text-sm text-gray-500 mb-4">Pagos por revisar, formularios pendientes, videos, mockups y conversaciones que necesitan al equipo.
+            <span>Las acciones de pagos requieren revisar el comprobante o el chat. Para las demás tarjetas, <b>Ctrl+Z</b> deshace la última acción.</span></p>
         <div id="pendientes-container"></div>
     </div>`;
 }
@@ -177,10 +180,17 @@ function pendOrderCard(o) {
 
 // Tarjeta de CONTACTO (columnas de atención humana y de la cola de la IA).
 function pendContactCard(c, col) {
-    const chatBtn = `<button onclick="pendOpenChat('${escapeHtml(c.id)}')" title="Ver conversación" class="pd-icon-btn"><i class="fas fa-comments"></i></button>`;
+    const chatId = c.contactId || c.id;
+    const chatBtn = `<button onclick="pendOpenChat('${escapeHtml(chatId)}')" title="Ver conversación" class="pd-icon-btn"><i class="fas fa-comments"></i></button>`;
     const unread = c.unreadCount > 0 ? `<span class="pd-age" style="background:#dc262618;color:#dc2626">${c.unreadCount} sin leer</span>` : '';
     let detalle = '', acciones = '';
-    if (col === 'atencion') {
+    if (col.startsWith('pago_')) {
+        const image = c.imageUrl ? `<a href="${escapeHtml(c.imageUrl)}" target="_blank" rel="noopener" class="pd-btn pd-btn-ghost">Ver comprobante</a>` : '';
+        detalle = `<div class="pd-card-sub"><b>${escapeHtml(c.orderNumber || c.name || '')}</b><br>${escapeHtml(c.reason || 'Pendiente de procesamiento')}${c.amount ? '<br>Importe leído: $' + escapeHtml(String(c.amount)) : ''}</div>`;
+        acciones = col === 'pago_formulario'
+            ? `<button onclick="pendPaymentRetry('${escapeHtml(c.id)}', this)" class="pd-btn">Revisar y reintentar</button><button onclick="pendPaymentConfirmSent('${escapeHtml(c.id)}', this)" class="pd-btn pd-btn-ghost">Ya lo recibió</button>`
+            : `${image}<button onclick="pendPaymentReview('${escapeHtml(c.id)}', '${col}', this)" class="pd-btn" style="background:#16a34a;color:white">Validar importe</button><button onclick="pendPaymentReject('${escapeHtml(c.id)}', this)" class="pd-btn pd-btn-ghost">Descartar</button>`;
+    } else if (col === 'atencion') {
         const motivo = PEND_ATTN_REASONS[c.reason] || 'Necesita que la atienda una persona';
         detalle = `<div class="pd-card-sub"><b>${escapeHtml(motivo)}</b>${c.lastMessage ? '<br>“' + escapeHtml(c.lastMessage) + '”' : ''}</div>`;
         acciones = `<button onclick="pendAtendido('${escapeHtml(c.id)}', this)" title="Ya la atendiste: quita lo urgente y el parpadeo en Chats" class="pd-btn" style="background:#16a34a;color:#fff"><i class="fas fa-check" style="margin-right:3px"></i>Atendido</button>`;
@@ -207,7 +217,7 @@ function pendContactCard(c, col) {
     }
     return `<div class="pd-card" data-pend="${escapeHtml(c.id)}">
         <div class="pd-card-top">
-            <span class="pd-card-num" onclick="pendOpenChat('${escapeHtml(c.id)}')" title="Abrir la conversación">${pendChanIcon(c.channel)} ${escapeHtml(c.name || c.id)}</span>
+            <span class="pd-card-num" onclick="pendOpenChat('${escapeHtml(chatId)}')" title="Abrir la conversación">${pendChanIcon(c.channel)} ${escapeHtml(c.name || c.id)}</span>
             <span class="pd-card-actions">${unread}${pendAgeBadge(c.at || c.lastMessageAt)}${chatBtn}</span>
         </div>
         ${detalle}
@@ -264,6 +274,59 @@ async function _pendPost(path, body) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
     return d;
+}
+
+// Diálogo dentro de la página: conserva el comprobante y el motivo a la vista.
+function _pendPaymentDialog(title, contents, submitLabel = 'Confirmar') {
+    return new Promise(resolve => {
+        const dialog = document.createElement('dialog');
+        dialog.style.cssText = 'max-width:480px;width:calc(100% - 32px);padding:24px;border:1px solid #cbd5e1;border-radius:14px;color:#334155;background:white;box-shadow:0 20px 80px #0004';
+        dialog.innerHTML = `<form><h2 style="font-size:20px;margin:0 0 16px">${escapeHtml(title)}</h2>${contents}<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:22px"><button type="button" data-cancel class="pd-btn pd-btn-ghost" style="padding:10px 16px">Cancelar</button><button type="submit" class="pd-btn" style="padding:10px 16px;background:#15803d;color:white">${escapeHtml(submitLabel)}</button></div></form>`;
+        const finish = value => { dialog.close(); dialog.remove(); resolve(value); };
+        dialog.querySelector('[data-cancel]').onclick = () => finish(null);
+        dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
+        dialog.querySelector('form').onsubmit = event => { event.preventDefault(); finish(Object.fromEntries(new FormData(event.target))); };
+        document.body.appendChild(dialog);
+        dialog.showModal();
+    });
+}
+
+async function _pendPaymentAction(path, body, button) {
+    button.disabled = true;
+    try { await _pendPost(path, body); await renderPendientesView(true); }
+    catch (e) { await _pendPaymentDialog('No se completó la acción', `<p>${escapeHtml(e.message)}</p>`, 'Entendido'); await renderPendientesView(true); }
+    finally { button.disabled = false; }
+}
+
+async function pendPaymentReview(id, col, button) {
+    const receipt = window._pendData?.[col]?.find(r => r.id === id);
+    if (!receipt) return;
+    const reactivate = /cancelad/i.test(receipt.reason || '');
+    const fieldStyle = 'display:block;width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:16px;margin:6px 0 14px;box-sizing:border-box';
+    const values = await _pendPaymentDialog(`Validar pago · ${receipt.orderNumber || 'Seleccionar pedido'}`, `
+        <p style="line-height:1.5">${escapeHtml(receipt.reason || '')}</p>
+        ${receipt.imageUrl ? `<a href="${escapeHtml(receipt.imageUrl)}" target="_blank" rel="noopener">Abrir comprobante</a>` : ''}
+        ${!receipt.orderId ? `<label>Pedido de este contacto<input name="orderNumber" required placeholder="DH12345" pattern="[Dd]?[Hh]?[0-9]+" style="${fieldStyle}"></label>` : ''}
+        <label>Importe recibido en este comprobante (MXN)<input name="amount" type="number" min="0.01" step="0.01" required value="${escapeHtml(String(receipt.amount || ''))}" style="${fieldStyle}"></label>
+        <p style="font-size:14px;line-height:1.5">Se sumará este abono. El formulario sólo se envía al liquidar el total del pedido.</p>
+        <label style="display:flex;gap:8px;line-height:1.4"><input type="checkbox" required name="reviewed"> Confirmo que revisé el comprobante y recibimos este importe.${reactivate ? ' Autorizo reactivar el pedido cancelado cuando quede liquidado.' : ''}</label>`, 'Validar importe');
+    if (!values) return;
+    await _pendPaymentAction(`payments/receipts/${encodeURIComponent(id)}/review`, { amount: Number(values.amount), reactivate, orderNumber: receipt.orderNumber || values.orderNumber }, button);
+}
+
+async function pendPaymentReject(id, button) {
+    if (!await _pendPaymentDialog('Descartar comprobante', '<p>No se sumará el importe ni se enviará el formulario de este comprobante.</p>', 'Descartar')) return;
+    await _pendPaymentAction(`payments/receipts/${encodeURIComponent(id)}/review`, { action: 'reject' }, button);
+}
+
+async function pendPaymentRetry(id, button) {
+    if (!await _pendPaymentDialog('Reenviar formulario', '<p>Confirma en el chat que hace falta el formulario. Si ya llegó, usa “Ya lo recibió” para cerrar el pendiente sin repetir el mensaje.</p><label><input type="checkbox" required> Revisé el chat y hace falta enviar el formulario.</label>', 'Enviar formulario')) return;
+    await _pendPaymentAction(`payments/forms/${encodeURIComponent(id)}/retry`, null, button);
+}
+
+async function pendPaymentConfirmSent(id, button) {
+    if (!await _pendPaymentDialog('Confirmar recepción del formulario', '<p>Esta acción cierra el pendiente sin reenviar el mensaje.</p><label><input type="checkbox" required> Comprobé en el chat que el cliente ya recibió el formulario de este pedido.</label>', 'Ya lo recibió')) return;
+    await _pendPaymentAction(`payments/forms/${encodeURIComponent(id)}/confirm-sent`, null, button);
 }
 
 // Quita una tarjeta del cache local y re-pinta (sin re-consultar: no parpadea ni salta el scroll).

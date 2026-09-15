@@ -80,6 +80,7 @@ app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
 app.use('/api/imagenes', require('./imagenes/imageStudioRoutes'));
 app.use('/api/pendientes', pendientesRouter);
+app.use('/api/payments', require('./payments/paymentRoutes'));
 app.use('/api/mercadopago', mercadopagoRouter);
 app.use('/api/pagos/transferencia', transferenciasRouter);
 app.use('/api/carritos-abandonados', carritosRouter);
@@ -607,6 +608,7 @@ function startSchedulers() {
   startShippingDigestScheduler();
   // Recuperar Purchase pendientes de Envíos aunque nadie tenga abierto el CRM.
   startMetaPurchaseScheduler();
+  require('./payments/paymentScheduler').startPaymentScheduler();
   // Iniciar scheduler de alerta de límite publicitario Meta Ads (cada 30 min)
   startSpendCapAlertScheduler();
   // Iniciar scheduler de alerta de saldo bajo de OpenRouter (cada 3 h; solo si el chat usa openrouter)

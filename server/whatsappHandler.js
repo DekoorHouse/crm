@@ -695,6 +695,8 @@ router.post('/', async (req, res) => {
              // --- Remove null/undefined fields before saving ---
             Object.keys(messageData).forEach(key => messageData[key] == null && delete messageData[key]);
 
+            await require('./payments/paymentWorkflow').enqueueReceipt(from, message.id, messageData);
+
             // Save the message to the 'messages' subcollection of the contact.
             // Se usa el wamid como ID del documento con create(): así el guardado es
             // ATÓMICO frente a reintentos de Meta (el chequeo de duplicados de arriba

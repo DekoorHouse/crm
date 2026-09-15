@@ -555,6 +555,7 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
     // si Meta entrega el webhook dos veces de forma concurrente (Instagram lo hace con frecuencia),
     // el segundo create() falla con ALREADY_EXISTS en lugar de crear un mensaje duplicado.
     // Esto cierra la race condition que la verificación query-then-add de arriba no alcanza a cubrir.
+    await require('./payments/paymentWorkflow').enqueueReceipt(contactId, message.mid, messageData);
     try {
         let savedMsgRef = null;
         if (message.mid) {

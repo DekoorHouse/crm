@@ -280,10 +280,12 @@ router.get('/', async (req, res) => {
         ia_cola.sort((a, b) => (b.at || 0) - (a.at || 0));
         ia_sin_pedido.sort((a, b) => (b.at || 0) - (a.at || 0));
 
+        const payments = await require('../payments/paymentWorkflow').pendingPayments();
         res.json({
             success: true,
-            buckets: { video, mockup, atencion, ia_cola, ia_sin_pedido, sospechoso },
+            buckets: { video, mockup, atencion, ia_cola, ia_sin_pedido, sospechoso, ...payments },
             counts: {
+                ...Object.fromEntries(Object.entries(payments).map(([key, rows]) => [key, rows.length])),
                 video: video.length, mockup: mockup.length, atencion: atencion.length,
                 ia_cola: ia_cola.length, ia_sin_pedido: ia_sin_pedido.length, sospechoso: sospechoso.length,
             },
@@ -491,12 +493,9 @@ router.post('/sospechoso/:contactId/aprobar', async (req, res) => {
         const cref = db.collection('contacts_whatsapp').doc(String(contactId));
         const cdoc = await cref.get();
         if (!cdoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        const { markComprobanteValidadoAndSendForm } = require('../services');
+        await markComprobanteValidadoAndSendForm(contactId, cdoc.data(), { force: true, orderNumber: cdoc.data().suspiciousReceipt?.orderNumber });
         await cref.set({ suspiciousReceiptPending: false, suspiciousReceipt: admin.firestore.FieldValue.delete() }, { merge: true });
-        // Continuar el flujo: validar el comprobante (sella comprobanteValidadoAt + manda el formulario).
-        try {
-            const { markComprobanteValidadoAndSendForm } = require('../services');
-            await markComprobanteValidadoAndSendForm(contactId, cdoc.data(), { force: true });
-        } catch (e) { console.warn('[PENDIENTES/sospechoso-aprobar] no se pudo validar/enviar formulario:', e.message); }
         res.json({ success: true });
     } catch (e) {
         console.error('[PENDIENTES/sospechoso-aprobar] error:', e.message);

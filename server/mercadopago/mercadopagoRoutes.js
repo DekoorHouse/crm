@@ -899,23 +899,11 @@ async function notifyAdminOxxoApproved({ amount, customerName, customerPhone, or
 async function notifyCustomerAiOxxoApproved(mpData, paymentId) {
     const phone = String(mpData.customerPhone || '').replace(/\D/g, '');
     const services = require('../services');
-    const contactSnap = await db.collection('contacts_whatsapp').doc(phone).get();
-    const contactData = contactSnap.exists ? contactSnap.data() : {};
-    let orderTotal = 0;
-    if (mpData.crmOrderNumber) {
-        const ref = await findPedidoRefByNumber(mpData.crmOrderNumber).catch(() => null);
-        const od = ref ? await ref.get().catch(() => null) : null;
-        if (od && od.exists) orderTotal = Number(od.data().precio) || 0;
-    }
     const monto = Number(mpData.total) || 0;
     const montoFmt = monto.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const cubreTotal = orderTotal > 0 && monto + 1 >= orderTotal;
-    if (cubreTotal) {
-        console.log(`[MP WEBHOOK] OXXO IA ${paymentId} cubre el total de ${mpData.crmOrderNumber} ($${monto} de $${orderTotal}): se valida como comprobante y se manda el formulario.`);
-        await services.markComprobanteValidadoAndSendForm(phone, contactData, { orderNumber: mpData.crmOrderNumber });
-        return;
-    }
-    const text = `¡Gracias! 🙌 Ya nos llegó tu pago en OXXO por *$${montoFmt}* ✅${orderTotal > 0 ? `\n\nQueda pendiente el resto de tu pedido: *$${(orderTotal - monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}*. Cuando te toque liquidarlo te aviso por aquí.` : ''}`;
+    const result = await require('../payments/paymentWorkflow').recordProviderPayment(phone, mpData.crmOrderNumber, monto, paymentId);
+    if (result.status !== 'partial') return; // El pago completo envía formulario; lo dudoso queda en Pendientes.
+    const text = `¡Gracias! 🙌 Ya nos llegó tu pago en OXXO por *$${montoFmt}* ✅\n\nQueda pendiente de liquidar *$${(result.remainingCents / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}*. Al completar el total te compartimos el formulario de envío.`;
     await services.sendAdvancedWhatsAppMessage(phone, { text });
     await db.collection('contacts_whatsapp').doc(phone).collection('messages').add({
         from_me: true, text, type: 'text', timestamp: new Date(), status: 'sent', origin: 'ai_oxxo_paid'
