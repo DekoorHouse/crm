@@ -136,4 +136,12 @@ const live = fs.readFileSync(require.resolve('../public/js/modules/pendientes-li
         await page.waitForFunction(() => payload.mockup[0].comentario === 'Nota anterior');
         expect(await page.$eval('[data-note-order="order0"]', el => el.value)).toBe('Nota anterior');
     });
+
+    test('enfocar sin escribir no sobrescribe una nota actualizada por otra persona', async () => {
+        await page.focus('[data-note-order="order0"]');
+        await page.evaluate(async () => { payload.mockup[0].comentario = 'Nota del equipo'; await renderPendientesView(true); });
+        await page.focus('#outside');
+        expect(await page.evaluate(() => posts.length)).toBe(0);
+        expect(await page.$eval('[data-note-order="order0"]', el => el.value)).toBe('Nota del equipo');
+    });
 });

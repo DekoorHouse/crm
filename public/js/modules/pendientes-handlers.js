@@ -679,6 +679,8 @@ function pendEditarComentario(orderId, el) {
 window.pendEditarComentario = pendEditarComentario;
 
 async function pendGuardarComentario(orderId, el) {
+    // Enfocar y salir sin escribir no debe sobrescribir la nota de otro operador.
+    if (!_pendDrafts.has(orderId)) { _paintPendientes(); return; }
     const draft = pendEditarComentario(orderId, el), value = el.value;
     if ((!draft.dirty && !draft.error && !draft.pending) || (draft.pending && draft.queued === value)) {
         if (!draft.pending) _paintPendientes();
