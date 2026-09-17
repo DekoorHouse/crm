@@ -1753,7 +1753,6 @@ async function markOrderFabricarForContact(contactId, contactData, addressText, 
     const orderNumber = orderData.consecutiveOrderNumber != null ? `DH${orderData.consecutiveOrderNumber}` : `(pedido ${orderId})`;
     const oldStatus = (orderData.estatus || 'Sin estatus').toLowerCase();
     const yaEnFabricar = oldStatus.includes('fabricar');
-    const fabricarSinVenta = !!orderData.fabricarSinVenta; // llegó a Fabricar por foto-reverso, sin contar venta
 
     // --- Rama LIGERA: foto del reverso (no cuenta la venta) ---
     if (!countSale) {
@@ -1785,72 +1784,13 @@ async function markOrderFabricarForContact(contactId, contactData, addressText, 
         return orderNumber;
     }
 
-    // --- Flujo NORMAL de venta confirmada (countSale=true) ---
-    if (require('./payments/paymentPolicy').awaitingPaymentApproval(orderData)) {
-        console.log(`[POSTVENTA] ${orderNumber}: datos solicitados, pero el pago sigue por aprobar; no se libera producción.`);
-        return null;
-    }
-    // Solo se salta si YA está en Fabricar Y la venta YA se contó. Si llegó a Fabricar por foto-reverso
-    // (fabricarSinVenta), NO se salta: hay que contar la venta ahora (Meta, inventario, corona, guía).
-    if (yaEnFabricar && !fabricarSinVenta) {
-        console.log(`[POSTVENTA] Pedido ${orderNumber} ya estaba en Fabricar; no se repite.`);
-        return null;
-    }
-
-    // 1) Cambiar estatus a Fabricar (+ confirmedAt la primera vez). Si venía de foto-reverso, ya está
-    // en Fabricar: solo se limpia el flag y se sella confirmedAt.
-    const updatePayload = {};
-    if (!yaEnFabricar) updatePayload.estatus = 'Fabricar';
-    if (fabricarSinVenta) updatePayload.fabricarSinVenta = admin.firestore.FieldValue.delete(); // ya se cuenta la venta
-    if (!orderData.confirmedAt) updatePayload.confirmedAt = admin.firestore.FieldValue.serverTimestamp();
-    if (Object.keys(updatePayload).length) await orderDoc.ref.update(updatePayload);
-    console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderId}) → Fabricar (${contactId})${skipShippingNotify ? ' [por anticipo — sin aviso de guía]' : ' por datos de envío completos'}${fabricarSinVenta ? ' [ya estaba en Fabricar por foto-reverso; ahora se cuenta la venta]' : ''}.`);
-
-    // 2) Descuento de inventario (idempotente)
-    try {
-        const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
-        const result = await descontarInventarioPorPedido(orderId, orderData, 'Fabricar');
-        if (result && result.ok && result.descontado) console.log(`[INVENTARIO] Pedido ${orderId} descontó ${result.movimientos} materiales (Fabricar por IA).`);
-    } catch (invErr) {
-        console.error(`[INVENTARIO] Error descontando pedido ${orderId} (Fabricar por IA):`, invErr.message);
-    }
-
-    // 3) Corona de compra completada en el contacto
-    try {
-        await db.collection('contacts_whatsapp').doc(contactId).update({
-            purchaseStatus: 'completed',
-            purchaseDate: admin.firestore.FieldValue.serverTimestamp()
-        });
-    } catch (crownErr) {
-        console.error('[CROWN] Error al marcar compra completada (Fabricar por IA):', crownErr.message);
-    }
-
-    // 4) Evento Purchase a Meta (idempotente por metaPurchaseSentAt). EXCEPCIÓN: en el depto de
-    // anticipo NO se manda automáticamente, porque aquí se llega con solo el apartado pagado
-    // ($100 de $750) y reportarle a Meta una compra completa optimizaría la campaña con dinero
-    // que todavía no se cobró. Se lee el departmentId sellado en el pedido, con respaldo en el
-    // contacto para los pedidos viejos registrados antes de que se sellara. Un cambio MANUAL de
-    // estatus desde el CRM sí manda el evento (ese pasa por apiRoutes, no por aquí).
-    const deptPedido = orderData.departmentId || (contactData && contactData.assignedDepartmentId) || null;
-    if (deptPedido === DEPT_ANTICIPO) {
-        console.log(`[META EVENT] Pedido ${orderNumber} es del depto de anticipo: NO se manda Purchase por el anticipo (solo se cobró el apartado).`);
-    } else {
-        // Si el pedido llegó a Fabricar por foto-reverso (fabricarSinVenta), su oldStatus ya es
-        // "fabricar" y el guard de sendPurchaseEventOnFabricar lo bloquearía; se pasa '' para que
-        // dispare el Purchase REAL ahora que sí se pagó (la idempotencia por metaPurchaseSentAt evita
-        // dobles envíos). En cualquier otro caso se pasa el oldStatus verdadero.
-        await sendPurchaseEventOnFabricar(orderId, { ...orderData, estatus: 'Fabricar' }, fabricarSinVenta ? '' : oldStatus);
-    }
-
-    // 5) Avisar a Rosario para que haga la guía. Se OMITE cuando el pedido pasa a Fabricar por el
-    // ANTICIPO de un especial (skipShippingNotify): ahí apenas arranca la fabricación, todavía falta
-    // el pago del resto y los datos de envío — la guía se pide después (cuando el cliente liquide y
-    // llene el formulario, ya aparece en la sección Envíos por comprobanteValidadoAt).
-    if (!skipShippingNotify) {
+    // La transición usa el pago aprobado del pedido, nunca los datos de envío.
+    if (!require('./payments/paymentProduction').approvedPayment(orderData)) return null;
+    const result = await require('./payments/paymentProduction').reconcilePaymentProduction(orderId);
+    if (result.status === 'fabricar' && !skipShippingNotify && orderData.comprobanteValidadoAt) {
         await notifyShippingDataReady(orderNumber, contactData, addressText)
-            .catch(e => console.warn('[POSTVENTA] Aviso a Rosario falló:', e.message));
+            .catch(e => console.warn('[POSTVENTA] Aviso a Rosario:', e.message));
     }
-
     return orderNumber;
 }
 
@@ -3789,6 +3729,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
             if (lastOrderDoc) {
                 const paymentOrder = lastOrderDoc.data();
+                orderInfoNote += '\n\nUn abono APROBADO libera Fabricar sin esperar a liquidar. No exijas el saldo para registrar o empezar la fabricación: el resto se paga al ver la foto del trabajo terminado. Si el cliente solo agradece, responde brevemente y no repitas el aviso de abono/saldo. Los pagos pertenecen a su pedido exacto; el de una compra anterior no acredita un pedido nuevo.';
                 orderInfoNote += `\n\n**Estado de pago comprobado por el sistema:** pago completo validado: ${paymentOrder.comprobanteValidadoAt ? 'sí' : 'no'}; abonos aprobados: $${(Number(paymentOrder.paymentReceivedCents || 0) / 100).toFixed(2)}; los comprobantes presentados cubren el total: ${paymentOrder.paymentReportedComplete ? 'sí' : 'no'}; formulario enviado: ${paymentOrder.shippingFormSentAt ? 'sí' : 'sin confirmación'}. En cuanto los comprobantes cubren el total, el sistema pide los datos de envío aunque el pago siga por aprobar. No vuelvas a cobrar el saldo si los comprobantes ya cubren el total. Recibir los datos no aprueba el pago ni libera la producción. No confundas un agradecimiento, el estatus Pagado/Fabricar ni una foto con la validación. /comprobante solicita revisión; no autoriza aprobar el pago. El sistema revisa los comprobantes pendientes aunque hayan llegado hace días. No afirmes que el formulario ya se envió sin confirmación.`;
             }
             // --- ¿YA LLENÓ el formulario de datos de envío? ---
@@ -4194,27 +4135,33 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         const needsReenvio = isPostVenta && /\/reenvio\b/i.test(aiResponse);
 
         let durablePaymentResult = null;
-        const paymentClaim = require('./payments/paymentPolicy').claimsPayment(aiResponse) || /datos-estafeta\//i.test(aiResponse);
+        let paymentRegistrationAttempted = false, paymentRegisteredOrderNumber = null;
+        const paymentConversation = require('./payments/paymentConversation');
+        const paymentClaim = require('./payments/paymentPolicy').claimsPayment(aiResponse) || paymentConversation.fullPaymentClaim(aiResponse) || paymentConversation.blocksProductionForBalance(aiResponse);
         if (comprobanteValidado || formularioPedidos.length || anticipoPaidCmd || paymentClaim) {
             try {
-                durablePaymentResult = await require('./payments/paymentWorkflow').paymentContext(contactId, { discover: true, process: true, orderNumber: formularioPedidos.length === 1 ? formularioPedidos[0] : null });
+                const paymentPolicy = require('./payments/paymentPolicy');
+                const history = messagesSnapshot.docs.map(d => d.data());
+                const receipt = history.find(m => m.from === contactId && (m.type === 'image' || (m.type === 'document' && /pdf/i.test(m.fileType || ''))));
+                const lastReply = history.find(m => m.from !== contactId);
+                const receiptPresent = !!receipt && paymentPolicy.ms(receipt.timestamp) > paymentPolicy.ms(lastReply?.timestamp);
+                // Registrar primero impide usar el pago de un pedido anterior mientras se crea el nuevo.
+                paymentRegistrationAttempted = registerOrderCmd || anticipoPaidCmd || (saleClosed && !isPostVenta && !esperaAnticipoCmd);
+                const turn = await paymentConversation.preparePaymentTurn(contactId, {
+                    register: paymentRegistrationAttempted ? () => require('./orders/aiOrderRegistration').registerOrderFromAI({ contactId, contactData, conversationText: `${conversationHistory}\nAsistente: ${aiResponse}` }) : null,
+                    orderNumber: formularioPedidos.length === 1 ? formularioPedidos[0] : null,
+                    incomingReceiptAt: receipt?.timestamp,
+                });
+                paymentRegisteredOrderNumber = turn.registeredOrderNumber;
+                durablePaymentResult = turn.context;
                 const p = durablePaymentResult;
-                if (p.hasPaid) {
+                if (p.hasPaid || p.reportedComplete) {
                     const delivery = await require('./payments/paymentWorkflow').deliverForm(p.orderId);
                     p.formSent = p.formSent || delivery.status === 'sent';
-                    // El formulario incluye la confirmación; no se repite la promesa de la IA.
-                    aiMessages = [p.formSent ? 'Tu pago ya está registrado ✅. El formulario de envío está en esta conversación.' : 'Tu pago completo ya está registrado ✅. Estamos preparando el envío de tu formulario; si requiere revisión, el equipo le dará seguimiento.'];
-                } else if (p.ambiguous) {
-                    aiMessages = ['Estamos revisando a cuál de tus pedidos corresponde el pago para registrarlo correctamente. El equipo dará seguimiento.'];
-                } else if (p.reportedComplete) {
-                    const delivery = await require('./payments/paymentWorkflow').deliverForm(p.orderId);
-                    p.formSent = p.formSent || delivery.status === 'sent';
-                    aiMessages = [p.formSent ? 'Gracias por compartir tu comprobante. Ya te compartimos el formulario para adelantar tus datos de envío; el equipo revisará tu pago.' : 'Gracias por compartir tu comprobante. Vamos a solicitar tus datos de envío mientras el equipo revisa tu pago.'];
-                } else if (p.partialCents > 0) {
-                    aiMessages = [`Tu abono registrado es de $${(p.partialCents / 100).toLocaleString('es-MX')}. Faltan $${(Math.max(0, p.totalCents - p.partialCents) / 100).toLocaleString('es-MX')} para liquidar el pedido. Los datos de envío se piden al completar el pago.`];
-                } else {
-                    aiMessages = [p.pending ? 'Recibimos tu comprobante y está en revisión. Solicitamos tus datos de envío en cuanto los importes de los comprobantes cubran el total, aunque la aprobación siga pendiente.' : 'Para confirmar tu pago necesitamos revisar la foto o el PDF del comprobante. ¿Nos lo compartes por aquí, por favor?'];
                 }
+                const reply = paymentConversation.paymentReply(p, { customerText: messageText, aiText: aiResponse, receiptPresent,
+                    recentReplies: history.filter(m => m.from !== contactId).slice(0, 10).map(m => m.text || '') });
+                if (reply !== null) aiMessages = reply;
             } catch (error) {
                 // Nunca enviar la confirmación original si la comprobación del sistema falló.
                 aiMessages = ['Recibimos tu comprobante. El equipo revisará el importe y dará seguimiento a tus datos de envío por aquí.'];
@@ -4510,23 +4457,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 .map(m => `Asistente: ${m.replace(/\r?\n/g, '\n    ')}`)
                 .join('\n');
             const fullTranscript = currentTurnText ? `${conversationHistory}\n${currentTurnText}` : conversationHistory;
-            require('./orders/aiOrderRegistration')
-                .registerOrderFromAI({ contactId, contactData, conversationText: fullTranscript })
+            (paymentRegistrationAttempted ? Promise.resolve(paymentRegisteredOrderNumber)
+                : require('./orders/aiOrderRegistration').registerOrderFromAI({ contactId, contactData, conversationText: fullTranscript }))
                 .then(async orderNum => {
-                    if (orderNum) await require('./payments/paymentWorkflow').discoverReceipts(contactId);
-                    // Anticipo de especial validado ($200): el pedido arranca fabricación → "Fabricar"
-                    // (descuenta inventario, corona y evento Purchase a Meta), PERO sin avisar aún a
-                    // Rosario para la guía: falta el pago del resto y los datos de envío.
-                    // Sólo un abono efectivamente registrado autoriza fabricación; una imagen sola no basta.
-                    if (orderNum && anticipoPaidCmd) {
-                        const registeredPayment = await require('./payments/paymentWorkflow').paymentContext(contactId, { discover: true, process: true, orderNumber: orderNum });
-                        if (!registeredPayment.hasPaid && !(registeredPayment.partialCents > 0)) {
-                            console.warn(`[ANTICIPO] ${contactId} emitió /anticipopagado SIN abono validado para el pedido; NO se manda a Fabricar (posible pago inventado).`);
-                            alertAdminHumanNeeded(contactId, contactData, `La IA dio por pagado el ANTICIPO de ${orderNum} SIN un abono validado en el sistema. El pedido NO se mandó a fabricar. Revisa si el pago existe antes de continuar.`).catch(() => {});
-                            return;
-                        }
-                        return markOrderFabricarForContact(contactId, contactData, null, { skipShippingNotify: true });
-                    }
+                    if (!orderNum) return;
+                    const registeredPayment = await require('./payments/paymentWorkflow').paymentContext(contactId, { discover: true, process: true, orderNumber: orderNum });
+                    if (registeredPayment.orderId) await require('./payments/paymentProduction').reconcilePaymentProduction(registeredPayment.orderId);
                 })
                 .catch(e => console.warn('[AI_ORDER] registro/fabricar por anticipo falló:', e.message));
         }

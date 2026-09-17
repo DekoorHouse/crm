@@ -1,7 +1,9 @@
 const mockDb = require('./helpers/paymentFirestore')();
 const mockOcr = jest.fn(), mockSend = jest.fn(), mockMessenger = jest.fn(), mockCancel = jest.fn(), mockDesign = jest.fn();
+const mockInventory = jest.fn(), mockPurchase = jest.fn();
 jest.mock('../server/config', () => ({ db: mockDb, admin: { firestore: { FieldValue: { serverTimestamp: () => new Date() }, Timestamp: { fromMillis: n => new Date(n) } } } }));
-jest.mock('../server/services', () => ({ extractReceiptData: (...a) => mockOcr(...a), sendAdvancedWhatsAppMessage: (...a) => mockSend(...a), sendMessengerMessage: (...a) => mockMessenger(...a) }));
+jest.mock('../server/services', () => ({ extractReceiptData: (...a) => mockOcr(...a), sendAdvancedWhatsAppMessage: (...a) => mockSend(...a), sendMessengerMessage: (...a) => mockMessenger(...a), sendPurchaseEventOnFabricar: (...a) => mockPurchase(...a) }));
+jest.mock('../server/inventario/inventarioService', () => ({ descontarInventarioPorPedido: (...a) => mockInventory(...a) }));
 jest.mock('../server/leads/scheduledReminderScheduler', () => ({ cancelReminderForContact: (...a) => mockCancel(...a) }));
 jest.mock('../server/design/designPending', () => ({ recomputeForContact: (...a) => mockDesign(...a) }));
 const flow = require('../server/payments/paymentWorkflow');
@@ -21,6 +23,7 @@ beforeEach(() => {
     mockOcr.mockReset().mockResolvedValue(ocr()); mockSend.mockReset().mockResolvedValue({ id: 'wamid.1' });
     mockMessenger.mockReset().mockResolvedValue({ messages: [{ id: 'mid.1' }] });
     mockCancel.mockResolvedValue(); mockDesign.mockResolvedValue();
+    mockInventory.mockReset().mockResolvedValue({ ok: true }); mockPurchase.mockReset().mockResolvedValue();
 });
 
 test('DH16368: worker processes a receipt five days later with chat IA off', async () => {
@@ -44,14 +47,14 @@ test('DH16328: asks shipping data while cancellation remains pending, approval d
     expect(mockSend).toHaveBeenCalledTimes(1);
     expect(mockSend.mock.calls[0][1].text).not.toMatch(/validamos|preparamos el envío/);
     await flow.processReceipt(id, { manual: true, amount: 1200, reactivate: true });
-    expect(order()).toMatchObject({ estatus: 'Pagado', shippingFormStatus: 'sent' });
+    expect(order()).toMatchObject({ estatus: 'Fabricar', shippingFormStatus: 'sent' });
     expect(mockSend).toHaveBeenCalledTimes(1);
 });
 
 test('only an automatic cancellation reactivates with a verified full payment', async () => {
     mockDb.seed('pedidos/order', { ...order(), estatus: 'Cancelado', canceladoPorCobranza: true });
     await flow.processReceipt(await enqueue());
-    expect(order()).toMatchObject({ estatus: 'Pagado', shippingFormStatus: 'sent' });
+    expect(order()).toMatchObject({ estatus: 'Fabricar', shippingFormStatus: 'sent' });
 });
 
 test('manual review of 300 + 900 reactivates a cancelled order only after both receipts are credited', async () => {
@@ -61,7 +64,7 @@ test('manual review of 300 + 900 reactivates a cancelled order only after both r
     expect(order()).toMatchObject({ estatus: 'Cancelado', paymentReceivedCents: 30000 });
     expect(mockSend).not.toHaveBeenCalled();
     await flow.processReceipt(await enqueue('remainder'), { manual: true, amount: 900, reactivate: true });
-    expect(order()).toMatchObject({ estatus: 'Pagado', paymentReceivedCents: 120000, shippingFormStatus: 'sent' });
+    expect(order()).toMatchObject({ estatus: 'Fabricar', paymentReceivedCents: 120000, shippingFormStatus: 'sent' });
     expect(mockSend).toHaveBeenCalledTimes(1);
 });
 
@@ -166,12 +169,14 @@ test('Messenger acknowledgement also seals and stores form delivery', async () =
     expect(mockSend).not.toHaveBeenCalled(); expect(mockMessenger).toHaveBeenCalledTimes(1);
 });
 
-test('multiple active orders require selecting the exact order and never assume latest paid', async () => {
+test('selects the single unpaid order instead of an older paid order; multiple unpaid remain ambiguous', async () => {
     mockDb.seed('pedidos/other', { ...order(), consecutiveOrderNumber: 16369, comprobanteValidadoAt: new Date() });
     const p = await flow.paymentContext('customer');
-    expect(p).toMatchObject({ ambiguous: true, hasPaid: false });
+    expect(p).toMatchObject({ ambiguous: false, hasPaid: false, orderId: 'order' });
     expect(await flow.paymentContext('customer', { orderNumber: 'DH16369' })).toMatchObject({ hasPaid: true, orderId: 'other' });
     await expect(flow.manualValidateAndSend('customer', { force: true })).rejects.toThrow(/exacto/);
+    mockDb.seed('pedidos/third', { ...order(), consecutiveOrderNumber: 16370 });
+    expect(await flow.paymentContext('customer')).toMatchObject({ ambiguous: true, hasPaid: false });
 });
 
 test('two different concurrent deposits sum atomically and send one form', async () => {
@@ -335,4 +340,108 @@ test('unclear OCR classification stays visible instead of being discarded', asyn
     mockOcr.mockResolvedValue(ocr({ esComprobante: null }));
     const id = await enqueue(); await flow.processReceipt(id);
     expect(job(id).status).toBe('review');
+});
+
+test.each([[16832, 3000, 1200], [16814, 1500, 500]])('DH%s: approved deposit starts production with IA off and no shipping form', async (number, total, deposit) => {
+    mockDb.seed('pedidos/order', { ...order(), consecutiveOrderNumber: number, precio: total, estatus: 'Sin estatus' });
+    mockOcr.mockResolvedValue(ocr({ monto: deposit }));
+    await enqueue(); await runPaymentSweep(); await runPaymentSweep();
+    expect(order()).toMatchObject({ estatus: 'Fabricar', paymentReceivedCents: deposit * 100, paymentProductionStatus: 'done', paymentProductionPending: false });
+    expect(order().comprobanteValidadoAt).toBeUndefined();
+    expect(mockSend).not.toHaveBeenCalled(); expect(mockInventory).toHaveBeenCalledTimes(1);
+    expect(mockPurchase).toHaveBeenCalledTimes(1);
+});
+
+test('DH16821: transfer in progress stays outside mockups until operator confirms its $300', async () => {
+    mockDb.seed('pedidos/order', { ...order(), consecutiveOrderNumber: 16821, precio: 750, estatus: 'Sin estatus' });
+    mockDb.seed('contacts_whatsapp/customer', { lastClientMsgAt: new Date(), suspiciousReceiptPending: true, suspiciousReceipt: { imageUrl: 'https://test.invalid/receipt.png' } });
+    mockOcr.mockResolvedValue(ocr({ monto: 300, pagoRealizado: false }));
+    const id = await enqueue(); await runPaymentSweep();
+    expect(order()).toMatchObject({ estatus: 'Esperando anticipo', paymentProductionStatus: 'review' });
+    expect(job(id).reason).toMatch(/en proceso/);
+    expect(mockInventory).not.toHaveBeenCalled(); expect(mockSend).not.toHaveBeenCalled();
+    expect((await post(`/receipts/${id}/review`, { amount: 300, orderId: 'order' })).status).toBe(200);
+    expect(order()).toMatchObject({ estatus: 'Fabricar', paymentReceivedCents: 30000, paymentProductionStatus: 'done' });
+    expect(order().comprobanteValidadoAt).toBeUndefined();
+    expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
+    expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('DH16816: approved full payment recovers production without resending an existing form', async () => {
+    mockDb.seed('pedidos/order', { ...order(), consecutiveOrderNumber: 16816, estatus: 'Sin estatus', paymentReceivedCents: 120000, comprobanteValidadoAt: new Date(), shippingFormSentAt: new Date(), shippingFormStatus: 'sent' });
+    mockDb.seed('datos_envio/address', { numeroPedido: 'DH16816' });
+    const result = await post('/orders/order/reconcile', {});
+    expect(result.status).toBe(200);
+    expect(order()).toMatchObject({ estatus: 'Fabricar', paymentProductionStatus: 'done' });
+    expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('full payment starts production and sends exactly one form, independently of /datoscompletos', async () => {
+    mockDb.seed('pedidos/order', { ...order(), estatus: 'Sin estatus' });
+    await flow.processReceipt(await enqueue());
+    await flow.recordShippingDataForOrder('DH16368');
+    expect(order()).toMatchObject({ estatus: 'Fabricar', shippingFormStatus: 'sent', paymentProductionStatus: 'done' });
+    expect(mockSend).toHaveBeenCalledTimes(1); expect(mockInventory).toHaveBeenCalledTimes(1);
+});
+
+test.each(['Foto enviada', 'Diseñado por IA', 'Corregir', 'Entregado', 'Cancelado'])('recovery preserves more advanced or blocked status %s', async estatus => {
+    mockDb.seed('pedidos/order', { ...order(), estatus, paymentReceivedCents: 30000 });
+    await post('/orders/order/reconcile', {});
+    expect(order().estatus).toBe(estatus); expect(mockInventory).not.toHaveBeenCalled();
+});
+
+test('captured address never approves a legacy unpaid order or starts manufacturing', async () => {
+    mockDb.seed('pedidos/order', { ...order(), estatus: 'Sin estatus' });
+    await flow.recordShippingDataForOrder('DH16368');
+    expect(order().comprobanteValidadoAt).toBeUndefined();
+    expect(order().estatus).toBe('Sin estatus'); expect(mockInventory).not.toHaveBeenCalled();
+});
+
+test('production failure is recovered from durable queue without crediting payment or sending messages again', async () => {
+    mockDb.seed('pedidos/order', { ...order(), estatus: 'Sin estatus' });
+    mockOcr.mockResolvedValue(ocr({ monto: 300 }));
+    mockInventory.mockRejectedValueOnce(new Error('unavailable'));
+    await flow.processReceipt(await enqueue());
+    expect(order()).toMatchObject({ paymentProductionStatus: 'retry', paymentProductionPending: true, paymentReceivedCents: 30000 });
+    mockDb.seed('pedidos/order', { ...order(), paymentProductionNextAttemptAt: new Date(0) });
+    await runPaymentSweep(); await runPaymentSweep();
+    expect(order()).toMatchObject({ paymentProductionStatus: 'done', paymentProductionPending: false, paymentReceivedCents: 30000 });
+    expect(mockInventory).toHaveBeenCalledTimes(2); expect(mockPurchase).toHaveBeenCalledTimes(1); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('DH16832: registration completes before looking up payment, leaving the earlier purchase intact', async () => {
+    const previous = { ...order(), consecutiveOrderNumber: 14728, comprobanteValidadoAt: new Date(now() - DAY), shippingFormSentAt: new Date(now() - DAY), estatus: 'Pagado' };
+    mockDb.seed('pedidos/order', previous);
+    mockDb.seed('contacts_whatsapp/customer/messages/new-receipt', { from: 'customer', type: 'image', timestamp: new Date(), fileUrl: 'https://test.invalid/receipt.png' });
+    mockOcr.mockResolvedValue(ocr({ monto: 1200 }));
+    const result = await require('../server/payments/paymentConversation').preparePaymentTurn('customer', { register: async () => {
+        await Promise.resolve();
+        mockDb.seed('pedidos/new', { contactId: 'customer', consecutiveOrderNumber: 16832, precio: 3000, estatus: 'Sin estatus', createdAt: new Date() });
+        return 'DH16832';
+    } });
+    expect(result.context).toMatchObject({ orderId: 'new', hasPaid: false, partialCents: 120000, productionStatus: 'Fabricar' });
+    expect(order()).toEqual(previous); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('failed new registration or a newer receipt cannot borrow the previous paid order', async () => {
+    mockDb.seed('pedidos/order', { ...order(), comprobanteValidadoAt: new Date(now() - DAY) });
+    const result = await require('../server/payments/paymentConversation').preparePaymentTurn('customer', { register: async () => null });
+    expect(result.context).toMatchObject({ registrationPending: true, hasPaid: false });
+    expect(await flow.paymentContext('customer', { incomingReceiptAt: new Date() })).toMatchObject({ hasPaid: false });
+});
+
+test('simultaneous production workers hold a single claim, and a stale claim is recovered', async () => {
+    const production = require('../server/payments/paymentProduction');
+    mockDb.seed('pedidos/order', { ...order(), estatus: 'Sin estatus', paymentReceivedCents: 30000, paymentProductionPending: true });
+    await Promise.all([production.reconcilePaymentProduction('order'), production.reconcilePaymentProduction('order')]);
+    expect(mockInventory).toHaveBeenCalledTimes(1); expect(mockPurchase).toHaveBeenCalledTimes(1);
+    mockDb.seed('pedidos/order', { ...order(), paymentProductionPending: true, paymentProductionStatus: 'processing', paymentProductionLeaseUntil: new Date(0) });
+    await runPaymentSweep();
+    expect(order()).toMatchObject({ paymentProductionPending: false, paymentProductionStatus: 'done' });
+});
+
+test('deposit for a new order does not clear an unrelated suspicious receipt', async () => {
+    mockDb.seed('contacts_whatsapp/customer', { suspiciousReceiptPending: true, suspiciousReceipt: { imageUrl: 'https://test.invalid/different.png' } });
+    await flow.processReceipt(await enqueue(), { manual: true, amount: 300 });
+    expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(true);
 });

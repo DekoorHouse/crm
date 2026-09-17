@@ -551,9 +551,8 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             const r = recent.data;
             const rNum = r.consecutiveOrderNumber != null ? `DH${r.consecutiveOrderNumber}` : recent.id;
             // "Esperando anticipo" también es editable: es un pedido que se sacó de la fila mientras
-            // esperaba el anticipo de una personalización especial (ver markOrderEsperandoAnticipoForContact
-            // en services.js). Al re-emitir /registrar el cliente ya pagó y confirmó el cambio, así que
-            // se ACTUALIZA con los datos especiales y se regresa a "Sin estatus" (vuelve a la fila).
+            // esperaba el anticipo de una personalización especial. Se actualizan los datos;
+            // únicamente el flujo de aprobación de pagos autoriza pasar a Fabricar.
             const estActual = r.estatus || 'Sin estatus';
             const editable = r.registeredByAI === true && r.aiReviewStatus === 'pending' && (estActual === 'Sin estatus' || estActual === 'Esperando anticipo');
             if (!editable) {
@@ -612,9 +611,8 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
                 aiUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 comentarios: `${comentarioBase}\nActualizado por la IA: el cliente cambió su pedido (confianza ${extraction.confianza}%).`.trim()
             };
-            // Si estaba "Esperando anticipo", el anticipo ya se pagó (la IA re-emitió /registrar):
-            // regrésalo a la fila de mockups ("Sin estatus") para que se pueda diseñar/fabricar.
-            if (estActual === 'Esperando anticipo') updatePayload.estatus = 'Sin estatus';
+            // Repetir /registrar no acredita dinero. El flujo de pagos liberará
+            // Fabricar al aprobar el abono, sin volver a la fila de mockups.
             await recent.ref.update(updatePayload);
             // Igual que al crear: el cierre acaba de poner pendientes_ia; un cambio APLICADO ya no
             // necesita registro manual — sin esto el contacto se queda en la cola y alguien

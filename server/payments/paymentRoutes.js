@@ -69,4 +69,19 @@ router.post('/contacts/:id/recover', async (req, res) => {
     try { res.json({ success: true, receipts: await discoverReceipts(req.params.id) }); }
     catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
+
+// Recuperación del pedido exacto: usa los importes ya aprobados; no aprueba recibos.
+router.post('/orders/:id/reconcile', async (req, res) => {
+    try {
+        const ref = db.collection('pedidos').doc(req.params.id);
+        const snap = await ref.get();
+        if (!snap.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        const p = snap.data();
+        await ref.update({ paymentProductionPending: true, paymentFormNeedsAssessment: true,
+            ...(p.comprobanteValidadoAt && !p.shippingFormStatus && !p.shippingFormSentAt ? { shippingFormStatus: 'pending', shippingFormNextAttemptAt: admin.firestore.FieldValue.serverTimestamp() } : {}) });
+        const form = await refreshReportedPayment(ref.id);
+        const order = (await ref.get()).data();
+        res.json({ success: true, form, orderNumber: `DH${order.consecutiveOrderNumber}`, status: order.estatus, productionStatus: order.paymentProductionStatus, reason: order.paymentProductionReason || '' });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
 module.exports = router;

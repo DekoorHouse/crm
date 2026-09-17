@@ -160,10 +160,10 @@ test('sin detalle de piezas suficiente conserva revisión manual', async () => {
     expect(contact().needsAttentionReason).toBe('cambio_no_aplicado');
 });
 
-test('un anticipo pendiente idéntico sigue avanzando al flujo de fabricación', async () => {
+test('repetir el registro de un anticipo pendiente conserva la espera hasta su aprobación', async () => {
     order().estatus = 'Esperando anticipo';
     expect(await run()).toBe('DH16731');
-    expect(order().estatus).toBe('Sin estatus'); // el llamador continúa con markOrderFabricarForContact
+    expect(order().estatus).toBe('Esperando anticipo'); // sólo un abono aprobado libera Fabricar
     expect(contact().needsAttention).toBeUndefined();
     expect(createOrder).not.toHaveBeenCalled();
 });

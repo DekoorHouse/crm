@@ -129,6 +129,12 @@ async function descontarInventarioPorPedido(orderId, orderData, motivo) {
     let movimientosEscritos = 0;
 
     await db.runTransaction(async (tx) => {
+        // Dos aprobaciones/operadores pueden llegar con la misma copia vieja del pedido.
+        // Releer el sello dentro de la transacción evita descontar dos veces.
+        const orderRef = db.collection('pedidos').doc(orderId);
+        const currentOrder = await tx.get(orderRef);
+        movimientosEscritos = 0;
+        if (!currentOrder.exists || currentOrder.data().inventarioDescontado === true) return;
         // Releer materiales dentro de la transacción para evitar race conditions
         const refs = materialIds.map(id => db.collection('materiales').doc(id));
         const snaps = await Promise.all(refs.map(r => tx.get(r)));
@@ -167,7 +173,6 @@ async function descontarInventarioPorPedido(orderId, orderData, motivo) {
         }
 
         // Marcar pedido como descontado (idempotencia)
-        const orderRef = db.collection('pedidos').doc(orderId);
         tx.update(orderRef, {
             inventarioDescontado: true,
             inventarioDescontadoAt: fecha,

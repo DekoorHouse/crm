@@ -14,6 +14,8 @@ async function runPaymentSweep() {
         for (const r of due.slice(0, 30)) await processReceipt(r.id);
         const assessments = await db.collection('pedidos').where('paymentFormNeedsAssessment', '==', true).get();
         for (const order of assessments.docs) await refreshReportedPayment(order.id);
+        const production = await db.collection('pedidos').where('paymentProductionPending', '==', true).get();
+        for (const order of production.docs) await require('./paymentProduction').reconcilePaymentProduction(order.id);
         const forms = await db.collection('pedidos').where('shippingFormStatus', 'in', ['pending', 'retry', 'sending']).get();
         for (const d of forms.docs) {
             const p = d.data();
