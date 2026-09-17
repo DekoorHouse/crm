@@ -1,8 +1,8 @@
 const { ms } = require('./paymentPolicy');
 const normalize = text => String(text || '').normalize('NFD').replace(/[\u0300-\u036f*_]/g, '').toLowerCase();
 const HANDOFF = 'Disculpa la confusión. Voy a dejar tu caso con una persona del equipo para que revise lo que nos compartiste y te ayude a continuar. No necesitas reenviar la misma imagen.';
-const waitingForPaymentHelp = contact => contact?.botActive === false && contact?.needsAttention === true
-    && ['payment_reply_loop', 'registro_pedido'].includes(contact.needsAttentionReason);
+const waitingForPaymentHelp = contact => contact?.botActive === false && (contact?.paymentReplyGuard?.stopped === true
+    || (contact?.needsAttention === true && ['payment_reply_loop', 'registro_pedido'].includes(contact.needsAttentionReason)));
 
 function paymentReplyCategory(text) {
     const t = normalize(text);

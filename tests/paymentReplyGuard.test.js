@@ -46,6 +46,8 @@ test('un fallo de registro deriva de inmediato y los recordatorios automáticos 
     expect(waitingForPaymentHelp(contact())).toBe(true);
     expect(evaluateFollowup({}, contact(), {}, Date.now()).action).toBe('wait');
     expect(evaluateOrderFollowup({}, contact(), {}, Date.now()).action).toBe('wait');
+    // Un nuevo mensaje con la IA apagada cambia la etiqueta a ai_off; la pausa sigue vigente.
+    expect(waitingForPaymentHelp({ ...contact(), needsAttentionReason: 'ai_off' })).toBe(true);
 });
 
 test('no bloquea la confirmación de un pago validado ni preguntas ajenas al pago', async () => {
