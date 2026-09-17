@@ -209,6 +209,8 @@ function disenoYaHecho(o) {
 
 function autoBlocked(o) {
     return !!(disenoYaHecho(o)                                              // ya diseñado / marcado hecho (3 marcas reales, invalidadas por un reenvío)
+        || o.svgServerRequest || o.svgServerJob || o.svgCorteReviewRequired || o.svgCorteSubidaDudosa
+        || Number(o.svgCorteServerFails) >= 3
         || o.ocultoDeEnvios                                                 // quitado de Envíos = gestionado
         || o.productoAgregadoPostPagoAt                                     // 2º producto -> manual
         || o.iaForce);                                                      // "Diseñar con IA": lo diseña processForcedDesigns CON confirmación, NO el auto-corte (el worker ya lo salta); así isAutoWaiting=false y sigue visible en Pendientes con su UI de confirmar
@@ -441,6 +443,7 @@ function isPersonajeAutoWaiting(o, previews) {
 // exacto que el endpoint saca de "Pendientes" manual y muestra en "SVG IA" como "esperando pareja".
 // `previews` = mockup_previews[orderId].previews.
 function isAutoWaiting(o, previews) {
+    if (o.svgServerJob && !o.svgCorteReviewRequired) return true;
     const est = String(o.estatus || '').trim().toLowerCase();
     if (ESTATUS_TERMINAL.has(est)) return false;
     // El pago validado manda; sin él solo pasa 'Fabricar' (flujo viejo). El corte de fecha deja fuera
@@ -469,6 +472,7 @@ function isVideoCorregir(o) {
 // sigue vivo hasta que el equipo lo grabe y se lo mande.
 function isVideoAutoWaiting(o, previews) {
     if (!isVideoCorregir(o)) return false;
+    if (o.svgServerJob && !o.svgCorteReviewRequired) return true;
     if (autoBlocked(o)) return false;
     if (quejaDeDatosAbierta(o)) return false;   // un dato sigue mal: no se corta solo (ver abajo)
     return svgAutoEligibility(o, previews).eligible;

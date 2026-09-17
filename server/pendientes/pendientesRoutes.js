@@ -111,15 +111,15 @@ router.get('/', async (req, res) => {
                 svgCorteAt: tsToMs(p.svgCorteAt),
                 // Ciclo del diseño forzado con la skill (cola -> staged -> aprobado). Mismos endpoints
                 // que usa Diseño (/api/design-pending/:id/design-ia, ia-confirm, ia-reject).
-                iaForce: p.iaForce ? {
-                    status: p.iaForce.status || null,
-                    previewUrl: p.iaForce.previewUrl || null,
-                    cortePreviewUrl: p.iaForce.cortePreviewUrl || null,
-                    error: p.iaForce.error || null,
+                iaForce: (p.svgServerRequest || p.iaForce) ? {
+                    status: (p.svgServerRequest || p.iaForce).status || null,
+                    previewUrl: (p.svgServerRequest || p.iaForce).previewUrl || null,
+                    cortePreviewUrl: (p.svgServerRequest || p.iaForce).cortePreviewUrl || null,
+                    error: (p.svgServerRequest || p.iaForce).error || null,
                 } : null,
                 iaEligible: isCorazon(p) && !MANUAL_SPECIAL_RE.test(datosOf(p)) && !p.svgCorteAt,
                 // El worker ya lo tiene en su cola de corte automático: no hay que diseñarlo a mano.
-                autoCutQueued: !p.iaForce && !p.svgCorteAt && isVideoAutoWaiting(p, previews),
+                autoCutQueued: !(p.svgServerRequest || p.iaForce) && !p.svgCorteAt && isVideoAutoWaiting(p, previews),
             };
         };
 

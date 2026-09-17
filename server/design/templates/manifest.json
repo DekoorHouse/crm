@@ -1,0 +1,205 @@
+{
+  "version": "server-svg-v1",
+  "pageMm": [
+    350,
+    330
+  ],
+  "fontSha256": "a368bd30b794abe2dadcae9ec2b7484d272f6cb20607d73e720598014b4d9c69",
+  "variants": {
+    "infinito-1": {
+      "model": "infinito",
+      "count": 1,
+      "matrix": [
+        0,
+        -1,
+        -1,
+        0,
+        200.0093,
+        324.0899
+      ],
+      "lineAdvancePerEm": 0.662395950506187,
+      "slots": [
+        {
+          "slot": 0,
+          "field": "nombre2",
+          "cxMm": 126.7516,
+          "cyMm": 137.5137,
+          "fontPt": 79
+        },
+        {
+          "slot": 0,
+          "field": "nombre1",
+          "cxMm": 40.66105,
+          "cyMm": 137.694,
+          "fontPt": 79
+        },
+        {
+          "slot": 0,
+          "field": "fecha",
+          "cxMm": 81.67875,
+          "cyMm": 166.5826,
+          "fontPt": 25.3
+        }
+      ]
+    },
+    "infinito-2": {
+      "model": "infinito",
+      "count": 2,
+      "matrix": [
+        0,
+        -1,
+        -1,
+        0,
+        200.0093,
+        324.08990000000006
+      ],
+      "lineAdvancePerEm": 0.662395950506187,
+      "slots": [
+        {
+          "slot": 1,
+          "field": "nombre2",
+          "cxMm": 283.7228,
+          "cyMm": 137.7533,
+          "fontPt": 79
+        },
+        {
+          "slot": 0,
+          "field": "nombre2",
+          "cxMm": 126.7516,
+          "cyMm": 137.5137,
+          "fontPt": 79
+        },
+        {
+          "slot": 1,
+          "field": "nombre1",
+          "cxMm": 201.40345,
+          "cyMm": 140.1939,
+          "fontPt": 79
+        },
+        {
+          "slot": 0,
+          "field": "nombre1",
+          "cxMm": 40.66105,
+          "cyMm": 137.694,
+          "fontPt": 79
+        },
+        {
+          "slot": 1,
+          "field": "fecha",
+          "cxMm": 242.2898,
+          "cyMm": 166.5558,
+          "fontPt": 25.3
+        },
+        {
+          "slot": 0,
+          "field": "fecha",
+          "cxMm": 81.67875,
+          "cyMm": 166.5826,
+          "fontPt": 25.3
+        }
+      ]
+    },
+    "spiderman-1": {
+      "model": "spiderman",
+      "count": 1,
+      "matrix": [
+        0,
+        -1,
+        -1,
+        0,
+        165.93619999999999,
+        160.26359
+      ],
+      "lineAdvancePerEm": 1.10399325084364,
+      "slots": [
+        {
+          "slot": 0,
+          "field": "nombre",
+          "cxMm": 36.8625,
+          "cyMm": 53.5968,
+          "fontPt": 80.291
+        }
+      ]
+    },
+    "spiderman-2": {
+      "model": "spiderman",
+      "count": 2,
+      "matrix": [
+        0,
+        -1,
+        -1,
+        0,
+        165.93619999999999,
+        321.4634
+      ],
+      "lineAdvancePerEm": 1.10399325084364,
+      "slots": [
+        {
+          "slot": 1,
+          "field": "nombre",
+          "cxMm": 36.8625,
+          "cyMm": 53.5968,
+          "fontPt": 80.291
+        },
+        {
+          "slot": 0,
+          "field": "nombre",
+          "cxMm": 198.0623,
+          "cyMm": 53.5968,
+          "fontPt": 80.291
+        }
+      ]
+    },
+    "rex-1": {
+      "model": "rex",
+      "count": 1,
+      "matrix": [
+        0,
+        -1,
+        -1,
+        0,
+        166.309199,
+        160.34279
+      ],
+      "lineAdvancePerEm": 1.10399325084364,
+      "slots": [
+        {
+          "slot": 0,
+          "field": "nombre",
+          "cxMm": 50.86855,
+          "cyMm": 36.84515,
+          "fontPt": 92.887
+        }
+      ]
+    },
+    "rex-2": {
+      "model": "rex",
+      "count": 2,
+      "matrix": [
+        0,
+        -1,
+        -1,
+        0,
+        166.309199,
+        321.5426
+      ],
+      "lineAdvancePerEm": 1.10399325084364,
+      "slots": [
+        {
+          "slot": 1,
+          "field": "nombre",
+          "cxMm": 50.86855,
+          "cyMm": 36.84515,
+          "fontPt": 92.887
+        },
+        {
+          "slot": 0,
+          "field": "nombre",
+          "cxMm": 212.06835,
+          "cyMm": 36.84515,
+          "fontPt": 92.887
+        }
+      ]
+    }
+  }
+}

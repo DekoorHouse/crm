@@ -72,6 +72,7 @@ app.get('/api/auth/mode', (req, res) => res.json({ mode: API_AUTH_MODE }));
 
 // IMPORTANTE: Definir el router de la API antes que los archivos estáticos
 app.use('/api', apiRouter);
+app.use('/api/svg-corte', require('./design/svgCutRoutes'));
 app.use('/api/autopost', autoPostRouter);
 app.use('/api/wa-group', waGroupRouter);
 app.use('/api/fb-group', fbGroupRouter);
@@ -587,6 +588,7 @@ const SCHEDULERS_ENABLED = process.env.ENABLE_SCHEDULERS
   : Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.RENDER_EXTERNAL_URL);
 
 function startSchedulers() {
+  require('./design/svgCutScheduler').startSvgCutScheduler();
   // Iniciar scheduler de auto-publicacion Google Photos -> Facebook
   startScheduler();
   // Iniciar scheduler de WhatsApp Group

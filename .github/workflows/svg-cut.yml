@@ -1,0 +1,31 @@
+name: Server SVG cutting
+on:
+  push:
+    paths:
+      - 'server/design/**'
+      - 'server/mockups/nameLayout.js'
+      - 'tests/svg*.test.js'
+      - 'tests/helpers/svgCutFirestore.js'
+      - 'tests/fixtures/svg-cut/**'
+      - 'public/editor/fonts/RowsOfSunflowers.ttf'
+      - 'package*.json'
+      - '.github/workflows/svg-cut.yml'
+  pull_request:
+    paths:
+      - 'server/design/**'
+      - 'tests/svg*.test.js'
+      - 'package*.json'
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx jest tests/svgCutQueue.test.js tests/svgCutWorker.test.js tests/svgRenderer.test.js tests/svgCutRoutes.test.js --runInBand

@@ -6146,7 +6146,7 @@ router.get('/debug/shipping-digest-run', async (req, res) => {
 // GET /api/debug/version → marcador de build + uptime del proceso. Sirve para saber con certeza qué
 // versión está viva (uptime bajo = recién desplegado) sin adivinar por endpoints nuevos.
 router.get('/debug/version', (_req, res) => {
-    res.json({ marker: 'entrega-auto-v1', uptimeSec: Math.round(process.uptime()), now: Date.now() });
+    res.json({ marker: 'server-svg-v1', commit: process.env.RENDER_GIT_COMMIT || null, uptimeSec: Math.round(process.uptime()), now: Date.now() });
 });
 
 // POST /api/debug/delivery-detect { contactId, message } → DRY-RUN del avance automático a "Entregado":
@@ -8583,6 +8583,7 @@ router.get('/design-pending', async (req, res) => {
         };
         const mapOrder = (doc, reasons, extra) => {
             const p = doc.data();
+            const cutRequest = p.svgServerRequest || p.iaForce || (p.svgCorteReviewRequired ? { status: 'error', error: p.svgCorteReviewRequired.message } : null);
             const num = p.consecutiveOrderNumber != null ? p.consecutiveOrderNumber : null;
             return {
                 id: doc.id,
@@ -8607,13 +8608,13 @@ router.get('/design-pending', async (req, res) => {
                 svgCorteSheetWith: p.svgCorteSheetWith || null,
                 // Diseño FORZADO desde el CRM ("Diseñar con IA"): estado del ciclo cola->staged->aprobado
                 // + imagen de preview y líneas a grabar (para el paso de confirmación antes de subir).
-                iaForce: p.iaForce ? {
-                    status: p.iaForce.status || null,
-                    previewUrl: p.iaForce.previewUrl || null,
-                    cortePreviewUrl: p.iaForce.cortePreviewUrl || null,   // PNG legible del corte que hizo la skill
-                    mockupUrl: p.iaForce.mockupUrl || null,               // el mockup que aprobó el cliente
-                    lines: p.iaForce.lines || null,
-                    error: p.iaForce.error || null,
+                iaForce: cutRequest ? {
+                    status: cutRequest.status || null,
+                    previewUrl: cutRequest.previewUrl || null,
+                    cortePreviewUrl: cutRequest.cortePreviewUrl || null,   // PNG legible del corte que hizo la skill
+                    mockupUrl: cutRequest.mockupUrl || null,               // el mockup que aprobó el cliente
+                    lines: cutRequest.lines || null,
+                    error: cutRequest.error || null,
                 } : null,
                 // ¿La IA puede diseñar este pedido? Lámpara de corazones cuyo "especial" NO sea una imagen/
                 // foto/frase para grabar (MANUAL_SPECIAL_RE): esos requieren diseño manual o Modo 4. Un
@@ -8769,7 +8770,7 @@ router.get('/design-pending', async (req, res) => {
                 // muestra su propia UI de "Diseñar con IA" (thumbnail + Subir a Drive) y no está en la cola
                 // automática.
                 orders.push(mapOrder(doc, reasons, {
-                    autoCutQueued: !p.iaForce && (isVideoAutoWaiting(p, prevMap.get(doc.id))
+                    autoCutQueued: !(p.svgServerRequest || p.iaForce) && (isVideoAutoWaiting(p, prevMap.get(doc.id))
                         || (correccionAbierta(p) && isAutoWaiting(p, prevMap.get(doc.id)))),
                     reviewInfo: buildReviewInfo(p, prevMap.get(doc.id)),
                 }));
@@ -8998,10 +8999,10 @@ router.post('/design-pending/:orderId/reopen', async (req, res) => {
     }
 });
 
-// POST /api/design-pending/:orderId/design-ia — FUERZA el diseño con IA (worker local de corte).
-// Pone el pedido en cola (iaForce.status='queued'); en su próxima corrida (≤15 min) el worker de esta
-// PC genera el SVG con CorelDRAW y lo deja STAGED (sin subir a Drive). El CRM muestra el preview y sube
-// a Drive SOLO al confirmar (ia-confirm). Solo lámpara de corazones no-especial (lo que el skill genera).
+// POST /api/design-pending/:orderId/design-ia — FUERZA el diseño con IA (motor de corte del servidor).
+// Pone el pedido en cola (svgServerRequest.status='queued'); en su próxima corrida (≤2 min),
+// el servidor genera el SVG y su vista previa y sube el corte. El CRM muestra la vista previa;
+// ia-confirm se conserva para diseños anteriores que ya estaban staged.
 router.post('/design-pending/:orderId/design-ia', async (req, res) => {
     const { orderId } = req.params;
     try {
@@ -9010,11 +9011,12 @@ router.post('/design-pending/:orderId/design-ia', async (req, res) => {
         const doc = await ref.get();
         if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
         const p = doc.data();
+        if (p.svgServerJob || p.svgCorteReviewRequired || p.svgCorteSubidaDudosa || p.iaForce) return res.status(409).json({ success: false, message: 'Hay un diseño en curso o una subida que requiere revisión; no se puede duplicar.' });
         if (!isCorazon(p)) return res.status(400).json({ success: false, message: 'El skill solo genera lámpara de corazones; este pedido requiere diseño manual.' });
         if (MANUAL_SPECIAL_RE.test(datosOf(p))) return res.status(400).json({ success: false, message: 'Lleva una imagen/foto o texto extra para grabar: requiere diseño manual.' });
         if (p.svgCorteAt) return res.status(400).json({ success: false, message: 'Este pedido ya tiene un SVG de corte.' });
         await ref.update({
-            iaForce: {
+            svgServerRequest: {
                 status: 'queued',
                 requestedAt: admin.firestore.FieldValue.serverTimestamp(),
                 requestedBy: 'crm',
@@ -9035,9 +9037,10 @@ router.post('/design-pending/:orderId/ia-confirm', async (req, res) => {
         const ref = db.collection('pedidos').doc(orderId);
         const doc = await ref.get();
         if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
-        const f = doc.data().iaForce || {};
+        const key = doc.data().svgServerRequest ? 'svgServerRequest' : 'iaForce';
+        const f = doc.data()[key] || {};
         if (f.status !== 'staged') return res.status(400).json({ success: false, message: 'El diseño aún no está listo para subir.' });
-        await ref.update({ 'iaForce.status': 'approved', 'iaForce.approvedAt': admin.firestore.FieldValue.serverTimestamp() });
+        await ref.update({ [key + '.status']: 'approved', [key + '.approvedAt']: admin.firestore.FieldValue.serverTimestamp() });
         res.json({ success: true });
     } catch (e) {
         console.error('[design-pending/ia-confirm] error:', e.message);
@@ -9053,7 +9056,7 @@ router.post('/design-pending/:orderId/ia-reject', async (req, res) => {
         const ref = db.collection('pedidos').doc(orderId);
         const doc = await ref.get();
         if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
-        await ref.update({ iaForce: admin.firestore.FieldValue.delete() });
+        await ref.update({ iaForce: admin.firestore.FieldValue.delete(), svgServerRequest: admin.firestore.FieldValue.delete() });
         res.json({ success: true });
     } catch (e) {
         console.error('[design-pending/ia-reject] error:', e.message);
@@ -9074,6 +9077,7 @@ router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
         const doc = await ref.get();
         if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
         const p = doc.data();
+        if (p.svgServerJob || p.svgCorteReviewRequired || p.svgCorteSubidaDudosa || p.iaForce) return res.status(409).json({ success: false, message: 'Hay un diseño en curso o una subida que requiere revisión; no se puede duplicar.' });
         if (!isCorazon(p)) return res.status(400).json({ success: false, message: 'El skill solo genera lámpara de corazones; este pedido requiere diseño manual.' });
         if (MANUAL_SPECIAL_RE.test(datosOf(p))) return res.status(400).json({ success: false, message: 'Lleva una imagen/foto o texto extra para grabar: requiere diseño manual.' });
         if (p.svgCorteAt) return res.status(400).json({ success: false, message: 'Este pedido ya tiene un SVG de corte.' });
@@ -9084,14 +9088,14 @@ router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
         const fecha = clean(req.body && req.body.fecha);
         if (!nombre1 || !nombre2) return res.status(400).json({ success: false, message: 'Se requieren los dos nombres.' });
         await ref.update({
-            'iaForce.status': 'queued',
-            'iaForce.overrideLines': { nombre1, nombre2, fecha },
-            'iaForce.requestedAt': admin.firestore.FieldValue.serverTimestamp(),
-            'iaForce.requestedBy': 'crm-edit',
-            'iaForce.error': admin.firestore.FieldValue.delete(),
+            'svgServerRequest.status': 'queued',
+            'svgServerRequest.overrideLines': { nombre1, nombre2, fecha },
+            'svgServerRequest.requestedAt': admin.firestore.FieldValue.serverTimestamp(),
+            'svgServerRequest.requestedBy': 'crm-edit',
+            'svgServerRequest.error': admin.firestore.FieldValue.delete(),
             // Limpia el staged viejo: el CRM no debe mostrar el preview anterior mientras se regenera.
-            'iaForce.cortePreviewUrl': admin.firestore.FieldValue.delete(),
-            'iaForce.svgLocalPath': admin.firestore.FieldValue.delete(),
+            'svgServerRequest.cortePreviewUrl': admin.firestore.FieldValue.delete(),
+            'svgServerRequest.svgLocalPath': admin.firestore.FieldValue.delete(),
         });
         res.json({ success: true });
     } catch (e) {
