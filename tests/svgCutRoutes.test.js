@@ -40,3 +40,15 @@ test('status is available before activation and malformed preview input is rejec
     const r = await fetch(base + '/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'unknown', lamps: [] }) });
     expect(r.status).toBe(400);
 });
+
+test('confirming a legacy preview retains its exact text and line breaks', () => {
+    const { approvedPreviewFields, requestBlocked } = require('../server/design/svgCutRequests');
+    const lines = { nombre1: 'José\nLuis', nombre2: 'Ana', fecha: '' };
+    const o = { iaForce: { status: 'staged', requestedAt: Date.now(), lines } };
+    expect(approvedPreviewFields(o)).toEqual(lines); expect(requestBlocked(o)).toBe(false);
+    expect(requestBlocked({ iaForce: { status: 'queued' } })).toBe(true);
+    expect(requestBlocked({ iaForce: { status: 'approved' } })).toBe(true);
+    expect(() => approvedPreviewFields({ ...o, svgCorteAt: Date.now() })).toThrow('ya tiene corte');
+    expect(() => approvedPreviewFields({ iaForce: { status: 'staged' } })).toThrow('no conserva los textos');
+    expect(() => approvedPreviewFields({ ...o, datoCorregidoAt: Date.now() + 1000 })).toThrow('cambió desde este previo');
+});

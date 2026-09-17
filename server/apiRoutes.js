@@ -9011,7 +9011,7 @@ router.post('/design-pending/:orderId/design-ia', async (req, res) => {
         const doc = await ref.get();
         if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
         const p = doc.data();
-        if (p.svgServerJob || p.svgCorteReviewRequired || p.svgCorteSubidaDudosa || p.iaForce) return res.status(409).json({ success: false, message: 'Hay un diseño en curso o una subida que requiere revisión; no se puede duplicar.' });
+        if (require('./design/svgCutRequests').requestBlocked(p)) return res.status(409).json({ success: false, message: 'Hay un diseño en curso o una subida que requiere revisión; no se puede duplicar.' });
         if (!isCorazon(p)) return res.status(400).json({ success: false, message: 'El skill solo genera lámpara de corazones; este pedido requiere diseño manual.' });
         if (MANUAL_SPECIAL_RE.test(datosOf(p))) return res.status(400).json({ success: false, message: 'Lleva una imagen/foto o texto extra para grabar: requiere diseño manual.' });
         if (p.svgCorteAt) return res.status(400).json({ success: false, message: 'Este pedido ya tiene un SVG de corte.' });
@@ -9021,6 +9021,7 @@ router.post('/design-pending/:orderId/design-ia', async (req, res) => {
                 requestedAt: admin.firestore.FieldValue.serverTimestamp(),
                 requestedBy: 'crm',
             },
+            iaForce: admin.firestore.FieldValue.delete(),
         });
         res.json({ success: true });
     } catch (e) {
@@ -9029,22 +9030,24 @@ router.post('/design-pending/:orderId/design-ia', async (req, res) => {
     }
 });
 
-// POST /api/design-pending/:orderId/ia-confirm — el usuario confirmó el diseño staged: lo aprueba
-// (iaForce.status='approved') para que el worker lo SUBA a Drive en su próxima corrida.
+// Un previo antiguo confirmado se genera con sus textos guardados desde el servidor.
 router.post('/design-pending/:orderId/ia-confirm', async (req, res) => {
     const { orderId } = req.params;
     try {
         const ref = db.collection('pedidos').doc(orderId);
-        const doc = await ref.get();
-        if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
-        const key = doc.data().svgServerRequest ? 'svgServerRequest' : 'iaForce';
-        const f = doc.data()[key] || {};
-        if (f.status !== 'staged') return res.status(400).json({ success: false, message: 'El diseño aún no está listo para subir.' });
-        await ref.update({ [key + '.status']: 'approved', [key + '.approvedAt']: admin.firestore.FieldValue.serverTimestamp() });
+        await db.runTransaction(async tx => {
+            const doc = await tx.get(ref);
+            if (!doc.exists) throw Object.assign(new Error('Pedido no encontrado.'), { statusCode: 404 });
+            const overrideLines = require('./design/svgCutRequests').approvedPreviewFields(doc.data());
+            tx.update(ref, { iaForce: admin.firestore.FieldValue.delete(), svgServerRequest: {
+                status: 'queued', overrideLines, requestedBy: 'crm-confirm-legacy',
+                requestedAt: admin.firestore.FieldValue.serverTimestamp()
+            } });
+        });
         res.json({ success: true });
     } catch (e) {
         console.error('[design-pending/ia-confirm] error:', e.message);
-        res.status(500).json({ success: false, message: e.message });
+        res.status(e.statusCode || 500).json({ success: false, message: e.message });
     }
 });
 
@@ -9077,7 +9080,7 @@ router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
         const doc = await ref.get();
         if (!doc.exists) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
         const p = doc.data();
-        if (p.svgServerJob || p.svgCorteReviewRequired || p.svgCorteSubidaDudosa || p.iaForce) return res.status(409).json({ success: false, message: 'Hay un diseño en curso o una subida que requiere revisión; no se puede duplicar.' });
+        if (require('./design/svgCutRequests').requestBlocked(p)) return res.status(409).json({ success: false, message: 'Hay un diseño en curso o una subida que requiere revisión; no se puede duplicar.' });
         if (!isCorazon(p)) return res.status(400).json({ success: false, message: 'El skill solo genera lámpara de corazones; este pedido requiere diseño manual.' });
         if (MANUAL_SPECIAL_RE.test(datosOf(p))) return res.status(400).json({ success: false, message: 'Lleva una imagen/foto o texto extra para grabar: requiere diseño manual.' });
         if (p.svgCorteAt) return res.status(400).json({ success: false, message: 'Este pedido ya tiene un SVG de corte.' });
@@ -9089,6 +9092,7 @@ router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
         if (!nombre1 || !nombre2) return res.status(400).json({ success: false, message: 'Se requieren los dos nombres.' });
         await ref.update({
             'svgServerRequest.status': 'queued',
+            iaForce: admin.firestore.FieldValue.delete(),
             'svgServerRequest.overrideLines': { nombre1, nombre2, fecha },
             'svgServerRequest.requestedAt': admin.firestore.FieldValue.serverTimestamp(),
             'svgServerRequest.requestedBy': 'crm-edit',
