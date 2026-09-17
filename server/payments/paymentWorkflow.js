@@ -315,27 +315,35 @@ async function manualValidateAndSend(contactId, { orderNumber = null, force = fa
     return `DH${order.data().consecutiveOrderNumber}`;
 }
 
-async function paymentContext(contactId, { discover = false, process = false, orderNumber = null, incomingReceiptAt = null } = {}) {
+async function paymentContext(contactId, { discover = false, process = false, orderNumber = null, newOrderIntent = false } = {}) {
     const num = Number(String(orderNumber || '').replace(/\D/g, ''));
+    if (newOrderIntent && !num) return { registrationPending: true, hasPaid: false, pending: 0 };
     const allOrders = await ordersForContact(contactId);
     const explicit = num ? allOrders.find(d => Number(d.data().consecutiveOrderNumber) === num) : null;
     if (discover) await discoverReceipts(contactId, { orderId: explicit?.id || null });
     const rs = await receipts().where('contactId', '==', contactId).get();
     const ordered = rs.docs.sort((a, b) => ms(a.data().receivedAt) - ms(b.data().receivedAt));
     if (process) for (const r of ordered.filter(d => d.data().status === 'pending').slice(0, 8)) await processReceipt(r.id, { immediate: true });
-    const orders = (await ordersForContact(contactId)).filter(d => !terminal(d.data()) && ms(d.data().createdAt) >= Date.now() - 45 * DAY);
+    const contact = num ? null : (await db.collection('contacts_whatsapp').doc(contactId).get()).data();
+    const newOrderSince = ms(contact?.paymentNewOrderRequestedAt);
+    const currentOrders = await ordersForContact(contactId);
+    const orders = num ? currentOrders : currentOrders.filter(d => !terminal(d.data())
+        && (d.data().comprobanteValidadoAt || ms(d.data().createdAt) >= Date.now() - 45 * DAY)
+        && (!newOrderSince || ms(d.data().createdAt) >= newOrderSince));
     const fresh = await receipts().where('contactId', '==', contactId).get();
     const unpaid = orders.filter(d => !d.data().comprobanteValidadoAt && !cancelled(d.data()));
-    const eligible = incomingReceiptAt ? orders.filter(d => !d.data().comprobanteValidadoAt || ms(d.data().comprobanteValidadoAt) >= ms(incomingReceiptAt)) : orders;
+    // Una imagen posterior puede ser un reenvío o una captura del chat: no invalida un pago.
+    // Los pedidos nuevos se distinguen por su registro o por la solicitud explícita de otro pedido.
     const selected = num ? orders.find(d => Number(d.data().consecutiveOrderNumber) === num)
-        : unpaid.length === 1 ? unpaid[0] : eligible.length === 1 ? eligible[0] : null;
+        : unpaid.length === 1 ? unpaid[0] : orders.length === 1 ? orders[0] : null;
     const pending = fresh.docs.filter(d => d.data().open && (!selected || d.data().orderId === selected.id || !d.data().orderId));
     const latest = selected?.data();
     const hasPaid = latest?.comprobanteValidadoAt && !cancelled(latest);
     return { hasPaid: !!hasPaid, partialCents: latest?.paymentReceivedCents || 0, totalCents: cents(latest?.precio) || 0,
         formSent: !!latest?.shippingFormSentAt, reportedComplete: !!latest?.paymentReportedComplete && !latest?.paymentFormNeedsAssessment, reportedCents: latest?.paymentReportedCents || 0, pending: pending.length,
         reason: pending.find(d => d.data().status === 'review')?.data().reason || latest?.shippingFormReason || '',
-        ambiguous: !selected && (eligible.length > 1 || unpaid.length > 1),
+        registrationPending: !num && !!newOrderSince && orders.length === 0,
+        ambiguous: !selected && (orders.length > 1 || !!num),
         productionStatus: latest?.estatus || null,
         productionReason: latest?.paymentProductionReason || '',
         orderId: selected?.id, orderNumber: latest?.consecutiveOrderNumber ? `DH${latest.consecutiveOrderNumber}` : null };

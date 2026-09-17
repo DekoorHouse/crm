@@ -423,11 +423,50 @@ test('DH16832: registration completes before looking up payment, leaving the ear
     expect(order()).toEqual(previous); expect(mockSend).not.toHaveBeenCalled();
 });
 
-test('failed new registration or a newer receipt cannot borrow the previous paid order', async () => {
+test('failed new registration or explicit new-order intent cannot borrow the previous paid order', async () => {
     mockDb.seed('pedidos/order', { ...order(), comprobanteValidadoAt: new Date(now() - DAY) });
     const result = await require('../server/payments/paymentConversation').preparePaymentTurn('customer', { register: async () => null });
     expect(result.context).toMatchObject({ registrationPending: true, hasPaid: false });
-    expect(await flow.paymentContext('customer', { incomingReceiptAt: new Date() })).toMatchObject({ hasPaid: false });
+    expect(await flow.paymentContext('customer', { newOrderIntent: true })).toMatchObject({ hasPaid: false, registrationPending: true });
+});
+
+test('DH16809: a later image and subsequent complaint keep the validated payment and do not resend the form', async () => {
+    mockDb.seed('pedidos/order', { ...order(), consecutiveOrderNumber: 16809, estatus: 'Pagado',
+        paymentReceivedCents: 120000, comprobanteValidadoAt: new Date(now() - 3 * 3600000),
+        shippingFormSentAt: new Date(now() - 4 * 3600000), shippingFormStatus: 'sent' });
+    mockDb.seed('contacts_whatsapp/customer/messages/resent-image', { from: 'customer', type: 'image', timestamp: new Date(), fileUrl: 'https://test.invalid/resent.png' });
+    const conversation = require('../server/payments/paymentConversation');
+    const { context } = await conversation.preparePaymentTurn('customer');
+    expect(context).toMatchObject({ hasPaid: true, partialCents: 120000, orderNumber: 'DH16809', formSent: true });
+    const reply = conversation.paymentReply(context, { customerText: 'Esque ya no entiedo me mandan y me mandar que page',
+        aiText: 'Para registrar el pago necesitamos la foto o el PDF del comprobante.' });
+    expect(reply[0]).toContain('DH16809'); expect(reply[0]).toContain('ya está registrado');
+    expect(mockSend).not.toHaveBeenCalled(); expect(order().paymentReceivedCents).toBe(120000);
+});
+
+test('a new-order request stays separate on following turns until the new order is registered', async () => {
+    mockDb.seed('pedidos/order', { ...order(), comprobanteValidadoAt: new Date(now() - DAY) });
+    const since = new Date(now() - 1000);
+    mockDb.seed('contacts_whatsapp/customer', { paymentNewOrderRequestedAt: since });
+    expect(await flow.paymentContext('customer')).toMatchObject({ hasPaid: false, registrationPending: true });
+    mockDb.seed('pedidos/new', { contactId: 'customer', consecutiveOrderNumber: 19000, precio: 750, estatus: 'Sin estatus', createdAt: new Date() });
+    expect(await flow.paymentContext('customer')).toMatchObject({ hasPaid: false, registrationPending: false, orderId: 'new' });
+    expect(await flow.paymentContext('customer', { orderNumber: 'DH16368' })).toMatchObject({ hasPaid: true, orderId: 'order' });
+});
+
+test('two paid orders remain ambiguous after resending a receipt; the explicit number selects only its payment', async () => {
+    mockDb.seed('pedidos/order', { ...order(), comprobanteValidadoAt: new Date(now() - DAY) });
+    mockDb.seed('pedidos/other', { ...order(), consecutiveOrderNumber: 19000 });
+    expect(await flow.paymentContext('customer')).toMatchObject({ ambiguous: true, hasPaid: false });
+    expect(await flow.paymentContext('customer', { orderNumber: 'DH19000' })).toMatchObject({ hasPaid: true, orderId: 'other' });
+    expect(await flow.paymentContext('customer', { orderNumber: 'DH99999' })).toMatchObject({ ambiguous: true, hasPaid: false });
+});
+
+test('a paid active order does not lose its payment by age, and an explicitly named delivered order remains paid', async () => {
+    mockDb.seed('pedidos/order', { ...order(), createdAt: new Date(now() - 60 * DAY), comprobanteValidadoAt: new Date(now() - 50 * DAY) });
+    expect(await flow.paymentContext('customer')).toMatchObject({ hasPaid: true, orderId: 'order' });
+    mockDb.seed('pedidos/order', { ...order(), estatus: 'Entregado' });
+    expect(await flow.paymentContext('customer', { orderNumber: 'DH16368' })).toMatchObject({ hasPaid: true, orderId: 'order' });
 });
 
 test('simultaneous production workers hold a single claim, and a stale claim is recovered', async () => {

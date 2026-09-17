@@ -3902,7 +3902,9 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (generalSettings.avisoPagoSinComprobante !== false) {
                 const durablePayment = await require('./payments/paymentWorkflow').paymentContext(contactId, { discover: true });
                 const hayComprobante = durablePayment.pending > 0 || durablePayment.hasPaid || durablePayment.partialCents > 0;
-                if (durablePayment.pending) pagoSinComprobanteNote = `\n\n**Comprobante guardado y pendiente de revisión:** ${durablePayment.reason || 'El sistema todavía está verificándolo.'}. No pidas al cliente que lo vuelva a mandar y no confirmes el pago antes de validarlo.`;
+                if (durablePayment.hasPaid) pagoSinComprobanteNote = `\n\n**PAGO COMPLETO VALIDADO de ${durablePayment.orderNumber}:** este pedido ya está pagado. No vuelvas a cobrar ni a pedir su comprobante, aunque el cliente reenvíe imágenes o capturas. Si reclama un cobro repetido, confirma que su pago está registrado y disculpa la confusión. No apliques este pago a un pedido nuevo.`;
+                else if (durablePayment.registrationPending) pagoSinComprobanteNote = '\n\n**PEDIDO NUEVO POR REGISTRAR:** el cliente abrió otra compra. El pago de su pedido anterior no acredita esta compra nueva; primero debe registrarse el pedido exacto.';
+                else if (durablePayment.pending) pagoSinComprobanteNote = `\n\n**Comprobante guardado y pendiente de revisión:** ${durablePayment.reason || 'El sistema todavía está verificándolo.'}. No pidas al cliente que lo vuelva a mandar y no confirmes el pago antes de validarlo.`;
                 // Ultimos 3 mensajes del cliente: puede decir "ya deposite" y luego "ok".
                 const ultimosCliente = messagesSnapshot.docs
                     .filter(mdoc => mdoc.data().from === contactId)
@@ -3910,7 +3912,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     .map(mdoc => String(mdoc.data().text || ''))
                     .join(' | ');
                 const DICE_PAGO_RE = /(ya (te )?(hice|mand[eé]|realic[eé]|envi[eé]|deposit[eé]|transfer[ií]|pagu[eé])|acabo de (pagar|depositar|transferir)|hice (el|la) (dep[oó]sito|transferencia|pago)|ya (est[aá]|qued[oó]) pagad|ya lo pagu[eé]|ya te (deposit|transfer|pagu)|te deposit[eé]|te transfer[ií])/i;
-                if (!hayComprobante && DICE_PAGO_RE.test(ultimosCliente)) {
+                if (!hayComprobante && !durablePayment.registrationPending && DICE_PAGO_RE.test(ultimosCliente)) {
                     pagoSinComprobanteNote = '\n\n**⚠️ AVISO DEL SISTEMA — EL CLIENTE DICE QUE YA PAGÓ PERO NO HAY COMPROBANTE:** revisé la conversación y NO hay ninguna imagen ni PDF de comprobante suyo. Su pago NO está confirmado. Por lo tanto: NO le digas que recibimos su pago o su anticipo, NO lo des por pagado y NO le digas que ya arrancamos su diseño. Agradécele con calidez y pídele la FOTO o captura de su comprobante para validarlo (ej.: "¡Gracias! 🙌 ¿Me compartes la captura de tu comprobante para validarlo y arrancar enseguida? ✨").';
                     console.log(`[AI] ${contactId} dice que pagó pero NO hay comprobante pendiente ni abono registrado; se avisa a la IA para que no lo confirme.`);
                 }
@@ -4138,7 +4140,9 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         let paymentRegistrationAttempted = false, paymentRegisteredOrderNumber = null;
         const paymentConversation = require('./payments/paymentConversation');
         const paymentClaim = require('./payments/paymentPolicy').claimsPayment(aiResponse) || paymentConversation.fullPaymentClaim(aiResponse) || paymentConversation.blocksProductionForBalance(aiResponse);
-        if (comprobanteValidado || formularioPedidos.length || anticipoPaidCmd || paymentClaim) {
+        const paymentComplaint = paymentConversation.paymentComplaint(messageText);
+        const onlyPreventRepeatRequest = !comprobanteValidado && !formularioPedidos.length && !anticipoPaidCmd && !paymentClaim && !paymentComplaint;
+        if (!onlyPreventRepeatRequest || paymentConversation.requestsPaymentAgain(aiResponse)) {
             try {
                 const paymentPolicy = require('./payments/paymentPolicy');
                 const history = messagesSnapshot.docs.map(d => d.data());
@@ -4149,8 +4153,8 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 paymentRegistrationAttempted = registerOrderCmd || anticipoPaidCmd || (saleClosed && !isPostVenta && !esperaAnticipoCmd);
                 const turn = await paymentConversation.preparePaymentTurn(contactId, {
                     register: paymentRegistrationAttempted ? () => require('./orders/aiOrderRegistration').registerOrderFromAI({ contactId, contactData, conversationText: `${conversationHistory}\nAsistente: ${aiResponse}` }) : null,
-                    orderNumber: formularioPedidos.length === 1 ? formularioPedidos[0] : null,
-                    incomingReceiptAt: receipt?.timestamp,
+                    orderNumber: paymentConversation.orderNumberInMessage(messageText) || (formularioPedidos.length === 1 ? formularioPedidos[0] : null),
+                    newOrderIntent: wantsNewOrder,
                 });
                 paymentRegisteredOrderNumber = turn.registeredOrderNumber;
                 durablePaymentResult = turn.context;
@@ -4160,6 +4164,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     p.formSent = p.formSent || delivery.status === 'sent';
                 }
                 const reply = paymentConversation.paymentReply(p, { customerText: messageText, aiText: aiResponse, receiptPresent,
+                    onlyPreventRepeatRequest,
                     recentReplies: history.filter(m => m.from !== contactId).slice(0, 10).map(m => m.text || '') });
                 if (reply !== null) aiMessages = reply;
             } catch (error) {
@@ -4398,6 +4403,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // (prompt por anuncio/depto), que sabe acompañar el pedido nuevo (foto, cobro, /cuatro
             // lo regresa a post-venta cuando esté listo).
             updateData.aiStage = 'venta';
+            if (wantsNewOrder && !registerOrderCmd && !paymentRegisteredOrderNumber) updateData.paymentNewOrderRequestedAt = admin.firestore.FieldValue.serverTimestamp();
             console.log(`[AI] Cliente ${contactId} ${wantsNewOrder ? 'quiere un nuevo pedido' : 'registró un pedido nuevo desde post-venta'}. Regresando a ETAPA 1 (venta).`);
         } else if (shouldDeactivate) {
             // Etapa 2 apagada (kill-switch): comportamiento anterior, se desactiva el bot.
