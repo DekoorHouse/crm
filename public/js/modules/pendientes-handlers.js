@@ -70,6 +70,7 @@ function PendientesViewTemplate() {
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
             <h1 class="text-2xl font-bold" style="margin:0"><i class="fas fa-clipboard-check mr-2" style="color:#0ea5e9"></i>Pendientes</h1>
             <span id="pend-updated" style="font-size:.75rem;color:var(--color-text-light,#94a3b8)"></span>
+            <span id="pend-live" role="status" style="font-size:.75rem;color:#15803d">Conectando…</span>
             <button onclick="renderPendientesView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
         </div>
         <p class="text-sm text-gray-500 mb-4">Pagos por revisar, formularios pendientes, videos, mockups y conversaciones que necesitan al equipo.
@@ -104,23 +105,53 @@ function pendChanIcon(ch) {
         : '<i class="fab fa-whatsapp" style="color:#25d366"></i>';
 }
 
-// silent=true: refresca SIN "Cargando…" y preservando el scroll de cada columna.
+const _pendDrafts = new Map();
+let _pendRequest = null, _pendDataVersion = 0;
+
+function _pendCancelRefresh() {
+    _pendDataVersion++;
+    if (_pendRequest) _pendRequest.controller.abort();
+    _pendRequest = null;
+}
+
+// Una sola consulta en vuelo. Un cambio durante la consulta pide otra al terminar.
 async function renderPendientesView(silent) {
     const container = document.getElementById('pendientes-container');
     if (!container) return;
-    if (!silent) container.innerHTML = '<p class="text-gray-500">Cargando…</p>';
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/pendientes`);
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
-        window._pendData = data.buckets || {};
-        _paintPendientes();
-        const upd = document.getElementById('pend-updated');
-        if (upd) upd.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
-    } catch (e) {
-        container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los pendientes: ${escapeHtml(e.message || String(e))}</p>
-            <button class="btn btn-outline btn-sm mt-2" onclick="renderPendientesView()">Reintentar</button>`;
-    }
+    if (typeof _pendStartLive === 'function') _pendStartLive();
+    if (_pendRequest) { _pendRequest.again = true; return _pendRequest.promise; }
+    if (!container.querySelector('.pd-board')) container.innerHTML = '<p class="text-gray-500">Cargando…</p>';
+    const request = { controller: new AbortController(), version: _pendDataVersion, again: false };
+    _pendRequest = request;
+    request.promise = (async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/pendientes`, { signal: request.controller.signal });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || ('HTTP ' + res.status));
+            if (request !== _pendRequest || container !== document.getElementById('pendientes-container')) return;
+            if (request.version !== _pendDataVersion) { request.again = true; return; }
+            window._pendData = data.buckets || {};
+            _paintPendientes();
+            if (typeof _pendFetchHealth === 'function') _pendFetchHealth(true);
+            if (typeof _pendSyncVisibleDocs === 'function') _pendSyncVisibleDocs(window._pendData);
+            const upd = document.getElementById('pend-updated');
+            if (upd) upd.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        } catch (e) {
+            if (request.controller.signal.aborted || request !== _pendRequest) return;
+            if (typeof _pendFetchHealth === 'function') _pendFetchHealth(false);
+            // Conservar tarjetas y borradores si se corta la conexión.
+            const upd = document.getElementById('pend-updated');
+            if (upd) upd.textContent = 'Sin conexión; reintentando…';
+            if (!container.querySelector('.pd-board')) container.innerHTML = `<p style="color:#991b1b">No se pudieron cargar los pendientes: ${escapeHtml(e.message || String(e))}</p><button class="btn btn-outline btn-sm mt-2" onclick="renderPendientesView()">Reintentar</button>`;
+            request.again = true;
+        } finally {
+            if (request === _pendRequest) {
+                _pendRequest = null;
+                if (request.again && typeof _pendScheduleRefresh === 'function') _pendScheduleRefresh();
+            }
+        }
+    })();
+    return request.promise;
 }
 window.renderPendientesView = renderPendientesView;
 
@@ -174,7 +205,7 @@ function pendOrderCard(o) {
             </div>
         </div>
         <div class="pd-row">${acciones}</div>
-        <textarea class="pd-note" onblur="pendGuardarComentario('${o.id}', this)" placeholder="Nota interna…" title="Notas del equipo (no las ve el cliente)">${escapeHtml(o.comentario || '')}</textarea>
+        <textarea class="pd-note" data-note-order="${escapeHtml(o.id)}" maxlength="2000" oninput="pendEditarComentario('${o.id}', this)" onblur="pendGuardarComentario('${o.id}', this)" placeholder="Nota interna…" title="Notas del equipo (no las ve el cliente)">${escapeHtml(_pendDrafts.get(o.id)?.value ?? o.comentario ?? '')}</textarea>
     </div>`;
 }
 
@@ -226,30 +257,65 @@ function pendContactCard(c, col) {
     </div>`;
 }
 
-// Pinta las 5 columnas desde window._pendData (sin volver a consultar).
+function _pendKeepCard(card) {
+    const note = card.querySelector('.pd-note');
+    const draft = note && _pendDrafts.get(note.dataset.noteOrder);
+    return card.contains(document.activeElement) || !!(draft && (draft.dirty || draft.pending || draft.error)) || !!card.querySelector('button:disabled');
+}
+
+// Reconcilia por ID: el campo que se está editando conserva su nodo, cursor y Ctrl+Z.
 function _paintPendientes() {
     const container = document.getElementById('pendientes-container');
     if (!container) return;
-    // Preserva el scroll de cada columna: al resolver una tarjeta la lista no salta al inicio.
-    const saved = {};
-    PEND_COLS.forEach(([k]) => { const el = document.getElementById('pd-col-' + k); if (el) saved[k] = el.scrollTop; });
     const data = window._pendData || {};
-    const cols = PEND_COLS.map(([key, label, color, icon]) => {
-        const items = data[key] || [];
-        const cards = items.length
-            ? items.map(x => (key === 'video' || key === 'mockup') ? pendOrderCard(x) : pendContactCard(x, key)).join('')
-            : `<div class="pd-empty"><i class="fas fa-check-circle" style="margin-right:5px;color:#16a34a"></i>Nada pendiente</div>`;
-        return `<div class="pd-col">
+    if (!container.querySelector('.pd-board')) container.innerHTML = PEND_CSS + `<div class="pd-board">${PEND_COLS.map(([key, label, color, icon]) => `<div class="pd-col">
             <div class="pd-col-head" style="border-top:3px solid ${color};border-radius:10px 10px 0 0">
                 <span class="pd-col-title" style="color:${color}"><i class="fas ${icon}"></i>${label}</span>
-                <span class="pd-col-count">${items.length}</span>
+                <span class="pd-col-count">0</span>
             </div>
-            <div class="pd-col-list" id="pd-col-${key}">${cards}</div>
-        </div>`;
-    }).join('');
-    container.innerHTML = PEND_CSS + `<div class="pd-board">${cols}</div>`;
+            <div class="pd-col-list" id="pd-col-${key}"></div>
+        </div>`).join('')}</div>`;
+    PEND_COLS.forEach(([key]) => {
+        const list = document.getElementById('pd-col-' + key), scrollTop = list.scrollTop;
+        const cards = [...list.querySelectorAll('.pd-card')];
+        const anchor = cards.find(card => card.getBoundingClientRect().bottom > list.getBoundingClientRect().top);
+        const anchorTop = anchor?.getBoundingClientRect().top;
+        const old = new Map(cards.map(card => [card.dataset.pend, card]));
+        const items = data[key] || [], wanted = new Set(items.map(item => item.id));
+        list.querySelector('.pd-empty')?.remove();
+        let cursor = list.firstElementChild;
+        for (const item of items) {
+            const draft = _pendDrafts.get(item.id);
+            if (draft && !draft.dirty && !draft.pending && !draft.error && item.comentario === draft.value) _pendDrafts.delete(item.id);
+            const html = (key === 'video' || key === 'mockup') ? pendOrderCard(item) : pendContactCard(item, key);
+            let card = old.get(item.id);
+            const keep = card && _pendKeepCard(card);
+            if (!card || (!keep && card._pendHtml !== html)) {
+                const template = document.createElement('template'); template.innerHTML = html;
+                const fresh = template.content.firstElementChild; fresh._pendHtml = html;
+                if (card) { if (cursor === card) cursor = fresh; card.replaceWith(fresh); }
+                card = fresh;
+            }
+            if (card !== cursor && !keep) list.insertBefore(card, cursor);
+            cursor = card.nextElementSibling;
+            card.querySelector('.pd-note-retained')?.remove();
+        }
+        for (const card of cards) {
+            if (wanted.has(card.dataset.pend) || !card.isConnected) continue;
+            if (_pendKeepCard(card) && card.querySelector('.pd-note')) {
+                if (!card.querySelector('.pd-note-retained')) {
+                    const notice = document.createElement('div'); notice.className = 'pd-note-retained pd-card-sub';
+                    notice.textContent = 'Este pedido salió de pendientes. Conservamos tu nota mientras terminas de editarla.';
+                    card.appendChild(notice);
+                }
+            } else card.remove();
+        }
+        list.parentElement.querySelector('.pd-col-count').textContent = items.length;
+        if (!list.children.length) list.innerHTML = '<div class="pd-empty">✓ Nada pendiente</div>';
+        list.scrollTop = scrollTop;
+        if (anchor?.isConnected) list.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+    });
     _pendFitHeight();
-    PEND_COLS.forEach(([k]) => { const el = document.getElementById('pd-col-' + k); if (el && saved[k] != null) el.scrollTop = saved[k]; });
     // Cotejo automático contra Ingresos: cada comprobante sospechoso se coteja solo al pintarse (una
     // vez por sesión; el OCR se cachea en el server). pendCotejar se salta los ya cotejados.
     container.querySelectorAll('.pd-cotejo-slot[data-cotejar]').forEach(el => pendCotejar(el.getAttribute('data-cotejar')));
@@ -269,12 +335,18 @@ function _pendFitHeight() {
 
 // --- Acciones ---------------------------------------------------------------------------------
 async function _pendPost(path, body) {
+    _pendDataVersion++;
     const opt = { method: 'POST' };
     if (body) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
-    const res = await fetch(`${API_BASE_URL}/api/${path}`, opt);
-    const d = await res.json().catch(() => ({}));
-    if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
-    return d;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/${path}`, opt);
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        return d;
+    } finally {
+        _pendDataVersion++;
+        if (typeof _pendScheduleRefresh === 'function') _pendScheduleRefresh();
+    }
 }
 
 // Diálogo dentro de la página: conserva el comprobante y el motivo a la vista.
@@ -592,16 +664,53 @@ function pendRegistrarPedido(contactId) {
 }
 window.pendRegistrarPedido = pendRegistrarPedido;
 
+function pendEditarComentario(orderId, el) {
+    let draft = _pendDrafts.get(orderId);
+    if (!draft) {
+        const item = [...(window._pendData?.video || []), ...(window._pendData?.mockup || [])].find(o => o.id === orderId);
+        draft = { value: el.value, saved: item?.comentario || '', pending: 0, chain: Promise.resolve() };
+        _pendDrafts.set(orderId, draft);
+    }
+    draft.value = el.value;
+    draft.dirty = draft.value !== draft.saved;
+    el.style.borderColor = draft.dirty ? '#d97706' : '';
+    return draft;
+}
+window.pendEditarComentario = pendEditarComentario;
+
 async function pendGuardarComentario(orderId, el) {
-    try {
-        await _pendPost(`pendientes/${orderId}/comentario`, { comentario: el.value });
-        for (const col of ['video', 'mockup']) {
-            const o = ((window._pendData || {})[col] || []).find(x => x.id === orderId);
-            if (o) o.comentario = el.value;
+    const draft = pendEditarComentario(orderId, el), value = el.value;
+    if ((!draft.dirty && !draft.error && !draft.pending) || (draft.pending && draft.queued === value)) {
+        if (!draft.pending) _paintPendientes();
+        return draft.chain;
+    }
+    draft.pending++; draft.queued = value;
+    // Serializar guardados evita que una respuesta lenta restaure una versión anterior.
+    draft.chain = draft.chain.catch(() => {}).then(async () => {
+        try {
+            await _pendPost(`pendientes/${encodeURIComponent(orderId)}/comentario`, { comentario: value });
+            draft.saved = value; draft.error = false; draft.dirty = draft.value !== value;
+            for (const col of ['video', 'mockup']) {
+                const o = (window._pendData?.[col] || []).find(x => x.id === orderId);
+                if (o) o.comentario = value;
+            }
+            el.style.borderColor = draft.dirty ? '#d97706' : '#16a34a';
+            el.closest('.pd-card')?.querySelector('.pd-note-error')?.remove();
+        } catch (e) {
+            draft.error = true; draft.dirty = true; el.style.borderColor = '#dc2626';
+            const card = el.closest('.pd-card');
+            if (card && !card.querySelector('.pd-note-error')) {
+                const retry = document.createElement('button'); retry.className = 'pd-btn pd-note-error';
+                retry.textContent = 'No se guardó la nota · Reintentar';
+                retry.onclick = () => pendGuardarComentario(orderId, card.querySelector('.pd-note'));
+                card.appendChild(retry);
+            }
+        } finally {
+            draft.pending--;
+            _paintPendientes();
         }
-        el.style.borderColor = '#16a34a';
-        setTimeout(() => { el.style.borderColor = ''; }, 900);
-    } catch (e) { alert('No se pudo guardar la nota: ' + (e.message || e)); }
+    });
+    return draft.chain;
 }
 window.pendGuardarComentario = pendGuardarComentario;
 
@@ -642,15 +751,4 @@ async function pendIaReject(orderId, el) {
 }
 window.pendIaReject = pendIaReject;
 
-// --- Refresco automático ----------------------------------------------------------------------
-// Cada 2 min mientras la sección está a la vista. Se salta si hay un chat abierto encima o si se
-// está escribiendo una nota (re-pintar borraría lo tecleado).
-setInterval(() => {
-    try {
-        if (typeof state === 'undefined' || state.activeView !== 'pendientes') return;
-        if (document.hidden || state.chatModalOpen) return;
-        const a = document.activeElement;
-        if (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT')) return;
-        renderPendientesView(true);
-    } catch (_) {}
-}, 120000);
+// Las suscripciones y su recuperación viven en pendientes-live.js.

@@ -46,6 +46,7 @@ function navigateTo(viewName, force = false) {
     if (viewName !== 'envios' && typeof _enviosDesuscribir === 'function') _enviosDesuscribir();
     // Lo mismo al salir de Pendientes de Diseño.
     if (viewName !== 'pendientes-diseno' && typeof _dpDesuscribir === 'function') _dpDesuscribir();
+    if (viewName !== 'pendientes' && typeof _pendStopLive === 'function') _pendStopLive();
 
     state.activeView = viewName;
 
