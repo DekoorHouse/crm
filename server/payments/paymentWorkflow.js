@@ -5,6 +5,7 @@ const date = n => admin.firestore.Timestamp.fromMillis(n);
 const receipts = () => db.collection('payment_receipts');
 const services = () => require('../services');
 const LEASE_MS = 3 * 60000;
+const { sameReceipt, matchesAlert, resolution, mergeReviewRows } = require('./receiptReviewQueue');
 
 async function ordersForContact(contactId) {
     const snap = await db.collection('pedidos').where('contactId', '==', contactId).get();
@@ -77,18 +78,33 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
         const keyRefs = keys.map(key => db.collection('payment_receipt_keys').doc(key));
         const existing = [];
         for (const keyRef of keyRefs) existing.push(await tx.get(keyRef));
+        const contactRef = db.collection('contacts_whatsapp').doc(r.contactId);
+        const contact = manual ? (await tx.get(contactRef)).data() : null;
+        const related = await tx.get(receipts().where('contactId', '==', r.contactId));
+        const copies = related.docs.filter(other => other.id !== ref.id && other.data().open && sameReceipt(r, other.data()));
+        const affectedOrders = [];
+        for (const id of new Set(copies.map(d => d.data().orderId).filter(id => id && id !== r.orderId))) {
+            affectedOrders.push(await tx.get(db.collection('pedidos').doc(id)));
+        }
+        const closeRelated = () => {
+            for (const other of copies) {
+                tx.update(other.ref, {
+                    status: 'duplicate', open: false, reason: 'Este mismo comprobante ya fue revisado.', leaseUntil: null, updatedAt: stamp(),
+                });
+            }
+            for (const other of affectedOrders) if (other.exists) tx.update(other.ref, { paymentFormNeedsAssessment: true });
+            if (matchesAlert(contact, r)) tx.update(contactRef, { ...resolution('approved'), suspiciousReceiptResolvedBy: manual ? 'manual' : 'automatic' });
+        };
         const conflict = existing.find(d => d.exists && d.data().orderId !== r.orderId);
         if (conflict) return { status: 'review', reason: 'Este comprobante ya está aplicado a otro pedido. No se volvió a sumar.' };
         if (existing.some(d => d.exists) || order.comprobanteValidadoAt) {
+            closeRelated();
             tx.update(ref, { status: 'duplicate', open: false, reason: 'Pago ya registrado; no se vuelve a sumar.', leaseUntil: null, updatedAt: stamp() });
             return { status: 'duplicate', orderId: r.orderId };
         }
         if (!keys.length) return { status: 'review', reason: 'No se pudo identificar el comprobante para evitar duplicados.' };
         const decision = paymentDecision(order, cents(manual ? amount : receipt.monto), manual);
         if (decision.status === 'review') return decision;
-        const contactRef = db.collection('contacts_whatsapp').doc(r.contactId);
-        const contact = manual ? (await tx.get(contactRef)).data() : null;
-        const reviewedSameReceipt = contact?.suspiciousReceiptPending && r.fileUrl && contact.suspiciousReceipt?.imageUrl === r.fileUrl;
         const fields = { paymentReceivedCents: decision.receivedCents, paymentUpdatedAt: stamp(), paymentFormNeedsAssessment: true, paymentProductionPending: true };
         if (decision.status === 'paid') {
             Object.assign(fields, { comprobanteValidadoAt: stamp(), paymentValidatedBy: manual ? 'manual' : 'receipt' });
@@ -97,7 +113,7 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
         }
         for (const keyRef of keyRefs) tx.set(keyRef, { orderId: r.orderId, receiptId: ref.id, amountCents: cents(manual ? amount : receipt.monto), createdAt: stamp() });
         tx.update(orderRef, fields);
-        if (reviewedSameReceipt) tx.update(contactRef, { suspiciousReceiptPending: false, suspiciousReceiptResolvedAt: stamp(), suspiciousReceiptResolvedBy: 'manual', suspiciousReceiptResolution: 'approved' });
+        closeRelated();
         tx.update(ref, { status: 'applied', open: false, result: decision.status, amountCents: cents(manual ? amount : receipt.monto), reviewedBy: manual ? 'manual' : 'automatic', reason: decision.status === 'paid' ? 'Pago completo registrado.' : 'Abono registrado; falta liquidar el total.', leaseUntil: null, updatedAt: stamp() });
         return { ...decision, orderId: r.orderId, contactId: r.contactId };
     });
@@ -341,7 +357,7 @@ async function recordProviderPayment(contactId, orderNumber, amount, paymentId) 
     return processReceipt(id, { immediate: true });
 }
 
-async function pendingPayments() {
+async function pendingPayments(suspiciousDocs) {
     const [rs, forms] = await Promise.all([
         receipts().where('open', '==', true).get(),
         db.collection('pedidos').where('shippingFormStatus', 'in', ['pending', 'sending', 'retry', 'review']).get(),
@@ -352,7 +368,7 @@ async function pendingPayments() {
     for (const r of rs.docs) {
         const d = r.data();
         const order = orders.get(d.orderId) || {};
-        const row = { id: r.id, contactId: d.contactId, name: d.orderNumber || d.contactId, orderNumber: d.orderNumber, orderId: d.orderId, at: ms(d.receivedAt), reason: d.reason, imageUrl: d.fileUrl, amount: d.ocr?.monto || null, status: d.status, formSent: !!order.shippingFormSentAt, shippingDataReceived: !!order.shippingDataReceivedAt };
+        const row = { id: r.id, contactId: d.contactId, name: d.orderNumber || d.contactId, orderNumber: d.orderNumber, orderId: d.orderId, at: ms(d.receivedAt), reason: d.reason, imageUrl: d.fileUrl, imageHash: d.ocr?.imageHash || null, amount: d.ocr?.monto || null, status: d.status, formSent: !!order.shippingFormSentAt, shippingDataReceived: !!order.shippingDataReceivedAt };
         (/cancelad/i.test(d.reason || '') ? pago_cancelado : pago_revision).push(row);
     }
     for (const o of forms.docs) {
@@ -360,7 +376,10 @@ async function pendingPayments() {
         if (!canRequestShippingForm(d)) continue;
         pago_formulario.push({ id: o.id, contactId: d.contactId, name: `DH${d.consecutiveOrderNumber}`, at: ms(d.shippingFormEligibleAt || d.comprobanteValidadoAt), reason: d.shippingFormReason, status: d.shippingFormStatus });
     }
-    return { pago_revision, pago_cancelado, pago_formulario };
+    if (!suspiciousDocs) suspiciousDocs = (await db.collection('contacts_whatsapp').where('suspiciousReceiptPending', '==', true).limit(200).get()).docs;
+    const reviews = await mergeReviewRows([...pago_revision, ...pago_cancelado], suspiciousDocs);
+    return { pago_revision: reviews.filter(r => !/cancelad/i.test(r.reason || '')),
+        pago_cancelado: reviews.filter(r => /cancelad/i.test(r.reason || '')), pago_formulario };
 }
 
 module.exports = { enqueueReceipt, discoverReceipts, processReceipt, creditReceipt, deliverForm, manualValidateAndSend, paymentContext, recordProviderPayment, pendingPayments, ordersForContact, refreshReportedPayment, recordShippingDataForOrder };

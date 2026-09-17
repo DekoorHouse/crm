@@ -17,10 +17,10 @@ const live = fs.readFileSync(require.resolve('../public/js/modules/pendientes-li
             window.API_BASE_URL = ''; window.state = { activeView: 'pendientes' };
             window.escapeHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             window.payload = { mockup: Array.from({ length: 15 }, (_, i) => ({ id: 'order' + i, orderNumber: 'DH' + (19000 + i), motivo: 'mockup', producto: 'Lámpara', datos: 'Nombre: Prueba', comentario: i ? '' : 'Nota anterior' })) };
-            window.gets = 0; window.posts = []; window.listeners = []; window.pendingPosts = []; window.pendingGets = [];
+            window.gets = 0; window.posts = []; window.postUrls = []; window.listeners = []; window.pendingPosts = []; window.pendingGets = [];
             window.fetch = async (url, options = {}) => {
                 if (options.method === 'POST') {
-                    const body = JSON.parse(options.body || '{}'); window.posts.push(body);
+                    const body = JSON.parse(options.body || '{}'); window.posts.push(body); window.postUrls.push(url);
                     if (window.failPost) return { ok: false, status: 503, json: async () => ({ message: 'Sin conexión' }) };
                     if (window.pausePost) await new Promise(resolve => window.pendingPosts.push(resolve));
                     const id = url.split('/').at(-2), row = window.payload.mockup?.find(o => o.id === id);
@@ -184,5 +184,27 @@ const live = fs.readFileSync(require.resolve('../public/js/modules/pendientes-li
             })).toEqual([]);
             expect(await page.$$eval('.pd-category-btn', buttons => buttons.every(el => el.getBoundingClientRect().width > 0))).toBe(true);
         }
+    });
+
+    test('una sola categoría muestra motivo y cotejo, y valida alertas antiguas con importe y pedido exactos', async () => {
+        await page.evaluate(async () => {
+            window.pendCotejar = () => {};
+            payload.pago_revision = [{ id: 'alert:customer', contactId: 'customer', name: 'DH19050', orderNumber: 'DH19050',
+                flagged: true, alertReason: 'Falta el folio', suspiciousContactId: 'customer', amount: 300, reviewToken: 'snapshot-1',
+                cotejo: { status: 'partial', monto: 300 } }];
+            await renderPendientesView(true); pendSelectCategory('pago_revision');
+        });
+        expect(await page.$('[data-pend-category="sospechoso"]')).toBeNull();
+        expect(await page.$eval('[data-pend-category="pago_revision"]', el => el.textContent)).toContain('Comprobantes por revisar');
+        expect(await page.$eval('[data-pend="alert:customer"]', el => el.textContent)).toContain('Falta el folio');
+        expect(await page.$eval('[data-pend="alert:customer"]', el => el.textContent)).toContain('Coincide monto/fecha');
+        await page.click('[data-pend="alert:customer"] [onclick^="pendPaymentReview"]');
+        expect(await page.$eval('dialog [name="orderNumber"]', el => el.value)).toBe('DH19050');
+        await page.$eval('dialog [name="orderNumber"]', el => { el.value = 'DH19051'; });
+        await page.click('dialog [name="reviewed"]');
+        await page.click('dialog [type="submit"]');
+        await page.waitForFunction(() => posts.some(p => p.amount === 300));
+        expect(await page.evaluate(() => posts.find(p => p.amount === 300))).toMatchObject({ amount: 300, orderNumber: 'DH19051', reviewToken: 'snapshot-1' });
+        expect(await page.evaluate(() => postUrls)).toContain('/api/payments/receipts/alert%3Acustomer/review');
     });
 });

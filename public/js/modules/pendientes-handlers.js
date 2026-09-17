@@ -16,13 +16,12 @@
 // del cache local). El backend es quien decide qué entra en cada columna; aquí solo se pinta.
 
 const PEND_COLS = [
-    ['pago_revision', 'Comprobante por revisar', '#d97706', 'fa-receipt'],
+    ['pago_revision', 'Comprobantes por revisar', '#d97706', 'fa-receipt'],
     ['pago_cancelado', 'Pago en pedido cancelado', '#dc2626', 'fa-circle-exclamation'],
     ['pago_formulario', 'Formulario por enviar', '#2563eb', 'fa-file-lines'],
     ['corregir', 'Corregir', '#ea580c', 'fa-screwdriver-wrench'],
     ['video', 'Mandar video', '#e83e8c', 'fa-video'],
     ['mockup', 'Falta mockup', '#6f42c1', 'fa-wand-magic-sparkles'],
-    ['sospechoso', 'Comprobante sospechoso', '#ea580c', 'fa-receipt'],
     ['atencion', 'Apoyo humano', '#0ea5e9', 'fa-hand'],
     ['ia_cola', 'Cola IA +1h', '#f59e0b', 'fa-hourglass-half'],
     ['ia_sin_pedido', 'IA no registró el pedido', '#dc2626', 'fa-triangle-exclamation'],
@@ -245,6 +244,8 @@ function pendContactCard(c, col) {
     if (col.startsWith('pago_')) {
         const image = c.imageUrl ? `<a href="${escapeHtml(c.imageUrl)}" target="_blank" rel="noopener" class="pd-btn pd-btn-ghost">Ver comprobante</a>` : '';
         detalle = `<div class="pd-card-sub"><b>${escapeHtml(c.orderNumber || c.name || '')}</b><br>${escapeHtml(c.reason || 'Pendiente de procesamiento')}${c.amount ? '<br>Importe leído: $' + escapeHtml(String(c.amount)) : ''}</div>`;
+        if (c.flagged) detalle += `<div class="pd-card-sub" style="padding:8px;border-radius:7px;background:#fff7ed;color:#9a3412"><b><i class="fas fa-triangle-exclamation"></i> Alerta de la IA</b><br>${escapeHtml(c.alertReason || 'Requiere revisión manual.')}</div>
+            <div class="pd-cotejo-slot" data-cotejar="${escapeHtml(c.suspiciousContactId)}">${pendCotejarBadge(c.cotejo, c.suspiciousContactId)}</div>`;
         if (col !== 'pago_formulario' && (c.formSent || c.shippingDataReceived)) detalle += `<div class="pd-card-sub" style="color:#2563eb">${c.shippingDataReceived ? 'Datos de envío recibidos' : 'Datos de envío solicitados'} · comprobante por revisar</div>`;
         acciones = col === 'pago_formulario'
             ? `<button onclick="pendPaymentRetry('${escapeHtml(c.id)}', this)" class="pd-btn">Revisar y reintentar</button><button onclick="pendPaymentConfirmSent('${escapeHtml(c.id)}', this)" class="pd-btn pd-btn-ghost">Ya lo recibió</button>`
@@ -258,15 +259,6 @@ function pendContactCard(c, col) {
             ${c.pedido ? 'Su pedido: <b>' + escapeHtml(c.pedido.orderNumber) + '</b> (' + escapeHtml(c.pedido.estatus) + ')' : ''}
             ${c.motivoFalla ? '<br>La IA falló: ' + escapeHtml(c.motivoFalla) : ''}</div>`;
         acciones = `<button onclick="pendIaResolver('${escapeHtml(c.id)}', this)" title="Sácalo de la cola Pendientes IA (ya aplicaste el cambio)" class="pd-btn" style="background:#16a34a;color:#fff"><i class="fas fa-check" style="margin-right:3px"></i>Resuelto</button>`;
-    } else if (col === 'sospechoso') {
-        const motivo = (c.reason && c.reason.trim()) ? c.reason.trim() : 'El comprobante no coincide con nuestros datos (revísalo)';
-        const img = c.imageUrl
-            ? `<div style="margin-top:6px"><img src="${escapeHtml(c.imageUrl)}" alt="Comprobante" onclick="openImageModal(this.src)" onerror="this.parentNode.style.display='none'" style="max-width:100%;max-height:170px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);cursor:pointer;object-fit:contain"></div>`
-            : '';
-        const cotejoSlot = `<div class="pd-cotejo-slot" data-cotejar="${escapeHtml(c.id)}">${pendCotejarBadge(c.cotejo, c.id)}</div>`;
-        detalle = `<div class="pd-card-sub"><b>Comprobante a revisar${c.orderNumber ? ' · ' + escapeHtml(c.orderNumber) : ''}</b><br>Motivo: ${escapeHtml(motivo)}${img}</div>${cotejoSlot}`;
-        acciones = `<button onclick="pendSospechosoAprobar('${escapeHtml(c.id)}', this)" title="El pago es válido: la conversación sigue su flujo (se le manda el formulario de envío)" class="pd-btn" style="background:#16a34a;color:#fff"><i class="fas fa-check" style="margin-right:3px"></i>Aprobar</button>
-            <button onclick="pendSospechosoDescartar('${escapeHtml(c.id)}', this)" title="El pago NO es válido o ya lo atendiste: quítalo de aquí SIN mandar formulario" class="pd-btn pd-btn-ghost">Descartar</button>`;
     } else {
         detalle = `<div class="pd-card-sub"><b>La IA le dijo “ya registramos tu pedido” y el pedido NO existe.</b>
             ${c.motivoFalla ? '<br>Motivo: ' + escapeHtml(c.motivoFalla) : ''}
@@ -437,18 +429,20 @@ async function pendPaymentReview(id, col, button) {
     const fieldStyle = 'display:block;width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:16px;margin:6px 0 14px;box-sizing:border-box';
     const values = await _pendPaymentDialog(`Validar pago · ${receipt.orderNumber || 'Seleccionar pedido'}`, `
         <p style="line-height:1.5">${escapeHtml(receipt.reason || '')}</p>
+        ${receipt.flagged ? `<p style="color:#9a3412"><b>Alerta de la IA:</b> ${escapeHtml(receipt.alertReason || '')}</p>` : ''}
         ${receipt.imageUrl ? `<a href="${escapeHtml(receipt.imageUrl)}" target="_blank" rel="noopener">Abrir comprobante</a>` : ''}
-        ${!receipt.orderId ? `<label>Pedido de este contacto<input name="orderNumber" required placeholder="DH12345" pattern="[Dd]?[Hh]?[0-9]+" style="${fieldStyle}"></label>` : ''}
+        ${!receipt.orderId ? `<label>Pedido de este contacto<input name="orderNumber" required value="${escapeHtml(receipt.orderNumber || '')}" placeholder="DH12345" pattern="[Dd]?[Hh]?[0-9]+" style="${fieldStyle}"></label>` : ''}
         <label>Importe recibido en este comprobante (MXN)<input name="amount" type="number" min="0.01" step="0.01" required value="${escapeHtml(String(receipt.amount || ''))}" style="${fieldStyle}"></label>
         <p style="font-size:14px;line-height:1.5">Se aprobará este abono. Los datos de envío se solicitan cuando los comprobantes cubren el total, aunque la aprobación siga pendiente.</p>
         <label style="display:flex;gap:8px;line-height:1.4"><input type="checkbox" required name="reviewed"> Confirmo que revisé el comprobante y recibimos este importe.${reactivate ? ' Autorizo reactivar el pedido cancelado cuando quede liquidado.' : ''}</label>`, 'Validar importe');
     if (!values) return;
-    await _pendPaymentAction(`payments/receipts/${encodeURIComponent(id)}/review`, { amount: Number(values.amount), reactivate, orderNumber: receipt.orderNumber || values.orderNumber }, button);
+    await _pendPaymentAction(`payments/receipts/${encodeURIComponent(id)}/review`, { amount: Number(values.amount), reactivate, orderNumber: values.orderNumber || receipt.orderNumber, reviewToken: receipt.reviewToken }, button);
 }
 
 async function pendPaymentReject(id, button) {
+    const receipt = ['pago_revision', 'pago_cancelado'].flatMap(col => window._pendData?.[col] || []).find(r => r.id === id);
     if (!await _pendPaymentDialog('Descartar comprobante', '<p>No se sumará el importe ni se enviará el formulario de este comprobante.</p>', 'Descartar')) return;
-    await _pendPaymentAction(`payments/receipts/${encodeURIComponent(id)}/review`, { action: 'reject' }, button);
+    await _pendPaymentAction(`payments/receipts/${encodeURIComponent(id)}/review`, { action: 'reject', reviewToken: receipt?.reviewToken }, button);
 }
 
 async function pendPaymentRetry(id, button) {
@@ -621,36 +615,6 @@ async function pendAtendido(contactId, el) {
 }
 window.pendAtendido = pendAtendido;
 
-// Aprobar un comprobante sospechoso: valida el pago y la conversación sigue su flujo (backend manda
-// el formulario de envío). No es deshacible desde aquí (ya se validó el pago); si fue error, se maneja en el chat.
-async function pendSospechosoAprobar(contactId, el) {
-    if (el) el.disabled = true;
-    const card = ((window._pendData || {}).sospechoso || []).find(x => x.id === contactId) || {};
-    try {
-        await _pendPost(`pendientes/sospechoso/${contactId}/aprobar`);
-        _pendRemove('sospechoso', contactId);
-        pendToast(`${card.name || contactId}: comprobante aprobado ✅ — la conversación sigue su flujo`, {});
-    } catch (e) {
-        if (el) el.disabled = false;
-        pendToast('No se pudo aprobar: ' + (e.message || e), {});
-    }
-}
-window.pendSospechosoAprobar = pendSospechosoAprobar;
-
-// Descartar: quita el comprobante de la columna SIN validar (pago no bueno o ya atendido por el chat).
-async function pendSospechosoDescartar(contactId, el) {
-    if (el) el.disabled = true;
-    try {
-        await _pendPost(`pendientes/sospechoso/${contactId}/descartar`);
-        _pendRemove('sospechoso', contactId);
-        pendToast('Comprobante quitado de la lista', {});
-    } catch (e) {
-        if (el) el.disabled = false;
-        pendToast('No se pudo quitar: ' + (e.message || e), {});
-    }
-}
-window.pendSospechosoDescartar = pendSospechosoDescartar;
-
 // Pinta el veredicto del cotejo contra Ingresos (colección `expenses` de Admon). El encabezado es
 // clic-para-recotejar (útil tras importar un estado de cuenta nuevo). cotejo=null -> "Cotejando…".
 function pendCotejarBadge(cotejo, contactId) {
@@ -686,15 +650,20 @@ function pendCotejarBadge(cotejo, contactId) {
 // en el server; sólo re-cotejo por sesión salvo force. Actualiza el panel in situ sin re-pintar todo.
 async function pendCotejar(contactId, force) {
     if (!contactId) return;
+    const reviews = () => ['pago_revision', 'pago_cancelado'].flatMap(col => window._pendData?.[col] || []);
+    const current = reviews().find(x => x.suspiciousContactId === contactId);
+    if (!current) return;
+    const key = JSON.stringify([contactId, current.imageUrl]);
     window._pendCotejadas = window._pendCotejadas || new Set();
-    if (!force && window._pendCotejadas.has(contactId)) return;
-    window._pendCotejadas.add(contactId);
+    if (!force && window._pendCotejadas.has(key)) return;
+    window._pendCotejadas.add(key);
     const slotOf = () => [...document.querySelectorAll('.pd-cotejo-slot[data-cotejar]')].find(el => el.getAttribute('data-cotejar') === String(contactId));
     if (force) { const s = slotOf(); if (s) s.innerHTML = pendCotejarBadge(null, contactId); }
     try {
         const r = await _pendPost(`pendientes/sospechoso/${contactId}/cotejar`, force ? { force: true } : null);
         const cotejo = (r && r.cotejo) || { status: 'error' };
-        const item = ((window._pendData || {}).sospechoso || []).find(x => x.id === contactId);
+        const item = reviews().find(x => x.suspiciousContactId === contactId);
+        if (!item || item.imageUrl !== current.imageUrl) return;
         if (item) item.cotejo = cotejo;                         // persistir en el cache local para el próximo re-pinta
         const s = slotOf(); if (s) s.innerHTML = pendCotejarBadge(cotejo, contactId);
     } catch (e) {

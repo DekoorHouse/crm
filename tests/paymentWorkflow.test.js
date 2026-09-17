@@ -445,3 +445,110 @@ test('deposit for a new order does not clear an unrelated suspicious receipt', a
     await flow.processReceipt(await enqueue(), { manual: true, amount: 300 });
     expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(true);
 });
+
+function flagReceipt(extra = {}) {
+    const suspiciousReceipt = { imageUrl: 'https://test.invalid/receipt.png', fileType: 'image/png',
+        orderNumber: 'DH16368', at: new Date(), reason: 'Falta el folio', cotejo: { status: 'partial', monto: 300 }, ...extra };
+    mockDb.seed('contacts_whatsapp/customer', { ...mockDb.read('contacts_whatsapp/customer'), suspiciousReceiptPending: true, suspiciousReceipt });
+}
+
+test('unified review shows one card per image, keeps AI reason and does not merge different deposits', async () => {
+    const id = await enqueue(); await enqueue('same-image');
+    await enqueue('different', { fileUrl: 'https://test.invalid/other.png' }); flagReceipt();
+    const before = mockDb.all('payment_receipts');
+    const rows = (await flow.pendingPayments()).pago_revision;
+    expect(rows).toHaveLength(2);
+    expect(rows.find(r => r.id === id)).toMatchObject({ flagged: true, alertReason: 'Falta el folio', cotejo: { status: 'partial' }, suspiciousContactId: 'customer' });
+    expect(mockDb.all('payment_receipts')).toEqual(before); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('one manual approval credits a deposit once and closes the matching AI alert and duplicate cards', async () => {
+    const id = await enqueue(), copy = await enqueue('same-image'); flagReceipt();
+    expect((await post(`/receipts/${id}/review`, { amount: 300 })).status).toBe(200);
+    expect(order().paymentReceivedCents).toBe(30000); expect(order().comprobanteValidadoAt).toBeUndefined();
+    expect(job(copy)).toMatchObject({ status: 'duplicate', open: false });
+    expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
+    expect((await flow.pendingPayments()).pago_revision).toEqual([]);
+    await runPaymentSweep(); expect(order().paymentReceivedCents).toBe(30000); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('discard resolves both sources and repeated images cannot reappear or run automatically', async () => {
+    const id = await enqueue(), copy = await enqueue('same-image'); flagReceipt();
+    expect((await post(`/receipts/${id}/review`, { action: 'reject' })).status).toBe(200);
+    expect(job(copy)).toMatchObject({ status: 'rejected', open: false });
+    expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
+    flagReceipt(); // Una respuesta atrasada de IA vuelve a escribir la alerta anterior.
+    expect((await flow.pendingPayments()).pago_revision).toEqual([]);
+    await runPaymentSweep(); expect(order().comprobanteValidadoAt).toBeUndefined(); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('discard does not clear a newer alert for another image', async () => {
+    const id = await enqueue(); flagReceipt({ imageUrl: 'https://test.invalid/new.png' });
+    expect((await post(`/receipts/${id}/review`, { action: 'reject' })).status).toBe(200);
+    expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(true);
+    expect((await flow.pendingPayments()).pago_revision).toHaveLength(1);
+});
+
+test('legacy alert uses the same amount review without creating an automatic payment on read', async () => {
+    flagReceipt();
+    const [row] = (await flow.pendingPayments()).pago_revision;
+    expect(row).toMatchObject({ id: 'alert:customer', flagged: true });
+    expect(mockDb.all('payment_receipts')).toEqual([]);
+    expect((await post('/receipts/alert%3Acustomer/review', { amount: 300, orderNumber: 'DH16368', reviewToken: row.reviewToken })).status).toBe(200);
+    expect(order().paymentReceivedCents).toBe(30000); expect(order().comprobanteValidadoAt).toBeUndefined();
+    expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
+    expect((await flow.pendingPayments()).pago_revision).toEqual([]); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('legacy alert rejected as not-receipt by OCR remains reviewable by an operator', async () => {
+    const id = await enqueue(); mockOcr.mockResolvedValue(ocr({ esComprobante: false }));
+    await flow.processReceipt(id); flagReceipt();
+    const [row] = (await flow.pendingPayments()).pago_revision;
+    expect(row.id).toBe('alert:customer');
+    expect((await post('/receipts/alert%3Acustomer/review', { amount: 300, orderNumber: 'DH16368', reviewToken: row.reviewToken })).status).toBe(200);
+    expect(job(id).status).toBe('applied'); expect(order().paymentReceivedCents).toBe(30000);
+    expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('stale legacy dialog cannot approve or dismiss a different incoming receipt', async () => {
+    flagReceipt(); const [row] = (await flow.pendingPayments()).pago_revision;
+    flagReceipt({ imageUrl: 'https://test.invalid/new.png' });
+    for (const action of [{ amount: 300, orderNumber: 'DH16368' }, { action: 'reject' }]) {
+        expect((await post('/receipts/alert%3Acustomer/review', { ...action, reviewToken: row.reviewToken })).status).toBe(409);
+    }
+    expect(mockDb.all('payment_receipts')).toEqual([]);
+    expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(true);
+});
+
+test('legacy alert with no image can be dismissed without crediting or sending messages', async () => {
+    flagReceipt({ imageUrl: null }); const [row] = (await flow.pendingPayments()).pago_revision;
+    expect((await post('/receipts/alert%3Acustomer/review', { action: 'reject', reviewToken: row.reviewToken })).status).toBe(200);
+    expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
+    expect((await flow.pendingPayments()).pago_revision).toEqual([]); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('a late legacy approval uses a newly enqueued matching receipt instead of creating a second one', async () => {
+    flagReceipt(); const [row] = (await flow.pendingPayments()).pago_revision;
+    const id = await enqueue();
+    expect((await post('/receipts/alert%3Acustomer/review', { amount: 300, orderNumber: 'DH16368', reviewToken: row.reviewToken })).status).toBe(200);
+    expect(mockDb.all('payment_receipts')).toHaveLength(1); expect(job(id).status).toBe('applied');
+    expect(order().paymentReceivedCents).toBe(30000);
+});
+
+test('a full payment already registered clears its matching alert without crediting or resending', async () => {
+    const id = await enqueue();
+    mockDb.seed('pedidos/order', { ...order(), paymentReceivedCents: 120000, comprobanteValidadoAt: new Date(), shippingFormStatus: 'sent', shippingFormSentAt: new Date() });
+    flagReceipt();
+    expect((await post(`/receipts/${id}/review`, { amount: 1200 })).status).toBe(200);
+    expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
+    expect(order().paymentReceivedCents).toBe(120000); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('discarding a repeated image invalidates the pending form assessment on every affected order', async () => {
+    const id = await enqueue();
+    mockDb.seed('pedidos/other', { ...order(), consecutiveOrderNumber: 19000, paymentReportedComplete: true, shippingFormStatus: 'pending' });
+    mockDb.seed('payment_receipts/copy', { ...job(id), orderId: 'other', orderNumber: 'DH19000' });
+    expect((await post(`/receipts/${id}/review`, { action: 'reject' })).status).toBe(200);
+    expect(mockDb.read('pedidos/other').paymentFormNeedsAssessment).toBe(true);
+    await runPaymentSweep(); expect(mockSend).not.toHaveBeenCalled();
+});

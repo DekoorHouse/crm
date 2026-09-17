@@ -70,8 +70,7 @@ router.get('/', async (req, res) => {
             db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get(),
             db.collection('contacts_whatsapp').where('needsAttention', '==', true).limit(200).get(),
             db.collection('contacts_whatsapp').where('status', '==', 'pendientes_ia').limit(300).get(),
-            // Comprobantes que la IA marcó /sospechoso (bandera en el contacto). El operador los aprueba
-            // o rechaza; al aprobar, la conversación sigue su flujo (se valida el comprobante).
+            // Las alertas de la IA enriquecen la misma cola de revisión por importe.
             db.collection('contacts_whatsapp').where('suspiciousReceiptPending', '==', true).limit(200).get(),
         ]);
 
@@ -177,21 +176,6 @@ router.get('/', async (req, res) => {
             }))
             .sort((a, b) => (a.at || a.lastMessageAt || 0) - (b.at || b.lastMessageAt || 0));
 
-        // --- Columna: comprobantes SOSPECHOSOS (la IA emitió /sospechoso) --------------------------
-        const sospechoso = sSus.docs
-            .map(doc => {
-                const sr = doc.data().suspiciousReceipt || {};
-                return mapContact(doc, {
-                    reason: sr.reason || '',
-                    imageUrl: sr.imageUrl || null,   // el comprobante que el cliente mandó (imagen/PDF)
-                    fileType: sr.fileType || null,
-                    orderNumber: sr.orderNumber || null,
-                    at: tsToMs(sr.at),
-                    cotejo: sr.cotejo || null,       // último veredicto del cotejo contra Ingresos (cacheado)
-                });
-            })
-            .sort((a, b) => (a.at || a.lastMessageAt || 0) - (b.at || b.lastMessageAt || 0));   // más viejo primero
-
         // --- Columnas 4 y 5: cola "Pendientes IA" atorada (>1 h) -------------------------------
         // Misma clasificación que el vigilante (orders/pendientesIaWatchdog.js): con pedido = cambio
         // pendiente de aplicar; sin pedido = venta cerrada que nunca se registró.
@@ -283,14 +267,14 @@ router.get('/', async (req, res) => {
         ia_cola.sort((a, b) => (b.at || 0) - (a.at || 0));
         ia_sin_pedido.sort((a, b) => (b.at || 0) - (a.at || 0));
 
-        const payments = await require('../payments/paymentWorkflow').pendingPayments();
+        const payments = await require('../payments/paymentWorkflow').pendingPayments(sSus.docs);
         res.json({
             success: true,
-            buckets: { corregir, video, mockup, atencion, ia_cola, ia_sin_pedido, sospechoso, ...payments },
+            buckets: { corregir, video, mockup, atencion, ia_cola, ia_sin_pedido, ...payments },
             counts: {
                 ...Object.fromEntries(Object.entries(payments).map(([key, rows]) => [key, rows.length])),
                 corregir: corregir.length, video: video.length, mockup: mockup.length, atencion: atencion.length,
-                ia_cola: ia_cola.length, ia_sin_pedido: ia_sin_pedido.length, sospechoso: sospechoso.length,
+                ia_cola: ia_cola.length, ia_sin_pedido: ia_sin_pedido.length,
             },
         });
     } catch (e) {
@@ -487,37 +471,9 @@ router.post('/atencion/:contactId/reabrir', async (req, res) => {
     }
 });
 
-// POST /api/pendientes/sospechoso/:contactId/aprobar — el operador aprueba un comprobante que la IA
-// marcó /sospechoso: limpia la bandera y VALIDA el comprobante (markComprobanteValidadoAndSendForm),
-// para que la conversación siga su flujo (se le manda el formulario de envío como si hubiera sido válido).
-router.post('/sospechoso/:contactId/aprobar', async (req, res) => {
-    const { contactId } = req.params;
-    try {
-        const cref = db.collection('contacts_whatsapp').doc(String(contactId));
-        const cdoc = await cref.get();
-        if (!cdoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        const { markComprobanteValidadoAndSendForm } = require('../services');
-        await markComprobanteValidadoAndSendForm(contactId, cdoc.data(), { force: true, orderNumber: cdoc.data().suspiciousReceipt?.orderNumber });
-        await cref.set({ suspiciousReceiptPending: false, suspiciousReceipt: admin.firestore.FieldValue.delete() }, { merge: true });
-        res.json({ success: true });
-    } catch (e) {
-        console.error('[PENDIENTES/sospechoso-aprobar] error:', e.message);
-        res.status(500).json({ success: false, message: e.message });
-    }
-});
-
-// POST /api/pendientes/sospechoso/:contactId/descartar — quita el comprobante de la columna SIN validar
-// (el operador determinó que el pago NO es bueno, o ya lo atendió por el chat). NO manda formulario.
-router.post('/sospechoso/:contactId/descartar', async (req, res) => {
-    const { contactId } = req.params;
-    try {
-        await db.collection('contacts_whatsapp').doc(String(contactId))
-            .set({ suspiciousReceiptPending: false, suspiciousReceipt: admin.firestore.FieldValue.delete() }, { merge: true });
-        res.json({ success: true });
-    } catch (e) {
-        console.error('[PENDIENTES/sospechoso-descartar] error:', e.message);
-        res.status(500).json({ success: false, message: e.message });
-    }
+// Las pestañas abiertas con la versión anterior deben pasar por la revisión de importe.
+router.post(['/sospechoso/:contactId/aprobar', '/sospechoso/:contactId/descartar'], (req, res) => {
+    res.status(410).json({ success: false, message: 'Unificamos los comprobantes. Recarga la página y revísalo en “Comprobantes por revisar”, confirmando el importe recibido.' });
 });
 
 // POST /api/pendientes/sospechoso/:contactId/cotejar — lee el comprobante (visión) y lo busca entre
