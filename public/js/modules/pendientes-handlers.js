@@ -2,7 +2,7 @@
 // === Sección "Pendientes" ========================================================================
 // =================================================================================================
 // Tablero hermano de "Pendientes de Diseño". Ahí van los pendientes del equipo de diseño (Erika);
-// aquí los demás (Lupita), en 5 columnas que lee GET /api/pendientes:
+// aquí los demás (Lupita), por categorías que lee GET /api/pendientes:
 //
 //   Mandar video      -> el cliente pidió video de su lámpara. La tarjeta trae el mockup que aprobó
 //                        y el botón "Diseñar con IA" (la pieza casi siempre hay que cortarla antes).
@@ -42,26 +42,46 @@ const PEND_ATTN_REASONS = {
 
 const PEND_CSS = `
 <style>
-.pd-board{display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;padding-bottom:4px;align-items:stretch}
-.pd-col{flex:1 1 0;min-width:255px;max-width:360px;background:var(--color-subtle-bg,#f8fafc);border:1px solid var(--color-border,#e5e7eb);border-radius:10px;display:flex;flex-direction:column;min-height:0}
-.pd-col-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:8px 10px;flex-shrink:0}
-.pd-col-title{font-weight:800;font-size:.8rem;display:flex;align-items:center;gap:5px}
-.pd-col-count{background:var(--color-border,#e5e7eb);color:var(--color-text,#334155);font-size:.7rem;font-weight:700;border-radius:999px;padding:1px 8px}
-.pd-col-list{flex:1;min-height:0;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
-.pd-card{background:var(--color-container-bg,#fff);border:1px solid var(--color-border,#e5e7eb);border-radius:8px;padding:8px 9px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
-.pd-card-top{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px}
-.pd-card-num{font-weight:800;color:var(--color-primary);cursor:pointer;font-size:.85rem}
-.pd-card-actions{display:flex;align-items:center;gap:6px}
-.pd-icon-btn{border:none;background:transparent;color:#0ea5e9;cursor:pointer;font-size:14px;padding:2px}
-.pd-card-datos{font-weight:600;font-size:.8rem;line-height:1.25;margin-bottom:2px}
-.pd-card-sub{font-size:.72rem;color:var(--color-text-light,#94a3b8);margin-bottom:4px;word-break:break-word}
-.pd-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:5px}
-.pd-note{width:100%;min-height:30px;max-height:90px;font-size:11.5px;line-height:1.3;padding:4px 6px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;resize:vertical;background:var(--color-surface,#fff);color:var(--color-text,#334155);margin-top:5px}
-.pd-thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:zoom-in;border:1px solid var(--color-border,#e5e7eb);flex:0 0 auto}
-.pd-age{font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:5px;white-space:nowrap}
-.pd-btn{padding:4px 8px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap;border:none}
+.pd-board,.pd-board *{box-sizing:border-box}
+.pd-board{display:grid;grid-template-columns:236px minmax(0,1fr);gap:20px;min-width:0;align-items:stretch}
+.pd-category-nav{min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:4px;background:var(--color-subtle-bg,#f8fafc);border:1px solid var(--color-border,#e5e7eb);border-radius:12px}
+.pd-nav-label{padding:10px 10px 6px;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-light,#64748b);font-weight:700}
+.pd-category-btn{display:flex;align-items:center;gap:9px;width:100%;text-align:left;min-height:45px;padding:10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--color-text,#334155);font:inherit;font-size:.84rem;line-height:1.35;cursor:pointer}
+.pd-category-btn>i{width:16px;flex-shrink:0;text-align:center;color:var(--pd-color)}
+.pd-category-label{flex:1;min-width:0;overflow-wrap:anywhere}
+.pd-category-btn:hover{background:var(--color-container-bg,#fff)}
+.pd-category-btn[aria-pressed="true"]{background:var(--color-container-bg,#fff);border-color:var(--color-border,#d1d5db);box-shadow:0 1px 3px #0000000a;font-weight:800}
+.pd-category-btn[aria-pressed="true"] .pd-col-count{background:var(--color-primary,#466451);color:#fff}
+.pd-category-btn:focus-visible,.pd-btn:focus-visible{outline:2px solid var(--color-primary,#466451);outline-offset:2px}
+.pd-panels{min-width:0;min-height:0;display:flex}
+.pd-col{width:100%;min-width:0;background:var(--color-subtle-bg,#f8fafc);border:1px solid var(--color-border,#e5e7eb);border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.pd-col[hidden]{display:none}
+.pd-col-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px;flex-shrink:0;border-top:3px solid var(--pd-color)}
+.pd-col-title{font-weight:800;font-size:1.05rem;display:flex;align-items:center;gap:8px;margin:0;min-width:0;overflow-wrap:anywhere;color:var(--pd-color)}
+.pd-col-count{background:var(--color-border,#e5e7eb);color:var(--color-text,#334155);font-size:.75rem;font-weight:700;border-radius:999px;padding:2px 8px;flex-shrink:0}
+.pd-col-list{flex:1;min-height:0;overflow-y:auto;padding:0 14px 14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,310px),1fr));align-content:start;align-items:start;gap:12px;scrollbar-gutter:stable}
+.pd-card{min-width:0;overflow-wrap:anywhere;background:var(--color-container-bg,#fff);border:1px solid var(--color-border,#e5e7eb);border-radius:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.pd-card-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:9px}
+.pd-card-num{font-weight:800;color:var(--color-primary);cursor:pointer;font-size:.95rem;min-width:0}
+.pd-card-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.pd-icon-btn{border:none;background:transparent;color:#0ea5e9;cursor:pointer;font-size:16px;padding:4px}
+.pd-card-datos{font-weight:600;font-size:.9rem;line-height:1.45;margin-bottom:4px}
+.pd-card-sub{font-size:.82rem;line-height:1.45;color:var(--color-text-light,#64748b);margin-bottom:6px;word-break:break-word}
+.pd-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:9px}
+.pd-note{width:100%;min-height:58px;max-height:160px;font-size:13px;line-height:1.45;padding:8px 10px;border:1px solid var(--color-border,#e5e7eb);border-radius:7px;resize:vertical;background:var(--color-surface,#fff);color:var(--color-text,#334155);margin-top:10px}
+.pd-thumb{width:64px;height:64px;object-fit:cover;border-radius:7px;cursor:zoom-in;border:1px solid var(--color-border,#e5e7eb);flex:0 0 auto}
+.pd-age{font-size:11px;font-weight:700;padding:2px 6px;border-radius:5px}
+.pd-btn{padding:7px 10px;font-size:12px;line-height:1.35;border-radius:7px;font-weight:700;cursor:pointer;white-space:normal;border:none;max-width:100%}
 .pd-btn-ghost{background:transparent;border:1px solid var(--color-border,#e5e7eb);color:var(--color-text,#334155)}
-.pd-empty{color:var(--color-text-light,#94a3b8);font-size:.78rem;text-align:center;padding:14px 6px}
+.pd-empty{grid-column:1/-1;color:var(--color-text-light,#64748b);font-size:.95rem;text-align:center;padding:50px 16px}
+@media(max-width:760px){
+    .pd-board{grid-template-columns:minmax(0,1fr);gap:14px;height:auto!important}
+    .pd-category-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));overflow:visible;gap:4px}
+    .pd-nav-label{grid-column:1/-1}
+    .pd-category-btn{font-size:.78rem;gap:6px;padding:8px}
+    .pd-col-list{overflow:visible;grid-template-columns:minmax(0,1fr);scrollbar-gutter:auto}
+    .pd-col-head{padding:14px}
+}
 /* Burbuja "el cliente te respondió" (a TI, no a la IA): igual que en Pendientes de Diseño. */
 .pd-resp{display:inline-flex;align-items:center;gap:3px;background:#16a34a;color:#fff;border:none;border-radius:999px;padding:2px 7px;font-size:10.5px;font-weight:800;cursor:pointer;line-height:1.5;animation:pdPulse 2s infinite}
 @keyframes pdPulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.55)}70%{box-shadow:0 0 0 6px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
@@ -69,14 +89,14 @@ const PEND_CSS = `
 
 function PendientesViewTemplate() {
     return `<div id="pendientes-view" class="p-4 md:p-6 h-full overflow-auto">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:4px">
             <h1 class="text-2xl font-bold" style="margin:0"><i class="fas fa-clipboard-check mr-2" style="color:#0ea5e9"></i>Pendientes</h1>
             <span id="pend-updated" style="font-size:.75rem;color:var(--color-text-light,#94a3b8)"></span>
             <span id="pend-live" role="status" style="font-size:.75rem;color:#15803d">Conectando…</span>
-            <button onclick="renderPendientesView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
+            <button onclick="renderPendientesView()" class="btn btn-outline btn-sm" title="Actualizar" aria-label="Actualizar pendientes" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
         </div>
-        <p class="text-sm text-gray-500 mb-4">Pagos por revisar, formularios pendientes, correcciones, videos, mockups y conversaciones que necesitan al equipo.
-            <span>Las acciones de pagos requieren revisar el comprobante o el chat. Para las demás tarjetas, <b>Ctrl+Z</b> deshace la última acción.</span></p>
+        <p class="text-sm text-gray-500 mb-4">Elige una categoría para atender sus pendientes.
+            <span>Revisa el comprobante o el chat antes de aprobar un pago. En las demás tarjetas, <b>Ctrl+Z</b> deshace la última acción.</span></p>
         <div id="pendientes-container"></div>
     </div>`;
 }
@@ -109,6 +129,8 @@ function pendChanIcon(ch) {
 
 const _pendDrafts = new Map();
 let _pendRequest = null, _pendDataVersion = 0;
+let _pendCategory = 'pago_revision';
+const _pendCategoryScroll = new Map();
 
 function _pendCancelRefresh() {
     _pendDataVersion++;
@@ -273,17 +295,25 @@ function _paintPendientes() {
     const container = document.getElementById('pendientes-container');
     if (!container) return;
     const data = window._pendData || {};
-    if (!container.querySelector('.pd-board')) container.innerHTML = PEND_CSS + `<div class="pd-board">${PEND_COLS.map(([key, label, color, icon]) => `<div class="pd-col">
-            <div class="pd-col-head" style="border-top:3px solid ${color};border-radius:10px 10px 0 0">
-                <span class="pd-col-title" style="color:${color}"><i class="fas ${icon}"></i>${label}</span>
-                <span class="pd-col-count">0</span>
-            </div>
-            <div class="pd-col-list" id="pd-col-${key}"></div>
-        </div>`).join('')}</div>`;
+    if (!container.querySelector('.pd-board')) {
+        container.innerHTML = PEND_CSS + `<div class="pd-board">
+            <nav class="pd-category-nav" aria-label="Categorías de pendientes">
+                <div class="pd-nav-label">Categorías</div>
+                ${PEND_COLS.map(([key, label, color, icon]) => `<button type="button" class="pd-category-btn" data-pend-category="${key}" aria-pressed="${key === _pendCategory}" aria-controls="pd-panel-${key}" style="--pd-color:${color}" onclick="pendSelectCategory('${key}')"><i class="fas ${icon}" aria-hidden="true"></i><span class="pd-category-label">${label}</span><span class="pd-col-count">0</span></button>`).join('')}
+            </nav>
+            <div class="pd-panels">${PEND_COLS.map(([key, label, color, icon]) => `<section class="pd-col" id="pd-panel-${key}" aria-labelledby="pd-title-${key}" style="--pd-color:${color}" ${key === _pendCategory ? '' : 'hidden'}>
+                <div class="pd-col-head">
+                    <h2 class="pd-col-title" id="pd-title-${key}"><i class="fas ${icon}" aria-hidden="true"></i>${label}</h2>
+                    <span class="pd-col-count">0</span>
+                </div>
+                <div class="pd-col-list" id="pd-col-${key}"></div>
+            </section>`).join('')}</div>
+        </div>`;
+    }
     PEND_COLS.forEach(([key]) => {
         const list = document.getElementById('pd-col-' + key), scrollTop = list.scrollTop;
         const cards = [...list.querySelectorAll('.pd-card')];
-        const anchor = cards.find(card => card.getBoundingClientRect().bottom > list.getBoundingClientRect().top);
+        const anchor = key === _pendCategory ? cards.find(card => card.getBoundingClientRect().bottom > list.getBoundingClientRect().top) : null;
         const anchorTop = anchor?.getBoundingClientRect().top;
         const old = new Map(cards.map(card => [card.dataset.pend, card]));
         const items = data[key] || [], wanted = new Set(items.map(item => item.id));
@@ -316,9 +346,12 @@ function _paintPendientes() {
             } else card.remove();
         }
         list.parentElement.querySelector('.pd-col-count').textContent = items.length;
+        container.querySelector(`[data-pend-category="${key}"] .pd-col-count`).textContent = items.length;
         if (!list.children.length) list.innerHTML = '<div class="pd-empty">✓ Nada pendiente</div>';
-        list.scrollTop = scrollTop;
-        if (anchor?.isConnected) list.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+        if (key === _pendCategory) {
+            list.scrollTop = scrollTop;
+            if (anchor?.isConnected) list.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+        }
     });
     _pendFitHeight();
     // Cotejo automático contra Ingresos: cada comprobante sospechoso se coteja solo al pintarse (una
@@ -330,10 +363,31 @@ function _paintPendientes() {
     }
 }
 
-// El tablero ocupa de su tope al fondo de la ventana: encabezados fijos y scroll por columna.
+// Conserva los paneles, borradores y posición de cada categoría al cambiar de vista.
+function pendSelectCategory(key) {
+    if (!PEND_COLS.some(col => col[0] === key) || key === _pendCategory) return;
+    const previous = document.getElementById('pd-col-' + _pendCategory);
+    if (previous) {
+        _pendCategoryScroll.set(_pendCategory, previous.scrollTop);
+        if (previous.contains(document.activeElement)) document.activeElement.blur();
+    }
+    _pendCategory = key;
+    PEND_COLS.forEach(([category]) => {
+        const panel = document.getElementById('pd-panel-' + category);
+        if (panel) panel.hidden = category !== key;
+        document.querySelector(`[data-pend-category="${category}"]`)?.setAttribute('aria-pressed', String(category === key));
+    });
+    const list = document.getElementById('pd-col-' + key);
+    if (list) list.scrollTop = _pendCategoryScroll.get(key) || 0;
+    _pendFitHeight();
+}
+window.pendSelectCategory = pendSelectCategory;
+
+// En escritorio solo se desplazan las tarjetas; en móvil la página crece verticalmente.
 function _pendFitHeight() {
     const board = document.querySelector('#pendientes-container .pd-board');
     if (!board) return;
+    if (window.matchMedia('(max-width:760px)').matches) { board.style.height = ''; return; }
     const top = board.getBoundingClientRect().top;
     board.style.height = Math.max(320, window.innerHeight - top - 16) + 'px';
 }

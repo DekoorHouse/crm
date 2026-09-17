@@ -46,7 +46,7 @@ const live = fs.readFileSync(require.resolve('../public/js/modules/pendientes-li
         });
         await page.addScriptTag({ content: handlers });
         await page.addScriptTag({ content: live });
-        await page.evaluate(async () => { document.getElementById('app').innerHTML = PendientesViewTemplate(); await renderPendientesView(); });
+        await page.evaluate(async () => { document.getElementById('app').innerHTML = PendientesViewTemplate(); await renderPendientesView(); pendSelectCategory('mockup'); });
     });
     afterEach(async () => { await page?.close(); });
 
@@ -55,7 +55,7 @@ const live = fs.readFileSync(require.resolve('../public/js/modules/pendientes-li
         await page.keyboard.type(' + borrador');
         await page.evaluate(() => {
             window.noteBefore = document.activeElement; noteBefore.setSelectionRange(3, 8);
-            document.querySelector('.pd-board').scrollLeft = 270;
+            document.querySelector('#pd-col-mockup').scrollTop = 80;
             window.payload.mockup[1].datos = 'Nombre: Actualizado';
             window.payload.pago_revision = [{ id: 'receipt1', name: 'DH19050', amount: 300 }];
             emitChange('payment_receipts');
@@ -63,9 +63,9 @@ const live = fs.readFileSync(require.resolve('../public/js/modules/pendientes-li
         await page.waitForSelector('[data-pend="receipt1"]');
         expect(await page.evaluate(() => ({
             sameNode: noteBefore === document.querySelector('[data-note-order="order0"]'), focused: document.activeElement === noteBefore,
-            text: noteBefore.value, selection: [noteBefore.selectionStart, noteBefore.selectionEnd], scroll: document.querySelector('.pd-board').scrollLeft,
+            text: noteBefore.value, selection: [noteBefore.selectionStart, noteBefore.selectionEnd], scroll: document.querySelector('#pd-col-mockup').scrollTop,
             updated: document.querySelector('[data-pend="order1"]').textContent.includes('Actualizado'),
-        }))).toEqual({ sameNode: true, focused: true, text: ' + borradorNota anterior', selection: [3, 8], scroll: 270, updated: true });
+        }))).toEqual({ sameNode: true, focused: true, text: ' + borradorNota anterior', selection: [3, 8], scroll: 80, updated: true });
     });
 
     test('si el pedido sale de pendientes conserva la tarjeta hasta guardar el texto', async () => {
@@ -143,5 +143,46 @@ const live = fs.readFileSync(require.resolve('../public/js/modules/pendientes-li
         await page.focus('#outside');
         expect(await page.evaluate(() => posts.length)).toBe(0);
         expect(await page.$eval('[data-note-order="order0"]', el => el.value)).toBe('Nota del equipo');
+    });
+
+    test('cambiar de categoría conserva notas y scroll; los contadores ocultos se actualizan en vivo', async () => {
+        await page.evaluate(() => { window.pausePost = true; });
+        await page.focus('[data-note-order="order0"]'); await page.keyboard.type('Borrador ');
+        await page.evaluate(() => { document.querySelector('#pd-col-mockup').scrollTop = 120; });
+        await page.click('[data-pend-category="corregir"]');
+        expect(await page.evaluate(() => document.querySelector('#pd-panel-corregir').hidden)).toBe(false);
+        expect(await page.$eval('#pd-col-corregir', el => el.textContent)).toContain('Nada pendiente');
+        await page.evaluate(async () => {
+            payload.pago_revision = [{ id: 'receipt1', name: 'DH19050' }];
+            payload.corregir = [{ id: 'fix1', orderNumber: 'DH19051', motivo: 'corregir', comentario: '' }];
+            await renderPendientesView(true);
+        });
+        expect(await page.$eval('[data-pend-category="pago_revision"] .pd-col-count', el => el.textContent)).toBe('1');
+        expect(await page.$eval('[data-pend-category="corregir"]', el => el.getAttribute('aria-pressed'))).toBe('true');
+        await page.click('[data-pend-category="mockup"]');
+        expect(await page.$eval('#pd-col-mockup', el => el.scrollTop)).toBe(120);
+        expect(await page.$eval('[data-note-order="order0"]', el => el.value)).toBe('Borrador Nota anterior');
+        await page.evaluate(() => pendingPosts.shift()());
+        await page.waitForFunction(() => payload.mockup[0].comentario === 'Borrador Nota anterior');
+        await page.click('[data-pend-category="pago_revision"]');
+        expect(await page.$eval('.pd-col:not([hidden])', el => el.id)).toBe('pd-panel-pago_revision');
+    });
+
+    test('las categorías y tarjetas caben sin scroll horizontal en escritorio y móvil', async () => {
+        await page.evaluate(async () => {
+            payload.mockup[0].datos = 'Nombre: ' + 'PersonalizaciónMuyLarga'.repeat(12);
+            payload.mockup[0].clienteRespondio = true; payload.mockup[0].contactId = 'customer';
+            payload.mockup[0].createdAt = Date.now() - 86400000;
+            await renderPendientesView(true);
+        });
+        for (const width of [1678, 1024, 736, 320]) {
+            await page.setViewport({ width, height: 960 });
+            await page.evaluate(() => _pendFitHeight());
+            expect(await page.evaluate(() => {
+                const elements = [document.documentElement, ...document.querySelectorAll('.pd-board,.pd-category-nav,.pd-category-btn,.pd-col:not([hidden]),.pd-col:not([hidden]) .pd-col-list,.pd-col:not([hidden]) .pd-card')];
+                return elements.filter(el => el.scrollWidth > el.clientWidth + 1).map(el => el.className || el.tagName);
+            })).toEqual([]);
+            expect(await page.$$eval('.pd-category-btn', buttons => buttons.every(el => el.getBoundingClientRect().width > 0))).toBe(true);
+        }
     });
 });
