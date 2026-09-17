@@ -15,4 +15,4 @@ function startSvgCutScheduler() {
     const first = setTimeout(tick, 30000); first.unref();
     console.log('[SVG CORTE] Motor del servidor disponible; activación y candado en Firestore.');
 }
-module.exports = { startSvgCutScheduler, tick };
+module.exports = { startSvgCutScheduler, tick, isStarted: () => !!timer };

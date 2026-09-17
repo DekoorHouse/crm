@@ -36,7 +36,7 @@ test('pause stops the server without re-enabling Corel', async () => {
 
 test('status is available before activation and malformed preview input is rejected', async () => {
     const status = await (await fetch(base + '/status')).json();
-    expect(status).toMatchObject({ engine: 'server-svg-v1', enabled: false, legacyRequests: [], activeJobs: [] });
+    expect(status).toMatchObject({ engine: 'server-svg-v1', enabled: false, schedulerStarted: false, legacyRequests: [], activeJobs: [] });
     const r = await fetch(base + '/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'unknown', lamps: [] }) });
     expect(r.status).toBe(400);
 });

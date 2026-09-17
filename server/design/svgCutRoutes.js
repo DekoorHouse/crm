@@ -14,6 +14,7 @@ router.get('/status', async (_req, res) => {
         ]);
         const cfg = snapshot.data() || {};
         res.json({ engine: ENGINE, commit: process.env.RENDER_GIT_COMMIT || null, platform: process.platform,
+            schedulerStarted: require('./svgCutScheduler').isStarted(),
             enabled: cfg.engine === ENGINE && cfg.serverEnabled === true,
             autoGenerate: cfg.serverAutoGenerate ?? cfg.autoGenerate ?? true,
             legacyAutoGenerate: cfg.autoGenerate ?? true, startAfter: ms(cfg.serverStartAfter),
