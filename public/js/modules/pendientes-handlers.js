@@ -19,6 +19,7 @@ const PEND_COLS = [
     ['pago_revision', 'Comprobante por revisar', '#d97706', 'fa-receipt'],
     ['pago_cancelado', 'Pago en pedido cancelado', '#dc2626', 'fa-circle-exclamation'],
     ['pago_formulario', 'Formulario por enviar', '#2563eb', 'fa-file-lines'],
+    ['corregir', 'Corregir', '#ea580c', 'fa-screwdriver-wrench'],
     ['video', 'Mandar video', '#e83e8c', 'fa-video'],
     ['mockup', 'Falta mockup', '#6f42c1', 'fa-wand-magic-sparkles'],
     ['sospechoso', 'Comprobante sospechoso', '#ea580c', 'fa-receipt'],
@@ -26,6 +27,7 @@ const PEND_COLS = [
     ['ia_cola', 'Cola IA +1h', '#f59e0b', 'fa-hourglass-half'],
     ['ia_sin_pedido', 'IA no registró el pedido', '#dc2626', 'fa-triangle-exclamation'],
 ];
+const PEND_ORDER_COLS = ['video', 'mockup', 'corregir'];
 
 // Por qué la conversación pide un humano (campo needsAttentionReason del contacto).
 const PEND_ATTN_REASONS = {
@@ -73,7 +75,7 @@ function PendientesViewTemplate() {
             <span id="pend-live" role="status" style="font-size:.75rem;color:#15803d">Conectando…</span>
             <button onclick="renderPendientesView()" class="btn btn-outline btn-sm" title="Actualizar" style="margin-left:auto"><i class="fas fa-rotate"></i></button>
         </div>
-        <p class="text-sm text-gray-500 mb-4">Pagos por revisar, formularios pendientes, videos, mockups y conversaciones que necesitan al equipo.
+        <p class="text-sm text-gray-500 mb-4">Pagos por revisar, formularios pendientes, correcciones, videos, mockups y conversaciones que necesitan al equipo.
             <span>Las acciones de pagos requieren revisar el comprobante o el chat. Para las demás tarjetas, <b>Ctrl+Z</b> deshace la última acción.</span></p>
         <div id="pendientes-container"></div>
     </div>`;
@@ -176,7 +178,7 @@ function pendIaControls(o) {
     return '';
 }
 
-// Tarjeta de PEDIDO (columnas "Mandar video" y "Falta mockup").
+// Tarjeta de pedido: video, mockup y estatus Corregir.
 function pendOrderCard(o) {
     const datos = String(o.datos || '')
         .replace(/nombres?\s*:\s*/i, '').replace(/\s*\|\s*fecha\s*:\s*/i, ' · ')
@@ -187,8 +189,11 @@ function pendOrderCard(o) {
     const thumb = o.mockupUrl
         ? `<img src="${escapeHtml(o.mockupUrl)}" class="pd-thumb" onclick="openImageModal(this.src)" title="Mockup que aprobó el cliente — clic para ampliar">` : '';
     const esVideo = o.motivo === 'video';
-    const desde = esVideo ? (o.videoRequestedAt || o.corregirAt) : o.createdAt;
-    const acciones = esVideo
+    const esCorregir = o.motivo === 'corregir';
+    const desde = esVideo ? (o.videoRequestedAt || o.corregirAt) : esCorregir ? (o.corregirAt || o.createdAt) : o.createdAt;
+    const acciones = esCorregir
+        ? `<span class="pd-age" style="color:#ea580c;background:#fff7ed">Corregir</span>${o.contactId ? `<button onclick="pendOpenChat('${escapeHtml(o.contactId)}')" class="pd-btn pd-btn-ghost">Ver conversación</button>` : ''}`
+        : esVideo
         ? `${pendIaControls(o)}<button onclick="pendVideoEnviado('${o.id}', this)" title="Ya le mandaste el video: saca el pedido de esta lista" class="pd-btn" style="background:#16a34a;color:#fff"><i class="fas fa-check" style="margin-right:3px"></i>Video enviado</button>`
         : `<button onclick="navigateTo('mockups')" title="Ir a la sección Mockup para generarle su preview" class="pd-btn" style="background:#6f42c1;color:#fff"><i class="fas fa-image" style="margin-right:3px"></i>Ir a Mockup</button>
            <button onclick="pendMockupOcultar('${o.id}', this)" title="Quitar de la lista sin hacerle mockup (mismo efecto que 'Ocultar' en la sección Mockup)" class="pd-btn pd-btn-ghost">Quitar</button>`;
@@ -287,7 +292,7 @@ function _paintPendientes() {
         for (const item of items) {
             const draft = _pendDrafts.get(item.id);
             if (draft && !draft.dirty && !draft.pending && !draft.error && item.comentario === draft.value) _pendDrafts.delete(item.id);
-            const html = (key === 'video' || key === 'mockup') ? pendOrderCard(item) : pendContactCard(item, key);
+            const html = PEND_ORDER_COLS.includes(key) ? pendOrderCard(item) : pendContactCard(item, key);
             let card = old.get(item.id);
             const keep = card && _pendKeepCard(card);
             if (!card || (!keep && card._pendHtml !== html)) {
@@ -667,7 +672,7 @@ window.pendRegistrarPedido = pendRegistrarPedido;
 function pendEditarComentario(orderId, el) {
     let draft = _pendDrafts.get(orderId);
     if (!draft) {
-        const item = [...(window._pendData?.video || []), ...(window._pendData?.mockup || [])].find(o => o.id === orderId);
+        const item = PEND_ORDER_COLS.flatMap(col => window._pendData?.[col] || []).find(o => o.id === orderId);
         draft = { value: el.value, saved: item?.comentario || '', pending: 0, chain: Promise.resolve() };
         _pendDrafts.set(orderId, draft);
     }
@@ -692,7 +697,7 @@ async function pendGuardarComentario(orderId, el) {
         try {
             await _pendPost(`pendientes/${encodeURIComponent(orderId)}/comentario`, { comentario: value });
             draft.saved = value; draft.error = false; draft.dirty = draft.value !== value;
-            for (const col of ['video', 'mockup']) {
+            for (const col of PEND_ORDER_COLS) {
                 const o = (window._pendData?.[col] || []).find(x => x.id === orderId);
                 if (o) o.comentario = value;
             }

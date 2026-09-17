@@ -59,7 +59,7 @@ async function ultimoPedidoDeContacto(contactId) {
     }
 }
 
-// GET /api/pendientes — las 5 colas de la sección, en un solo viaje.
+// GET /api/pendientes — las colas de la sección, en un solo viaje.
 router.get('/', async (req, res) => {
     try {
         const { isVideoAutoWaiting, isCorazon, MANUAL_SPECIAL_RE, datosOf } = require('../design/svgAuto');
@@ -124,6 +124,8 @@ router.get('/', async (req, res) => {
             };
         };
 
+        // Corregir refleja el estatus, aunque también haya un video pendiente.
+        const corregir = sCor.docs.map(doc => mapOrder(doc, 'corregir'));
         const video = [], mockup = [];
         for (const doc of [...sCor.docs, ...sSin.docs]) {
             const motivos = pendientesReasonsForOrderData(doc.data(), (prevMap.get(doc.id) || []).length > 0);
@@ -133,16 +135,17 @@ router.get('/', async (req, res) => {
         // Más viejo primero: lo que lleva más tiempo esperando es lo más urgente.
         video.sort((a, b) => (a.videoRequestedAt || a.corregirAt || 0) - (b.videoRequestedAt || b.corregirAt || 0));
         mockup.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+        corregir.sort((a, b) => (a.corregirAt || a.createdAt || 0) - (b.corregirAt || b.createdAt || 0));
 
         // --- Nombre + canal del cliente para las tarjetas de pedido ---
-        const cids = [...new Set([...video, ...mockup].map(o => o.contactId).filter(Boolean))];
+        const cids = [...new Set([...video, ...mockup, ...corregir].map(o => o.contactId).filter(Boolean))];
         const infoById = new Map();
         for (let i = 0; i < cids.length; i += 300) {
             const refs = cids.slice(i, i + 300).map(id => db.collection('contacts_whatsapp').doc(String(id)));
             const docs = await db.getAll(...refs);
             docs.forEach(d => { if (d.exists) infoById.set(d.id, d.data()); });
         }
-        [...video, ...mockup].forEach(o => {
+        [...video, ...mockup, ...corregir].forEach(o => {
             const c = infoById.get(o.contactId) || {};
             o.clienteName = c.name || o.contactId;
             o.channel = c.channel || 'whatsapp';
@@ -283,10 +286,10 @@ router.get('/', async (req, res) => {
         const payments = await require('../payments/paymentWorkflow').pendingPayments();
         res.json({
             success: true,
-            buckets: { video, mockup, atencion, ia_cola, ia_sin_pedido, sospechoso, ...payments },
+            buckets: { corregir, video, mockup, atencion, ia_cola, ia_sin_pedido, sospechoso, ...payments },
             counts: {
                 ...Object.fromEntries(Object.entries(payments).map(([key, rows]) => [key, rows.length])),
-                video: video.length, mockup: mockup.length, atencion: atencion.length,
+                corregir: corregir.length, video: video.length, mockup: mockup.length, atencion: atencion.length,
                 ia_cola: ia_cola.length, ia_sin_pedido: ia_sin_pedido.length, sospechoso: sospechoso.length,
             },
         });
