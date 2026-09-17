@@ -3973,7 +3973,7 @@ router.post('/contacts/disable-ia-bulk', async (req, res) => {
 // Lo usan tanto "activar venta" (sin tocar aiStage) como "activar post-venta" (aiStage='postventa').
 async function activateAiAndAnswerPending(contactRef, snap, extraUpdate = {}) {
     const contactId = contactRef.id;
-    const update = { botActive: true, ...extraUpdate };
+    const update = { botActive: true, paymentReplyGuardResetAt: admin.firestore.FieldValue.serverTimestamp(), ...extraUpdate };
     await contactRef.update(update);
     await require('./payments/paymentWorkflow').discoverReceipts(contactId);
 
@@ -6243,17 +6243,7 @@ router.get('/debug/ai-order-extract', async (req, res) => {
         if (!contactSnap.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
         const contactData = contactSnap.data();
 
-        // Transcript igual que el de los clasificadores (más antiguo arriba, sangría en multilínea)
-        const msgsSnap = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(60).get();
-        const lines = msgsSnap.docs.reverse().map(d => {
-            const m = d.data();
-            let body = (m.text || '').trim();
-            if (!body && m.type && m.type !== 'text') body = `[${m.type}]`;
-            if (!body) return null;
-            const who = m.from === contactId ? 'Cliente' : 'Asistente';
-            return `${who}: ${body.replace(/\r?\n/g, '\n    ')}`;
-        }).filter(Boolean);
-        const conversationText = lines.join('\n');
+        const conversationText = await require('./orders/registrationHistory').loadRegistrationHistory(contactRef, contactId, '');
 
         // Igual que el flujo real: pasar el pedido reciente como contexto para que el
         // extractor decida CAMBIO vs ADICIONAL (esAdicional).
@@ -6280,6 +6270,7 @@ router.get('/debug/ai-order-extract', async (req, res) => {
             conversationText,
             name: contactData.name || contactId,
             catalogText: cfg.catalogText,
+            teamNote: contactData.aiConversationNote || '',
             existingOrder
         });
         const computedTotal = extraction ? extraction.items.reduce((s, it) => s + it.precio * it.cantidad, 0) : null;

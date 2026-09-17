@@ -44,6 +44,7 @@ jest.mock('../server/services', () => ({
     generateGeminiResponse: jest.fn(), sendAdvancedWhatsAppMessage: jest.fn().mockResolvedValue({}),
 }));
 jest.mock('../server/aiUsage', () => ({ logAiUsage: async () => {} }));
+jest.mock('../server/orders/registrationHistory', () => ({ loadRegistrationHistory: async (_ref, _id, text) => text }));
 jest.mock('../server/orders/createOrderCore', () => ({
     ...jest.requireActual('../server/orders/createOrderCore'), createOrder: jest.fn(),
 }));
@@ -187,4 +188,21 @@ test('sin pedido previo se registra normalmente', async () => {
     mockDocs.delete('pedidos/p1');
     expect(await run()).toBe('DH16732');
     expect(createOrder).toHaveBeenCalledTimes(1);
+});
+
+test('un desglose inconsistente nunca crea pedido ni deja al bot repitiendo solicitudes', async () => {
+    mockDocs.delete('pedidos/p1');
+    extract([{ ...items()[0], cantidad: 2 }, items()[1]], { total: 1200 });
+    expect(await run('Cliente: Dos lámparas por $1200, confirmo.')).toBeNull();
+    expect(services.generateGeminiResponse).toHaveBeenCalledTimes(2);
+    expect(createOrder).not.toHaveBeenCalled();
+    expect(contact()).toMatchObject({ botActive: false, needsAttention: true, needsAttentionReason: 'registro_pedido' });
+    expect(mockFailures[0].motivo).toContain('items suman $1800');
+});
+
+test('Maribel: la indicación del equipo llega al extractor sin acreditar dinero', async () => {
+    mockDocs.delete('pedidos/p1');
+    await registerOrderFromAI({ contactId: 'c1', contactData: { aiConversationNote: 'Maribel confirmó al equipo que desea continuar; ya no quiere cancelar.' }, conversationText: 'Cliente: Nombres: Maribel y César.' });
+    expect(services.generateGeminiResponse.mock.calls[0][2]).toContain('ya no quiere cancelar');
+    expect(createOrder.mock.calls[0][0].extraFields.comprobanteValidadoAt).toBeUndefined();
 });

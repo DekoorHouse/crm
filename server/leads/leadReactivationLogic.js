@@ -89,6 +89,7 @@ function normalizeConfig(raw) {
  * @returns {{action: 'none'|'wait'|'send'|'done'|'expire'|'skip_recent'|'cancel', stage?: number, text?: string, reason?: string}}
  */
 function evaluateFollowup(followup, contact, config, nowMs) {
+    if (require('../payments/paymentReplyGuard').waitingForPaymentHelp(contact)) return { action: 'wait', reason: 'revision_humana_pago' };
     if (!followup || followup.status !== 'pending') return { action: 'none' };
 
     const stage = followup.stage || 0;

@@ -346,6 +346,7 @@ async function paymentContext(contactId, { discover = false, process = false, or
         ambiguous: !selected && (orders.length > 1 || !!num),
         productionStatus: latest?.estatus || null,
         productionReason: latest?.paymentProductionReason || '',
+        contextSince: Math.max(ms(latest?.createdAt), ms(latest?.paymentUpdatedAt)),
         orderId: selected?.id, orderNumber: latest?.consecutiveOrderNumber ? `DH${latest.consecutiveOrderNumber}` : null };
 }
 

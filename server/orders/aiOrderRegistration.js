@@ -311,7 +311,7 @@ function sameRegisteredOrder(order, extraction) {
  * (5216391483947), que hubo que capturar a mano como DH14004. Dos intentos (~30 s) caben de
  * sobra dentro de IN_FLIGHT_STALE_MS (3 min).
  */
-async function extractOrderDetailed({ conversationText, name, catalogText, existingOrder = null, adPersonaje = '' }) {
+async function extractOrderDetailed({ conversationText, name, catalogText, existingOrder = null, adPersonaje = '', teamNote = '' }) {
     if (!conversationText || !conversationText.trim()) {
         return { extraction: null, motivo: 'la conversación llegó vacía' };
     }
@@ -333,13 +333,18 @@ ${cerrado
 ` : '';
 
     const prompt = `Cliente: ${name || 'desconocido'}\n\nConversación (más antiguo arriba):\n${conversationText}\n\nDevuelve solo el JSON.`;
-    const systemInstruction = buildExtractorSystemInstruction(catalogText, existingOrderNote, adPersonaje);
+    const systemInstruction = buildExtractorSystemInstruction(catalogText, existingOrderNote, adPersonaje) + `
+Registrar un pedido y acreditar su pago son operaciones distintas. NO marques listo=false sólo porque el anticipo esté pendiente de validación: el flujo de pagos decide si puede fabricarse. El envío del anticipo tras acordar producto, personalización y precio puede confirmar esos datos; no exijas una frase ritual ni un encabezado de resumen si el acuerdo es claro. Si faltan datos, hay cambios sin confirmar o una cancelación vigente, conserva listo=false.
+Las cantidades son POR FILA: si hay una lámpara para Lucas y otra para Max, son dos filas de cantidad 1. En una promoción de 2 por $1200, cada pieza cuesta $600; NO pongas cantidad 2 en cada fila ni uses el precio del paquete como unitario. Calcula la suma antes de responder. No inventes piezas ni cambies el total acordado para cuadrarla.
+${teamNote ? `Indicación vigente del equipo para este contacto (no es un mensaje del cliente): ${String(teamNote).slice(0, 1200)}` : ''}`;
 
     let motivo = 'el extractor no devolvió nada';
+    let correction = '';
+    let repairTotal = null;
     for (let intento = 1; intento <= EXTRACTOR_INTENTOS; intento++) {
         let res;
         try {
-            res = await generateGeminiResponse(prompt, [], systemInstruction);
+            res = await generateGeminiResponse(prompt + correction, [], systemInstruction);
         } catch (e) {
             motivo = `la API de Gemini falló (${e.message})`;
             console.warn(`[AI_ORDER] Extracción intento ${intento}/${EXTRACTOR_INTENTOS}: ${motivo}`);
@@ -353,8 +358,18 @@ ${cerrado
 
         const parsed = parseClassifierJson(res.text);
         if (parsed && typeof parsed === 'object') {
+            const extraction = saneaExtraccion(parsed);
+            const sum = extraction.items.reduce((s, it) => s + it.precio * it.cantidad, 0);
+            if (repairTotal !== null && Math.abs(extraction.total - repairTotal) > 1) {
+                return { extraction: { ...extraction, listo: false, faltante: 'El intento de corregir el desglose cambió el total; requiere revisión del equipo.' }, motivo: null };
+            }
+            if (extraction.listo && extraction.items.length && Math.abs(sum - extraction.total) > 1 && intento < EXTRACTOR_INTENTOS) {
+                repairTotal = extraction.total;
+                correction = `\n\nTu extracción anterior fue inconsistente: ${JSON.stringify(extraction)}. Los productos suman $${sum}, pero el total devuelto es $${extraction.total}. Relee el acuerdo del chat y corrige cantidades/precios por pieza. No cambies el total confirmado ni inventes datos. Si no puedes resolverlo con la conversación, devuelve listo=false indicando qué falta.`;
+                continue;
+            }
             if (intento > 1) console.log(`[AI_ORDER] Extracción resuelta en el intento ${intento}.`);
-            return { extraction: saneaExtraccion(parsed), motivo: null };
+            return { extraction, motivo: null };
         }
 
         // Se guarda un pedazo de lo que respondió: sin esto no hay manera de saber si el modelo
@@ -480,11 +495,13 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
         // Último pedido no cancelado de los últimos 7 días (si hay). Se consulta UNA vez: sirve de
         // contexto al extractor y luego para decidir si es cambio, fusión o pedido nuevo.
         const existingRec = await findRecentOrderForContact(contactId).catch(() => null);
+        const completeHistory = await require('./registrationHistory').loadRegistrationHistory(contactRef, contactId, conversationText);
         const { extraction, motivo: motivoExtraccion } = await extractOrderDetailed({
-            conversationText,
+            conversationText: completeHistory,
             name,
             catalogText: cfg.catalogText,
             adPersonaje,
+            teamNote: contactData.aiConversationNote || '',
             // Contexto del pedido ya registrado (si hay uno reciente): el extractor decide si la
             // conversación lo CAMBIA (devuelve el pedido completo actualizado) o es uno ADICIONAL.
             existingOrder: existingRec ? {
@@ -676,6 +693,10 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
         try {
             await db.collection('contacts_whatsapp').doc(contactId).update({
                 status: 'pendientes_ia',
+                botActive: false,
+                needsAttention: true,
+                needsAttentionReason: 'registro_pedido',
+                needsAttentionAt: admin.firestore.FieldValue.serverTimestamp(),
                 pendientesIaAt: admin.firestore.FieldValue.serverTimestamp(),
                 lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
             });

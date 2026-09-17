@@ -165,6 +165,32 @@ describe('saneaExtraccion', () => {
     });
 });
 
+test('Eduardo y Guadalupe: reintenta un desglose de $1800 para un paquete acordado de $1200', async () => {
+    const item = { producto: 'Lámpara Universo', cantidad: 1, precio: 600, datosProducto: 'Nombre: Lucas' };
+    const correct = { listo: true, items: [item, { ...item, datosProducto: 'Nombre: Max' }], total: 1200, confianza: 95 };
+    mockGemini.mockResolvedValueOnce({ text: JSON.stringify({ ...correct, items: [{ ...item, cantidad: 2 }, correct.items[1]] }) })
+        .mockResolvedValueOnce({ text: JSON.stringify(correct) });
+    const result = await extractOrderDetailed({ ...args(), conversationText: 'Asistente: Lucas y Max, una lámpara para cada uno, total $1200.\nCliente: Sí.' });
+    expect(result.extraction).toMatchObject(correct);
+    expect(mockGemini).toHaveBeenCalledTimes(2);
+    expect(mockGemini.mock.calls[1][0]).toContain('Los productos suman $1800');
+    expect(mockGemini.mock.calls[1][0]).toContain('No cambies el total confirmado');
+});
+
+test('no fuerza registro si faltan datos o hay una cancelación vigente', async () => {
+    mockGemini.mockResolvedValue({ text: JSON.stringify({ listo: false, faltante: 'Cliente canceló', items: [], total: 0 }) });
+    expect((await extractOrderDetailed(args())).extraction.listo).toBe(false);
+    expect(mockGemini).toHaveBeenCalledTimes(1);
+});
+
+test('la reparación no puede cuadrar el desglose subiendo el total de $1200 a $1800', async () => {
+    const bad = { listo: true, items: [{ producto: 'Lámpara', cantidad: 3, precio: 600 }], total: 1200, confianza: 95 };
+    mockGemini.mockResolvedValueOnce({ text: JSON.stringify(bad) }).mockResolvedValueOnce({ text: JSON.stringify({ ...bad, total: 1800 }) });
+    const result = await extractOrderDetailed(args());
+    expect(result.extraction.listo).toBe(false);
+    expect(result.extraction.faltante).toContain('cambió el total');
+});
+
 describe('pedido previo CERRADO / post-venta (segundo pedido de un cliente que ya pagó)', () => {
     const { buildRegistrationRule } = require('../server/orders/aiOrderRegistration');
     const previo = { num: 'DH16334', datosProducto: 'Nombre: Diego | Personaje: Spiderman', precio: 750, estatus: 'Pagado' };

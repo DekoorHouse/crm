@@ -179,6 +179,7 @@ function normalizeOrderConfig(raw) {
  * @returns {{action:'none'|'wait'|'wait_hours'|'send'|'done'|'expire'|'skip_recent'|'cancel', stage?:number, reason?:string}}
  */
 function evaluateOrderFollowup(followup, contact, cfg, nowMs) {
+    if (require('../payments/paymentReplyGuard').waitingForPaymentHelp(contact)) return { action: 'wait', reason: 'revision_humana_pago' };
     if (!followup || followup.status !== 'pending') return { action: 'none' };
 
     // La IA ya cerró la venta: el contacto pasó a "Pendientes de revisión IA"

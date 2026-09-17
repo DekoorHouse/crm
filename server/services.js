@@ -4047,7 +4047,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // OJO: `saleClosed` puede volverse true DENTRO del loop si la IA mandó la frase a través
         // de un ATAJO de respuesta rápida (ej. /confirmar → "Ya registramos tu pedido..."); el
         // check inicial solo ve "/confirmar". Por eso es `let` y la decisión se calcula tras el loop.
-        let saleClosed = /\/final/i.test(aiResponse) || /ya registramos tu pedido/i.test(aiResponse);
+        let saleClosed = /\/final/i.test(aiResponse) || require('./orders/registrationTurn').registrationClaim(aiResponse);
         // /cuatro (pedido LISTO → post-venta) es EXCLUSIVO del equipo humano: solo ellos
         // saben cuándo el pedido físico está terminado. La transición a post-venta vive
         // únicamente en los envíos manuales (apiRoutes). Si la IA lo emitiera, se descarta
@@ -4138,6 +4138,17 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 
         let durablePaymentResult = null;
         let paymentRegistrationAttempted = false, paymentRegisteredOrderNumber = null;
+        const { createRegistrationTurn, registrationClaim, REGISTRATION_PENDING } = require('./orders/registrationTurn');
+        const registrationTurn = createRegistrationTurn(extraText => require('./orders/aiOrderRegistration').registerOrderFromAI({
+            contactId, contactData, conversationText: `${conversationHistory}\nAsistente: ${aiResponse.replace(/\r?\n/g, '\n    ')}\nAsistente: ${extraText.replace(/\r?\n/g, '\n    ')}`,
+        }));
+        const ensureRegistration = async (extraText = '') => {
+            paymentRegistrationAttempted = true;
+            paymentRegisteredOrderNumber = await registrationTurn.ensure(extraText);
+            return paymentRegisteredOrderNumber;
+        };
+        const registrationNeeded = !orderCancelled && (registerOrderCmd || anticipoPaidCmd || (saleClosed && !isPostVenta && !esperaAnticipoCmd));
+        if (registrationNeeded) await ensureRegistration();
         const paymentConversation = require('./payments/paymentConversation');
         const paymentClaim = require('./payments/paymentPolicy').claimsPayment(aiResponse) || paymentConversation.fullPaymentClaim(aiResponse) || paymentConversation.blocksProductionForBalance(aiResponse);
         const paymentComplaint = paymentConversation.paymentComplaint(messageText);
@@ -4150,13 +4161,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const lastReply = history.find(m => m.from !== contactId);
                 const receiptPresent = !!receipt && paymentPolicy.ms(receipt.timestamp) > paymentPolicy.ms(lastReply?.timestamp);
                 // Registrar primero impide usar el pago de un pedido anterior mientras se crea el nuevo.
-                paymentRegistrationAttempted = registerOrderCmd || anticipoPaidCmd || (saleClosed && !isPostVenta && !esperaAnticipoCmd);
                 const turn = await paymentConversation.preparePaymentTurn(contactId, {
-                    register: paymentRegistrationAttempted ? () => require('./orders/aiOrderRegistration').registerOrderFromAI({ contactId, contactData, conversationText: `${conversationHistory}\nAsistente: ${aiResponse}` }) : null,
+                    register: registrationNeeded ? () => ensureRegistration() : null,
                     orderNumber: paymentConversation.orderNumberInMessage(messageText) || (formularioPedidos.length === 1 ? formularioPedidos[0] : null),
                     newOrderIntent: wantsNewOrder,
                 });
-                paymentRegisteredOrderNumber = turn.registeredOrderNumber;
+                paymentRegisteredOrderNumber = turn.registeredOrderNumber || paymentRegisteredOrderNumber;
                 durablePaymentResult = turn.context;
                 const p = durablePaymentResult;
                 if (p.hasPaid || p.reportedComplete) {
@@ -4169,11 +4179,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 if (reply !== null) aiMessages = reply;
             } catch (error) {
                 // Nunca enviar la confirmación original si la comprobación del sistema falló.
-                aiMessages = ['Recibimos tu comprobante. El equipo revisará el importe y dará seguimiento a tus datos de envío por aquí.'];
+                aiMessages = ['El equipo revisará el estado de tu pago y te ayudará a continuar por aquí.'];
                 await contactRef.set({ needsAttention: true, needsAttentionReason: 'payment_review', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
                 console.warn('[PAYMENTS] No se pudo comprobar el pago:', error.message);
             }
         }
+        if (paymentRegistrationAttempted && !paymentRegisteredOrderNumber) aiMessages = [REGISTRATION_PENDING];
 
         // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado, /comprobante, /registrar) de los mensajes antes de enviar.
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
@@ -4211,6 +4222,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             } catch (e) { console.warn('[PILOTO] Candado /ttt→/tttp no disponible:', e.message); }
         }
 
+        let paymentHandoff = false;
         for (let i = 0; i < aiMessages.length; i++) {
             // Verificar cancelación entre mensajes si hay SPLIT
             if (i > 0) {
@@ -4337,6 +4349,28 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (priceTestPrice) {
                 try { msgText = require('./orders/priceTest').applyPrice(msgText, priceTestPrice, { anticipo: priceTestAnticipo }); } catch (_) {}
             }
+            // También cubre /confirmar y cualquier atajo que prometa un registro: su texto
+            // real sólo se conoce aquí. La promesa nunca sale si la escritura falló.
+            if (registrationClaim(msgText) && (!isPostVenta || wantsNewOrder || registerOrderCmd) && !orderCancelled) {
+                saleClosed = true;
+                if (!await ensureRegistration(msgText)) {
+                    msgText = REGISTRATION_PENDING;
+                    qrFileUrl = null; qrFileType = null;
+                }
+            }
+            const paymentReplyGuard = require('./payments/paymentReplyGuard');
+            if (!durablePaymentResult && paymentReplyGuard.paymentReplyCategory(msgText)) {
+                durablePaymentResult = await require('./payments/paymentWorkflow').paymentContext(contactId, {
+                    orderNumber: paymentRegisteredOrderNumber || paymentConversation.orderNumberInMessage(messageText), newOrderIntent: wantsNewOrder,
+                });
+            }
+            const guarded = await paymentReplyGuard.protectPaymentReply({
+                contactRef, contactId, text: msgText, customerText: messageText,
+                context: durablePaymentResult || {}, history: messagesSnapshot.docs.map(d => d.data()),
+            });
+            msgText = guarded.text;
+            if (guarded.stop) { paymentHandoff = true; qrFileUrl = null; qrFileType = null; }
+            if (guarded.stop && !msgText) break;
             if (!msgText && !qrFileUrl) continue; // nada que enviar
 
             const contactChannel = contactData.channel || 'whatsapp';
@@ -4367,6 +4401,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (qrFileUrl) { aiMsgToSave.fileUrl = qrFileUrl; aiMsgToSave.fileType = qrFileType; }
             await contactRef.collection('messages').add(aiMsgToSave);
             lastText = sentMessageData.textForDb;
+            if (paymentHandoff) break;
 
             if (i < aiMessages.length - 1) {
                 await new Promise(r => setTimeout(r, 1500));
@@ -4379,15 +4414,14 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // la etapa 2 (cobro) arranca ÚNICAMENTE cuando el EQUIPO manda /cuatro desde el CRM
         // (detección en apiRoutes); la IA no puede transicionar por sí misma. Con el
         // kill-switch de etapa 2 apagado, /final conserva el comportamiento viejo (bot off).
-        const shouldDeactivate = !postSaleStageActive && saleClosed;
+        const shouldDeactivate = !postSaleStageActive && saleClosed && !paymentRegisteredOrderNumber;
 
         const updateData = {
-            lastMessage: lastText,
-            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            ...(lastText ? { lastMessage: lastText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() } : {}),
             aiStatus: admin.firestore.FieldValue.delete()
         };
 
-        if (postSaleStageActive && !isPostVenta && saleClosed) {
+        if (postSaleStageActive && !isPostVenta && saleClosed && !paymentRegisteredOrderNumber) {
             // Venta cerrada: a Pendientes IA para que el equipo registre el pedido. La IA
             // sigue en etapa de VENTA acompañando al cliente mientras se fabrica su pedido.
             updateData.status = 'pendientes_ia';
@@ -4438,33 +4472,10 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         await contactRef.update(updateData);
         console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas enviadas: ${aiMessages.length})`);
 
-        // Registro automático del pedido (/registrar): el extractor lee la conversación (incluye
-        // el resumen que el cliente confirmó) y crea el pedido en el CRM con el mismo núcleo que
-        // el modal. Si tiene éxito, createOrder quita solo la etiqueta pendientes_ia que acaba de
-        // poner el cierre; si falla, el contacto queda en Pendientes IA (flujo manual de siempre)
-        // y se avisa al admin. Fire-and-forget: nunca debe tumbar la respuesta al cliente.
-        // require perezoso para evitar ciclo de módulos (aiOrderRegistration requiere services).
-        // /anticipopagado implica registrar también (si aún no existe el pedido) y luego pasarlo a
-        // Fabricar: el anticipo del especial ya se validó, así que arranca la fabricación.
-        // Respaldo anti-fuga: si la IA cerró la venta (frase "ya registramos tu pedido" o /final)
-        // pero OLVIDÓ emitir /registrar, se intenta el registro automático igual — el cliente ya
-        // oyó que su pedido quedó registrado y sin esto se queda en la cola sin pedido (caso real
-        // 5216471109101). registerOrderFromAI valida todo y no-opea si el registro está apagado;
-        // /esperaanticipo se excluye: ahí la venta aún NO debe registrarse (falta el anticipo).
-        const registroImplied = saleClosed && !isPostVenta && !registerOrderCmd && !esperaAnticipoCmd && !anticipoPaidCmd;
-        if (registroImplied) {
-            console.log(`[AI_ORDER] Cierre sin /registrar detectado para ${contactId}; se intenta el registro automático de respaldo.`);
-        }
-        if (registerOrderCmd || anticipoPaidCmd || registroImplied) {
-            // Anexar la respuesta del TURNO ACTUAL al transcript: conversationHistory se arma
-            // ANTES de generar, así que sin esto el extractor no vería un resumen/cierre emitido
-            // en este mismo turno (y las confirmaciones por nota de voz perderían su contexto).
-            const currentTurnText = aiMessages
-                .map(m => `Asistente: ${m.replace(/\r?\n/g, '\n    ')}`)
-                .join('\n');
-            const fullTranscript = currentTurnText ? `${conversationHistory}\n${currentTurnText}` : conversationHistory;
-            (paymentRegistrationAttempted ? Promise.resolve(paymentRegisteredOrderNumber)
-                : require('./orders/aiOrderRegistration').registerOrderFromAI({ contactId, contactData, conversationText: fullTranscript }))
+        // El registro ya terminó antes de contestar. Ahora conciliar comprobantes con ese DH;
+        // únicamente un pago aprobado puede liberar la fabricación.
+        if (paymentRegisteredOrderNumber) {
+            Promise.resolve(paymentRegisteredOrderNumber)
                 .then(async orderNum => {
                     if (!orderNum) return;
                     const registeredPayment = await require('./payments/paymentWorkflow').paymentContext(contactId, { discover: true, process: true, orderNumber: orderNum });
@@ -4472,6 +4483,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 })
                 .catch(e => console.warn('[AI_ORDER] registro/fabricar por anticipo falló:', e.message));
         }
+        if (paymentHandoff) return; // no ejecutar otros comandos ni armar nuevos seguimientos del bot
 
         // /esperaanticipo: la IA pidió el anticipo de un pedido especial. Si el cliente ya tenía un
         // pedido "Sin estatus" (se volvió especial DESPUÉS de registrarse), se saca de la fila de

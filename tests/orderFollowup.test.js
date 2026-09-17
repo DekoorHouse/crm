@@ -17,7 +17,7 @@ const {
 } = require('../server/leads/orderFollowupLogic');
 
 const OFFSET = -6; // México Centro
-const cfg = normalizeOrderConfig({ enabled: true }); // defaults: 8h/16h, 8–21, 23.5h, gap 4h
+const cfg = normalizeOrderConfig({ enabled: true, delaysHours: [8, 16] }); // escenario de estas pruebas: 8h/16h
 
 // UTC ms cuya hora local (UTC-6) es `hour:min` en el día y-mo-d
 function atLocal(y, mo, d, hour, min = 0) {

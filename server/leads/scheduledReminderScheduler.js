@@ -489,6 +489,7 @@ async function runReminderSweep({ dryRun = false } = {}) {
                 contact = cs.exists ? cs.data() : null;
             } catch (_) {}
             const createdMs = toMillis(rem.createdAt) || 0;
+            if (rem.source !== 'operator' && require('../payments/paymentReplyGuard').waitingForPaymentHelp(contact)) continue;
             const orderMs = toMillis(contact && contact.lastOrderDate);
             if (orderMs && orderMs >= createdMs) {
                 if (!dryRun) await doc.ref.update({ status: 'cancelled', cancelReason: 'ya_compro', updatedAt: new Date() }).catch(() => {});
