@@ -19,12 +19,30 @@ const DESTINATIONS = ['3262', '0670', '2629', '1983', '9250'];
 function receiptKeys(receipt) {
     const keys = [];
     if (receipt.imageHash) keys.push('image_' + receipt.imageHash);
-    const folio = normalize(receipt.claveRastreo || receipt.referencia);
-    if (folio.length >= 5 && receipt.fecha && cents(receipt.monto) > 0) {
+    for (const folio of receiptFolios(receipt)) if (receipt.fecha && cents(receipt.monto) > 0) {
         // No incluir al cliente ni al pedido: un mismo pago no financia dos pedidos.
         keys.push('folio_' + hash([folio, receipt.fecha, String(receipt.cuentaDestino || '').replace(/\D/g, '').slice(-4)].join('|')));
     }
     return keys;
+}
+
+const receiptFolios = receipt => [...new Set([receipt.claveRastreo, receipt.referencia].map(normalize).filter(v => v.length >= 5))];
+
+// Dos capturas pueden corresponder al mismo ingreso. La incertidumbre obliga a
+// revisar; no permite descartar ni acreditar dinero automáticamente.
+function possibleSamePayment(a, b) {
+    if (a.contactId && b.contactId && a.contactId !== b.contactId) return false;
+    if (a.verifiedProvider && b.verifiedProvider) return a.providerPaymentId === b.providerPaymentId;
+    const x = a.ocr || {}, y = b.ocr || {};
+    if (x.imageHash && x.imageHash === y.imageHash) return true;
+    if (!(Number(a.amountCents ?? cents(x.monto)) > 0) || Number(a.amountCents ?? cents(x.monto)) !== Number(b.amountCents ?? cents(y.monto))) return false;
+    const destination = r => String(r.cuentaDestino || '').replace(/\D/g, '').slice(-4);
+    if (destination(x) && destination(y) && destination(x) !== destination(y)) return false;
+    const xf = receiptFolios(x), yf = receiptFolios(y);
+    if (xf.length && yf.length && !xf.some(f => yf.includes(f))) return false;
+    // Sin folio, otra fecha leída no demuestra que sean dos transferencias.
+    if (xf.length && yf.length && x.fecha && y.fecha && x.fecha !== y.fecha) return false;
+    return true;
 }
 
 function validateReceipt(order, receipt, receivedAt, destinations = DESTINATIONS) {
@@ -68,7 +86,9 @@ function reportedPaymentCents(order, jobs, creditedKeys = new Set()) {
     for (const job of jobs) {
         const keys = receiptKeys(job.ocr || {});
         if (!keys.length) continue;
-        const matches = groups.filter(g => keys.some(k => g.keys.has(k)));
+        const matches = groups.filter(g => keys.some(k => g.keys.has(k)) || g.jobs.some(other =>
+            ['applied', 'review', 'pending', 'processing'].includes(job.status) &&
+            ['applied', 'review', 'pending', 'processing'].includes(other.status) && possibleSamePayment(job, other)));
         const group = { keys: new Set(keys), jobs: [job] };
         for (const match of matches) {
             match.keys.forEach(k => group.keys.add(k));
@@ -94,4 +114,4 @@ function claimsPayment(text) {
     return /(?:ya\s+(?:valid[aá](?:mos|do)|valid[eé]|confirm[aá](?:mos|do)|verifiqu[eé]|verificamos)|(?:recibimos|recib[ií]|recibido|gracias)[^.!?\n]{0,65})(?:[^.!?\n]{0,65})(?:pago|comprobante|dep[oó]sito|transferencia|anticipo)|(?:pedido|pago)[^.!?\n]{0,35}(?:liquidado|pagado|validado|confirmado)/i.test(text);
 }
 
-module.exports = { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, validateReceipt, paymentDecision, claimsPayment, reportedPaymentCents, canRequestShippingForm, awaitingPaymentApproval };
+module.exports = { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, receiptFolios, possibleSamePayment, validateReceipt, paymentDecision, claimsPayment, reportedPaymentCents, canRequestShippingForm, awaitingPaymentApproval };

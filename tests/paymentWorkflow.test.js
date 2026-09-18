@@ -16,6 +16,19 @@ const job = id => mockDb.read('payment_receipts/' + id);
 async function enqueue(id = 'message', extra = {}) {
     return flow.enqueueReceipt('customer', id, { from: 'customer', id, timestamp: new Date(), type: 'image', fileUrl: 'https://test.invalid/receipt.png', fileType: 'image/png', ...extra }, { historical: true });
 }
+function verifiedPreview(p) {
+    return { safetyToken: p.safetyToken, confirmedRisks: p.risks.map(r => r.code),
+        bankVerified: true, bankEvidence: 'Folio bancario TEST-12345, ingreso confirmado' };
+}
+async function reviewedReceipt(id, options) {
+    const preview = await flow.previewReceiptReview(id, options);
+    return flow.processReceipt(id, { ...options, verification: verifiedPreview(preview) });
+}
+async function reviewViaApi(id, body) {
+    const { data } = await post(`/receipts/${id}/preview`, body);
+    expect(data.success).toBe(true);
+    return post(`/receipts/${id}/review`, { ...body, verification: verifiedPreview(data.preview) });
+}
 beforeEach(() => {
     mockDb.reset(); jest.clearAllMocks();
     mockDb.seed('pedidos/order', { contactId: 'customer', consecutiveOrderNumber: 16368, precio: 1200, estatus: 'Foto enviada', createdAt: new Date(now() - 6 * DAY) });
@@ -46,7 +59,7 @@ test('DH16328: asks shipping data while cancellation remains pending, approval d
     expect(order()).toMatchObject({ estatus: 'Cancelado', shippingFormStatus: 'sent', shippingFormRequestedBeforeApproval: true });
     expect(mockSend).toHaveBeenCalledTimes(1);
     expect(mockSend.mock.calls[0][1].text).not.toMatch(/validamos|preparamos el envío/);
-    await flow.processReceipt(id, { manual: true, amount: 1200, reactivate: true });
+    await reviewedReceipt(id, { manual: true, amount: 1200, reactivate: true });
     expect(order()).toMatchObject({ estatus: 'Fabricar', shippingFormStatus: 'sent' });
     expect(mockSend).toHaveBeenCalledTimes(1);
 });
@@ -60,10 +73,10 @@ test('only an automatic cancellation reactivates with a verified full payment', 
 test('manual review of 300 + 900 reactivates a cancelled order only after both receipts are credited', async () => {
     mockDb.seed('pedidos/order', { ...order(), estatus: 'Cancelado' });
     mockOcr.mockResolvedValueOnce(ocr({ monto: 300 })).mockResolvedValueOnce(ocr({ monto: 900, referencia: 'other12345678', imageHash: 'remaining' }));
-    await flow.processReceipt(await enqueue('deposit'), { manual: true, amount: 300, reactivate: true });
+    await reviewedReceipt(await enqueue('deposit'), { manual: true, amount: 300, reactivate: true });
     expect(order()).toMatchObject({ estatus: 'Cancelado', paymentReceivedCents: 30000 });
     expect(mockSend).not.toHaveBeenCalled();
-    await flow.processReceipt(await enqueue('remainder'), { manual: true, amount: 900, reactivate: true });
+    await reviewedReceipt(await enqueue('remainder'), { manual: true, amount: 900, reactivate: true });
     expect(order()).toMatchObject({ estatus: 'Fabricar', paymentReceivedCents: 120000, shippingFormStatus: 'sent' });
     expect(mockSend).toHaveBeenCalledTimes(1);
 });
@@ -77,7 +90,7 @@ test('DH16295: receipt after 20h is not expired, but 2100 versus 1950 requires r
     expect(job(id).reason).toMatch(/supera el total/);
     expect(order().comprobanteValidadoAt).toBeUndefined();
     expect(mockSend).toHaveBeenCalledTimes(1);
-    await flow.processReceipt(id, { manual: true, amount: 2100 });
+    await reviewedReceipt(id, { manual: true, amount: 2100 });
     expect(order().shippingFormStatus).toBe('sent');
     expect(mockSend).toHaveBeenCalledTimes(1);
 });
@@ -111,6 +124,123 @@ test('same transaction photographed again is deduplicated; cannot finance anothe
     await flow.processReceipt(id);
     expect(job(id)).toMatchObject({ status: 'review', open: true });
     expect(mockDb.read('pedidos/other').paymentReceivedCents).toBe(0);
+});
+
+test('DH16829: a second screenshot cannot turn one $300 deposit into $600 or ask for shipping after $150', async () => {
+    mockDb.seed('pedidos/order', { ...order(), precio: 750 });
+    mockOcr.mockResolvedValue(ocr({ monto: 300 }));
+    await flow.processReceipt(await enqueue('original'));
+    mockOcr.mockResolvedValue(ocr({ monto: 300, imageHash: 'second-screen', fecha: null, referencia: null }));
+    const copy = await enqueue('other-screen'); await flow.processReceipt(copy);
+    const preview = await flow.previewReceiptReview(copy, { amount: 300 });
+    expect(preview).toMatchObject({ receivedCents: 30000, afterCents: 60000 });
+    expect(preview.risks.map(r => r.code)).toEqual(expect.arrayContaining(['possible_duplicate', 'missing_identity']));
+    expect((await post(`/receipts/${copy}/review`, { amount: 300, verification: { safetyToken: preview.safetyToken } })).status).toBe(409);
+    expect(order()).toMatchObject({ paymentReceivedCents: 30000, paymentReportedCents: 30000 });
+    mockOcr.mockResolvedValue(ocr({ monto: 150, imageHash: 'later-150', referencia: '15012345' }));
+    await flow.processReceipt(await enqueue('later-150'));
+    expect(order()).toMatchObject({ paymentReceivedCents: 45000, paymentReportedCents: 45000 });
+    expect(order().comprobanteValidadoAt).toBeUndefined(); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('DH16722: failed OXXO operation is not credited through ordinary manual approval', async () => {
+    mockDb.seed('pedidos/order', { ...order(), precio: 750 });
+    mockOcr.mockResolvedValue(ocr({ monto: 312, pagoRealizado: false, referencia: null, imageHash: 'failed-oxxo' }));
+    const failed = await enqueue('failed-oxxo'); await flow.processReceipt(failed);
+    mockOcr.mockResolvedValue(ocr({ monto: 300, imageHash: 'real-transfer' }));
+    await flow.processReceipt(await enqueue('real-transfer'));
+    const { data } = await post(`/receipts/${failed}/preview`, { amount: 300 });
+    expect(data.preview.risks.map(r => r.code)).toContain('unconfirmed_payment');
+    expect((await post(`/receipts/${failed}/review`, { amount: 300 })).status).toBe(409);
+    expect((await post(`/receipts/${failed}/review`, { amount: 300, verification: { safetyToken: data.preview.safetyToken } })).status).toBe(409);
+    expect(order().paymentReceivedCents).toBe(30000);
+    expect(job(failed).status).toBe('review');
+    mockOcr.mockResolvedValue(ocr({ monto: 150, imageHash: 'rest', referencia: '15012345' }));
+    await flow.processReceipt(await enqueue('rest'));
+    expect(order()).toMatchObject({ paymentReceivedCents: 45000, paymentReportedCents: 45000 });
+    expect(order().comprobanteValidadoAt).toBeUndefined(); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('a distinct deposit with incomplete evidence requires recorded bank verification, not just checked warnings', async () => {
+    mockOcr.mockResolvedValue(ocr({ monto: 300 }));
+    await flow.processReceipt(await enqueue('first'));
+    mockOcr.mockResolvedValue(ocr({ monto: 300, referencia: null, imageHash: 'second-distinct' }));
+    const second = await enqueue('second-distinct'); await flow.processReceipt(second);
+    const preview = await flow.previewReceiptReview(second, { amount: 300 });
+    const checked = { safetyToken: preview.safetyToken, confirmedRisks: preview.risks.map(r => r.code) };
+    expect((await post(`/receipts/${second}/review`, { amount: 300, verification: checked })).status).toBe(409);
+    expect(order().paymentReceivedCents).toBe(30000);
+    expect((await reviewViaApi(second, { amount: 300 })).status).toBe(200);
+    expect(order().paymentReceivedCents).toBe(60000);
+    expect(job(second).manualVerification).toMatchObject({ previousReceivedCents: 30000, bankVerified: true, bankEvidence: expect.stringContaining('TEST-12345') });
+});
+
+test('two reviewers with the same old balance cannot both credit payments without a fresh review', async () => {
+    const first = await enqueue('first'), second = await enqueue('second');
+    mockDb.seed('payment_receipts/' + first, { ...job(first), ocr: ocr({ monto: 300 }) });
+    mockDb.seed('payment_receipts/' + second, { ...job(second), ocr: ocr({ monto: 300, referencia: 'second-123', imageHash: 'second' }) });
+    const a = await flow.previewReceiptReview(first, { amount: 300 });
+    const b = await flow.previewReceiptReview(second, { amount: 300 });
+    const results = await Promise.all([
+        flow.processReceipt(first, { manual: true, amount: 300, verification: verifiedPreview(a) }),
+        flow.processReceipt(second, { manual: true, amount: 300, verification: verifiedPreview(b) })
+    ]);
+    expect(results.filter(r => r.status === 'partial')).toHaveLength(1);
+    expect(order().paymentReceivedCents).toBe(30000);
+    const pending = job(first).status === 'review' ? first : second;
+    await reviewedReceipt(pending, { manual: true, amount: 300 });
+    expect(order().paymentReceivedCents).toBe(60000);
+});
+
+test('changing the amount after preview invalidates the approval', async () => {
+    const id = await enqueue();
+    const preview = await flow.previewReceiptReview(id, { amount: 300 });
+    expect((await post(`/receipts/${id}/review`, { amount: 1200, verification: verifiedPreview(preview) })).status).toBe(409);
+    expect(order().paymentReceivedCents).toBeUndefined();
+});
+
+test('preview shows the ledger without validating money, starting production or sending a form', async () => {
+    const id = await enqueue();
+    const before = order();
+    const preview = await post(`/receipts/${id}/preview`, { amount: 1200 });
+    expect(preview.data.preview).toMatchObject({ receivedCents: 0, afterCents: 120000, remainingCents: 0 });
+    expect(order()).toEqual(before); expect(job(id).status).toBe('pending');
+    expect(mockSend).not.toHaveBeenCalled(); expect(mockInventory).not.toHaveBeenCalled();
+});
+
+test('multiple ambiguous screenshots never inflate reported payment or trigger an early shipping form', async () => {
+    mockDb.seed('pedidos/order', { ...order(), precio: 750 });
+    mockOcr.mockResolvedValue(ocr({ monto: 450, referencia: null, fecha: null }));
+    await flow.processReceipt(await enqueue('screen1'));
+    mockOcr.mockResolvedValue(ocr({ monto: 450, referencia: null, fecha: null, imageHash: 'screen2' }));
+    await flow.processReceipt(await enqueue('screen2'));
+    expect(order().paymentReportedCents).toBe(45000);
+    expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('deduplication indexes both the bank reference and tracking code', async () => {
+    mockOcr.mockResolvedValue(ocr({ monto: 300, claveRastreo: 'tracking123' }));
+    await flow.processReceipt(await enqueue('full'));
+    mockOcr.mockResolvedValue(ocr({ monto: 300, imageHash: 'only-reference' }));
+    const duplicate = await enqueue('only-reference'); await flow.processReceipt(duplicate);
+    expect(job(duplicate).status).toBe('duplicate'); expect(order().paymentReceivedCents).toBe(30000);
+});
+
+test('automatic processing holds a complete receipt if a partial screenshot was already credited', async () => {
+    mockOcr.mockResolvedValue(ocr({ monto: 300, referencia: null, fecha: null, imageHash: 'partial-screen' }));
+    await reviewedReceipt(await enqueue('partial-screen'), { manual: true, amount: 300 });
+    mockOcr.mockResolvedValue(ocr({ monto: 300, imageHash: 'full-receipt' }));
+    const duplicate = await enqueue('full-receipt'); await flow.processReceipt(duplicate);
+    expect(job(duplicate)).toMatchObject({ status: 'review', reason: expect.stringContaining('Posible comprobante repetido') });
+    expect(order().paymentReceivedCents).toBe(30000); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('a failed attempt of the same amount does not prevent crediting a later successful transfer', async () => {
+    mockOcr.mockResolvedValue(ocr({ monto: 300, pagoRealizado: false, referencia: null, imageHash: 'failed' }));
+    await flow.processReceipt(await enqueue('failed'));
+    mockOcr.mockResolvedValue(ocr({ monto: 300, imageHash: 'successful' }));
+    await flow.processReceipt(await enqueue('successful'));
+    expect(order().paymentReceivedCents).toBe(30000);
 });
 
 test('transient send rejection retains payment and retries without duplicating', async () => {
@@ -220,9 +350,9 @@ test('pending 300 + repeated 300 + 900 asks once, approvals do not double count 
     expect(order()).toMatchObject({ paymentReportedCents: 120000, paymentReportedComplete: true, shippingFormStatus: 'sent' });
     expect(order().comprobanteValidadoAt).toBeUndefined();
     expect(await flow.paymentContext('customer')).toMatchObject({ hasPaid: false, reportedComplete: true, formSent: true });
-    await flow.processReceipt(first, { manual: true, amount: 300 });
+    await reviewedReceipt(first, { manual: true, amount: 300 });
     expect(order().paymentReportedCents).toBe(120000);
-    await flow.processReceipt(second, { manual: true, amount: 900 });
+    await reviewedReceipt(second, { manual: true, amount: 900 });
     expect(order().paymentReceivedCents).toBe(120000);
     expect(order().comprobanteValidadoAt).toBeTruthy();
     expect(mockSend).toHaveBeenCalledTimes(1);
@@ -314,7 +444,7 @@ async function post(path, body) {
 }
 test('manual review API records a deposit without marking the order fully paid', async () => {
     const id = await enqueue();
-    expect((await post(`/receipts/${id}/review`, { amount: 300 })).status).toBe(200);
+    expect((await reviewViaApi(id, { amount: 300 })).status).toBe(200);
     expect(order().paymentReceivedCents).toBe(30000); expect(order().comprobanteValidadoAt).toBeUndefined();
     expect(mockSend).not.toHaveBeenCalled();
 });
@@ -360,7 +490,7 @@ test('DH16821: transfer in progress stays outside mockups until operator confirm
     expect(order()).toMatchObject({ estatus: 'Esperando anticipo', paymentProductionStatus: 'review' });
     expect(job(id).reason).toMatch(/en proceso/);
     expect(mockInventory).not.toHaveBeenCalled(); expect(mockSend).not.toHaveBeenCalled();
-    expect((await post(`/receipts/${id}/review`, { amount: 300, orderId: 'order' })).status).toBe(200);
+    expect((await reviewViaApi(id, { amount: 300, orderId: 'order' })).status).toBe(200);
     expect(order()).toMatchObject({ estatus: 'Fabricar', paymentReceivedCents: 30000, paymentProductionStatus: 'done' });
     expect(order().comprobanteValidadoAt).toBeUndefined();
     expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
@@ -481,7 +611,7 @@ test('simultaneous production workers hold a single claim, and a stale claim is 
 
 test('deposit for a new order does not clear an unrelated suspicious receipt', async () => {
     mockDb.seed('contacts_whatsapp/customer', { suspiciousReceiptPending: true, suspiciousReceipt: { imageUrl: 'https://test.invalid/different.png' } });
-    await flow.processReceipt(await enqueue(), { manual: true, amount: 300 });
+    await reviewedReceipt(await enqueue(), { manual: true, amount: 300 });
     expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(true);
 });
 
@@ -503,7 +633,7 @@ test('unified review shows one card per image, keeps AI reason and does not merg
 
 test('one manual approval credits a deposit once and closes the matching AI alert and duplicate cards', async () => {
     const id = await enqueue(), copy = await enqueue('same-image'); flagReceipt();
-    expect((await post(`/receipts/${id}/review`, { amount: 300 })).status).toBe(200);
+    expect((await reviewViaApi(id, { amount: 300 })).status).toBe(200);
     expect(order().paymentReceivedCents).toBe(30000); expect(order().comprobanteValidadoAt).toBeUndefined();
     expect(job(copy)).toMatchObject({ status: 'duplicate', open: false });
     expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
@@ -533,7 +663,7 @@ test('legacy alert uses the same amount review without creating an automatic pay
     const [row] = (await flow.pendingPayments()).pago_revision;
     expect(row).toMatchObject({ id: 'alert:customer', flagged: true });
     expect(mockDb.all('payment_receipts')).toEqual([]);
-    expect((await post('/receipts/alert%3Acustomer/review', { amount: 300, orderNumber: 'DH16368', reviewToken: row.reviewToken })).status).toBe(200);
+    expect((await reviewViaApi('alert%3Acustomer', { amount: 300, orderNumber: 'DH16368', reviewToken: row.reviewToken })).status).toBe(200);
     expect(order().paymentReceivedCents).toBe(30000); expect(order().comprobanteValidadoAt).toBeUndefined();
     expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
     expect((await flow.pendingPayments()).pago_revision).toEqual([]); expect(mockSend).not.toHaveBeenCalled();
@@ -544,7 +674,7 @@ test('legacy alert rejected as not-receipt by OCR remains reviewable by an opera
     await flow.processReceipt(id); flagReceipt();
     const [row] = (await flow.pendingPayments()).pago_revision;
     expect(row.id).toBe('alert:customer');
-    expect((await post('/receipts/alert%3Acustomer/review', { amount: 300, orderNumber: 'DH16368', reviewToken: row.reviewToken })).status).toBe(200);
+    expect((await reviewViaApi('alert%3Acustomer', { amount: 300, orderNumber: 'DH16368', reviewToken: row.reviewToken })).status).toBe(200);
     expect(job(id).status).toBe('applied'); expect(order().paymentReceivedCents).toBe(30000);
     expect(mockSend).not.toHaveBeenCalled();
 });
@@ -569,7 +699,7 @@ test('legacy alert with no image can be dismissed without crediting or sending m
 test('a late legacy approval uses a newly enqueued matching receipt instead of creating a second one', async () => {
     flagReceipt(); const [row] = (await flow.pendingPayments()).pago_revision;
     const id = await enqueue();
-    expect((await post('/receipts/alert%3Acustomer/review', { amount: 300, orderNumber: 'DH16368', reviewToken: row.reviewToken })).status).toBe(200);
+    expect((await reviewViaApi('alert%3Acustomer', { amount: 300, orderNumber: 'DH16368', reviewToken: row.reviewToken })).status).toBe(200);
     expect(mockDb.all('payment_receipts')).toHaveLength(1); expect(job(id).status).toBe('applied');
     expect(order().paymentReceivedCents).toBe(30000);
 });
@@ -578,7 +708,7 @@ test('a full payment already registered clears its matching alert without credit
     const id = await enqueue();
     mockDb.seed('pedidos/order', { ...order(), paymentReceivedCents: 120000, comprobanteValidadoAt: new Date(), shippingFormStatus: 'sent', shippingFormSentAt: new Date() });
     flagReceipt();
-    expect((await post(`/receipts/${id}/review`, { amount: 1200 })).status).toBe(200);
+    expect((await reviewViaApi(id, { amount: 1200 })).status).toBe(200);
     expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
     expect(order().paymentReceivedCents).toBe(120000); expect(mockSend).not.toHaveBeenCalled();
 });

@@ -6,6 +6,34 @@ const receipts = () => db.collection('payment_receipts');
 const services = () => require('../services');
 const LEASE_MS = 3 * 60000;
 const { sameReceipt, matchesAlert, resolution, mergeReviewRows } = require('./receiptReviewQueue');
+const { receiptReviewState, checkManualReview } = require('./receiptSafety');
+
+// Vista previa sin acreditar dinero, cambiar estatus ni enviar mensajes.
+async function previewReceiptReview(id, { amount, orderId } = {}) {
+    if (!Number.isFinite(Number(amount)) || !(Number(amount) > 0)) throw new Error('Confirma un importe válido.');
+    const ref = receipts().doc(id);
+    let receipt = (await ref.get()).data();
+    if (!receipt?.open || ms(receipt.leaseUntil) > Date.now()) throw new Error('El comprobante ya se resolvió o se está procesando. Actualiza la lista.');
+    if (!receipt.ocr) {
+        if (!receipt.fileUrl) throw new Error('No hay imagen del comprobante para revisar.');
+        const ocr = await services().extractReceiptData(receipt.fileUrl, receipt.fileType);
+        await db.runTransaction(async tx => {
+            const fresh = (await tx.get(ref)).data();
+            if (!fresh?.open || ms(fresh.leaseUntil) > Date.now()) throw new Error('El comprobante cambió. Actualiza la lista.');
+            if (!fresh.ocr) tx.update(ref, { ocr, updatedAt: stamp() });
+        });
+    }
+    return db.runTransaction(async tx => {
+        receipt = (await tx.get(ref)).data();
+        if (!receipt?.open || ms(receipt.leaseUntil) > Date.now()) throw new Error('El comprobante ya se resolvió o se está procesando. Actualiza la lista.');
+        const selected = orderId || receipt.orderId;
+        if (!selected || (receipt.orderId && selected !== receipt.orderId)) throw new Error('Selecciona el pedido correcto de este contacto.');
+        const order = (await tx.get(db.collection('pedidos').doc(selected))).data();
+        if (!order || order.contactId !== receipt.contactId) throw new Error('El pedido no pertenece a este contacto.');
+        const related = await tx.get(receipts().where('contactId', '==', receipt.contactId));
+        return receiptReviewState(order, { ...receipt, id, orderId: selected }, related.docs.map(d => ({ ...d.data(), id: d.id })), amount);
+    });
+}
 
 async function ordersForContact(contactId) {
     const snap = await db.collection('pedidos').where('contactId', '==', contactId).get();
@@ -60,7 +88,7 @@ async function reviewReceipt(ref, reason, extra = {}) {
     });
 }
 
-async function creditReceipt(ref, receipt, { manual = false, amount = null, reactivate = false } = {}) {
+async function creditReceipt(ref, receipt, { manual = false, amount = null, reactivate = false, verification = {} } = {}) {
     const keys = receiptKeys(receipt);
     return db.runTransaction(async tx => {
         const snap = await tx.get(ref);
@@ -103,6 +131,13 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
             return { status: 'duplicate', orderId: r.orderId };
         }
         if (!keys.length) return { status: 'review', reason: 'No se pudo identificar el comprobante para evitar duplicados.' };
+        const safety = receiptReviewState(order, { ...r, ocr: receipt, id: ref.id }, related.docs.map(d => ({ ...d.data(), id: d.id })), manual ? amount : receipt.monto);
+        if (manual) {
+            const reason = checkManualReview(safety, verification);
+            if (reason) return { status: 'review', reason, risks: safety.risks };
+        } else if (safety.risks.some(risk => risk.code === 'possible_duplicate')) {
+            return { status: 'review', reason: 'Posible comprobante repetido: verificar que sea otro ingreso antes de sumarlo.', risks: safety.risks };
+        }
         const decision = paymentDecision(order, cents(manual ? amount : receipt.monto), manual);
         if (decision.status === 'review') return decision;
         const fields = { paymentReceivedCents: decision.receivedCents, paymentUpdatedAt: stamp(), paymentFormNeedsAssessment: true, paymentProductionPending: true };
@@ -114,12 +149,16 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
         for (const keyRef of keyRefs) tx.set(keyRef, { orderId: r.orderId, receiptId: ref.id, amountCents: cents(manual ? amount : receipt.monto), createdAt: stamp() });
         tx.update(orderRef, fields);
         closeRelated();
-        tx.update(ref, { status: 'applied', open: false, result: decision.status, amountCents: cents(manual ? amount : receipt.monto), reviewedBy: manual ? 'manual' : 'automatic', reason: decision.status === 'paid' ? 'Pago completo registrado.' : 'Abono registrado; falta liquidar el total.', leaseUntil: null, updatedAt: stamp() });
+        tx.update(ref, { status: 'applied', open: false, result: decision.status, amountCents: cents(manual ? amount : receipt.monto), reviewedBy: manual ? 'manual' : 'automatic', reason: decision.status === 'paid' ? 'Pago completo registrado.' : 'Abono registrado; falta liquidar el total.', leaseUntil: null, updatedAt: stamp(),
+            ...(manual ? { manualVerification: { safetyToken: safety.safetyToken, previousReceivedCents: safety.receivedCents,
+                confirmedRisks: safety.risks.map(risk => risk.code), bankVerified: verification.bankVerified === true,
+                bankEvidence: String(verification.bankEvidence || '').trim().slice(0, 1000), reviewedAt: stamp() } } : {}) });
         return { ...decision, orderId: r.orderId, contactId: r.contactId };
     });
 }
 
 async function processReceipt(id, options = {}) {
+    if (options.manual && !options.verification?.safetyToken) return { status: 'review', reason: 'Abre la revisión del comprobante y confirma el saldo antes de aprobar.' };
     const ref = receipts().doc(id);
     const claimed = await db.runTransaction(async tx => {
         const snap = await tx.get(ref);
@@ -155,7 +194,7 @@ async function processReceipt(id, options = {}) {
         }
         if (!options.manual && !claimed.verifiedProvider && check.status === 'review') return await reviewReceipt(ref, check.reason);
         const result = await creditReceipt(ref, ocr, options);
-        if (result.status === 'review') return await reviewReceipt(ref, result.reason);
+        if (result.status === 'review') return await reviewReceipt(ref, result.reason, { reviewRisks: result.risks || [] });
         if (result.status === 'paid' || result.status === 'duplicate') {
             // El pago ya quedó comprometido; un fallo posterior sólo afecta al formulario.
             await deliverForm(result.orderId).catch(e => console.warn('[PAYMENTS] Formulario pendiente:', e.message));
@@ -378,6 +417,7 @@ async function pendingPayments(suspiciousDocs) {
         const d = r.data();
         const order = orders.get(d.orderId) || {};
         const row = { id: r.id, contactId: d.contactId, name: d.orderNumber || d.contactId, orderNumber: d.orderNumber, orderId: d.orderId, at: ms(d.receivedAt), reason: d.reason, imageUrl: d.fileUrl, imageHash: d.ocr?.imageHash || null, amount: d.ocr?.monto || null, status: d.status, formSent: !!order.shippingFormSentAt, shippingDataReceived: !!order.shippingDataReceivedAt };
+        Object.assign(row, { receivedCents: Number(order.paymentReceivedCents) || 0, totalCents: cents(order.precio) || 0, reviewRisks: d.reviewRisks || [] });
         (/cancelad/i.test(d.reason || '') ? pago_cancelado : pago_revision).push(row);
     }
     for (const o of forms.docs) {
@@ -391,4 +431,4 @@ async function pendingPayments(suspiciousDocs) {
         pago_cancelado: reviews.filter(r => /cancelad/i.test(r.reason || '')), pago_formulario };
 }
 
-module.exports = { enqueueReceipt, discoverReceipts, processReceipt, creditReceipt, deliverForm, manualValidateAndSend, paymentContext, recordProviderPayment, pendingPayments, ordersForContact, refreshReportedPayment, recordShippingDataForOrder };
+module.exports = { enqueueReceipt, discoverReceipts, processReceipt, creditReceipt, previewReceiptReview, deliverForm, manualValidateAndSend, paymentContext, recordProviderPayment, pendingPayments, ordersForContact, refreshReportedPayment, recordShippingDataForOrder };

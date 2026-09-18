@@ -1,14 +1,40 @@
 const router = require('express').Router();
 const { db, admin } = require('../config');
-const { processReceipt, deliverForm, discoverReceipts, refreshReportedPayment } = require('./paymentWorkflow');
+const { processReceipt, previewReceiptReview, deliverForm, discoverReceipts, refreshReportedPayment } = require('./paymentWorkflow');
 const { ms, canRequestShippingForm } = require('./paymentPolicy');
 const { resolveReviewRef, sameReceipt, matchesAlert, resolution } = require('./receiptReviewQueue');
+
+async function selectReviewOrder(receipt, body) {
+    let orderId = body.orderId || receipt.orderId;
+    if (body.orderNumber) {
+        const number = Number(String(body.orderNumber).replace(/\D/g, ''));
+        const matches = await db.collection('pedidos').where('consecutiveOrderNumber', '==', number).get();
+        const selected = matches.docs.filter(d => d.data().contactId === receipt.contactId);
+        if (selected.length !== 1) throw Object.assign(new Error('No hay un pedido único con ese número para el contacto.'), { status: 400 });
+        orderId = selected[0].id;
+    }
+    if (!orderId) throw Object.assign(new Error('Selecciona el pedido correcto.'), { status: 400 });
+    const order = await db.collection('pedidos').doc(String(orderId)).get();
+    if (!order.exists || order.data().contactId !== receipt.contactId) throw Object.assign(new Error('El pedido no corresponde al contacto.'), { status: 400 });
+    if (receipt.orderId && receipt.orderId !== orderId) throw Object.assign(new Error('El comprobante ya está vinculado a otro pedido.'), { status: 409 });
+    return { orderId, orderNumber: `DH${order.data().consecutiveOrderNumber}` };
+}
+
+router.post('/receipts/:id/preview', async (req, res) => {
+    try {
+        const ref = await resolveReviewRef(req.params.id, req.body?.reviewToken);
+        const snap = await ref.get();
+        if (!snap.exists) return res.status(404).json({ success: false, message: 'Comprobante no encontrado.' });
+        const binding = await selectReviewOrder(snap.data(), req.body || {});
+        const preview = await previewReceiptReview(ref.id, { ...binding, amount: req.body?.amount });
+        res.json({ success: true, preview });
+    } catch (error) { res.status(error.status || 409).json({ success: false, message: error.message }); }
+});
 
 router.post('/receipts/:id/review', async (req, res) => {
     try {
         const { amount, reactivate, action } = req.body || {};
         if (action !== 'reject' && (!(Number(amount) > 0) || !Number.isFinite(Number(amount)))) return res.status(400).json({ success: false, message: 'Confirma el importe que aparece en el comprobante.' });
-        let { orderId } = req.body || {};
         const ref = await resolveReviewRef(req.params.id, req.body?.reviewToken);
         const snap = await ref.get();
         if (!snap.exists) return res.status(404).json({ success: false, message: 'Comprobante no encontrado.' });
@@ -42,21 +68,8 @@ router.post('/receipts/:id/review', async (req, res) => {
             if (receipt.orderId) await refreshReportedPayment(receipt.orderId);
             return res.json({ success: true });
         }
-        if (req.body.orderNumber) {
-            const number = Number(String(req.body.orderNumber).replace(/\D/g, ''));
-            const matches = await db.collection('pedidos').where('consecutiveOrderNumber', '==', number).get();
-            const selected = matches.docs.filter(d => d.data().contactId === receipt.contactId);
-            if (selected.length !== 1) return res.status(400).json({ success: false, message: 'No hay un pedido único con ese número para el contacto.' });
-            orderId = selected[0].id;
-        }
-        let orderNumber;
-        if (orderId) {
-            const order = await db.collection('pedidos').doc(String(orderId)).get();
-            if (!order.exists || order.data().contactId !== receipt.contactId) return res.status(400).json({ success: false, message: 'El pedido no corresponde al contacto.' });
-            if (receipt.orderId && receipt.orderId !== orderId) return res.status(409).json({ success: false, message: 'El comprobante ya está vinculado a otro pedido.' });
-            orderNumber = `DH${order.data().consecutiveOrderNumber}`;
-        }
-        const result = await processReceipt(ref.id, { manual: true, amount: Number(amount), reactivate: reactivate === true, ...(orderId ? { orderId, orderNumber } : {}) });
+        const binding = await selectReviewOrder(receipt, req.body || {});
+        const result = await processReceipt(ref.id, { manual: true, amount: Number(amount), reactivate: reactivate === true, ...binding, verification: req.body.verification || {} });
         res.status(['review', 'unchanged'].includes(result.status) ? 409 : 200).json({ success: !['review', 'unchanged'].includes(result.status), message: result.reason || 'Comprobante registrado.', result });
     } catch (error) { res.status(error.status || 500).json({ success: false, message: error.message }); }
 });

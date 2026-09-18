@@ -23,6 +23,11 @@ const live = fs.readFileSync(require.resolve('../public/js/modules/pendientes-li
                     const body = JSON.parse(options.body || '{}'); window.posts.push(body); window.postUrls.push(url);
                     if (window.failPost) return { ok: false, status: 503, json: async () => ({ message: 'Sin conexión' }) };
                     if (window.pausePost) await new Promise(resolve => window.pendingPosts.push(resolve));
+                    if (url.endsWith('/preview')) return { ok: true, json: async () => ({ success: true, preview: window.reviewPreview || {
+                        safetyToken: 'balance-snapshot', orderNumber: body.orderNumber, totalCents: 75000, receivedCents: 30000,
+                        amountCents: body.amount * 100, afterCents: 30000 + body.amount * 100, remainingCents: 45000 - body.amount * 100,
+                        previousPayments: [], similarReceipts: [], risks: []
+                    } }) };
                     const id = url.split('/').at(-2), row = window.payload.mockup?.find(o => o.id === id);
                     if (row) row.comentario = body.comentario;
                     return { ok: true, json: async () => ({ success: true }) };
@@ -201,10 +206,40 @@ const live = fs.readFileSync(require.resolve('../public/js/modules/pendientes-li
         await page.click('[data-pend="alert:customer"] [onclick^="pendPaymentReview"]');
         expect(await page.$eval('dialog [name="orderNumber"]', el => el.value)).toBe('DH19050');
         await page.$eval('dialog [name="orderNumber"]', el => { el.value = 'DH19051'; });
+        await page.click('dialog [type="submit"]');
+        await page.waitForSelector('dialog [name="reviewed"]');
+        expect(await page.$eval('dialog', el => el.textContent)).toContain('Ya registrado: $300.00');
+        expect(await page.evaluate(() => postUrls.some(url => url.endsWith('/review')))).toBe(false);
         await page.click('dialog [name="reviewed"]');
         await page.click('dialog [type="submit"]');
+        await page.waitForFunction(() => postUrls.some(url => url.endsWith('/review')));
         await page.waitForFunction(() => posts.some(p => p.amount === 300));
         expect(await page.evaluate(() => posts.find(p => p.amount === 300))).toMatchObject({ amount: 300, orderNumber: 'DH19051', reviewToken: 'snapshot-1' });
         expect(await page.evaluate(() => postUrls)).toContain('/api/payments/receipts/alert%3Acustomer/review');
+        expect(await page.evaluate(() => posts.at(-1).verification)).toMatchObject({ safetyToken: 'balance-snapshot' });
+    });
+
+    test('no permite aprobar una operación fallida sin revisar la alerta y verificar el banco', async () => {
+        await page.evaluate(async () => {
+            payload.pago_revision = [{ id: 'failed', orderId: 'order', orderNumber: 'DH16722', amount: 300, reason: 'Operación fallida' }];
+            window.reviewPreview = { safetyToken: 'failed-snapshot', orderNumber: 'DH16722', totalCents: 75000, receivedCents: 30000,
+                amountCents: 30000, afterCents: 60000, remainingCents: 15000, previousPayments: [], similarReceipts: [],
+                risks: [{ code: 'unconfirmed_payment', message: 'La operación aparece fallida, en proceso o sin confirmación.' }] };
+            await renderPendientesView(true); pendSelectCategory('pago_revision');
+        });
+        await page.click('[data-pend="failed"] [onclick^="pendPaymentReview"]');
+        await page.click('dialog [type="submit"]');
+        await page.waitForSelector('dialog [name="bankEvidence"]');
+        await page.click('dialog [name="reviewed"]');
+        await page.click('dialog [type="submit"]');
+        expect(await page.evaluate(() => postUrls.some(url => url.endsWith('/review')))).toBe(false);
+        await page.click('dialog [name="risk_unconfirmed_payment"]');
+        await page.click('dialog [name="bankVerified"]');
+        await page.click('dialog [type="submit"]');
+        expect(await page.evaluate(() => postUrls.some(url => url.endsWith('/review')))).toBe(false);
+        await page.type('dialog [name="bankEvidence"]', 'Folio TEST-12345, ingreso confirmado');
+        await page.click('dialog [type="submit"]');
+        await page.waitForFunction(() => postUrls.some(url => url.endsWith('/review')));
+        expect(await page.evaluate(() => posts.at(-1).verification)).toMatchObject({ confirmedRisks: ['unconfirmed_payment'], bankVerified: true, bankEvidence: 'Folio TEST-12345, ingreso confirmado' });
     });
 });

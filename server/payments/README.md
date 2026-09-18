@@ -18,6 +18,17 @@ cada 30 segundos, independientemente del navegador y de `botActive`.
 - `paymentReceivedCents` acumula abonos. Sólo al cubrir el total se guarda
   `comprobanteValidadoAt` y se crea la obligación de enviar el formulario en el
   mismo commit. Los pagos OXXO acreditados por el webhook usan el mismo registro.
+- La revisión manual requiere una vista previa del saldo y de los comprobantes
+  anteriores. Su confirmación está vinculada al pedido, importe y estado actual
+  del registro; si otro operador acredita un pago, hay que volver a revisar.
+- Una captura distinta sin identificación suficiente puede ser el mismo ingreso.
+  Se deriva a revisión y tampoco infla el total presentado para pedir datos de
+  envío. No se descarta automáticamente: dos abonos reales del mismo importe
+  siguen siendo posibles. Se indexan tanto la referencia como la clave de rastreo.
+- Las operaciones fallidas/en proceso, posibles duplicados, falta de folio/fecha,
+  importes modificados y excedentes requieren confirmar cada alerta y registrar
+  evidencia del ingreso comprobado en banco. La verificación queda auditada en
+  `manualVerification`; una aprobación ordinaria no puede saltarse estas alertas.
 - `shippingFormStatus` es independiente: pending → sending → sent. El sello se
   escribe después del ID confirmado por el canal y del mensaje guardado en el
   chat. Un rechazo definitivo reintenta; un timeout ambiguo o un reinicio durante

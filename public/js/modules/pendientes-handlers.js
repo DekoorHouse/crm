@@ -246,6 +246,7 @@ function pendContactCard(c, col) {
     if (col.startsWith('pago_')) {
         const image = c.imageUrl ? `<a href="${escapeHtml(c.imageUrl)}" target="_blank" rel="noopener" class="pd-btn pd-btn-ghost">Ver comprobante</a>` : '';
         detalle = `<div class="pd-card-sub"><b>${escapeHtml(c.orderNumber || c.name || '')}</b><br>${escapeHtml(c.reason || 'Pendiente de procesamiento')}${c.amount ? '<br>Importe leído: $' + escapeHtml(String(c.amount)) : ''}</div>`;
+        if (c.orderId && c.totalCents > 0) detalle += `<div class="pd-card-sub"><b>Ya registrado: $${(Number(c.receivedCents || 0) / 100).toLocaleString('es-MX')}</b> de $${(Number(c.totalCents) / 100).toLocaleString('es-MX')}</div>`;
         if (c.flagged) detalle += `<div class="pd-card-sub" style="padding:8px;border-radius:7px;background:#fff7ed;color:#9a3412"><b><i class="fas fa-triangle-exclamation"></i> Alerta de la IA</b><br>${escapeHtml(c.alertReason || 'Requiere revisión manual.')}</div>
             <div class="pd-cotejo-slot" data-cotejar="${escapeHtml(c.suspiciousContactId)}">${pendCotejarBadge(c.cotejo, c.suspiciousContactId)}</div>`;
         if (col !== 'pago_formulario' && (c.formSent || c.shippingDataReceived)) detalle += `<div class="pd-card-sub" style="color:#2563eb">${c.shippingDataReceived ? 'Datos de envío recibidos' : 'Datos de envío solicitados'} · comprobante por revisar</div>`;
@@ -406,7 +407,7 @@ async function _pendPost(path, body) {
 function _pendPaymentDialog(title, contents, submitLabel = 'Confirmar') {
     return new Promise(resolve => {
         const dialog = document.createElement('dialog');
-        dialog.style.cssText = 'max-width:480px;width:calc(100% - 32px);padding:24px;border:1px solid #cbd5e1;border-radius:14px;color:#334155;background:white;box-shadow:0 20px 80px #0004';
+        dialog.style.cssText = 'max-width:540px;max-height:90vh;overflow:auto;width:calc(100% - 32px);box-sizing:border-box;padding:24px;border:1px solid #cbd5e1;border-radius:14px;color:#334155;background:white;box-shadow:0 20px 80px #0004';
         dialog.innerHTML = `<form><h2 style="font-size:20px;margin:0 0 16px">${escapeHtml(title)}</h2>${contents}<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:22px"><button type="button" data-cancel class="pd-btn pd-btn-ghost" style="padding:10px 16px">Cancelar</button><button type="submit" class="pd-btn" style="padding:10px 16px;background:#15803d;color:white">${escapeHtml(submitLabel)}</button></div></form>`;
         const finish = value => { dialog.close(); dialog.remove(); resolve(value); };
         dialog.querySelector('[data-cancel]').onclick = () => finish(null);
@@ -435,10 +436,39 @@ async function pendPaymentReview(id, col, button) {
         ${receipt.imageUrl ? `<a href="${escapeHtml(receipt.imageUrl)}" target="_blank" rel="noopener">Abrir comprobante</a>` : ''}
         ${!receipt.orderId ? `<label>Pedido de este contacto<input name="orderNumber" required value="${escapeHtml(receipt.orderNumber || '')}" placeholder="DH12345" pattern="[Dd]?[Hh]?[0-9]+" style="${fieldStyle}"></label>` : ''}
         <label>Importe recibido en este comprobante (MXN)<input name="amount" type="number" min="0.01" step="0.01" required value="${escapeHtml(String(receipt.amount || ''))}" style="${fieldStyle}"></label>
-        <p style="font-size:14px;line-height:1.5">Se aprobará este abono. Los datos de envío se solicitan cuando los comprobantes cubren el total, aunque la aprobación siga pendiente.</p>
-        <label style="display:flex;gap:8px;line-height:1.4"><input type="checkbox" required name="reviewed"> Confirmo que revisé el comprobante y recibimos este importe.${reactivate ? ' Autorizo reactivar el pedido cancelado cuando quede liquidado.' : ''}</label>`, 'Validar importe');
+        <p style="font-size:14px;line-height:1.5">Primero revisaremos el saldo y los abonos anteriores. Todavía no se sumará este importe.</p>`, 'Revisar saldo');
     if (!values) return;
-    await _pendPaymentAction(`payments/receipts/${encodeURIComponent(id)}/review`, { amount: Number(values.amount), reactivate, orderNumber: values.orderNumber || receipt.orderNumber, reviewToken: receipt.reviewToken }, button);
+    const path = `payments/receipts/${encodeURIComponent(id)}`;
+    const body = { amount: Number(values.amount), reactivate, orderNumber: values.orderNumber || receipt.orderNumber, reviewToken: receipt.reviewToken };
+    button.disabled = true;
+    try {
+        const { preview: p } = await _pendPost(`${path}/preview`, body);
+        const money = n => '$' + (Number(n || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 });
+        const payments = [...p.previousPayments].sort((a, b) => b.receivedAt - a.receivedAt);
+        const references = r => `<li style="margin:8px 0">${escapeHtml(money(r.amountCents))} · ${escapeHtml(r.orderNumber || '')} · ${escapeHtml(new Date(r.receivedAt).toLocaleDateString('es-MX'))} ${r.imageUrl ? `<a href="${escapeHtml(r.imageUrl)}" target="_blank" rel="noopener">Ver comprobante</a>` : ''}</li>`;
+        const confirmation = await _pendPaymentDialog(`Confirmar abono · ${p.orderNumber}`, `
+            <div style="background:#f1f5f9;padding:14px;border-radius:8px;line-height:1.8">
+                Total del pedido: <b>${money(p.totalCents)}</b><br>
+                Ya registrado: <b>${money(p.receivedCents)}</b><br>
+                Nuevo abono a sumar: <b>${money(p.amountCents)}</b><br>
+                Quedaría registrado: <b>${money(p.afterCents)}</b><br>
+                Saldo restante: <b>${money(p.remainingCents)}</b>
+            </div>
+            ${receipt.imageUrl ? `<p><a href="${escapeHtml(receipt.imageUrl)}" target="_blank" rel="noopener">Abrir el comprobante que estás revisando</a></p>` : ''}
+            ${payments.length ? `<details open><summary>Abonos ya registrados (${payments.length})</summary><ul style="padding-left:20px">${payments.map(references).join('')}</ul></details>` : ''}
+            ${p.similarReceipts.length ? `<details open><summary>Comprobantes que podrían ser el mismo pago</summary><ul style="padding-left:20px">${p.similarReceipts.map(references).join('')}</ul></details>` : ''}
+            ${p.risks.map(r => `<div style="margin:12px 0;padding:12px;border:1px solid #fca5a5;background:#fef2f2;border-radius:8px;color:#991b1b"><b>${escapeHtml(r.message)}</b><label style="display:flex;gap:8px;margin-top:10px;line-height:1.5"><input type="checkbox" required name="risk_${escapeHtml(r.code)}"> ${r.code === 'possible_duplicate' ? 'Comprobé que es otro ingreso, distinto de los abonos ya registrados.' : 'Revisé esta alerta y confirmé el importe recibido en el banco.'}</label></div>`).join('')}
+            ${p.risks.length ? `<label style="display:flex;gap:8px;line-height:1.5;margin:14px 0"><input type="checkbox" required name="bankVerified"> Verifiqué el ingreso en el banco; no me basé únicamente en esta imagen.</label><label>Folio o evidencia del ingreso verificado<input name="bankEvidence" required minlength="8" maxlength="1000" placeholder="Folio, fecha e importe del movimiento en banco" style="${fieldStyle}"></label>` : ''}
+            <label style="display:flex;gap:8px;line-height:1.5;margin-top:14px"><input type="checkbox" required name="reviewed"> Confirmo que recibimos este nuevo abono y que el saldo mostrado es correcto.${reactivate ? ' Autorizo reactivar el pedido cancelado cuando quede liquidado.' : ''}</label>`, p.risks.length ? 'Registrar pago verificado en banco' : 'Registrar abono');
+        if (!confirmation) return;
+        await _pendPost(`${path}/review`, { ...body, verification: { safetyToken: p.safetyToken,
+            confirmedRisks: p.risks.filter(r => confirmation[`risk_${r.code}`]).map(r => r.code),
+            bankVerified: !!confirmation.bankVerified, bankEvidence: confirmation.bankEvidence || '' } });
+        await renderPendientesView(true);
+    } catch (e) {
+        await _pendPaymentDialog('No se registró el abono', `<p>${escapeHtml(e.message)}</p>`, 'Entendido');
+        await renderPendientesView(true);
+    } finally { button.disabled = false; }
 }
 
 async function pendPaymentReject(id, button) {
