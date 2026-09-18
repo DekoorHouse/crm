@@ -74,3 +74,35 @@ test.each([{ hasPaid: false }, deposit])('legitimate payment instructions remain
 test('a received receipt pending review is not requested again even before approval', () => {
     expect(paymentReply({ pending: 1 }, { aiText: 'Envía el comprobante.', onlyPreventRepeatRequest: true })[0]).toContain('No necesitas volver a mandar la misma imagen');
 });
+
+test.each(['Sí claro.', 'Si, por favor', 'Ok deme unos minutos por fa', 'En unos minutos lo mando'])('customer waiting or agreement does not trigger another receipt request: %s', customerText => {
+    const result = paymentReply({}, { customerText, aiText: 'Envíame el comprobante.' });
+    expect(result[0]).toMatch(/Con gusto|tómate tu tiempo/);
+    expect(result[0]).not.toMatch(/comprobante|Recibimos|reenviar|revisión/);
+});
+
+test.each([
+    ['Me puedes mandar la información mejor a mi número de WhatsApp', 'Para continuar en el otro WhatsApp, escríbenos desde ese número.'],
+    ['Ya cuando tengas los diseños de como quedarían las lámparas', 'El equipo te compartirá los diseños por aquí.'],
+    ['¿Cuánto tarda el envío?', 'El envío tarda de 3 a 5 días hábiles después de despachar.'],
+])('DH16978 pending receipt does not replace an unrelated answer: %s', (customerText, aiText) => {
+    expect(paymentReply({ pending: 1 }, { customerText, aiText })).toBeNull();
+});
+
+test('a new receipt attached to an acknowledgment still goes through payment review', () => {
+    expect(paymentReply({ pending: 1 }, { customerText: 'Sí claro.', receiptPresent: true })[0]).toContain('revisando');
+});
+
+test('pending payments still cannot be described as approved or complete', () => {
+    const result = paymentReply({ pending: 1 }, { customerText: 'Me mandas el diseño', aiText: 'Tu pago completo ya está registrado.' });
+    expect(result[0]).toContain('revisando');
+    expect(result[0]).not.toContain('ya está registrado');
+});
+
+test('a real registration failure still reaches the team even after an acknowledgment', () => {
+    expect(paymentReply({ registrationPending: true }, { customerText: 'Sí claro.' })[0]).toContain('seguimiento al registro');
+});
+
+test('accepting payment instructions preserves the account details for an unpaid order', () => {
+    expect(paymentReply({}, { customerText: 'Sí, por favor.', aiText: 'Transfiere a esta cuenta y manda el comprobante.', onlyPreventRepeatRequest: true })).toBeNull();
+});

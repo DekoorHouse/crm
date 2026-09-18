@@ -3905,7 +3905,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const hayComprobante = durablePayment.pending > 0 || durablePayment.hasPaid || durablePayment.partialCents > 0;
                 if (durablePayment.hasPaid) pagoSinComprobanteNote = `\n\n**PAGO COMPLETO VALIDADO de ${durablePayment.orderNumber}:** este pedido ya está pagado. No vuelvas a cobrar ni a pedir su comprobante, aunque el cliente reenvíe imágenes o capturas. Si reclama un cobro repetido, confirma que su pago está registrado y disculpa la confusión. No apliques este pago a un pedido nuevo.`;
                 else if (durablePayment.registrationPending) pagoSinComprobanteNote = '\n\n**PEDIDO NUEVO POR REGISTRAR:** el cliente abrió otra compra. El pago de su pedido anterior no acredita esta compra nueva; primero debe registrarse el pedido exacto.';
-                else if (durablePayment.pending) pagoSinComprobanteNote = `\n\n**Comprobante guardado y pendiente de revisión:** ${durablePayment.reason || 'El sistema todavía está verificándolo.'}. No pidas al cliente que lo vuelva a mandar y no confirmes el pago antes de validarlo.`;
+                else if (durablePayment.pending) pagoSinComprobanteNote = `\n\n**Comprobante guardado y pendiente de revisión:** ${durablePayment.reason || 'El sistema todavía está verificándolo.'}. No pidas al cliente que lo vuelva a mandar y no confirmes el pago antes de validarlo. Si ya avisaste que está en revisión, responde a la pregunta actual (por ejemplo, diseño, teléfono o entrega) sin repetir ese aviso. La revisión del pago no es motivo por sí sola para cortar la conversación ni derivarla con /equipo. Si solo dice "sí, claro" o pide unos minutos, responde brevemente y dale tiempo.`;
                 // Ultimos 3 mensajes del cliente: puede decir "ya deposite" y luego "ok".
                 const ultimosCliente = messagesSnapshot.docs
                     .filter(mdoc => mdoc.data().from === contactId)
@@ -4367,9 +4367,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
             const guarded = await paymentReplyGuard.protectPaymentReply({
                 contactRef, contactId, text: msgText, customerText: messageText,
+                customerMessageId: message.id || null,
+                receiptPresent: ['image', 'document'].includes(message.type),
                 context: durablePaymentResult || {}, history: messagesSnapshot.docs.map(d => d.data()),
             });
             msgText = guarded.text;
+            if (msgText === null) { qrFileUrl = null; qrFileType = null; }
             if (guarded.stop) { paymentHandoff = true; qrFileUrl = null; qrFileType = null; }
             if (guarded.stop && !msgText) break;
             if (!msgText && !qrFileUrl) continue; // nada que enviar

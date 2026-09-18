@@ -9,6 +9,14 @@ const orderNumberInMessage = text => {
     return numbers.length === 1 ? numbers[0] : null;
 };
 
+// Aceptar o pedir tiempo no significa que el cliente ya haya pagado o enviado una imagen.
+function paymentCourtesyReply(text) {
+    const t = clean(text).replace(/[¡!¿?.,;:*😊👍✨]/gu, ' ').replace(/\s+/g, ' ').trim();
+    if (/^(?:(?:ok|okey|va|sale|si|claro|por supuesto|por favor|gracias|muchas gracias|perfecto|listo|de acuerdo)\s*)+$/.test(t)) return '¡Con gusto! ✨';
+    if (/^(?:(?:ok|okey|si|claro|va|sale)\s+)*(?:(?:dame|deme|demen|dame chance|deme chance|esperame|espereme)\s+(?:(?:unos|un|poquitos|pocos)\s+)?(?:minutos|minuto|momento|ratito)|(?:en un momento|en unos minutos|ahorita|al rato)\s+(?:(?:te|se|lo|les)\s+)*(?:mando|envio|pago|deposito|transfiero)(?:\s+(?:el comprobante|la foto|el pago))?)(?:\s+(?:por fa|por favor|gracias))?$/.test(t)) return 'Claro, tómate tu tiempo. Quedo al pendiente. 😊';
+    return null;
+}
+
 // El pedido se registra ANTES de consultar su pago. Así un comprador recurrente
 // nunca recibe una confirmación basada en el pedido anterior mientras se crea el nuevo.
 async function preparePaymentTurn(contactId, { register = null, orderNumber = null, newOrderIntent = false } = {}) {
@@ -23,8 +31,9 @@ async function preparePaymentTurn(contactId, { register = null, orderNumber = nu
 function paymentReply(context, { customerText = '', aiText = '', receiptPresent = false, recentReplies = [], onlyPreventRepeatRequest = false } = {}) {
     // Una instrucción legítima para pagar un pedido aún no pagado conserva los datos bancarios.
     if (onlyPreventRepeatRequest && !context.hasPaid && !context.reportedComplete && !context.pending) return null;
+    const courtesy = !receiptPresent && paymentCourtesyReply(customerText);
+    if (courtesy && !context.registrationPending && !context.ambiguous) return [courtesy];
     const question = clean(customerText).trim();
-    if (/^(?:ok|okey|va|sale|si|si gracias|gracias|muchas gracias|perfecto|listo|de acuerdo)[\s.!¡,😊👍✨]*$/.test(question) && !receiptPresent) return ['¡Con gusto! ✨'];
     if (context.registrationPending) return [(receiptPresent ? 'Recibimos tu comprobante. ' : '') + 'El equipo dará seguimiento al registro de este pedido y a su pago.'];
     if (context.ambiguous) return ['El equipo revisará a cuál de tus pedidos corresponde este comprobante para registrarlo correctamente.'];
     if (context.hasPaid || context.reportedComplete) {
@@ -54,8 +63,14 @@ function paymentReply(context, { customerText = '', aiText = '', receiptPresent 
         if (!asksBalance && !receiptPresent && recentReplies.includes(reply)) return ['El resto lo liquidas al ver la foto del trabajo terminado, como acordamos.'];
         return [reply];
     }
-    if (context.pending || receiptPresent) return ['Recibimos tu comprobante y el equipo está revisando que el importe se haya acreditado. No necesitas volver a mandar la misma imagen.'];
+    if (context.pending || receiptPresent) {
+        // Una pregunta nueva (teléfono, diseño, entrega) no se reemplaza por otro aviso del pago.
+        const unsafe = requestsPaymentAgain(aiText) || fullPaymentClaim(aiText) || blocksProductionForBalance(aiText)
+            || require('./paymentPolicy').claimsPayment(aiText) || /\/(?:comprobante|anticipopagado)\b/i.test(aiText);
+        if (!receiptPresent && !unsafe) return null;
+        return ['Recibimos tu comprobante y el equipo está revisando que el importe se haya acreditado. No necesitas volver a mandar la misma imagen.'];
+    }
     return ['Para registrar el pago necesitamos la foto o el PDF del comprobante. ¿Nos lo compartes por aquí, por favor?'];
 }
 
-module.exports = { preparePaymentTurn, paymentReply, fullPaymentClaim, blocksProductionForBalance, requestsPaymentAgain, paymentComplaint, orderNumberInMessage };
+module.exports = { preparePaymentTurn, paymentReply, paymentCourtesyReply, fullPaymentClaim, blocksProductionForBalance, requestsPaymentAgain, paymentComplaint, orderNumberInMessage };
