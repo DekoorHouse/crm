@@ -423,6 +423,79 @@ test('design image and unpaid reference are not payments', async () => {
     expect(job(id).status).toBe('ignored'); expect(order().paymentReceivedCents).toBeUndefined();
 });
 
+test('DH16475: an old failed OXXO ticket is closed and does not reappear when history is recovered', async () => {
+    mockDb.seed('pedidos/order', { ...order(), consecutiveOrderNumber: 16475, precio: 750, estatus: 'Cancelado' });
+    const received = new Date(now() - 5 * DAY);
+    const message = { from: 'customer', id: 'old-failure', timestamp: received, type: 'image', fileUrl: 'https://test.invalid/receipt.png' };
+    mockDb.seed('contacts_whatsapp/customer/messages/old-failure', message);
+    mockOcr.mockResolvedValue(ocr({ monto: null, fecha: received.toISOString().slice(0, 10), pagoRealizado: false,
+        estadoOperacion: 'rechazado', evidenciaEstado: 'TRANSACCION NO REALIZADA POR HABER EXCEDIDO SU LIMITE PERMITIDO', outcomeVersion: 1 }));
+    flagReceipt();
+    await flow.discoverReceipts('customer'); await runPaymentSweep();
+    const [receipt] = mockDb.all('payment_receipts');
+    expect(receipt).toMatchObject({ status: 'rejected', open: false, rejectionKind: 'failed_operation' });
+    expect((await flow.pendingPayments()).pago_revision).toHaveLength(0);
+    expect(order()).toMatchObject({ estatus: 'Cancelado', paymentReportedCents: 0 });
+    expect(order().paymentReceivedCents).toBeUndefined(); expect(mockSend).not.toHaveBeenCalled();
+    flagReceipt(); // Una respuesta atrasada de la IA no resucita la alerta.
+    await flow.discoverReceipts('customer'); await runPaymentSweep();
+    expect((await flow.pendingPayments()).pago_revision).toHaveLength(0);
+    expect(mockDb.all('payment_receipts')).toHaveLength(1); expect(mockOcr).toHaveBeenCalledTimes(1);
+});
+
+test('a failed ticket sent with a new message ID remains closed even if its next OCR is ambiguous', async () => {
+    mockOcr.mockResolvedValue(ocr({ pagoRealizado: false, estadoOperacion: 'rechazado', evidenciaEstado: 'La transaccion no fue realizada', outcomeVersion: 1 }));
+    await flow.processReceipt(await enqueue('failed'));
+    mockOcr.mockResolvedValue(ocr({ pagoRealizado: false, estadoOperacion: 'desconocido', outcomeVersion: 1 }));
+    const copy = await enqueue('resend', { fileUrl: 'https://test.invalid/resent.png' });
+    await flow.processReceipt(copy);
+    expect(job(copy)).toMatchObject({ status: 'rejected', rejectionKind: 'failed_operation' });
+    expect((await flow.pendingPayments()).pago_revision).toHaveLength(0); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('old false-only OCR is reread once, closes explicit failure and preserves genuinely pending payments', async () => {
+    const failed = await enqueue('old-failure'), pending = await enqueue('old-pending', { fileUrl: 'https://test.invalid/pending.png' });
+    mockDb.seed('payment_receipts/' + failed, { ...job(failed), status: 'review', ocr: ocr({ monto: null, pagoRealizado: false }) });
+    mockDb.seed('payment_receipts/' + pending, { ...job(pending), status: 'review', ocr: ocr({ monto: 300, pagoRealizado: false, imageHash: 'pending' }) });
+    mockOcr.mockImplementation(url => Promise.resolve(ocr(url.endsWith('/pending.png')
+        ? { monto: 300, pagoRealizado: false, imageHash: 'pending', estadoOperacion: 'en_proceso', evidenciaEstado: 'En proceso', outcomeVersion: 1 }
+        : { monto: null, pagoRealizado: false, estadoOperacion: 'rechazado', evidenciaEstado: 'Transaccion no realizada', outcomeVersion: 1 })));
+    await runPaymentSweep(); await runPaymentSweep();
+    expect(job(failed).status).toBe('rejected'); expect(job(pending).status).toBe('review');
+    expect(mockOcr).toHaveBeenCalledTimes(2); expect(mockSend).not.toHaveBeenCalled();
+    expect(order().paymentReceivedCents).toBeUndefined();
+});
+
+test('an unsuccessful historical reclassification keeps the item for review and backs off', async () => {
+    const id = await enqueue();
+    mockDb.seed('payment_receipts/' + id, { ...job(id), status: 'review', ocr: ocr({ pagoRealizado: false }) });
+    mockOcr.mockRejectedValue(new Error('OCR unavailable'));
+    await runPaymentSweep(); await runPaymentSweep();
+    expect(job(id)).toMatchObject({ status: 'review', open: true, failureReviewAttempts: 1 });
+    expect(mockOcr).toHaveBeenCalledTimes(1); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('rereading cannot undo an approval made by another operator', async () => {
+    const id = await enqueue();
+    mockDb.seed('payment_receipts/' + id, { ...job(id), status: 'review', ocr: ocr({ pagoRealizado: false }) });
+    mockOcr.mockImplementation(async () => {
+        mockDb.seed('payment_receipts/' + id, { ...job(id), status: 'applied', open: false, amountCents: 30000 });
+        mockDb.seed('pedidos/order', { ...order(), paymentReceivedCents: 30000 });
+        return ocr({ pagoRealizado: false, estadoOperacion: 'rechazado', evidenciaEstado: 'Transaccion no realizada', outcomeVersion: 1 });
+    });
+    await runPaymentSweep();
+    expect(job(id).status).toBe('applied'); expect(order().paymentReceivedCents).toBe(30000);
+});
+
+test('preview archives an explicit failed receipt instead of allowing manual credit', async () => {
+    mockOcr.mockResolvedValue(ocr({ pagoRealizado: false, estadoOperacion: 'rechazado', evidenciaEstado: 'Operacion rechazada', outcomeVersion: 1 }));
+    const id = await enqueue();
+    const response = await post(`/receipts/${id}/preview`, { amount: 300 });
+    expect(response.status).toBe(409); expect(response.data.message).toContain('operación fallida');
+    expect(job(id).status).toBe('rejected'); expect(order().paymentReceivedCents).toBeUndefined();
+    expect(mockSend).not.toHaveBeenCalled();
+});
+
 test.each(['Ya validamos su depósito', 'Gracias por tu pago', 'Tu pedido está liquidado', 'Ya confirmamos la transferencia'])('confirmation guard recognizes %s', text => expect(claimsPayment(text)).toBe(true));
 test('stable folio key survives a corrected OCR amount', () => expect(receiptKeys(ocr({ monto: 900 }))[1]).toBe(receiptKeys(ocr())[1]));
 test('receipt date is checked against arrival, not the time IA is enabled', () => {

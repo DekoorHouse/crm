@@ -1,6 +1,7 @@
 const { db } = require('../config');
 const { ms } = require('./paymentPolicy');
 const { processReceipt, deliverForm, refreshReportedPayment } = require('./paymentWorkflow');
+const { reassessFailedReceipts } = require('./failedReceiptWorkflow');
 let timer, running = false;
 
 async function runPaymentSweep() {
@@ -12,6 +13,7 @@ async function runPaymentSweep() {
             .sort((a, b) => ms(a.data().receivedAt) - ms(b.data().receivedAt));
         // Una sola generación por vez: evita picos de consumo al recuperar una caída.
         for (const r of due.slice(0, 30)) await processReceipt(r.id);
+        await reassessFailedReceipts();
         const assessments = await db.collection('pedidos').where('paymentFormNeedsAssessment', '==', true).get();
         for (const order of assessments.docs) await refreshReportedPayment(order.id);
         const production = await db.collection('pedidos').where('paymentProductionPending', '==', true).get();

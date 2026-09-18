@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { isDefinitivelyFailed } = require('./receiptOutcome');
 
 const DAY = 86400000;
 const ms = value => value?.toMillis ? value.toMillis() : (typeof value === 'number' ? value : value instanceof Date ? value.getTime() : Date.parse(value) || 0);
@@ -46,6 +47,7 @@ function possibleSamePayment(a, b) {
 }
 
 function validateReceipt(order, receipt, receivedAt, destinations = DESTINATIONS) {
+    if (isDefinitivelyFailed(receipt)) return { status: 'rejected', reason: 'Intento de pago fallido: el ticket indica que la operación no se realizó.' };
     if (receipt.esComprobante === false) return { status: 'ignored', reason: 'La imagen no es un comprobante de pago.' };
     if (receipt.esComprobante !== true) return { status: 'review', reason: 'No se pudo determinar si la imagen es un comprobante; revisar a mano.' };
     if (terminal(order)) return { status: 'review', reason: 'El pedido ya fue entregado o devuelto.' };
@@ -101,7 +103,7 @@ function reportedPaymentCents(order, jobs, creditedKeys = new Set()) {
     for (const group of groups) {
         if ([...group.keys].some(k => creditedKeys.has(k)) || group.jobs.some(j => ['applied', 'duplicate', 'rejected'].includes(j.status))) continue;
         const candidates = group.jobs.filter(j => ['review', 'pending', 'processing'].includes(j.status)
-            && j.ocr?.esComprobante === true && j.ocr.pagoRealizado !== false
+            && j.ocr?.esComprobante === true && j.ocr.pagoRealizado !== false && !isDefinitivelyFailed(j.ocr)
             && (!j.ocr.moneda || j.ocr.moneda === 'MXN')
             && Number.isFinite(cents(j.ocr.monto)) && cents(j.ocr.monto) > 0);
         candidates.sort((a, b) => ms(a.receivedAt) - ms(b.receivedAt));

@@ -7,22 +7,31 @@ const services = () => require('../services');
 const LEASE_MS = 3 * 60000;
 const { sameReceipt, matchesAlert, resolution, mergeReviewRows } = require('./receiptReviewQueue');
 const { receiptReviewState, checkManualReview } = require('./receiptSafety');
+const { OUTCOME_VERSION } = require('./receiptOutcome');
+const { rejectFailedReceipt } = require('./failedReceiptWorkflow');
 
-// Vista previa sin acreditar dinero, cambiar estatus ni enviar mensajes.
+// Vista previa sin acreditar dinero ni enviar mensajes. Archiva intentos fallidos.
 async function previewReceiptReview(id, { amount, orderId } = {}) {
     if (!Number.isFinite(Number(amount)) || !(Number(amount) > 0)) throw new Error('Confirma un importe válido.');
     const ref = receipts().doc(id);
     let receipt = (await ref.get()).data();
     if (!receipt?.open || ms(receipt.leaseUntil) > Date.now()) throw new Error('El comprobante ya se resolvió o se está procesando. Actualiza la lista.');
-    if (!receipt.ocr) {
+    if (!receipt.ocr || (receipt.ocr.pagoRealizado === false && receipt.ocr.outcomeVersion !== OUTCOME_VERSION)) {
         if (!receipt.fileUrl) throw new Error('No hay imagen del comprobante para revisar.');
-        const ocr = await services().extractReceiptData(receipt.fileUrl, receipt.fileType);
+        const reading = await services().extractReceiptData(receipt.fileUrl, receipt.fileType);
+        const ocr = receipt.ocr?.pagoRealizado === false && reading.pagoRealizado !== false
+            ? { ...receipt.ocr, estadoOperacion: 'desconocido', evidenciaEstado: reading.evidenciaEstado || '', outcomeVersion: OUTCOME_VERSION }
+            : reading;
         await db.runTransaction(async tx => {
             const fresh = (await tx.get(ref)).data();
             if (!fresh?.open || ms(fresh.leaseUntil) > Date.now()) throw new Error('El comprobante cambió. Actualiza la lista.');
-            if (!fresh.ocr) tx.update(ref, { ocr, updatedAt: stamp() });
+            if (fresh.fileUrl !== receipt.fileUrl) throw new Error('El comprobante cambió. Actualiza la lista.');
+            tx.update(ref, { ocr, updatedAt: stamp() });
         });
     }
+    const checked = (await ref.get()).data();
+    const failed = await rejectFailedReceipt(ref, checked.ocr || {});
+    if (failed) throw new Error('Este ticket corresponde a una operación fallida. Se retiró de los comprobantes por revisar sin registrar dinero.');
     return db.runTransaction(async tx => {
         receipt = (await tx.get(ref)).data();
         if (!receipt?.open || ms(receipt.leaseUntil) > Date.now()) throw new Error('El comprobante ya se resolvió o se está procesando. Actualiza la lista.');
@@ -180,6 +189,8 @@ async function processReceipt(id, options = {}) {
             ocr = await services().extractReceiptData(claimed.fileUrl, claimed.fileType);
             await ref.update({ ocr, updatedAt: stamp() });
         }
+        const failed = !claimed.verifiedProvider && await rejectFailedReceipt(ref, ocr, { processing: true });
+        if (failed) return failed;
         if (!options.manual && ocr.esComprobante === false) {
             await ref.update({ status: 'ignored', open: false, reason: 'La imagen no es un comprobante de pago.', leaseUntil: null, updatedAt: stamp() });
             return { status: 'ignored' };

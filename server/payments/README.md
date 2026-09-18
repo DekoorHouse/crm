@@ -25,10 +25,20 @@ cada 30 segundos, independientemente del navegador y de `botActive`.
   Se deriva a revisión y tampoco infla el total presentado para pedir datos de
   envío. No se descarta automáticamente: dos abonos reales del mismo importe
   siguen siendo posibles. Se indexan tanto la referencia como la clave de rastreo.
-- Las operaciones fallidas/en proceso, posibles duplicados, falta de folio/fecha,
+- Las operaciones en proceso o de resultado incierto, posibles duplicados, falta de folio/fecha,
   importes modificados y excedentes requieren confirmar cada alerta y registrar
   evidencia del ingreso comprobado en banco. La verificación queda auditada en
   `manualVerification`; una aprobación ordinaria no puede saltarse estas alertas.
+- Los rechazos explícitos tienen `estadoOperacion: rechazado` y una frase literal
+  del ticket en `evidenciaEstado`. Si la frase confirma que la operación no se
+  realizó, el recibo queda `rejected` / `failed_operation`, fuera de Pendientes,
+  sin acreditar dinero. Se conserva el ticket en el chat y en el registro.
+- `pagoRealizado: false` por sí solo NO descarta un comprobante. Los movimientos
+  en proceso, ilegibles o inciertos siguen en revisión. Tampoco se descarta por
+  antigüedad. El worker relee los OCR antiguos de este tipo en lotes de tres,
+  una vez por versión (hasta tres intentos con espera si falla), sin aprobar ni
+  revertir abonos. El mismo ticket y sus alertas antiguas no se reabren al volver
+  a consultar el historial.
 - `shippingFormStatus` es independiente: pending → sending → sent. El sello se
   escribe después del ID confirmado por el canal y del mensaje guardado en el
   chat. Un rechazo definitivo reintenta; un timeout ambiguo o un reinicio durante
