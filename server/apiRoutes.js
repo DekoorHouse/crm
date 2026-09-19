@@ -302,6 +302,9 @@ function _checadorAdminPinOk(pin) {
 }
 const _genCheckadorPin = () => String(Math.floor(1000 + Math.random() * 9000));
 
+router.post('/checador/admin/weekly-rate', _checadorPinLimiter,
+    require('./checador/weeklyRates').createSaveWeeklyRate({ db, admin, isAdmin: _checadorAdminPinOk }));
+
 // mi-perfil: valida nombre+PIN CONTRA EL SERVER. Rate-limited. Devuelve el empleado SIN el PIN.
 const _empLoginLimiter = require('express-rate-limit')({
     windowMs: 10 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,

@@ -125,9 +125,20 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // --- Catch-all: denegar por defecto ---
-    match /{document=**} {
-      allow read, write: if isAuthenticated();
+    // Conservar la regla del Lienzo que ya existe en producción.
+    match /lienzo/{uid}/{resto=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // La tarifa se lee en vivo; solo el servidor puede editarla tras validar el PIN admin.
+    match /checador_weekly_rates/{weekStart} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // Mantener el acceso existente del CRM, excepto la tarifa protegida del checador.
+    match /{collection}/{document=**} {
+      allow read, write: if isAuthenticated() && collection != 'checador_weekly_rates';
     }
   }
 }

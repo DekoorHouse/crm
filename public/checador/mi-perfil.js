@@ -19,6 +19,9 @@ let weekOffset = 0;
 let unsubscribeLogs = null;
 let unsubscribeAdj = null;
 let unsubscribeHolidays = null;
+let unsubscribeRates = null;
+let weeklyRates = {};
+let weeklyRatesReady = false;
 
 function isoDateStr(d) {
     const y = d.getFullYear();
@@ -95,6 +98,15 @@ async function loginWithPin(nameInput, pinInput, isAutoLogin) {
     }
 
     currentEmployee = match;
+    unsubscribeRates = db.collection('checador_weekly_rates').onSnapshot(snap => {
+        weeklyRates = Object.fromEntries(snap.docs.map(doc => [doc.id, doc.data().hourlyRate]));
+        weeklyRatesReady = true;
+        renderProfile();
+    }, () => {
+        weeklyRatesReady = false;
+        document.getElementById('stat-pay').textContent = 'No disponible';
+        showNotification('No se pudo cargar el precio por hora. Recarga la página.', 'danger');
+    });
     document.getElementById('pin-login-view').style.display = 'none';
     document.getElementById('profile-content').style.display = 'block';
 
@@ -161,6 +173,9 @@ document.getElementById('logout-btn').addEventListener('click', () => {
     if (unsubscribeLogs) { unsubscribeLogs(); unsubscribeLogs = null; }
     if (unsubscribeAdj) { unsubscribeAdj(); unsubscribeAdj = null; }
     if (unsubscribeHolidays) { unsubscribeHolidays(); unsubscribeHolidays = null; }
+    if (unsubscribeRates) { unsubscribeRates(); unsubscribeRates = null; }
+    weeklyRates = {};
+    weeklyRatesReady = false;
     logsCache = [];
     adjustmentsCache = [];
     holidaysCache = [];
@@ -221,7 +236,7 @@ document.getElementById('next-week').addEventListener('click', () => {
 // RENDER
 // =====================
 function renderProfile() {
-    if (!currentEmployee) return;
+    if (!currentEmployee || !weeklyRatesReady) return;
 
     const empName = currentEmployee.name.toLowerCase();
     const weekDates = getWeekDates(weekOffset);
@@ -313,7 +328,7 @@ function renderProfile() {
 
         const hasData = dayLogs.length > 0 || isVacDay || isHolidayDay;
         const hoursStr = dayMins > 0 ? `${Math.floor(dayMins / 60)}h ${dayMins % 60}m` : (hasData ? '0h 0m' : '—');
-        const dayPay = Math.round((dayMins / 60) * 70);
+        const dayPay = ChecadorPayroll.roundMoney(ChecadorPayroll.payForMinutes(dayMins, dateObj, weeklyRates));
         const payStr = hasData ? `$${dayPay.toLocaleString()}` : '';
 
         const row = document.createElement('div');
@@ -335,7 +350,7 @@ function renderProfile() {
     // Stats
     const totalHours = Math.floor(totalWeekMins / 60);
     const totalRemainMins = totalWeekMins % 60;
-    const basePay = Math.round((totalWeekMins / 60) * 70);
+    const basePay = ChecadorPayroll.roundMoney(ChecadorPayroll.payForMinutes(totalWeekMins, weekDates[0], weeklyRates));
 
     // Ajustes de la semana
     const { start: wkStart, end: wkEnd } = getWeekRange(weekOffset);

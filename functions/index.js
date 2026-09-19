@@ -1,6 +1,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const twilio = require('twilio');
+const { payForMinutes, roundMoney } = require('./checadorPayroll');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -66,6 +67,8 @@ async function buildAndSendReports(period = 'semanal') {
     // Load employees
     const empSnap = await db.collection('checador_employees').get();
     const employees = empSnap.docs.map(d => ({ _docId: d.id, ...d.data() }));
+    const ratesSnap = await db.collection('checador_weekly_rates').get();
+    const weeklyRates = Object.fromEntries(ratesSnap.docs.map(d => [d.id, d.data().hourlyRate]));
 
     // Load logs in the period
     const logsSnap = await db.collection('checador_logs').get();
@@ -95,23 +98,24 @@ async function buildAndSendReports(period = 'semanal') {
             dayGroups[log.date].push(log);
         });
 
-        let totalMinutes = 0, daysWorked = 0;
-        for (const events of Object.values(dayGroups)) {
+        let totalMinutes = 0, daysWorked = 0, payment = 0;
+        for (const [date, events] of Object.entries(dayGroups)) {
             const sorted = events.sort((a, b) => a.timestamp - b.timestamp);
-            let lastIn = null, hasIn = false;
+            let lastIn = null, hasIn = false, dayMinutes = 0;
             sorted.forEach(e => {
                 if (e.type === 'IN') { lastIn = e.timestamp; hasIn = true; }
                 else if (e.type === 'OUT' && lastIn) {
-                    totalMinutes += Math.floor((e.timestamp - lastIn) / 60000);
+                    dayMinutes += Math.floor((e.timestamp - lastIn) / 60000);
                     lastIn = null;
                 }
             });
+            totalMinutes += dayMinutes;
+            payment += payForMinutes(dayMinutes, date, weeklyRates);
             if (hasIn) daysWorked++;
         }
 
         const hrs = Math.floor(totalMinutes / 60);
         const mins = totalMinutes % 60;
-        const payment = (totalMinutes / 60) * 70;
         const firstName = emp.name.split(' ')[0];
 
         const body =
@@ -120,7 +124,7 @@ async function buildAndSendReports(period = 'semanal') {
             `📅 *${periodLabel}*\n\n` +
             `▸ Días trabajados: *${daysWorked}*\n` +
             `▸ Total horas: *${hrs}h ${mins}m*\n` +
-            `▸ Pago estimado: *$${payment.toFixed(0)}*\n\n` +
+            `▸ Pago estimado: *$${roundMoney(payment).toFixed(2)}*\n\n` +
             `¡Gracias por tu trabajo! 💼\n_— Dekoor House_`;
 
         try {

@@ -10,7 +10,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const firebaseAuth = firebase.auth();
 const db = firebase.firestore();
-const functions = firebase.functions();
 
 // El PIN de admin ya NO vive aquí (antes era visible para cualquiera). Se valida contra el servidor
 // (POST /api/checador/verify-admin-pin) y los datos solo se cargan tras validarlo (ver startPanelData).
@@ -22,6 +21,62 @@ let holidaysCache = [];
 let adminPin = null;      // PIN de admin validado (se guarda en memoria para las llamadas al server)
 let pinsCache = {};       // { docId -> pin } de empleados, obtenido del server (ya no vive en el cliente)
 let weekOffset = 0; // 0 = semana actual, -1 = anterior, etc.
+let weeklyRates = {};
+let weeklyRatesReady = false;
+let weeklyRateSaving = false;
+const weeklyRateDrafts = new Map();
+
+function renderWeeklyRate() {
+    const key = ChecadorPayroll.weekKey(getWeekRange(weekOffset).start);
+    const input = document.getElementById('weekly-rate');
+    const draft = weeklyRateDrafts.get(key);
+    const value = draft === undefined ? String(ChecadorPayroll.rateForDate(weeklyRates, key)) : draft;
+    // No reemplazar el campo mientras el administrador escribe y llegan registros en vivo.
+    if (input.dataset.week !== key || input.value !== value) input.value = value;
+    input.dataset.week = key;
+    input.disabled = !weeklyRatesReady || weeklyRateSaving;
+    document.getElementById('weekly-rate-save').disabled = !weeklyRatesReady || weeklyRateSaving;
+    document.getElementById('weekly-rate-save').textContent = weeklyRateSaving ? 'Guardando…' : 'Guardar';
+    document.getElementById('weekly-rate-status').textContent = !weeklyRatesReady ? 'Cargando precio…'
+        : draft !== undefined ? 'Cambio sin guardar en esta semana.'
+        : Object.prototype.hasOwnProperty.call(weeklyRates, key) ? `Guardado: $${weeklyRates[key].toFixed(2)} MXN por hora.`
+        : 'Sin tarifa guardada para esta semana: se usan $70.00 MXN por hora.';
+}
+
+document.getElementById('weekly-rate').addEventListener('input', e => {
+    weeklyRateDrafts.set(e.target.dataset.week, e.target.value);
+    document.getElementById('weekly-rate-status').textContent = 'Cambio sin guardar en esta semana.';
+});
+
+document.getElementById('weekly-rate-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!weeklyRatesReady || weeklyRateSaving) return;
+    const input = document.getElementById('weekly-rate');
+    const weekStart = input.dataset.week;
+    const hourlyRate = Number(input.value);
+    if (!ChecadorPayroll.validRate(hourlyRate)) {
+        showNotification('Ingresa un precio válido con máximo dos decimales.', 'danger'); return;
+    }
+    weeklyRateSaving = true;
+    renderWeeklyRate();
+    try {
+        const response = await fetch('/api/checador/admin/weekly-rate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ adminPin, weekStart, hourlyRate }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.message || 'No se pudo guardar.');
+        weeklyRates[weekStart] = data.hourlyRate;
+        weeklyRateDrafts.delete(weekStart);
+        showNotification('Precio guardado para la semana seleccionada.');
+        renderAdminLogs(); renderResumen();
+    } catch (err) {
+        showNotification(err.message || 'No se pudo guardar. Revisa tu conexión.', 'danger');
+    } finally {
+        weeklyRateSaving = false;
+        renderWeeklyRate();
+    }
+});
 
 // =====================
 // AUTH
@@ -38,6 +93,16 @@ let panelDataStarted = false;
 function startPanelData() {
     if (panelDataStarted) return;
     panelDataStarted = true;
+    db.collection('checador_weekly_rates').onSnapshot(snap => {
+        weeklyRates = Object.fromEntries(snap.docs.map(doc => [doc.id, doc.data().hourlyRate]));
+        weeklyRatesReady = true;
+        renderAdminLogs(); renderResumen();
+    }, () => {
+        weeklyRatesReady = false;
+        renderWeeklyRate();
+        document.getElementById('weekly-rate-status').textContent = 'No se pudieron cargar los precios. Recarga para intentar de nuevo.';
+        showNotification('No se pudieron cargar los precios por semana.', 'danger');
+    });
     db.collection('checador_logs').orderBy('timestamp', 'desc')
         .onSnapshot(snap => {
             logsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
@@ -53,6 +118,8 @@ function startPanelData() {
             // (loadEmployeePins → /api/checador/admin/employee-pins).
             if (document.getElementById('panel-content').style.display !== 'none') {
                 renderAdminEmployees();
+                renderAdminLogs();
+                renderResumen();
                 loadEmployeePins();
             }
         });
@@ -61,6 +128,7 @@ function startPanelData() {
             adjustmentsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
             if (document.getElementById('panel-content').style.display !== 'none') {
                 renderAdminLogs();
+                renderResumen();
             }
         });
     db.collection('checador_holidays')
@@ -197,7 +265,7 @@ function getGroupedData() {
         });
         if (lastInTime) totalMinutes += Math.floor((Date.now() - lastInTime) / 60000);
         group.totalStr = `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
-        group.payment = (totalMinutes / 60) * 70;
+        group.payment = ChecadorPayroll.payForMinutes(totalMinutes, group.date, weeklyRates);
         group.timeline = timelineText.join(" | ");
         return group;
     }).reverse();
@@ -287,6 +355,8 @@ function formatHoursLabel(mins) {
 // ASISTENCIA (VISTA SEMANAL)
 // =====================
 function renderAdminLogs() {
+    renderWeeklyRate();
+    if (!weeklyRatesReady) return;
     const data = getGroupedData();
     groupedDataCache = data;
     groupedDataMap = {};
@@ -413,7 +483,7 @@ function renderAdminLogs() {
     // Fila de totales
     const totalCells = employees.map(e => {
         const mins = empTotals[e.name.toLowerCase()];
-        const basePay = Math.round((mins / 60) * 70);
+        const basePay = ChecadorPayroll.roundMoney(ChecadorPayroll.payForMinutes(mins, weekStart, weeklyRates));
         // Ajustes de esta persona en esta semana
         const adjs = getWeekAdjustments(e.name, weekStart, weekEnd);
         const adjTotal = adjs.reduce((sum, a) => sum + (a.type === 'bono' ? a.amount : -a.amount), 0);
@@ -428,7 +498,7 @@ function renderAdminLogs() {
     const totalAll = Object.values(empTotals).reduce((a, b) => a + b, 0);
     const totalPay = employees.reduce((sum, e) => {
         const mins = empTotals[e.name.toLowerCase()];
-        const basePay = Math.round((mins / 60) * 70);
+        const basePay = ChecadorPayroll.roundMoney(ChecadorPayroll.payForMinutes(mins, weekStart, weeklyRates));
         const adjs = getWeekAdjustments(e.name, weekStart, weekEnd);
         return sum + basePay + adjs.reduce((s, a) => s + (a.type === 'bono' ? a.amount : -a.amount), 0);
     }, 0);
@@ -796,10 +866,11 @@ document.getElementById('add-employee-btn').addEventListener('click', async () =
 // CSV EXPORT
 // =====================
 function exportToCSV() {
+    if (!weeklyRatesReady) { showNotification('Espera a que carguen los precios.', 'danger'); return; }
     const data = getGroupedData();
     if (data.length === 0) { showNotification("Sin datos", "danger"); return; }
     const { start: wkS, end: wkE } = getWeekRange(weekOffset);
-    let csv = "Nombre,Fecha,Eventos,Total Tiempo,Pago Horas,Ajustes,Pago Final\n";
+    let csv = "Nombre,Fecha,Eventos,Total Tiempo,Precio por Hora,Pago Horas,Ajustes,Pago Final\n";
     data.forEach(r => {
         const cleanEvents = r.timeline.replace(/<[^>]*>/g, '');
         const adjs = getWeekAdjustments(r.name, wkS, wkE);
@@ -807,7 +878,8 @@ function exportToCSV() {
         const basePay = r.payment.toFixed(2);
         const adjText = adjs.map(a => `${a.type === 'bono' ? '+' : '-'}$${a.amount} ${a.concept || ''}`).join('; ') || '—';
         const finalPay = (r.payment + adjSum).toFixed(2);
-        csv += `"${r.name}","${r.date}","${cleanEvents}","${r.totalStr}","$${basePay}","${adjText}","$${finalPay}"\n`;
+        const rate = ChecadorPayroll.rateForDate(weeklyRates, r.date).toFixed(2);
+        csv += `"${r.name}","${r.date}","${cleanEvents}","${r.totalStr}","$${rate}","$${basePay}","${adjText}","$${finalPay}"\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
@@ -1052,21 +1124,24 @@ function getResumenData(period) {
     filtered.forEach(log => {
         const resolved = resolveLogName(log);
         const key = `${resolved.toLowerCase()}-${log.date}`;
-        if (!dayGroups[key]) dayGroups[key] = { name: resolved, events: [] };
+        if (!dayGroups[key]) dayGroups[key] = { name: resolved, date: log.date, events: [] };
         dayGroups[key].events.push(log);
     });
 
     const byEmployee = {};
     Object.values(dayGroups).forEach(group => {
         const k = group.name.toLowerCase();
-        if (!byEmployee[k]) byEmployee[k] = { name: group.name, minutes: 0, days: 0 };
+        if (!byEmployee[k]) byEmployee[k] = { name: group.name, minutes: 0, days: 0, payment: 0 };
         let mins = 0, lastIn = null, hasIn = false;
         [...group.events].sort((a, b) => a.timestamp - b.timestamp).forEach(e => {
             if (e.type === 'IN') { lastIn = e.timestamp; hasIn = true; }
             else if (e.type === 'OUT' && lastIn) { mins += Math.floor((e.timestamp - lastIn) / 60000); lastIn = null; }
         });
         if (lastIn) mins += Math.floor((Date.now() - lastIn) / 60000);
-        if (hasIn) { byEmployee[k].minutes += mins; byEmployee[k].days += 1; }
+        if (hasIn) {
+            byEmployee[k].minutes += mins; byEmployee[k].days += 1;
+            byEmployee[k].payment += ChecadorPayroll.payForMinutes(mins, group.date, weeklyRates);
+        }
     });
 
     // Agregar días de vacaciones para empleados que estén de vacaciones en cada fecha
@@ -1074,7 +1149,7 @@ function getResumenData(period) {
     employeesCache.forEach(emp => {
         if (!emp.vacaciones || !emp.vacacionesDesde || !emp.vacacionesHasta) return;
         const k = emp.name.toLowerCase();
-        if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0 };
+        if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0, payment: 0 };
         const cur = new Date(start);
         while (cur <= end && cur <= today) {
             if (isOnVacation(emp.name, cur)) {
@@ -1082,7 +1157,10 @@ function getResumenData(period) {
                 const dayKey = `${k}-${dateStr}`;
                 if (!dayGroups[dayKey]) {
                     const vacMins = getVacationMinutes(cur.getDay());
-                    if (vacMins > 0) { byEmployee[k].minutes += vacMins; byEmployee[k].days += 1; }
+                    if (vacMins > 0) {
+                        byEmployee[k].minutes += vacMins; byEmployee[k].days += 1;
+                        byEmployee[k].payment += ChecadorPayroll.payForMinutes(vacMins, cur, weeklyRates);
+                    }
                 }
             }
             cur.setDate(cur.getDate() + 1);
@@ -1093,7 +1171,7 @@ function getResumenData(period) {
     // No se gatea por today: los inhábiles se planean con anticipación y se reflejan de inmediato.
     employeesCache.forEach(emp => {
         const k = emp.name.toLowerCase();
-        if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0 };
+        if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0, payment: 0 };
         const cur = new Date(start);
         while (cur <= end) {
             const holiday = findHoliday(cur);
@@ -1102,7 +1180,10 @@ function getResumenData(period) {
                 const dayKey = `${k}-${dateStr}`;
                 if (!dayGroups[dayKey]) {
                     const hMins = getMinutesForHoliday(holiday, cur.getDay());
-                    if (hMins > 0) { byEmployee[k].minutes += hMins; byEmployee[k].days += 1; }
+                    if (hMins > 0) {
+                        byEmployee[k].minutes += hMins; byEmployee[k].days += 1;
+                        byEmployee[k].payment += ChecadorPayroll.payForMinutes(hMins, cur, weeklyRates);
+                    }
                 }
             }
             cur.setDate(cur.getDate() + 1);
@@ -1113,7 +1194,7 @@ function getResumenData(period) {
         .map(emp => ({
             ...emp,
             totalStr: `${Math.floor(emp.minutes / 60)}h ${emp.minutes % 60}m`,
-            payment: (emp.minutes / 60) * 70
+            payment: ChecadorPayroll.roundMoney(emp.payment)
         }))
         .sort((a, b) => b.minutes - a.minutes);
 }
@@ -1127,6 +1208,7 @@ function getAdjustmentsForPeriod(name, start, end) {
 }
 
 function renderResumen() {
+    if (!weeklyRatesReady) return;
     const data = getResumenData(currentPeriod);
     const { start, end } = getPeriodRange(currentPeriod);
     const tbody = document.getElementById('resumen-body');
@@ -1141,7 +1223,7 @@ function renderResumen() {
     let totalMins = 0, totalBasePay = 0, totalAdjSum = 0, totalFinal = 0;
     data.forEach(emp => {
         totalMins += emp.minutes;
-        const basePay = Math.round(emp.payment);
+        const basePay = emp.payment;
         totalBasePay += basePay;
 
         // Ajustes del periodo
@@ -1199,6 +1281,7 @@ document.querySelectorAll('.period-btn').forEach(btn => {
 // WHATSAPP
 // =====================
 document.getElementById('send-whatsapp-btn').addEventListener('click', async () => {
+    if (!weeklyRatesReady) return;
     const btn = document.getElementById('send-whatsapp-btn');
     const data = getResumenData(currentPeriod);
 
@@ -1212,9 +1295,25 @@ document.getElementById('send-whatsapp-btn').addEventListener('click', async () 
     btn.disabled = true;
     btn.textContent = 'Enviando...';
     try {
-        const sendReport = functions.httpsCallable('sendReportManual');
-        const result = await sendReport({ period: currentPeriod });
-        const { sent, errors } = result.data;
+        // Usar los mismos importes que se muestran en Resumen (incluye cada tarifa semanal).
+        const { start, end } = getPeriodRange(currentPeriod);
+        let sent = 0, errors = 0;
+        for (const employee of withPhone) {
+            const summary = data.find(row => row.name.toLowerCase() === employee.name.toLowerCase());
+            if (!summary) continue;
+            const adjs = getAdjustmentsForPeriod(employee.name, start, end);
+            const adjustment = adjs.reduce((sum, a) => sum + (a.type === 'bono' ? a.amount : -a.amount), 0);
+            const finalPay = ChecadorPayroll.roundMoney(summary.payment + adjustment);
+            const report = `📋 *Reporte de asistencia ${currentPeriod}*\n📅 ${getPeriodLabel(currentPeriod)}\n👤 *${employee.name}*\n\n⏱ *Total:* ${summary.totalStr}\n💰 *Pago horas:* $${summary.payment.toLocaleString()}\nAjustes: $${adjustment.toLocaleString()}\n\n💵 *Pago final:* $${finalPay.toLocaleString()}`;
+            try {
+                const response = await fetch('/api/checador/whatsapp-report', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone: employee.phone, name: employee.name, report }),
+                });
+                const result = await response.json();
+                if (response.ok && result.ok) sent++; else errors++;
+            } catch (_) { errors++; }
+        }
         showNotification(`Enviado a ${sent} persona(s)${errors > 0 ? `. ${errors} error(es)` : ''}`);
     } catch (err) {
         showNotification('Error al enviar: ' + (err.message || 'Intenta de nuevo'), 'danger');
@@ -1270,6 +1369,7 @@ function buildWeekReportData() {
 }
 
 document.getElementById('send-week-whatsapp').addEventListener('click', () => {
+    if (!weeklyRatesReady) return;
     waReportData = buildWeekReportData();
     if (waReportData.length === 0) {
         showNotification('Sin datos o nadie tiene WhatsApp', 'danger');
@@ -1285,7 +1385,7 @@ document.getElementById('send-week-whatsapp').addEventListener('click', () => {
     waReportData.forEach((emp, i) => {
         const totalH = Math.floor(emp.totalMins / 60);
         const totalM = emp.totalMins % 60;
-        const basePay = Math.round((emp.totalMins / 60) * 70);
+        const basePay = ChecadorPayroll.roundMoney(ChecadorPayroll.payForMinutes(emp.totalMins, wkS, weeklyRates));
         const adjs = getWeekAdjustments(emp.name, wkS, wkE);
         const adjSum = adjs.reduce((s, a) => s + (a.type === 'bono' ? a.amount : -a.amount), 0);
         const finalPay = basePay + adjSum;
@@ -1342,6 +1442,7 @@ function updateWaSendBtn() {
 }
 
 document.getElementById('wa-send-btn').addEventListener('click', async () => {
+    if (!weeklyRatesReady || weeklyRateSaving) return;
     const btn = document.getElementById('wa-send-btn');
     const selected = [...document.querySelectorAll('.wa-check:checked')].map(cb => waReportData[parseInt(cb.dataset.idx)]);
     if (selected.length === 0) return;
@@ -1356,7 +1457,7 @@ document.getElementById('wa-send-btn').addEventListener('click', async () => {
     for (const emp of selected) {
         const totalH = Math.floor(emp.totalMins / 60);
         const totalM = emp.totalMins % 60;
-        const basePay = Math.round((emp.totalMins / 60) * 70);
+        const basePay = ChecadorPayroll.roundMoney(ChecadorPayroll.payForMinutes(emp.totalMins, wkStart, weeklyRates));
         const lines = emp.days.map(d => `  ${d.day}: ${d.hours}`).join('\n');
 
         // Ajustes

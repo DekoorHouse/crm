@@ -426,6 +426,10 @@ app.get('/checador/panel', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'checador', 'panel.html'));
 });
 
+app.get('/checador/payroll.js', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'functions', 'checadorPayroll.js'));
+});
+
 app.get('/checador/mi-perfil', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'checador', 'mi-perfil.html'));
 });

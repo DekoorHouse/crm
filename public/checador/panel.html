@@ -63,6 +63,22 @@
         }
         .tab-content { height: auto; overflow: visible; }
         .table-container { overflow-x: auto; }
+        .weekly-rate-card { display:flex; align-items:center; flex-wrap:wrap; gap:14px; padding:16px; margin-bottom:18px; border:1px solid var(--glass-border); border-radius:14px; background:rgba(255,255,255,.04); }
+        .weekly-rate-copy { flex:1; min-width:210px; }
+        .weekly-rate-copy label { display:block; font-weight:600; margin-bottom:5px; color:var(--text-main); }
+        .weekly-rate-copy p { font-size:.78rem; color:var(--text-muted); margin:0; }
+        .weekly-rate-controls { display:flex; align-items:center; gap:8px; }
+        #weekly-rate { width:110px; margin:0; padding:10px; }
+        #weekly-rate-save { padding:11px 16px; white-space:nowrap; border:0; border-radius:10px; cursor:pointer; }
+        #weekly-rate-status { width:100%; font-size:.78rem; color:var(--text-muted); }
+        @media (max-width: 600px) {
+            body { padding:12px; }
+            .panel-card { padding:16px; }
+            .admin-tabs { overflow-x:auto; }
+            .weekly-rate-controls { flex-wrap:wrap; }
+            .week-nav { gap:6px; }
+            .week-nav span { min-width:0; flex:1; }
+        }
     </style>
 </head>
 <body>
@@ -114,6 +130,20 @@
                     <button id="next-week">Siguiente &raquo;</button>
                 </div>
 
+                <form id="weekly-rate-form" class="weekly-rate-card">
+                    <div class="weekly-rate-copy">
+                        <label for="weekly-rate">Precio por hora de esta semana</label>
+                        <p>Para todo el equipo. Se guarda solo en la semana seleccionada.</p>
+                    </div>
+                    <div class="weekly-rate-controls">
+                        <span aria-hidden="true">$</span>
+                        <input id="weekly-rate" type="number" min="0.01" max="100000" step="0.01" inputmode="decimal" required disabled aria-describedby="weekly-rate-status">
+                        <span>MXN/h</span>
+                        <button id="weekly-rate-save" type="submit" class="btn-in" disabled>Guardar</button>
+                    </div>
+                    <div id="weekly-rate-status" role="status" aria-live="polite">Cargando precio…</div>
+                </form>
+
                 <div class="table-container">
                     <table id="admin-table">
                         <thead></thead>
@@ -148,7 +178,7 @@
             <!-- Tab: Inhábiles -->
             <div id="tab-holidays" class="tab-content">
                 <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:14px;">
-                    Los días inhábiles se pagan a todos los empleados como si trabajaran. Default: L-V 6h, Sáb 4h ($70/hr). Puedes sobreescribir las horas por inhábil.
+                    Los días inhábiles se pagan a todos los empleados con el precio por hora de su semana. Horario normal: L-V 6h, Sáb 4h. Puedes sobreescribir las horas por inhábil.
                 </p>
                 <div class="add-employee-form" style="grid-template-columns: 150px 1fr 110px auto; gap:10px;">
                     <input type="date" id="new-holiday-date">
@@ -276,7 +306,7 @@
                 <label style="font-size:0.8rem;">Fecha fin</label>
                 <input type="date" id="vac-hasta" style="font-size:1rem;">
             </div>
-            <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:16px;">Horario vacaciones: L-V 9am-3pm (6h), Sáb 9am-1pm (4h) a $70/hr</p>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:16px;">Horario vacaciones: L-V 9am-3pm (6h), Sáb 9am-1pm (4h), con el precio por hora de cada semana.</p>
             <div style="display:flex; gap:10px;">
                 <button id="vac-save-btn" class="btn-in" style="flex:1; padding:14px; font-size:1rem;">Guardar</button>
                 <button id="vac-remove-btn" class="btn-small btn-danger" style="padding:14px 20px; font-size:0.9rem; display:none;">Quitar</button>
@@ -291,7 +321,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="/js/auth-fetch.js?v=1"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
-    <script src="panel.js?v=3"></script>
+    <script src="/checador/payroll.js?v=1"></script>
+    <script src="panel.js?v=4"></script>
 </body>
 </html>
