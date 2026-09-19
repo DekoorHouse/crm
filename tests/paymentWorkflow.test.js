@@ -226,6 +226,85 @@ test('deduplication indexes both the bank reference and tracking code', async ()
     expect(job(duplicate).status).toBe('duplicate'); expect(order().paymentReceivedCents).toBe(30000);
 });
 
+function seedOtherPayment(reading) {
+    mockDb.seed('pedidos/other', { contactId: 'other-customer', consecutiveOrderNumber: 16915, precio: reading.monto,
+        paymentReceivedCents: Math.round(reading.monto * 100), comprobanteValidadoAt: new Date() });
+    mockDb.seed('payment_receipts/other-paid', { contactId: 'other-customer', orderId: 'other', status: 'applied',
+        orderNumber: 'DH16915', open: false, amountCents: Math.round(reading.monto * 100), ocr: reading });
+    // Índices del despliegue anterior, sin el nuevo campo identity.
+    for (const key of receiptKeys(reading)) mockDb.seed('payment_receipt_keys/' + key, {
+        orderId: 'other', receiptId: 'other-paid', amountCents: Math.round(reading.monto * 100),
+    });
+}
+
+test('DH16798: shared bank reference with DH16915 cannot block a distinct tracking code', async () => {
+    mockDb.seed('pedidos/order', { ...order(), consecutiveOrderNumber: 16798, shippingFormStatus: 'sent', shippingFormSentAt: new Date() });
+    const first = ocr({ monto: 750, cuentaDestino: '***670', referencia: '0690670', claveRastreo: '2609180110389829782H', imageHash: 'first-transfer' });
+    seedOtherPayment(first);
+    const originalKeys = mockDb.all('payment_receipt_keys');
+    mockOcr.mockResolvedValue(ocr({ cuentaDestino: '***670', referencia: '0690670', claveRastreo: '2609180110779917031', imageHash: 'second-transfer' }));
+    const id = await enqueue();
+    await flow.processReceipt(id);
+    expect(job(id).status).toBe('review'); // la cuenta abreviada aún requiere revisión manual
+    expect(order()).toMatchObject({ paymentReportedCents: 120000, paymentReportedComplete: true });
+    expect(order().paymentReceivedCents).toBeUndefined();
+    expect((await reviewViaApi(id, { amount: 1200 })).status).toBe(200);
+    expect(order().paymentReceivedCents).toBe(120000);
+    expect(job(id).status).toBe('applied');
+    expect(mockDb.read('pedidos/other').paymentReceivedCents).toBe(75000);
+    for (const { path, ...value } of originalKeys) expect(mockDb.read(path)).toEqual(value);
+    expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('same-amount installments with a shared reference but different tracking codes both count', async () => {
+    mockOcr.mockResolvedValue(ocr({ monto: 300, claveRastreo: 'tracking-first', imageHash: 'first-deposit' }));
+    await flow.processReceipt(await enqueue('first-deposit'));
+    mockOcr.mockResolvedValue(ocr({ monto: 300, claveRastreo: 'tracking-second', imageHash: 'second-deposit' }));
+    const id = await enqueue('second-deposit');
+    await flow.processReceipt(id);
+    expect(job(id).status).toBe('applied');
+    expect(order()).toMatchObject({ paymentReceivedCents: 60000, paymentReportedCents: 60000 });
+    // Otra captura de ese segundo ingreso sigue bloqueada aunque su referencia cambie.
+    mockOcr.mockResolvedValue(ocr({ monto: 300, referencia: 'other-reference', claveRastreo: 'tracking-second', imageHash: 'second-deposit-copy' }));
+    const copy = await enqueue('second-deposit-copy'); await flow.processReceipt(copy);
+    expect(job(copy).status).toBe('duplicate');
+    expect(order().paymentReceivedCents).toBe(60000);
+});
+
+test('two unapproved transfers with different tracking codes are not grouped by their shared reference', async () => {
+    mockOcr.mockResolvedValue(ocr({ monto: 300, cuentaDestino: '***670', claveRastreo: 'first-tracking', imageHash: 'first-pending' }));
+    await flow.processReceipt(await enqueue('first-pending'));
+    mockOcr.mockResolvedValue(ocr({ monto: 900, cuentaDestino: '***670', claveRastreo: 'second-tracking', imageHash: 'second-pending' }));
+    await flow.processReceipt(await enqueue('second-pending'));
+    expect(order()).toMatchObject({ paymentReportedCents: 120000, paymentReportedComplete: true, shippingFormStatus: 'sent' });
+    expect(order().paymentReceivedCents).toBeUndefined();
+    expect(order().comprobanteValidadoAt).toBeUndefined();
+    expect(mockSend).toHaveBeenCalledTimes(1);
+});
+
+test.each(['same-image', 'same-tracking', 'missing-tracking'])('true or uncertain duplicate %s stays blocked across orders', async match => {
+    const first = ocr({ monto: 750, claveRastreo: 'tracking-first' });
+    seedOtherPayment(first);
+    mockOcr.mockResolvedValue(ocr({ monto: 1200,
+        claveRastreo: match === 'same-tracking' ? 'tracking-first' : match === 'missing-tracking' ? null : 'tracking-second',
+        imageHash: match === 'same-image' ? first.imageHash : 'different-image' }));
+    const id = await enqueue();
+    await flow.processReceipt(id);
+    expect(job(id)).toMatchObject({ status: 'review', reason: expect.stringContaining('otro pedido') });
+    expect(order().paymentReceivedCents).toBeUndefined();
+    expect(order().paymentReportedCents).toBe(0);
+    expect((await reviewViaApi(id, { amount: 1200 })).status).toBe(409);
+    expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('reference-only legacy owner remains a conflict even if the new image includes tracking', async () => {
+    seedOtherPayment(ocr({ monto: 750 }));
+    mockOcr.mockResolvedValue(ocr({ claveRastreo: 'new-tracking', imageHash: 'new-image' }));
+    const id = await enqueue(); await flow.processReceipt(id);
+    expect(job(id)).toMatchObject({ status: 'review', reason: expect.stringContaining('otro pedido') });
+    expect(order().paymentReceivedCents).toBeUndefined();
+});
+
 test('automatic processing holds a complete receipt if a partial screenshot was already credited', async () => {
     mockOcr.mockResolvedValue(ocr({ monto: 300, referencia: null, fecha: null, imageHash: 'partial-screen' }));
     await reviewedReceipt(await enqueue('partial-screen'), { manual: true, amount: 300 });

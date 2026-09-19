@@ -1,5 +1,5 @@
 const { db, admin } = require('../config');
-const { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, validateReceipt, paymentDecision, reportedPaymentCents, canRequestShippingForm, awaitingPaymentApproval } = require('./paymentPolicy');
+const { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, receiptKeyMatches, validateReceipt, paymentDecision, reportedPaymentCents, canRequestShippingForm, awaitingPaymentApproval } = require('./paymentPolicy');
 const stamp = () => admin.firestore.FieldValue.serverTimestamp();
 const date = n => admin.firestore.Timestamp.fromMillis(n);
 const receipts = () => db.collection('payment_receipts');
@@ -9,6 +9,24 @@ const { sameReceipt, matchesAlert, resolution, mergeReviewRows } = require('./re
 const { receiptReviewState, checkManualReview } = require('./receiptSafety');
 const { OUTCOME_VERSION } = require('./receiptOutcome');
 const { rejectFailedReceipt } = require('./failedReceiptWorkflow');
+
+async function readCreditedKeys(tx, keys) {
+    const credited = new Map(), owners = new Map();
+    for (const key of keys) {
+        const snap = await tx.get(db.collection('payment_receipt_keys').doc(key));
+        if (!snap.exists) continue;
+        const value = snap.data();
+        let identity = value.identity;
+        // Índices antiguos: consultar su comprobante dentro de la misma transacción.
+        // Si falta, conservar el bloqueo; no asumir que una referencia es distinta.
+        if (!identity && !key.startsWith('image_') && value.receiptId) {
+            if (!owners.has(value.receiptId)) owners.set(value.receiptId, (await tx.get(receipts().doc(value.receiptId))).data()?.ocr);
+            identity = owners.get(value.receiptId);
+        }
+        credited.set(key, { ...value, identity });
+    }
+    return credited;
+}
 
 // Vista previa sin acreditar dinero ni enviar mensajes. Archiva intentos fallidos.
 async function previewReceiptReview(id, { amount, orderId } = {}) {
@@ -112,9 +130,8 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
         if (cancelled(order) && !(order.canceladoPorCobranza === true || (manual && reactivate))) {
             return { status: 'review', reason: 'Pago en pedido cancelado: confirmar su reactivación.' };
         }
-        const keyRefs = keys.map(key => db.collection('payment_receipt_keys').doc(key));
-        const existing = [];
-        for (const keyRef of keyRefs) existing.push(await tx.get(keyRef));
+        const existing = await readCreditedKeys(tx, keys);
+        const matching = [...existing].filter(([key, value]) => receiptKeyMatches(key, receipt, value.identity)).map(([, value]) => value);
         const contactRef = db.collection('contacts_whatsapp').doc(r.contactId);
         const contact = manual ? (await tx.get(contactRef)).data() : null;
         const related = await tx.get(receipts().where('contactId', '==', r.contactId));
@@ -132,9 +149,9 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
             for (const other of affectedOrders) if (other.exists) tx.update(other.ref, { paymentFormNeedsAssessment: true });
             if (matchesAlert(contact, r)) tx.update(contactRef, { ...resolution('approved'), suspiciousReceiptResolvedBy: manual ? 'manual' : 'automatic' });
         };
-        const conflict = existing.find(d => d.exists && d.data().orderId !== r.orderId);
+        const conflict = matching.find(value => value.orderId !== r.orderId);
         if (conflict) return { status: 'review', reason: 'Este comprobante ya está aplicado a otro pedido. No se volvió a sumar.' };
-        if (existing.some(d => d.exists) || order.comprobanteValidadoAt) {
+        if (matching.length || order.comprobanteValidadoAt) {
             closeRelated();
             tx.update(ref, { status: 'duplicate', open: false, reason: 'Pago ya registrado; no se vuelve a sumar.', leaseUntil: null, updatedAt: stamp() });
             return { status: 'duplicate', orderId: r.orderId };
@@ -155,7 +172,12 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
             if (!order.shippingFormStatus && !order.shippingFormSentAt) Object.assign(fields, { shippingFormStatus: 'pending', shippingFormNextAttemptAt: stamp(), shippingFormReason: 'Pago validado; formulario pendiente.' });
             if (cancelled(order)) Object.assign(fields, { estatus: 'Pagado', paymentReactivatedAt: stamp(), paymentPreviousStatus: order.estatus });
         }
-        for (const keyRef of keyRefs) tx.set(keyRef, { orderId: r.orderId, receiptId: ref.id, amountCents: cents(manual ? amount : receipt.monto), createdAt: stamp() });
+        // Nunca sobrescribir la referencia compartida que pertenece al otro ingreso.
+        // Cada pago conserva además su imagen y su clave de rastreo propias.
+        for (const key of keys) if (!existing.has(key)) tx.set(db.collection('payment_receipt_keys').doc(key), {
+            orderId: r.orderId, receiptId: ref.id, amountCents: cents(manual ? amount : receipt.monto), createdAt: stamp(),
+            identity: { claveRastreo: receipt.claveRastreo || null },
+        });
         tx.update(orderRef, fields);
         closeRelated();
         tx.update(ref, { status: 'applied', open: false, result: decision.status, amountCents: cents(manual ? amount : receipt.monto), reviewedBy: manual ? 'manual' : 'automatic', reason: decision.status === 'paid' ? 'Pago completo registrado.' : 'Abono registrado; falta liquidar el total.', leaseUntil: null, updatedAt: stamp(),
@@ -240,8 +262,7 @@ async function refreshReportedPayment(orderId) {
         const rs = await tx.get(receipts().where('orderId', '==', orderId));
         const jobs = rs.docs.map(d => d.data()).filter(r => r.contactId === order.contactId);
         const keys = [...new Set(jobs.flatMap(r => receiptKeys(r.ocr || {})))];
-        const credited = new Set();
-        for (const key of keys) if ((await tx.get(db.collection('payment_receipt_keys').doc(key))).exists) credited.add(key);
+        const credited = await readCreditedKeys(tx, keys);
         const reported = reportedPaymentCents(order, jobs, credited);
         const complete = cents(order.precio) > 0 && reported >= cents(order.precio);
         const fields = { paymentReportedCents: reported, paymentReportedComplete: complete, paymentFormNeedsAssessment: false };

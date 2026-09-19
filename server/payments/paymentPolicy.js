@@ -28,6 +28,16 @@ function receiptKeys(receipt) {
 }
 
 const receiptFolios = receipt => [...new Set([receipt.claveRastreo, receipt.referencia].map(normalize).filter(v => v.length >= 5))];
+const trackingCode = receipt => {
+    const value = normalize(receipt?.claveRastreo);
+    return value.length >= 5 ? value : null;
+};
+const differentTracking = (a, b) => !!trackingCode(a) && !!trackingCode(b) && trackingCode(a) !== trackingCode(b);
+
+// Banco Azteca puede repetir la referencia (p. ej. 0690670) en pagos distintos.
+// Dos claves de rastreo completas y diferentes desempatan esa referencia; una
+// imagen idéntica sigue siendo duplicada incluso si una lectura cambió el folio.
+const receiptKeyMatches = (key, a, b) => key.startsWith('image_') || !differentTracking(a, b);
 
 // Dos capturas pueden corresponder al mismo ingreso. La incertidumbre obliga a
 // revisar; no permite descartar ni acreditar dinero automáticamente.
@@ -36,6 +46,7 @@ function possibleSamePayment(a, b) {
     if (a.verifiedProvider && b.verifiedProvider) return a.providerPaymentId === b.providerPaymentId;
     const x = a.ocr || {}, y = b.ocr || {};
     if (x.imageHash && x.imageHash === y.imageHash) return true;
+    if (differentTracking(x, y)) return false;
     if (!(Number(a.amountCents ?? cents(x.monto)) > 0) || Number(a.amountCents ?? cents(x.monto)) !== Number(b.amountCents ?? cents(y.monto))) return false;
     const destination = r => String(r.cuentaDestino || '').replace(/\D/g, '').slice(-4);
     if (destination(x) && destination(y) && destination(x) !== destination(y)) return false;
@@ -83,14 +94,15 @@ function paymentDecision(order, amountCents, manual = false) {
 
 // Pedir una dirección no acredita dinero. Sumamos importes legibles aun si falta
 // validar el folio, el destino o reactivar el pedido; nunca operaciones fallidas.
-function reportedPaymentCents(order, jobs, creditedKeys = new Set()) {
+function reportedPaymentCents(order, jobs, creditedKeys = new Map()) {
     const groups = [];
     for (const job of jobs) {
         const keys = receiptKeys(job.ocr || {});
         if (!keys.length) continue;
-        const matches = groups.filter(g => keys.some(k => g.keys.has(k)) || g.jobs.some(other =>
-            ['applied', 'review', 'pending', 'processing'].includes(job.status) &&
-            ['applied', 'review', 'pending', 'processing'].includes(other.status) && possibleSamePayment(job, other)));
+        const matches = groups.filter(g => g.jobs.some(other =>
+            keys.some(k => receiptKeys(other.ocr || {}).includes(k) && receiptKeyMatches(k, job.ocr, other.ocr)) ||
+            (['applied', 'review', 'pending', 'processing'].includes(job.status) &&
+            ['applied', 'review', 'pending', 'processing'].includes(other.status) && possibleSamePayment(job, other))));
         const group = { keys: new Set(keys), jobs: [job] };
         for (const match of matches) {
             match.keys.forEach(k => group.keys.add(k));
@@ -101,7 +113,9 @@ function reportedPaymentCents(order, jobs, creditedKeys = new Set()) {
     }
     let total = Number(order.paymentReceivedCents) || 0;
     for (const group of groups) {
-        if ([...group.keys].some(k => creditedKeys.has(k)) || group.jobs.some(j => ['applied', 'duplicate', 'rejected'].includes(j.status))) continue;
+        if (group.jobs.some(j => receiptKeys(j.ocr || {}).some(k => creditedKeys.has(k)
+            && receiptKeyMatches(k, j.ocr, creditedKeys.get?.(k)?.identity)))
+            || group.jobs.some(j => ['applied', 'duplicate', 'rejected'].includes(j.status))) continue;
         const candidates = group.jobs.filter(j => ['review', 'pending', 'processing'].includes(j.status)
             && j.ocr?.esComprobante === true && j.ocr.pagoRealizado !== false && !isDefinitivelyFailed(j.ocr)
             && (!j.ocr.moneda || j.ocr.moneda === 'MXN')
@@ -116,4 +130,4 @@ function claimsPayment(text) {
     return /(?:ya\s+(?:valid[aá](?:mos|do)|valid[eé]|confirm[aá](?:mos|do)|verifiqu[eé]|verificamos)|(?:recibimos|recib[ií]|recibido|gracias)[^.!?\n]{0,65})(?:[^.!?\n]{0,65})(?:pago|comprobante|dep[oó]sito|transferencia|anticipo)|(?:pedido|pago)[^.!?\n]{0,35}(?:liquidado|pagado|validado|confirmado)/i.test(text);
 }
 
-module.exports = { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, receiptFolios, possibleSamePayment, validateReceipt, paymentDecision, claimsPayment, reportedPaymentCents, canRequestShippingForm, awaitingPaymentApproval };
+module.exports = { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, receiptFolios, receiptKeyMatches, possibleSamePayment, validateReceipt, paymentDecision, claimsPayment, reportedPaymentCents, canRequestShippingForm, awaitingPaymentApproval };
