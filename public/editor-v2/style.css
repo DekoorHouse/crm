@@ -45,7 +45,7 @@ input[type=checkbox] { accent-color: var(--accent); }
 .separator { height: 20px; width: 1px; background: var(--line); flex-shrink: 0; }
 .spacer { flex: 1; }
 .local-badge { font-size: 11px; color: #a0c3b3; }
-.workspace { display: flex; flex: 1; min-height: 0; }
+.workspace { position: relative; display: flex; flex: 1; min-height: 0; }
 .tools { width: 60px; flex-shrink: 0; background: #191c23; border-right: 1px solid var(--line); display: flex; align-items: center; flex-direction: column; gap: 8px; padding: 16px 7px; }
 .tools button { width: 42px; height: 42px; padding: 0; flex-shrink: 0; color: #b8becc; }
 .tools .icon { width: 21px; height: 21px; }
@@ -57,7 +57,7 @@ input[type=checkbox] { accent-color: var(--accent); }
 #canvas[data-tool=hand] { cursor: grab; }
 .workspace-label { position: absolute; top: 20px; left: 24px; pointer-events: none; font-size: 10px; font-weight: 600; letter-spacing: 1.5px; color: #949caf; }
 .workspace-label span { margin-left: 12px; color: #686f80; }
-.zoom-controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: #232730; border: 1px solid #3b4050; border-radius: 10px; padding: 5px; box-shadow: 0 8px 24px #0005; }
+.zoom-controls { position: absolute; z-index: 1; bottom: 20px; left: calc(50% + 30px); transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: #232730; border: 1px solid #3b4050; border-radius: 10px; padding: 5px; box-shadow: 0 8px 24px #0005; }
 .zoom-controls output { width: 48px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 600; }
 .zoom-controls button { font-size: 12px; }
 .inspector { width: 280px; flex-shrink: 0; background: var(--panel); border-left: 1px solid var(--line); overflow: auto; scrollbar-width: thin; scrollbar-color: #505669 transparent; }
