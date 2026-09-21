@@ -10,7 +10,7 @@ const flow = require('../server/payments/paymentWorkflow');
 const { runPaymentSweep } = require('../server/payments/paymentScheduler');
 const { DAY, receiptKeys, claimsPayment, validateReceipt } = require('../server/payments/paymentPolicy');
 const now = () => Date.now();
-const ocr = (extra = {}) => ({ esComprobante: true, monto: 1200, fecha: new Date().toISOString().slice(0, 10), cuentaDestino: '3262', referencia: '12345678', moneda: 'MXN', pagoRealizado: true, imageHash: 'sample-image', ...extra });
+const ocr = (extra = {}) => ({ sourceIdentityVersion: 1, esComprobante: true, monto: 1200, fecha: new Date().toISOString().slice(0, 10), cuentaDestino: '3262', referencia: '12345678', moneda: 'MXN', pagoRealizado: true, imageHash: 'sample-image', ...extra });
 const order = () => mockDb.read('pedidos/order');
 const job = id => mockDb.read('payment_receipts/' + id);
 async function enqueue(id = 'message', extra = {}) {
@@ -236,6 +236,79 @@ function seedOtherPayment(reading) {
         orderId: 'other', receiptId: 'other-paid', amountCents: Math.round(reading.monto * 100),
     });
 }
+
+test('DH17033: date reference shared with DH17032 allows a different source account', async () => {
+    mockDb.seed('pedidos/order', { ...order(), precio: 750, consecutiveOrderNumber: 17033 });
+    seedOtherPayment(ocr({ monto: 750, referencia: '2109260', cuentaOrigen: '****1234', imageHash: 'first', claveRastreo: 'tracking-first' }));
+    mockOcr.mockResolvedValue(ocr({ monto: 750, referencia: '2109260', cuentaOrigen: '****5678', imageHash: 'second', claveRastreo: null }));
+    const id = await enqueue(); await flow.processReceipt(id);
+    expect(job(id).status).toBe('applied');
+    expect(order().paymentReceivedCents).toBe(75000);
+    expect(mockDb.read('pedidos/other').paymentReceivedCents).toBe(75000);
+});
+
+test('shared reference retains the second source identity and blocks another photo of that payment', async () => {
+    seedOtherPayment(ocr({ monto: 300, cuentaOrigen: '****1234', imageHash: 'other' }));
+    mockOcr.mockResolvedValue(ocr({ monto: 300, cuentaOrigen: '****5678', imageHash: 'second' }));
+    await flow.processReceipt(await enqueue('second'));
+    expect(order().paymentReceivedCents).toBe(30000);
+    mockOcr.mockResolvedValue(ocr({ monto: 300, cuentaOrigen: '001122335678', imageHash: 'second-rephoto' }));
+    const copy = await enqueue('copy'); await flow.processReceipt(copy);
+    expect(job(copy).status).toBe('duplicate');
+    expect(order().paymentReceivedCents).toBe(30000);
+    mockDb.seed('pedidos/third', { contactId: 'customer', consecutiveOrderNumber: 17034, precio: 1200, estatus: 'Foto enviada', createdAt: new Date() });
+    const third = await enqueue('third');
+    mockDb.seed('payment_receipts/' + third, { ...job(third), orderId: 'third' });
+    await flow.processReceipt(third);
+    expect(job(third).reason).toContain('otro pedido');
+    expect(mockDb.read('pedidos/third').paymentReceivedCents).toBeUndefined();
+});
+
+test('two installments from distinct sources count without a possible duplicate alert', async () => {
+    mockOcr.mockResolvedValue(ocr({ monto: 300, cuentaOrigen: '****1234', imageHash: 'first' }));
+    await flow.processReceipt(await enqueue('first'));
+    mockOcr.mockResolvedValue(ocr({ monto: 300, cuentaOrigen: '****5678', imageHash: 'second' }));
+    const id = await enqueue('second');
+    const preview = await flow.previewReceiptReview(id, { amount: 300 });
+    expect(preview.risks).toEqual([]);
+    await flow.processReceipt(id, { manual: true, amount: 300, verification: verifiedPreview(preview) });
+    expect(order()).toMatchObject({ paymentReceivedCents: 60000, paymentReportedCents: 60000 });
+});
+
+test.each(['same-image', 'same-tracking', 'missing-source', 'same-suffix', 'short-source'])('source comparison preserves duplicate protection: %s', async kind => {
+    const first = ocr({ cuentaOrigen: '001122331234', claveRastreo: 'tracking-first' });
+    seedOtherPayment(first);
+    mockOcr.mockResolvedValue(ocr({
+        cuentaOrigen: kind === 'missing-source' ? null : kind === 'same-suffix' ? '****1234' : kind === 'short-source' ? '**678' : '****5678',
+        imageHash: kind === 'same-image' ? first.imageHash : 'second',
+        claveRastreo: kind === 'same-tracking' ? first.claveRastreo : null,
+    }));
+    const id = await enqueue(); await flow.processReceipt(id);
+    expect(job(id).reason).toContain('otro pedido');
+    expect((await reviewViaApi(id, { amount: 1200 })).status).toBe(409);
+    expect(order().paymentReceivedCents).toBeUndefined();
+});
+
+test('manual preview enriches legacy source accounts without changing historical payment or OCR amounts', async () => {
+    const first = ocr({ monto: 750, imageHash: 'first', sourceIdentityVersion: undefined });
+    seedOtherPayment(first);
+    mockDb.seed('payment_receipts/other-paid', { ...job('other-paid'), fileUrl: 'https://test.invalid/old.png' });
+    // The previous index schema stored tracking only.
+    for (const key of receiptKeys(first)) {
+        const path = 'payment_receipt_keys/' + key;
+        mockDb.seed(path, { ...mockDb.read(path), identity: { claveRastreo: null } });
+    }
+    const id = await enqueue();
+    mockDb.seed('payment_receipts/' + id, { ...job(id), status: 'review', ocr: ocr({ imageHash: 'second', sourceIdentityVersion: undefined }) });
+    mockOcr.mockImplementation(async url => ocr({ monto: 9999, cuentaOrigen: url.endsWith('old.png') ? '****1234' : '****5678', imageHash: url.endsWith('old.png') ? 'first' : 'second' }));
+    const result = await reviewViaApi(id, { amount: 1200 });
+    expect(result.status).toBe(200);
+    expect(job(id).status).toBe('applied');
+    expect(order().paymentReceivedCents).toBe(120000);
+    expect(job('other-paid')).toMatchObject({ status: 'applied', amountCents: 75000, ocr: { monto: 750, cuentaOrigen: '****1234' } });
+    expect(mockDb.read('pedidos/other').paymentReceivedCents).toBe(75000);
+    expect(mockOcr).toHaveBeenCalledTimes(2);
+});
 
 test('DH16798: shared bank reference with DH16915 cannot block a distinct tracking code', async () => {
     mockDb.seed('pedidos/order', { ...order(), consecutiveOrderNumber: 16798, shippingFormStatus: 'sent', shippingFormSentAt: new Date() });

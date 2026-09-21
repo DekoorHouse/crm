@@ -10,6 +10,33 @@ const { receiptReviewState, checkManualReview } = require('./receiptSafety');
 const { OUTCOME_VERSION } = require('./receiptOutcome');
 const { rejectFailedReceipt } = require('./failedReceiptWorkflow');
 
+// Actualización puntual del OCR antiguo: sólo identidad de origen, nunca saldos
+// ni el resultado de un pago ya aplicado. La lectura externa queda fuera del tx.
+async function refreshSourceIdentity(ref) {
+    const before = (await ref.get()).data();
+    if (!before?.ocr || before.ocr.sourceIdentityVersion === 1 || !before.fileUrl) return before?.ocr;
+    const reading = await services().extractReceiptData(before.fileUrl, before.fileType);
+    if (before.ocr.imageHash && reading.imageHash !== before.ocr.imageHash) throw new Error('La imagen del comprobante cambió; revisa el archivo antes de validar.');
+    return db.runTransaction(async tx => {
+        const fresh = (await tx.get(ref)).data();
+        if (!fresh?.ocr || fresh.fileUrl !== before.fileUrl || fresh.ocr.imageHash !== before.ocr.imageHash) throw new Error('El comprobante cambió. Actualiza la lista.');
+        if (fresh.ocr.sourceIdentityVersion === 1) return fresh.ocr;
+        const ocr = { ...fresh.ocr, cuentaOrigen: reading.cuentaOrigen || null, sourceIdentityVersion: 1 };
+        tx.update(ref, { ocr, updatedAt: stamp() });
+        return ocr;
+    });
+}
+
+async function refreshSourceOwners(ocr) {
+    if (!ocr?.cuentaOrigen) return;
+    const owners = new Set();
+    for (const key of receiptKeys(ocr).filter(key => !key.startsWith('image_'))) {
+        const value = (await db.collection('payment_receipt_keys').doc(key).get()).data();
+        if (value?.receiptId) owners.add(value.receiptId);
+    }
+    for (const id of owners) await refreshSourceIdentity(receipts().doc(id));
+}
+
 async function readCreditedKeys(tx, keys) {
     const credited = new Map(), owners = new Map();
     for (const key of keys) {
@@ -19,9 +46,10 @@ async function readCreditedKeys(tx, keys) {
         let identity = value.identity;
         // Índices antiguos: consultar su comprobante dentro de la misma transacción.
         // Si falta, conservar el bloqueo; no asumir que una referencia es distinta.
-        if (!identity && !key.startsWith('image_') && value.receiptId) {
+        if ((!identity || identity.sourceIdentityVersion !== 1) && !key.startsWith('image_') && value.receiptId) {
             if (!owners.has(value.receiptId)) owners.set(value.receiptId, (await tx.get(receipts().doc(value.receiptId))).data()?.ocr);
-            identity = owners.get(value.receiptId);
+            identity = { ...owners.get(value.receiptId), ...identity,
+                cuentaOrigen: owners.get(value.receiptId)?.cuentaOrigen || identity?.cuentaOrigen || null };
         }
         credited.set(key, { ...value, identity });
     }
@@ -47,6 +75,8 @@ async function previewReceiptReview(id, { amount, orderId } = {}) {
             tx.update(ref, { ocr, updatedAt: stamp() });
         });
     }
+    const sourceOcr = await refreshSourceIdentity(ref);
+    await refreshSourceOwners(sourceOcr);
     const checked = (await ref.get()).data();
     const failed = await rejectFailedReceipt(ref, checked.ocr || {});
     if (failed) throw new Error('Este ticket corresponde a una operación fallida. Se retiró de los comprobantes por revisar sin registrar dinero.');
@@ -176,7 +206,8 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
         // Cada pago conserva además su imagen y su clave de rastreo propias.
         for (const key of keys) if (!existing.has(key)) tx.set(db.collection('payment_receipt_keys').doc(key), {
             orderId: r.orderId, receiptId: ref.id, amountCents: cents(manual ? amount : receipt.monto), createdAt: stamp(),
-            identity: { claveRastreo: receipt.claveRastreo || null },
+            identity: { claveRastreo: receipt.claveRastreo || null, cuentaOrigen: receipt.cuentaOrigen || null,
+                sourceIdentityVersion: receipt.sourceIdentityVersion || null },
         });
         tx.update(orderRef, fields);
         closeRelated();
@@ -211,6 +242,8 @@ async function processReceipt(id, options = {}) {
             ocr = await services().extractReceiptData(claimed.fileUrl, claimed.fileType);
             await ref.update({ ocr, updatedAt: stamp() });
         }
+        if (!options.manual && ocr.sourceIdentityVersion !== 1) ocr = await refreshSourceIdentity(ref) || ocr;
+        await refreshSourceOwners(ocr);
         const failed = !claimed.verifiedProvider && await rejectFailedReceipt(ref, ocr, { processing: true });
         if (failed) return failed;
         if (!options.manual && ocr.esComprobante === false) {

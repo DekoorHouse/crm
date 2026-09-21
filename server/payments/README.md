@@ -15,6 +15,17 @@ cada 30 segundos, independientemente del navegador y de `botActive`.
 - `payment_receipt_keys` evita sumar nuevamente una imagen o folio registrado en
   este flujo, incluso para otro pedido. No es un cotejo bancario ni un registro
   retroactivo de todos los comprobantes anteriores al despliegue.
+- Una referencia compartida con la misma fecha y destino se distingue cuando
+  ambos comprobantes tienen terminaciones de origen legibles (al menos cuatro
+  dígitos) y diferentes. La cuenta de origen se extrae de la imagen; nunca se
+  deduce del banco o del remitente. Si falta, se conserva la revisión. Una imagen
+  idéntica o una misma clave de rastreo prevalecen sobre una cuenta distinta.
+  Se conserva un índice adicional por referencia y origen para que otra captura
+  del segundo ingreso tampoco pueda acreditarse de nuevo.
+- Al abrir una revisión se completa la cuenta de origen de los OCR antiguos y
+  de los comprobantes que comparten sus índices. Sólo se actualiza esa identidad;
+  no se recalculan importes ni se reabren pagos aplicados. Sin imagen disponible
+  o cuenta legible, no se presume que el pago sea distinto.
 - `paymentReceivedCents` acumula abonos. Sólo al cubrir el total se guarda
   `comprobanteValidadoAt` y se crea la obligación de enviar el formulario en el
   mismo commit. Los pagos OXXO acreditados por el webhook usan el mismo registro.

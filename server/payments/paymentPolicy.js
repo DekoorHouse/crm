@@ -22,7 +22,11 @@ function receiptKeys(receipt) {
     if (receipt.imageHash) keys.push('image_' + receipt.imageHash);
     for (const folio of receiptFolios(receipt)) if (receipt.fecha && cents(receipt.monto) > 0) {
         // No incluir al cliente ni al pedido: un mismo pago no financia dos pedidos.
-        keys.push('folio_' + hash([folio, receipt.fecha, String(receipt.cuentaDestino || '').replace(/\D/g, '').slice(-4)].join('|')));
+        const identity = [folio, receipt.fecha, String(receipt.cuentaDestino || '').replace(/\D/g, '').slice(-4)].join('|');
+        keys.push('folio_' + hash(identity));
+        // Conserva también al segundo titular de una referencia compartida.
+        const source = sourceAccount(receipt);
+        if (source) keys.push('source_' + hash(identity + '|' + source));
     }
     return keys;
 }
@@ -33,11 +37,23 @@ const trackingCode = receipt => {
     return value.length >= 5 ? value : null;
 };
 const differentTracking = (a, b) => !!trackingCode(a) && !!trackingCode(b) && trackingCode(a) !== trackingCode(b);
+const sourceAccount = receipt => {
+    const value = String(receipt?.cuentaOrigen || '').trim();
+    // Sólo números visibles, con separadores o máscara; nunca nombres o etiquetas.
+    if (!/^[\d\s*xX•.\-]+$/.test(value)) return null;
+    const suffix = value.replace(/[\s.\-]/g, '').match(/(\d{4,})$/)?.[1];
+    return suffix ? suffix.slice(-4) : null;
+};
+const differentPayment = (a, b) => {
+    // Una misma clave completa pesa más que una cuenta leída de forma distinta.
+    if (trackingCode(a) && trackingCode(b)) return differentTracking(a, b);
+    return !!sourceAccount(a) && !!sourceAccount(b) && sourceAccount(a) !== sourceAccount(b);
+};
 
-// Banco Azteca puede repetir la referencia (p. ej. 0690670) en pagos distintos.
-// Dos claves de rastreo completas y diferentes desempatan esa referencia; una
-// imagen idéntica sigue siendo duplicada incluso si una lectura cambió el folio.
-const receiptKeyMatches = (key, a, b) => key.startsWith('image_') || !differentTracking(a, b);
+// Las referencias pueden repetirse (p. ej. fecha + 0 en BanCoppel).
+// Rastreo distinto o terminaciones de origen distintas desempatan la referencia;
+// una imagen idéntica sigue siendo duplicada aunque cambie la lectura del folio.
+const receiptKeyMatches = (key, a, b) => key.startsWith('image_') || !differentPayment(a, b);
 
 // Dos capturas pueden corresponder al mismo ingreso. La incertidumbre obliga a
 // revisar; no permite descartar ni acreditar dinero automáticamente.
@@ -46,7 +62,7 @@ function possibleSamePayment(a, b) {
     if (a.verifiedProvider && b.verifiedProvider) return a.providerPaymentId === b.providerPaymentId;
     const x = a.ocr || {}, y = b.ocr || {};
     if (x.imageHash && x.imageHash === y.imageHash) return true;
-    if (differentTracking(x, y)) return false;
+    if (differentPayment(x, y)) return false;
     if (!(Number(a.amountCents ?? cents(x.monto)) > 0) || Number(a.amountCents ?? cents(x.monto)) !== Number(b.amountCents ?? cents(y.monto))) return false;
     const destination = r => String(r.cuentaDestino || '').replace(/\D/g, '').slice(-4);
     if (destination(x) && destination(y) && destination(x) !== destination(y)) return false;
