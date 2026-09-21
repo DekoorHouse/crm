@@ -227,8 +227,8 @@ window.addEventListener('blur', cancelGesture);
 canvas.addEventListener('wheel', event => {
     event.preventDefault(); if (gesture) return;
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1;
-    if (event.ctrlKey || event.metaKey) { const rect = canvas.getBoundingClientRect(); zoom(Math.exp(-event.deltaY * unit * .002), event.clientX - rect.left, event.clientY - rect.top); }
-    else { view.x -= (event.shiftKey ? event.deltaY : event.deltaX) * unit; view.y -= (event.shiftKey ? 0 : event.deltaY) * unit; renderScene(); }
+    const rect = canvas.getBoundingClientRect();
+    zoom(Math.exp(-event.deltaY * unit * .002), event.clientX - rect.left, event.clientY - rect.top);
 }, { passive: false });
 
 $('#properties').addEventListener('submit', event => event.preventDefault());
