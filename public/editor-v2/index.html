@@ -21,7 +21,7 @@
     <label>Ancho <input id="page-width" type="number" required min="1" max="5000" step="any" value="210"></label>
     <label>Alto <input id="page-height" type="number" required min="1" max="5000" step="any" value="297"></label><span class="subtle">mm</span>
     <span class="separator"></span><button data-action="duplicate" title="Duplicar (Ctrl+D)">Duplicar</button><button data-action="delete" title="Eliminar (Supr)">Eliminar</button>
-    <span class="spacer"></span><button data-action="cloud" class="local-badge" id="cloud-badge">Proyectos en Firebase</button>
+    <span class="spacer"></span><button data-action="cloud" class="local-badge" id="cloud-badge" hidden>Proyectos en Firebase</button>
   </div>
   <main class="workspace">
     <nav class="tools" aria-label="Herramientas">
@@ -41,7 +41,7 @@
       </svg>
       <div class="zoom-controls"><button data-action="zoom-out" aria-label="Alejar">−</button><output id="zoom-label">100%</output><button data-action="zoom-in" aria-label="Acercar">+</button><span class="separator"></span><button data-action="fit">Ajustar página</button></div>
     </section>
-    <aside class="inspector">
+    <aside class="inspector" hidden>
       <div class="panel-heading"><strong>Propiedades</strong><span id="selection-kind">Documento</span></div>
       <div id="empty-selection"><div class="empty-icon">↖</div><h2>Todo empieza con una forma.</h2><p>Elige una herramienta y dibuja sobre la página. Selecciona un objeto para editarlo.</p><div class="hint">R <span>Rectángulo</span><br>E <span>Elipse</span><br>T <span>Texto</span></div></div>
       <form id="properties" hidden>

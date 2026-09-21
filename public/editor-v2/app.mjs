@@ -103,8 +103,10 @@ function getBounds(o) {
 }
 function render() {
     if (selectedId && !selected()) selectedId = null;
-    renderScene();
     const d = history.document, o = selected();
+    $('.inspector').hidden = !o;
+    $('#cloud-badge').hidden = !o;
+    renderScene();
     $('#palette-color').value = o && o.fill !== 'none' ? o.fill : nextFill;
     document.querySelectorAll('[data-color]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.color === (o ? o.fill : nextFill)));
