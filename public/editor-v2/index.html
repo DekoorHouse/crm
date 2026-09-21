@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dekoor · Editor V2</title>
   <meta name="theme-color" content="#191b22">
-  <link rel="stylesheet" href="/editor-v2/style.css?v=dark-1">
+  <link rel="stylesheet" href="/editor-v2/style.css?v=cloud-1">
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +21,7 @@
     <label>Ancho <input id="page-width" type="number" required min="1" max="5000" step="any" value="210"></label>
     <label>Alto <input id="page-height" type="number" required min="1" max="5000" step="any" value="297"></label><span class="subtle">mm</span>
     <span class="separator"></span><button data-action="duplicate" title="Duplicar (Ctrl+D)">Duplicar</button><button data-action="delete" title="Eliminar (Supr)">Eliminar</button>
-    <span class="spacer"></span><span class="local-badge">● Proyecto local</span>
+    <span class="spacer"></span><button data-action="cloud" class="local-badge" id="cloud-badge">Proyectos en Firebase</button>
   </div>
   <main class="workspace">
     <nav class="tools" aria-label="Herramientas">
@@ -46,9 +46,8 @@
       <div id="empty-selection"><div class="empty-icon">↖</div><h2>Todo empieza con una forma.</h2><p>Elige una herramienta y dibuja sobre la página. Selecciona un objeto para editarlo.</p><div class="hint">R <span>Rectángulo</span><br>E <span>Elipse</span><br>T <span>Texto</span></div></div>
       <form id="properties" hidden>
         <label class="full">Nombre<input data-property="name" maxlength="120"></label>
-        <h3>POSICIÓN Y TAMAÑO <span>mm</span></h3>
+        <h3>TAMAÑO <span>mm</span></h3>
         <div class="property-grid">
-          <label>X<input data-property="x" type="number" required min="-10000" max="10000" step="any"></label><label>Y<input data-property="y" type="number" required min="-10000" max="10000" step="any"></label>
           <label>Ancho<input data-property="width" type="number" required min="0.1" max="10000" step="any"></label><label>Alto<input data-property="height" type="number" required min="0.1" max="10000" step="any"></label>
         </div>
         <div id="text-properties" hidden><h3>TEXTO</h3><label>Contenido<input data-property="text" maxlength="10000"></label><label>Tamaño (mm)<input data-property="fontSize" type="number" required min="0.1" max="1000" step="any"></label><p class="subtle">Arial · El texto se exporta editable.</p></div>
@@ -60,9 +59,27 @@
       <section class="layers-panel"><div class="panel-heading"><strong>Objetos</strong><span id="object-count">0</span></div><p class="layer-caption">El primero está al frente</p><div id="layers"></div><div class="layer-actions"><button data-action="backward">↓ Bajar</button><button data-action="forward">↑ Subir</button></div></section>
     </aside>
   </main>
+  <section class="color-palette" aria-label="Paleta de colores RGB"><strong>RGB</strong><div id="palette-swatches" role="group" aria-label="Colores de relleno"></div><label title="Elegir un color de relleno personalizado">Personalizado <input id="palette-color" type="color" value="#b9a3ed" aria-label="Color RGB personalizado"></label></section>
   <footer><span id="status" role="status">Listo para crear</span><span id="save-status">Guardado automático en este navegador</span><span>Medidas en mm · SVG</span></footer>
   <input id="open-file" type="file" accept=".json,.dekoor,application/json" hidden>
-  <dialog id="help"><h2>Tu nuevo espacio de diseño</h2><p>Dibuja arrastrando. Mantén Shift para crear cuadrados o círculos. Usa la esquina inferior derecha de una figura seleccionada para cambiar su tamaño.</p><p><b>V</b> seleccionar · <b>H</b> desplazar · <b>R</b> rectángulo · <b>E</b> elipse · <b>T</b> texto<br><b>Ctrl+Z</b> deshacer · <b>Ctrl+Shift+Z</b> rehacer<br><b>Ctrl+D</b> duplicar · <b>Supr</b> eliminar · <b>Esc</b> cancelar<br><b>Flechas</b> mover 1 mm · <b>Shift+flechas</b> mover 10 mm<br><b>Rueda</b> acercar/alejar · <b>H + arrastrar</b> desplazar</p><p>Los proyectos se guardan en este navegador. Usa «Guardar proyecto» para descargar una copia. Esta primera versión trabaja con figuras y texto; la importación de SVG, curvas y herramientas de corte se añadirán por etapas.</p><form method="dialog"><button class="primary">Entendido</button></form></dialog>
+  <dialog id="help"><h2>Tu nuevo espacio de diseño</h2><p>Dibuja arrastrando. Mantén Shift para crear cuadrados o círculos. Arrastra cualquiera de las cuatro esquinas para cambiar el tamaño proporcionalmente. Los puntos medios de los lados cambian solo el ancho o el alto.</p><p><b>V</b> seleccionar · <b>H</b> desplazar · <b>R</b> rectángulo · <b>E</b> elipse · <b>T</b> texto<br><b>Ctrl+Z</b> deshacer · <b>Ctrl+Shift+Z</b> rehacer<br><b>Ctrl+D</b> duplicar · <b>Supr</b> eliminar · <b>Esc</b> cancelar<br><b>Flechas</b> mover 1 mm · <b>Shift+flechas</b> mover 10 mm<br><b>Rueda</b> acercar/alejar · <b>H + arrastrar</b> desplazar</p><p>«Guardar proyecto» guarda en Firebase con tu cuenta del CRM. «Abrir» muestra los proyectos del equipo. También puedes descargar e importar copias locales desde esa ventana. El borrador se conserva en este navegador. Esta primera versión trabaja con figuras y texto; la importación de SVG, curvas y herramientas de corte se añadirán por etapas.</p><form method="dialog"><button class="primary">Entendido</button></form></dialog>
+  <dialog id="cloud-dialog" aria-labelledby="cloud-title">
+    <div class="cloud-heading"><h2 id="cloud-title">Proyectos en Firebase</h2><button id="cloud-close" aria-label="Cerrar proyectos">Cerrar</button></div>
+    <p>Proyectos compartidos con el equipo del CRM. El borrador de trabajo se conserva en este navegador.</p>
+    <p id="cloud-message" role="status" aria-live="polite"></p>
+    <form id="cloud-login" hidden>
+      <label>Correo del CRM<input id="cloud-email" type="email" autocomplete="username" required></label>
+      <label>Contraseña<input id="cloud-password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary">Iniciar sesión</button>
+    </form>
+    <div id="cloud-account" hidden>
+      <p id="cloud-user"></p>
+      <div class="cloud-buttons"><button id="cloud-save" class="primary">Guardar en Firebase</button><button id="cloud-copy">Guardar como copia</button><button id="cloud-refresh">Actualizar lista</button></div>
+      <p class="subtle">Últimos 100 proyectos · al abrir se reemplaza el borrador actual; puedes deshacerlo.</p>
+      <div id="cloud-projects"></div>
+    </div>
+    <div class="cloud-local"><span>Archivos locales</span><button data-action="download">Descargar copia</button><button data-action="import">Importar proyecto</button></div>
+  </dialog>
   <script type="module" src="/editor-v2/app.mjs"></script>
 </body>
 </html>

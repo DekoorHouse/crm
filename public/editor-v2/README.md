@@ -5,21 +5,28 @@ Editor vectorial nuevo, disponible en `/editor-v2/` desde el servidor Express ex
 ## Primera etapa
 
 - Documento en milímetros, tamaño de página editable; SVG con dimensiones físicas.
-- Rectángulos, elipses y texto Arial. Selección individual, movimiento y redimensionado de figuras; Shift mantiene proporciones al redimensionar.
+- Rectángulos, elipses y texto Arial. Selección individual, movimiento y redimensionado de figuras; ocho controles de tamaño: las esquinas mantienen proporciones y los puntos medios estiran un solo eje.
 - Propiedades numéricas, relleno, contorno, duplicación y eliminación.
 - Orden de objetos, visibilidad y bloqueo.
 - Historial de 100 cambios; cada arrastre es una sola operación. Escape cancela el gesto.
 - Zoom y desplazamiento independientes del documento.
 - Borrador automático local, descarga/apertura de proyectos `.dekoor` (JSON validado) y exportación SVG.
+- Paleta RGB horizontal para rellenos y color personalizado; propiedades de ancho y alto.
+- Guardado y carga manual en Firebase con la cuenta del CRM, más guardar como copia. Colección `editor_v2_projects`, compartida entre usuarios autenticados conforme a las reglas existentes. No mezcla formatos con `editor_files` del editor anterior.
 
-El borrador pertenece al navegador/origen, no a una cuenta del CRM. No se conecta a pedidos ni servicios privados. No usar este borrador como única copia: descargar el proyecto para conservarlo. Abrir/Nuevo se puede deshacer durante la sesión.
+El borrador pertenece al navegador/origen. «Guardar proyecto» (Ctrl+S) guarda en Firebase; «Abrir» (Ctrl+O) muestra los últimos 100 proyectos. La ventana incluye descarga e importación local. Los cambios no se envían automáticamente a Firebase: el indicador diferencia el proyecto guardado de los cambios pendientes. Abrir/Nuevo se puede deshacer durante la sesión.
+
+Firestore almacena JSON validado (hasta 850 KB) con metadatos, fecha del servidor y revisión. Las transacciones rechazan sobrescrituras si otra sesión modificó el documento; en ese caso se puede abrir la versión actual o guardar como copia. Las lecturas de la lista/proyecto requieren conexión al servidor. No se cambian las reglas ni se agrega acceso público. El SDK se carga al abrir Firebase; el editor local puede funcionar sin ese servicio. No se convierten archivos del editor anterior.
 
 ## Estructura
 
 - `model.mjs`: documento, validación, historial y serialización SVG, sin acceso al DOM.
 - `app.mjs`: eventos, herramientas, vista SVG, paneles y almacenamiento local.
+- `geometry.mjs`: ocho controles y geometría de redimensionado, sin DOM.
+- `cloud.mjs`: autenticación Firebase, consultas y guardado con control de revisión.
 - `style.css` e `index.html`: interfaz independiente, sin CDN.
 - `../../tests/editorV2.test.mjs`: ejecutar desde la raíz con `node --test tests/editorV2.test.mjs`.
+- `../../tests/editorV2Geometry.test.mjs`: invariantes de proporción y anclaje de los ocho controles.
 
 ## Próximas etapas según el uso solicitado
 

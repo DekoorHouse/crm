@@ -1,5 +1,7 @@
 import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, exportSvg } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
+import { RESIZE_HANDLES, resizeBounds } from './geometry.mjs';
+import { connect, cloudError } from './cloud.mjs';
 
 decorateControls();
 
@@ -9,6 +11,9 @@ const storageKey = 'dekoor.editor-v2.document.v1';
 let history = new History(), selectedId = null, tool = 'select', gesture = null;
 let view = { x: 0, y: 0, scale: 2 }, draft = null;
 let storageBlocked = false;
+let cloudBinding = null, cloudSavedJson = null, cloudBusy = false, pendingSave = false;
+let cloudApi = null;
+let nextFill = '#b9a3ed';
 const current = () => draft || history.document;
 const selected = () => current().objects.find(o => o.id === selectedId);
 const status = message => { $('#status').textContent = message; };
@@ -16,6 +21,10 @@ const status = message => { $('#status').textContent = message; };
 try {
     const saved = localStorage.getItem(storageKey);
     if (saved) history = new History(JSON.parse(saved));
+    const meta = JSON.parse(localStorage.getItem(storageKey + '.cloud') || 'null');
+    if (meta && meta.documentJson === JSON.stringify(history.document) && typeof meta.binding?.id === 'string' && Number.isSafeInteger(meta.binding.revision)) {
+        cloudBinding = meta.binding; cloudSavedJson = meta.savedJson;
+    }
 } catch {
     storageBlocked = true;
     $('#save-status').textContent = 'No se pudo recuperar el borrador. Descarga tu proyecto.';
@@ -26,6 +35,7 @@ function persist() {
     if (storageBlocked) return;
     try {
         localStorage.setItem(storageKey, JSON.stringify(history.document));
+        localStorage.setItem(storageKey + '.cloud', JSON.stringify({ binding: cloudBinding, savedJson: cloudSavedJson, documentJson: JSON.stringify(history.document) }));
         $('#save-status').textContent = 'Borrador guardado en este navegador';
     } catch { $('#save-status').textContent = 'No se pudo guardar el borrador. Descarga tu proyecto.'; }
 }
@@ -75,9 +85,11 @@ function renderScene() {
         for (const [key, value] of Object.entries({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'pointer-events': 'none' })) box.setAttribute(key, value);
         selection.append(box);
         if (!o.locked && o.type !== 'text') {
-            const handle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            for (const [key, value] of Object.entries({ x: o.x + o.width - 4 * unit, y: o.y + o.height - 4 * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: 'nwse-resize' })) handle.setAttribute(key, value);
-            handle.dataset.handle = 'resize'; selection.append(handle);
+            for (const control of RESIZE_HANDLES) {
+                const handle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                for (const [key, value] of Object.entries({ x: o.x + o.width * control.x - 4 * unit, y: o.y + o.height * control.y - 4 * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: control.cursor })) handle.setAttribute(key, value);
+                handle.dataset.handle = control.name; selection.append(handle);
+            }
         }
     }
     $('#zoom-label').textContent = `${Math.round(view.scale / (96 / 25.4) * 100)}%`;
@@ -93,6 +105,13 @@ function render() {
     if (selectedId && !selected()) selectedId = null;
     renderScene();
     const d = history.document, o = selected();
+    $('#palette-color').value = o && o.fill !== 'none' ? o.fill : nextFill;
+    document.querySelectorAll('[data-color]').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.color === (o ? o.fill : nextFill)));
+        button.disabled = Boolean(o?.locked);
+    });
+    $('#palette-color').disabled = Boolean(o?.locked);
+    $('#cloud-badge').textContent = cloudBinding ? (JSON.stringify(d) === cloudSavedJson ? 'Guardado en Firebase' : 'Cambios sin guardar en Firebase') : 'Proyectos en Firebase';
     $('#document-name').value = d.name;
     $('#page-width').value = d.width; $('#page-height').value = d.height;
     $('#empty-selection').hidden = Boolean(o); $('#properties').hidden = !o;
@@ -172,13 +191,13 @@ canvas.addEventListener('pointerdown', event => {
         gesture = { type: 'pan', pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, view: { ...view } }; return;
     }
     if (tool === 'text') {
-        const text = createObject('text', start.x, start.y); text.fill = '#352a49'; text.stroke = 'none';
+        const text = createObject('text', start.x, start.y); text.fill = nextFill; text.stroke = 'none';
         selectedId = text.id; edit(d => d.objects.push(text)); setTool('select');
         $('[data-property="text"]').focus(); $('[data-property="text"]').select(); return;
     }
     if (tool === 'rect' || tool === 'ellipse') {
         draft = clone(history.document);
-        const object = createObject(tool, start.x, start.y, .1, .1); selectedId = object.id; draft.objects.push(object);
+        const object = createObject(tool, start.x, start.y, .1, .1); object.fill = nextFill; selectedId = object.id; draft.objects.push(object);
         gesture = { type: 'draw', start, pointerId: event.pointerId }; renderScene(); return;
     }
     const target = event.target.closest('[data-id]');
@@ -187,7 +206,7 @@ canvas.addEventListener('pointerdown', event => {
     const o = selected();
     if (o && !o.locked && !o.hidden) {
         draft = clone(history.document);
-        gesture = { type: handle ? 'resize' : 'move', start, original: clone(o), pointerId: event.pointerId };
+        gesture = { type: handle ? 'resize' : 'move', handle: handle?.dataset.handle, start, original: clone(o), pointerId: event.pointerId };
     }
     render();
 });
@@ -205,8 +224,7 @@ canvas.addEventListener('pointermove', event => {
         o.width = Math.max(.1, w); o.height = Math.max(.1, h);
     }
     if (gesture.type === 'resize') {
-        o.width = Math.max(.1, gesture.original.width + dx); o.height = Math.max(.1, gesture.original.height + dy);
-        if (event.shiftKey) o.height = o.width * gesture.original.height / gesture.original.width;
+        Object.assign(o, resizeBounds(gesture.original, gesture.handle, dx, dy));
     }
     renderScene();
 });
@@ -261,11 +279,15 @@ const actions = {
     undo() { if (history.undo()) { persist(); render(); status('Cambio deshecho'); } },
     redo() { if (history.redo()) { persist(); render(); status('Cambio rehecho'); } },
     new() {
-        if (!window.confirm('¿Crear un proyecto nuevo? Descarga el actual con «Guardar proyecto» si quieres conservar una copia. Puedes deshacer esta acción.')) return;
+        if (!window.confirm('¿Crear un proyecto nuevo? Guarda el actual en Firebase o descarga una copia si quieres conservarlo. Puedes deshacer esta acción.')) return;
+        cloudBinding = null; cloudSavedJson = null;
         storageBlocked = false; selectedId = null; commit(blankDocument()); persist(); fit(); status('Nuevo documento A4');
     },
-    open() { $('#open-file').click(); },
-    save() { download(JSON.stringify(history.document, null, 2), 'application/json', '.dekoor'); status('Proyecto descargado'); },
+    open() { showCloud(false); },
+    cloud() { showCloud(false); },
+    save() { showCloud(true); },
+    import() { $('#open-file').click(); },
+    download() { download(JSON.stringify(history.document, null, 2), 'application/json', '.dekoor'); status('Proyecto descargado'); },
     export() { download(exportSvg(history.document), 'image/svg+xml', '.svg'); status('SVG exportado con medidas en milímetros'); },
     delete() { const o = selected(); if (o && !o.locked) edit(d => { d.objects = d.objects.filter(item => item.id !== o.id); }); },
     duplicate() {
@@ -293,11 +315,12 @@ $('#open-file').addEventListener('change', async event => {
         if (file.size > 5 * 1024 * 1024) throw new Error('El proyecto supera el límite de 5 MB.');
         const next = validateDocument(JSON.parse(await file.text()));
         if (!window.confirm('¿Abrir este proyecto y reemplazar el borrador actual? Puedes deshacer esta acción.')) return;
-        cancelGesture(); storageBlocked = false; selectedId = null; commit(next); persist(); fit(); status('Proyecto abierto');
+        cancelGesture(); cloudBinding = null; cloudSavedJson = null;
+        storageBlocked = false; selectedId = null; commit(next); persist(); fit(); $('#cloud-dialog').close(); status('Proyecto abierto');
     } catch (error) { status(`No se abrió el archivo: ${error.message}`); }
 });
 document.addEventListener('keydown', event => {
-    if ($('#help').open) return;
+    if ($('#help').open || $('#cloud-dialog').open) return;
     const editing = event.target.closest('input, textarea, [contenteditable="true"]');
     const mod = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
     if (key === 'escape') { cancelGesture(); selectedId = null; setTool('select'); render(); return; }
@@ -316,4 +339,108 @@ document.addEventListener('keydown', event => {
     }
 });
 new ResizeObserver(() => { if (!gesture) renderScene(); }).observe(canvas);
+const palette = ['#000000', '#404040', '#808080', '#bfbfbf', '#ffffff', '#800000', '#ff0000', '#ff6600', '#ff9900', '#ffcc00', '#ffff00', '#99cc00', '#00ff00', '#008000', '#008080', '#00ffff', '#00aaff', '#0066ff', '#0000ff', '#000080', '#6600cc', '#9900ff', '#b9a3ed', '#ff00ff', '#ff66aa', '#ffb3cc', '#663300', '#996633'];
+for (const color of palette) {
+    const button = document.createElement('button'); button.dataset.color = color;
+    button.style.backgroundColor = color;
+    const channels = [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16));
+    button.title = `RGB ${channels.join(', ')} · ${color}`; button.setAttribute('aria-label', button.title);
+    button.onclick = () => applyPalette(color); $('#palette-swatches').append(button);
+}
+function applyPalette(color) {
+    if (gesture || selected()?.locked) return;
+    nextFill = color;
+    const o = selected();
+    if (o) { edit(d => { d.objects.find(item => item.id === o.id).fill = color; }); status('Color de relleno actualizado'); }
+    else { render(); status('Color elegido para el siguiente objeto'); }
+}
+$('#palette-color').addEventListener('change', event => applyPalette(event.target.value));
+
+function cloudMessage(message) { $('#cloud-message').textContent = message; }
+function cloudState() {
+    const user = cloudApi?.user;
+    $('#cloud-login').hidden = Boolean(user); $('#cloud-account').hidden = !user;
+    $('#cloud-user').textContent = user ? `Sesión: ${user.email || user.uid}` : '';
+    $('#cloud-dialog').querySelectorAll('button, input').forEach(element => {
+        element.disabled = cloudBusy;
+    });
+}
+async function cloudOperation(operation) {
+    if (cloudBusy) return;
+    cloudBusy = true; cloudState();
+    try { await operation(); } catch (error) { cloudMessage(cloudError(error)); }
+    finally { cloudBusy = false; cloudState(); }
+}
+async function refreshProjects() {
+    const list = $('#cloud-projects'); list.replaceChildren();
+    cloudMessage('Cargando proyectos…');
+    const projects = await cloudApi.list();
+    if (!cloudApi.user) { list.replaceChildren(); return; }
+    for (const project of projects) {
+        const row = document.createElement('button'); row.className = 'cloud-project';
+        const title = document.createElement('strong'); title.textContent = project.name || 'Sin título';
+        const detail = document.createElement('span');
+        detail.textContent = `${project.count ?? 0} objetos · ${project.updatedAt?.toLocaleString('es-MX') || 'Sin fecha'}`;
+        row.append(title, detail);
+        row.onclick = () => cloudOperation(async () => {
+            cloudMessage('Abriendo proyecto…');
+            const loaded = await cloudApi.load(project.id);
+            // Guard against accidentally discarding edits; loading is also undoable.
+            if (!window.confirm('¿Abrir este proyecto y reemplazar el borrador actual? Puedes deshacerlo.')) { cloudMessage('Apertura cancelada.'); return; }
+            cancelGesture(); cloudBinding = loaded.binding; cloudSavedJson = JSON.stringify(loaded.document);
+            storageBlocked = false; selectedId = null; commit(loaded.document); persist(); fit();
+            $('#cloud-dialog').close(); status('Proyecto cargado desde Firebase');
+        });
+        list.append(row);
+    }
+    cloudMessage(projects.length ? 'Selecciona un proyecto para abrirlo.' : 'Todavía no hay proyectos. Guarda el primero en Firebase.');
+}
+async function saveCloud(copy = false) {
+    // Capture a snapshot: edits made while the request is in flight stay marked as pending.
+    const snapshot = clone(history.document), previousBinding = cloudBinding;
+    cloudMessage('Guardando en Firebase…');
+    const binding = await cloudApi.save(snapshot, copy ? null : cloudBinding);
+    if (cloudBinding === previousBinding) {
+        cloudBinding = binding; cloudSavedJson = JSON.stringify(snapshot); persist(); render();
+    }
+    try {
+        await refreshProjects();
+        cloudMessage(copy ? 'Copia guardada en Firebase.' : 'Proyecto guardado en Firebase.');
+    } catch { cloudMessage('El proyecto se guardó en Firebase, pero no se pudo actualizar la lista.'); }
+    status('Proyecto guardado en Firebase');
+}
+async function showCloud(saveRequested) {
+    if (cloudBusy) return;
+    pendingSave = saveRequested;
+    if (!$('#cloud-dialog').open) $('#cloud-dialog').showModal();
+    await cloudOperation(async () => {
+        cloudMessage('Conectando con Firebase…');
+        if (!cloudApi) {
+            cloudApi = await connect();
+            cloudApi.watch(() => { cloudState(); if (!cloudApi.user) $('#cloud-projects').replaceChildren(); });
+        }
+        cloudState();
+        if (!cloudApi.user) { cloudMessage('Inicia sesión con tu cuenta del CRM.'); return; }
+        if (pendingSave) { pendingSave = false; await saveCloud(); }
+        else await refreshProjects();
+    });
+}
+$('#cloud-close').onclick = () => $('#cloud-dialog').close();
+$('#cloud-dialog').addEventListener('cancel', event => { if (cloudBusy) event.preventDefault(); });
+$('#cloud-save').onclick = () => cloudOperation(() => saveCloud());
+$('#cloud-copy').onclick = () => cloudOperation(() => saveCloud(true));
+$('#cloud-refresh').onclick = () => cloudOperation(refreshProjects);
+$('#cloud-login').addEventListener('submit', event => {
+    event.preventDefault();
+    cloudOperation(async () => {
+        if (!cloudApi) cloudApi = await connect();
+        cloudMessage('Iniciando sesión…');
+        const password = $('#cloud-password').value;
+        $('#cloud-password').value = '';
+        await cloudApi.login($('#cloud-email').value.trim(), password);
+        cloudState();
+        if (pendingSave) { pendingSave = false; await saveCloud(); }
+        else await refreshProjects();
+    });
+});
 setTool('select'); render(); fit();
