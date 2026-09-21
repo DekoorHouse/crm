@@ -1,4 +1,7 @@
 import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, exportSvg } from './model.mjs';
+import { icon, decorateControls } from './icons.mjs';
+
+decorateControls();
 
 const $ = selector => document.querySelector(selector);
 const canvas = $('#canvas'), scene = $('#scene'), objects = $('#objects'), selection = $('#selection');
@@ -135,10 +138,11 @@ function render() {
         }
         row.className = 'layer' + (item.id === selectedId ? ' selected' : '');
         const select = row.children[0];
-        select.textContent = `${{ rect: '□', ellipse: '○', text: 'T' }[item.type]}  ${item.name}`;
+        const label = document.createElement('span'); label.textContent = item.name;
+        select.replaceChildren(icon(item.type), label);
         select.title = item.name; select.setAttribute('aria-pressed', String(item.id === selectedId));
-        for (const [field, on, off] of [['hidden', '○', '●'], ['locked', '▣', '◇']]) {
-            const button = row.querySelector(`[data-field="${field}"]`); button.textContent = item[field] ? on : off;
+        for (const [field, on, off] of [['hidden', 'hidden', 'visible'], ['locked', 'locked', 'unlocked']]) {
+            const button = row.querySelector(`[data-field="${field}"]`); button.replaceChildren(icon(item[field] ? on : off));
             button.title = `${field === 'hidden' ? (item.hidden ? 'Mostrar' : 'Ocultar') : (item.locked ? 'Desbloquear' : 'Bloquear')} ${item.name}`;
             button.setAttribute('aria-label', button.title);
         }
