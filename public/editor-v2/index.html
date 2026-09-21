@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dekoor · Editor V2</title>
+  <link rel="stylesheet" href="/editor-v2/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">D</span><strong>dekoor<span> / editor</span></strong><small>V2 · BASE</small></div>
+    <input id="document-name" aria-label="Nombre del documento" value="Sin título" maxlength="120">
+    <div class="file-actions">
+      <button data-action="new">Nuevo</button><button data-action="open">Abrir</button><button data-action="save" title="Guardar proyecto (Ctrl+S)">Guardar proyecto</button><button data-action="export" class="primary">Exportar SVG ↗</button>
+    </div>
+  </header>
+  <div class="commandbar">
+    <div><button data-action="undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer">↶</button><button data-action="redo" title="Rehacer (Ctrl+Shift+Z)" aria-label="Rehacer">↷</button></div>
+    <span class="separator"></span><span class="subtle">Página</span>
+    <label>Ancho <input id="page-width" type="number" required min="1" max="5000" step="any" value="210"></label>
+    <label>Alto <input id="page-height" type="number" required min="1" max="5000" step="any" value="297"></label><span class="subtle">mm</span>
+    <span class="separator"></span><button data-action="duplicate" title="Duplicar (Ctrl+D)">Duplicar</button><button data-action="delete" title="Eliminar (Supr)">Eliminar</button>
+    <span class="spacer"></span><span class="local-badge">● Proyecto local</span>
+  </div>
+  <main class="workspace">
+    <nav class="tools" aria-label="Herramientas">
+      <button data-tool="select" class="active" title="Seleccionar y mover (V)" aria-label="Seleccionar" aria-pressed="true">↖</button>
+      <button data-tool="hand" title="Desplazar vista (H)" aria-label="Desplazar vista" aria-pressed="false">✥</button>
+      <span class="tool-divider"></span>
+      <button data-tool="rect" title="Rectángulo (R)" aria-label="Rectángulo" aria-pressed="false">□</button>
+      <button data-tool="ellipse" title="Elipse (E)" aria-label="Elipse" aria-pressed="false">○</button>
+      <button data-tool="text" title="Texto (T)" aria-label="Texto" aria-pressed="false">T</button>
+      <span class="spacer"></span><button data-action="help" title="Atajos y ayuda" aria-label="Ayuda">?</button>
+    </nav>
+    <section id="viewport" aria-label="Área de diseño">
+      <span class="workspace-label">MESA DE TRABAJO <span>/ 01</span></span>
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg" tabindex="0" aria-label="Lienzo vectorial">
+        <defs><filter id="page-shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.12"/></filter></defs>
+        <g id="scene"><rect id="paper" fill="white" filter="url(#page-shadow)"/><g id="objects"></g><g id="selection"></g></g>
+      </svg>
+      <div class="zoom-controls"><button data-action="zoom-out" aria-label="Alejar">−</button><output id="zoom-label">100%</output><button data-action="zoom-in" aria-label="Acercar">+</button><span class="separator"></span><button data-action="fit">Ajustar página</button></div>
+    </section>
+    <aside class="inspector">
+      <div class="panel-heading"><strong>Propiedades</strong><span id="selection-kind">Documento</span></div>
+      <div id="empty-selection"><div class="empty-icon">↖</div><h2>Todo empieza con una forma.</h2><p>Elige una herramienta y dibuja sobre la página. Selecciona un objeto para editarlo.</p><div class="hint">R <span>Rectángulo</span><br>E <span>Elipse</span><br>T <span>Texto</span></div></div>
+      <form id="properties" hidden>
+        <label class="full">Nombre<input data-property="name" maxlength="120"></label>
+        <h3>POSICIÓN Y TAMAÑO <span>mm</span></h3>
+        <div class="property-grid">
+          <label>X<input data-property="x" type="number" required min="-10000" max="10000" step="any"></label><label>Y<input data-property="y" type="number" required min="-10000" max="10000" step="any"></label>
+          <label>Ancho<input data-property="width" type="number" required min="0.1" max="10000" step="any"></label><label>Alto<input data-property="height" type="number" required min="0.1" max="10000" step="any"></label>
+        </div>
+        <div id="text-properties" hidden><h3>TEXTO</h3><label>Contenido<input data-property="text" maxlength="10000"></label><label>Tamaño (mm)<input data-property="fontSize" type="number" required min="0.1" max="1000" step="any"></label><p class="subtle">Arial · El texto se exporta editable.</p></div>
+        <h3>APARIENCIA</h3>
+        <div class="paint-row"><label>Relleno<input data-property="fill" type="color"></label><label class="check"><input id="no-fill" type="checkbox"> Sin relleno</label></div>
+        <div class="paint-row"><label>Contorno<input data-property="stroke" type="color"></label><label class="check"><input id="no-stroke" type="checkbox"> Sin contorno</label></div>
+        <label>Grosor (mm)<input data-property="strokeWidth" type="number" required min="0" max="100" step="any"></label>
+      </form>
+      <section class="layers-panel"><div class="panel-heading"><strong>Objetos</strong><span id="object-count">0</span></div><p class="layer-caption">El primero está al frente</p><div id="layers"></div><div class="layer-actions"><button data-action="backward">↓ Bajar</button><button data-action="forward">↑ Subir</button></div></section>
+    </aside>
+  </main>
+  <footer><span id="status" role="status">Listo para crear</span><span id="save-status">Guardado automático en este navegador</span><span>Medidas en mm · SVG</span></footer>
+  <input id="open-file" type="file" accept=".json,.dekoor,application/json" hidden>
+  <dialog id="help"><h2>Tu nuevo espacio de diseño</h2><p>Dibuja arrastrando. Mantén Shift para crear cuadrados o círculos. Usa la esquina inferior derecha de una figura seleccionada para cambiar su tamaño.</p><p><b>V</b> seleccionar · <b>H</b> desplazar · <b>R</b> rectángulo · <b>E</b> elipse · <b>T</b> texto<br><b>Ctrl+Z</b> deshacer · <b>Ctrl+Shift+Z</b> rehacer<br><b>Ctrl+D</b> duplicar · <b>Supr</b> eliminar · <b>Esc</b> cancelar<br><b>Flechas</b> mover 1 mm · <b>Shift+flechas</b> mover 10 mm<br><b>Rueda</b> desplazar · <b>Ctrl+rueda</b> zoom</p><p>Los proyectos se guardan en este navegador. Usa «Guardar proyecto» para descargar una copia. Esta primera versión trabaja con figuras y texto; la importación de SVG, curvas y herramientas de corte se añadirán por etapas.</p><form method="dialog"><button class="primary">Entendido</button></form></dialog>
+  <script type="module" src="/editor-v2/app.mjs"></script>
+</body>
+</html>
