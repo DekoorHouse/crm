@@ -56,6 +56,14 @@ cada 30 segundos, independientemente del navegador y de `botActive`.
   el envío se deriva a revisión, sin volver a enviar a ciegas.
 - Fuera de la ventana del canal, el formulario queda visible y espera un nuevo
   mensaje del cliente. No se envía una plantilla ni se fuerza esa ventana.
+- Guardar datos de envío deja, en la misma transacción, una confirmación pendiente
+  por pedido. Se envía por el canal original aunque la IA esté apagada; sólo
+  confirma la recepción de los datos, no el pago ni la salida del paquete.
+  El worker recupera pendientes y rechazos del canal. Si la ventana está cerrada,
+  espera un mensaje del cliente. Un timeout o reinicio durante el envío deja
+  `shippingDataConfirmationStatus: review` para no duplicar mensajes a ciegas.
+  La IA no repite `/pagado` para pedidos cuya confirmación gestiona este flujo.
+  No se envían confirmaciones retroactivas de formularios guardados antes del cambio.
 
 El tablero Pendientes expone revisión de comprobantes, pagos en cancelados y
 pagados sin formulario. La revisión permite validar el importe real, descartar

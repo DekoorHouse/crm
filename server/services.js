@@ -3746,7 +3746,9 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 if (num && (o.comprobanteValidadoAt || o.shippingFormRequestedBeforeApproval)) {
                     const de = await getShippingDataForOrder(num);
                     const formUrl = `${APP_BASE_URL}/datos-estafeta/${num}`;
-                    if (de && require('./payments/paymentPolicy').awaitingPaymentApproval(o)) {
+                    if (de && o.shippingDataConfirmationStatus) {
+                        shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS.** El sistema gestiona la confirmación de recepción (estado: ${o.shippingDataConfirmationStatus}). No emitas /pagado ni repitas la confirmación del formulario; si el cliente sólo avisa que lo llenó, agradece brevemente. Esto no implica que su pago esté aprobado ni que el envío haya salido.`;
+                    } else if (de && require('./payments/paymentPolicy').awaitingPaymentApproval(o)) {
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS.** Agradece que los completó; el pago sigue pendiente de aprobación. NO emitas /pagado ni /datoscompletos, no prometas la salida del envío ni pidas el formulario otra vez.`;
                     } else if (de) {
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS en el sistema** (a nombre de ${de.nombreCompleto || 'el cliente'}). Si el cliente te confirma que llenó el formulario, respóndele ÚNICAMENTE con /pagado. NO le pidas que lo llene otra vez ni le mandes el enlace de nuevo.`;
@@ -4267,7 +4269,10 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const lastOrderNum = lastOrder && lastOrder.data().consecutiveOrderNumber;
                 const orderNumber = lastOrderNum != null ? `DH${lastOrderNum}` : null;
                 const de = orderNumber ? await getShippingDataForOrder(orderNumber) : null;
-                if (de && require('./payments/paymentPolicy').awaitingPaymentApproval(lastOrder.data())) {
+                if (de && lastOrder.data().shippingDataConfirmationStatus) {
+                    msgText = '¡Gracias! 😊';
+                    skipShortcutExpansion = true;
+                } else if (de && require('./payments/paymentPolicy').awaitingPaymentApproval(lastOrder.data())) {
                     msgText = '¡Gracias! Tus datos de envío ya quedaron guardados. El equipo dará seguimiento a la revisión de tu pago.';
                     skipShortcutExpansion = true;
                 } else if (orderNumber && !de) {

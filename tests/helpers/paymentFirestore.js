@@ -2,7 +2,7 @@
 // create conflicts and injected storage failures. No credentials or network.
 module.exports = function paymentFirestore() {
     const rows = new Map();
-    let serial = Promise.resolve(), fault = null;
+    let serial = Promise.resolve(), fault = null, nextId = 0;
     const copy = v => v && typeof v === 'object' ? (v instanceof Date ? new Date(v) : Array.isArray(v) ? v.map(copy) : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, copy(x)]))) : v;
     function fail(kind, path) {
         if (fault && fault.kind === kind && path.includes(fault.path)) { const e = fault.error; fault = null; throw e; }
@@ -22,7 +22,7 @@ module.exports = function paymentFirestore() {
         return ref;
     }
     function query(path, filters = [], sort = null, limit = Infinity) {
-        return { doc: id => doc(path + '/' + id),
+        return { doc: (id = 'auto-' + (++nextId)) => doc(path + '/' + id),
             where: (key, op, value) => query(path, [...filters, [key, op, value]], sort, limit),
             orderBy: (key, direction) => query(path, filters, [key, direction], limit),
             limit: n => query(path, filters, sort, n),

@@ -8443,7 +8443,7 @@ router.post('/datos-envio', async (req, res) => {
         const toCoord = (v) => (v === null || v === undefined || v === '' || !isFinite(Number(v))) ? null : Number(v);
         const latNum = toCoord(lat), lngNum = toCoord(lng);
 
-        await db.collection('datos_envio').add({
+        await require('./payments/shippingConfirmation').saveShippingData({
             numeroPedido,
             nombreCompleto,
             telefono,
@@ -8459,14 +8459,6 @@ router.post('/datos-envio', async (req, res) => {
             lng: lngNum,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
-
-        // Registrar la recepción por separado: pedir datos antes de aprobar el
-        // comprobante no debe aprobar el pago cuando el cliente llena el formulario.
-        try {
-            await require('./payments/paymentWorkflow').recordShippingDataForOrder(numeroPedido);
-        } catch (e) {
-            console.warn('[ENVIOS] No se pudo marcar el pedido al recibir el formulario:', e.message);
-        }
 
         res.status(201).json({
             success: true,
