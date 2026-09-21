@@ -105,10 +105,11 @@ function renderScene() {
         for (const [key, value] of Object.entries({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'pointer-events': 'none' })) box.setAttribute(key, value);
         selection.append(box);
         if (!o.locked && o.type !== 'text' && selectedIds.size === 1) {
+            // Reduce the outer gap when zooming out; keep the node itself free to drag.
+            const handleOffset = 4 + Math.max(1, Math.min(4, 4 * view.scale / (96 / 25.4)));
             for (const control of RESIZE_HANDLES) {
                 const handle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                // Keep scale controls outside the reference hit area at every zoom level.
-                for (const [key, value] of Object.entries({ x: o.x + o.width * control.x + ((control.x * 2 - 1) * 14 - 4) * unit, y: o.y + o.height * control.y + ((control.y * 2 - 1) * 14 - 4) * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: control.cursor })) handle.setAttribute(key, value);
+                for (const [key, value] of Object.entries({ x: o.x + o.width * control.x + ((control.x * 2 - 1) * handleOffset - 4) * unit, y: o.y + o.height * control.y + ((control.y * 2 - 1) * handleOffset - 4) * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: control.cursor })) handle.setAttribute(key, value);
                 handle.dataset.handle = control.name; selection.append(handle);
             }
         }
