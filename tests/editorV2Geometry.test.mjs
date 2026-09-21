@@ -1,6 +1,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resizeBounds, objectReference } from '../public/editor-v2/geometry.mjs';
+import { resizeBounds, objectReference, snapTranslation } from '../public/editor-v2/geometry.mjs';
+
+test('dragged reference snaps exactly to another object and releases outside tolerance', () => {
+    const target = { id: 'target', type: 'rect', x: 100, y: 50, width: 80, height: 40 };
+    const anchor = { x: 10, y: 20 };
+    for (const [x, y, label] of [[100, 50, 'Nodo'], [140, 50, 'Punto medio'], [140, 70, 'Centro'], [120, 50, 'Borde']]) {
+        const result = snapTranslation(anchor, { x: x - 10 + .5, y: y - 20 + .5 }, [target], new Set(), 1);
+        assert.equal(result.hit.reference.label, label);
+        assert.equal(anchor.y + result.y, y);
+        if (label !== 'Borde') assert.equal(anchor.x + result.x, x);
+    }
+    const free = snapTranslation(anchor, { x: 30, y: 30 }, [target], new Set(), 1);
+    assert.deepEqual(free, { x: 30, y: 30, hit: null });
+});
+
+test('snapping excludes the moving group and hidden objects, but accepts locked guides', () => {
+    const target = { id: 'target', type: 'rect', x: 100, y: 50, width: 80, height: 40 };
+    const snap = (objects, excluded = new Set()) => snapTranslation({ x: 100, y: 50 }, { x: 0, y: 0 }, objects, excluded, 1);
+    assert.equal(snap([target], new Set(['target'])).hit, null);
+    assert.equal(snap([{ ...target, hidden: true }]).hit, null);
+    assert.equal(snap([{ ...target, locked: true }]).hit.target.id, 'target');
+    assert.equal(snap([target, { ...target, id: 'moving' }], new Set(['moving'])).hit.target.id, 'target');
+});
 
 const box = { x: 10, y: 20, width: 80, height: 40 };
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} ≠ ${b}`);

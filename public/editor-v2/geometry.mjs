@@ -100,3 +100,23 @@ export function objectReference(object, point, tolerance) {
 export function fullyContained(area, bounds) {
     return bounds.x >= area.x && bounds.y >= area.y && bounds.x + bounds.width <= area.x + area.width && bounds.y + bounds.height <= area.y + area.height;
 }
+
+// Snap the grabbed point, preserving the pointer offset and the group's geometry.
+export function snapTranslation(anchor, delta, objects, excludedIds, tolerance) {
+    const position = { x: anchor.x + delta.x, y: anchor.y + delta.y };
+    let hit = null;
+    for (const target of [...objects].reverse()) {
+        if (target.hidden || excludedIds.has(target.id)) continue;
+        const reference = objectReference(target, position, tolerance);
+        if (!reference) continue;
+        const distance = Math.hypot(reference.x - position.x, reference.y - position.y);
+        const priority = reference.label === 'Borde' ? 1 : 0;
+        if (!hit || priority < hit.priority || (priority === hit.priority && distance < hit.distance))
+            hit = { target, reference, distance, priority };
+    }
+    return {
+        x: delta.x + (hit ? hit.reference.x - position.x : 0),
+        y: delta.y + (hit ? hit.reference.y - position.y : 0),
+        hit,
+    };
+}

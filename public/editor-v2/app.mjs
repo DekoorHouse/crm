@@ -1,6 +1,6 @@
 import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, exportSvg } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
-import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained } from './geometry.mjs';
+import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation } from './geometry.mjs';
 import { connect, cloudError } from './cloud.mjs';
 import { normalizeSpline, pointsPath, splinePath } from './spline.mjs';
 
@@ -286,6 +286,11 @@ canvas.addEventListener('pointerdown', event => {
     if (o && !o.locked && !o.hidden) {
         draft = clone(history.document);
         gesture = { type: handle ? 'resize' : 'move', handle: handle?.dataset.handle, start, original: clone(o), originals: clone(selectedObjects().filter(item => !item.locked)), pointerId: event.pointerId };
+        gesture.anchor = hit?.reference || start;
+        gesture.snapTargets = current().objects.map(item => {
+            const bounds = getBounds(item);
+            return { ...item, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+        });
     }
     render();
 });
@@ -304,8 +309,11 @@ function showReference(event) {
     if (gesture || tool === 'hand' || event.pointerType === 'touch' || event.target.closest('[data-handle]')) return;
     const hit = referenceAt(point(event));
     if (!hit) return;
-    const { target, reference } = hit;
     if (tool === 'select') canvas.style.cursor = 'move';
+    drawReference(hit);
+}
+function drawReference({ target, reference }) {
+    const overlay = $('#hover-reference'); overlay.replaceChildren();
     const add = (tag, attributes, parent = overlay) => {
         const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
         for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
@@ -346,7 +354,9 @@ canvas.addEventListener('pointermove', event => {
         setSelection(current().objects.filter(item => !item.hidden && !item.locked && fullyContained(gesture.area, getBounds(item))).map(item => item.id));
     }
     if (gesture.type === 'move') {
-        for (const original of gesture.originals) { const item = draft.objects.find(item => item.id === original.id); item.x = original.x + dx; item.y = original.y + dy; }
+        const movement = snapTranslation(gesture.anchor, { x: dx, y: dy }, gesture.snapTargets, selectedIds, 7 / view.scale);
+        gesture.snap = movement.hit;
+        for (const original of gesture.originals) { const item = draft.objects.find(item => item.id === original.id); item.x = original.x + movement.x; item.y = original.y + movement.y; }
     }
     if (gesture.type === 'draw') {
         let w = Math.abs(dx), h = Math.abs(dy);
@@ -358,6 +368,7 @@ canvas.addEventListener('pointermove', event => {
         Object.assign(o, resizeBounds(gesture.original, gesture.handle, dx, dy));
     }
     renderScene();
+    if (gesture.type === 'move' && gesture.snap) drawReference(gesture.snap);
 });
 canvas.addEventListener('dblclick', event => { if (tool === 'spline') { event.preventDefault(); finishSpline(); } });
 canvas.addEventListener('pointerup', event => {
@@ -368,7 +379,8 @@ canvas.addEventListener('pointerup', event => {
     if (previous.type === 'marquee') { render(); status(`${selectedIds.size} objetos seleccionados`); return; }
     if (previous.type === 'draw' && selected().width * view.scale < 3 && selected().height * view.scale < 3) { draft = null; render(); return; }
     commit(draft); if (previous.type === 'draw') setTool('select');
-    showReference(event);
+    if (previous.snap) { drawReference(previous.snap); status(`Encajado en ${previous.snap.reference.label.toLowerCase()}`); }
+    else showReference(event);
 });
 function cancelGesture() {
     if (!gesture) return;
