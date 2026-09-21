@@ -4,25 +4,29 @@ Editor vectorial nuevo, disponible en `/editor-v2/` desde el servidor Express ex
 
 ## Primera etapa
 
-- Documento en milímetros, tamaño de página editable; SVG con dimensiones físicas.
-- Rectángulos, elipses y texto Arial. Selección individual, movimiento y redimensionado de figuras; ocho controles de tamaño: las esquinas mantienen proporciones y los puntos medios estiran un solo eje.
+- Documento interno en milímetros, selector de milímetros/pulgadas para mostrar y editar medidas. Cambiar unidades o el tamaño de página conserva el zoom y la vista; SVG con dimensiones físicas.
+- Rectángulos, elipses, texto Arial e imágenes PNG/JPEG/WebP pegadas con Ctrl+V (hasta 10 MB por imagen; conserva los píxeles originales).
+- Spline cúbica interpolada: clic para cada punto, Enter/doble clic para terminar, Escape para cancelar y Retroceso para quitar el último punto. Máximo 500 puntos. Se guarda como puntos normalizados y se exporta como curvas Bézier SVG; permite mover, redimensionar y cambiar contorno. Aún no incluye edición de nodos ni cierre de curvas.
+- Selección individual o por área de objetos completamente contenidos; movimiento, duplicación, eliminación y contorno en conjunto. Los ocultos/bloqueados no se seleccionan por área. Ocho controles de tamaño para una figura: esquinas proporcionales y puntos medios en un solo eje.
+- Referencias visuales al pasar el mouse: centro, nodos, puntos medios y borde; no aplican ajuste magnético. Ctrl+Inicio lleva al frente y Ctrl+Fin al fondo conservando el orden relativo de la selección.
 - Propiedades numéricas, relleno, contorno, duplicación y eliminación.
 - Orden de objetos, visibilidad y bloqueo.
 - Historial de 100 cambios; cada arrastre es una sola operación. Escape cancela el gesto.
 - Zoom y desplazamiento independientes del documento.
 - Borrador automático local, descarga/apertura de proyectos `.dekoor` (JSON validado) y exportación SVG.
-- Paleta RGB horizontal para rellenos y color personalizado; propiedades de ancho y alto.
+- Paleta RGB horizontal: clic izquierdo cambia el contorno; el relleno se cambia en Propiedades. Si el contorno tenía grosor cero, se activa con 0.4 mm. Propiedades de ancho y alto.
 - Guardado y carga manual en Firebase con la cuenta del CRM, más guardar como copia. Colección `editor_v2_projects`, compartida entre usuarios autenticados conforme a las reglas existentes. No mezcla formatos con `editor_files` del editor anterior.
 
 El borrador pertenece al navegador/origen. «Guardar proyecto» (Ctrl+S) guarda en Firebase; «Abrir» (Ctrl+O) muestra los últimos 100 proyectos. La ventana incluye descarga e importación local. Los cambios no se envían automáticamente a Firebase: el indicador diferencia el proyecto guardado de los cambios pendientes. Abrir/Nuevo se puede deshacer durante la sesión.
 
-Firestore almacena JSON validado (hasta 850 KB) con metadatos, fecha del servidor y revisión. Las transacciones rechazan sobrescrituras si otra sesión modificó el documento; en ese caso se puede abrir la versión actual o guardar como copia. Las lecturas de la lista/proyecto requieren conexión al servidor. No se cambian las reglas ni se agrega acceso público. El SDK se carga al abrir Firebase; el editor local puede funcionar sin ese servicio. No se convierten archivos del editor anterior.
+Al guardar un proyecto «Sin título» se pide un nombre antes de continuar. Firestore almacena JSON validado (hasta 850 KB) con metadatos, fecha del servidor y revisión. Las imágenes se suben a Firebase Storage en `editor-v2/images/{uid}/{hash}` y se recuperan como datos embebidos al abrir, para incluirlas en descargas y SVG. Las transacciones rechazan sobrescrituras si otra sesión modificó el documento; en ese caso se puede abrir la versión actual o guardar como copia. Las lecturas de la lista/proyecto requieren conexión al servidor. Se usan las reglas existentes de Firestore/Storage. El SDK se carga al abrir Firebase; el editor local puede funcionar sin ese servicio. No se convierten archivos del editor anterior.
 
 ## Estructura
 
 - `model.mjs`: documento, validación, historial y serialización SVG, sin acceso al DOM.
 - `app.mjs`: eventos, herramientas, vista SVG, paneles y almacenamiento local.
 - `geometry.mjs`: ocho controles y geometría de redimensionado, sin DOM.
+- `spline.mjs`: segmentos cúbicos, evaluación de curvas y límites exactos.
 - `cloud.mjs`: autenticación Firebase, consultas y guardado con control de revisión.
 - `style.css` e `index.html`: interfaz independiente, sin CDN.
 - `../../tests/editorV2.test.mjs`: ejecutar desde la raíz con `node --test tests/editorV2.test.mjs`.
@@ -34,4 +38,4 @@ Firestore almacena JSON validado (hasta 850 KB) con metadatos, fecha del servido
 2. Impresión Xerox: imágenes, tamaño final, márgenes/sangrado y PDF; definir modelo de impresora, papel y flujo de color antes de implementar perfiles.
 3. Grabado raster: imágenes, escala de grises, contraste, tramado y exportación a DPI configurables; definir el software/controlador láser de destino.
 
-Esta base aún no importa CDR/SVG, no genera PDF ni raster y no convierte texto a curvas. El SVG actual conserva texto editable en Arial y fondo transparente; objetos fuera de página pueden quedar recortados al abrirlo en otros programas. Antes de fabricar hay que validar el SVG en el software de destino, sus unidades y la interpretación de contornos.
+Esta base aún no importa CDR/SVG, no genera PDF ni archivos raster y no convierte texto a curvas. El SVG actual conserva texto editable en Arial y fondo transparente; objetos fuera de página pueden quedar recortados al abrirlo en otros programas. Antes de fabricar hay que validar el SVG en el software de destino, sus unidades y la interpretación de contornos.

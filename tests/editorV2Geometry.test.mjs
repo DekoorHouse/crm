@@ -1,9 +1,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resizeBounds } from '../public/editor-v2/geometry.mjs';
+import { resizeBounds, objectReference } from '../public/editor-v2/geometry.mjs';
 
 const box = { x: 10, y: 20, width: 80, height: 40 };
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} ≠ ${b}`);
+test('rectangle hover identifies center, corners, midpoints and edges within screen tolerance', () => {
+    const object = { ...box, type: 'rect' };
+    for (const [x, y, label] of [[50, 40, 'Centro'], [10, 20, 'Nodo'], [90, 60, 'Nodo'], [50, 20, 'Punto medio'], [10, 40, 'Punto medio'], [30, 20, 'Borde']]) {
+        assert.equal(objectReference(object, { x: x + .2, y: y + .2 }, 1)?.label, label);
+    }
+    assert.equal(objectReference(object, { x: 30, y: 30 }, 1), null);
+    assert.equal(objectReference(object, { x: 30, y: 22 }, 1), null);
+    assert.equal(objectReference(object, { x: 30, y: 22 }, 3)?.label, 'Borde');
+});
+test('ellipse hover follows the curved perimeter, not the bounding box', () => {
+    const object = { ...box, type: 'ellipse' };
+    assert.equal(objectReference(object, { x: 50, y: 40 }, 1)?.label, 'Centro');
+    assert.equal(objectReference(object, { x: 90, y: 40 }, 1)?.label, 'Nodo');
+    assert.equal(objectReference(object, { x: 10, y: 20 }, 1), null);
+    const p = { x: 50 + 40 * Math.cos(.7), y: 40 + 20 * Math.sin(.7) };
+    const edge = objectReference(object, p, 1);
+    assert.equal(edge?.label, 'Borde');
+    assert.ok(Math.hypot(edge.x - p.x, edge.y - p.y) < .001);
+});
 for (const [corner, sx, sy] of [['nw', -1, -1], ['ne', 1, -1], ['sw', -1, 1], ['se', 1, 1]]) {
     test(`${corner}: proportional scaling keeps the opposite corner fixed`, () => {
         for (const [dx, dy] of [[40 * sx, 20 * sy], [30, -10], [-8 * sx, -4 * sy]]) {

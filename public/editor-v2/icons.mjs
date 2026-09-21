@@ -1,5 +1,7 @@
 // Local SVG icons share one grid, stroke weight and optical size.
 const paths = {
+    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',
+    spline: '<path d="M4 18C4 2 20 22 20 6"/><rect x="2" y="16" width="4" height="4"/><rect x="18" y="4" width="4" height="4"/>',
     select: '<path d="m5 3 14 9-7 1-3 7Z"/>',
     hand: '<path d="M8 13V7a2 2 0 0 1 4 0v5-7a2 2 0 0 1 4 0v7-4a2 2 0 0 1 4 0v8c0 4-2 6-6 6h-1c-2 0-3-1-4-2l-5-6a2 2 0 0 1 3-3l1 2Z"/>',
     rect: '<rect x="4" y="4" width="16" height="16" rx="1"/>',

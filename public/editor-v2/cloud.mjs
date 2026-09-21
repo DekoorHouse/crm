@@ -6,10 +6,11 @@ export async function connect() {
     return connection;
 }
 async function initialize() {
-    const [appSdk, authSdk, dbSdk] = await Promise.all([
+    const [appSdk, authSdk, dbSdk, storageSdk] = await Promise.all([
         import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js'),
         import('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js'),
         import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js'),
+        import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js'),
     ]);
     const app = appSdk.getApps().find(app => app.name === '[DEFAULT]') || appSdk.initializeApp({
         apiKey: 'AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg',
@@ -19,15 +20,45 @@ async function initialize() {
     });
     const auth = authSdk.getAuth(app), db = dbSdk.getFirestore(app);
     await auth.authStateReady();
+    const storage = storageSdk.getStorage(app), uploaded = new Map();
+    const media = {
+        async prepare(document) {
+            const copy = structuredClone(document);
+            for (const object of copy.objects) {
+                if (object.type !== 'image' || !object.src.startsWith('data:')) continue;
+                const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(object.src));
+                const hash = [...new Uint8Array(digest)].map(n => n.toString(16).padStart(2, '0')).join('');
+                const path = `editor-v2/images/${auth.currentUser.uid}/${hash}`;
+                if (!uploaded.has(path)) {
+                    const reference = storageSdk.ref(storage, path);
+                    await storageSdk.uploadString(reference, object.src, 'data_url');
+                    uploaded.set(path, await storageSdk.getDownloadURL(reference));
+                }
+                object.src = uploaded.get(path);
+            }
+            return copy;
+        },
+        async hydrate(document) {
+            for (const object of document.objects) {
+                if (object.type !== 'image' || object.src.startsWith('data:')) continue;
+                const response = await fetch(object.src);
+                if (!response.ok) throw new Error('No se pudo cargar una imagen del proyecto.');
+                const blob = await response.blob();
+                if (blob.size > 10 * 1024 * 1024) throw new Error('Una imagen supera el límite de 10 MB.');
+                object.src = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+            }
+            return validateDocument(document);
+        },
+    };
     return {
         get user() { return auth.currentUser; },
         watch(callback) { return authSdk.onAuthStateChanged(auth, callback); },
         async login(email, password) { await authSdk.signInWithEmailAndPassword(auth, email, password); },
-        ...createProjectRepository(dbSdk, db, () => auth.currentUser),
+        ...createProjectRepository(dbSdk, db, () => auth.currentUser, media),
     };
 }
 
-export function createProjectRepository(dbSdk, db, getUser) {
+export function createProjectRepository(dbSdk, db, getUser, media = { prepare: async document => document, hydrate: async document => document }) {
     const projects = dbSdk.collection(db, 'editor_v2_projects');
     const requireUser = () => {
         const user = getUser();
@@ -46,11 +77,11 @@ export function createProjectRepository(dbSdk, db, getUser) {
             if (!snapshot.exists()) throw new Error('El proyecto ya no existe.');
             const data = snapshot.data();
             if (!Number.isSafeInteger(data.revision) || data.revision < 1) throw new Error('La versión del proyecto no es compatible.');
-            return { document: validateDocument(JSON.parse(data.documentJson)), binding: { id, revision: data.revision } };
+            return { document: await media.hydrate(validateDocument(JSON.parse(data.documentJson))), binding: { id, revision: data.revision } };
         },
         async save(document, binding) {
             const user = requireUser(), validated = validateDocument(document);
-            const documentJson = JSON.stringify(validated);
+            const documentJson = JSON.stringify(await media.prepare(validated));
             if (new TextEncoder().encode(documentJson).length > 850000) throw new Error('El proyecto supera el tamaño admitido en Firebase. Descarga una copia local.');
             const reference = binding ? dbSdk.doc(projects, binding.id) : dbSdk.doc(projects);
             const revision = await dbSdk.runTransaction(db, async transaction => {
