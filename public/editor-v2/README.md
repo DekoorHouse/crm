@@ -7,7 +7,7 @@ Editor vectorial nuevo, disponible en `/editor-v2/` desde el servidor Express ex
 - Documento interno en milímetros, selector de milímetros/pulgadas para mostrar y editar medidas. Cambiar unidades o el tamaño de página conserva el zoom y la vista; SVG con dimensiones físicas.
 - Rectángulos, elipses, texto Arial e imágenes PNG/JPEG/WebP pegadas con Ctrl+V (hasta 10 MB por imagen; conserva los píxeles originales).
 - Spline cúbica interpolada: clic para cada punto, Enter/doble clic para terminar, Escape para cancelar y Retroceso para quitar el último punto. Máximo 500 puntos. Se guarda como puntos normalizados y se exporta como curvas Bézier SVG; permite mover, redimensionar y cambiar contorno. Aún no incluye edición de nodos ni cierre de curvas.
-- Selección individual o por área de objetos completamente contenidos; movimiento, duplicación, eliminación y contorno en conjunto. Los ocultos/bloqueados no se seleccionan por área. Ocho controles de tamaño para una figura: esquinas proporcionales y puntos medios en un solo eje.
+- Selección individual o por área de objetos completamente contenidos; movimiento, duplicación, eliminación y contorno en conjunto. Los ocultos/bloqueados no se seleccionan por área. Ocho controles exteriores de tamaño para una figura: esquinas proporcionales y laterales en un solo eje. Arrastrar desde las referencias geométricas mueve el objeto sin escalarlo.
 - Referencias visuales al pasar el mouse: centro, nodos, puntos medios y borde; no aplican ajuste magnético. Ctrl+Inicio lleva al frente y Ctrl+Fin al fondo conservando el orden relativo de la selección.
 - Propiedades numéricas, relleno, contorno, duplicación y eliminación.
 - Orden de objetos, visibilidad y bloqueo.

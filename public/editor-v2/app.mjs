@@ -107,7 +107,8 @@ function renderScene() {
         if (!o.locked && o.type !== 'text' && selectedIds.size === 1) {
             for (const control of RESIZE_HANDLES) {
                 const handle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                for (const [key, value] of Object.entries({ x: o.x + o.width * control.x - 4 * unit, y: o.y + o.height * control.y - 4 * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: control.cursor })) handle.setAttribute(key, value);
+                // Keep scale controls outside the reference hit area at every zoom level.
+                for (const [key, value] of Object.entries({ x: o.x + o.width * control.x + ((control.x * 2 - 1) * 14 - 4) * unit, y: o.y + o.height * control.y + ((control.y * 2 - 1) * 14 - 4) * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: control.cursor })) handle.setAttribute(key, value);
                 handle.dataset.handle = control.name; selection.append(handle);
             }
         }
@@ -273,11 +274,13 @@ canvas.addEventListener('pointerdown', event => {
     }
     const target = event.target.closest('[data-id]');
     const handle = event.target.closest('[data-handle]');
-    if (!handle && !target) {
+    const hit = !handle ? referenceAt(start) : null;
+    const targetId = hit?.target.id || target?.dataset.id;
+    if (!handle && !targetId) {
         gesture = { type: 'marquee', start, originalIds: [...selectedIds], pointerId: event.pointerId };
         selectOnly(null); render(); return;
     }
-    if (!handle && !selectedIds.has(target.dataset.id)) selectOnly(target.dataset.id);
+    if (!handle && !selectedIds.has(targetId)) selectOnly(targetId);
     const o = selected();
     if (o && !o.locked && !o.hidden) {
         draft = clone(history.document);
@@ -285,18 +288,23 @@ canvas.addEventListener('pointerdown', event => {
     }
     render();
 });
+function referenceAt(position) {
+    for (const item of [...current().objects].reverse()) {
+        if (item.hidden || item.locked) continue;
+        const bounds = item.type === 'text' ? getBounds(item) : item;
+        const reference = objectReference({ ...item, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }, position, 7 / view.scale);
+        if (reference) return { target: item, reference };
+    }
+    return null;
+}
 function showReference(event) {
     const overlay = $('#hover-reference'); overlay.replaceChildren();
-    if (gesture || tool === 'hand' || event.pointerType === 'touch') return;
-    const position = point(event);
-    let target = null, reference = null;
-    for (const item of [...current().objects].reverse()) {
-        if (item.hidden) continue;
-        const bounds = item.type === 'text' ? getBounds(item) : item;
-        reference = objectReference({ ...item, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }, position, 7 / view.scale);
-        if (reference) { target = item; break; }
-    }
-    if (!reference) return;
+    canvas.style.cursor = '';
+    if (gesture || tool === 'hand' || event.pointerType === 'touch' || event.target.closest('[data-handle]')) return;
+    const hit = referenceAt(point(event));
+    if (!hit) return;
+    const { target, reference } = hit;
+    if (tool === 'select') canvas.style.cursor = 'move';
     const add = (tag, attributes, parent = overlay) => {
         const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
         for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
@@ -323,7 +331,7 @@ function showReference(event) {
     add('rect', { x: labelX, y: labelY, width: labelWidth, height: 24, rx: 5, fill: '#102b35', stroke: '#22d3ee', 'stroke-width': 1 });
     add('text', { x: labelX + 9, y: labelY + 16, fill: '#a5f3fc', 'font-size': 12, 'font-weight': 600 }).textContent = reference.label;
 }
-canvas.addEventListener('pointerleave', () => $('#hover-reference').replaceChildren());
+canvas.addEventListener('pointerleave', () => { $('#hover-reference').replaceChildren(); canvas.style.cursor = ''; });
 canvas.addEventListener('pointermove', event => {
     if (tool === 'spline' && splineDraft && !gesture) { splinePointer = point(event); renderSplinePreview(); showReference(event); return; }
     if (!gesture) { showReference(event); return; }
