@@ -308,15 +308,14 @@ function render() {
         const value = paint[key], name = key === 'fill' ? 'Relleno' : 'Contorno';
         chip.classList.toggle('none', value === 'none');
         chip.style[key === 'fill' ? 'backgroundColor' : 'borderColor'] = value === 'none' ? '' : value;
-        chip.title = `${name}: ${value === 'none' ? 'sin color' : value}`; chip.setAttribute('aria-label', chip.title);
+        chip.title = `${name}: ${value === 'none' ? 'sin color' : value} · Clic: color personalizado`; chip.setAttribute('aria-label', chip.title);
+        chip.disabled = Boolean(o?.locked);
     }
     const paletteColor = o ? o[paletteTarget] : paletteTarget === 'fill' ? nextFill : nextStroke;
-    $('#palette-color').value = paletteColor === 'none' ? '#000000' : paletteColor;
     document.querySelectorAll('[data-color]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.color === paletteColor));
         button.disabled = Boolean(o?.locked);
     });
-    $('#palette-color').disabled = Boolean(o?.locked);
     $('#stroke-menu-label').hidden = !o;
     const strokeMenu = $('#stroke-menu'), widths = selectedObjects().map(item => item.strokeWidth);
     const sameWidth = widths.every(value => Math.abs(value - widths[0]) < 1e-8);
@@ -1222,16 +1221,25 @@ function applyPalette(color, target = 'fill') {
         render(); status(color === 'none' ? `Sin ${label} para los nuevos objetos` : `Color de ${label} para los nuevos objetos`);
     }
 }
-$('#palette-color').addEventListener('click', () => { paletteTarget = 'fill'; });
-$('#palette-color').addEventListener('contextmenu', event => { event.preventDefault(); paletteTarget = 'stroke'; $('#palette-color').showPicker(); });
-// While the wheel's picker is open, repaint the selection (or the chip for new objects) without
+// Clicking the fill or outline chip opens the native picker for a custom colour of that kind.
+for (const [target, chip] of [['fill', $('#fill-chip')], ['stroke', $('#stroke-chip')]]) {
+    chip.addEventListener('click', () => {
+        if (gesture || selected()?.locked) return;
+        const o = selected(), current = o ? o[target] : target === 'fill' ? nextFill : nextStroke;
+        const input = $('#palette-color');
+        paletteTarget = target;
+        input.value = current === 'none' ? '#000000' : current;
+        try { input.showPicker(); } catch { input.click(); }
+    });
+}
+// While the picker is open, repaint the selection (or the chip for new objects) without
 // committing; the colour becomes one undo step when the picker closes.
-let wheelFrame = null;
+let pickerFrame = null;
 $('#palette-color').addEventListener('input', event => {
     const color = event.target.value;
-    if (wheelFrame !== null) cancelAnimationFrame(wheelFrame);
-    wheelFrame = requestAnimationFrame(() => {
-        wheelFrame = null;
+    if (pickerFrame !== null) cancelAnimationFrame(pickerFrame);
+    pickerFrame = requestAnimationFrame(() => {
+        pickerFrame = null;
         const chip = paletteTarget === 'fill' ? $('#fill-chip') : $('#stroke-chip');
         chip.classList.remove('none'); chip.style[paletteTarget === 'fill' ? 'backgroundColor' : 'borderColor'] = color;
         for (const item of selectedObjects().filter(item => !item.locked)) {
@@ -1246,7 +1254,7 @@ $('#palette-color').addEventListener('input', event => {
     });
 });
 $('#palette-color').addEventListener('change', event => {
-    if (wheelFrame !== null) { cancelAnimationFrame(wheelFrame); wheelFrame = null; }
+    if (pickerFrame !== null) { cancelAnimationFrame(pickerFrame); pickerFrame = null; }
     applyPalette(event.target.value, paletteTarget);
 });
 
