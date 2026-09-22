@@ -18,6 +18,7 @@
   <div class="commandbar">
     <div><button data-action="undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer">↶</button><button data-action="redo" title="Rehacer (Ctrl+Shift+Z)" aria-label="Rehacer">↷</button></div>
     <span class="separator"></span><span class="subtle">Página</span>
+    <select id="page-preset" aria-label="Tamaño de página"><option value="custom">Personalizado</option><option value="tabloid">Tabloide (11 × 17 pulg)</option><option value="letter">Carta (8.5 × 11 pulg)</option><option value="12x18">12 × 18 pulg</option><option value="a4" selected>A4 (210 × 297 mm)</option></select>
     <label>Ancho <input id="page-width" type="number" required min="1" max="5000" step="any" value="210"></label>
     <label>Alto <input id="page-height" type="number" required min="1" max="5000" step="any" value="297"></label><select id="display-unit" aria-label="Unidad de medida"><option value="mm">mm</option><option value="in">Pulgadas</option></select>
     <span class="separator"></span><button data-action="duplicate" title="Duplicar (Ctrl+D)">Duplicar</button><button data-action="delete" title="Eliminar (Supr)">Eliminar</button>

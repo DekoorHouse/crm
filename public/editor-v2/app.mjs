@@ -25,6 +25,12 @@ let displayUnit = 'mm';
 try { displayUnit = localStorage.getItem('dekoor.editor-v2.unit') === 'in' ? 'in' : 'mm'; } catch {}
 const unitFactor = () => displayUnit === 'in' ? 25.4 : 1;
 const displayMeasure = value => Number((value / unitFactor()).toFixed(displayUnit === 'in' ? 6 : 2));
+const pagePresets = {
+    tabloid: { width: 279.4, height: 431.8, unit: 'in' },
+    letter: { width: 215.9, height: 279.4, unit: 'in' },
+    '12x18': { width: 304.8, height: 457.2, unit: 'in' },
+    a4: { width: 210, height: 297, unit: 'mm' },
+};
 const current = () => draft || history.document;
 const selected = () => current().objects.find(o => o.id === selectedId);
 const status = message => { $('#status').textContent = message; };
@@ -167,6 +173,7 @@ function render() {
     $('#cloud-badge').textContent = cloudBinding ? (JSON.stringify(d) === cloudSavedJson ? 'Guardado en Firebase' : 'Cambios sin guardar en Firebase') : 'Proyectos en Firebase';
     $('#document-name').value = d.name;
     $('#display-unit').value = displayUnit;
+    $('#page-preset').value = Object.keys(pagePresets).find(key => Math.abs(d.width - pagePresets[key].width) < .001 && Math.abs(d.height - pagePresets[key].height) < .001) || 'custom';
     document.querySelectorAll('[data-unit]').forEach(element => { element.textContent = displayUnit === 'in' ? 'pulg' : 'mm'; });
     for (const key of ['width', 'height']) {
         const input = $('#page-' + key); input.min = 1 / unitFactor(); input.max = 5000 / unitFactor(); input.value = displayMeasure(d[key]);
@@ -416,6 +423,13 @@ $('#document-name').addEventListener('change', event => edit(d => { d.name = eve
 for (const dimension of ['width', 'height']) $('#page-' + dimension).addEventListener('change', event => {
     if (!event.target.checkValidity()) { render(); status('La página debe medir entre 1 y 5000 mm.'); return; }
     edit(d => { d[dimension] = Number(event.target.value) * unitFactor(); });
+});
+$('#page-preset').addEventListener('change', event => {
+    const preset = pagePresets[event.target.value];
+    if (!preset || gesture) return;
+    displayUnit = preset.unit;
+    try { localStorage.setItem('dekoor.editor-v2.unit', displayUnit); } catch {}
+    edit(d => { d.width = preset.width; d.height = preset.height; });
 });
 $('#display-unit').addEventListener('change', event => {
     displayUnit = event.target.value;
