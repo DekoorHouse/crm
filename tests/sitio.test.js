@@ -81,7 +81,7 @@ describe('Sitio - Accesibilidad', () => {
 
     test('tiene aria-labels en botones de navegación', () => {
         expect(html).toContain('aria-label="Menú"');
-        expect(html).toContain('aria-label="Rastrear pedido"');
+        expect(html).toContain('aria-label="Carrito de compras"');
     });
 
     test('imágenes del carrusel tienen alt descriptivo', () => {
@@ -89,7 +89,12 @@ describe('Sitio - Accesibilidad', () => {
     });
 
     test('imágenes tienen width y height', () => {
-        expect(html).toMatch(/carousel-slide.*width="600".*height="600"/);
+        const slides = html.match(/<img[^>]*carousel-slide[^>]*>/g) || [];
+        expect(slides.length).toBeGreaterThan(0);
+        slides.forEach(img => {
+            expect(img).toMatch(/\swidth="\d+"/);
+            expect(img).toMatch(/\sheight="\d+"/);
+        });
     });
 });
 
