@@ -21,6 +21,7 @@ let cloudBinding = null, cloudSavedJson = null, cloudBusy = false, pendingSave =
 let cloudApi = null;
 let nextFill = '#b9a3ed';
 let nextStroke = '#352a49';
+let paletteTarget = 'fill';
 let splineDraft = null, splinePointer = null;
 let displayUnit = 'mm';
 try { displayUnit = localStorage.getItem('dekoor.editor-v2.unit') === 'in' ? 'in' : 'mm'; } catch {}
@@ -177,10 +178,10 @@ function render() {
     $('.inspector').hidden = !o;
     $('#cloud-badge').hidden = !o;
     renderScene();
-    const paletteColor = o ? o.stroke : nextStroke;
+    const paletteColor = o ? o[paletteTarget] : paletteTarget === 'fill' ? nextFill : nextStroke;
     $('#palette-color').value = paletteColor === 'none' ? '#000000' : paletteColor;
     document.querySelectorAll('[data-color]').forEach(button => {
-        button.setAttribute('aria-pressed', String(button.dataset.color === (o ? o.stroke : nextStroke)));
+        button.setAttribute('aria-pressed', String(button.dataset.color === paletteColor));
         button.disabled = Boolean(o?.locked);
     });
     $('#palette-color').disabled = Boolean(o?.locked);
@@ -649,19 +650,25 @@ for (const color of ['none', ...palette]) {
     const button = document.createElement('button'); button.dataset.color = color;
     if (color !== 'none') button.style.backgroundColor = color;
     const channels = [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16));
-    button.title = color === 'none' ? 'Sin color · Quitar contorno' : `Contorno · RGB ${channels.join(', ')} · ${color}`; button.setAttribute('aria-label', button.title);
-    button.onclick = () => applyPalette(color); $('#palette-swatches').append(button);
+    button.title = (color === 'none' ? 'Sin color' : `RGB ${channels.join(', ')} · ${color}`) + ' · Clic izquierdo: relleno · Clic derecho: contorno'; button.setAttribute('aria-label', button.title);
+    button.onclick = () => applyPalette(color, 'fill');
+    button.oncontextmenu = event => { event.preventDefault(); if (!button.disabled) applyPalette(color, 'stroke'); };
+    $('#palette-swatches').append(button);
 }
-function applyPalette(color) {
+function applyPalette(color, target = 'fill') {
     if (gesture || selected()?.locked) return;
-    nextStroke = color;
+    paletteTarget = target;
+    if (target === 'fill') nextFill = color; else nextStroke = color;
     const o = selected();
+    const label = target === 'fill' ? 'relleno' : 'contorno';
     if (o) {
-        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { item.stroke = color; if (color !== 'none' && item.strokeWidth === 0) item.strokeWidth = .4; } });
-        status(color === 'none' ? 'Contorno eliminado' : 'Color del contorno actualizado');
-    } else { render(); status(color === 'none' ? 'Sin contorno para la siguiente figura' : 'Contorno elegido para la siguiente figura'); }
+        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { item[target] = color; if (target === 'stroke' && color !== 'none' && item.strokeWidth === 0) item.strokeWidth = .4; } });
+        status(color === 'none' ? `Sin ${label}` : `Color de ${label} actualizado`);
+    } else { render(); status(color === 'none' ? `Sin ${label} para la siguiente figura` : `Color de ${label} elegido para la siguiente figura`); }
 }
-$('#palette-color').addEventListener('change', event => applyPalette(event.target.value));
+$('#palette-color').addEventListener('click', () => { paletteTarget = 'fill'; });
+$('#palette-color').addEventListener('contextmenu', event => { event.preventDefault(); paletteTarget = 'stroke'; $('#palette-color').showPicker(); });
+$('#palette-color').addEventListener('change', event => applyPalette(event.target.value, paletteTarget));
 
 function cloudMessage(message) { $('#cloud-message').textContent = message; }
 function cloudState() {

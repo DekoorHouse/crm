@@ -14,7 +14,7 @@ Editor vectorial nuevo, disponible en `/editor-v2/` desde el servidor Express ex
 - Historial de 100 cambios; cada arrastre es una sola operación. Escape cancela el gesto.
 - Zoom y desplazamiento independientes del documento.
 - Borrador automático local, descarga/apertura de proyectos `.dekoor` (JSON validado) y exportación SVG.
-- Paleta RGB horizontal: clic izquierdo cambia el contorno; el relleno se cambia en Propiedades. Si el contorno tenía grosor cero, se activa con 0.4 mm. Propiedades de ancho y alto.
+- Paleta RGB horizontal: clic izquierdo cambia el relleno y clic derecho cambia el contorno. Sin color elimina el relleno o el contorno según el botón utilizado. Si el contorno tenía grosor cero, se activa con 0.4 mm. Propiedades de ancho y alto.
 - Guardado y carga manual en Firebase con la cuenta del CRM, más guardar como copia. Colección `editor_v2_projects`, compartida entre usuarios autenticados conforme a las reglas existentes. No mezcla formatos con `editor_files` del editor anterior.
 
 El borrador pertenece al navegador/origen. «Guardar proyecto» (Ctrl+S) guarda en Firebase; «Abrir» (Ctrl+O) muestra los últimos 100 proyectos. La ventana incluye descarga e importación local. Los cambios no se envían automáticamente a Firebase: el indicador diferencia el proyecto guardado de los cambios pendientes. Abrir/Nuevo se puede deshacer durante la sesión.
