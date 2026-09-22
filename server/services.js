@@ -4233,7 +4233,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             } catch (e) { console.warn('[PILOTO] Candado /ttt→/tttp no disponible:', e.message); }
         }
 
-        let paymentHandoff = false;
+        let paymentHandoff = false, mediaHandoff = false;
         for (let i = 0; i < aiMessages.length; i++) {
             // Verificar cancelación entre mensajes si hay SPLIT
             if (i > 0) {
@@ -4390,6 +4390,14 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (guarded.stop && !msgText) break;
             if (!msgText && !qrFileUrl) continue; // nada que enviar
 
+            const mediaGuard = await require('./mediaReplyGuard').protectMediaReply({ contactId, text: msgText, fileUrl: qrFileUrl });
+            if (mediaGuard.blocked) {
+                mediaHandoff = true;
+                msgText = mediaGuard.text;
+                qrFileUrl = null; qrFileType = null;
+                if (!msgText) break;
+            }
+
             const contactChannel = contactData.channel || 'whatsapp';
             let sentMessageData;
 
@@ -4418,11 +4426,17 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (qrFileUrl) { aiMsgToSave.fileUrl = qrFileUrl; aiMsgToSave.fileType = qrFileType; }
             await contactRef.collection('messages').add(aiMsgToSave);
             lastText = sentMessageData.textForDb;
-            if (paymentHandoff) break;
+            if (paymentHandoff || mediaHandoff) break;
 
             if (i < aiMessages.length - 1) {
                 await new Promise(r => setTimeout(r, 1500));
             }
+        }
+
+        if (mediaHandoff) {
+            await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete(),
+                ...(lastText ? { lastMessage: lastText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() } : {}) });
+            return; // La solicitud humana ya quedó guardada antes de contestar.
         }
 
         // Decisión de transición DESPUÉS del loop, para que cuente también la frase que pudo

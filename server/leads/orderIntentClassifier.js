@@ -31,6 +31,7 @@ Reglas:
 - Si el CLIENTE pidió explícitamente esperar o que lo contacten más adelante / en una fecha futura (por ejemplo "les escribo en un mes", "contáctenme el mes que viene", "dentro de un mes les digo", "cuando sepa el sexo del bebé", "ahorita no", "luego les aviso"): enProceso=false. Respeta su tiempo; NO lo persigas dentro de las 24h ni al día siguiente. Insistir después de que pidió esperar molesta y se ve mal; el recordatorio a semanas/meses vista es otro mecanismo, no este.
 - Coherencia obligatoria: los "mensajes" JAMÁS deben contradecir, re-ofrecer ni re-prometer algo que el Asistente ya descartó en la conversación. Si ya se negó la cobertura de un código postal, NO ofrezcas volver a "checar la cobertura" de ese mismo CP; si ya se dijo que no hay stock de un modelo, no lo vuelvas a ofrecer.
 - No inventes datos que no estén en la conversación.
+- Este seguimiento SOLO envía texto: nunca digas que adjuntas, envías o tienes lista una foto, imagen, video o diseño. Si el cliente está esperando que el equipo cree o envíe un diseño/archivo, enProceso=false: el pendiente es del equipo, no del cliente. Las promesas del Asistente no prueban que exista ese archivo.
 - Los mensajes deben sonar humanos y naturales, como un vendedor amable dando seguimiento, no como un bot.`;
 
 /**

@@ -79,6 +79,9 @@ async function armOrderFollowup(waId, name) {
     const cfg = await getOrderFollowupConfig();
     if (!cfg.enabled) return;
 
+    const contact = (await db.collection('contacts_whatsapp').doc(waId).get()).data();
+    if (contact?.needsAttention && contact?.mediaRequestPending) return;
+
     const ref = db.collection('order_followups').doc(waId);
     const snap = await ref.get();
     const prev = snap.exists ? snap.data() : null;
@@ -172,6 +175,8 @@ async function fetchRecentMessages(waId, limit) {
 
 // Envía el mensaje y lo refleja en el chat del CRM para que el operador lo vea
 async function sendFollowupMessage(waId, text) {
+    const guarded = await require('../mediaReplyGuard').protectMediaReply({ contactId: waId, text, source: 'order_followup' });
+    if (guarded.blocked) return null;
     const result = await sendAdvancedWhatsAppMessage(waId, { text });
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(waId);
@@ -245,6 +250,11 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
                 continue;
             }
 
+            if (contact?.needsAttention && contact?.mediaRequestPending) {
+                if (!dryRun) await doc.ref.update({ status: 'cancelled', cancelReason: 'media_requires_human', nextDueAt: null, updatedAt: new Date() });
+                summary.finished++;
+                continue;
+            }
             const verdict = evaluateOrderFollowup(followup, contact, cfg, nowMs);
 
             if (verdict.action === 'wait' || verdict.action === 'wait_hours' || verdict.action === 'none') {
@@ -326,6 +336,11 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
 
             try {
                 const messageId = await sendFollowupMessage(doc.id, text);
+                if (!messageId) {
+                    await doc.ref.update({ status: 'cancelled', cancelReason: 'media_requires_human', nextDueAt: null, updatedAt: new Date() });
+                    summary.finished++;
+                    continue;
+                }
                 const newStage = verdict.stage + 1;
                 const isLast = newStage >= (followup.scheduledSends || []).length;
                 await doc.ref.update({
