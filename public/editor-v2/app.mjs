@@ -5,6 +5,7 @@ import { HAIRLINE_WIDTH } from './model.mjs';
 import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
 import { normalizeSpline, pointsPath, splinePath, splinePoints, closestOnSpline, moveSplineNodes, insertSplineNode, removeSplineNodes } from './spline.mjs';
+import { renderAdjusted, canvasUrl, bakeAdjustedSource, sourceKey } from './imageAdjust.mjs';
 
 decorateControls();
 
@@ -112,6 +113,7 @@ function renderScene() {
         const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         // Markup comes only from validated primitives, never from imported SVG.
         group.innerHTML = objectMarkup(object);
+        showAdjustedImages(group);
         if (object.powerClip) drawPowerClipMarker(group, object);
         if (object.type === 'spline' && !object.locked) {
             const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -280,6 +282,12 @@ function render() {
         $('#no-fill').checked = o.fill === 'none'; $('#no-stroke').checked = o.stroke === 'none';
         $('#no-fill').disabled = o.locked; $('#no-stroke').disabled = o.locked;
         $('#text-properties').hidden = o.type !== 'text';
+        $('#image-properties').hidden = o.type !== 'image';
+        if (o.type === 'image') {
+            for (const input of adjustInputs) { input.value = o.adjust?.[input.dataset.imageAdjust] ?? 0; input.disabled = o.locked; }
+            $('#image-adjust-reset').disabled = o.locked || !o.adjust;
+            showAdjustValues();
+        }
     }
     $('[data-action="undo"]').disabled = !history.past.length;
     $('[data-action="redo"]').disabled = !history.future.length;
@@ -677,6 +685,7 @@ function previewPropertyColor(input, o) {
         if (pending.property === 'stroke' && preview.strokeWidth === 0) preview.strokeWidth = HAIRLINE_WIDTH;
         // Only repaint this object. Do not reset the native picker or serialize the project while dragging.
         group.innerHTML = objectMarkup(preview);
+        showAdjustedImages(group);
         if (preview.powerClip) drawPowerClipMarker(group, preview);
     });
 }
@@ -709,6 +718,88 @@ $('#properties').addEventListener('change', updateProperty);
 $('#properties').addEventListener('focusout', event => {
     if (pendingColor?.input === event.target) finishPropertyColor();
 });
+
+// Adjusted images show processed copies; the document keeps the original pixels and the settings.
+const adjustedViews = new Map(), pendingViews = new Set();
+const viewKey = item => `${item.id}|${sourceKey(item.src)}|${JSON.stringify(item.adjust)}`;
+function findObject(id) {
+    for (const item of objectsWithContents(current().objects)) if (item.id === id) return item;
+}
+function storeView(key, url, final) {
+    const previous = adjustedViews.get(key);
+    if (previous && previous.url !== url) URL.revokeObjectURL(previous.url);
+    adjustedViews.delete(key); adjustedViews.set(key, { url, final });
+    // Keep a few recent versions so undo and redo show them without reprocessing.
+    while (adjustedViews.size > 24) {
+        const [oldKey, old] = adjustedViews.entries().next().value;
+        URL.revokeObjectURL(old.url); adjustedViews.delete(oldKey);
+    }
+}
+function showAdjustedImages(root) {
+    for (const element of root.querySelectorAll('image[data-adjusted]')) {
+        const item = findObject(element.dataset.adjusted);
+        if (!item?.adjust) continue;
+        const key = viewKey(item), view = adjustedViews.get(key);
+        if (view) element.setAttribute('href', view.url);
+        if (view?.final || pendingViews.has(key)) continue;
+        pendingViews.add(key);
+        renderAdjusted(item.src, item.adjust, { maxSize: 2048 }).then(canvasUrl)
+            .then(url => { storeView(key, url, true); showAdjustedImages(objects); })
+            .catch(() => status('No se pudo mostrar el ajuste de la imagen.'))
+            .finally(() => pendingViews.delete(key));
+    }
+}
+const adjustInputs = [...document.querySelectorAll('[data-image-adjust]')];
+const readAdjust = () => Object.fromEntries(adjustInputs.map(input => [input.dataset.imageAdjust, Number(input.value)]));
+function showAdjustValues() {
+    for (const input of adjustInputs) {
+        const value = Number(input.value);
+        $(`[data-adjust-value="${input.dataset.imageAdjust}"]`).textContent = Number(input.min) < 0 && value > 0 ? `+${value}` : String(value);
+    }
+}
+// While a slider moves, draw a small copy; one preview at a time, always ending on the last position.
+let adjustPreviewBusy = false, adjustPreviewAgain = false;
+async function previewAdjust() {
+    if (adjustPreviewBusy) { adjustPreviewAgain = true; return; }
+    adjustPreviewBusy = true;
+    try {
+        const o = selected();
+        if (o?.type === 'image' && !o.locked) {
+            const adjust = readAdjust(), key = viewKey({ ...o, adjust });
+            let url = adjustedViews.get(key)?.url;
+            if (!url) { url = await canvasUrl(await renderAdjusted(o.src, adjust, { maxSize: 768, fast: true }), 'image/webp'); storeView(key, url, false); }
+            [...objects.children].find(group => group.dataset.id === o.id)?.querySelector('image')?.setAttribute('href', url);
+        }
+    } catch { status('No se pudo mostrar el ajuste de la imagen.'); }
+    finally {
+        adjustPreviewBusy = false;
+        if (adjustPreviewAgain) { adjustPreviewAgain = false; previewAdjust(); }
+    }
+}
+$('#image-properties').addEventListener('input', event => {
+    if (!event.target.matches('[data-image-adjust]')) return;
+    showAdjustValues(); previewAdjust();
+});
+$('#image-properties').addEventListener('change', event => {
+    if (!event.target.matches('[data-image-adjust]')) return;
+    const o = selected(), adjust = readAdjust();
+    if (o?.type !== 'image' || o.locked) return;
+    edit(d => { d.objects.find(item => item.id === o.id).adjust = adjust; });
+});
+$('#image-adjust-reset').onclick = () => {
+    const o = selected();
+    if (o?.type !== 'image' || o.locked || !o.adjust) return;
+    edit(d => { delete d.objects.find(item => item.id === o.id).adjust; });
+    status('Ajustes de imagen restablecidos');
+};
+// Exports carry the adjusted pixels: laser and print software never see the editor settings.
+async function bakeAdjustedImages(snapshot) {
+    for (const item of objectsWithContents(snapshot.objects)) {
+        if (item.type !== 'image' || !item.adjust) continue;
+        if (!item.hidden) item.src = await bakeAdjustedSource(item.src, item.adjust);
+        delete item.adjust;
+    }
+}
 document.addEventListener('pointerdown', event => {
     if (pendingColor && event.target !== pendingColor.input) finishPropertyColor();
 }, true);
@@ -772,6 +863,7 @@ $('#export-form').addEventListener('submit', async event => {
     $('#export-form').querySelectorAll('button, select').forEach(element => { element.disabled = true; });
     $('#export-message').textContent = 'Preparando archivo…';
     try {
+        await bakeAdjustedImages(snapshot);
         if (format === 'pdf') {
             const { exportPdf } = await import('./pdf.mjs');
             download(await exportPdf(snapshot), 'application/pdf', '.pdf', snapshot.name);

@@ -1,5 +1,6 @@
 // Coordinates and stroke widths are always millimetres; viewport state is separate.
 import { splinePath } from './spline.mjs';
+import { normalizeAdjust } from './imageAdjust.mjs';
 export const TYPES = ['rect', 'ellipse', 'text', 'spline', 'image'];
 export const HAIRLINE_WIDTH = 0.0762;
 export const clone = value => structuredClone(value);
@@ -50,6 +51,8 @@ export function validateDocument(input) {
         if (o.type === 'image') {
             if (!validImageSource(o.src)) throw new Error('La imagen contiene un origen inválido o es demasiado grande.');
             valid.src = o.src;
+            const adjust = o.adjust === undefined ? null : normalizeAdjust(o.adjust);
+            if (adjust) valid.adjust = adjust;
         }
         if (o.powerClip !== undefined) {
             const clip = o.powerClip;
@@ -108,7 +111,8 @@ export function objectMarkup(o) {
     if (o.type === 'rect') return `<rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" ${style}/>`;
     if (o.type === 'ellipse') return `<ellipse cx="${o.x + o.width / 2}" cy="${o.y + o.height / 2}" rx="${o.width / 2}" ry="${o.height / 2}" ${style}/>`;
     if (o.type === 'spline') return `<path d="${splinePath(o)}" ${style}/>`;
-    if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none" href="${escapeXml(o.src)}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
+    // data-adjusted lets the editor swap in the processed pixels; exports bake the adjustments first.
+    if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(o.src)}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
     return `<text x="${o.x}" y="${o.y + o.fontSize}" font-family="Arial, sans-serif" font-size="${o.fontSize}" ${style} xml:space="preserve">${escapeXml(o.text)}</text>`;
 }
 export function exportSvg(document) {
