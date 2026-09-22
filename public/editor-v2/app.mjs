@@ -1043,13 +1043,16 @@ $('#export-form').addEventListener('submit', async event => {
         $('#export-form').querySelectorAll('button, select').forEach(element => { element.disabled = false; });
     }
 });
+function newDocument() {
+    cloudBinding = null; cloudSavedJson = null;
+    storageBlocked = false; selectOnly(null); commit(blankDocument()); persist(); fit(); status('Nuevo documento A4');
+}
 const actions = {
     undo() { if (history.undo()) { nodeEditing?.nodes.clear(); persist(); render(); status('Cambio deshecho'); } },
     redo() { if (history.redo()) { nodeEditing?.nodes.clear(); persist(); render(); status('Cambio rehecho'); } },
     new() {
         if (!window.confirm('¿Crear un proyecto nuevo? Guarda el actual en Firebase o descarga una copia si quieres conservarlo. Puedes deshacer esta acción.')) return;
-        cloudBinding = null; cloudSavedJson = null;
-        storageBlocked = false; selectOnly(null); commit(blankDocument()); persist(); fit(); status('Nuevo documento A4');
+        newDocument();
     },
     open() { showCloud(false); },
     cloud() { showCloud(false); },
@@ -1338,4 +1341,27 @@ $('#cloud-login').addEventListener('submit', event => {
         else await refreshProjects();
     });
 });
-setTool('select'); render(); fit();
+// Every load asks whether to continue the autosaved draft or start from something else.
+function showWelcome() {
+    const draftDocument = history.document, hasDraft = draftDocument.objects.length > 0 || draftDocument.name !== 'Sin título';
+    const dialog = $('#welcome-dialog'), thumb = $('#welcome-thumb');
+    let thumbUrl = null;
+    $('#welcome-continue').hidden = !hasDraft;
+    if (hasDraft) {
+        const count = draftDocument.objects.length;
+        $('#welcome-draft-name').textContent = `${draftDocument.name} · ${count} ${count === 1 ? 'objeto' : 'objetos'}`;
+        try { thumbUrl = URL.createObjectURL(new Blob([exportSvg(draftDocument)], { type: 'image/svg+xml' })); thumb.src = thumbUrl; }
+        catch { thumb.removeAttribute('src'); }
+    }
+    const release = () => { if (thumbUrl) URL.revokeObjectURL(thumbUrl); thumbUrl = null; thumb.removeAttribute('src'); };
+    const choose = action => () => { dialog.close(); release(); action(); };
+    $('#welcome-continue').onclick = choose(() => status('Borrador recuperado'));
+    $('#welcome-new').onclick = choose(() => { newDocument(); if (hasDraft) status('Nuevo documento A4 · Ctrl+Z recupera el borrador anterior'); });
+    $('#welcome-open').onclick = choose(() => showCloud(false));
+    $('#welcome-import').onclick = choose(() => $('#open-file').click());
+    // Escape closes the window too and keeps the draft.
+    dialog.addEventListener('close', release, { once: true });
+    dialog.showModal();
+    (hasDraft ? $('#welcome-continue') : $('#welcome-new')).focus();
+}
+setTool('select'); render(); fit(); showWelcome();
