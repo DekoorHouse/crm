@@ -30,6 +30,10 @@ test.each([
     'Tus datos de envío quedaron registrados.',
     'Gracias por enviar tu foto.',
     'El diseño cuesta $750.',
+    'El equipo está revisando la imagen de tu comprobante.',
+    'Ya tengo la imagen de tu comprobante y estamos revisando el importe.',
+    'Ya te enviamos las fotos de tu pedido.',
+    'No te mando la imagen hasta que esté revisada.',
 ])('allows ordinary text: %s', text => expect(unsupportedMediaClaim(text)).toBe(false));
 
 test('allows a real quick reply attachment, but never a fictitious marker beside it', () => {
@@ -62,4 +66,29 @@ test('cannot claim a handoff if saving the request failed', async () => {
 test('ordinary replies do not create human attention', async () => {
     expect(await protectMediaReply({ contactId: 'customer', text: '¿Qué nombre quieres?' })).toEqual({ blocked: false, text: '¿Qué nombre quieres?' });
     expect(mockDb.read('contacts_whatsapp/customer').needsAttention).toBe(false);
+});
+
+test('DH17117: preserves receipt acknowledgment without requesting a missing design', async () => {
+    const text = 'Recibimos tu comprobante y el equipo está revisando que el importe se haya acreditado. No necesitas volver a mandar la misma imagen.';
+    expect(await protectMediaReply({ contactId: 'customer', text })).toEqual({ blocked: false, text });
+    expect(mockDb.read('contacts_whatsapp/customer')).toEqual({ name: 'Cliente', needsAttention: false });
+    expect(unsupportedMediaClaim(text + ' Aquí te mando la foto del diseño.')).toBe(true);
+    expect(unsupportedMediaClaim(text + ' [imagen]')).toBe(true);
+});
+
+test('includes previously sent files and latest order without treating them as a new attachment', async () => {
+    const prefix = 'contacts_whatsapp/customer/messages/';
+    mockDb.seed(prefix + 'photo', { from: 'business', fileUrl: 'https://example.com/photo.jpg', timestamp: new Date(10), status: 'delivered' });
+    mockDb.seed(prefix + 'receipt', { from: 'customer', fileUrl: 'https://example.com/receipt.jpg', timestamp: new Date(20) });
+    mockDb.seed(prefix + 'failed', { from: 'business', fileUrl: 'https://example.com/failed.jpg', timestamp: new Date(30), status: 'failed' });
+    mockDb.seed(prefix + 'scheduled', { from: 'business', fileUrl: 'https://example.com/scheduled.jpg', timestamp: new Date(40), status: 'scheduled' });
+    mockDb.seed('pedidos/old', { contactId: 'customer', createdAt: new Date(1), estatus: 'Cancelado' });
+    mockDb.seed('pedidos/current', { contactId: 'customer', createdAt: new Date(2), estatus: 'Foto enviada' });
+    const result = await protectMediaReply({ contactId: 'customer', text: 'Aquí te mando la imagen de Santy.' });
+    expect(result.blocked).toBe(true);
+    expect(result.text).not.toMatch(/no tengo|no existe|falta el diseño/i);
+    expect(mockDb.read('contacts_whatsapp/customer').mediaRequest).toMatchObject({
+        priorAttachmentIds: ['photo'], orderId: 'current', orderStatus: 'Foto enviada',
+        reason: expect.stringContaining('Ya hay archivos enviados'),
+    });
 });
