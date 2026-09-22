@@ -1,6 +1,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resizeBounds, objectReference, snapTranslation } from '../public/editor-v2/geometry.mjs';
+import { resizeBounds, objectReference, snapTranslation, unionBounds, resizeSelection } from '../public/editor-v2/geometry.mjs';
+
+test('a selection scales inside its box: corners keep proportions and scale text, sides stretch one axis', () => {
+    const items = [
+        { id: 'a', type: 'rect', x: 10, y: 20, width: 40, height: 20 },
+        { id: 'b', type: 'ellipse', x: 70, y: 40, width: 20, height: 20 },
+        { id: 't', type: 'text', x: 10, y: 50, width: 40, height: 30, fontSize: 10 },
+    ];
+    // Text contributes its rendered bounds, not its stored width and height.
+    const box = unionBounds([items[0], items[1], { x: 10, y: 50, width: 30, height: 10 }]);
+    assert.deepEqual(box, { x: 10, y: 20, width: 80, height: 40 });
+    const doubled = resizeSelection(items, box, 'se', 80, 40);
+    assert.deepEqual(doubled.map(o => [o.x, o.y, o.width, o.height]), [[10, 20, 80, 40], [130, 60, 40, 40], [10, 80, 40, 30]]);
+    assert.equal(doubled[2].fontSize, 20);
+    const stretched = resizeSelection(items, box, 'e', 80, 40);
+    assert.deepEqual(stretched.map(o => [o.x, o.y, o.width, o.height]), [[10, 20, 80, 20], [130, 40, 40, 20], [10, 50, 40, 30]]);
+    assert.equal(stretched[2].fontSize, 10);
+    const tiny = resizeSelection(items, box, 'se', -1000, -1000);
+    assert.ok(tiny.every(o => o.width >= .1 && o.height >= .1));
+    assert.equal(items[0].width, 40);
+});
 
 test('dragged reference snaps exactly to another object and releases outside tolerance', () => {
     const target = { id: 'target', type: 'rect', x: 100, y: 50, width: 80, height: 40 };

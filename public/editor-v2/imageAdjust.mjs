@@ -65,7 +65,7 @@ function decode(src) {
         const image = new Image(); image.src = src;
         decoded.set(key, image.decode().then(() => image));
         decoded.get(key).catch(() => decoded.delete(key));
-        if (decoded.size > 8) decoded.delete(decoded.keys().next().value);
+        if (decoded.size > 4) decoded.delete(decoded.keys().next().value);
     }
     return decoded.get(key);
 }
@@ -93,8 +93,8 @@ export async function renderAdjusted(src, adjust, { maxSize = Infinity, fast = f
     return view;
 }
 // PNG keeps the view lossless; slider previews pass WebP because it encodes faster.
-export function canvasUrl(canvas, type = 'image/png') {
-    return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(URL.createObjectURL(blob)) : reject(new Error('No se pudo procesar la imagen.')), type, .92));
+export function canvasBlob(canvas, type = 'image/png') {
+    return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('No se pudo procesar la imagen.')), type, .92));
 }
 // Full-resolution pixels in the original format, ready to embed in the SVG or PDF.
 export async function bakeAdjustedSource(src, adjust) {

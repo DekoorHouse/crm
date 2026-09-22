@@ -1,11 +1,11 @@
 import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
-import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget } from './geometry.mjs';
+import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget, unionBounds, resizeSelection } from './geometry.mjs';
 import { HAIRLINE_WIDTH } from './model.mjs';
 import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
 import { normalizeSpline, pointsPath, splinePath, splinePoints, closestOnSpline, moveSplineNodes, insertSplineNode, removeSplineNodes } from './spline.mjs';
-import { renderAdjusted, canvasUrl, bakeAdjustedSource, sourceKey } from './imageAdjust.mjs';
+import { renderAdjusted, canvasBlob, bakeAdjustedSource, sourceKey } from './imageAdjust.mjs';
 
 decorateControls();
 
@@ -133,16 +133,17 @@ function renderScene() {
         const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         for (const [key, value] of Object.entries({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'pointer-events': 'none' })) box.setAttribute(key, value);
         selection.append(box);
-        if (!o.locked && o.type !== 'text' && selectedIds.size === 1) {
-            // Reduce the outer gap when zooming out; keep the node itself free to drag.
-            const handleOffset = 4 + Math.max(1, Math.min(4, 4 * view.scale / (96 / 25.4)));
-            for (const control of RESIZE_HANDLES) {
-                const handle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                for (const [key, value] of Object.entries({ x: o.x + o.width * control.x + ((control.x * 2 - 1) * handleOffset - 4) * unit, y: o.y + o.height * control.y + ((control.y * 2 - 1) * handleOffset - 4) * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: control.cursor })) handle.setAttribute(key, value);
-                handle.dataset.handle = control.name; selection.append(handle);
-            }
-        }
+        if (!o.locked && o.type !== 'text' && selectedIds.size === 1) drawResizeHandles(o);
       }
+    }
+    // Several objects: one dashed box around the ones that can be scaled, with its own handles.
+    const scalable = selectedIds.size > 1 ? selectedObjects().filter(item => !item.hidden && !item.locked) : [];
+    if (scalable.length) {
+        const box = unionBounds(scalable.map(getBounds)), unit = 1 / view.scale;
+        if (box.width >= .1 && box.height >= .1) {
+            svgElement('rect', { ...box, fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'stroke-dasharray': `${4 * unit} ${3 * unit}`, 'pointer-events': 'none' }, selection);
+            drawResizeHandles(box, true);
+        }
     }
     if (['marquee', 'node-marquee'].includes(gesture?.type) && gesture.area) {
         const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -158,6 +159,15 @@ function svgElement(tag, attributes, parent) {
     const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
     for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
     parent.append(element); return element;
+}
+function drawResizeHandles(bounds, group = false) {
+    const unit = 1 / view.scale;
+    // Reduce the outer gap when zooming out; keep the node itself free to drag.
+    const handleOffset = 4 + Math.max(1, Math.min(4, 4 * view.scale / (96 / 25.4)));
+    for (const control of RESIZE_HANDLES) {
+        const handle = svgElement('rect', { x: bounds.x + bounds.width * control.x + ((control.x * 2 - 1) * handleOffset - 4) * unit, y: bounds.y + bounds.height * control.y + ((control.y * 2 - 1) * handleOffset - 4) * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: control.cursor, 'data-handle': control.name }, selection);
+        if (group) handle.dataset.group = 'true';
+    }
 }
 function drawNodes(o) {
     const unit = 1 / view.scale;
@@ -264,7 +274,7 @@ function render() {
     }
     $('#empty-selection').hidden = Boolean(o); $('#properties').hidden = !o || selectedIds.size > 1;
     $('#multi-selection').hidden = selectedIds.size < 2;
-    $('#multi-selection').textContent = `${selectedIds.size} objetos seleccionados. Puedes moverlos juntos, cambiar el contorno o eliminarlos.`;
+    $('#multi-selection').textContent = `${selectedIds.size} objetos seleccionados. Puedes moverlos juntos, escalarlos con los controles del recuadro, cambiar el contorno o eliminarlos.`;
     $('#selection-kind').textContent = selectedIds.size > 1 ? `${selectedIds.size} objetos` : o ? ({ rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[o.type] + (o.closed ? ' cerrada' : '') + (o.powerClip ? ' · PowerClip' : '') + (nodeEditing ? ' · nodos' : '') + (o.locked ? ' · bloqueado' : '')) : 'Documento';
     if (o) {
         const bounds = getBounds(o);
@@ -425,6 +435,12 @@ canvas.addEventListener('pointerdown', event => {
         gesture = { type: 'marquee', start, originalIds: [...selectedIds], pointerId: event.pointerId };
         selectOnly(null); render(); return;
     }
+    if (handle?.dataset.group) {
+        const items = selectedObjects().filter(item => !item.hidden && !item.locked);
+        draft = clone(history.document);
+        gesture = { type: 'resize-group', handle: handle.dataset.handle, start, originals: clone(items), box: unionBounds(items.map(getBounds)), pointerId: event.pointerId };
+        render(); return;
+    }
     if (!handle && !selectedIds.has(targetId)) selectOnly(targetId);
     const o = selected();
     if (o && !o.locked && !o.hidden) {
@@ -529,6 +545,9 @@ canvas.addEventListener('pointermove', event => {
         if (event.shiftKey) w = h = Math.max(w, h);
         o.x = gesture.start.x - (dx < 0 ? w : 0); o.y = gesture.start.y - (dy < 0 ? h : 0);
         o.width = Math.max(.1, w); o.height = Math.max(.1, h);
+    }
+    if (gesture.type === 'resize-group') {
+        for (const item of resizeSelection(gesture.originals, gesture.box, gesture.handle, dx, dy)) Object.assign(draft.objects.find(object => object.id === item.id), item);
     }
     if (gesture.type === 'resize') {
         Object.assign(o, resizeBounds(gesture.original, gesture.handle, dx, dy));
@@ -725,16 +744,20 @@ const viewKey = item => `${item.id}|${sourceKey(item.src)}|${JSON.stringify(item
 function findObject(id) {
     for (const item of objectsWithContents(current().objects)) if (item.id === id) return item;
 }
-function storeView(key, url, final) {
-    const previous = adjustedViews.get(key);
-    if (previous && previous.url !== url) URL.revokeObjectURL(previous.url);
-    adjustedViews.delete(key); adjustedViews.set(key, { url, final });
-    // Keep a few recent versions so undo and redo show them without reprocessing.
-    while (adjustedViews.size > 24) {
+function storeView(key, blob, final) {
+    const url = URL.createObjectURL(blob), previous = adjustedViews.get(key);
+    if (previous) URL.revokeObjectURL(previous.url);
+    adjustedViews.delete(key); adjustedViews.set(key, { url, final, bytes: blob.size });
+    // Keep recent versions so undo and redo show them without reprocessing, within a memory budget.
+    let total = 0;
+    for (const view of adjustedViews.values()) total += view.bytes;
+    while (adjustedViews.size > 1 && (adjustedViews.size > 24 || total > 256 * 1024 * 1024)) {
         const [oldKey, old] = adjustedViews.entries().next().value;
-        URL.revokeObjectURL(old.url); adjustedViews.delete(oldKey);
+        URL.revokeObjectURL(old.url); adjustedViews.delete(oldKey); total -= old.bytes;
     }
+    return url;
 }
+const imageElement = id => [...objects.children].find(group => group.dataset.id === id)?.querySelector('image');
 function showAdjustedImages(root) {
     for (const element of root.querySelectorAll('image[data-adjusted]')) {
         const item = findObject(element.dataset.adjusted);
@@ -743,8 +766,9 @@ function showAdjustedImages(root) {
         if (view) element.setAttribute('href', view.url);
         if (view?.final || pendingViews.has(key)) continue;
         pendingViews.add(key);
-        renderAdjusted(item.src, item.adjust, { maxSize: 2048 }).then(canvasUrl)
-            .then(url => { storeView(key, url, true); showAdjustedImages(objects); })
+        // The settled view keeps the full resolution, so zooming in shows the same pixels as the export.
+        renderAdjusted(item.src, item.adjust).then(canvas => canvasBlob(canvas))
+            .then(blob => { storeView(key, blob, true); showAdjustedImages(objects); })
             .catch(() => status('No se pudo mostrar el ajuste de la imagen.'))
             .finally(() => pendingViews.delete(key));
     }
@@ -757,7 +781,8 @@ function showAdjustValues() {
         $(`[data-adjust-value="${input.dataset.imageAdjust}"]`).textContent = Number(input.min) < 0 && value > 0 ? `+${value}` : String(value);
     }
 }
-// While a slider moves, draw a small copy; one preview at a time, always ending on the last position.
+// While a slider moves, process a copy at the size the image covers on screen (1024 to 2048 px),
+// so it stays sharp; one preview at a time, always ending on the last position.
 let adjustPreviewBusy = false, adjustPreviewAgain = false;
 async function previewAdjust() {
     if (adjustPreviewBusy) { adjustPreviewAgain = true; return; }
@@ -767,8 +792,12 @@ async function previewAdjust() {
         if (o?.type === 'image' && !o.locked) {
             const adjust = readAdjust(), key = viewKey({ ...o, adjust });
             let url = adjustedViews.get(key)?.url;
-            if (!url) { url = await canvasUrl(await renderAdjusted(o.src, adjust, { maxSize: 768, fast: true }), 'image/webp'); storeView(key, url, false); }
-            [...objects.children].find(group => group.dataset.id === o.id)?.querySelector('image')?.setAttribute('href', url);
+            if (!url) {
+                const shown = imageElement(o.id)?.getBoundingClientRect() || { width: 0, height: 0 };
+                const maxSize = Math.min(2048, Math.max(1024, Math.ceil(Math.max(shown.width, shown.height) * devicePixelRatio)));
+                url = storeView(key, await canvasBlob(await renderAdjusted(o.src, adjust, { maxSize, fast: true }), 'image/webp'), false);
+            }
+            imageElement(o.id)?.setAttribute('href', url);
         }
     } catch { status('No se pudo mostrar el ajuste de la imagen.'); }
     finally {

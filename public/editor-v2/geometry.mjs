@@ -30,6 +30,23 @@ export function resizeBounds(original, handle, dx, dy) {
     return { x: sx < 0 ? x + w - width : x, y: sy < 0 ? y + h - height : y, width, height };
 }
 
+export function unionBounds(list) {
+    const x = Math.min(...list.map(b => b.x)), y = Math.min(...list.map(b => b.y));
+    return { x, y, width: Math.max(...list.map(b => b.x + b.width)) - x, height: Math.max(...list.map(b => b.y + b.height)) - y };
+}
+
+// Scale a selection inside its bounding box with the same handles as one object: corners keep
+// proportions, sides stretch one axis. Text cannot stretch, so its size changes only on corners.
+export function resizeSelection(items, box, handle, dx, dy) {
+    const next = resizeBounds(box, handle, dx, dy);
+    const sx = next.width / box.width, sy = next.height / box.height, corner = handle.length === 2;
+    return items.map(item => {
+        const moved = { ...item, x: next.x + (item.x - box.x) * sx, y: next.y + (item.y - box.y) * sy };
+        if (item.type === 'text') return corner ? { ...moved, fontSize: Math.max(.1, item.fontSize * sx) } : moved;
+        return { ...moved, width: Math.max(.1, item.width * sx), height: Math.max(.1, item.height * sy) };
+    });
+}
+
 export function objectReference(object, point, tolerance) {
     const { x, y, width: w, height: h } = object;
     if (point.x < x - tolerance || point.x > x + w + tolerance || point.y < y - tolerance || point.y > y + h + tolerance) return null;
