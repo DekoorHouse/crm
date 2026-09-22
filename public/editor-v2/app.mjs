@@ -541,9 +541,9 @@ document.addEventListener('keydown', event => {
     if (mod && ['home', 'end'].includes(key)) {
         event.preventDefault(); if (!gesture) actions[key === 'home' ? 'front' : 'back'](); return;
     }
-    if (mod && ['z', 'y', 'd', 's', 'o'].includes(key)) {
+    if (mod && ['z', 'y', 'd', 's', 'o', 'i', 'e'].includes(key)) {
         event.preventDefault(); if (gesture) return;
-        const action = { z: event.shiftKey ? 'redo' : 'undo', y: 'redo', d: 'duplicate', s: 'save', o: 'open' }[key]; actions[action](); return;
+        const action = { z: event.shiftKey ? 'redo' : 'undo', y: 'redo', d: 'duplicate', s: 'save', o: 'open', i: 'import', e: 'export' }[key]; actions[action](); return;
     }
     if (mod || event.altKey || gesture) return;
     if ({ v: 'select', h: 'hand', r: 'rect', e: 'ellipse', t: 'text', b: 'spline' }[key]) { event.preventDefault(); setTool({ v: 'select', h: 'hand', r: 'rect', e: 'ellipse', t: 'text', b: 'spline' }[key]); }
