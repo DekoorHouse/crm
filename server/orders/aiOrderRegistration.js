@@ -392,11 +392,12 @@ async function extractOrderFromChat(args) {
  * Último pedido NO cancelado del contacto dentro de RECENT_ORDER_WINDOW_MS, o null.
  * Query por contactId sin orderBy (no requiere índice compuesto); se ordena en memoria.
  */
-async function findRecentOrderForContact(contactId) {
+async function findRecentOrderForContact(contactId, purchaseSessionId = null) {
     const snap = await db.collection('pedidos').where('contactId', '==', contactId).get();
     let best = null, bestMs = 0;
     snap.forEach(doc => {
         const d = doc.data();
+        if (purchaseSessionId && d.purchaseSessionId !== purchaseSessionId) return;
         if (d.estatus === 'Cancelado') return; // un pedido cancelado no bloquea uno nuevo
         const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
         if (ms > bestMs) { bestMs = ms; best = doc; }
@@ -494,7 +495,8 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
 
         // Último pedido no cancelado de los últimos 7 días (si hay). Se consulta UNA vez: sirve de
         // contexto al extractor y luego para decidir si es cambio, fusión o pedido nuevo.
-        const existingRec = await findRecentOrderForContact(contactId).catch(() => null);
+        const purchaseContact = (await contactRef.get()).data() || {};
+        const existingRec = await findRecentOrderForContact(contactId, purchaseContact.activePurchaseSessionId).catch(() => null);
         const completeHistory = await require('./registrationHistory').loadRegistrationHistory(contactRef, contactId, conversationText);
         const { extraction, motivo: motivoExtraccion } = await extractOrderDetailed({
             conversationText: completeHistory,

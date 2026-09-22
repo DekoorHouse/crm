@@ -107,7 +107,9 @@ async function enqueueReceipt(contactId, messageId, message, { historical = fals
     // tiene otros pedidos. Recuperar el chat nunca lo reasigna ni lo reabre.
     const existing = (await ref.get()).data();
     if (existing?.orderId || (existing && !existing.open)) return id;
-    const orders = knownOrders || await ordersForContact(contactId);
+    const allOrders = knownOrders || await ordersForContact(contactId);
+    const orders = allOrders.filter(d => message.purchaseOrderId ? d.id === message.purchaseOrderId
+        : !message.purchaseSessionId || d.data().purchaseSessionId === message.purchaseSessionId);
     const inPeriod = d => ms(d.data().createdAt) >= ms(message.timestamp) - 45 * DAY
         && ms(d.data().createdAt) <= ms(message.timestamp) + 2 * DAY;
     // Los pagos anteriores al registro durable también cuentan como posible
@@ -134,6 +136,7 @@ async function enqueueReceipt(contactId, messageId, message, { historical = fals
         return id;
     }
     const value = { contactId, messageId, orderId: order?.id || null,
+        purchaseSessionId: message.purchaseSessionId || null,
         orderNumber: order ? `DH${order.data().consecutiveOrderNumber}` : null,
         receivedAt: message.timestamp, createdAt: stamp(), updatedAt: stamp(), status: 'pending', open: true,
         attempts: 0, nextAttemptAt: date(Date.now() + (historical ? 0 : 25000)), historical,
@@ -474,11 +477,13 @@ async function paymentContext(contactId, { discover = false, process = false, or
     if (discover) await discoverReceipts(contactId, { orderId: explicit?.id || null });
     const rs = await receipts().where('contactId', '==', contactId).get();
     const ordered = rs.docs.sort((a, b) => ms(a.data().receivedAt) - ms(b.data().receivedAt));
-    if (process) for (const r of ordered.filter(d => d.data().status === 'pending').slice(0, 8)) await processReceipt(r.id, { immediate: true });
     const contact = num ? null : (await db.collection('contacts_whatsapp').doc(contactId).get()).data();
+    if (process) for (const r of ordered.filter(d => d.data().status === 'pending'
+        && (num ? d.data().orderId === explicit?.id : !contact?.activePurchaseSessionId || d.data().purchaseSessionId === contact.activePurchaseSessionId)).slice(0, 8)) await processReceipt(r.id, { immediate: true });
     const newOrderSince = ms(contact?.paymentNewOrderRequestedAt);
     const currentOrders = await ordersForContact(contactId);
     const orders = num ? currentOrders : currentOrders.filter(d => !terminal(d.data())
+        && (!contact?.activePurchaseSessionId || d.data().purchaseSessionId === contact.activePurchaseSessionId)
         && (d.data().comprobanteValidadoAt || ms(d.data().createdAt) >= Date.now() - 45 * DAY)
         && (!newOrderSince || ms(d.data().createdAt) >= newOrderSince));
     const fresh = await receipts().where('contactId', '==', contactId).get();
@@ -487,7 +492,9 @@ async function paymentContext(contactId, { discover = false, process = false, or
     // Los pedidos nuevos se distinguen por su registro o por la solicitud explícita de otro pedido.
     const selected = num ? orders.find(d => Number(d.data().consecutiveOrderNumber) === num)
         : unpaid.length === 1 ? unpaid[0] : orders.length === 1 ? orders[0] : null;
-    const pending = fresh.docs.filter(d => d.data().open && (!selected || d.data().orderId === selected.id || !d.data().orderId));
+    const pending = fresh.docs.filter(d => d.data().open
+        && (num || !contact?.activePurchaseSessionId || d.data().purchaseSessionId === contact.activePurchaseSessionId || d.data().orderId === selected?.id)
+        && (!selected || d.data().orderId === selected.id || !d.data().orderId));
     const latest = selected?.data();
     const hasPaid = latest?.comprobanteValidadoAt && !cancelled(latest);
     return { hasPaid: !!hasPaid, partialCents: latest?.paymentReceivedCents || 0, totalCents: cents(latest?.precio) || 0,

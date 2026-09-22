@@ -3318,7 +3318,10 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // --- Contenido dinámico (cambia en cada petición) ---
         // Solo los últimos N mensajes: el historial completo inflaba el prompt con
         // información vieja ya dada y empujaba al modelo a repetirla.
-        const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(AI_HISTORY_MESSAGE_LIMIT).get();
+        const purchaseSessions = require('./orders/purchaseSessions');
+        const fullMessagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(AI_HISTORY_MESSAGE_LIMIT).get();
+        const explicitPurchaseReference = /\bDH\s*\d{4,6}\b/i.test(message.text?.body || message.text || '');
+        const messagesSnapshot = { docs: fullMessagesSnapshot.docs.filter(d => explicitPurchaseReference || purchaseSessions.inPurchase(d.data(), contactData)) };
         const downloadedMedia = [];
         let mediaCount = 0;
 
@@ -3416,7 +3419,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         //  - conversationHistory: transcript plano que reutilizan los clasificadores
         //    (tagOrderInProgress, detectAndArmReminder).
         const historyTurns = [];
-        const historyLines = [];
+        const historyLines = contactData.activePurchaseSessionId ? ['SISTEMA: Esta conversación corresponde a una compra independiente. No reutilices pagos, nombres, fotos, domicilio ni guía de pedidos anteriores. Si pregunta por otra compra, pide su número DH antes de usar sus datos.'] : [];
         let prevMsgMs = null;
         for (const doc of [...messagesSnapshot.docs].reverse()) { // cronológico
             const d = doc.data();
@@ -3682,6 +3685,16 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             try {
                 const info = await getOrdersInfoForContact(contactId);
                 lastOrderDoc = info.latest;
+                if (contactData.activePurchaseSessionId || explicitPurchaseReference) {
+                    const purchaseOrders = await db.collection('pedidos').where('contactId', '==', contactId).get();
+                    const referenced = String(messageText).match(/\bDH\s*(\d{4,6})\b/i);
+                    const scoped = purchaseOrders.docs.filter(d => referenced
+                        ? Number(d.data().consecutiveOrderNumber) === Number(referenced[1])
+                        : d.data().purchaseSessionId === contactData.activePurchaseSessionId);
+                    scoped.sort((a, b) => require('./payments/paymentPolicy').ms(b.data().createdAt) - require('./payments/paymentPolicy').ms(a.data().createdAt));
+                    lastOrderDoc = scoped[0] || null;
+                    info.active = scoped;
+                }
                 isRepeatBuyer = info.nonCancelled >= 2;
                 if (lastOrderDoc) {
                     const d = lastOrderDoc.data();
@@ -3995,6 +4008,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         } // fin de la ruta Gemini (ver SWITCH DE PROVEEDOR arriba)
 
         let aiResponse = aiResult.text;   // 'let': el candado del telefono de emergencia puede recortarla
+        if (contactData.purchaseClarificationPending && !explicitPurchaseReference) aiResponse = purchaseSessions.clarification;
         
         // Registrar uso de tokens en Firestore, etiquetado como fuente 'bot' (la respuesta de
         // Andrea al cliente). El desglose por fuente vive en bySource; los totales se conservan.
@@ -4416,6 +4430,8 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 
             const fromId = (contactChannel === 'messenger' || contactChannel === 'instagram') ? FB_PAGE_ID : PHONE_NUMBER_ID;
             const aiMsgToSave = {
+                ...(explicitPurchaseReference ? { purchaseSessionId: 'order:' + String(messageText).match(/\bDH\s*(\d{4,6})\b/i)[1] }
+                    : contactData.activePurchaseSessionId ? { purchaseSessionId: contactData.activePurchaseSessionId } : {}),
                 from: fromId, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true,
                 channel: contactChannel,
@@ -4469,7 +4485,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // (prompt por anuncio/depto), que sabe acompañar el pedido nuevo (foto, cobro, /cuatro
             // lo regresa a post-venta cuando esté listo).
             updateData.aiStage = 'venta';
-            if (wantsNewOrder && !registerOrderCmd && !paymentRegisteredOrderNumber) updateData.paymentNewOrderRequestedAt = admin.firestore.FieldValue.serverTimestamp();
+            if (wantsNewOrder && !registerOrderCmd && !paymentRegisteredOrderNumber && !contactData.activePurchaseSessionId) updateData.paymentNewOrderRequestedAt = admin.firestore.FieldValue.serverTimestamp();
             console.log(`[AI] Cliente ${contactId} ${wantsNewOrder ? 'quiere un nuevo pedido' : 'registró un pedido nuevo desde post-venta'}. Regresando a ETAPA 1 (venta).`);
         } else if (shouldDeactivate) {
             // Etapa 2 apagada (kill-switch): comportamiento anterior, se desactiva el bot.

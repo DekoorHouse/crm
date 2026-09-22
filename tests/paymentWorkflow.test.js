@@ -104,6 +104,17 @@ test('registration recovery survives a failed discovery and runs without another
     expect(mockDb.all('payment_receipts')).toEqual([expect.objectContaining({ orderId: 'order', status: 'review', associationNeedsReview: true })]);
 });
 
+test('a new purchase cannot inherit the prior payment and its deposit waits for its own order', async () => {
+    mockDb.seed('pedidos/order', { ...order(), comprobanteValidadoAt: new Date(), paymentReceivedCents: 120000, estatus: 'Pagado' });
+    mockDb.seed('contacts_whatsapp/customer', { activePurchaseSessionId: 'new', activePurchaseStartedAt: new Date(), paymentNewOrderRequestedAt: new Date() });
+    const id = await enqueue('new-deposit', { purchaseSessionId: 'new' });
+    expect(job(id)).toMatchObject({ purchaseSessionId: 'new', orderId: null });
+    const context = await flow.paymentContext('customer');
+    expect(context).toMatchObject({ hasPaid: false, partialCents: 0, registrationPending: true });
+    expect(order().paymentReceivedCents).toBe(120000);
+    expect((await flow.paymentContext('customer', { orderNumber: 'DH16368' })).hasPaid).toBe(true);
+});
+
 test('DH17194: recover legacy proxy attachment, persist chat image, and credit the deposit only once', async () => {
     const id = await missingMediaReceipt();
     mockOcr.mockResolvedValue(ocr({ monto: 300 }));

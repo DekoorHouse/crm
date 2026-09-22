@@ -99,6 +99,7 @@ async function createOrder({
 
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     const orderCounterRef = db.collection('counters').doc('orders');
+    const purchaseContact = (await contactRef.get()).data() || {};
 
     // Prueba de precio: si el contacto es grupo A y el pedido lo registró la IA, forzar el
     // precio de cada item al variante ($850/$950). Es la red de seguridad para que el TOTAL
@@ -139,6 +140,7 @@ async function createOrder({
     // Crear objeto del nuevo pedido con items embebidos
     const nuevoPedido = {
         contactId,
+        ...(purchaseContact.activePurchaseSessionId ? { purchaseSessionId: purchaseContact.activePurchaseSessionId } : {}),
         producto: mainProducto, // Primer producto para backward compat (queries where producto==)
         items: normalizedItems, // Lista completa de productos
         telefono,
@@ -282,6 +284,7 @@ async function createOrder({
 
     // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
     const contactUpdate = {
+        ...(purchaseContact.activePurchaseSessionId ? { activePurchaseOrderId: newOrderRef.id } : {}),
         lastOrderNumber: newOrderNumber,
         lastOrderDate: nuevoPedido.createdAt,
         purchaseStatus: 'registered',

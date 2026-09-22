@@ -18,7 +18,10 @@ function registrationTranscript(contactId, messages) {
 
 async function loadRegistrationHistory(contactRef, contactId, currentTranscript) {
     const snap = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(400).get();
-    const history = snap.docs.map(d => d.data()).filter(m => ms(m.timestamp) >= Date.now() - 45 * DAY);
+    const contact = (await contactRef.get()).data() || {};
+    const history = snap.docs.map(d => d.data()).filter(m => ms(m.timestamp) >= Date.now() - 45 * DAY
+        && (!contact.activePurchaseStartedAt || ms(m.timestamp) >= ms(contact.activePurchaseStartedAt))
+        && (!m.purchaseSessionId || !contact.activePurchaseSessionId || m.purchaseSessionId === contact.activePurchaseSessionId));
     return registrationTranscript(contactId, history) + '\n\nTurno actual (puede repetir el final del historial):\n' + currentTranscript;
 }
 

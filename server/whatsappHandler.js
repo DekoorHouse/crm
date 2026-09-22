@@ -628,6 +628,7 @@ router.post('/', async (req, res) => {
              // --- Remove null/undefined fields before saving ---
             Object.keys(messageData).forEach(key => messageData[key] == null && delete messageData[key]);
 
+            Object.assign(messageData, await require('./orders/purchaseSessions').scopeIncomingMessage(from, message.id, messageData));
             await require('./payments/paymentWorkflow').enqueueReceipt(from, message.id, messageData);
 
             // Save the message to the 'messages' subcollection of the contact.

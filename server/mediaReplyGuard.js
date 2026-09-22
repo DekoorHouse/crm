@@ -22,7 +22,8 @@ async function truthfulProductionReply(contactId, text) {
     const parts = String(text || '').split(/(?<=[.!?])\s+|\n+/);
     if (!parts.some(p => productionPhotoNotice(p) || productionClaim(p))) return text;
     const orders = await db.collection('pedidos').where('contactId', '==', contactId).get();
-    const order = latestOrder(orders.docs)?.data();
+    const contact = (await db.collection('contacts_whatsapp').doc(contactId).get()).data();
+    const order = latestOrder(orders.docs.filter(d => !contact?.activePurchaseSessionId || d.data().purchaseSessionId === contact.activePurchaseSessionId))?.data();
     return parts.map(part => {
         if (productionPhotoNotice(part)) {
             if (/\b(?:ajuste|correccion)\b/.test(normalize(part))) {
