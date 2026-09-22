@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dekoor · Editor V2</title>
   <meta name="theme-color" content="#191b22">
-  <link rel="stylesheet" href="/editor-v2/style.css?v=powerclip-pick-target-1">
+  <link rel="stylesheet" href="/editor-v2/style.css?v=powerclip-edit-1">
 </head>
 <body>
   <header class="topbar">
@@ -106,6 +106,7 @@
       <button type="submit" id="export-submit" class="primary">Descargar</button>
     </form>
   </dialog>
+  <div id="powerclip-edit-bar" role="toolbar" aria-label="Edición de PowerClip" hidden> Editando contenido de PowerClip <button type="button" id="powerclip-edit-done">Terminar edición</button></div>
   <div id="powerclip-toolbar" role="toolbar" aria-label="Contenido de PowerClip" hidden>
     <button type="button" id="powerclip-extract" title="Extraer el contenido del PowerClip">Extraer</button>
     <button type="button" id="powerclip-contain" title="Ajustar proporcionalmente al ancho o al alto">Ajustar dentro</button>
@@ -117,6 +118,6 @@
     <button type="button" role="menuitem" id="extract-powerclip">Extraer contenido de PowerClip</button>
     <button type="button" role="menuitem" id="remove-powerclip">Quitar contenedor PowerClip vacío</button>
   </div>
-  <script type="module" src="/editor-v2/app.mjs?v=powerclip-pick-target-1"></script>
+  <script type="module" src="/editor-v2/app.mjs?v=powerclip-edit-1"></script>
 </body>
 </html>

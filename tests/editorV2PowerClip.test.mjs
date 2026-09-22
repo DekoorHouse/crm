@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { powerClipDropTarget } from '../public/editor-v2/geometry.mjs';
+import { powerClipEditDocument, mergePowerClipEdits } from '../public/editor-v2/model.mjs';
 import { blankDocument, createObject, makePowerClip, placeInPowerClip, extractPowerClip, validateDocument, exportSvg, History, clone, objectsWithContents, fitPowerClip } from '../public/editor-v2/model.mjs';
 
 test('picking a plain shape converts and inserts in one undoable operation', () => {
@@ -22,6 +23,26 @@ test('picking a plain shape converts and inserts in one undoable operation', () 
     frame.locked = true;
     assert.throws(() => placeInPowerClip(d, ids, frame.id, { createContainer: true }));
     assert.equal(frame.powerClip, undefined);
+});
+
+test('PowerClip editing preserves transforms, siblings and undo while applying content changes', () => {
+    const d = blankDocument(), frame = createObject('rect', 40, 50, 100, 80), child = createObject('rect', 55, 65, 20, 10), sibling = createObject('ellipse', 200, 200);
+    d.objects.push(frame, child, sibling); makePowerClip(frame);
+    placeInPowerClip(d, new Set([child.id]), frame.id);
+    frame.powerClip.transform = { x: 5, y: -3, scale: 2 };
+    frame.width *= 1.5;
+    const content = powerClipEditDocument(d, frame.id);
+    const roundtrip = mergePowerClipEdits(d, frame.id, content);
+    assert.deepEqual(roundtrip, validateDocument(d));
+    content.objects[0].x += 30; content.objects[0].fill = '#ff0000';
+    const history = new History(d);
+    history.commit(mergePowerClipEdits(d, frame.id, content));
+    assert.equal(history.document.objects[0].powerClip.objects[0].x, frame.powerClip.objects[0].x + 10);
+    assert.equal(history.document.objects[0].powerClip.objects[0].fill, '#ff0000');
+    assert.deepEqual(history.document.objects[1], validateDocument(d).objects[1]);
+    history.undo(); assert.deepEqual(history.document, validateDocument(d));
+    content.objects = [];
+    assert.equal(mergePowerClipEdits(d, frame.id, content).objects[0].powerClip.objects.length, 0);
 });
 
 test('drag target respects ellipse boundary, blockers and invalid sources', () => {

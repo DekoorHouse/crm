@@ -151,6 +151,28 @@ export function extractPowerClip(document, targetId) {
     document.objects.splice(document.objects.indexOf(target) + 1, 0, ...content);
 }
 
+export function powerClipEditDocument(document, targetId) {
+    const copy = clone(document), target = copy.objects.find(item => item.id === targetId);
+    if (!target?.powerClip || target.locked) throw new Error('Selecciona un PowerClip sin bloquear.');
+    const ids = new Set(target.powerClip.objects.map(item => item.id));
+    extractPowerClip(copy, targetId);
+    copy.objects = copy.objects.filter(item => ids.has(item.id));
+    return validateDocument(copy);
+}
+
+export function mergePowerClipEdits(document, targetId, content) {
+    const copy = clone(document), target = copy.objects.find(item => item.id === targetId);
+    const clip = target.powerClip, t = clip.transform || { x: 0, y: 0, scale: 1 };
+    const sx = target.width / clip.width, sy = target.height / clip.height;
+    clip.objects = content.objects.map(item => ({ ...clone(item),
+        x: ((item.x - target.x) / sx - t.x) / t.scale,
+        y: ((item.y - target.y) / sy - t.y) / t.scale,
+        width: item.width / (sx * t.scale), height: item.height / (sy * t.scale),
+        fontSize: item.fontSize / (sy * t.scale), strokeWidth: item.strokeWidth / (t.scale * Math.min(sx, sy)),
+    }));
+    return validateDocument(copy);
+}
+
 export function fitPowerClip(target, mode, bounds) {
     if (!target?.powerClip?.objects.length || target.locked || !['contain', 'cover'].includes(mode)) return;
     if (!bounds || !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height) || bounds.width <= 0 || bounds.height <= 0) throw new Error('El contenido no tiene dimensiones para ajustar.');

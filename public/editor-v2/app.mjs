@@ -2,6 +2,7 @@ import { History, blankDocument, createObject, clone, validateDocument, objectMa
 import { icon, decorateControls } from './icons.mjs';
 import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget } from './geometry.mjs';
 import { HAIRLINE_WIDTH } from './model.mjs';
+import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
 import { normalizeSpline, pointsPath, splinePath } from './spline.mjs';
 
@@ -13,6 +14,8 @@ const storageKey = 'dekoor.editor-v2.document.v1';
 let history = new History(), selectedId = null, tool = 'select', gesture = null;
 let selectedIds = new Set();
 let powerClipSources = null;
+let powerClipEditing = null;
+const savedDocument = () => powerClipEditing ? mergePowerClipEdits(powerClipEditing.history.document, powerClipEditing.id, history.document) : history.document;
 function setSelection(ids) { selectedIds = new Set(ids); selectedId = [...selectedIds].at(-1) || null; }
 const selectOnly = id => setSelection(id ? [id] : []);
 const selectedObjects = () => current().objects.filter(object => selectedIds.has(object.id));
@@ -54,8 +57,9 @@ function persist() {
     // Preserve unreadable previous data until the user explicitly opens/creates a project.
     if (storageBlocked) return;
     try {
-        localStorage.setItem(storageKey, JSON.stringify(history.document));
-        localStorage.setItem(storageKey + '.cloud', JSON.stringify({ binding: cloudBinding, savedJson: cloudSavedJson, documentJson: JSON.stringify(history.document) }));
+        const documentJson = JSON.stringify(savedDocument());
+        localStorage.setItem(storageKey, documentJson);
+        localStorage.setItem(storageKey + '.cloud', JSON.stringify({ binding: cloudBinding, savedJson: cloudSavedJson, documentJson }));
         $('#save-status').textContent = 'Borrador guardado en este navegador';
     } catch { $('#save-status').textContent = 'No se pudo guardar el borrador. Descarga tu proyecto.'; }
 }
@@ -93,6 +97,13 @@ function renderScene() {
     scene.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.scale})`);
     $('#paper').setAttribute('width', d.width); $('#paper').setAttribute('height', d.height);
     objects.replaceChildren();
+    if (powerClipEditing) {
+        const frame = powerClipEditing.history.document.objects.find(item => item.id === powerClipEditing.id);
+        const outline = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        outline.setAttribute('pointer-events', 'none');
+        outline.innerHTML = objectMarkup({ ...frame, powerClip: undefined, fill: 'none', stroke: '#22d3ee', strokeWidth: 1.5 / view.scale });
+        objects.append(outline);
+    }
     for (const object of d.objects) {
         if (object.hidden) continue;
         const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -202,6 +213,8 @@ function getBounds(o) {
     return o;
 }
 function render() {
+    $('#powerclip-edit-bar').hidden = !powerClipEditing;
+    for (const selector of ['#document-name', '#page-width', '#page-height', '#page-preset']) $(selector).disabled = Boolean(powerClipEditing);
     setSelection([...selectedIds].filter(id => current().objects.some(object => object.id === id)));
     const d = history.document, o = selected();
     $('.inspector').hidden = !o;
@@ -302,8 +315,17 @@ function zoom(factor, x = canvas.clientWidth / 2, y = canvas.clientHeight / 2) {
     view.scale = scale; renderScene();
 }
 
+let lastPowerClipClick = null;
 canvas.addEventListener('pointerdown', event => {
     if (gesture || (event.button !== 0 && event.button !== 1)) return;
+    const clickedId = event.target.closest('[data-id]')?.dataset.id;
+    if (event.button === 0 && tool === 'select' && !powerClipEditing && !powerClipSources) {
+        const previous = lastPowerClipClick;
+        lastPowerClipClick = { id: clickedId, time: event.timeStamp, x: event.clientX, y: event.clientY };
+        if (clickedId && previous?.id === clickedId && event.timeStamp - previous.time < 500 && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < 5 && beginPowerClipEditing(event)) {
+            lastPowerClipClick = null; return;
+        }
+    }
     hideObjectMenu();
     if (powerClipSources && event.button === 0) {
         event.preventDefault();
@@ -440,10 +462,40 @@ canvas.addEventListener('pointermove', event => {
     renderScene();
     if (gesture.type === 'move' && gesture.snap && !gesture.dropTarget) drawReference(gesture.snap);
 });
-canvas.addEventListener('dblclick', event => { if (tool === 'spline') { event.preventDefault(); finishSpline(); } });
+canvas.addEventListener('dblclick', event => {
+    if (tool === 'spline') { event.preventDefault(); finishSpline(); return; }
+    beginPowerClipEditing(event);
+});
+function beginPowerClipEditing(event) {
+    if (tool !== 'select' || powerClipEditing || powerClipSources) return false;
+    const id = event.target.closest('[data-id]')?.dataset.id || selectedId;
+    const target = history.document.objects.find(item => item.id === id);
+    if (!target?.powerClip || target.locked) return false;
+    event.preventDefault(); finishPropertyColor(); cancelGesture();
+    try {
+        const content = powerClipEditDocument(history.document, id);
+        powerClipEditing = { id, history };
+        history = new History(content); selectOnly(null); setTool('select'); render();
+        status('Editando contenido de PowerClip. Terminar edición o Esc para volver.');
+    } catch (error) { status(error.message); }
+    return true;
+}
+function finishPowerClipEditing() {
+    if (!powerClipEditing) return;
+    finishPropertyColor(); cancelGesture();
+    const session = powerClipEditing;
+    try {
+        const next = savedDocument();
+        history = session.history; powerClipEditing = null;
+        selectOnly(session.id); setTool('select'); commit(next);
+        status('Edición de PowerClip terminada');
+    } catch (error) { status(error.message); }
+}
+$('#powerclip-edit-done').onclick = finishPowerClipEditing;
 canvas.addEventListener('pointerup', event => {
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     const previous = gesture; gesture = null;
+    if (previous.moved || previous.type !== 'move') lastPowerClipClick = null;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     if (previous.type === 'pan') return;
     if (previous.type === 'marquee') { render(); status(`${selectedIds.size} objetos seleccionados`); return; }
@@ -647,6 +699,10 @@ const actions = {
     'zoom-in'() { zoom(1.2); }, 'zoom-out'() { zoom(1 / 1.2); }, fit,
     help() { $('#help').showModal(); },
 };
+for (const name of ['new', 'open', 'cloud', 'save', 'import', 'download', 'export']) {
+    const action = actions[name];
+    if (action) actions[name] = (...args) => { finishPowerClipEditing(); if (!powerClipEditing) return action(...args); };
+}
 function hideObjectMenu() { $('#object-menu').hidden = true; }
 canvas.addEventListener('contextmenu', event => {
     event.preventDefault(); if (gesture || splineDraft) return;
@@ -656,8 +712,9 @@ canvas.addEventListener('contextmenu', event => {
     if (!selectedIds.has(id)) selectOnly(id);
     render();
     const menu = $('#object-menu'), single = selectedIds.size === 1;
-    $('#make-powerclip').disabled = !single || object.locked || Boolean(object.powerClip) || !['rect', 'ellipse'].includes(object.type);
+    $('#make-powerclip').disabled = Boolean(powerClipEditing) || !single || object.locked || Boolean(object.powerClip) || !['rect', 'ellipse'].includes(object.type);
     $('#place-powerclip').disabled = selectedObjects().some(item => item.locked || item.powerClip) || !current().objects.some(item => ['rect', 'ellipse'].includes(item.type) && !item.locked && !item.hidden && !selectedIds.has(item.id));
+    $('#place-powerclip').disabled ||= Boolean(powerClipEditing);
     $('#extract-powerclip').hidden = !object.powerClip;
     $('#extract-powerclip').disabled = !single || object.locked || !object.powerClip?.objects.length;
     $('#remove-powerclip').hidden = !object.powerClip;
@@ -731,7 +788,7 @@ document.addEventListener('keydown', event => {
     if (document.querySelector('dialog[open]')) return;
     const editing = event.target.closest('input, select, textarea, [contenteditable="true"]');
     const mod = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
-    if (key === 'escape') { cancelGesture(); selectOnly(null); setTool('select'); render(); return; }
+    if (key === 'escape') { if (powerClipEditing && !editing && !splineDraft) { finishPowerClipEditing(); return; } cancelGesture(); selectOnly(null); setTool('select'); render(); return; }
     if (editing) return;
     if (splineDraft) {
         if (key === 'enter') { event.preventDefault(); finishSpline(); }
