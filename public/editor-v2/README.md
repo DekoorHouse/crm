@@ -39,3 +39,5 @@ Al guardar un proyecto «Sin título» se pide un nombre antes de continuar. Fir
 3. Grabado raster: imágenes, escala de grises, contraste, tramado y exportación a DPI configurables; definir el software/controlador láser de destino.
 
 Esta base aún no importa CDR/SVG, no genera PDF ni archivos raster y no convierte texto a curvas. El SVG actual conserva texto editable en Arial y fondo transparente; objetos fuera de página pueden quedar recortados al abrirlo en otros programas. Antes de fabricar hay que validar el SVG en el software de destino, sus unidades y la interpretación de contornos.
+
+Exportación: el botón Exportar y Ctrl+E abren el selector SVG/PDF. PDF conserva el tamaño físico y orientación de la página, las figuras vectoriales y las imágenes; omite objetos ocultos y controles del editor. Texto editable con Helvetica (sustitución de Arial). PDF RGB, sin conversión CMYK ni perfil PDF/X. Las dependencias locales se cargan al elegir PDF; ver vendor/README.md.

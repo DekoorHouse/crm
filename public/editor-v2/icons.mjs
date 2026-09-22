@@ -43,7 +43,7 @@ export function icon(name) {
 }
 
 export function decorateControls() {
-    const labels = { new: 'Nuevo', open: 'Abrir', save: 'Guardar proyecto', export: 'Exportar SVG', duplicate: 'Duplicar', delete: 'Eliminar', fit: 'Ajustar página', backward: 'Bajar', forward: 'Subir' };
+    const labels = { new: 'Nuevo', open: 'Abrir', save: 'Guardar proyecto', export: 'Exportar', duplicate: 'Duplicar', delete: 'Eliminar', fit: 'Ajustar página', backward: 'Bajar', forward: 'Subir' };
     document.querySelectorAll('[data-tool], [data-action]').forEach(button => {
         const name = button.dataset.tool || button.dataset.action;
         if (!paths[name]) return;

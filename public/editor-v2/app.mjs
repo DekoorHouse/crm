@@ -461,11 +461,32 @@ document.addEventListener('paste', async event => {
     } catch (error) { status(error.message || 'No se pudo pegar la imagen.'); }
     finally { pastingImage = false; }
 });
-function download(content, type, extension) {
+function download(content, type, extension, name = history.document.name) {
     const url = URL.createObjectURL(new Blob([content], { type })), link = document.createElement('a');
-    link.href = url; link.download = (history.document.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') || 'Proyecto') + extension;
+    link.href = url; link.download = (name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') || 'Proyecto') + extension;
     document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+let exporting = false;
+$('#export-cancel').onclick = () => $('#export-dialog').close();
+$('#export-dialog').addEventListener('cancel', event => { if (exporting) event.preventDefault(); });
+$('#export-form').addEventListener('submit', async event => {
+    event.preventDefault(); if (exporting) return;
+    const snapshot = clone(history.document), format = $('#export-format').value;
+    exporting = true;
+    $('#export-form').querySelectorAll('button, select').forEach(element => { element.disabled = true; });
+    $('#export-message').textContent = 'Preparando archivo…';
+    try {
+        if (format === 'pdf') {
+            const { exportPdf } = await import('./pdf.mjs');
+            download(await exportPdf(snapshot), 'application/pdf', '.pdf', snapshot.name);
+        } else download(exportSvg(snapshot), 'image/svg+xml', '.svg', snapshot.name);
+        $('#export-dialog').close(); status(`${format.toUpperCase()} exportado con el tamaño de página del proyecto`);
+    } catch (error) { $('#export-message').textContent = error.message || 'No se pudo exportar el diseño.'; }
+    finally {
+        exporting = false;
+        $('#export-form').querySelectorAll('button, select').forEach(element => { element.disabled = false; });
+    }
+});
 const actions = {
     undo() { if (history.undo()) { persist(); render(); status('Cambio deshecho'); } },
     redo() { if (history.redo()) { persist(); render(); status('Cambio rehecho'); } },
@@ -479,7 +500,7 @@ const actions = {
     async save() { if (await ensureProjectName()) showCloud(true); },
     import() { $('#open-file').click(); },
     async download() { if (await ensureProjectName()) { download(JSON.stringify(history.document, null, 2), 'application/json', '.dekoor'); status('Proyecto descargado'); } },
-    export() { download(exportSvg(history.document), 'image/svg+xml', '.svg'); status('SVG exportado con medidas en milímetros'); },
+    export() { $('#export-message').textContent = ''; $('#export-dialog').showModal(); },
     delete() { edit(d => { d.objects = d.objects.filter(item => !selectedIds.has(item.id) || item.locked); }); },
     duplicate() {
         const originals = selectedObjects().filter(item => !item.locked); if (!originals.length) return;
@@ -527,7 +548,7 @@ $('#open-file').addEventListener('change', async event => {
     } catch (error) { status(`No se abrió el archivo: ${error.message}`); }
 });
 document.addEventListener('keydown', event => {
-    if ($('#help').open || $('#cloud-dialog').open || $('#name-dialog').open) return;
+    if (document.querySelector('dialog[open]')) return;
     const editing = event.target.closest('input, select, textarea, [contenteditable="true"]');
     const mod = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
     if (key === 'escape') { cancelGesture(); selectOnly(null); setTool('select'); render(); return; }
