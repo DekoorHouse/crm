@@ -487,17 +487,27 @@ $('#stroke-menu').addEventListener('change', event => {
     } });
     status(width === HAIRLINE_WIDTH ? 'Grosor: Muy fina (0.0762 mm)' : `Grosor: ${width} mm`);
 });
-$('#properties').addEventListener('change', event => {
+function updateProperty(event) {
     const input = event.target, o = selected();
+    if (event.type === 'input' && input.type !== 'color') return;
     if (!o || o.locked) return;
     const property = input.dataset.property;
     if (property) {
         if (!input.checkValidity()) { status('Introduce un valor dentro del rango permitido.'); render(); return; }
-        edit(d => { d.objects.find(item => item.id === o.id)[property] = input.type === 'number' ? Number(input.value) * unitFactor() : input.value; });
+        const value = input.type === 'number' ? Number(input.value) * unitFactor() : input.value;
+        if (o[property] === value) return;
+        edit(d => {
+            const item = d.objects.find(item => item.id === o.id);
+            item[property] = value;
+            if (property === 'stroke' && value !== 'none' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH;
+        });
     } else if (input.id === 'no-fill' || input.id === 'no-stroke') {
         edit(d => { d.objects.find(item => item.id === o.id)[input.id === 'no-fill' ? 'fill' : 'stroke'] = input.checked ? 'none' : '#352a49'; });
     }
-});
+}
+// Native color pickers emit input while choosing, before their final change event.
+$('#properties').addEventListener('input', updateProperty);
+$('#properties').addEventListener('change', updateProperty);
 $('#document-name').addEventListener('change', event => edit(d => { d.name = event.target.value.trim() || 'Sin título'; }));
 for (const dimension of ['width', 'height']) $('#page-' + dimension).addEventListener('change', event => {
     if (!event.target.checkValidity()) { render(); status('La página debe medir entre 1 y 5000 mm.'); return; }
