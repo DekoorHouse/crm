@@ -144,3 +144,7 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 #powerclip-toolbar { position: fixed; z-index: 20; display: flex; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: #23262e; box-shadow: 0 4px 16px #0006; }
 #powerclip-toolbar button { font-size: 12px; padding: 6px 9px; }
+
+.commandbar { overflow-x: auto; }
+#stroke-menu { font-size: 12px; max-width: 160px; }
+#stroke-menu-label { flex-shrink: 0; }

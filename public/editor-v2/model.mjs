@@ -1,13 +1,14 @@
 // Coordinates and stroke widths are always millimetres; viewport state is separate.
 import { splinePath } from './spline.mjs';
 export const TYPES = ['rect', 'ellipse', 'text', 'spline', 'image'];
+export const HAIRLINE_WIDTH = 0.0762;
 export const clone = value => structuredClone(value);
 export const blankDocument = () => ({ version: 1, name: 'Sin título', width: 210, height: 297, objects: [] });
 
 export function createObject(type, x, y, width = 40, height = 30) {
     if (!TYPES.includes(type)) throw new Error('Tipo de objeto no compatible.');
     return { id: crypto.randomUUID(), type, name: { rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[type],
-        x, y, width, height, fill: '#b9a3ed', stroke: '#352a49', strokeWidth: 0.4,
+        x, y, width, height, fill: '#b9a3ed', stroke: '#352a49', strokeWidth: HAIRLINE_WIDTH,
         text: 'Tu texto', fontSize: 10, hidden: false, locked: false,
         ...(type === 'spline' ? { points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] } : {}) };
 }

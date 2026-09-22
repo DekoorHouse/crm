@@ -1,6 +1,7 @@
 import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
-import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation } from './geometry.mjs';
+import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget } from './geometry.mjs';
+import { HAIRLINE_WIDTH } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
 import { normalizeSpline, pointsPath, splinePath } from './spline.mjs';
 
@@ -96,6 +97,7 @@ function renderScene() {
         const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         // Markup comes only from validated primitives, never from imported SVG.
         group.innerHTML = objectMarkup(object);
+        if (object.powerClip) drawPowerClipMarker(group, object);
         if (object.type === 'spline' && !object.locked) {
             const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             hitArea.setAttribute('d', splinePath(object)); hitArea.setAttribute('fill', 'none');
@@ -132,6 +134,31 @@ function renderScene() {
     $('#zoom-label').textContent = `${Math.round(view.scale / (96 / 25.4) * 100)}%`;
     renderSplinePreview();
     renderPowerClipToolbar();
+    if (gesture?.dropTarget) drawPowerClipDrop(gesture.dropTarget);
+}
+function svgElement(tag, attributes, parent) {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
+    parent.append(element); return element;
+}
+function drawPowerClipMarker(group, object) {
+    const { x, y, width, height } = object;
+    const overlay = svgElement('g', { 'pointer-events': 'none', 'data-editor-marker': 'powerclip' }, group);
+    if (!object.powerClip.objects.length) svgElement('path', { d: `M${x + width * .2} ${y + height * .2}L${x + width * .8} ${y + height * .8}M${x + width * .8} ${y + height * .2}L${x + width * .2} ${y + height * .8}`, stroke: '#64748b', 'stroke-width': 1 / view.scale, opacity: .65 }, overlay);
+    const size = Math.min(12 / view.scale, width / 5, height / 5), cx = x + width / 2, cy = y + height / 2;
+    svgElement('rect', { x: cx - size * 1.2, y: cy - size * .8, width: size * 2.4, height: size * 1.6, rx: size * .3, fill: '#18343d', opacity: .85 }, overlay);
+    svgElement('text', { x: cx, y: cy + size * .35, 'text-anchor': 'middle', 'font-size': size, fill: '#a5f3fc', 'font-family': 'Arial, sans-serif' }, overlay).textContent = 'PC';
+}
+function drawPowerClipDrop(target) {
+    const overlay = $('#hover-reference'); overlay.replaceChildren();
+    const g = svgElement('g', { transform: `translate(${view.x} ${view.y}) scale(${view.scale})` }, overlay);
+    const shape = { fill: '#22d3ee', 'fill-opacity': .2, stroke: '#22d3ee', 'stroke-width': 2 / view.scale };
+    if (target.type === 'ellipse') svgElement('ellipse', { cx: target.x + target.width / 2, cy: target.y + target.height / 2, rx: target.width / 2, ry: target.height / 2, ...shape }, g);
+    else svgElement('rect', { x: target.x, y: target.y, width: target.width, height: target.height, ...shape }, g);
+    const x = Math.max(4, Math.min(canvas.clientWidth - 246, view.x + target.x * view.scale));
+    const y = Math.max(4, Math.min(canvas.clientHeight - 32, view.y + target.y * view.scale - 36));
+    svgElement('rect', { x, y, width: 242, height: 28, rx: 5, fill: '#10343d', stroke: '#22d3ee' }, overlay);
+    svgElement('text', { x: x + 10, y: y + 18, fill: '#a5f3fc', 'font-size': 12 }, overlay).textContent = 'Soltar para colocar dentro del PowerClip';
 }
 function renderPowerClipToolbar() {
     const toolbar = $('#powerclip-toolbar'), o = selected();
@@ -185,6 +212,11 @@ function render() {
         button.disabled = Boolean(o?.locked);
     });
     $('#palette-color').disabled = Boolean(o?.locked);
+    $('#stroke-menu-label').hidden = !o;
+    const strokeMenu = $('#stroke-menu'), widths = selectedObjects().map(item => item.strokeWidth);
+    const sameWidth = widths.every(value => Math.abs(value - widths[0]) < 1e-8);
+    strokeMenu.value = sameWidth ? ([...strokeMenu.options].find(option => option.value !== 'custom' && Math.abs(Number(option.value) - widths[0]) < 1e-8)?.value || 'custom') : 'custom';
+    strokeMenu.disabled = !selectedObjects().some(item => !item.locked);
     $('#cloud-badge').textContent = cloudBinding ? (JSON.stringify(d) === cloudSavedJson ? 'Guardado en Firebase' : 'Cambios sin guardar en Firebase') : 'Proyectos en Firebase';
     $('#document-name').value = d.name;
     $('#display-unit').value = displayUnit;
@@ -207,6 +239,7 @@ function render() {
             }
             input.value = o.type === 'text' && ['width', 'height'].includes(key) ? displayMeasure(bounds[key]) :
                 input.type === 'color' && o[key] === 'none' ? '#000000' : typeof o[key] === 'number' ? displayMeasure(o[key]) : o[key];
+            if (key === 'strokeWidth') input.value = Number((o[key] / unitFactor()).toFixed(6));
             input.disabled = o.locked || (o.type === 'text' && ['width', 'height'].includes(key));
         });
         $('#no-fill').checked = o.fill === 'none'; $('#no-stroke').checked = o.stroke === 'none';
@@ -257,12 +290,12 @@ function render() {
 }
 function fit() {
     const rect = canvas.getBoundingClientRect(), d = current();
-    view.scale = Math.max(.05, Math.min(40, (rect.width - 100) / d.width, (rect.height - 110) / d.height));
+    view.scale = Math.max(.05, Math.min((96 / 25.4) * 100, (rect.width - 100) / d.width, (rect.height - 110) / d.height));
     view.x = (rect.width - d.width * view.scale) / 2; view.y = (rect.height - d.height * view.scale) / 2;
     renderScene();
 }
 function zoom(factor, x = canvas.clientWidth / 2, y = canvas.clientHeight / 2) {
-    const scale = Math.max(.05, Math.min(40, view.scale * factor));
+    const scale = Math.max(.05, Math.min((96 / 25.4) * 100, view.scale * factor));
     view.x = x - (x - view.x) * scale / view.scale; view.y = y - (y - view.y) * scale / view.scale;
     view.scale = scale; renderScene();
 }
@@ -390,6 +423,8 @@ canvas.addEventListener('pointermove', event => {
         const movement = snapTranslation(gesture.anchor, { x: dx, y: dy }, gesture.snapTargets, selectedIds, 7 / view.scale);
         gesture.snap = movement.hit;
         for (const original of gesture.originals) { const item = draft.objects.find(item => item.id === original.id); item.x = original.x + movement.x; item.y = original.y + movement.y; }
+        gesture.moved ||= Math.hypot(dx, dy) * view.scale > 4;
+        gesture.dropTarget = gesture.moved ? powerClipDropTarget(draft.objects, selectedIds, p) : null;
     }
     if (gesture.type === 'draw') {
         let w = Math.abs(dx), h = Math.abs(dy);
@@ -401,7 +436,7 @@ canvas.addEventListener('pointermove', event => {
         Object.assign(o, resizeBounds(gesture.original, gesture.handle, dx, dy));
     }
     renderScene();
-    if (gesture.type === 'move' && gesture.snap) drawReference(gesture.snap);
+    if (gesture.type === 'move' && gesture.snap && !gesture.dropTarget) drawReference(gesture.snap);
 });
 canvas.addEventListener('dblclick', event => { if (tool === 'spline') { event.preventDefault(); finishSpline(); } });
 canvas.addEventListener('pointerup', event => {
@@ -411,6 +446,15 @@ canvas.addEventListener('pointerup', event => {
     if (previous.type === 'pan') return;
     if (previous.type === 'marquee') { render(); status(`${selectedIds.size} objetos seleccionados`); return; }
     if (previous.type === 'draw' && selected().width * view.scale < 3 && selected().height * view.scale < 3) { draft = null; render(); return; }
+    if (previous.type === 'move' && previous.moved) {
+        const drop = powerClipDropTarget(draft.objects, selectedIds, point(event));
+        if (drop) {
+            try {
+                const next = clone(draft); placeInPowerClip(next, selectedIds, drop.id);
+                const valid = validateDocument(next); selectOnly(drop.id); commit(valid); status('Contenido colocado en PowerClip'); return;
+            } catch (error) { draft = null; render(); status(error.message); return; }
+        }
+    }
     commit(draft); if (previous.type === 'draw') setTool('select');
     if (previous.snap) { drawReference(previous.snap); status(`Encajado en ${previous.snap.reference.label.toLowerCase()}`); }
     else showReference(event);
@@ -434,6 +478,15 @@ canvas.addEventListener('wheel', event => {
 }, { passive: false });
 
 $('#properties').addEventListener('submit', event => event.preventDefault());
+$('#stroke-menu').addEventListener('change', event => {
+    if (event.target.value === 'custom') { $('[data-property="strokeWidth"]').focus(); return; }
+    const width = Number(event.target.value);
+    edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) {
+        item.strokeWidth = width;
+        if (item.stroke === 'none') item.stroke = nextStroke === 'none' ? '#000000' : nextStroke;
+    } });
+    status(width === HAIRLINE_WIDTH ? 'Grosor: Muy fina (0.0762 mm)' : `Grosor: ${width} mm`);
+});
 $('#properties').addEventListener('change', event => {
     const input = event.target, o = selected();
     if (!o || o.locked) return;
@@ -662,7 +715,7 @@ function applyPalette(color, target = 'fill') {
     const o = selected();
     const label = target === 'fill' ? 'relleno' : 'contorno';
     if (o) {
-        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { item[target] = color; if (target === 'stroke' && color !== 'none' && item.strokeWidth === 0) item.strokeWidth = .4; } });
+        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { item[target] = color; if (target === 'stroke' && color !== 'none' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH; } });
         status(color === 'none' ? `Sin ${label}` : `Color de ${label} actualizado`);
     } else { render(); status(color === 'none' ? `Sin ${label} para la siguiente figura` : `Color de ${label} elegido para la siguiente figura`); }
 }

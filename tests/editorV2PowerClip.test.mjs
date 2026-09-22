@@ -1,6 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { powerClipDropTarget } from '../public/editor-v2/geometry.mjs';
 import { blankDocument, createObject, makePowerClip, placeInPowerClip, extractPowerClip, validateDocument, exportSvg, History, clone, objectsWithContents, fitPowerClip } from '../public/editor-v2/model.mjs';
+
+test('drag target respects ellipse boundary, blockers and invalid sources', () => {
+    const frame = createObject('ellipse', 100, 100, 100, 100); makePowerClip(frame);
+    const source = createObject('rect', 0, 0), ids = new Set([source.id]);
+    assert.equal(powerClipDropTarget([frame, source], ids, { x: 150, y: 150 }), frame);
+    assert.equal(powerClipDropTarget([frame, source], ids, { x: 101, y: 101 }), null);
+    const blocker = createObject('rect', 140, 140);
+    assert.equal(powerClipDropTarget([frame, blocker, source], ids, { x: 150, y: 150 }), null);
+    frame.locked = true;
+    assert.equal(powerClipDropTarget([frame, source], ids, { x: 150, y: 150 }), null);
+    frame.locked = false; makePowerClip(source);
+    assert.equal(powerClipDropTarget([frame, source], ids, { x: 150, y: 150 }), null);
+});
+
+test('new objects use hairline and export does not include editor-only container markers', () => {
+    const d = blankDocument();
+    for (const type of ['rect', 'ellipse', 'text', 'spline', 'image']) assert.equal(createObject(type, 0, 0).strokeWidth, .0762);
+    const frame = createObject('rect', 0, 0); makePowerClip(frame); d.objects.push(frame);
+    assert.doesNotMatch(exportSvg(d), /data-editor-marker|Soltar para|>PC</);
+});
 
 test('contain and cover preserve proportions, center content and are repeatable', () => {
     const frame = createObject('rect', 20, 30, 100, 100); makePowerClip(frame);

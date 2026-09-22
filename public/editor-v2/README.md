@@ -14,7 +14,7 @@ Editor vectorial nuevo, disponible en `/editor-v2/` desde el servidor Express ex
 - Historial de 100 cambios; cada arrastre es una sola operación. Escape cancela el gesto.
 - Zoom y desplazamiento independientes del documento.
 - Borrador automático local, descarga/apertura de proyectos `.dekoor` (JSON validado) y exportación SVG.
-- Paleta RGB horizontal: clic izquierdo cambia el relleno y clic derecho cambia el contorno. Sin color elimina el relleno o el contorno según el botón utilizado. Si el contorno tenía grosor cero, se activa con 0.4 mm. Propiedades de ancho y alto.
+- Paleta RGB horizontal: clic izquierdo cambia el relleno y clic derecho cambia el contorno. Sin color elimina el relleno o el contorno según el botón utilizado. Si el contorno tenía grosor cero, se activa con Muy fina (0.0762 mm). Propiedades de ancho y alto.
 - Guardado y carga manual en Firebase con la cuenta del CRM, más guardar como copia. Colección `editor_v2_projects`, compartida entre usuarios autenticados conforme a las reglas existentes. No mezcla formatos con `editor_files` del editor anterior.
 
 El borrador pertenece al navegador/origen. «Guardar proyecto» (Ctrl+S) guarda en Firebase; «Abrir» (Ctrl+O) muestra los últimos 100 proyectos. La ventana incluye descarga e importación local. Los cambios no se envían automáticamente a Firebase: el indicador diferencia el proyecto guardado de los cambios pendientes. Abrir/Nuevo se puede deshacer durante la sesión.
@@ -43,3 +43,5 @@ Esta base aún no importa CDR/SVG, no genera PDF ni archivos raster y no convier
 Exportación: el botón Exportar y Ctrl+E abren el selector SVG/PDF. PDF conserva el tamaño físico y orientación de la página, las figuras vectoriales y las imágenes; omite objetos ocultos y controles del editor. Texto editable con Helvetica (sustitución de Arial). PDF RGB, sin conversión CMYK ni perfil PDF/X. Las dependencias locales se cargan al elegir PDF; ver vendor/README.md.
 
 PowerClip: clic derecho en rectángulo/elipse → Convertir en PowerClip vacío. Para añadir contenido, clic derecho sobre los objetos → Colocar dentro de PowerClip y clic en el contenedor. Conserva la posición original; usa la barra flotante Extraer / Ajustar dentro / Rellenar para acomodarlo. Los ajustes centran el contenido y mantienen su proporción respecto de sus límites rectangulares; el contenedor recorta el sobrante. Se conserva en proyectos, Firebase, SVG y PDF. Esta etapa no admite contenedores anidados.
+
+Grosor: los objetos nuevos usan Muy fina (0.0762 mm). Al seleccionar aparece el menú de grosores; los valores personalizados siguen disponibles en Propiedades. Zoom máximo: 10 000%. Los PowerClip muestran una marca PC solo en el editor. Al arrastrar contenido sobre un contenedor válido se resalta y muestra el aviso de inserción; soltar lo incorpora en un único paso deshacible.

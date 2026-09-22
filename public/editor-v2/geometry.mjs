@@ -101,6 +101,21 @@ export function fullyContained(area, bounds) {
     return bounds.x >= area.x && bounds.y >= area.y && bounds.x + bounds.width <= area.x + area.width && bounds.y + bounds.height <= area.y + area.height;
 }
 
+export function powerClipDropTarget(objects, sourceIds, point) {
+    const sources = objects.filter(item => sourceIds.has(item.id));
+    if (!sources.length || sources.some(item => item.locked || item.hidden || item.powerClip)) return null;
+    for (const item of [...objects].reverse()) {
+        if (sourceIds.has(item.id) || item.hidden) continue;
+        const nx = (point.x - item.x) / item.width, ny = (point.y - item.y) / item.height;
+        if (nx < 0 || nx > 1 || ny < 0 || ny > 1) continue;
+        if (item.type === 'ellipse' && (2 * nx - 1) ** 2 + (2 * ny - 1) ** 2 > 1) continue;
+        if (item.powerClip && !item.locked) return item;
+        // A visible foreground object blocks a container behind it.
+        return null;
+    }
+    return null;
+}
+
 // Snap the grabbed point, preserving the pointer offset and the group's geometry.
 export function snapTranslation(anchor, delta, objects, excludedIds, tolerance) {
     const position = { x: anchor.x + delta.x, y: anchor.y + delta.y };

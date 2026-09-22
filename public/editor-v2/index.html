@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dekoor · Editor V2</title>
   <meta name="theme-color" content="#191b22">
-  <link rel="stylesheet" href="/editor-v2/style.css?v=powerclip-1">
+  <link rel="stylesheet" href="/editor-v2/style.css?v=stroke-menu-1">
 </head>
 <body>
   <header class="topbar">
@@ -22,6 +22,7 @@
     <label>Ancho <input id="page-width" type="number" required min="1" max="5000" step="any" value="210"></label>
     <label>Alto <input id="page-height" type="number" required min="1" max="5000" step="any" value="297"></label><select id="display-unit" aria-label="Unidad de medida"><option value="mm">mm</option><option value="in">Pulgadas</option></select>
     <span class="separator"></span><button data-action="duplicate" title="Duplicar (Ctrl+D)">Duplicar</button><button data-action="delete" title="Eliminar (Supr)">Eliminar</button>
+    <label id="stroke-menu-label" hidden>Grosor <select id="stroke-menu" aria-label="Grosor de línea"><option value="0.0762">Muy fina</option><option value="0.1">0.1 mm</option><option value="0.25">0.25 mm</option><option value="0.5">0.5 mm</option><option value="1">1 mm</option><option value="2">2 mm</option><option value="custom">Personalizado / Mixto</option></select></label>
     <span class="spacer"></span><button data-action="cloud" class="local-badge" id="cloud-badge" hidden>Proyectos en Firebase</button>
   </div>
   <main class="workspace">
