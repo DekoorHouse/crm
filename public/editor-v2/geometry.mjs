@@ -1,4 +1,4 @@
-import { splinePoints, splineSegments, curvePoint } from './spline.mjs';
+import { splinePoints, splineSegments, curvePoint, closestOnSegment } from './spline.mjs';
 export const RESIZE_HANDLES = [
     { name: 'nw', x: 0, y: 0, cursor: 'nwse-resize' },
     { name: 'n', x: .5, y: 0, cursor: 'ns-resize' },
@@ -42,19 +42,8 @@ export function objectReference(object, point, tolerance) {
         if (near.length) return near[0];
         let best = null;
         for (const segment of segments) {
-            let sample = 0, sampleDistance = Infinity;
-            for (let i = 0; i <= 40; i++) {
-                const p = curvePoint(segment, i / 40), distance = Math.hypot(point.x - p.x, point.y - p.y);
-                if (distance < sampleDistance) { sample = i; sampleDistance = distance; }
-            }
-            let low = Math.max(0, (sample - 1) / 40), high = Math.min(1, (sample + 1) / 40);
-            const distanceAt = t => { const p = curvePoint(segment, t); return Math.hypot(point.x - p.x, point.y - p.y); };
-            for (let i = 0; i < 24; i++) {
-                const left = (2 * low + high) / 3, right = (low + 2 * high) / 3;
-                if (distanceAt(left) < distanceAt(right)) high = right; else low = left;
-            }
-            const p = curvePoint(segment, (low + high) / 2), distance = Math.hypot(point.x - p.x, point.y - p.y);
-            if (!best || distance < best.distance) best = { ...p, distance, label: 'Borde' };
+            const hit = closestOnSegment(segment, point);
+            if (!best || hit.distance < best.distance) best = { ...hit, label: 'Borde' };
         }
         return best?.distance <= tolerance ? best : null;
     }

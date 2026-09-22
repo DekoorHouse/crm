@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSpline, splineSegments, curvePoint, splinePoints } from '../public/editor-v2/spline.mjs';
+import { normalizeSpline, splineSegments, curvePoint, splinePoints, closestOnSpline, moveSplineNodes, insertSplineNode, removeSplineNodes } from '../public/editor-v2/spline.mjs';
 import { createObject, blankDocument, validateDocument, exportSvg } from '../public/editor-v2/model.mjs';
-import { fullyContained } from '../public/editor-v2/geometry.mjs';
+import { fullyContained, objectReference } from '../public/editor-v2/geometry.mjs';
+
+const close = (a, b, tolerance = 1e-8) => assert.ok(Math.abs(a - b) < tolerance, `${a} ≠ ${b}`);
+const arch = () => ({ ...createObject('spline', 0, 0), ...normalizeSpline([{ x: 10, y: 30 }, { x: 20, y: 10 }, { x: 80, y: 10 }, { x: 90, y: 30 }]) });
 
 test('spline bounds include curve overshoot and resizing preserves normalized points', () => {
     const points = [{ x: 10, y: 30 }, { x: 20, y: 10 }, { x: 80, y: 10 }, { x: 90, y: 30 }];
@@ -26,6 +29,46 @@ test('two-point horizontal and vertical splines have valid bounds; invalid point
         assert.doesNotThrow(() => validateDocument(d));
         d.objects[0].points[0].x = Infinity; assert.throws(() => validateDocument(d));
     }
+});
+test('moving nodes keeps the other nodes in place and renormalizes exact bounds', () => {
+    const object = arch(), before = splinePoints(object);
+    const moved = { ...object, ...moveSplineNodes(object, [1, 2], 5, -15) };
+    splinePoints(moved).forEach((p, i) => {
+        const shift = [1, 2].includes(i) ? { x: 5, y: -15 } : { x: 0, y: 0 };
+        close(p.x, before[i].x + shift.x); close(p.y, before[i].y + shift.y);
+    });
+    for (const segment of splineSegments(splinePoints(moved))) for (let i = 0; i <= 100; i++) {
+        const p = curvePoint(segment, i / 100);
+        assert.ok(p.y >= moved.y - 1e-8 && p.y <= moved.y + moved.height + 1e-8);
+    }
+    assert.ok(moved.y < object.y);
+    assert.deepEqual(splinePoints(object), before);
+});
+test('a node inserted at the closest curve point keeps the existing nodes and validates', () => {
+    const object = arch(), hit = closestOnSpline(object, { x: 50, y: 0 });
+    // The middle segment is symmetric, so its closest point to (50, 0) is its apex (50, 7.5).
+    assert.equal(hit.index, 1); close(hit.x, 50, 1e-3); close(hit.y, 7.5, 1e-3);
+    const inserted = { ...object, ...insertSplineNode(object, hit) }, nodes = splinePoints(inserted), before = splinePoints(object);
+    assert.equal(nodes.length, 5);
+    close(nodes[2].x, hit.x); close(nodes[2].y, hit.y);
+    [0, 1, 3, 4].forEach((index, i) => { close(nodes[index].x, before[i].x); close(nodes[index].y, before[i].y); });
+    const d = blankDocument(); d.objects.push(inserted);
+    assert.doesNotThrow(() => validateDocument(d));
+});
+test('removing nodes keeps at least two, and insertion stops at 500 points', () => {
+    const object = arch(), before = splinePoints(object);
+    const removed = splinePoints({ ...object, ...removeSplineNodes(object, [1, 2]) });
+    assert.equal(removed.length, 2);
+    close(removed[0].x, before[0].x); close(removed[1].y, before[3].y);
+    assert.throws(() => removeSplineNodes(object, [0, 1, 2]), /al menos dos nodos/);
+    const full = { ...createObject('spline', 0, 0), ...normalizeSpline(Array.from({ length: 500 }, (_, i) => ({ x: i, y: i % 2 }))) };
+    assert.throws(() => insertSplineNode(full, closestOnSpline(full, { x: 1.5, y: .5 })), /500/);
+});
+test('spline hover edge matches the closest curve point used to insert nodes', () => {
+    const object = arch(), query = { x: 32.66, y: 7.6 };
+    const edge = objectReference(object, query, 1), hit = closestOnSpline(object, query);
+    assert.equal(edge?.label, 'Borde');
+    close(edge.x, hit.x); close(edge.y, hit.y); close(edge.distance, hit.distance);
 });
 test('selection area requires full containment, not an intersection', () => {
     const area = { x: 10, y: 10, width: 100, height: 50 };

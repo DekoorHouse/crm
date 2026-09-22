@@ -4,7 +4,7 @@ import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTran
 import { HAIRLINE_WIDTH } from './model.mjs';
 import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
-import { normalizeSpline, pointsPath, splinePath } from './spline.mjs';
+import { normalizeSpline, pointsPath, splinePath, splinePoints, closestOnSpline, moveSplineNodes, insertSplineNode, removeSplineNodes } from './spline.mjs';
 
 decorateControls();
 
@@ -15,6 +15,8 @@ let history = new History(), selectedId = null, tool = 'select', gesture = null;
 let selectedIds = new Set();
 let powerClipSources = null;
 let powerClipEditing = null;
+// Double-clicking a spline edits its nodes: { id, nodes: Set of point indices }.
+let nodeEditing = null;
 const savedDocument = () => powerClipEditing ? mergePowerClipEdits(powerClipEditing.history.document, powerClipEditing.id, history.document) : history.document;
 function setSelection(ids) { selectedIds = new Set(ids); selectedId = [...selectedIds].at(-1) || null; }
 const selectOnly = id => setSelection(id ? [id] : []);
@@ -39,6 +41,7 @@ const pagePresets = {
 };
 const current = () => draft || history.document;
 const selected = () => current().objects.find(o => o.id === selectedId);
+const editedSpline = () => nodeEditing && current().objects.find(o => o.id === nodeEditing.id);
 const status = message => { $('#status').textContent = message; };
 
 try {
@@ -77,7 +80,7 @@ function setTool(next) {
     powerClipSources = null; hideObjectMenu();
     canvas.classList.remove('placing-powerclip');
     if (gesture) cancelGesture();
-    splineDraft = null; splinePointer = null;
+    splineDraft = null; splinePointer = null; nodeEditing = null;
     tool = next;
     canvas.dataset.tool = next;
     document.querySelectorAll('[data-tool]').forEach(button => {
@@ -122,6 +125,7 @@ function renderScene() {
     }
     selection.replaceChildren();
     for (const o of selectedObjects()) {
+      if (nodeEditing?.id === o.id && o.type === 'spline' && !o.hidden) { drawNodes(o); continue; }
       if (!o.hidden) {
         const bounds = getBounds(o), unit = 1 / view.scale;
         const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -138,7 +142,7 @@ function renderScene() {
         }
       }
     }
-    if (gesture?.type === 'marquee' && gesture.area) {
+    if (['marquee', 'node-marquee'].includes(gesture?.type) && gesture.area) {
         const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         for (const [key, value] of Object.entries({ ...gesture.area, fill: '#a78bfa', 'fill-opacity': .12, stroke: '#c4b5fd', 'stroke-width': 1 / view.scale, 'stroke-dasharray': `${4 / view.scale} ${3 / view.scale}`, 'pointer-events': 'none' })) box.setAttribute(key, value);
         selection.append(box);
@@ -152,6 +156,14 @@ function svgElement(tag, attributes, parent) {
     const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
     for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
     parent.append(element); return element;
+}
+function drawNodes(o) {
+    const unit = 1 / view.scale;
+    svgElement('path', { d: splinePath(o), fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'pointer-events': 'none' }, selection);
+    splinePoints(o).forEach((p, index) => {
+        const active = nodeEditing.nodes.has(index);
+        svgElement('rect', { x: p.x - 4 * unit, y: p.y - 4 * unit, width: 8 * unit, height: 8 * unit, fill: active ? '#8b5bd1' : 'white', stroke: active ? 'white' : '#8b5bd1', 'stroke-width': unit, cursor: 'move', 'data-node': index }, selection);
+    });
 }
 function drawPowerClipMarker(group, object) {
     if (object.powerClip.objects.length) return;
@@ -216,6 +228,10 @@ function render() {
     $('#powerclip-edit-bar').hidden = !powerClipEditing;
     for (const selector of ['#document-name', '#page-width', '#page-height', '#page-preset']) $(selector).disabled = Boolean(powerClipEditing);
     setSelection([...selectedIds].filter(id => current().objects.some(object => object.id === id)));
+    // Leave node editing when its spline is deselected, hidden, locked or removed.
+    const edited = editedSpline();
+    if (nodeEditing && (edited?.type !== 'spline' || edited.locked || edited.hidden || selectedIds.size !== 1 || !selectedIds.has(edited.id))) nodeEditing = null;
+    if (nodeEditing) nodeEditing.nodes = new Set([...nodeEditing.nodes].filter(index => index < edited.points.length));
     const d = history.document, o = selected();
     $('.inspector').hidden = !o;
     $('#cloud-badge').hidden = !o;
@@ -243,7 +259,7 @@ function render() {
     $('#empty-selection').hidden = Boolean(o); $('#properties').hidden = !o || selectedIds.size > 1;
     $('#multi-selection').hidden = selectedIds.size < 2;
     $('#multi-selection').textContent = `${selectedIds.size} objetos seleccionados. Puedes moverlos juntos, cambiar el contorno o eliminarlos.`;
-    $('#selection-kind').textContent = selectedIds.size > 1 ? `${selectedIds.size} objetos` : o ? ({ rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[o.type] + (o.powerClip ? ' · PowerClip' : '') + (o.locked ? ' · bloqueado' : '')) : 'Documento';
+    $('#selection-kind').textContent = selectedIds.size > 1 ? `${selectedIds.size} objetos` : o ? ({ rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[o.type] + (o.powerClip ? ' · PowerClip' : '') + (nodeEditing ? ' · nodos' : '') + (o.locked ? ' · bloqueado' : '')) : 'Documento';
     if (o) {
         const bounds = getBounds(o);
         document.querySelectorAll('[data-property]').forEach(input => {
@@ -315,15 +331,22 @@ function zoom(factor, x = canvas.clientWidth / 2, y = canvas.clientHeight / 2) {
     view.scale = scale; renderScene();
 }
 
-let lastPowerClipClick = null;
+let lastClick = null;
 canvas.addEventListener('pointerdown', event => {
     if (gesture || (event.button !== 0 && event.button !== 1)) return;
-    const clickedId = event.target.closest('[data-id]')?.dataset.id;
-    if (event.button === 0 && tool === 'select' && !powerClipEditing && !powerClipSources) {
-        const previous = lastPowerClipClick;
-        lastPowerClipClick = { id: clickedId, time: event.timeStamp, x: event.clientX, y: event.clientY };
-        if (clickedId && previous?.id === clickedId && event.timeStamp - previous.time < 500 && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < 5 && beginPowerClipEditing(event)) {
-            lastPowerClipClick = null; return;
+    const nodeTarget = event.target.closest('[data-node]'), node = nodeTarget ? Number(nodeTarget.dataset.node) : null;
+    const edited = editedSpline();
+    // While editing nodes, the edited curve takes the clicks within the reference tolerance.
+    const curveHit = edited && node === null ? closestOnSpline(edited, point(event)) : null;
+    const onCurve = Boolean(curveHit) && curveHit.distance * view.scale <= 7;
+    const clickedId = onCurve ? edited.id : event.target.closest('[data-id]')?.dataset.id;
+    if (event.button === 0 && tool === 'select' && !powerClipSources) {
+        const previous = lastClick;
+        lastClick = { id: clickedId, node, time: event.timeStamp, x: event.clientX, y: event.clientY };
+        if (previous && (clickedId || node !== null) && previous.id === clickedId && previous.node === node && event.timeStamp - previous.time < 500 &&
+            Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < 5 && doubleClick(event, clickedId, node, onCurve ? curveHit : null)) {
+            // Keep the browser from selecting page text on the second click.
+            event.preventDefault(); lastClick = null; return;
         }
     }
     hideObjectMenu();
@@ -363,6 +386,24 @@ canvas.addEventListener('pointerdown', event => {
         const object = createObject(tool, start.x, start.y, .1, .1); object.fill = nextFill; object.stroke = nextStroke; selectOnly(object.id); draft.objects.push(object);
         gesture = { type: 'draw', start, pointerId: event.pointerId }; renderScene(); return;
     }
+    if (edited) {
+        if (node !== null) {
+            if (!event.shiftKey) { if (!nodeEditing.nodes.has(node)) nodeEditing.nodes = new Set([node]); }
+            else if (!nodeEditing.nodes.delete(node)) nodeEditing.nodes.add(node);
+            if (nodeEditing.nodes.has(node)) {
+                draft = clone(history.document);
+                gesture = { type: 'nodes', start, pointerId: event.pointerId, original: clone(edited), indices: [...nodeEditing.nodes], anchor: splinePoints(edited)[node], snapTargets: snapTargets() };
+            }
+            render(); return;
+        }
+        if (!clickedId || clickedId === edited.id) {
+            gesture = { type: 'node-marquee', start, pointerId: event.pointerId, originalNodes: new Set(nodeEditing.nodes), additive: event.shiftKey, onObject: Boolean(clickedId) };
+            if (!event.shiftKey) nodeEditing.nodes = new Set();
+            render(); return;
+        }
+        // Clicking another object leaves node editing and selects it as usual.
+        nodeEditing = null;
+    }
     const target = event.target.closest('[data-id]');
     const handle = event.target.closest('[data-handle]');
     const hit = !handle ? referenceAt(start) : null;
@@ -377,13 +418,16 @@ canvas.addEventListener('pointerdown', event => {
         draft = clone(history.document);
         gesture = { type: handle ? 'resize' : 'move', handle: handle?.dataset.handle, start, original: clone(o), originals: clone(selectedObjects().filter(item => !item.locked)), pointerId: event.pointerId };
         gesture.anchor = hit?.reference || start;
-        gesture.snapTargets = current().objects.map(item => {
-            const bounds = getBounds(item);
-            return { ...item, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
-        });
+        gesture.snapTargets = snapTargets();
     }
     render();
 });
+function snapTargets() {
+    return current().objects.map(item => {
+        const bounds = getBounds(item);
+        return { ...item, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+    });
+}
 function referenceAt(position) {
     for (const item of [...current().objects].reverse()) {
         if (item.hidden || item.locked) continue;
@@ -396,7 +440,7 @@ function referenceAt(position) {
 function showReference(event) {
     const overlay = $('#hover-reference'); overlay.replaceChildren();
     canvas.style.cursor = '';
-    if (gesture || tool === 'hand' || event.pointerType === 'touch' || event.target.closest('[data-handle]')) return;
+    if (gesture || nodeEditing || tool === 'hand' || event.pointerType === 'touch' || event.target.closest('[data-handle]')) return;
     const hit = referenceAt(point(event));
     if (!hit) return;
     if (tool === 'select') canvas.style.cursor = 'move';
@@ -443,6 +487,19 @@ canvas.addEventListener('pointermove', event => {
         gesture.area = { x: Math.min(p.x, gesture.start.x), y: Math.min(p.y, gesture.start.y), width: Math.abs(dx), height: Math.abs(dy) };
         setSelection(current().objects.filter(item => !item.hidden && !item.locked && fullyContained(gesture.area, getBounds(item))).map(item => item.id));
     }
+    if (gesture.type === 'node-marquee') {
+        gesture.area = { x: Math.min(p.x, gesture.start.x), y: Math.min(p.y, gesture.start.y), width: Math.abs(dx), height: Math.abs(dy) };
+        gesture.moved ||= Math.hypot(dx, dy) * view.scale > 3;
+        const inside = splinePoints(o).flatMap((node, index) => fullyContained(gesture.area, { ...node, width: 0, height: 0 }) ? [index] : []);
+        nodeEditing.nodes = new Set([...(gesture.additive ? gesture.originalNodes : []), ...inside]);
+    }
+    if (gesture.type === 'nodes') {
+        const movement = snapTranslation(gesture.anchor, { x: dx, y: dy }, gesture.snapTargets, new Set([o.id]), 7 / view.scale);
+        gesture.moved ||= Math.hypot(dx, dy) * view.scale > 3;
+        gesture.snap = gesture.moved ? movement.hit : null;
+        // Below the drag threshold, keep the exact original geometry so a click does not add an undo step.
+        Object.assign(o, gesture.moved && (movement.x || movement.y) ? moveSplineNodes(gesture.original, gesture.indices, movement.x, movement.y) : clone(gesture.original));
+    }
     if (gesture.type === 'move') {
         const movement = snapTranslation(gesture.anchor, { x: dx, y: dy }, gesture.snapTargets, selectedIds, 7 / view.scale);
         gesture.snap = movement.hit;
@@ -460,12 +517,47 @@ canvas.addEventListener('pointermove', event => {
         Object.assign(o, resizeBounds(gesture.original, gesture.handle, dx, dy));
     }
     renderScene();
-    if (gesture.type === 'move' && gesture.snap && !gesture.dropTarget) drawReference(gesture.snap);
+    if (['move', 'nodes'].includes(gesture.type) && gesture.snap && !gesture.dropTarget) drawReference(gesture.snap);
 });
 canvas.addEventListener('dblclick', event => {
     if (tool === 'spline') { event.preventDefault(); finishSpline(); return; }
-    beginPowerClipEditing(event);
+    // pointerdown already handles double clicks while editing nodes.
+    if (nodeEditing) return;
+    if (!beginNodeEditing(event.target.closest('[data-id]')?.dataset.id || selectedId)) beginPowerClipEditing(event);
 });
+function doubleClick(event, id, node, curveHit) {
+    if (!nodeEditing) return beginNodeEditing(id) || beginPowerClipEditing(event);
+    if (node !== null) { deleteNodes([node]); return true; }
+    if (!curveHit) return false;
+    addNode(curveHit); return true;
+}
+function beginNodeEditing(id) {
+    const target = current().objects.find(item => item.id === id);
+    if (tool !== 'select' || powerClipSources || target?.type !== 'spline' || target.locked || target.hidden) return false;
+    nodeEditing = { id, nodes: new Set() }; selectOnly(id); render();
+    status('Nodos: arrastra para mover · doble clic en la curva añade · doble clic en un nodo o Supr elimina · Esc termina');
+    return true;
+}
+function finishNodeEditing() {
+    nodeEditing = null; render(); status('Edición de nodos terminada');
+}
+function addNode(hit) {
+    try {
+        const id = nodeEditing.id, geometry = insertSplineNode(editedSpline(), hit);
+        nodeEditing.nodes = new Set([hit.index + 1]);
+        edit(d => Object.assign(d.objects.find(item => item.id === id), geometry));
+        status('Nodo añadido');
+    } catch (error) { status(error.message); }
+}
+function deleteNodes(indices) {
+    if (!indices.length) { status('Selecciona los nodos que quieres eliminar.'); return; }
+    try {
+        const id = nodeEditing.id, geometry = removeSplineNodes(editedSpline(), indices);
+        nodeEditing.nodes = new Set();
+        edit(d => Object.assign(d.objects.find(item => item.id === id), geometry));
+        status(indices.length === 1 ? 'Nodo eliminado' : `${indices.length} nodos eliminados`);
+    } catch (error) { status(error.message); }
+}
 function beginPowerClipEditing(event) {
     if (tool !== 'select' || powerClipEditing || powerClipSources) return false;
     const id = event.target.closest('[data-id]')?.dataset.id || selectedId;
@@ -495,10 +587,15 @@ $('#powerclip-edit-done').onclick = finishPowerClipEditing;
 canvas.addEventListener('pointerup', event => {
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     const previous = gesture; gesture = null;
-    if (previous.moved || previous.type !== 'move') lastPowerClipClick = null;
+    if (previous.moved || !['move', 'nodes', 'node-marquee'].includes(previous.type)) lastClick = null;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     if (previous.type === 'pan') return;
     if (previous.type === 'marquee') { render(); status(`${selectedIds.size} objetos seleccionados`); return; }
+    if (previous.type === 'node-marquee') {
+        // A plain click on empty space ends node editing, like deselecting with Select.
+        if (!previous.moved && !previous.onObject) { selectOnly(null); finishNodeEditing(); return; }
+        render(); if (previous.moved) status(`${nodeEditing?.nodes.size ?? 0} nodos seleccionados`); return;
+    }
     if (previous.type === 'draw' && selected().width * view.scale < 3 && selected().height * view.scale < 3) { draft = null; render(); return; }
     if (previous.type === 'move' && previous.moved) {
         const drop = powerClipDropTarget(draft.objects, selectedIds, point(event));
@@ -518,6 +615,7 @@ function cancelGesture() {
     const previous = gesture; gesture = null; draft = null;
     if (previous.type === 'pan') view = previous.view;
     if (previous.type === 'marquee') setSelection(previous.originalIds);
+    if (previous.type === 'node-marquee' && nodeEditing) nodeEditing.nodes = previous.originalNodes;
     if (canvas.hasPointerCapture(previous.pointerId)) canvas.releasePointerCapture(previous.pointerId);
     render();
 }
@@ -676,8 +774,8 @@ $('#export-form').addEventListener('submit', async event => {
     }
 });
 const actions = {
-    undo() { if (history.undo()) { persist(); render(); status('Cambio deshecho'); } },
-    redo() { if (history.redo()) { persist(); render(); status('Cambio rehecho'); } },
+    undo() { if (history.undo()) { nodeEditing?.nodes.clear(); persist(); render(); status('Cambio deshecho'); } },
+    redo() { if (history.redo()) { nodeEditing?.nodes.clear(); persist(); render(); status('Cambio rehecho'); } },
     new() {
         if (!window.confirm('¿Crear un proyecto nuevo? Guarda el actual en Firebase o descarga una copia si quieres conservarlo. Puedes deshacer esta acción.')) return;
         cloudBinding = null; cloudSavedJson = null;
@@ -689,7 +787,10 @@ const actions = {
     import() { $('#open-file').click(); },
     async download() { if (await ensureProjectName()) { download(JSON.stringify(history.document, null, 2), 'application/json', '.dekoor'); status('Proyecto descargado'); } },
     export() { $('#export-message').textContent = ''; $('#export-dialog').showModal(); },
-    delete() { edit(d => { d.objects = d.objects.filter(item => !selectedIds.has(item.id) || item.locked); }); },
+    delete() {
+        if (nodeEditing) { deleteNodes([...nodeEditing.nodes]); return; }
+        edit(d => { d.objects = d.objects.filter(item => !selectedIds.has(item.id) || item.locked); });
+    },
     duplicate() {
         const originals = selectedObjects().filter(item => !item.locked); if (!originals.length) return;
         edit(d => { const ids = []; for (const o of originals) { const copy = clone(o); for (const item of objectsWithContents([copy])) item.id = crypto.randomUUID(); copy.name = (copy.name + ' copia').slice(0, 120); copy.x += 5; copy.y += 5; d.objects.push(copy); ids.push(copy.id); } setSelection(ids); });
@@ -788,7 +889,12 @@ document.addEventListener('keydown', event => {
     if (document.querySelector('dialog[open]')) return;
     const editing = event.target.closest('input, select, textarea, [contenteditable="true"]');
     const mod = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
-    if (key === 'escape') { if (powerClipEditing && !editing && !splineDraft) { finishPowerClipEditing(); return; } cancelGesture(); selectOnly(null); setTool('select'); render(); return; }
+    if (key === 'escape') {
+        // The first Escape cancels a node drag; the next one leaves node editing.
+        if (nodeEditing && !editing) { if (gesture) cancelGesture(); else finishNodeEditing(); return; }
+        if (powerClipEditing && !editing && !splineDraft) { finishPowerClipEditing(); return; }
+        cancelGesture(); selectOnly(null); setTool('select'); render(); return;
+    }
     if (editing) return;
     if (splineDraft) {
         if (key === 'enter') { event.preventDefault(); finishSpline(); }
@@ -809,7 +915,12 @@ document.addEventListener('keydown', event => {
     if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(key)) {
         const o = selected(); if (!o || o.locked) return; event.preventDefault();
         const amount = event.shiftKey ? 10 : 1;
-        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { if (key === 'arrowleft') item.x -= amount; if (key === 'arrowright') item.x += amount; if (key === 'arrowup') item.y -= amount; if (key === 'arrowdown') item.y += amount; } });
+        const dx = { arrowleft: -amount, arrowright: amount }[key] || 0, dy = { arrowup: -amount, arrowdown: amount }[key] || 0;
+        if (nodeEditing?.nodes.size) {
+            const geometry = moveSplineNodes(o, [...nodeEditing.nodes], dx, dy);
+            edit(d => Object.assign(d.objects.find(item => item.id === o.id), geometry)); return;
+        }
+        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { item.x += dx; item.y += dy; } });
     }
 });
 new ResizeObserver(() => { if (!gesture) renderScene(); }).observe(canvas);
