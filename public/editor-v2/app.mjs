@@ -1,6 +1,7 @@
 import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
-import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget, unionBounds, resizeSelection } from './geometry.mjs';
+import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget, unionBounds, resizeSelection, resizeRotated, rotatedBounds } from './geometry.mjs';
+import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns } from './transform.mjs';
 import { HAIRLINE_WIDTH } from './model.mjs';
 import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
@@ -19,7 +20,13 @@ let powerClipEditing = null;
 // Double-clicking a spline edits its nodes: { id, nodes: Set of point indices }.
 let nodeEditing = null;
 const savedDocument = () => powerClipEditing ? mergePowerClipEdits(powerClipEditing.history.document, powerClipEditing.id, history.document) : history.document;
-function setSelection(ids) { selectedIds = new Set(ids); selectedId = [...selectedIds].at(-1) || null; }
+// Clicking a selected object again swaps its size handles for rotation handles, as in CorelDRAW.
+let rotateMode = false;
+function setSelection(ids) {
+    const next = new Set(ids);
+    if (next.size !== selectedIds.size || [...next].some(id => !selectedIds.has(id))) rotateMode = false;
+    selectedIds = next; selectedId = [...selectedIds].at(-1) || null;
+}
 const selectOnly = id => setSelection(id ? [id] : []);
 const selectedObjects = () => current().objects.filter(object => selectedIds.has(object.id));
 let view = { x: 0, y: 0, scale: 2 }, draft = null;
@@ -81,7 +88,7 @@ function setTool(next) {
     powerClipSources = null; hideObjectMenu();
     canvas.classList.remove('placing-powerclip');
     if (gesture) cancelGesture();
-    splineDraft = null; splinePointer = null; nodeEditing = null;
+    splineDraft = null; splinePointer = null; nodeEditing = null; rotateMode = false;
     tool = next;
     canvas.dataset.tool = next;
     document.querySelectorAll('[data-tool]').forEach(button => {
@@ -129,22 +136,26 @@ function renderScene() {
     for (const o of selectedObjects()) {
       if (nodeEditing?.id === o.id && o.type === 'spline' && !o.hidden) { drawNodes(o); continue; }
       if (!o.hidden) {
-        const bounds = getBounds(o), unit = 1 / view.scale;
-        const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        for (const [key, value] of Object.entries({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'pointer-events': 'none' })) box.setAttribute(key, value);
-        selection.append(box);
-        if (!o.locked && o.type !== 'text' && selectedIds.size === 1) drawResizeHandles(o);
+        // A rotated object gets its own frame turned with it, so the handles follow its sides.
+        const unit = 1 / view.scale, bounds = turns(o) ? localBox(o) : getBounds(o);
+        const frame = turns(o) ? svgElement('g', { transform: rotateAttr(o) }, selection) : selection;
+        svgElement('rect', { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'pointer-events': 'none' }, frame);
+        if (!o.locked && selectedIds.size === 1) {
+            if (rotateMode) drawRotateHandles(bounds, frame);
+            else if (o.type !== 'text') drawResizeHandles(bounds, false, frame);
+        }
       }
     }
     // Several objects: one dashed box around the ones that can be scaled, with its own handles.
-    const scalable = selectedIds.size > 1 ? selectedObjects().filter(item => !item.hidden && !item.locked) : [];
-    if (scalable.length) {
+    const scalable = selectedObjects().filter(item => !item.hidden && !item.locked);
+    if (selectedIds.size > 1 && scalable.length) {
         const box = unionBounds(scalable.map(getBounds)), unit = 1 / view.scale;
         if (box.width >= .1 && box.height >= .1) {
             svgElement('rect', { ...box, fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'stroke-dasharray': `${4 * unit} ${3 * unit}`, 'pointer-events': 'none' }, selection);
-            drawResizeHandles(box, true);
+            if (rotateMode) drawRotateHandles(box, selection); else drawResizeHandles(box, true);
         }
     }
+    if (rotateMode && scalable.length && !nodeEditing) drawRotationCentre(gesture?.type === 'rotate' ? gesture.centre : selectionCentre(scalable));
     if (['marquee', 'node-marquee'].includes(gesture?.type) && gesture.area) {
         const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         for (const [key, value] of Object.entries({ ...gesture.area, fill: '#a78bfa', 'fill-opacity': .12, stroke: '#c4b5fd', 'stroke-width': 1 / view.scale, 'stroke-dasharray': `${4 / view.scale} ${3 / view.scale}`, 'pointer-events': 'none' })) box.setAttribute(key, value);
@@ -161,14 +172,31 @@ function svgElement(tag, attributes, parent) {
     for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
     parent.append(element); return element;
 }
-function drawResizeHandles(bounds, group = false) {
-    const unit = 1 / view.scale;
-    // Reduce the outer gap when zooming out; keep the node itself free to drag.
-    const handleOffset = 4 + Math.max(1, Math.min(4, 4 * view.scale / (96 / 25.4)));
+// Reduce the outer gap of handles when zooming out; keep the node itself free to drag.
+const handleOffset = () => 4 + Math.max(1, Math.min(4, 4 * view.scale / (96 / 25.4)));
+function drawResizeHandles(bounds, group = false, parent = selection) {
+    const unit = 1 / view.scale, offset = handleOffset();
     for (const control of RESIZE_HANDLES) {
-        const handle = svgElement('rect', { x: bounds.x + bounds.width * control.x + ((control.x * 2 - 1) * handleOffset - 4) * unit, y: bounds.y + bounds.height * control.y + ((control.y * 2 - 1) * handleOffset - 4) * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: control.cursor, 'data-handle': control.name }, selection);
+        const handle = svgElement('rect', { x: bounds.x + bounds.width * control.x + ((control.x * 2 - 1) * offset - 4) * unit, y: bounds.y + bounds.height * control.y + ((control.y * 2 - 1) * offset - 4) * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: control.cursor, 'data-handle': control.name }, parent);
         if (group) handle.dataset.group = 'true';
     }
+}
+// Round rotation handles on the corners, like CorelDRAW's curved arrows.
+function drawRotateHandles(bounds, parent) {
+    const unit = 1 / view.scale, offset = handleOffset();
+    for (const control of RESIZE_HANDLES.filter(item => item.name.length === 2)) {
+        svgElement('circle', { cx: bounds.x + bounds.width * control.x + (control.x * 2 - 1) * offset * unit, cy: bounds.y + bounds.height * control.y + (control.y * 2 - 1) * offset * unit, r: 5 * unit, fill: '#8b5bd1', stroke: 'white', 'stroke-width': 1.5 * unit, 'data-rotate': control.name }, parent);
+    }
+}
+function drawRotationCentre(c) {
+    const unit = 1 / view.scale, marker = svgElement('g', { 'pointer-events': 'none' }, selection);
+    svgElement('circle', { cx: c.x, cy: c.y, r: 6 * unit, fill: 'none', stroke: '#8b5bd1', 'stroke-width': 1.5 * unit }, marker);
+    svgElement('circle', { cx: c.x, cy: c.y, r: 1.5 * unit, fill: '#8b5bd1' }, marker);
+}
+// Rotation turns around the centre of the page-aligned box of the objects being rotated.
+function selectionCentre(items) {
+    const box = unionBounds(items.map(getBounds));
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 function drawNodes(o) {
     const unit = 1 / view.scale, nodes = splinePoints(o);
@@ -180,10 +208,12 @@ function drawNodes(o) {
         svgElement('rect', { x: p.x - 4 * unit, y: p.y - 4 * unit, width: 8 * unit, height: 8 * unit, fill: active ? '#8b5bd1' : 'white', stroke: active ? 'white' : '#8b5bd1', 'stroke-width': unit, cursor: 'move', 'data-node': index }, selection);
     });
 }
+// SVG transform that turns editor overlays with a rotated object (see transform.mjs).
+const rotateAttr = o => `rotate(${-o.rotation} ${pivot(o).x} ${pivot(o).y})`;
 function drawPowerClipMarker(group, object) {
     if (object.powerClip.objects.length) return;
     const { x, y, width, height } = object;
-    const overlay = svgElement('g', { 'pointer-events': 'none', 'data-editor-marker': 'powerclip' }, group);
+    const overlay = svgElement('g', { 'pointer-events': 'none', 'data-editor-marker': 'powerclip', ...(turns(object) ? { transform: rotateAttr(object) } : {}) }, group);
     if (!object.powerClip.objects.length) svgElement('path', { d: `M${x + width * .2} ${y + height * .2}L${x + width * .8} ${y + height * .8}M${x + width * .8} ${y + height * .2}L${x + width * .2} ${y + height * .8}`, stroke: '#64748b', 'stroke-width': 1 / view.scale, opacity: .65 }, overlay);
     const size = Math.min(12 / view.scale, width / 5, height / 5), cx = x + width / 2, cy = y + height / 2;
     svgElement('rect', { x: cx - size * 1.2, y: cy - size * .8, width: size * 2.4, height: size * 1.6, rx: size * .3, fill: '#18343d', opacity: .85 }, overlay);
@@ -192,7 +222,7 @@ function drawPowerClipMarker(group, object) {
 // waiting: a PowerClip with content is only outlined until W is held.
 function drawPowerClipDrop(target, waiting = false) {
     const overlay = $('#hover-reference'); overlay.replaceChildren();
-    const g = svgElement('g', { transform: `translate(${view.x} ${view.y}) scale(${view.scale})` }, overlay);
+    const g = svgElement('g', { transform: `translate(${view.x} ${view.y}) scale(${view.scale})${turns(target) ? ' ' + rotateAttr(target) : ''}` }, overlay);
     const shape = waiting ? { fill: 'none', stroke: '#22d3ee', 'stroke-width': 1.5 / view.scale, 'stroke-dasharray': `${6 / view.scale} ${4 / view.scale}` }
         : { fill: '#22d3ee', 'fill-opacity': .2, stroke: '#22d3ee', 'stroke-width': 2 / view.scale };
     if (target.type === 'ellipse') svgElement('ellipse', { cx: target.x + target.width / 2, cy: target.y + target.height / 2, rx: target.width / 2, ry: target.height / 2, ...shape }, g);
@@ -240,12 +270,18 @@ function finishSpline(closed = false) {
     edit(document => document.objects.push(shape)); setTool('select');
     status(closed ? 'Spline cerrada creada' : 'Spline creada');
 }
+// The page-aligned box around an object as drawn, rotation included.
 function getBounds(o) {
     if (o.type === 'text') {
         const group = [...objects.children].find(g => g.dataset.id === o.id);
         if (group) return group.getBBox();
     }
-    return o;
+    return rotatedBounds(o);
+}
+// An object's box in its own, unrotated frame (the rendered text box for text).
+function localBox(o) {
+    const text = o.type === 'text' && [...objects.children].find(g => g.dataset.id === o.id)?.querySelector('text');
+    return text ? text.getBBox() : { x: o.x, y: o.y, width: o.width, height: o.height };
 }
 function render() {
     $('#powerclip-edit-bar').hidden = !powerClipEditing;
@@ -281,7 +317,7 @@ function render() {
     }
     $('#empty-selection').hidden = Boolean(o); $('#properties').hidden = !o || selectedIds.size > 1;
     $('#multi-selection').hidden = selectedIds.size < 2;
-    $('#multi-selection').textContent = `${selectedIds.size} objetos seleccionados. Puedes moverlos juntos, escalarlos con los controles del recuadro, cambiar el contorno o eliminarlos.`;
+    $('#multi-selection').textContent = `${selectedIds.size} objetos seleccionados. Puedes moverlos juntos, escalarlos con los controles del recuadro (clic otra vez para girarlos), cambiar el contorno o eliminarlos.`;
     $('#selection-kind').textContent = selectedIds.size > 1 ? `${selectedIds.size} objetos` : o ? ({ rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[o.type] + (o.closed ? ' cerrada' : '') + (o.powerClip ? ' · PowerClip' : '') + (nodeEditing ? ' · nodos' : '') + (o.locked ? ' · bloqueado' : '')) : 'Documento';
     if (o) {
         const bounds = getBounds(o);
@@ -299,6 +335,7 @@ function render() {
         $('#no-fill').checked = o.fill === 'none'; $('#no-stroke').checked = o.stroke === 'none';
         $('#no-fill').disabled = o.locked; $('#no-stroke').disabled = o.locked;
         $('#text-properties').hidden = o.type !== 'text';
+        $('#rotation-input').value = Number((o.rotation || 0).toFixed(2)); $('#rotation-input').disabled = o.locked;
         $('#image-properties').hidden = o.type !== 'image';
         if (o.type === 'image') {
             for (const input of adjustInputs) { input.value = o.adjust?.[input.dataset.imageAdjust] ?? 0; input.disabled = o.locked; }
@@ -308,7 +345,7 @@ function render() {
     }
     $('[data-action="undo"]').disabled = !history.past.length;
     $('[data-action="redo"]').disabled = !history.future.length;
-    for (const action of ['delete', 'duplicate', 'forward', 'backward']) $('[data-action="' + action + '"]').disabled = !o || o.locked;
+    for (const action of ['delete', 'duplicate', 'forward', 'backward', 'rotate-left', 'rotate-right']) $('[data-action="' + action + '"]').disabled = !o || o.locked;
     if (o) {
         $('[data-action="forward"]').disabled ||= !d.objects.some((item, index) => selectedIds.has(item.id) && index < d.objects.length - 1 && !selectedIds.has(d.objects[index + 1].id));
         $('[data-action="backward"]').disabled ||= !d.objects.some((item, index) => selectedIds.has(item.id) && index > 0 && !selectedIds.has(d.objects[index - 1].id));
@@ -438,6 +475,16 @@ canvas.addEventListener('pointerdown', event => {
         // Clicking another object leaves node editing and selects it as usual.
         nodeEditing = null;
     }
+    // Rotation handles turn the selection around its centre; Ctrl keeps the angle to steps of 15°.
+    if (event.target.closest('[data-rotate]')) {
+        const items = selectedObjects().filter(item => !item.hidden && !item.locked);
+        if (items.length) {
+            const centre = selectionCentre(items);
+            draft = clone(history.document);
+            gesture = { type: 'rotate', start, centre, startAngle: angleOf(start, centre), originals: clone(items), pointerId: event.pointerId };
+        }
+        render(); return;
+    }
     const target = event.target.closest('[data-id]');
     const handle = event.target.closest('[data-handle]');
     const hit = !handle ? referenceAt(start) : null;
@@ -452,18 +499,22 @@ canvas.addEventListener('pointerdown', event => {
         gesture = { type: 'resize-group', handle: handle.dataset.handle, start, originals: clone(items), box: unionBounds(items.map(getBounds)), pointerId: event.pointerId };
         render(); return;
     }
+    // A plain click on an object that was already selected switches between size and rotation handles.
+    const reselect = !handle && selectedIds.has(targetId);
     if (!handle && !selectedIds.has(targetId)) selectOnly(targetId);
     const o = selected();
     if (o && !o.locked && !o.hidden) {
         draft = clone(history.document);
-        gesture = { type: handle ? 'resize' : 'move', handle: handle?.dataset.handle, start, original: clone(o), originals: clone(selectedObjects().filter(item => !item.locked)), pointerId: event.pointerId };
+        gesture = { type: handle ? 'resize' : 'move', handle: handle?.dataset.handle, start, original: clone(o), originals: clone(selectedObjects().filter(item => !item.locked)), pointerId: event.pointerId, reselect };
         gesture.anchor = hit?.reference || start;
         gesture.snapTargets = snapTargets();
     }
     render();
 });
+// Text snaps to its rendered box; every other object keeps its geometry and rotation.
 function snapTargets() {
     return current().objects.map(item => {
+        if (item.type !== 'text') return item;
         const bounds = getBounds(item);
         return { ...item, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
     });
@@ -494,7 +545,7 @@ function drawReference({ target, reference }) {
         parent.append(element); return element;
     };
     if (reference.label === 'Borde') {
-        const outline = add('g', { transform: `translate(${view.x} ${view.y}) scale(${view.scale})` });
+        const outline = add('g', { transform: `translate(${view.x} ${view.y}) scale(${view.scale})${turns(target) ? ' ' + rotateAttr(target) : ''}` });
         const attrs = { fill: 'none', stroke: '#22d3ee', 'stroke-width': 1.5 / view.scale };
         if (target.type === 'spline') add('path', { d: splinePath(target), ...attrs }, outline);
         else if (target.type === 'ellipse') add('ellipse', { cx: target.x + target.width / 2, cy: target.y + target.height / 2, rx: target.width / 2, ry: target.height / 2, ...attrs }, outline);
@@ -560,8 +611,16 @@ canvas.addEventListener('pointermove', event => {
     if (gesture.type === 'resize-group') {
         for (const item of resizeSelection(gesture.originals, gesture.box, gesture.handle, dx, dy)) Object.assign(draft.objects.find(object => object.id === item.id), item);
     }
+    if (gesture.type === 'rotate') {
+        let delta = normalizeAngle(angleOf(p, gesture.centre) - gesture.startAngle);
+        // Ctrl: one object lands on multiples of 15°; a group turns in steps of 15°.
+        const [single] = gesture.originals.length === 1 ? gesture.originals : [];
+        if (event.ctrlKey) delta = single ? Math.round(((single.rotation || 0) + delta) / 15) * 15 - (single.rotation || 0) : Math.round(delta / 15) * 15;
+        for (const item of gesture.originals) Object.assign(draft.objects.find(object => object.id === item.id), rotateObject(item, gesture.centre, delta));
+        status(gesture.originals.length === 1 ? `Rotación: ${formatAngle((gesture.originals[0].rotation || 0) + delta)}` : `Giro: ${formatAngle(delta)}`);
+    }
     if (gesture.type === 'resize') {
-        Object.assign(o, resizeBounds(gesture.original, gesture.handle, dx, dy));
+        Object.assign(o, turns(gesture.original) ? resizeRotated(gesture.original, gesture.handle, dx, dy) : resizeBounds(gesture.original, gesture.handle, dx, dy));
     }
     renderScene();
     if (['move', 'nodes'].includes(gesture.type) && gesture.snap && !gesture.dropTarget && !gesture.dropHint) drawReference(gesture.snap);
@@ -582,7 +641,7 @@ function doubleClick(event, id, node, insertAt) {
 function beginNodeEditing(id) {
     const target = current().objects.find(item => item.id === id);
     if (tool !== 'select' || powerClipSources || target?.type !== 'spline' || target.locked || target.hidden) return false;
-    nodeEditing = { id, nodes: new Set() }; selectOnly(id); render();
+    nodeEditing = { id, nodes: new Set() }; selectOnly(id); rotateMode = false; render();
     status('Nodos: arrastra para mover · doble clic en la curva añade · doble clic en un nodo o Supr elimina · Esc termina');
     return true;
 }
@@ -645,6 +704,11 @@ canvas.addEventListener('pointerup', event => {
         render(); if (previous.moved) status(`${nodeEditing?.nodes.size ?? 0} nodos seleccionados`); return;
     }
     if (previous.type === 'draw' && selected().width * view.scale < 3 && selected().height * view.scale < 3) { draft = null; render(); return; }
+    if (previous.type === 'move' && !previous.moved && previous.reselect) {
+        draft = null; rotateMode = !rotateMode; render();
+        status(rotateMode ? 'Arrastra una esquina para girar · Ctrl: de 15° en 15° · clic otra vez para volver al tamaño' : 'Selecciona un objeto para moverlo o editarlo');
+        return;
+    }
     if (previous.type === 'move' && previous.moved) {
         previous.pointer = point(event); updatePowerClipDrop(previous);
         const drop = previous.dropTarget;
@@ -756,6 +820,12 @@ function updateProperty(event) {
         if (o[property] === value) return;
         edit(d => {
             const item = d.objects.find(item => item.id === o.id);
+            // A rotated shape grows along its own side, so the opposite side stays on the page.
+            if (turns(o) && (property === 'width' || property === 'height')) {
+                const along = rotatePoint(property === 'width' ? { x: value - o.width, y: 0 } : { x: 0, y: value - o.height }, { x: 0, y: 0 }, o.rotation);
+                Object.assign(item, resizeRotated(o, property === 'width' ? 'e' : 's', along.x, along.y));
+                return;
+            }
             item[property] = value;
             if (property === 'stroke' && value !== 'none' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH;
         });
@@ -853,6 +923,20 @@ $('#image-adjust-reset').onclick = () => {
     edit(d => { delete d.objects.find(item => item.id === o.id).adjust; });
     status('Ajustes de imagen restablecidos');
 };
+const formatAngle = degrees => `${Number(normalizeAngle(degrees).toFixed(1))}°`;
+// Turn the unlocked selection around its centre; used by the angle field and the 90° buttons.
+function rotateSelection(delta) {
+    const items = selectedObjects().filter(item => !item.hidden && !item.locked);
+    if (!items.length || !normalizeAngle(delta)) return;
+    const centre = selectionCentre(items);
+    edit(d => { for (const item of items) Object.assign(d.objects.find(object => object.id === item.id), rotateObject(item, centre, delta)); });
+    status(items.length === 1 ? `Rotación: ${formatAngle((items[0].rotation || 0) + delta)}` : `Giro: ${formatAngle(delta)}`);
+}
+$('#rotation-input').addEventListener('change', event => {
+    const o = selected();
+    if (!o || o.locked || !event.target.checkValidity()) { render(); return; }
+    rotateSelection(Number(event.target.value) - (o.rotation || 0));
+});
 // Exports carry the adjusted pixels: laser and print software never see the editor settings.
 async function bakeAdjustedImages(snapshot) {
     for (const item of objectsWithContents(snapshot.objects)) {
@@ -959,6 +1043,7 @@ const actions = {
         edit(d => { const ids = []; for (const o of originals) { const copy = clone(o); for (const item of objectsWithContents([copy])) item.id = crypto.randomUUID(); copy.name = (copy.name + ' copia').slice(0, 120); copy.x += 5; copy.y += 5; d.objects.push(copy); ids.push(copy.id); } setSelection(ids); });
     },
     forward() { reorder(1); }, backward() { reorder(-1); },
+    'rotate-left'() { rotateSelection(90); }, 'rotate-right'() { rotateSelection(-90); },
     front() { reorderToEnd(true); }, back() { reorderToEnd(false); },
     'zoom-in'() { zoom(1.2); }, 'zoom-out'() { zoom(1 / 1.2); }, fit,
     help() { $('#help').showModal(); },

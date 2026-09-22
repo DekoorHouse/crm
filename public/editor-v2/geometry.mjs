@@ -1,4 +1,5 @@
 import { splinePoints, splineSegments, curvePoint, closestOnSegment } from './spline.mjs';
+import { rotatePoint, pivot, turns, trig } from './transform.mjs';
 export const RESIZE_HANDLES = [
     { name: 'nw', x: 0, y: 0, cursor: 'nwse-resize' },
     { name: 'n', x: .5, y: 0, cursor: 'ns-resize' },
@@ -30,6 +31,26 @@ export function resizeBounds(original, handle, dx, dy) {
     return { x: sx < 0 ? x + w - width : x, y: sy < 0 ? y + h - height : y, width, height };
 }
 
+// Resize a rotated shape along its own axes: the pointer delta is turned into the shape's frame, and
+// the point opposite the dragged handle stays where it was on the page.
+export function resizeRotated(original, handle, dx, dy) {
+    const local = rotatePoint({ x: dx, y: dy }, { x: 0, y: 0 }, -original.rotation);
+    const next = resizeBounds(original, handle, local.x, local.y), control = RESIZE_HANDLES.find(item => item.name === handle);
+    const fixed = box => ({ x: box.x + box.width * (1 - control.x), y: box.y + box.height * (1 - control.y) });
+    const before = rotatePoint(fixed(original), pivot(original), original.rotation);
+    const after = rotatePoint(fixed(next), pivot({ ...original, ...next }), original.rotation);
+    return { ...next, x: next.x + before.x - after.x, y: next.y + before.y - after.y };
+}
+
+// The page-aligned box around a shape, rotated or not. Text boxes come from rendering instead.
+export function rotatedBounds(o) {
+    if (!turns(o)) return { x: o.x, y: o.y, width: o.width, height: o.height };
+    const c = pivot(o), cos = Math.abs(trig(o.rotation)[0]), sin = Math.abs(trig(o.rotation)[1]);
+    const halfWidth = o.type === 'ellipse' ? Math.hypot(o.width / 2 * cos, o.height / 2 * sin) : (o.width * cos + o.height * sin) / 2;
+    const halfHeight = o.type === 'ellipse' ? Math.hypot(o.width / 2 * sin, o.height / 2 * cos) : (o.width * sin + o.height * cos) / 2;
+    return { x: c.x - halfWidth, y: c.y - halfHeight, width: 2 * halfWidth, height: 2 * halfHeight };
+}
+
 export function unionBounds(list) {
     const x = Math.min(...list.map(b => b.x)), y = Math.min(...list.map(b => b.y));
     return { x, y, width: Math.max(...list.map(b => b.x + b.width)) - x, height: Math.max(...list.map(b => b.y + b.height)) - y };
@@ -43,11 +64,22 @@ export function resizeSelection(items, box, handle, dx, dy) {
     return items.map(item => {
         const moved = { ...item, x: next.x + (item.x - box.x) * sx, y: next.y + (item.y - box.y) * sy };
         if (item.type === 'text') return corner ? { ...moved, fontSize: Math.max(.1, item.fontSize * sx) } : moved;
+        if (turns(item)) {
+            // A rotated shape cannot stretch along the page axes either: its centre follows the box,
+            // and it only changes size on corners.
+            const c = pivot(item), width = corner ? Math.max(.1, item.width * sx) : item.width, height = corner ? Math.max(.1, item.height * sy) : item.height;
+            return { ...item, width, height, x: next.x + (c.x - box.x) * sx - width / 2, y: next.y + (c.y - box.y) * sy - height / 2 };
+        }
         return { ...moved, width: Math.max(.1, item.width * sx), height: Math.max(.1, item.height * sy) };
     });
 }
 
 export function objectReference(object, point, tolerance) {
+    // A rotated shape finds the reference in its own frame, then turns it back onto the page.
+    if (turns(object) && object.type !== 'text') {
+        const c = pivot(object), local = objectReference({ ...object, rotation: 0 }, rotatePoint(point, c, -object.rotation), tolerance);
+        return local && { ...local, ...rotatePoint(local, c, object.rotation) };
+    }
     const { x, y, width: w, height: h } = object;
     if (point.x < x - tolerance || point.x > x + w + tolerance || point.y < y - tolerance || point.y > y + h + tolerance) return null;
     const cx = x + w / 2, cy = y + h / 2;
@@ -114,7 +146,8 @@ export function powerClipDropTarget(objects, sourceIds, point) {
     if (!sources.length || sources.some(item => item.locked || item.hidden || item.powerClip)) return null;
     for (const item of [...objects].reverse()) {
         if (sourceIds.has(item.id) || item.hidden) continue;
-        const nx = (point.x - item.x) / item.width, ny = (point.y - item.y) / item.height;
+        const local = turns(item) ? rotatePoint(point, pivot(item), -item.rotation) : point;
+        const nx = (local.x - item.x) / item.width, ny = (local.y - item.y) / item.height;
         if (nx < 0 || nx > 1 || ny < 0 || ny > 1) continue;
         if (item.type === 'ellipse' && (2 * nx - 1) ** 2 + (2 * ny - 1) ** 2 > 1) continue;
         if (item.powerClip && !item.locked) return item;

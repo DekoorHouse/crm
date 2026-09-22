@@ -19,6 +19,8 @@ const paths = {
     'zoom-in': '<path d="M5 12h14M12 5v14"/>',
     'zoom-out': '<path d="M5 12h14"/>',
     fit: '<path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/><rect x="8" y="7" width="8" height="10" rx="1"/>',
+    'rotate-left': '<path d="M3 4v5h5"/><path d="M3.6 9A8.5 8.5 0 1 1 6 18"/>',
+    'rotate-right': '<path d="M21 4v5h-5"/><path d="M20.4 9A8.5 8.5 0 1 0 18 18"/>',
     backward: '<path d="M12 4v16m-6-6 6 6 6-6"/>',
     forward: '<path d="M12 20V4m-6 6 6-6 6 6"/>',
     visible: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
@@ -43,7 +45,7 @@ export function icon(name) {
 }
 
 export function decorateControls() {
-    const labels = { new: 'Nuevo', open: 'Abrir', save: 'Guardar proyecto', export: 'Exportar', duplicate: 'Duplicar', delete: 'Eliminar', fit: 'Ajustar página', backward: 'Bajar', forward: 'Subir' };
+    const labels = { new: 'Nuevo', open: 'Abrir', save: 'Guardar proyecto', export: 'Exportar', duplicate: 'Duplicar', delete: 'Eliminar', fit: 'Ajustar página', backward: 'Bajar', forward: 'Subir', 'rotate-left': '90°', 'rotate-right': '90°' };
     document.querySelectorAll('[data-tool], [data-action]').forEach(button => {
         const name = button.dataset.tool || button.dataset.action;
         if (!paths[name]) return;

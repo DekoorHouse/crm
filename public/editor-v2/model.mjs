@@ -1,6 +1,7 @@
 // Coordinates and stroke widths are always millimetres; viewport state is separate.
-import { splinePath } from './spline.mjs';
+import { splinePath, splinePoints, normalizeSpline } from './spline.mjs';
 import { normalizeAdjust } from './imageAdjust.mjs';
+import { normalizeAngle, pivot, placeAtPivot, rotatePoint, turns } from './transform.mjs';
 export const TYPES = ['rect', 'ellipse', 'text', 'spline', 'image'];
 export const HAIRLINE_WIDTH = 0.0762;
 export const clone = value => structuredClone(value);
@@ -42,6 +43,10 @@ export function validateDocument(input) {
         ids.add(o.id);
         // Whitelist fields: project files are data, never markup or executable content.
         const valid = Object.fromEntries(['id', 'type', 'name', 'x', 'y', 'width', 'height', 'fill', 'stroke', 'strokeWidth', 'text', 'fontSize', 'hidden', 'locked'].map(k => [k, o[k]]));
+        if (o.rotation !== undefined) {
+            if (!numberIn(o.rotation, -360, 360)) throw new Error('El proyecto contiene objetos inválidos o no compatibles.');
+            if (normalizeAngle(o.rotation)) valid.rotation = normalizeAngle(o.rotation);
+        }
         if (o.type === 'spline') {
             // Control points are normalized to the curve's bounds, so they may fall outside 0–1.
             if (!Array.isArray(o.points) || o.points.length < 2 || o.points.length > 500 || o.points.some(p => !p || !numberIn(p.x, -10000, 10000) || !numberIn(p.y, -10000, 10000))) throw new Error('La spline contiene puntos inválidos.');
@@ -100,6 +105,11 @@ export class History {
 
 const escapeXml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
 export function objectMarkup(o) {
+    // A rotated object turns around its pivot (see transform.mjs); a PowerClip turns with its content.
+    if (turns(o)) {
+        const p = pivot(o);
+        return `<g transform="rotate(${-o.rotation} ${p.x} ${p.y})">${objectMarkup({ ...o, rotation: 0 })}</g>`;
+    }
     if (o.powerClip) {
         const base = { ...o }; delete base.powerClip;
         const clipId = 'pc-' + Array.from(o.id).map(c => c.codePointAt(0).toString(16)).join('-');
@@ -136,23 +146,40 @@ export function placeInPowerClip(document, sourceIds, targetId, { createContaine
     const sources = document.objects.filter(item => sourceIds.has(item.id));
     if (!sources.length || sources.some(item => item.locked || item.hidden || item.powerClip)) throw new Error('Selecciona contenido visible, sin bloquear y sin PowerClip anidado.');
     if (!target.powerClip) makePowerClip(target);
-    const sx = target.powerClip.width / target.width, sy = target.powerClip.height / target.height;
-    const t = target.powerClip.transform || { x: 0, y: 0, scale: 1 };
-    for (const source of sources) {
-        const child = clone(source);
-        child.x = ((source.x - target.x) * sx - t.x) / t.scale; child.y = ((source.y - target.y) * sy - t.y) / t.scale;
-        child.width *= sx / t.scale; child.height *= sy / t.scale; child.fontSize *= sy / t.scale;
-        target.powerClip.objects.push(child);
-    }
+    const frame = clipFrame(target), kx = frame.sx / frame.t.scale, ky = frame.sy / frame.t.scale;
+    for (const source of sources) target.powerClip.objects.push(mapObject(source, frame.toContent, kx, ky, -frame.angle));
     document.objects = document.objects.filter(item => !sourceIds.has(item.id));
+}
+
+// Page ↔ content coordinates of a PowerClip, including the container's own rotation.
+function clipFrame(target) {
+    const t = target.powerClip.transform || { x: 0, y: 0, scale: 1 }, angle = target.rotation || 0, centre = pivot(target);
+    const sx = target.powerClip.width / target.width, sy = target.powerClip.height / target.height;
+    return {
+        t, sx, sy, angle,
+        toContent: p => { const local = rotatePoint(p, centre, -angle); return { x: ((local.x - target.x) * sx - t.x) / t.scale, y: ((local.y - target.y) * sy - t.y) / t.scale }; },
+        toPage: p => rotatePoint({ x: target.x + (p.x * t.scale + t.x) / sx, y: target.y + (p.y * t.scale + t.y) / sy }, centre, angle),
+    };
+}
+// Carry an object across that mapping: its pivot (or a spline's control points) follows the map,
+// sizes scale by kx and ky, and the container's angle is added or removed.
+function mapObject(item, map, kx, ky, angle) {
+    const child = clone(item);
+    if (item.type === 'spline') Object.assign(child, normalizeSpline(splinePoints(item).map(map), item.closed));
+    else {
+        child.width = item.width * kx; child.height = item.height * ky; child.fontSize = item.fontSize * ky;
+        placeAtPivot(child, map(pivot(item)));
+    }
+    const rotation = normalizeAngle((item.rotation || 0) + angle);
+    if (rotation) child.rotation = rotation; else delete child.rotation;
+    return child;
 }
 
 export function extractPowerClip(document, targetId) {
     const target = document.objects.find(item => item.id === targetId);
     if (!target?.powerClip || target.locked) return;
-    const sx = target.width / target.powerClip.width, sy = target.height / target.powerClip.height;
-    const t = target.powerClip.transform || { x: 0, y: 0, scale: 1 };
-    const content = target.powerClip.objects.map(item => ({ ...clone(item), x: target.x + (item.x * t.scale + t.x) * sx, y: target.y + (item.y * t.scale + t.y) * sy, width: item.width * t.scale * sx, height: item.height * t.scale * sy, fontSize: item.fontSize * t.scale * sy, strokeWidth: item.strokeWidth * t.scale * Math.min(sx, sy) }));
+    const frame = clipFrame(target), kx = frame.t.scale / frame.sx, ky = frame.t.scale / frame.sy;
+    const content = target.powerClip.objects.map(item => ({ ...mapObject(item, frame.toPage, kx, ky, frame.angle), strokeWidth: item.strokeWidth * Math.min(kx, ky) }));
     target.powerClip.objects = [];
     delete target.powerClip.transform;
     document.objects.splice(document.objects.indexOf(target) + 1, 0, ...content);
@@ -169,14 +196,8 @@ export function powerClipEditDocument(document, targetId) {
 
 export function mergePowerClipEdits(document, targetId, content) {
     const copy = clone(document), target = copy.objects.find(item => item.id === targetId);
-    const clip = target.powerClip, t = clip.transform || { x: 0, y: 0, scale: 1 };
-    const sx = target.width / clip.width, sy = target.height / clip.height;
-    clip.objects = content.objects.map(item => ({ ...clone(item),
-        x: ((item.x - target.x) / sx - t.x) / t.scale,
-        y: ((item.y - target.y) / sy - t.y) / t.scale,
-        width: item.width / (sx * t.scale), height: item.height / (sy * t.scale),
-        fontSize: item.fontSize / (sy * t.scale), strokeWidth: item.strokeWidth / (t.scale * Math.min(sx, sy)),
-    }));
+    const frame = clipFrame(target), kx = frame.sx / frame.t.scale, ky = frame.sy / frame.t.scale;
+    target.powerClip.objects = content.objects.map(item => ({ ...mapObject(item, frame.toContent, kx, ky, -frame.angle), strokeWidth: item.strokeWidth * Math.max(kx, ky) }));
     return validateDocument(copy);
 }
 
