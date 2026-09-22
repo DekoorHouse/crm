@@ -142,6 +142,7 @@ function svgElement(tag, attributes, parent) {
     parent.append(element); return element;
 }
 function drawPowerClipMarker(group, object) {
+    if (object.powerClip.objects.length) return;
     const { x, y, width, height } = object;
     const overlay = svgElement('g', { 'pointer-events': 'none', 'data-editor-marker': 'powerclip' }, group);
     if (!object.powerClip.objects.length) svgElement('path', { d: `M${x + width * .2} ${y + height * .2}L${x + width * .8} ${y + height * .8}M${x + width * .8} ${y + height * .2}L${x + width * .2} ${y + height * .8}`, stroke: '#64748b', 'stroke-width': 1 / view.scale, opacity: .65 }, overlay);
