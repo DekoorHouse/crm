@@ -92,3 +92,8 @@ Recuperar el archivo no reabre recibos resueltos ni acredita dinero por sí solo
 Verificación: `node node_modules/jest/bin/jest.js tests/paymentWorkflow.test.js --runInBand`.
 La suite usa Firestore y canales simulados; no transmite mensajes ni accede a
 Firebase de producción.
+# Anticipos anteriores al registro
+
+Los adjuntos entrantes se guardan en `payment_receipts` aunque todavía no exista un DH; el OCR descarta las imágenes que no son comprobantes. Al crear un pedido, `paymentReceiptDiscoveryPending` activa una recuperación durable, incluso en registros manuales y tras reinicios. Se consultan también los comprobantes pendientes persistidos, sin depender de los últimos 100 mensajes del chat.
+
+Un comprobante sin propietario que se vincula después, o recuperado más de dos días antes del registro, requiere confirmar su asociación (`associationNeedsReview`) antes de acreditar dinero. Se conservan los límites de nueva compra, la protección de pagos de pedidos anteriores y los índices globales contra duplicados. La búsqueda histórica se limita a 45 días; los anticipos más antiguos permanecen para selección manual.

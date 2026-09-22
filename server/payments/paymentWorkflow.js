@@ -105,7 +105,8 @@ async function enqueueReceipt(contactId, messageId, message, { historical = fals
     const ref = receipts().doc(id);
     // Un registro existente conserva su decisión, incluso si hoy el contacto
     // tiene otros pedidos. Recuperar el chat nunca lo reasigna ni lo reabre.
-    if ((await ref.get()).exists) return id;
+    const existing = (await ref.get()).data();
+    if (existing?.orderId || (existing && !existing.open)) return id;
     const orders = knownOrders || await ordersForContact(contactId);
     const inPeriod = d => ms(d.data().createdAt) >= ms(message.timestamp) - 45 * DAY
         && ms(d.data().createdAt) <= ms(message.timestamp) + 2 * DAY;
@@ -114,15 +115,29 @@ async function enqueueReceipt(contactId, messageId, message, { historical = fals
     if (historical && orders.some(d => inPeriod(d) && (d.data().comprobanteValidadoAt || d.data().guiaEnvio?.guia || terminal(d.data()))
         && (!d.data().comprobanteValidadoAt || ms(message.timestamp) <= ms(d.data().comprobanteValidadoAt)))) return null;
     const candidates = orders.filter(d => !terminal(d.data()) && !d.data().comprobanteValidadoAt
-        && !(historical && cancelled(d.data())) && inPeriod(d));
+        && !(historical && cancelled(d.data())) && (inPeriod(d)
+            || (ms(d.data().createdAt) > ms(message.timestamp) && ms(d.data().createdAt) <= ms(message.timestamp) + 45 * DAY)));
     if (orderId && !candidates.some(d => d.id === orderId)) return null;
     const order = orderId ? candidates.find(d => d.id === orderId) : candidates.length === 1 ? candidates[0] : null;
-    // Sin pedido, conservar la imagen en el chat; al registrar/reactivar se vuelve a descubrir.
-    if (!candidates.length) return null;
+    // Guardar también los adjuntos recibidos antes del DH. El OCR descarta fotos
+    // normales; un comprobante sin propietario queda visible para revisión.
+    if (!candidates.length && historical) return existing ? id : null;
+    const beforeRegistration = order && ms(message.timestamp) + 2 * DAY < ms(order.data().createdAt);
+    if (existing) {
+        if (order) await db.runTransaction(async tx => {
+            const fresh = (await tx.get(ref)).data();
+            if (!fresh?.open || fresh.orderId || ms(fresh.leaseUntil) > Date.now()) return;
+            tx.update(ref, { orderId: order.id, orderNumber: `DH${order.data().consecutiveOrderNumber}`,
+                status: 'pending', associationNeedsReview: true, nextAttemptAt: stamp(), updatedAt: stamp(),
+                reason: 'Comprobante anterior al registro: confirmar que corresponde a esta compra.' });
+        });
+        return id;
+    }
     const value = { contactId, messageId, orderId: order?.id || null,
         orderNumber: order ? `DH${order.data().consecutiveOrderNumber}` : null,
         receivedAt: message.timestamp, createdAt: stamp(), updatedAt: stamp(), status: 'pending', open: true,
         attempts: 0, nextAttemptAt: date(Date.now() + (historical ? 0 : 25000)), historical,
+        associationNeedsReview: !!beforeRegistration,
         fileUrl: message.fileUrl || null, fileType: message.fileType || null,
         whatsappMediaId: message.whatsappMediaId || null, mediaProxyUrl: message.mediaProxyUrl || null,
         reason: order ? 'Comprobante pendiente de revisión.' : 'Hay varios pedidos: seleccionar el pedido correcto.',
@@ -138,11 +153,21 @@ async function discoverReceipts(contactId, { orderId = null } = {}) {
     const ids = [], knownOrders = await ordersForContact(contactId);
     const contact = (await db.collection('contacts_whatsapp').doc(contactId).get()).data();
     const newOrderSince = ms(contact?.paymentNewOrderRequestedAt);
+    // Los anticipos persistidos no dependen de seguir dentro de los últimos 100 mensajes.
+    const saved = await receipts().where('contactId', '==', contactId).get();
+    for (const r of saved.docs) {
+        const data = r.data();
+        if (!data.open || data.orderId || (newOrderSince && ms(data.receivedAt) < newOrderSince)) continue;
+        const id = await enqueueReceipt(contactId, data.messageId, { ...data, id: data.messageId,
+            from: contactId, type: /pdf/i.test(data.fileType || '') ? 'document' : 'image', timestamp: data.receivedAt },
+        { historical: true, orderId, knownOrders });
+        if (id) ids.push(id);
+    }
     for (const m of [...messages.docs].reverse()) {
         if (ms(m.data().timestamp) < Date.now() - 45 * DAY) continue;
         if (newOrderSince && ms(m.data().timestamp) < newOrderSince) continue;
         const id = await enqueueReceipt(contactId, m.id, m.data(), { historical: true, orderId, knownOrders });
-        if (id) ids.push(id);
+        if (id && !ids.includes(id)) ids.push(id);
     }
     return ids;
 }
@@ -271,7 +296,8 @@ async function processReceipt(id, options = {}) {
             await ref.update({ status: 'ignored', open: false, reason: 'La imagen no es un comprobante de pago.', leaseUntil: null, updatedAt: stamp() });
             return { status: 'ignored' };
         }
-        if (!claimed.orderId) return await reviewReceipt(ref, 'Hay varios pedidos: seleccionar el pedido correcto.');
+        if (!claimed.orderId) return await reviewReceipt(ref, 'Comprobante sin pedido asignado: registrar o seleccionar el pedido correcto.');
+        if (!options.manual && claimed.associationNeedsReview) return await reviewReceipt(ref, 'Anticipo anterior al registro: confirmar a qué compra corresponde antes de sumarlo.');
         const os = await db.collection('pedidos').doc(claimed.orderId).get();
         if (!os.exists) return await reviewReceipt(ref, 'El pedido ya no existe.');
         const check = validateReceipt(os.data(), ocr, claimed.receivedAt);

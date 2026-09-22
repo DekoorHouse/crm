@@ -52,6 +52,58 @@ async function missingMediaReceipt() {
     return id;
 }
 
+test('DH17117: deposit more than two days before registration stays visible for association review', async () => {
+    const receivedAt = new Date(now() - 3 * DAY);
+    mockDb.seed('pedidos/order', { ...order(), createdAt: new Date(), paymentReceivedCents: 90000 });
+    mockDb.seed('contacts_whatsapp/customer/messages/deposit', { from: 'customer', id: 'deposit', type: 'image', timestamp: receivedAt, fileUrl: 'https://test.invalid/deposit.jpg' });
+    mockOcr.mockResolvedValue(ocr({ monto: 300, fecha: receivedAt.toISOString().slice(0, 10) }));
+    const ids = await flow.discoverReceipts('customer', { orderId: 'order' });
+    expect(ids).toHaveLength(1);
+    await flow.processReceipt(ids[0], { immediate: true });
+    expect(job(ids[0])).toMatchObject({ orderId: 'order', status: 'review', associationNeedsReview: true });
+    expect(order().paymentReceivedCents).toBe(90000);
+    await reviewedReceipt(ids[0], { manual: true, amount: 300 });
+    expect(order().paymentReceivedCents).toBe(120000);
+    await flow.discoverReceipts('customer', { orderId: 'order' });
+    await runPaymentSweep();
+    expect(order().paymentReceivedCents).toBe(120000);
+    expect(mockSend).toHaveBeenCalledTimes(1);
+});
+
+test('stores pre-registration receipts and finds them even after their chat message leaves the history window', async () => {
+    mockDb.reset();
+    mockDb.seed('contacts_whatsapp/customer', { botActive: false, lastClientMsgAt: new Date() });
+    const id = await enqueue('early-deposit');
+    expect(id).toBeTruthy();
+    mockOcr.mockResolvedValue(ocr({ monto: 300 }));
+    await flow.processReceipt(id, { immediate: true });
+    expect(job(id)).toMatchObject({ orderId: null, status: 'review', open: true });
+    mockDb.seed('pedidos/order', { contactId: 'customer', consecutiveOrderNumber: 16368, precio: 1200, estatus: 'Sin estatus', createdAt: new Date() });
+    await flow.discoverReceipts('customer', { orderId: 'order' });
+    await flow.processReceipt(id, { immediate: true });
+    expect(job(id)).toMatchObject({ orderId: 'order', status: 'review', associationNeedsReview: true });
+    expect(order().paymentReceivedCents).toBeUndefined();
+});
+
+test('ordinary images received before registration are discarded by OCR without creating a payment', async () => {
+    mockDb.reset();
+    const id = await enqueue('reference-photo');
+    mockOcr.mockResolvedValue(ocr({ esComprobante: false }));
+    await flow.processReceipt(id, { immediate: true });
+    expect(job(id)).toMatchObject({ status: 'ignored', open: false });
+});
+
+test('registration recovery survives a failed discovery and runs without another customer message', async () => {
+    mockDb.seed('pedidos/order', { ...order(), createdAt: new Date(), paymentReceiptDiscoveryPending: true });
+    mockDb.seed('contacts_whatsapp/customer/messages/deposit', { from: 'customer', id: 'deposit', type: 'image', timestamp: new Date(now() - 3 * DAY), fileUrl: 'https://test.invalid/deposit.jpg' });
+    mockDb.failNext('get', 'contacts_whatsapp/customer/messages');
+    await expect(runPaymentSweep()).rejects.toThrow();
+    expect(order().paymentReceiptDiscoveryPending).toBe(true);
+    await runPaymentSweep();
+    expect(order().paymentReceiptDiscoveryPending).toBe(false);
+    expect(mockDb.all('payment_receipts')).toEqual([expect.objectContaining({ orderId: 'order', status: 'review', associationNeedsReview: true })]);
+});
+
 test('DH17194: recover legacy proxy attachment, persist chat image, and credit the deposit only once', async () => {
     const id = await missingMediaReceipt();
     mockOcr.mockResolvedValue(ocr({ monto: 300 }));

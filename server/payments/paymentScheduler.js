@@ -1,6 +1,6 @@
 const { db } = require('../config');
 const { ms } = require('./paymentPolicy');
-const { processReceipt, deliverForm, refreshReportedPayment } = require('./paymentWorkflow');
+const { processReceipt, deliverForm, refreshReportedPayment, discoverReceipts } = require('./paymentWorkflow');
 const { reassessFailedReceipts } = require('./failedReceiptWorkflow');
 let timer, running = false;
 
@@ -10,6 +10,12 @@ async function runPaymentSweep() {
     try {
         await require('./shippingConfirmation').recoverShippingConfirmations();
         await require('./receiptMedia').recoverMissingReceiptMedia();
+        // Durable recovery also covers orders created manually and restarts after registration.
+        const registrations = await db.collection('pedidos').where('paymentReceiptDiscoveryPending', '==', true).get();
+        for (const order of registrations.docs.slice(0, 30)) {
+            await discoverReceipts(order.data().contactId, { orderId: order.id });
+            await order.ref.update({ paymentReceiptDiscoveryPending: false });
+        }
         const pending = await db.collection('payment_receipts').where('status', 'in', ['pending', 'processing']).get();
         const due = pending.docs.filter(d => ms(d.data().leaseUntil) <= Date.now() && ms(d.data().nextAttemptAt) <= Date.now())
             .sort((a, b) => ms(a.data().receivedAt) - ms(b.data().receivedAt));

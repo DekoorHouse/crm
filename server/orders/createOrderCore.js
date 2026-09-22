@@ -151,6 +151,7 @@ async function createOrder({
         consecutiveOrderNumber: newOrderNumber,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         estatus: 'Sin estatus',
+        paymentReceiptDiscoveryPending: true,
         telefonoVerificado: false,
         estatusVerificado: false,
         // Tracking de campañas (opcional): si vienen, persisten; si no, quedan null
