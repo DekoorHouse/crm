@@ -1,4 +1,4 @@
-import { validateDocument } from './model.mjs';
+import { validateDocument, objectsWithContents } from './model.mjs';
 
 let connection;
 export async function connect() {
@@ -24,7 +24,7 @@ async function initialize() {
     const media = {
         async prepare(document) {
             const copy = structuredClone(document);
-            for (const object of copy.objects) {
+            for (const object of objectsWithContents(copy.objects)) {
                 if (object.type !== 'image' || !object.src.startsWith('data:')) continue;
                 const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(object.src));
                 const hash = [...new Uint8Array(digest)].map(n => n.toString(16).padStart(2, '0')).join('');
@@ -39,7 +39,7 @@ async function initialize() {
             return copy;
         },
         async hydrate(document) {
-            for (const object of document.objects) {
+            for (const object of objectsWithContents(document.objects)) {
                 if (object.type !== 'image' || object.src.startsWith('data:')) continue;
                 const response = await fetch(object.src);
                 if (!response.ok) throw new Error('No se pudo cargar una imagen del proyecto.');

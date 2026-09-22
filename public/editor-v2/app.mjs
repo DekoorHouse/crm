@@ -1,4 +1,4 @@
-import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, exportSvg } from './model.mjs';
+import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
 import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation } from './geometry.mjs';
 import { connect, cloudError } from './cloud.mjs';
@@ -11,6 +11,7 @@ const canvas = $('#canvas'), scene = $('#scene'), objects = $('#objects'), selec
 const storageKey = 'dekoor.editor-v2.document.v1';
 let history = new History(), selectedId = null, tool = 'select', gesture = null;
 let selectedIds = new Set();
+let powerClipSources = null;
 function setSelection(ids) { selectedIds = new Set(ids); selectedId = [...selectedIds].at(-1) || null; }
 const selectOnly = id => setSelection(id ? [id] : []);
 const selectedObjects = () => current().objects.filter(object => selectedIds.has(object.id));
@@ -67,6 +68,7 @@ function edit(operation) {
     const next = clone(history.document); operation(next); commit(next);
 }
 function setTool(next) {
+    powerClipSources = null; hideObjectMenu();
     if (gesture) cancelGesture();
     splineDraft = null; splinePointer = null;
     tool = next;
@@ -128,6 +130,17 @@ function renderScene() {
     }
     $('#zoom-label').textContent = `${Math.round(view.scale / (96 / 25.4) * 100)}%`;
     renderSplinePreview();
+    renderPowerClipToolbar();
+}
+function renderPowerClipToolbar() {
+    const toolbar = $('#powerclip-toolbar'), o = selected();
+    toolbar.hidden = !o?.powerClip?.objects.length || selectedIds.size !== 1 || o.locked || o.hidden || Boolean(gesture);
+    if (toolbar.hidden) return;
+    const rect = canvas.getBoundingClientRect();
+    const center = rect.left + view.x + (o.x + o.width / 2) * view.scale;
+    const top = rect.top + view.y + o.y * view.scale;
+    toolbar.style.left = Math.max(rect.left + 8, Math.min(center - toolbar.offsetWidth / 2, rect.right - toolbar.offsetWidth - 8)) + 'px';
+    toolbar.style.top = Math.max(rect.top + 8, Math.min(top - toolbar.offsetHeight - 12, rect.bottom - toolbar.offsetHeight - 8)) + 'px';
 }
 function renderSplinePreview() {
     let preview = $('#spline-preview');
@@ -182,7 +195,7 @@ function render() {
     $('#empty-selection').hidden = Boolean(o); $('#properties').hidden = !o || selectedIds.size > 1;
     $('#multi-selection').hidden = selectedIds.size < 2;
     $('#multi-selection').textContent = `${selectedIds.size} objetos seleccionados. Puedes moverlos juntos, cambiar el contorno o eliminarlos.`;
-    $('#selection-kind').textContent = selectedIds.size > 1 ? `${selectedIds.size} objetos` : o ? ({ rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[o.type] + (o.locked ? ' · bloqueado' : '')) : 'Documento';
+    $('#selection-kind').textContent = selectedIds.size > 1 ? `${selectedIds.size} objetos` : o ? ({ rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[o.type] + (o.powerClip ? ' · PowerClip' : '') + (o.locked ? ' · bloqueado' : '')) : 'Documento';
     if (o) {
         const bounds = getBounds(o);
         document.querySelectorAll('[data-property]').forEach(input => {
@@ -228,7 +241,7 @@ function render() {
         }
         row.className = 'layer' + (selectedIds.has(item.id) ? ' selected' : '');
         const select = row.children[0];
-        const label = document.createElement('span'); label.textContent = item.name;
+        const label = document.createElement('span'); label.textContent = item.name + (item.powerClip ? ' · PowerClip' : '');
         select.replaceChildren(icon(item.type), label);
         select.title = item.name; select.setAttribute('aria-pressed', String(selectedIds.has(item.id)));
         for (const [field, on, off] of [['hidden', 'hidden', 'visible'], ['locked', 'locked', 'unlocked']]) {
@@ -255,6 +268,17 @@ function zoom(factor, x = canvas.clientWidth / 2, y = canvas.clientHeight / 2) {
 
 canvas.addEventListener('pointerdown', event => {
     if (gesture || (event.button !== 0 && event.button !== 1)) return;
+    hideObjectMenu();
+    if (powerClipSources && event.button === 0) {
+        event.preventDefault();
+        const id = event.target.closest('[data-id]')?.dataset.id;
+        try {
+            const next = clone(history.document); placeInPowerClip(next, powerClipSources, id);
+            const valid = validateDocument(next);
+            powerClipSources = null; selectOnly(id); commit(valid); status('Contenido colocado en PowerClip');
+        } catch (error) { status(error.message + ' Esc para cancelar.'); }
+        return;
+    }
     event.preventDefault(); canvas.focus();
     const start = point(event);
     canvas.setPointerCapture(event.pointerId);
@@ -505,13 +529,55 @@ const actions = {
     delete() { edit(d => { d.objects = d.objects.filter(item => !selectedIds.has(item.id) || item.locked); }); },
     duplicate() {
         const originals = selectedObjects().filter(item => !item.locked); if (!originals.length) return;
-        edit(d => { const ids = []; for (const o of originals) { const copy = clone(o); copy.id = crypto.randomUUID(); copy.name = (copy.name + ' copia').slice(0, 120); copy.x += 5; copy.y += 5; d.objects.push(copy); ids.push(copy.id); } setSelection(ids); });
+        edit(d => { const ids = []; for (const o of originals) { const copy = clone(o); for (const item of objectsWithContents([copy])) item.id = crypto.randomUUID(); copy.name = (copy.name + ' copia').slice(0, 120); copy.x += 5; copy.y += 5; d.objects.push(copy); ids.push(copy.id); } setSelection(ids); });
     },
     forward() { reorder(1); }, backward() { reorder(-1); },
     front() { reorderToEnd(true); }, back() { reorderToEnd(false); },
     'zoom-in'() { zoom(1.2); }, 'zoom-out'() { zoom(1 / 1.2); }, fit,
     help() { $('#help').showModal(); },
 };
+function hideObjectMenu() { $('#object-menu').hidden = true; }
+canvas.addEventListener('contextmenu', event => {
+    event.preventDefault(); if (gesture || splineDraft) return;
+    const id = event.target.closest('[data-id]')?.dataset.id || referenceAt(point(event))?.target.id;
+    const object = current().objects.find(item => item.id === id);
+    if (!object) { hideObjectMenu(); return; }
+    if (!selectedIds.has(id)) selectOnly(id);
+    render();
+    const menu = $('#object-menu'), single = selectedIds.size === 1;
+    $('#make-powerclip').disabled = !single || object.locked || Boolean(object.powerClip) || !['rect', 'ellipse'].includes(object.type);
+    $('#place-powerclip').disabled = selectedObjects().some(item => item.locked || item.powerClip) || !current().objects.some(item => item.powerClip && !item.locked && !item.hidden && !selectedIds.has(item.id));
+    $('#extract-powerclip').hidden = !object.powerClip;
+    $('#extract-powerclip').disabled = !single || object.locked || !object.powerClip?.objects.length;
+    $('#remove-powerclip').hidden = !object.powerClip;
+    $('#remove-powerclip').disabled = !single || object.locked || Boolean(object.powerClip?.objects.length);
+    menu.hidden = false;
+    menu.style.left = Math.max(4, Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 4)) + 'px';
+    menu.style.top = Math.max(4, Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 4)) + 'px';
+    menu.querySelector('button:not(:disabled):not([hidden])')?.focus();
+});
+document.addEventListener('pointerdown', event => { if (!event.target.closest('#object-menu')) hideObjectMenu(); });
+window.addEventListener('blur', hideObjectMenu);
+$('#make-powerclip').onclick = () => {
+    const id = selectedId; hideObjectMenu();
+    edit(d => makePowerClip(d.objects.find(item => item.id === id)));
+    status('PowerClip vacío creado. Clic derecho en otro objeto → Colocar dentro de PowerClip.');
+};
+$('#place-powerclip').onclick = () => {
+    hideObjectMenu(); setTool('select'); powerClipSources = new Set(selectedIds);
+    status('Haz clic en el contenedor PowerClip de destino. Esc para cancelar.'); canvas.focus();
+};
+$('#extract-powerclip').onclick = () => { hideObjectMenu(); edit(d => extractPowerClip(d, selectedId)); status('Contenido extraído'); };
+$('#powerclip-extract').onclick = () => { edit(d => extractPowerClip(d, selectedId)); status('Contenido extraído'); };
+for (const mode of ['contain', 'cover']) $('#powerclip-' + mode).onclick = () => {
+    const group = [...objects.children].find(item => item.dataset.id === selectedId)?.querySelector('[data-powerclip-content]');
+    if (!group) return;
+    const bounds = group.getBBox();
+    try { edit(d => fitPowerClip(d.objects.find(item => item.id === selectedId), mode, bounds)); status(mode === 'contain' ? 'Contenido ajustado proporcionalmente dentro del PowerClip' : 'Contenido ampliado proporcionalmente para rellenar el PowerClip'); }
+    catch (error) { status(error.message); }
+};
+$('#remove-powerclip').onclick = () => { hideObjectMenu(); edit(d => { delete d.objects.find(item => item.id === selectedId).powerClip; }); };
+
 function reorder(delta) {
     edit(d => {
         const indices = Array.from({ length: d.objects.length }, (_, i) => i); if (delta > 0) indices.reverse();
@@ -549,6 +615,7 @@ $('#open-file').addEventListener('change', async event => {
     } catch (error) { status(`No se abrió el archivo: ${error.message}`); }
 });
 document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { hideObjectMenu(); powerClipSources = null; }
     if (document.querySelector('dialog[open]')) return;
     const editing = event.target.closest('input, select, textarea, [contenteditable="true"]');
     const mod = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();

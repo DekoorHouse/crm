@@ -48,8 +48,25 @@ export function validateDocument(input) {
             if (!validImageSource(o.src)) throw new Error('La imagen contiene un origen inválido o es demasiado grande.');
             valid.src = o.src;
         }
+        if (o.powerClip !== undefined) {
+            const clip = o.powerClip;
+            if (!['rect', 'ellipse'].includes(o.type) || !clip || !numberIn(clip.width, .1, 10000) || !numberIn(clip.height, .1, 10000) ||
+                !Array.isArray(clip.objects) || clip.objects.some(child => !child || child.powerClip !== undefined)) throw new Error('Contenedor PowerClip inválido.');
+            valid.powerClip = { width: clip.width, height: clip.height, objects: validateDocument({ ...input, objects: clip.objects }).objects };
+            if (clip.transform !== undefined) {
+                const t = clip.transform;
+                if (!t || !numberIn(t.x, -100000000, 100000000) || !numberIn(t.y, -100000000, 100000000) || !numberIn(t.scale, .000001, 1000000)) throw new Error('Ajuste PowerClip inválido.');
+                valid.powerClip.transform = { x: t.x, y: t.y, scale: t.scale };
+            }
+            for (const child of valid.powerClip.objects) {
+                if (ids.has(child.id)) throw new Error('El PowerClip contiene identificadores repetidos.');
+                ids.add(child.id);
+            }
+            if (ids.size > 2000) throw new Error('El proyecto supera el límite de objetos.');
+        }
         return valid;
     });
+    if (ids.size > 2000) throw new Error('El proyecto supera el límite de objetos.');
     return { version: 1, name: input.name, width: input.width, height: input.height, objects };
 }
 
@@ -76,6 +93,14 @@ export class History {
 
 const escapeXml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
 export function objectMarkup(o) {
+    if (o.powerClip) {
+        const base = { ...o }; delete base.powerClip;
+        const clipId = 'pc-' + Array.from(o.id).map(c => c.codePointAt(0).toString(16)).join('-');
+        const shape = objectMarkup({ ...base, fill: '#ffffff', stroke: 'none' });
+        const content = o.powerClip.objects.filter(item => !item.hidden).map(objectMarkup).join('');
+        const t = o.powerClip.transform || { x: 0, y: 0, scale: 1 };
+        return `${objectMarkup({ ...base, stroke: 'none' })}<defs><clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${shape}</clipPath></defs><g clip-path="url(#${clipId})"><g transform="translate(${o.x} ${o.y}) scale(${o.width / o.powerClip.width} ${o.height / o.powerClip.height})"><g data-powerclip-content="true" transform="translate(${t.x} ${t.y}) scale(${t.scale})">${content}</g></g></g>${objectMarkup({ ...base, fill: 'none' })}`;
+    }
     const style = `fill="${escapeXml(o.fill)}" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"`;
     if (o.type === 'rect') return `<rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" ${style}/>`;
     if (o.type === 'ellipse') return `<ellipse cx="${o.x + o.width / 2}" cy="${o.y + o.height / 2}" rx="${o.width / 2}" ry="${o.height / 2}" ${style}/>`;
@@ -86,4 +111,48 @@ export function objectMarkup(o) {
 export function exportSvg(document) {
     const d = validateDocument(document);
     return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${d.width}mm" height="${d.height}mm" viewBox="0 0 ${d.width} ${d.height}">\n<title>${escapeXml(d.name)}</title>\n${d.objects.filter(o => !o.hidden).map(objectMarkup).join('\n')}\n</svg>`;
+}
+
+export function* objectsWithContents(objects) {
+    for (const object of objects) { yield object; if (object.powerClip) yield* objectsWithContents(object.powerClip.objects); }
+}
+
+export function makePowerClip(object) {
+    if (object.locked || object.powerClip || !['rect', 'ellipse'].includes(object.type)) throw new Error('Selecciona un rectángulo o una elipse sin bloquear.');
+    object.powerClip = { width: object.width, height: object.height, objects: [] };
+}
+
+export function placeInPowerClip(document, sourceIds, targetId) {
+    const target = document.objects.find(item => item.id === targetId);
+    if (!target?.powerClip || target.locked || sourceIds.has(targetId)) throw new Error('Elige otro contenedor PowerClip sin bloquear.');
+    const sources = document.objects.filter(item => sourceIds.has(item.id));
+    if (!sources.length || sources.some(item => item.locked || item.hidden || item.powerClip)) throw new Error('Selecciona contenido visible, sin bloquear y sin PowerClip anidado.');
+    const sx = target.powerClip.width / target.width, sy = target.powerClip.height / target.height;
+    const t = target.powerClip.transform || { x: 0, y: 0, scale: 1 };
+    for (const source of sources) {
+        const child = clone(source);
+        child.x = ((source.x - target.x) * sx - t.x) / t.scale; child.y = ((source.y - target.y) * sy - t.y) / t.scale;
+        child.width *= sx / t.scale; child.height *= sy / t.scale; child.fontSize *= sy / t.scale;
+        target.powerClip.objects.push(child);
+    }
+    document.objects = document.objects.filter(item => !sourceIds.has(item.id));
+}
+
+export function extractPowerClip(document, targetId) {
+    const target = document.objects.find(item => item.id === targetId);
+    if (!target?.powerClip || target.locked) return;
+    const sx = target.width / target.powerClip.width, sy = target.height / target.powerClip.height;
+    const t = target.powerClip.transform || { x: 0, y: 0, scale: 1 };
+    const content = target.powerClip.objects.map(item => ({ ...clone(item), x: target.x + (item.x * t.scale + t.x) * sx, y: target.y + (item.y * t.scale + t.y) * sy, width: item.width * t.scale * sx, height: item.height * t.scale * sy, fontSize: item.fontSize * t.scale * sy, strokeWidth: item.strokeWidth * t.scale * Math.min(sx, sy) }));
+    target.powerClip.objects = [];
+    delete target.powerClip.transform;
+    document.objects.splice(document.objects.indexOf(target) + 1, 0, ...content);
+}
+
+export function fitPowerClip(target, mode, bounds) {
+    if (!target?.powerClip?.objects.length || target.locked || !['contain', 'cover'].includes(mode)) return;
+    if (!bounds || !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height) || bounds.width <= 0 || bounds.height <= 0) throw new Error('El contenido no tiene dimensiones para ajustar.');
+    const clip = target.powerClip;
+    const scale = Math[mode === 'cover' ? 'max' : 'min'](clip.width / bounds.width, clip.height / bounds.height);
+    clip.transform = { scale, x: (clip.width - bounds.width * scale) / 2 - bounds.x * scale, y: (clip.height - bounds.height * scale) / 2 - bounds.y * scale };
 }
