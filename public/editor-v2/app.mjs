@@ -1224,7 +1224,31 @@ function applyPalette(color, target = 'fill') {
 }
 $('#palette-color').addEventListener('click', () => { paletteTarget = 'fill'; });
 $('#palette-color').addEventListener('contextmenu', event => { event.preventDefault(); paletteTarget = 'stroke'; $('#palette-color').showPicker(); });
-$('#palette-color').addEventListener('change', event => applyPalette(event.target.value, paletteTarget));
+// While the wheel's picker is open, repaint the selection (or the chip for new objects) without
+// committing; the colour becomes one undo step when the picker closes.
+let wheelFrame = null;
+$('#palette-color').addEventListener('input', event => {
+    const color = event.target.value;
+    if (wheelFrame !== null) cancelAnimationFrame(wheelFrame);
+    wheelFrame = requestAnimationFrame(() => {
+        wheelFrame = null;
+        const chip = paletteTarget === 'fill' ? $('#fill-chip') : $('#stroke-chip');
+        chip.classList.remove('none'); chip.style[paletteTarget === 'fill' ? 'backgroundColor' : 'borderColor'] = color;
+        for (const item of selectedObjects().filter(item => !item.locked)) {
+            const group = [...objects.children].find(group => group.dataset.id === item.id);
+            if (!group) continue;
+            const preview = { ...item, [paletteTarget]: color };
+            if (paletteTarget === 'stroke' && preview.strokeWidth === 0) preview.strokeWidth = HAIRLINE_WIDTH;
+            group.innerHTML = objectMarkup(preview);
+            showAdjustedImages(group);
+            if (preview.powerClip) drawPowerClipMarker(group, preview);
+        }
+    });
+});
+$('#palette-color').addEventListener('change', event => {
+    if (wheelFrame !== null) { cancelAnimationFrame(wheelFrame); wheelFrame = null; }
+    applyPalette(event.target.value, paletteTarget);
+});
 
 function cloudMessage(message) { $('#cloud-message').textContent = message; }
 function cloudState() {
