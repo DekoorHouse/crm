@@ -2,6 +2,47 @@ const { db, admin } = require('./config');
 const normalize = text => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[*_`]/g, '');
 const MEDIA = /\b(?:foto|imagen|video|diseno|previo|captura|archivo|adjunto)s?\b/;
 
+// Only a future photo of the finished product belongs to the production flow.
+// Arbitrary promises of custom designs still require a real attachment/handoff.
+function productionPhotoNotice(text) {
+    const value = normalize(text);
+    return /\b(?:foto|imagen)s?\b/.test(value)
+        && /\b(?:producto|pedido|trabajo)\s+(?:terminado|personalizado)\b|\b(?:cuando|en cuanto)\s+este\s+(?:terminado|listo)\b|\ben cuanto\b.{0,100}\b(?:ajuste|correccion)\b/.test(value)
+        && /\bte\s+(?:enviaremos|mandaremos|compartiremos|enviare|mandare)\b|\b(?:cuando|en cuanto)\b.{0,180}\bte\s+(?:envio|mando|comparto)\b/.test(value)
+        && !/\b(?:aqui|ahora|adjunto)\b|\[/.test(value);
+}
+
+const productionClaim = text => /\b(?:esta|estan|entro|entraron|paso|pasaron)\s+(?:ya\s+)?(?:en|a)\s+fabricacion\b|\b(?:arrancamos|iniciamos|comenzamos)\s+(?:la\s+)?fabricacion\b/.test(normalize(text));
+const latestOrder = docs => [...docs].sort((a, b) => {
+    const ms = v => v?.toMillis ? v.toMillis() : new Date(v || 0).getTime();
+    return ms(b.data().createdAt) - ms(a.data().createdAt);
+})[0];
+
+async function truthfulProductionReply(contactId, text) {
+    const parts = String(text || '').split(/(?<=[.!?])\s+|\n+/);
+    if (!parts.some(p => productionPhotoNotice(p) || productionClaim(p))) return text;
+    const orders = await db.collection('pedidos').where('contactId', '==', contactId).get();
+    const order = latestOrder(orders.docs)?.data();
+    return parts.map(part => {
+        if (productionPhotoNotice(part)) {
+            if (/\b(?:ajuste|correccion)\b/.test(normalize(part))) {
+                return 'La solicitud de cambio debe revisarla el equipo. Si se realiza el ajuste, recibirás una foto actualizada.';
+            }
+            // No generated deadline is treated as a verified production date.
+            if (order && ['Sin estatus', 'Fabricar', 'Esperando anticipo'].includes(order.estatus)) {
+                return 'Cuando tu pedido esté terminado, recibirás la foto para continuar con el proceso.';
+            }
+            return order ? 'El envío de la foto depende del avance del pedido; todavía no puedo confirmar una fecha.'
+                : 'Si confirmas tu pedido, recibirás la foto cuando esté terminado; todavía no puedo confirmar una fecha.';
+        }
+        if (productionClaim(part) && order?.estatus !== 'Fabricar') {
+            return order ? 'Tu pedido está registrado. Todavía no puedo confirmar que esté en fabricación.'
+                : 'Todavía no puedo confirmar el registro ni el inicio de fabricación de tu pedido.';
+        }
+        return part;
+    }).join('\n');
+}
+
 function unsupportedMediaClaim(text, fileUrl) {
     const value = normalize(text);
     // Un marcador escrito por el modelo nunca es un archivo, ni siquiera junto
@@ -29,6 +70,10 @@ function unsupportedMediaClaim(text, fileUrl) {
 }
 
 async function protectMediaReply({ contactId, text, fileUrl = null, source = 'ai' }) {
+    // Never normalize away a fake attachment or an immediate delivery claim.
+    if (!/\[(?:imagen|foto|video|archivo adjunto|adjunto)\b/i.test(normalize(text))) {
+        text = await truthfulProductionReply(contactId, text);
+    }
     if (!unsupportedMediaClaim(text, fileUrl)) return { text, blocked: false };
     const ref = db.collection('contacts_whatsapp').doc(contactId);
     const first = await db.runTransaction(async tx => {

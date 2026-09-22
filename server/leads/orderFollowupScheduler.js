@@ -177,6 +177,7 @@ async function fetchRecentMessages(waId, limit) {
 async function sendFollowupMessage(waId, text) {
     const guarded = await require('../mediaReplyGuard').protectMediaReply({ contactId: waId, text, source: 'order_followup' });
     if (guarded.blocked) return null;
+    text = guarded.text;
     const result = await sendAdvancedWhatsAppMessage(waId, { text });
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(waId);

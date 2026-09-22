@@ -4391,6 +4391,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (!msgText && !qrFileUrl) continue; // nada que enviar
 
             const mediaGuard = await require('./mediaReplyGuard').protectMediaReply({ contactId, text: msgText, fileUrl: qrFileUrl });
+            msgText = mediaGuard.text;
             if (mediaGuard.blocked) {
                 mediaHandoff = true;
                 msgText = mediaGuard.text;

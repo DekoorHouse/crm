@@ -6,6 +6,63 @@ beforeEach(() => {
     mockDb.seed('contacts_whatsapp/customer', { name: 'Cliente', needsAttention: false });
 });
 
+test('DH17200: allows the production photo step without inventing a date or production status', async () => {
+    mockDb.seed('pedidos/current', { contactId: 'customer', estatus: 'Sin estatus', createdAt: new Date() });
+    const text = '¡Excelente! Me alegra mucho que todo esté en orden. ✨\n\nYa registramos tu pedido y está en fabricación.\n\n📸 Entre hoy y mañana te enviaremos foto del producto terminado junto con las opciones de pago.\n💳 Una vez confirmado tu pago, generaremos tu guía de envío.\n\n¿Tienes alguna otra duda sobre pago, envío o entrega? Estamos para ayudarte 😊';
+    const result = await protectMediaReply({ contactId: 'customer', text });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain('Tu pedido está registrado. Todavía no puedo confirmar');
+    expect(result.text).toContain('Cuando tu pedido esté terminado, recibirás la foto');
+    expect(result.text).not.toMatch(/hoy|mañana|ya registramos tu pedido y está en fabricación/i);
+    expect(mockDb.read('contacts_whatsapp/customer').needsAttention).toBe(false);
+});
+
+test.each(['ai', 'order_followup'])('allows verified production and conditional photos for %s', async source => {
+    mockDb.seed('pedidos/current', { contactId: 'customer', estatus: 'Fabricar', createdAt: new Date() });
+    const result = await protectMediaReply({ contactId: 'customer', source, text: 'Tu pedido está en fabricación. Cuando esté terminado, te enviaremos la foto.' });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain('Tu pedido está en fabricación.');
+    expect(result.text).toContain('Cuando tu pedido esté terminado');
+});
+
+test.each([null, 'Cancelado', 'Foto enviada'])('does not invent production or a future photo for status %s', async estatus => {
+    if (estatus) mockDb.seed('pedidos/current', { contactId: 'customer', estatus, createdAt: new Date() });
+    const result = await protectMediaReply({ contactId: 'customer', text: 'Ya está en fabricación. Mañana te enviaremos foto del producto terminado.' });
+    expect(result.blocked).toBe(false);
+    expect(result.text).not.toContain('Ya está en fabricación');
+    expect(result.text).not.toContain('Mañana');
+    expect(result.text).toContain('todavía no puedo confirmar una fecha');
+});
+
+test.each(['Aquí te mando la foto.', '[imagen]'])('future production notice cannot hide an unsupported attachment: %s', async claim => {
+    mockDb.seed('pedidos/current', { contactId: 'customer', estatus: 'Fabricar', createdAt: new Date() });
+    expect((await protectMediaReply({ contactId: 'customer', text: 'Cuando esté terminado, te enviaremos la foto. ' + claim })).blocked).toBe(true);
+});
+
+test('does not send a production assertion if reading its saved status fails', async () => {
+    mockDb.failNext('get', 'pedidos');
+    await expect(protectMediaReply({ contactId: 'customer', text: 'Tu pedido está en fabricación.' })).rejects.toThrow();
+});
+
+test('4921128336 and +50931927297: sales photo notice does not require an existing order or attachment', async () => {
+    const text = '¡Excelente! 🎉\n\n✅ *¡Ya hemos enviado varias veces a tu zona!* 📦✨\n\nMañana te enviaremos la foto de tu pedido personalizado para que puedas realizar tu pago y enviarlo.✨\n\nEl ENVIO ES GRATIS por DHL ✈️ y *tu pedido llegará en 3 a 5 días hábiles* (sin contar sábados ni domingos) después de que recibamos tu pago y enviemos la guia de envio. 🚛💨';
+    const result = await protectMediaReply({ contactId: 'customer', text });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain('Si confirmas tu pedido');
+    expect(result.text).not.toContain('Mañana');
+    expect(mockDb.read('contacts_whatsapp/customer').needsAttention).toBe(false);
+});
+
+test('DH17068: a photo after a proposed correction does not claim an attachment exists now', async () => {
+    mockDb.seed('pedidos/current', { contactId: 'customer', estatus: 'Foto enviada', createdAt: new Date() });
+    const text = 'En cuanto validemos tu comprobante, el equipo hace el ajuste del diseño y te mando la foto nueva para que veas qué bonitas quedaron. ✨';
+    const result = await protectMediaReply({ contactId: 'customer', text });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain('La solicitud de cambio debe revisarla el equipo');
+    expect(result.text).toContain('Si se realiza el ajuste');
+    expect(mockDb.read('contacts_whatsapp/customer').needsAttention).toBe(false);
+});
+
 test.each([
     'Aquí te comparto el diseño previo del León. [imagen]',
     '[archivo adjunto: previo_leon_santy.jpg]',
