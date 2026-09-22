@@ -53,7 +53,7 @@ function chooseCohort(run, hash, context) {
     const draw = parseInt(hash.slice(0, 8), 16) / 0x100000000;
     if (draw < run.representativeRate) return 'representative';
     const hard = context.hasMedia || context.paymentPhaseActive
-        || /pago|anticipo|saldo|comprobante|cancel|cambi|correg|reclamo|dos|varias|\b[2-9]\b/i.test(context.customerText || '');
+        || /pago|anticipo|saldo|comprobante|cancel|cambi|correg|reclamo|\bdos\b|\bvarias\b|\b[2-9]\b/i.test(context.customerText || '');
     const challengeDraw = parseInt(hash.slice(8, 16), 16) / 0x100000000;
     return hard && challengeDraw < run.challengeRate ? 'challenge' : null;
 }
