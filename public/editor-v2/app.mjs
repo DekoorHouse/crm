@@ -164,7 +164,8 @@ function render() {
     $('.inspector').hidden = !o;
     $('#cloud-badge').hidden = !o;
     renderScene();
-    $('#palette-color').value = o && o.stroke !== 'none' ? o.stroke : nextStroke;
+    const paletteColor = o ? o.stroke : nextStroke;
+    $('#palette-color').value = paletteColor === 'none' ? '#000000' : paletteColor;
     document.querySelectorAll('[data-color]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.color === (o ? o.stroke : nextStroke)));
         button.disabled = Boolean(o?.locked);
@@ -577,11 +578,11 @@ document.addEventListener('keydown', event => {
 });
 new ResizeObserver(() => { if (!gesture) renderScene(); }).observe(canvas);
 const palette = ['#000000', '#404040', '#808080', '#bfbfbf', '#ffffff', '#800000', '#ff0000', '#ff6600', '#ff9900', '#ffcc00', '#ffff00', '#99cc00', '#00ff00', '#008000', '#008080', '#00ffff', '#00aaff', '#0066ff', '#0000ff', '#000080', '#6600cc', '#9900ff', '#b9a3ed', '#ff00ff', '#ff66aa', '#ffb3cc', '#663300', '#996633'];
-for (const color of palette) {
+for (const color of ['none', ...palette]) {
     const button = document.createElement('button'); button.dataset.color = color;
-    button.style.backgroundColor = color;
+    if (color !== 'none') button.style.backgroundColor = color;
     const channels = [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16));
-    button.title = `Contorno · RGB ${channels.join(', ')} · ${color}`; button.setAttribute('aria-label', button.title);
+    button.title = color === 'none' ? 'Sin color · Quitar contorno' : `Contorno · RGB ${channels.join(', ')} · ${color}`; button.setAttribute('aria-label', button.title);
     button.onclick = () => applyPalette(color); $('#palette-swatches').append(button);
 }
 function applyPalette(color) {
@@ -589,9 +590,9 @@ function applyPalette(color) {
     nextStroke = color;
     const o = selected();
     if (o) {
-        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { item.stroke = color; if (item.strokeWidth === 0) item.strokeWidth = .4; } });
-        status('Color del contorno actualizado');
-    } else { render(); status('Contorno elegido para la siguiente figura'); }
+        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { item.stroke = color; if (color !== 'none' && item.strokeWidth === 0) item.strokeWidth = .4; } });
+        status(color === 'none' ? 'Contorno eliminado' : 'Color del contorno actualizado');
+    } else { render(); status(color === 'none' ? 'Sin contorno para la siguiente figura' : 'Contorno elegido para la siguiente figura'); }
 }
 $('#palette-color').addEventListener('change', event => applyPalette(event.target.value));
 
