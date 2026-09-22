@@ -101,13 +101,6 @@ function renderScene() {
     scene.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.scale})`);
     $('#paper').setAttribute('width', d.width); $('#paper').setAttribute('height', d.height);
     objects.replaceChildren();
-    if (powerClipEditing) {
-        const frame = powerClipEditing.history.document.objects.find(item => item.id === powerClipEditing.id);
-        const outline = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        outline.setAttribute('pointer-events', 'none');
-        outline.innerHTML = objectMarkup({ ...frame, powerClip: undefined, fill: 'none', stroke: '#22d3ee', strokeWidth: 1.5 / view.scale });
-        objects.append(outline);
-    }
     for (const object of d.objects) {
         if (object.hidden) continue;
         const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -124,6 +117,13 @@ function renderScene() {
         group.dataset.id = object.id;
         group.setAttribute('pointer-events', object.locked ? 'none' : 'all');
         objects.append(group);
+    }
+    if (powerClipEditing) {
+        // The container outline goes above the content, with a dark halo so it shows over any image;
+        // clicks pass through to the content underneath.
+        const frame = { ...powerClipEditing.history.document.objects.find(item => item.id === powerClipEditing.id), powerClip: undefined, fill: 'none' };
+        svgElement('g', { 'pointer-events': 'none', 'data-powerclip-frame': 'true' }, objects).innerHTML =
+            objectMarkup({ ...frame, stroke: '#0b1f26', strokeWidth: 4 / view.scale }) + objectMarkup({ ...frame, stroke: '#22d3ee', strokeWidth: 1.5 / view.scale });
     }
     selection.replaceChildren();
     for (const o of selectedObjects()) {
