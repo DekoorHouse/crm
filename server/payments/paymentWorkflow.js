@@ -100,15 +100,24 @@ async function ordersForContact(contactId) {
 async function enqueueReceipt(contactId, messageId, message, { historical = false, orderId = null, knownOrders = null } = {}) {
     if (message.from !== contactId || !['image', 'document'].includes(message.type)) return null;
     if (message.type === 'document' && !/pdf/i.test(message.fileType || '')) return null;
+    const id = hash(contactId + '|' + (message.id || messageId));
+    const ref = receipts().doc(id);
+    // Un registro existente conserva su decisión, incluso si hoy el contacto
+    // tiene otros pedidos. Recuperar el chat nunca lo reasigna ni lo reabre.
+    if ((await ref.get()).exists) return id;
     const orders = knownOrders || await ordersForContact(contactId);
+    const inPeriod = d => ms(d.data().createdAt) >= ms(message.timestamp) - 45 * DAY
+        && ms(d.data().createdAt) <= ms(message.timestamp) + 2 * DAY;
+    // Los pagos anteriores al registro durable también cuentan como posible
+    // propietario. No reciclar sus imágenes para otro pedido al volver al chat.
+    if (historical && orders.some(d => inPeriod(d) && (d.data().comprobanteValidadoAt || d.data().guiaEnvio?.guia || terminal(d.data()))
+        && (!d.data().comprobanteValidadoAt || ms(message.timestamp) <= ms(d.data().comprobanteValidadoAt)))) return null;
     const candidates = orders.filter(d => !terminal(d.data()) && !d.data().comprobanteValidadoAt
-        && ms(d.data().createdAt) >= ms(message.timestamp) - 45 * DAY
-        && ms(d.data().createdAt) <= ms(message.timestamp) + 2 * DAY);
+        && !(historical && cancelled(d.data())) && inPeriod(d));
+    if (orderId && !candidates.some(d => d.id === orderId)) return null;
     const order = orderId ? candidates.find(d => d.id === orderId) : candidates.length === 1 ? candidates[0] : null;
     // Sin pedido, conservar la imagen en el chat; al registrar/reactivar se vuelve a descubrir.
     if (!candidates.length) return null;
-    const id = hash(contactId + '|' + (message.id || messageId));
-    const ref = receipts().doc(id);
     const value = { contactId, messageId, orderId: order?.id || null,
         orderNumber: order ? `DH${order.data().consecutiveOrderNumber}` : null,
         receivedAt: message.timestamp, createdAt: stamp(), updatedAt: stamp(), status: 'pending', open: true,
@@ -125,8 +134,11 @@ async function discoverReceipts(contactId, { orderId = null } = {}) {
     const messages = await db.collection('contacts_whatsapp').doc(contactId).collection('messages')
         .orderBy('timestamp', 'desc').limit(100).get();
     const ids = [], knownOrders = await ordersForContact(contactId);
+    const contact = (await db.collection('contacts_whatsapp').doc(contactId).get()).data();
+    const newOrderSince = ms(contact?.paymentNewOrderRequestedAt);
     for (const m of [...messages.docs].reverse()) {
         if (ms(m.data().timestamp) < Date.now() - 45 * DAY) continue;
+        if (newOrderSince && ms(m.data().timestamp) < newOrderSince) continue;
         const id = await enqueueReceipt(contactId, m.id, m.data(), { historical: true, orderId, knownOrders });
         if (id) ids.push(id);
     }

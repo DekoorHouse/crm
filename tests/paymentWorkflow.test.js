@@ -14,7 +14,9 @@ const ocr = (extra = {}) => ({ sourceIdentityVersion: 1, esComprobante: true, mo
 const order = () => mockDb.read('pedidos/order');
 const job = id => mockDb.read('payment_receipts/' + id);
 async function enqueue(id = 'message', extra = {}) {
-    return flow.enqueueReceipt('customer', id, { from: 'customer', id, timestamp: new Date(), type: 'image', fileUrl: 'https://test.invalid/receipt.png', fileType: 'image/png', ...extra }, { historical: true });
+    const receiptId = await flow.enqueueReceipt('customer', id, { from: 'customer', id, timestamp: new Date(), type: 'image', fileUrl: 'https://test.invalid/receipt.png', fileType: 'image/png', ...extra }, { historical: false });
+    if (receiptId) mockDb.seed('payment_receipts/' + receiptId, { ...job(receiptId), nextAttemptAt: new Date(0) });
+    return receiptId;
 }
 function verifiedPreview(p) {
     return { safetyToken: p.safetyToken, confirmedRisks: p.risks.map(r => r.code),
@@ -37,6 +39,40 @@ beforeEach(() => {
     mockMessenger.mockReset().mockResolvedValue({ messages: [{ id: 'mid.1' }] });
     mockCancel.mockResolvedValue(); mockDesign.mockResolvedValue();
     mockInventory.mockReset().mockResolvedValue({ ok: true }); mockPurchase.mockReset().mockResolvedValue();
+});
+
+test('DH15366: returning customer cannot recover an old payment into a cancelled order', async () => {
+    mockDb.seed('pedidos/order', { ...order(), estatus: 'Cancelado', consecutiveOrderNumber: 15366 });
+    mockDb.seed('pedidos/paid', { contactId: 'customer', consecutiveOrderNumber: 15371, createdAt: new Date(now() - 6 * DAY),
+        comprobanteValidadoAt: new Date(now() - 4 * DAY), estatus: 'Pagado', guiaEnvio: { guia: 'old-guide' } });
+    mockDb.seed('contacts_whatsapp/customer/messages/old', { from: 'customer', id: 'old', type: 'image', timestamp: new Date(now() - 4 * DAY - 60000), fileUrl: 'https://test.invalid/old.jpg' });
+    expect(await flow.discoverReceipts('customer')).toEqual([]);
+    await runPaymentSweep();
+    expect(mockDb.all('payment_receipts')).toHaveLength(0);
+    expect(mockOcr).not.toHaveBeenCalled(); expect(mockSend).not.toHaveBeenCalled();
+});
+
+test('legacy paid order prevents reassigning its old attachment to a new unpaid order', async () => {
+    mockDb.seed('pedidos/paid', { contactId: 'customer', createdAt: new Date(now() - 6 * DAY), comprobanteValidadoAt: new Date(now() - DAY), estatus: 'Pagado' });
+    mockDb.seed('contacts_whatsapp/customer/messages/old', { from: 'customer', id: 'old', type: 'image', timestamp: new Date(now() - 2 * DAY), fileUrl: 'https://test.invalid/old.jpg' });
+    expect(await flow.discoverReceipts('customer')).toEqual([]);
+    expect(mockDb.all('payment_receipts')).toHaveLength(0);
+});
+
+test('historical cancellation requires reactivation before automatic recovery', async () => {
+    mockDb.seed('pedidos/order', { ...order(), estatus: 'Cancelado' });
+    mockDb.seed('contacts_whatsapp/customer/messages/old', { from: 'customer', id: 'old', type: 'image', timestamp: new Date(), fileUrl: 'https://test.invalid/old.jpg' });
+    expect(await flow.discoverReceipts('customer', { orderId: 'order' })).toEqual([]);
+    mockDb.seed('pedidos/order', { ...order(), estatus: 'Foto enviada' });
+    expect(await flow.discoverReceipts('customer', { orderId: 'order' })).toHaveLength(1);
+});
+
+test('new purchase boundary excludes earlier chat attachments', async () => {
+    mockDb.seed('contacts_whatsapp/customer', { paymentNewOrderRequestedAt: new Date(now() - DAY) });
+    for (const [id, age] of [['old', 2 * DAY], ['new', 0]]) mockDb.seed('contacts_whatsapp/customer/messages/' + id,
+        { from: 'customer', id, type: 'image', timestamp: new Date(now() - age), fileUrl: 'https://test.invalid/' + id + '.jpg' });
+    const ids = await flow.discoverReceipts('customer');
+    expect(ids).toHaveLength(1); expect(job(ids[0]).messageId).toBe('new');
 });
 
 test('DH16368: worker processes a receipt five days later with chat IA off', async () => {
@@ -580,6 +616,10 @@ test('DH16475: an old failed OXXO ticket is closed and does not reappear when hi
     const received = new Date(now() - 5 * DAY);
     const message = { from: 'customer', id: 'old-failure', timestamp: received, type: 'image', fileUrl: 'https://test.invalid/receipt.png' };
     mockDb.seed('contacts_whatsapp/customer/messages/old-failure', message);
+    // Ya estaba en la cola desde su recepción; recuperar un chat cancelado no
+    // debe descubrir comprobantes antiguos nuevos, pero sí conservar éste.
+    const queued = await flow.enqueueReceipt('customer', 'old-failure', message);
+    mockDb.seed('payment_receipts/' + queued, { ...job(queued), nextAttemptAt: new Date(0) });
     mockOcr.mockResolvedValue(ocr({ monto: null, fecha: received.toISOString().slice(0, 10), pagoRealizado: false,
         estadoOperacion: 'rechazado', evidenciaEstado: 'TRANSACCION NO REALIZADA POR HABER EXCEDIDO SU LIMITE PERMITIDO', outcomeVersion: 1 }));
     flagReceipt();

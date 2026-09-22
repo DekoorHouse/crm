@@ -7,6 +7,12 @@ cada 30 segundos, independientemente del navegador y de `botActive`.
 - Un único pedido elegible permite vincular automáticamente. Si hay varios, el
   operador debe seleccionar el número exacto. Al activar la IA o registrar un
   pedido se recuperan los adjuntos recientes que todavía no tenían una entrada.
+- La recuperación histórica excluye pedidos cancelados hasta que se reactiven.
+  No importa archivos anteriores al inicio explícito de una nueva compra ni
+  archivos que podrían pertenecer a un pedido anterior ya validado, enviado o
+  terminado. Estos archivos permanecen en el chat para revisión manual; no
+  acreditan dinero ni disparan formularios. Los registros durables existentes
+  conservan su decisión y no se reabren al recuperar el historial.
 - La fecha se compara con la recepción del comprobante, no con la ejecución de
   la IA. No se valida sólo porque exista una foto ni por un comando del modelo.
 - Se exigen importe, fecha, destino admitido, moneda, folio y operación realizada.
