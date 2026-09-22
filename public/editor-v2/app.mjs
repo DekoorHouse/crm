@@ -154,6 +154,7 @@ function renderScene() {
     renderSplinePreview();
     renderPowerClipToolbar();
     if (gesture?.dropTarget) drawPowerClipDrop(gesture.dropTarget);
+    else if (gesture?.dropHint) drawPowerClipDrop(gesture.dropHint, true);
 }
 function svgElement(tag, attributes, parent) {
     const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -186,16 +187,19 @@ function drawPowerClipMarker(group, object) {
     svgElement('rect', { x: cx - size * 1.2, y: cy - size * .8, width: size * 2.4, height: size * 1.6, rx: size * .3, fill: '#18343d', opacity: .85 }, overlay);
     svgElement('text', { x: cx, y: cy + size * .35, 'text-anchor': 'middle', 'font-size': size, fill: '#a5f3fc', 'font-family': 'Arial, sans-serif' }, overlay).textContent = 'PC';
 }
-function drawPowerClipDrop(target) {
+// waiting: a PowerClip with content is only outlined until W is held.
+function drawPowerClipDrop(target, waiting = false) {
     const overlay = $('#hover-reference'); overlay.replaceChildren();
     const g = svgElement('g', { transform: `translate(${view.x} ${view.y}) scale(${view.scale})` }, overlay);
-    const shape = { fill: '#22d3ee', 'fill-opacity': .2, stroke: '#22d3ee', 'stroke-width': 2 / view.scale };
+    const shape = waiting ? { fill: 'none', stroke: '#22d3ee', 'stroke-width': 1.5 / view.scale, 'stroke-dasharray': `${6 / view.scale} ${4 / view.scale}` }
+        : { fill: '#22d3ee', 'fill-opacity': .2, stroke: '#22d3ee', 'stroke-width': 2 / view.scale };
     if (target.type === 'ellipse') svgElement('ellipse', { cx: target.x + target.width / 2, cy: target.y + target.height / 2, rx: target.width / 2, ry: target.height / 2, ...shape }, g);
     else svgElement('rect', { x: target.x, y: target.y, width: target.width, height: target.height, ...shape }, g);
-    const x = Math.max(4, Math.min(canvas.clientWidth - 246, view.x + target.x * view.scale));
+    const text = waiting ? 'Mantén W para colocar dentro del PowerClip' : 'Soltar para colocar dentro del PowerClip', width = Math.round(text.length * 5.6 + 18);
+    const x = Math.max(4, Math.min(canvas.clientWidth - width - 4, view.x + target.x * view.scale));
     const y = Math.max(4, Math.min(canvas.clientHeight - 32, view.y + target.y * view.scale - 36));
-    svgElement('rect', { x, y, width: 242, height: 28, rx: 5, fill: '#10343d', stroke: '#22d3ee' }, overlay);
-    svgElement('text', { x: x + 10, y: y + 18, fill: '#a5f3fc', 'font-size': 12 }, overlay).textContent = 'Soltar para colocar dentro del PowerClip';
+    svgElement('rect', { x, y, width, height: 28, rx: 5, fill: '#10343d', stroke: '#22d3ee' }, overlay);
+    svgElement('text', { x: x + 10, y: y + 18, fill: '#a5f3fc', 'font-size': 12 }, overlay).textContent = text;
 }
 function renderPowerClipToolbar() {
     const toolbar = $('#powerclip-toolbar'), o = selected();
@@ -538,7 +542,7 @@ canvas.addEventListener('pointermove', event => {
         gesture.snap = movement.hit;
         for (const original of gesture.originals) { const item = draft.objects.find(item => item.id === original.id); item.x = original.x + movement.x; item.y = original.y + movement.y; }
         gesture.moved ||= Math.hypot(dx, dy) * view.scale > 4;
-        gesture.dropTarget = gesture.moved ? powerClipDropTarget(draft.objects, selectedIds, p) : null;
+        gesture.pointer = p; updatePowerClipDrop(gesture);
     }
     if (gesture.type === 'draw') {
         let w = Math.abs(dx), h = Math.abs(dy);
@@ -553,7 +557,7 @@ canvas.addEventListener('pointermove', event => {
         Object.assign(o, resizeBounds(gesture.original, gesture.handle, dx, dy));
     }
     renderScene();
-    if (['move', 'nodes'].includes(gesture.type) && gesture.snap && !gesture.dropTarget) drawReference(gesture.snap);
+    if (['move', 'nodes'].includes(gesture.type) && gesture.snap && !gesture.dropTarget && !gesture.dropHint) drawReference(gesture.snap);
 });
 canvas.addEventListener('dblclick', event => {
     if (tool === 'spline') { event.preventDefault(); finishSpline(); return; }
@@ -635,7 +639,8 @@ canvas.addEventListener('pointerup', event => {
     }
     if (previous.type === 'draw' && selected().width * view.scale < 3 && selected().height * view.scale < 3) { draft = null; render(); return; }
     if (previous.type === 'move' && previous.moved) {
-        const drop = powerClipDropTarget(draft.objects, selectedIds, point(event));
+        previous.pointer = point(event); updatePowerClipDrop(previous);
+        const drop = previous.dropTarget;
         if (drop) {
             try {
                 const next = clone(draft); placeInPowerClip(next, selectedIds, drop.id);
@@ -659,6 +664,26 @@ function cancelGesture() {
 canvas.addEventListener('pointercancel', cancelGesture);
 canvas.addEventListener('lostpointercapture', cancelGesture);
 window.addEventListener('blur', cancelGesture);
+
+// An empty PowerClip takes whatever is dropped on it; one that already has content only takes more
+// while W is held, so objects can be moved over it without falling in.
+let insertKeyHeld = false;
+function updatePowerClipDrop(move) {
+    const container = move.moved ? powerClipDropTarget(draft.objects, selectedIds, move.pointer) : null;
+    const accepts = Boolean(container) && (!container.powerClip.objects.length || insertKeyHeld);
+    move.dropTarget = accepts ? container : null;
+    move.dropHint = container && !accepts ? container : null;
+}
+function setInsertKey(event, held) {
+    if (event.key?.toLowerCase() !== 'w' || insertKeyHeld === held) return;
+    insertKeyHeld = held;
+    if (gesture?.type !== 'move' || !gesture.pointer) return;
+    updatePowerClipDrop(gesture); renderScene();
+    if (gesture.snap && !gesture.dropTarget && !gesture.dropHint) drawReference(gesture.snap);
+}
+document.addEventListener('keydown', event => setInsertKey(event, true));
+document.addEventListener('keyup', event => setInsertKey(event, false));
+window.addEventListener('blur', () => { insertKeyHeld = false; });
 canvas.addEventListener('wheel', event => {
     event.preventDefault(); if (gesture) return;
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1;
