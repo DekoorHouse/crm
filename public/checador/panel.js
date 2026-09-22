@@ -488,10 +488,10 @@ function renderAdminLogs() {
         const adjs = getWeekAdjustments(e.name, weekStart, weekEnd);
         const adjTotal = adjs.reduce((sum, a) => sum + (a.type === 'bono' ? a.amount : -a.amount), 0);
         const finalPay = basePay + adjTotal;
-        const adjLabel = adjTotal !== 0 ? `<br><small style="color:${adjTotal > 0 ? '#10b981' : '#ef4444'};">${adjTotal > 0 ? '+' : ''}$${adjTotal}</small>` : '';
+        const adjLabel = adjTotal !== 0 ? `<br><small style="color:${adjTotal > 0 ? '#10b981' : '#ef4444'};">${adjTotal > 0 ? '+' : ''}$${adjTotal.toFixed(2)}</small>` : '';
         return `<td style="text-align:center; border-top:2px solid var(--glass-border);">
             <span style="font-weight:bold; color:var(--success);">${mins > 0 ? `${Math.floor(mins/60)}h ${mins%60}m` : '—'}</span>
-            ${mins > 0 || adjTotal !== 0 ? `<br><small style="color:var(--text-muted);">$${finalPay}</small>${adjLabel}` : ''}
+            ${mins > 0 || adjTotal !== 0 ? `<br><small style="color:var(--text-muted);">$${finalPay.toFixed(2)}</small>${adjLabel}` : ''}
             <br><span style="cursor:pointer; font-size:0.7rem; color:var(--primary); opacity:0.7;" onclick="openAdjModal('${e.name.replace(/'/g, "\\'")}')">+/-</span>
         </td>`;
     }).join('');
@@ -503,7 +503,7 @@ function renderAdminLogs() {
         return sum + basePay + adjs.reduce((s, a) => s + (a.type === 'bono' ? a.amount : -a.amount), 0);
     }, 0);
     const totalRow = document.createElement('tr');
-    totalRow.innerHTML = `<td style="font-weight:bold; color:var(--text-muted); border-top:2px solid var(--glass-border);">TOTAL</td>${totalCells}<td style="text-align:center; font-weight:bold; border-top:2px solid var(--glass-border);"><span style="color:var(--primary);">${totalAll > 0 ? `${Math.floor(totalAll/60)}h ${totalAll%60}m` : '—'}</span>${totalPay > 0 ? `<br><small style="color:var(--text-muted);">$${totalPay.toLocaleString()}</small>` : ''}</td>`;
+    totalRow.innerHTML = `<td style="font-weight:bold; color:var(--text-muted); border-top:2px solid var(--glass-border);">TOTAL</td>${totalCells}<td style="text-align:center; font-weight:bold; border-top:2px solid var(--glass-border);"><span style="color:var(--primary);">${totalAll > 0 ? `${Math.floor(totalAll/60)}h ${totalAll%60}m` : '—'}</span>${totalPay > 0 ? `<br><small style="color:var(--text-muted);">$${totalPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</small>` : ''}</td>`;
     tbody.appendChild(totalRow);
 }
 
