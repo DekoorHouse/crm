@@ -43,7 +43,9 @@ export function validateDocument(input) {
         const valid = Object.fromEntries(['id', 'type', 'name', 'x', 'y', 'width', 'height', 'fill', 'stroke', 'strokeWidth', 'text', 'fontSize', 'hidden', 'locked'].map(k => [k, o[k]]));
         if (o.type === 'spline') {
             if (!Array.isArray(o.points) || o.points.length < 2 || o.points.length > 500 || o.points.some(p => !p || !numberIn(p.x, 0, 1) || !numberIn(p.y, 0, 1))) throw new Error('La spline contiene puntos inválidos.');
+            if (o.closed !== undefined && (typeof o.closed !== 'boolean' || (o.closed && o.points.length < 3))) throw new Error('Una curva cerrada necesita al menos tres puntos.');
             valid.points = o.points.map(p => ({ x: p.x, y: p.y }));
+            if (o.closed) valid.closed = true;
         }
         if (o.type === 'image') {
             if (!validImageSource(o.src)) throw new Error('La imagen contiene un origen inválido o es demasiado grande.');

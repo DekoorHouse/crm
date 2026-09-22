@@ -1,6 +1,10 @@
-export function splineSegments(points) {
-    return points.slice(0, -1).map((p0, i) => {
-        const before = points[Math.max(0, i - 1)], p3 = points[i + 1], after = points[Math.min(points.length - 1, i + 2)];
+// A closed curve adds the segment from the last point back to the first and wraps the neighbours,
+// so the joint is as smooth as any other node.
+export function splineSegments(points, closed = false) {
+    const n = points.length, wrap = closed && n >= 3;
+    const at = i => points[wrap ? (i + n) % n : Math.max(0, Math.min(n - 1, i))];
+    return Array.from({ length: wrap ? n : n - 1 }, (_, i) => {
+        const p0 = at(i), before = at(i - 1), p3 = at(i + 1), after = at(i + 2);
         return { p0, p3, c1: { x: p0.x + (p3.x - before.x) / 6, y: p0.y + (p3.y - before.y) / 6 },
             c2: { x: p3.x - (after.x - p0.x) / 6, y: p3.y - (after.y - p0.y) / 6 } };
     });
@@ -30,20 +34,21 @@ export const splinePoints = object => object.points.map(p => ({ x: object.x + p.
 // index is the segment that holds the closest point; a node inserted there goes at index + 1.
 export function closestOnSpline(object, point) {
     let best = null;
-    splineSegments(splinePoints(object)).forEach((segment, index) => {
+    splineSegments(splinePoints(object), object.closed).forEach((segment, index) => {
         const hit = closestOnSegment(segment, point);
         if (!best || hit.distance < best.distance) best = { ...hit, index };
     });
     return best;
 }
-export function pointsPath(points) {
+export function pointsPath(points, closed = false) {
     if (!points.length) return '';
-    return `M ${points[0].x} ${points[0].y} ` + splineSegments(points).map(s => `C ${s.c1.x} ${s.c1.y} ${s.c2.x} ${s.c2.y} ${s.p3.x} ${s.p3.y}`).join(' ');
+    return `M ${points[0].x} ${points[0].y} ` + splineSegments(points, closed).map(s => `C ${s.c1.x} ${s.c1.y} ${s.c2.x} ${s.c2.y} ${s.p3.x} ${s.p3.y}`).join(' ') +
+        (closed && points.length >= 3 ? ' Z' : '');
 }
-export const splinePath = object => pointsPath(splinePoints(object));
-export function normalizeSpline(points) {
+export const splinePath = object => pointsPath(splinePoints(object), object.closed);
+export function normalizeSpline(points, closed = false) {
     const extrema = [...points];
-    for (const segment of splineSegments(points)) {
+    for (const segment of splineSegments(points, closed)) {
         for (const axis of ['x', 'y']) {
             const a = -segment.p0[axis] + 3 * segment.c1[axis] - 3 * segment.c2[axis] + segment.p3[axis];
             const b = 2 * (segment.p0[axis] - 2 * segment.c1[axis] + segment.c2[axis]);
@@ -61,16 +66,17 @@ export function normalizeSpline(points) {
 // Node edits work in page coordinates and renormalize, so the bounds stay exact.
 export function moveSplineNodes(object, indices, dx, dy) {
     const moving = new Set(indices);
-    return normalizeSpline(splinePoints(object).map((p, i) => moving.has(i) ? { x: p.x + dx, y: p.y + dy } : p));
+    return normalizeSpline(splinePoints(object).map((p, i) => moving.has(i) ? { x: p.x + dx, y: p.y + dy } : p), object.closed);
 }
 export function insertSplineNode(object, { index, x, y }) {
     if (object.points.length >= 500) throw new Error('Máximo 500 puntos por spline.');
     const nodes = splinePoints(object);
     nodes.splice(index + 1, 0, { x, y });
-    return normalizeSpline(nodes);
+    return normalizeSpline(nodes, object.closed);
 }
 export function removeSplineNodes(object, indices) {
     const removed = new Set(indices), nodes = splinePoints(object).filter((_, i) => !removed.has(i));
+    if (object.closed && nodes.length < 3) throw new Error('Una curva cerrada necesita al menos tres nodos.');
     if (nodes.length < 2) throw new Error('Una spline necesita al menos dos nodos.');
-    return normalizeSpline(nodes);
+    return normalizeSpline(nodes, object.closed);
 }

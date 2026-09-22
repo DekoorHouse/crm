@@ -28,7 +28,7 @@ let cloudApi = null;
 let nextFill = '#b9a3ed';
 let nextStroke = '#352a49';
 let paletteTarget = 'fill';
-let splineDraft = null, splinePointer = null;
+let splineDraft = null, splinePointer = null, splineFinishedAt = -Infinity;
 let displayUnit = 'mm';
 try { displayUnit = localStorage.getItem('dekoor.editor-v2.unit') === 'in' ? 'in' : 'mm'; } catch {}
 const unitFactor = () => displayUnit === 'in' ? 25.4 : 1;
@@ -88,7 +88,7 @@ function setTool(next) {
         button.setAttribute('aria-pressed', String(button.dataset.tool === next));
     });
     renderScene();
-    status({ select: 'Selecciona un objeto para moverlo o editarlo', hand: 'Arrastra para desplazar la vista', rect: 'Arrastra para dibujar · Shift: cuadrado', ellipse: 'Arrastra para dibujar · Shift: círculo', text: 'Haz clic para añadir texto', spline: 'Spline: coloca puntos con clics · Enter o doble clic para terminar · Esc para cancelar' }[next]);
+    status({ select: 'Selecciona un objeto para moverlo o editarlo', hand: 'Arrastra para desplazar la vista', rect: 'Arrastra para dibujar · Shift: cuadrado', ellipse: 'Arrastra para dibujar · Shift: círculo', text: 'Haz clic para añadir texto', spline: 'Spline: coloca puntos con clics · clic en el primero para cerrarla · Enter o doble clic para terminar · Esc para cancelar' }[next]);
 }
 function point(event) {
     const rect = canvas.getBoundingClientRect();
@@ -200,22 +200,26 @@ function renderSplinePreview() {
     if (!preview) { preview = document.createElementNS('http://www.w3.org/2000/svg', 'g'); preview.id = 'spline-preview'; preview.setAttribute('pointer-events', 'none'); scene.append(preview); }
     preview.replaceChildren();
     if (!splineDraft?.length) return;
-    const points = splinePointer ? [...splineDraft, splinePointer] : splineDraft;
+    // Over the first point, preview the closed curve that a click would create.
+    const closing = Boolean(splinePointer) && closesSpline(splinePointer);
+    const points = splinePointer && !closing ? [...splineDraft, splinePointer] : splineDraft;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', pointsPath(points)); path.setAttribute('fill', 'none'); path.setAttribute('stroke', '#22d3ee');
+    path.setAttribute('d', pointsPath(points, closing)); path.setAttribute('fill', 'none'); path.setAttribute('stroke', '#22d3ee');
     path.setAttribute('stroke-width', 1.5 / view.scale); preview.append(path);
     for (const p of splineDraft) {
         const node = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        node.setAttribute('cx', p.x); node.setAttribute('cy', p.y); node.setAttribute('r', 3 / view.scale);
+        node.setAttribute('cx', p.x); node.setAttribute('cy', p.y); node.setAttribute('r', (closing && p === splineDraft[0] ? 5 : 3) / view.scale);
         node.setAttribute('fill', '#22d3ee'); preview.append(node);
     }
 }
-function finishSpline() {
+// With three or more points, clicking the first one closes the spline.
+const closesSpline = p => splineDraft?.length >= 3 && Math.hypot(p.x - splineDraft[0].x, p.y - splineDraft[0].y) * view.scale <= 7;
+function finishSpline(closed = false) {
     if (!splineDraft || splineDraft.length < 2) { status('Coloca al menos dos puntos para terminar la spline.'); return; }
-    const shape = { ...createObject('spline', 0, 0), ...normalizeSpline(splineDraft), fill: 'none', stroke: nextStroke };
-    splineDraft = null; splinePointer = null; selectOnly(shape.id);
+    const shape = { ...createObject('spline', 0, 0), ...normalizeSpline(splineDraft, closed), fill: closed ? nextFill : 'none', stroke: nextStroke, ...(closed ? { closed: true } : {}) };
+    splineDraft = null; splinePointer = null; splineFinishedAt = performance.now(); selectOnly(shape.id);
     edit(document => document.objects.push(shape)); setTool('select');
-    status('Spline creada');
+    status(closed ? 'Spline cerrada creada' : 'Spline creada');
 }
 function getBounds(o) {
     if (o.type === 'text') {
@@ -259,7 +263,7 @@ function render() {
     $('#empty-selection').hidden = Boolean(o); $('#properties').hidden = !o || selectedIds.size > 1;
     $('#multi-selection').hidden = selectedIds.size < 2;
     $('#multi-selection').textContent = `${selectedIds.size} objetos seleccionados. Puedes moverlos juntos, cambiar el contorno o eliminarlos.`;
-    $('#selection-kind').textContent = selectedIds.size > 1 ? `${selectedIds.size} objetos` : o ? ({ rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[o.type] + (o.powerClip ? ' · PowerClip' : '') + (nodeEditing ? ' · nodos' : '') + (o.locked ? ' · bloqueado' : '')) : 'Documento';
+    $('#selection-kind').textContent = selectedIds.size > 1 ? `${selectedIds.size} objetos` : o ? ({ rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[o.type] + (o.closed ? ' cerrada' : '') + (o.powerClip ? ' · PowerClip' : '') + (nodeEditing ? ' · nodos' : '') + (o.locked ? ' · bloqueado' : '')) : 'Documento';
     if (o) {
         const bounds = getBounds(o);
         document.querySelectorAll('[data-property]').forEach(input => {
@@ -369,6 +373,7 @@ canvas.addEventListener('pointerdown', event => {
     if (tool === 'spline') {
         selectOnly(null);
         if (!splineDraft) splineDraft = [];
+        if (closesSpline(start)) { finishSpline(true); return; }
         const last = splineDraft.at(-1);
         if (!last || Math.hypot(start.x - last.x, start.y - last.y) * view.scale > 3) {
             if (splineDraft.length >= 500) { status('Máximo 500 puntos por spline. Pulsa Enter para terminar.'); return; }
@@ -476,7 +481,11 @@ function drawReference({ target, reference }) {
 }
 canvas.addEventListener('pointerleave', () => { $('#hover-reference').replaceChildren(); canvas.style.cursor = ''; });
 canvas.addEventListener('pointermove', event => {
-    if (tool === 'spline' && splineDraft && !gesture) { splinePointer = point(event); renderSplinePreview(); showReference(event); return; }
+    if (tool === 'spline' && splineDraft && !gesture) {
+        splinePointer = point(event); renderSplinePreview(); showReference(event);
+        if (closesSpline(splinePointer)) drawReference({ reference: { ...splineDraft[0], label: 'Cerrar curva' } });
+        return;
+    }
     if (!gesture) { showReference(event); return; }
     if (gesture.pointerId !== event.pointerId) return;
     if (gesture.type === 'pan') {
@@ -521,8 +530,9 @@ canvas.addEventListener('pointermove', event => {
 });
 canvas.addEventListener('dblclick', event => {
     if (tool === 'spline') { event.preventDefault(); finishSpline(); return; }
-    // pointerdown already handles double clicks while editing nodes.
-    if (nodeEditing) return;
+    // pointerdown already handles double clicks while editing nodes, and a click that just closed
+    // a spline must not turn the rest of that double click into node editing.
+    if (nodeEditing || event.timeStamp - splineFinishedAt < 500) return;
     if (!beginNodeEditing(event.target.closest('[data-id]')?.dataset.id || selectedId)) beginPowerClipEditing(event);
 });
 function doubleClick(event, id, node, curveHit) {

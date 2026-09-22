@@ -70,6 +70,41 @@ test('spline hover edge matches the closest curve point used to insert nodes', (
     assert.equal(edge?.label, 'Borde');
     close(edge.x, hit.x); close(edge.y, hit.y); close(edge.distance, hit.distance);
 });
+const loop = () => ({ ...createObject('spline', 0, 0), closed: true, ...normalizeSpline([{ x: 10, y: 10 }, { x: 60, y: 10 }, { x: 60, y: 50 }, { x: 10, y: 50 }], true) });
+test('a closed spline wraps around smoothly, keeps its bulge in bounds and exports a closed path', () => {
+    const object = loop(), nodes = splinePoints(object), segments = splineSegments(nodes, true);
+    assert.equal(segments.length, 4);
+    close(segments[3].p3.x, nodes[0].x); close(segments[3].p3.y, nodes[0].y);
+    // Both handles at the first node mirror each other, so the joint has no corner.
+    close(segments[0].c1.x - nodes[0].x, nodes[0].x - segments[3].c2.x); close(segments[0].c1.y - nodes[0].y, nodes[0].y - segments[3].c2.y);
+    for (const segment of segments) for (let i = 0; i <= 100; i++) {
+        const p = curvePoint(segment, i / 100);
+        assert.ok(p.x >= object.x - 1e-8 && p.x <= object.x + object.width + 1e-8 && p.y >= object.y - 1e-8 && p.y <= object.y + object.height + 1e-8);
+    }
+    assert.ok(object.x < 10);
+    const d = blankDocument(); d.objects.push(object);
+    assert.deepEqual(validateDocument(JSON.parse(JSON.stringify(d))), d);
+    assert.match(exportSvg(d), /<path d="M [^"]* Z"/);
+});
+test('closed splines need a boolean flag and three points; open ones keep no flag', () => {
+    const d = blankDocument(); d.objects.push({ ...arch(), closed: true });
+    assert.doesNotThrow(() => validateDocument(d));
+    d.objects[0] = { ...createObject('spline', 0, 0), ...normalizeSpline([{ x: 0, y: 0 }, { x: 50, y: 0 }]), closed: true };
+    assert.throws(() => validateDocument(d), /tres puntos/);
+    d.objects[0].closed = 'sí'; assert.throws(() => validateDocument(d));
+    d.objects[0].closed = false; assert.equal('closed' in validateDocument(d).objects[0], false);
+});
+test('node edits on a closed spline use the closing segment and keep three nodes', () => {
+    const object = loop(), hit = closestOnSpline(object, { x: 5, y: 30 });
+    assert.equal(hit.index, 3);
+    assert.equal(objectReference(object, hit, 1)?.label, 'Punto medio');
+    const inserted = splinePoints({ ...object, ...insertSplineNode(object, hit) });
+    assert.equal(inserted.length, 5); close(inserted[4].x, hit.x); close(inserted[4].y, hit.y);
+    assert.equal(removeSplineNodes(object, [0]).points.length, 3);
+    assert.throws(() => removeSplineNodes(object, [0, 1]), /al menos tres nodos/);
+    const moved = { ...object, ...moveSplineNodes(object, [3], -20, 0) }, node = splinePoints(moved)[3];
+    close(node.x, -10); close(node.y, 50); assert.ok(moved.x <= -10);
+});
 test('selection area requires full containment, not an intersection', () => {
     const area = { x: 10, y: 10, width: 100, height: 50 };
     assert.equal(fullyContained(area, { x: 10, y: 10, width: 100, height: 50 }), true);
