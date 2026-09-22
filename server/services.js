@@ -3956,7 +3956,14 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             ];
             const { generateChatCompletion, modelForProvider } = require('./ai/openaiProvider');
             console.log(`[AI] Generando respuesta con ${chatProvider} (${modelForProvider(chatProvider)}) para ${contactId}. (${historyTurns.length} turnos + ${mediaParts.length} archivo(s) multimedia)`);
-            aiResult = await generateChatCompletion(oaContents, mediaParts, oaSystem, chatProvider);
+            const shadowCustomerMessage = messagesSnapshot.docs.find(d => d.data().from === contactId);
+            aiResult = await generateChatCompletion(oaContents, mediaParts, oaSystem, chatProvider, {
+                contactId,
+                messageId: shadowCustomerMessage ? shadowCustomerMessage.id : null,
+                customerText: shadowCustomerMessage ? String(shadowCustomerMessage.data().text || '') : '',
+                stage: isPostVenta ? 'postventa' : 'venta', paymentPhaseActive,
+                hasMedia: mediaParts.length > 0,
+            });
             console.log(`[AI] 💰 ${chatProvider} — cacheados: ${aiResult.cachedTokens}, entrada: ${aiResult.inputTokens}, salida: ${aiResult.outputTokens}`);
         } else {
         // --- Intentar usar Context Caching (ruta Gemini) ---

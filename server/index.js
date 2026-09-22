@@ -619,6 +619,8 @@ function startSchedulers() {
   startSpendCapAlertScheduler();
   // Iniciar scheduler de alerta de saldo bajo de OpenRouter (cada 3 h; solo si el chat usa openrouter)
   startOpenRouterCreditAlertScheduler();
+  // Capture/compare is disabled until an explicit bounded evaluation run is configured.
+  require('./ai/shadowEvaluation').startMaintenance();
   // Iniciar scheduler de auto-generación de mockups (cada 10 min; SOLO genera, no envía)
   startMockupAutoScheduler();
   // Iniciar scheduler de cobranza automática (3 cobros diarios máx; luego cancela; se enciende desde la página de cobranza)
