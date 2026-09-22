@@ -7,7 +7,9 @@
     "start": "node server/index.js",
     "dev": "nodemon --watch server --ext js,json server/index.js",
     "build": "node scripts/build-nextjs.js",
-    "test": "jest --forceExit --detectOpenHandles"
+    "test": "npm run test:jest && npm run test:node",
+    "test:jest": "jest --forceExit --detectOpenHandles",
+    "test:node": "node --test tests/*.test.mjs tests/*.node-test.cjs"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
@@ -44,5 +46,9 @@
   "devDependencies": {
     "jest": "^30.3.0",
     "nodemon": "^3.1.14"
+  },
+  "jest": {
+    "roots": ["<rootDir>/tests"],
+    "testMatch": ["**/*.test.js"]
   }
 }
