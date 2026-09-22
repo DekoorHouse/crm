@@ -487,11 +487,47 @@ $('#stroke-menu').addEventListener('change', event => {
     } });
     status(width === HAIRLINE_WIDTH ? 'Grosor: Muy fina (0.0762 mm)' : `Grosor: ${width} mm`);
 });
+let pendingColor = null, colorFrame = null;
+function finishPropertyColor() {
+    if (colorFrame !== null) cancelAnimationFrame(colorFrame);
+    colorFrame = null;
+    const pending = pendingColor;
+    pendingColor = null;
+    if (!pending || pending.document !== history.document) return;
+    edit(d => {
+        const item = d.objects.find(item => item.id === pending.id);
+        if (!item || item.locked) return;
+        item[pending.property] = pending.value;
+        if (pending.property === 'stroke' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH;
+    });
+}
+function previewPropertyColor(input, o) {
+    pendingColor = { input, id: o.id, document: history.document, property: input.dataset.property, value: input.value };
+    if (colorFrame !== null) return;
+    colorFrame = requestAnimationFrame(() => {
+        colorFrame = null;
+        const pending = pendingColor;
+        if (!pending || pending.document !== history.document) return;
+        const item = history.document.objects.find(item => item.id === pending.id);
+        const group = [...objects.children].find(group => group.dataset.id === pending.id);
+        if (!item || !group) return;
+        const preview = { ...item, [pending.property]: pending.value };
+        if (pending.property === 'stroke' && preview.strokeWidth === 0) preview.strokeWidth = HAIRLINE_WIDTH;
+        // Only repaint this object. Do not reset the native picker or serialize the project while dragging.
+        group.innerHTML = objectMarkup(preview);
+        if (preview.powerClip) drawPowerClipMarker(group, preview);
+    });
+}
 function updateProperty(event) {
     const input = event.target, o = selected();
     if (event.type === 'input' && input.type !== 'color') return;
     if (!o || o.locked) return;
     const property = input.dataset.property;
+    if (input.type === 'color' && (property === 'fill' || property === 'stroke')) {
+        previewPropertyColor(input, o);
+        if (event.type === 'change') finishPropertyColor();
+        return;
+    }
     if (property) {
         if (!input.checkValidity()) { status('Introduce un valor dentro del rango permitido.'); render(); return; }
         const value = input.type === 'number' ? Number(input.value) * unitFactor() : input.value;
@@ -508,6 +544,15 @@ function updateProperty(event) {
 // Native color pickers emit input while choosing, before their final change event.
 $('#properties').addEventListener('input', updateProperty);
 $('#properties').addEventListener('change', updateProperty);
+$('#properties').addEventListener('focusout', event => {
+    if (pendingColor?.input === event.target) finishPropertyColor();
+});
+document.addEventListener('pointerdown', event => {
+    if (pendingColor && event.target !== pendingColor.input) finishPropertyColor();
+}, true);
+document.addEventListener('keydown', event => {
+    if (pendingColor && event.target !== pendingColor.input) finishPropertyColor();
+}, true);
 $('#document-name').addEventListener('change', event => edit(d => { d.name = event.target.value.trim() || 'Sin título'; }));
 for (const dimension of ['width', 'height']) $('#page-' + dimension).addEventListener('change', event => {
     if (!event.target.checkValidity()) { render(); status('La página debe medir entre 1 y 5000 mm.'); return; }
