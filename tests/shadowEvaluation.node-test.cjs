@@ -115,6 +115,12 @@ test('cohorts are deterministic and deliberately enriched cases remain separate'
     assert.equal(core.chooseCohort(cfg, '00000000ffffffff', {}), 'representative');
     assert.equal(core.chooseCohort(cfg, 'ffffffff00000000', { paymentPhaseActive: true }), 'challenge');
     assert.equal(core.chooseCohort(cfg, 'ffffffff00000000', {}), null);
+    for (const customerText of ['mis pedidos', 'todos listos', 'fueron enviados']) {
+        assert.equal(core.chooseCohort(cfg, 'ffffffff00000000', { customerText }), null);
+    }
+    for (const customerText of ['quiero dos productos', 'varias piezas', 'quiero 2 piezas']) {
+        assert.equal(core.chooseCohort(cfg, 'ffffffff00000000', { customerText }), 'challenge');
+    }
     assert.equal(core.validRun({ ...cfg, budgetUsd: 100 }), false);
 });
 
