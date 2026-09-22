@@ -4044,7 +4044,8 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // o el cliente insistiendo con el nombre del pueblo). El prompt solo no alcanzó.
         let coberturaGuardMotivo = null;
         try {
-            if (/\/ttt\b/i.test(aiResponse) && contactData.aiStage !== 'postventa') {
+            // Kill-switch: crm_settings/general.coberturaGuardsActive = false apaga este candado y el de /registrar.
+            if (generalSettings.coberturaGuardsActive !== false && /\/ttt\b/i.test(aiResponse) && contactData.aiStage !== 'postventa') {
                 const cob = require('./envios/coberturaCheck');
                 const decision = cob.decidirGuardTtt(coberturaCheck);
                 if (!decision.ok) {
@@ -4182,7 +4183,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // registrando el pedido a mano.
         let registroBloqueadoPorCobertura = false;
         try {
-            if (!isPostVenta && (registerOrderCmd || saleClosed)) {
+            if (generalSettings.coberturaGuardsActive !== false && !isPostVenta && (registerOrderCmd || saleClosed)) {
                 const cob = require('./envios/coberturaCheck');
                 if (cob.bloqueaRegistro(coberturaCheck)) {
                     registroBloqueadoPorCobertura = true;

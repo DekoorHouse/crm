@@ -332,12 +332,16 @@ const PROBLEMAS = new Set(['cp_inexistente', 'cp_no_coincide_estado', 'cp_no_coi
 /**
  * Revalida el C.P. de un formulario de datos de envío recién recibido. Guarda `envioCpCheck` en el
  * pedido (la sección Envíos lo pinta), y si hay un PROBLEMA marca el contacto en Atención y avisa al
- * admin por WhatsApp. Nunca lanza (fire-and-forget desde el endpoint).
+ * admin por WhatsApp (salvo `silent`). Nunca lanza (fire-and-forget desde el endpoint). Se puede volver
+ * a correr con POST /api/envios/revalidar-cp (uno o todos los pendientes de guía).
  */
-async function validarFormularioEnvio({ numeroPedido, codigoPostal, ciudad, estado, nombre }) {
+async function validarFormularioEnvio({ numeroPedido, codigoPostal, ciudad, estado, nombre, silent = false }) {
     const out = { ok: false, flags: [], numeroPedido };
     try {
         const { db, admin } = require('../config');
+        // Kill-switch: crm_settings/general.cpEnvioCheckActive = false apaga la revalidación completa.
+        const general = (await db.collection('crm_settings').doc('general').get()).data() || {};
+        if (general.cpEnvioCheckActive === false) return { ...out, skipped: 'kill_switch' };
         const cp = String(codigoPostal || '').replace(/\D/g, '');
         const num = parseInt(String(numeroPedido || '').replace(/\D/g, ''), 10);
         if (!/^\d{5}$/.test(cp) || !num) return { ...out, skipped: 'datos_incompletos' };
@@ -372,7 +376,8 @@ async function validarFormularioEnvio({ numeroPedido, codigoPostal, ciudad, esta
             checkedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
         await pedidoRef.set({ envioCpCheck: check }, { merge: true });
-        if (problemas.length && contactId) {
+        // silent = solo guardar el resultado (p. ej. revalidación en lote desde Envíos): sin Atención ni alerta.
+        if (problemas.length && contactId && !silent) {
             await db.collection('contacts_whatsapp').doc(String(contactId)).set({
                 needsAttention: true, needsAttentionReason: 'cp_envio', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp(),
             }, { merge: true }).catch(e => console.warn('[CP ENVIO] no se pudo marcar Atención:', e.message));

@@ -9577,6 +9577,47 @@ async function _cotizarCP(dest, opts = {}) {
     return servicios;
 }
 
+// --- POST /api/envios/revalidar-cp — vuelve a correr la revalidación del C.P. del formulario ---
+// Body: { orderNumber: 'DH16320' } para uno, o { all: true } para TODOS los pedidos pendientes de guía
+// con formulario (silencioso: solo escribe envioCpCheck para que la tabla pinte las banderas, sin
+// alertas). Sirve para poblar el rezago cuando se estrenó la revalidación (22-sep-2026) y para volver
+// a cotizar un C.P. cuando T1 estuvo caído.
+router.post('/envios/revalidar-cp', async (req, res) => {
+    try {
+        const cob = require('./envios/coberturaCheck');
+        const b = req.body || {};
+        const latestForm = async (num) => {
+            const snap = await db.collection('datos_envio').where('numeroPedido', 'in', [`DH${num}`, String(num)]).get();
+            let best = null, bestMs = -1;
+            snap.forEach(d => { const x = d.data(); const ms = x.createdAt && x.createdAt.toMillis ? x.createdAt.toMillis() : 0; if (ms > bestMs) { best = x; bestMs = ms; } });
+            return best;
+        };
+        if (b.all === true) {
+            const snap = await db.collection('pedidos').where('comprobanteValidadoAt', '>=', admin.firestore.Timestamp.fromMillis(Date.now() - 45 * 864e5)).get();
+            const pendientes = snap.docs.map(d => d.data()).filter(p => p.consecutiveOrderNumber && !(p.guiaEnvio && p.guiaEnvio.guia) && p.ocultoDeEnvios !== true && !/cancel|entregad/i.test(String(p.estatus || '')));
+            const resumen = { revisados: 0, conProblema: 0, sinFormulario: 0, errores: 0, problemas: [] };
+            for (const p of pendientes) {
+                const f = await latestForm(p.consecutiveOrderNumber);
+                if (!f) { resumen.sinFormulario++; continue; }
+                const r = await cob.validarFormularioEnvio({ numeroPedido: `DH${p.consecutiveOrderNumber}`, codigoPostal: f.codigoPostal, ciudad: f.ciudad, estado: f.estado, nombre: f.nombreCompleto, silent: true });
+                resumen.revisados++;
+                if (r.error || !r.ok) resumen.errores++;
+                else if (r.problema) { resumen.conProblema++; resumen.problemas.push({ pedido: `DH${p.consecutiveOrderNumber}`, cp: f.codigoPostal, flags: r.flags, dhl: r.check && r.check.dhl, fedex: r.check && r.check.fedex }); }
+            }
+            return res.json({ success: true, ...resumen });
+        }
+        const num = parseOrderNumber(b.orderNumber);
+        if (!num) return res.status(400).json({ success: false, message: 'Falta orderNumber (DH1234) o all:true.' });
+        const f = await latestForm(num);
+        if (!f) return res.status(404).json({ success: false, message: 'Ese pedido no tiene formulario de datos de envío.' });
+        const r = await cob.validarFormularioEnvio({ numeroPedido: `DH${num}`, codigoPostal: f.codigoPostal, ciudad: f.ciudad, estado: f.estado, nombre: f.nombreCompleto, silent: b.silent === true });
+        res.json({ success: true, ...r });
+    } catch (e) {
+        console.error('[CP ENVIO] revalidar-cp:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // --- POST /api/envios/cotizar — cotiza DHL (y demás) para un CP destino. GRATIS. ---
 router.post('/envios/cotizar', async (req, res) => {
     try {
