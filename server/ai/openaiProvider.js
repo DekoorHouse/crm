@@ -176,7 +176,7 @@ function markCacheablePrefix(messages) {
  * generateGeminiResponse(promptOrContents, mediaParts, systemInstruction) para que el
  * switch de proveedor sea transparente en services.js.
  */
-async function generateChatCompletion(promptOrContents, mediaParts = [], systemInstruction = null, providerKey = 'openai') {
+async function generateChatCompletion(promptOrContents, mediaParts = [], systemInstruction = null, providerKey = 'openai', evaluationContext = null) {
     const cfg = PROVIDERS[providerKey] || PROVIDERS.openai;
     const apiKey = process.env[cfg.keyEnv];
     if (!apiKey) throw new Error(`Falta ${cfg.keyEnv} para el chat con ${providerKey}.`);
@@ -209,6 +209,10 @@ async function generateChatCompletion(promptOrContents, mediaParts = [], systemI
     };
 
     let data;
+    const requestedAt = new Date().toISOString();
+    const startedAt = Date.now();
+    const evaluationAttempts = [];
+    try {
     for (let attempt = 1; attempt <= 2; attempt++) {
         try {
             const res = await fetch(cfg.url, {
@@ -218,6 +222,7 @@ async function generateChatCompletion(promptOrContents, mediaParts = [], systemI
                 signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
             });
             data = await res.json().catch(() => null);
+            if (evaluationContext) evaluationAttempts.push({ http: res.status, data });
             if (!res.ok) {
                 const msg = (data && data.error && data.error.message) || `HTTP ${res.status}`;
                 // 429/5xx son transitorios: vale la pena un reintento.
@@ -230,6 +235,7 @@ async function generateChatCompletion(promptOrContents, mediaParts = [], systemI
             }
             break;
         } catch (e) {
+            if (evaluationContext && evaluationAttempts.length < attempt) evaluationAttempts.push({ http: null, error: e.name || 'Error' });
             const retriable = /timeout|aborted|fetch failed|network|econnreset|terminated/i.test(String(e && e.message));
             if (attempt < 2 && retriable) {
                 console.warn(`[${providerKey.toUpperCase()}] Falló (${e.message}), reintentando...`);
@@ -257,6 +263,18 @@ async function generateChatCompletion(promptOrContents, mediaParts = [], systemI
         outputTokens: usage.completion_tokens || 0,
         cachedTokens: cached,
     };
+    } finally {
+        if (evaluationContext && providerKey === 'openrouter') {
+            // Observation only: candidate outputs never return through this function or its caller.
+            try {
+                require('./shadowEvaluation').schedule({
+                    payload, provider: providerKey, data: data || null,
+                    requestedAt, elapsedMs: Date.now() - startedAt,
+                    attempts: evaluationAttempts, context: evaluationContext,
+                });
+            } catch (_) { /* evaluation must never affect the live reply */ }
+        }
+    }
 }
 
 /** Chat con OpenAI (gpt-5-mini por defecto). */
