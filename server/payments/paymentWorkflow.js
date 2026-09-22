@@ -62,8 +62,9 @@ async function previewReceiptReview(id, { amount, orderId } = {}) {
     const ref = receipts().doc(id);
     let receipt = (await ref.get()).data();
     if (!receipt?.open || ms(receipt.leaseUntil) > Date.now()) throw new Error('El comprobante ya se resolvió o se está procesando. Actualiza la lista.');
+    if (!receipt.fileUrl && !receipt.ocr) receipt = await require('./receiptMedia').recoverReceiptMedia(ref);
     if (!receipt.ocr || (receipt.ocr.pagoRealizado === false && receipt.ocr.outcomeVersion !== OUTCOME_VERSION)) {
-        if (!receipt.fileUrl) throw new Error('No hay imagen del comprobante para revisar.');
+        if (!receipt.fileUrl) throw new Error(receipt.reason || 'No hay imagen del comprobante para revisar.');
         const reading = await services().extractReceiptData(receipt.fileUrl, receipt.fileType);
         const ocr = receipt.ocr?.pagoRealizado === false && reading.pagoRealizado !== false
             ? { ...receipt.ocr, estadoOperacion: 'desconocido', evidenciaEstado: reading.evidenciaEstado || '', outcomeVersion: OUTCOME_VERSION }
@@ -123,6 +124,7 @@ async function enqueueReceipt(contactId, messageId, message, { historical = fals
         receivedAt: message.timestamp, createdAt: stamp(), updatedAt: stamp(), status: 'pending', open: true,
         attempts: 0, nextAttemptAt: date(Date.now() + (historical ? 0 : 25000)), historical,
         fileUrl: message.fileUrl || null, fileType: message.fileType || null,
+        whatsappMediaId: message.whatsappMediaId || null, mediaProxyUrl: message.mediaProxyUrl || null,
         reason: order ? 'Comprobante pendiente de revisión.' : 'Hay varios pedidos: seleccionar el pedido correcto.',
     };
     try { await ref.create(value); }
@@ -250,7 +252,14 @@ async function processReceipt(id, options = {}) {
     try {
         let ocr = claimed.ocr;
         if (!ocr) {
-            if (!claimed.fileUrl) return await reviewReceipt(ref, 'No se pudo guardar la imagen; revisar el comprobante en el chat.');
+            if (!claimed.fileUrl) {
+                let recovered;
+                try { recovered = await require('./receiptMedia').recoverReceiptMedia(ref); }
+                catch (_) { return await reviewReceipt(ref, (await ref.get()).data()?.reason || 'Recuperando comprobante. Se reintentará automáticamente.'); }
+                if (!recovered?.fileUrl) return await reviewReceipt(ref, recovered?.reason || 'No se pudo recuperar la imagen; solicita que reenvíen el comprobante.');
+                claimed.fileUrl = recovered.fileUrl;
+                claimed.fileType = recovered.fileType;
+            }
             ocr = await services().extractReceiptData(claimed.fileUrl, claimed.fileType);
             await ref.update({ ocr, updatedAt: stamp() });
         }

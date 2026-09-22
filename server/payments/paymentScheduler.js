@@ -9,6 +9,7 @@ async function runPaymentSweep() {
     running = true;
     try {
         await require('./shippingConfirmation').recoverShippingConfirmations();
+        await require('./receiptMedia').recoverMissingReceiptMedia();
         const pending = await db.collection('payment_receipts').where('status', 'in', ['pending', 'processing']).get();
         const due = pending.docs.filter(d => ms(d.data().leaseUntil) <= Date.now() && ms(d.data().nextAttemptAt) <= Date.now())
             .sort((a, b) => ms(a.data().receivedAt) - ms(b.data().receivedAt));

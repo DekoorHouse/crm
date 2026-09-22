@@ -80,6 +80,15 @@ No hay una migración masiva automática de pagos históricos. Para recuperar un
 contacto se usa `discoverReceipts(contactId, { orderId })`; no aprueba sus pagos.
 Las colas se conservan en Firestore al reiniciar o volver a una versión anterior.
 
+Si falta la imagen guardada, el recibo conserva el ID de WhatsApp. La revisión
+manual y el worker recuperan el archivo, actualizan también el mensaje original
+y sólo después ejecutan el OCR y los controles de duplicados. Para registros
+antiguos se busca el ID en el `mediaProxyUrl` del mensaje; nunca se descarga una
+URL arbitraria suministrada por el cliente. La cola procesa hasta tres
+recuperaciones por barrido, con lease y hasta cinco intentos con espera creciente.
+Si se agotan, permanece en revisión con una solicitud explícita de reenvío.
+Recuperar el archivo no reabre recibos resueltos ni acredita dinero por sí solo.
+
 Verificación: `node node_modules/jest/bin/jest.js tests/paymentWorkflow.test.js --runInBand`.
 La suite usa Firestore y canales simulados; no transmite mensajes ni accede a
 Firebase de producción.

@@ -1,6 +1,8 @@
 const mockDb = require('./helpers/paymentFirestore')();
 const mockOcr = jest.fn(), mockSend = jest.fn(), mockMessenger = jest.fn(), mockCancel = jest.fn(), mockDesign = jest.fn();
 const mockInventory = jest.fn(), mockPurchase = jest.fn();
+const mockMediaRecovery = jest.fn();
+jest.mock('../server/whatsappMedia', () => ({ downloadAndUploadMedia: (...a) => mockMediaRecovery(...a) }));
 jest.mock('../server/config', () => ({ db: mockDb, admin: { firestore: { FieldValue: { serverTimestamp: () => new Date() }, Timestamp: { fromMillis: n => new Date(n) } } } }));
 jest.mock('../server/services', () => ({ extractReceiptData: (...a) => mockOcr(...a), sendAdvancedWhatsAppMessage: (...a) => mockSend(...a), sendMessengerMessage: (...a) => mockMessenger(...a), sendPurchaseEventOnFabricar: (...a) => mockPurchase(...a) }));
 jest.mock('../server/inventario/inventarioService', () => ({ descontarInventarioPorPedido: (...a) => mockInventory(...a) }));
@@ -33,12 +35,79 @@ async function reviewViaApi(id, body) {
 }
 beforeEach(() => {
     mockDb.reset(); jest.clearAllMocks();
+    mockMediaRecovery.mockReset().mockResolvedValue({ publicUrl: 'https://test.invalid/recovered.jpg', mimeType: 'image/jpeg' });
     mockDb.seed('pedidos/order', { contactId: 'customer', consecutiveOrderNumber: 16368, precio: 1200, estatus: 'Foto enviada', createdAt: new Date(now() - 6 * DAY) });
     mockDb.seed('contacts_whatsapp/customer', { botActive: false, lastClientMsgAt: new Date() });
     mockOcr.mockReset().mockResolvedValue(ocr()); mockSend.mockReset().mockResolvedValue({ id: 'wamid.1' });
     mockMessenger.mockReset().mockResolvedValue({ messages: [{ id: 'mid.1' }] });
     mockCancel.mockResolvedValue(); mockDesign.mockResolvedValue();
     mockInventory.mockReset().mockResolvedValue({ ok: true }); mockPurchase.mockReset().mockResolvedValue();
+});
+
+async function missingMediaReceipt() {
+    const id = await enqueue('missing-image', { fileUrl: null });
+    mockDb.seed('payment_receipts/' + id, { ...job(id), status: 'review', reason: 'No se pudo guardar la imagen; revisar el comprobante en el chat.' });
+    mockDb.seed('contacts_whatsapp/customer/messages/missing-image', { from: 'customer', id: 'missing-image', type: 'image',
+        mediaProxyUrl: '/webhook/wa/media/1017732527994600', fileType: 'image/jpeg' });
+    return id;
+}
+
+test('DH17194: recover legacy proxy attachment, persist chat image, and credit the deposit only once', async () => {
+    const id = await missingMediaReceipt();
+    mockOcr.mockResolvedValue(ocr({ monto: 300 }));
+    await runPaymentSweep(); await runPaymentSweep();
+    expect(mockMediaRecovery).toHaveBeenCalledWith('1017732527994600', 'customer');
+    expect(mockMediaRecovery).toHaveBeenCalledTimes(1);
+    expect(job(id)).toMatchObject({ status: 'applied', amountCents: 30000, mediaRecoveryStatus: 'recovered', fileUrl: 'https://test.invalid/recovered.jpg' });
+    expect(mockDb.read('contacts_whatsapp/customer/messages/missing-image').fileUrl).toBe('https://test.invalid/recovered.jpg');
+    expect(order().paymentReceivedCents).toBe(30000);
+});
+
+test('temporary storage failure retries after backoff without crediting before image recovery', async () => {
+    const id = await missingMediaReceipt();
+    mockMediaRecovery.mockRejectedValueOnce(new Error('Storage unavailable'));
+    await runPaymentSweep(); await runPaymentSweep();
+    expect(job(id)).toMatchObject({ status: 'review', mediaRecoveryStatus: 'retry', mediaRecoveryAttempts: 1 });
+    expect(mockMediaRecovery).toHaveBeenCalledTimes(1); expect(mockOcr).not.toHaveBeenCalled();
+    expect(order().paymentReceivedCents).toBeUndefined();
+    mockDb.seed('payment_receipts/' + id, { ...job(id), mediaRecoveryNextAt: new Date(0) });
+    await runPaymentSweep();
+    expect(job(id).status).toBe('applied'); expect(order().paymentReceivedCents).toBe(120000);
+});
+
+test('manual preview recovers a missing image before presenting the amount confirmation', async () => {
+    const id = await missingMediaReceipt();
+    const p = await flow.previewReceiptReview(id, { amount: 1200 });
+    expect(p.amountCents).toBe(120000);
+    expect(job(id).fileUrl).toBe('https://test.invalid/recovered.jpg');
+    expect(order().paymentReceivedCents).toBeUndefined();
+});
+
+test('recovery never reopens a receipt rejected during the download', async () => {
+    const id = await missingMediaReceipt();
+    mockMediaRecovery.mockImplementation(async () => {
+        mockDb.seed('payment_receipts/' + id, { ...job(id), status: 'rejected', open: false });
+        return { publicUrl: 'https://test.invalid/recovered.jpg', mimeType: 'image/jpeg' };
+    });
+    await runPaymentSweep();
+    expect(job(id).status).toBe('rejected'); expect(order().paymentReceivedCents).toBeUndefined();
+    expect(mockOcr).not.toHaveBeenCalled();
+});
+
+test('exhausted media recovery remains in review with a clear resend request', async () => {
+    const id = await missingMediaReceipt();
+    mockDb.seed('payment_receipts/' + id, { ...job(id), mediaRecoveryAttempts: 4 });
+    mockMediaRecovery.mockRejectedValue(new Error('Media expired'));
+    await runPaymentSweep(); await runPaymentSweep();
+    expect(job(id)).toMatchObject({ status: 'review', mediaRecoveryStatus: 'unavailable', mediaRecoveryAttempts: 5 });
+    expect(job(id).reason).toContain('reenvíen'); expect(mockMediaRecovery).toHaveBeenCalledTimes(1);
+});
+
+test('uses an already repaired message URL without downloading again', async () => {
+    const id = await missingMediaReceipt();
+    mockDb.seed('contacts_whatsapp/customer/messages/missing-image', { fileUrl: 'https://test.invalid/repaired.jpg', fileType: 'image/jpeg' });
+    await runPaymentSweep();
+    expect(job(id).status).toBe('applied'); expect(mockMediaRecovery).not.toHaveBeenCalled();
 });
 
 test('DH15366: returning customer cannot recover an old payment into a cancelled order', async () => {
