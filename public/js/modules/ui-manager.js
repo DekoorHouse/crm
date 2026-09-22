@@ -1557,6 +1557,20 @@ function _paintEnvios() {
             if (!v) return `<td style="padding:10px 14px 10px 0;color:#cbd5e1">—</td>`;
             return `<td class="envio-copy" title="Clic para copiar" onclick="copyEnvioCell(this)" style="padding:10px 14px 10px 0;cursor:pointer;${style}">${escapeHtml(v)}</td>`;
         };
+        // Celda del C.P. con la bandera de la revalidación del formulario (envioCpCheck): reexpedición,
+        // C.P. que no coincide con la ciudad, C.P. inexistente o distinto al verificado en el chat.
+        const cpCell = (val, chk) => {
+            const base = cell(val, 'white-space:nowrap');
+            if (!chk || !chk.flags || !chk.flags.length) return base;
+            const LABEL = { cp_inexistente: 'C.P. no existe', cp_no_coincide_estado: 'otro estado', cp_no_coincide_ciudad: 'no coincide con la ciudad', reexpedicion: 'reexpedición', sin_tarifas: 'sin tarifa', error_cotizacion: 'no se pudo cotizar', distinto_al_chat: 'distinto al del chat' };
+            const problemas = chk.flags.filter(f => f !== 'distinto_al_chat');
+            const lugar = chk.sepomex && chk.sepomex.municipio ? `${chk.sepomex.municipio}, ${chk.sepomex.estado || ''}` : (chk.sepomex && chk.sepomex.existe === false ? 'no existe en SEPOMEX' : '');
+            const tip = [lugar ? `C.P. ${chk.cp} = ${lugar}` : '', chk.dhl != null ? `DHL $${Number(chk.dhl).toFixed(0)}` : '', chk.fedex != null ? `FedEx $${Number(chk.fedex).toFixed(0)}` : '', chk.cpChat ? `C.P. del chat: ${chk.cpChat}` : '', chk.flags.map(f => LABEL[f] || f).join(' · ')].filter(Boolean).join(' | ');
+            const color = problemas.length ? '#dc2626' : '#d97706';
+            const label = problemas.length ? (LABEL[problemas[0]] || problemas[0]) : LABEL.distinto_al_chat;
+            const badge = `<span title="${escapeHtml(tip)}" style="display:inline-block;margin-left:6px;background:${color};color:#fff;font-size:10px;font-weight:800;padding:2px 6px;border-radius:5px;white-space:nowrap;vertical-align:middle">⚠️ ${escapeHtml(label)}</span>`;
+            return base.replace(/<\/td>$/, badge + '</td>');
+        };
         const DATA_COLS = 9; // nombre..teléfono
         // _hasGuia solo para los conteos/filtros. NO se agrupa: orden cronológico ascendente
         // (los más antiguos arriba, los nuevos ABAJO). Los que faltan datos se quedan en su lugar.
@@ -1592,7 +1606,7 @@ function _paintEnvios() {
                     cell(d.referencia) +
                     cell(d.ciudad, 'white-space:nowrap') +
                     cell(d.estado, 'white-space:nowrap') +
-                    cell(d.codigoPostal, 'white-space:nowrap') +
+                    cpCell(d.codigoPostal, e.cpCheck) +
                     cell(d.telefono, 'white-space:nowrap');
             } else {
                 dataCells = `<td colspan="${DATA_COLS}" style="padding:10px 0;color:#b45309;font-weight:600">Pendiente — aún no llena el formulario</td>`;

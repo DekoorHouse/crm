@@ -8460,6 +8460,15 @@ router.post('/datos-envio', async (req, res) => {
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
+        // Revalidar el C.P. del formulario (SEPOMEX + cotización T1) sin retrasar la respuesta al
+        // cliente: 13 pedidos salieron a reexpedición con un C.P. distinto al verificado en el chat y
+        // 4 eran errores de dedo (auditoría 22-sep-2026). Marca el pedido (envioCpCheck), pone la
+        // conversación en Atención y avisa al admin si hay problema. Ver server/envios/coberturaCheck.js.
+        setImmediate(() => {
+            require('./envios/coberturaCheck').validarFormularioEnvio({ numeroPedido, codigoPostal, ciudad, estado, nombre: nombreCompleto })
+                .catch(e => console.warn('[CP ENVIO] validación falló:', e.message));
+        });
+
         res.status(201).json({
             success: true,
             message: 'Datos de envío guardados correctamente.',
@@ -9221,6 +9230,9 @@ router.get('/envios', async (_req, res) => {
         // Mapa numeroPedido (solo dígitos) -> datos de envío MÁS RECIENTES.
         const norm = (v) => String(v || '').replace(/\D/g, '');
         // Serializa la guía DHL guardada en el doc (sin el serverTimestamp) para el frontend.
+        // Resultado de la revalidación del C.P. del formulario (coberturaCheck.validarFormularioEnvio):
+        // la tabla de Envíos pinta una bandera junto al C.P. cuando hay problema.
+        const serCpCheck = (c) => (c && c.cp) ? { cp: c.cp, verdict: c.verdict || null, dhl: c.dhl != null ? c.dhl : null, fedex: c.fedex != null ? c.fedex : null, flags: Array.isArray(c.flags) ? c.flags : [], problema: !!c.problema, cpChat: c.cpChat || null, sepomex: c.sepomex ? { municipio: c.sepomex.municipio || null, estado: c.sepomex.estado || null, existe: c.sepomex.existe !== false } : null } : null;
         const serGuia = (g) => (g && g.guia) ? { proveedor: g.proveedor || 't1', guia: g.guia, numOrden: g.numOrden || null, mensajeria: g.mensajeria || null, tipoServicio: g.tipoServicio || null, costo: (g.costo != null ? g.costo : null), pdfPath: g.pdfPath || null, labelUrl: g.labelUrl || null, tracking: g.tracking || null, manual: g.manual === true } : null;
         const datosByOrder = new Map();
         datosSnap.docs.forEach(d => {
@@ -9271,6 +9283,7 @@ router.get('/envios', async (_req, res) => {
                 orderDocId: doc.id,  // id del pedido para cambiar su estatus
                 ...metaState,
                 guiaEnvio: serGuia(p.guiaEnvio),
+                cpCheck: serCpCheck(p.envioCpCheck),
             };
         }).filter(Boolean);
 

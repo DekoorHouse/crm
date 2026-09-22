@@ -1064,6 +1064,14 @@ const CATALOGO_NOTE = `\n\n**ENLACES DEL CATÁLOGO (para cuando el cliente pide 
 · Catálogo COMPLETO (solo si quiere ver TODO o no sabes qué busca): https://app.dekoormx.com/sitio/catalogo/
 Reglas: elige por lo que el cliente YA te dijo (si viene por una lámpara de niño, manda la de niños; si es para su negocio, la de empresas). NO mandes varios enlaces ni el catálogo completo "por si acaso": distrae y enfría la venta. Después de mandarlo, sigue con tu pregunta para avanzar el pedido (el nombre, la foto, etc.). Escribe la URL tal cual, completa.`;
 
+// COBERTURA POR C.P. — regla global de venta (auditoría 22-sep-2026, server/envios/coberturaCheck.js):
+// el veredicto lo da SOLO la nota del sistema (cotización T1). Leonel se dejaba convencer: tras un
+// /lamento correcto el cliente decía "es Emiliano Zapata", "Cancún", "aquí llega DHL", "pertenece al
+// Centro" y Leonel "revisaba de nuevo" y respondía /ttt sin nota (5 de 20 pedidos), o inventaba un
+// "servicio ocurre" en sucursal (DH16456). Además de esta nota hay candados en código (decidirGuardTtt,
+// bloqueaRegistro): esto es la instrucción, aquello la red.
+const COBERTURA_NOTE = `\n\n**COBERTURA DE ENVÍO — SOLO LA NOTA DEL SISTEMA DECIDE:** la cobertura de una zona la determina ÚNICAMENTE la nota interna "Cobertura de envío para el C.P. …" que el sistema te deja cuando el cliente escribe un código postal de 5 dígitos. Tú NO puedes saber si llegamos a un lugar por su nombre: NUNCA confirmes cobertura por el nombre de una ciudad, colonia o municipio, ni porque el cliente diga que ahí llega DHL o que ya ha recibido paquetes, ni porque insista. Si te contesta con el nombre de su ciudad en vez de un C.P., pídele con amabilidad el código postal de 5 dígitos. Nunca digas "revisé de nuevo", "ya confirmé" ni "sí llegamos" sin una nota nueva que lo diga. Después de un /lamento, la venta NO continúa hasta que un C.P. nuevo de 5 dígitos salga con cobertura: no tomes nombres ni datos del pedido como si ya estuviera resuelto, y no registres el pedido. No existe entrega en sucursal, "ocurre" ni recoger en paquetería: no lo ofrezcas. Si el cliente pide que lo revise una persona, escribe /equipo.`;
+
 // Dos alucinaciones del caso DH14717 (10-ago-2026), ambas en etapa de VENTA —donde no existian las
 // reglas equivalentes del prompt de post-venta—:
 //  (1) Leonel OFRECIO "una tarjeta de regalo personalizada con el nombre de quien se la entrega".
@@ -1176,7 +1184,7 @@ async function buildStaticContext(botInstructions, isPostVenta = false, paymentP
     }
 
     // Instrucciones van en systemInstruction, no en contents
-    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${isPostVenta ? REENVIO_COMMAND_NOTE : ''}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE + (oxxoMpActive ? OXXO_MP_COMMAND_NOTE : '') : ''}${isPostVenta ? '' : INFANTIL_SPECIAL_NOTE}${DURANGO_NOTE}${NO_PERSONAL_PLANS_NOTE}${IDENTITY_NOTE}${PAYMENT_PROOF_NOTE}${CATALOGO_NOTE}${NO_INVENTAR_NOTE}${NO_INVENTAR_ENVIO_NOTE}`;
+    const systemText = `${botInstructions}${closingRule}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.${CANCEL_COMMAND_NOTE}${isPostVenta ? REENVIO_COMMAND_NOTE : ''}${paymentPhaseActive ? POSTVENTA_PROTOCOL_NOTE + COMPROBANTE_COMMAND_NOTE + (oxxoMpActive ? OXXO_MP_COMMAND_NOTE : '') : ''}${isPostVenta ? '' : INFANTIL_SPECIAL_NOTE + COBERTURA_NOTE}${DURANGO_NOTE}${NO_PERSONAL_PLANS_NOTE}${IDENTITY_NOTE}${PAYMENT_PROOF_NOTE}${CATALOGO_NOTE}${NO_INVENTAR_NOTE}${NO_INVENTAR_ENVIO_NOTE}`;
 
     // Material de referencia va en contents (como contexto, no como instrucciones)
     const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo:** Si una de estas respuestas aplica perfectamente, puedes enviarla respondiendo ÚNICAMENTE con su atajo (ejemplo: responde exactamente "/ttt" y nada más); el sistema lo reemplazará automáticamente por su contenido completo, incluida cualquier imagen. También puedes escribir el contenido directamente si lo prefieres. NUNCA combines un atajo con más texto en el mismo mensaje.\n\n⚠️ **El cliente NO debe enterarse de que existen los atajos.** Son internos: él solo ve el texto ya expandido. Por eso NUNCA anuncies, presentes ni expliques un atajo, ni antes ni después ni en otro mensaje. PROHIBIDO escribir cosas como "te envío el comando", "te mando este otro", "usamos este comando para checar cobertura", "ahora te comparto la información de..." o dos puntos anunciando lo que sigue. Simplemente escribe el atajo SOLO (ej.: una línea que diga exactamente "/ttt") y nada más: el sistema pone el texto completo por ti y al cliente le llega una conversación natural. Si necesitas mandar dos atajos, ponlos cada uno en su propia línea, sin una sola palabra entre ellos.\n${quickReplies || 'No hay respuestas rápidas.'}`;
@@ -3611,62 +3619,31 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             return { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote };
         })();
 
-        // (B) Cobertura/cotización T1: cuando la IA revisa cobertura de un C.P. (labor de venta),
-        // cotizar en T1 (DHL/FedEx, precios reales) para saber si hay envío y a qué costo. Reemplaza
-        // el scraping de Estafeta. El envío al cliente es GRATIS; los montos son referencia interna.
+        // (B) Cobertura/cotización T1 (server/envios/coberturaCheck.js). Se busca el C.P. en TODO el
+        // lote de mensajes del cliente desde nuestra última respuesta —no solo en el mensaje que
+        // disparó el turno: "83554" + "Puerto Peñasco" en dos mensajes dejaba a Leonel sin nota y
+        // respondía /ttt por inercia (auditoría 22-sep-2026)—, se cotiza en T1 (precio real de DHL;
+        // el envío al cliente es GRATIS, los montos son referencia interna) y el veredicto se GUARDA
+        // en el contacto (`coverage`). Si en este turno no hay C.P. nuevo, se le recuerda a la IA el
+        // último veredicto para que no "revise de nuevo" por su cuenta cuando el cliente insiste.
         const coberturaPromise = (async () => {
-            let coberturaNote = '';
-            if (postalCodeMatch) {
-                try {
-                    const t1 = require('./t1/t1Client');
-                    const q = await t1.cotizar({ cpDestino: postalCodeMatch[1] });
-                    const result = Array.isArray(q && q.result) ? q.result : [];
-                    const ops = [];
-                    result.forEach((r) => {
-                        const svc = (r.cotizacion && r.cotizacion.servicios) || {};
-                        Object.keys(svc).forEach((k) => {
-                            const s = svc[k] || {};
-                            if (s.costo_total != null) ops.push({ paq: r.clave, serv: s.servicio, dias: s.dias_entrega, costo: Number(s.costo_total) });
-                        });
-                    });
-                    ops.sort((a, b) => a.costo - b.costo);
-                    if (ops.length) {
-                        const top = ops.slice(0, 4).map(o => `${o.paq} ${o.serv} $${o.costo.toFixed(2)}${o.dias ? ` (~${o.dias}d)` : ''}`).join(' · ');
-                        // Umbral de envío: SERVIMOS la zona (envío GRATIS, nosotros pagamos la guía) solo si
-                        // **DHL** llega por <= este monto. Regla del negocio (24-jul-2026): la decisión la toma
-                        // ÚNICAMENTE DHL, que es la paquetería con la que generamos la guía. Antes bastaba con
-                        // que CUALQUIER paquetería bajara del umbral, y eso prometía cobertura en zonas a las
-                        // que DHL no llega (o cobra de más). Ahora: sin tarifa DHL <= umbral -> se DECLINA con
-                        // /lamento, aunque otra paquetería salga más barata.
-                        const UMBRAL_ENVIO = Number(process.env.MAX_ENVIO_SERVIBLE || 200);
-                        // ops ya viene ordenado ascendente -> el primer DHL es el DHL MÁS BARATO. En T1 la
-                        // paquetería viene en `clave` ("DHL", "FEDEX", "ESTAFETA"…) y el servicio en `servicio`
-                        // ("EXPRESS DOMESTIC", "ECONOMY DOMESTIC"…). Se busca "dhl" en ambos: "domestic" NO
-                        // sirve como señal (otras paqueterías también usan esa palabra y daría un falso DHL).
-                        const dhlOps = ops.filter(o => /dhl/i.test(`${o.paq || ''} ${o.serv || ''}`));
-                        const dhlCosto = dhlOps.length ? dhlOps[0].costo : null;
-                        const servible = dhlCosto != null && dhlCosto <= UMBRAL_ENVIO;
-                        // Las claves van al log: si un día T1 renombra "DHL", aquí se vería que se está
-                        // declinando todo por no reconocer la paquetería (y no por falta de cobertura real).
-                        const claves = [...new Set(ops.map(o => o.paq).filter(Boolean))].join(', ') || '¿?';
-                        console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: ${ops.length} ops (${claves}), DHL ${dhlCosto != null ? `$${dhlCosto}` : 'SIN TARIFA'} vs umbral $${UMBRAL_ENVIO} -> ${servible ? 'SERVIR' : 'LAMENTO'}`);
-                        if (servible) {
-                            coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real de DHL vía T1, desde Durango):** SÍ hay cobertura a domicilio (DHL llega por $${dhlCosto.toFixed(2)}) y el envío al cliente es GRATIS (nosotros pagamos la guía). Opciones (referencia interna de costo, NO para el cliente): ${top}. NO le cobres envío ni le menciones estos montos; úsalos solo para saber que sí llegamos y a qué costo. Sigue el flujo normal de cobertura (responde "/ttt" y luego "/qqq"). Usa esta info SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal (es un pedido, monto, teléfono, etc.), ignora esta nota.`;
-                        } else {
-                            const motivo = dhlCosto == null
-                                ? `DHL NO cotiza esa zona (las demás paqueterías no cuentan para esta decisión)`
-                                : `DHL cuesta $${dhlCosto.toFixed(2)}, por arriba de nuestro límite de $${UMBRAL_ENVIO}`;
-                            coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]} (cotización real vía T1, desde Durango):** NO tenemos cobertura en esa zona — ${motivo}. En este caso NO tomamos el pedido: responde ÚNICAMENTE con "/lamento" (en su propio renglón, sólo eso, sin ningún texto adicional). NO le menciones al cliente el costo del envío ni ningún monto; el mensaje de /lamento ya le explica con amabilidad e invita a dar otro código postal de otra zona. (Referencia interna de opciones: ${top}.) Aplica esto SOLO si el cliente pregunta por cobertura/envío o está dando su C.P./dirección. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
-                        }
-                    } else {
-                        console.log(`[AI] Cobertura T1 CP ${postalCodeMatch[1]}: sin tarifas (posible zona sin cobertura o CP inválido)`);
-                        coberturaNote = `\n\n**Cobertura de envío para el C.P. ${postalCodeMatch[1]}:** ninguna paquetería (DHL/FedEx) devolvió tarifa para ese C.P. — posible zona sin cobertura o C.P. inválido. Si el cliente pregunta por envío a esa zona, avísale con amabilidad que lo confirmarás y escribe /equipo (en su propio renglón) antes de prometer la entrega. Si el número de 5 dígitos NO es un código postal, ignora esta nota.`;
-                    }
-                } catch (e) {
-                    console.warn('[AI] Cotización de cobertura T1 falló:', e.message);
+            const cob = require('./envios/coberturaCheck');
+            const msgsDesc = messagesSnapshot.docs.map(d => d.data());
+            let lote = null;
+            try { lote = cob.ultimoCpDelLote(msgsDesc, contactId); } catch (e) { console.warn('[AI] ultimoCpDelLote falló:', e.message); }
+            if (!lote && postalCodeMatch) lote = { cp: postalCodeMatch[1] };
+            if (lote) {
+                const check = await cob.cotizarCp(lote.cp);
+                console.log(`[AI] Cobertura T1 CP ${check.cp}: ${check.ops.length} ops (${(check.claves || []).join(', ') || '¿?'}), DHL ${check.dhl != null ? `$${check.dhl}` : 'SIN TARIFA'} vs umbral $${check.umbral} -> ${check.verdict.toUpperCase()}${check.error ? ` (${check.error})` : ''}`);
+                if (check.verdict !== 'error') {
+                    contactRef.set({ coverage: { ...cob.coverageParaGuardar(check, 'ia'), at: admin.firestore.FieldValue.serverTimestamp() } }, { merge: true })
+                        .catch(e => console.warn('[AI] no se pudo guardar coverage:', e.message));
                 }
+                return { note: cob.notaCobertura(check), check: { ...check, source: 'ia', stale: false } };
             }
-            return coberturaNote;
+            const vigente = cob.veredictoVigente(contactData, msgsDesc, contactId);
+            if (vigente && contactData.aiStage !== 'postventa') return { note: cob.notaCobertura(vigente, { recordatorio: true }), check: vigente };
+            return { note: '', check: vigente };
         })();
 
         // (C) Pedido REGISTRADO (orderInfoNote) + FORMULARIO de datos de envío (shippingFormNote) +
@@ -3825,7 +3802,9 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // en fase de pago de la que no lo está.
 
         // Esperar las tres tareas de red juntas (arrancaron arriba y corrieron en paralelo).
-        const [mediaBundle, coberturaNote, orderNotes] = await Promise.all([mediaWorkPromise, coberturaPromise, orderNotesPromise]);
+        const [mediaBundle, coberturaResult, orderNotes] = await Promise.all([mediaWorkPromise, coberturaPromise, orderNotesPromise]);
+        const coberturaNote = (coberturaResult && coberturaResult.note) || '';
+        const coberturaCheck = (coberturaResult && coberturaResult.check) || null; // veredicto de este turno o el guardado (candados de /ttt y /registrar)
         const { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote } = mediaBundle;
         const { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote } = orderNotes;
 
@@ -4058,6 +4037,30 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
         } catch (e) { console.warn('[TEL] candado del telefono fallo (se continua):', e.message); }
 
+        // CANDADO DE COBERTURA (/ttt): la IA solo puede confirmar cobertura con un veredicto SERVIBLE
+        // vigente (de este turno o guardado en el contacto y no caduco). Sin C.P. pide el código; con
+        // veredicto negativo, error de T1 o sin tarifas, pasa a una persona. Auditoría 22-sep-2026:
+        // 11 de 20 pedidos "sin cobertura" nacieron de un /ttt sin nota (C.P.+ciudad en dos mensajes,
+        // o el cliente insistiendo con el nombre del pueblo). El prompt solo no alcanzó.
+        let coberturaGuardMotivo = null;
+        try {
+            if (/\/ttt\b/i.test(aiResponse) && contactData.aiStage !== 'postventa') {
+                const cob = require('./envios/coberturaCheck');
+                const decision = cob.decidirGuardTtt(coberturaCheck);
+                if (!decision.ok) {
+                    coberturaGuardMotivo = decision.motivo;
+                    console.warn(`[COBERTURA] ${contactId}: la IA emitió /ttt sin veredicto servible (${decision.motivo}${coberturaCheck ? `, CP ${coberturaCheck.cp} = ${coberturaCheck.verdict}` : ', sin C.P.'}); se sustituye la respuesta.`);
+                    aiResponse = decision.texto;
+                    if (decision.escalar) {
+                        alertAdminHumanNeeded(contactId, contactData, `Cobertura sin confirmar: la IA quiso decir que SÍ llegamos${coberturaCheck ? ` al C.P. ${coberturaCheck.cp} (${coberturaCheck.verdict}${coberturaCheck.dhl != null ? `, DHL $${coberturaCheck.dhl}` : ''})` : ' sin tener un C.P.'}. Revisa si se puede servir la zona y confírmale al cliente (si sí: manda /ttt desde el CRM).`)
+                            .catch(e => console.warn('[COBERTURA] alerta falló:', e.message));
+                        contactRef.set({ needsAttention: true, needsAttentionReason: 'cobertura', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+                            .catch(e => console.warn('[COBERTURA] no se pudo marcar Atención:', e.message));
+                    }
+                }
+            }
+        } catch (e) { console.warn('[COBERTURA] candado de /ttt falló (se continua):', e.message); }
+
         // Separar la respuesta en múltiples mensajes si contiene [SPLIT]
         let aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);
         let lastText = "";
@@ -4119,7 +4122,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // (orders/aiOrderRegistration.js). Si algo falla, cae al flujo manual (pendientes_ia).
         // Aplica TAMBIÉN en ETAPA 2 (post-venta): ahí es un pedido NUEVO de un cliente que ya
         // cerró el anterior. Antes se descartaba en silencio y el segundo pedido se perdía.
-        const registerOrderCmd = /\/registrar\b/i.test(aiResponse);
+        let registerOrderCmd = /\/registrar\b/i.test(aiResponse);
         if (registerOrderCmd && isPostVenta) {
             console.log(`[AI_ORDER] /registrar en POST-VENTA para ${contactId}: pedido nuevo de un cliente con pedido cerrado; se registra y regresa a ETAPA 1 (venta).`);
         }
@@ -4172,7 +4175,29 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             paymentRegisteredOrderNumber = await registrationTurn.ensure(extraText);
             return paymentRegisteredOrderNumber;
         };
-        const registrationNeeded = !orderCancelled && (registerOrderCmd || anticipoPaidCmd || (saleClosed && !isPostVenta && !esperaAnticipoCmd));
+        // CANDADO DE REGISTRO SIN COBERTURA: con un veredicto NEGATIVO vigente (reexpedición / sin
+        // tarifas, sin override humano) el pedido NO se registra aunque la IA emita /registrar o
+        // diga "ya registramos": 31 pedidos salieron así entre ago y sep-2026 (auditoría 22-sep).
+        // Un humano lo desbloquea mandando el atajo /ttt desde el CRM (cuenta como override) o
+        // registrando el pedido a mano.
+        let registroBloqueadoPorCobertura = false;
+        try {
+            if (!isPostVenta && (registerOrderCmd || saleClosed)) {
+                const cob = require('./envios/coberturaCheck');
+                if (cob.bloqueaRegistro(coberturaCheck)) {
+                    registroBloqueadoPorCobertura = true;
+                    registerOrderCmd = false;
+                    saleClosed = false;
+                    aiMessages = [cob.TEXTO_REGISTRO_BLOQUEADO];
+                    console.warn(`[COBERTURA] ${contactId}: /registrar bloqueado, CP ${coberturaCheck.cp} = ${coberturaCheck.verdict}.`);
+                    alertAdminHumanNeeded(contactId, contactData, `La IA quiso REGISTRAR un pedido con C.P. ${coberturaCheck.cp} sin cobertura (${coberturaCheck.verdict}${coberturaCheck.dhl != null ? `, DHL $${coberturaCheck.dhl}` : ''}). Se frenó el registro: decide si se sirve la zona (manda /ttt desde el CRM para desbloquear) o dile al cliente que no llegamos.`)
+                        .catch(e => console.warn('[COBERTURA] alerta falló:', e.message));
+                    contactRef.set({ needsAttention: true, needsAttentionReason: 'cobertura_registro', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+                        .catch(e => console.warn('[COBERTURA] no se pudo marcar Atención:', e.message));
+                }
+            }
+        } catch (e) { console.warn('[COBERTURA] candado de registro falló (se continua):', e.message); }
+        const registrationNeeded = !orderCancelled && !registroBloqueadoPorCobertura && (registerOrderCmd || anticipoPaidCmd || (saleClosed && !isPostVenta && !esperaAnticipoCmd));
         if (registrationNeeded) await ensureRegistration();
         const paymentConversation = require('./payments/paymentConversation');
         const paymentClaim = require('./payments/paymentPolicy').claimsPayment(aiResponse) || paymentConversation.fullPaymentClaim(aiResponse) || paymentConversation.blocksProductionForBalance(aiResponse);
@@ -4339,7 +4364,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     // min (15:45, 15:52, 16:05). Si el texto ya se envió en las últimas 12 h, se
                     // sustituye por una línea corta y natural en vez de repetir el bloque completo
                     // (nunca se deja mudo el turno: eso fue el bug que ya se corrigió en /comprobante).
-                    if (msgText && msgText.trim()) {
+                    // /lamento y /cp quedan FUERA del candado: silenciar el segundo /lamento hacía que el
+                    // cliente creyera que su nuevo C.P. sí tenía cobertura (DH16121, DH16346, auditoría
+                    // 22-sep-2026). Repetirlos es correcto: cada C.P. merece su respuesta.
+                    const atajoSinAntiRepeticion = /^(lamento|cp)$/i.test(String(shortcutMatch[1] || '').trim());
+                    if (msgText && msgText.trim() && !atajoSinAntiRepeticion) {
                         const REPEAT_WINDOW_MS = 12 * 60 * 60 * 1000;
                         const norm = t => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 220);
                         const nuevoNorm = norm(msgText);
