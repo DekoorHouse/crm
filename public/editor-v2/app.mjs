@@ -71,6 +71,7 @@ function edit(operation) {
 }
 function setTool(next) {
     powerClipSources = null; hideObjectMenu();
+    canvas.classList.remove('placing-powerclip');
     if (gesture) cancelGesture();
     splineDraft = null; splinePointer = null;
     tool = next;
@@ -308,9 +309,9 @@ canvas.addEventListener('pointerdown', event => {
         event.preventDefault();
         const id = event.target.closest('[data-id]')?.dataset.id;
         try {
-            const next = clone(history.document); placeInPowerClip(next, powerClipSources, id);
+            const next = clone(history.document); placeInPowerClip(next, powerClipSources, id, { createContainer: true });
             const valid = validateDocument(next);
-            powerClipSources = null; selectOnly(id); commit(valid); status('Contenido colocado en PowerClip');
+            powerClipSources = null; canvas.classList.remove('placing-powerclip'); selectOnly(id); commit(valid); status('Contenido colocado en PowerClip');
         } catch (error) { status(error.message + ' Esc para cancelar.'); }
         return;
     }
@@ -656,7 +657,7 @@ canvas.addEventListener('contextmenu', event => {
     render();
     const menu = $('#object-menu'), single = selectedIds.size === 1;
     $('#make-powerclip').disabled = !single || object.locked || Boolean(object.powerClip) || !['rect', 'ellipse'].includes(object.type);
-    $('#place-powerclip').disabled = selectedObjects().some(item => item.locked || item.powerClip) || !current().objects.some(item => item.powerClip && !item.locked && !item.hidden && !selectedIds.has(item.id));
+    $('#place-powerclip').disabled = selectedObjects().some(item => item.locked || item.powerClip) || !current().objects.some(item => ['rect', 'ellipse'].includes(item.type) && !item.locked && !item.hidden && !selectedIds.has(item.id));
     $('#extract-powerclip').hidden = !object.powerClip;
     $('#extract-powerclip').disabled = !single || object.locked || !object.powerClip?.objects.length;
     $('#remove-powerclip').hidden = !object.powerClip;
@@ -675,7 +676,8 @@ $('#make-powerclip').onclick = () => {
 };
 $('#place-powerclip').onclick = () => {
     hideObjectMenu(); setTool('select'); powerClipSources = new Set(selectedIds);
-    status('Haz clic en el contenedor PowerClip de destino. Esc para cancelar.'); canvas.focus();
+    canvas.classList.add('placing-powerclip');
+    status('Haz clic en un rectángulo o elipse para colocar el contenido dentro. Esc para cancelar.'); canvas.focus();
 };
 $('#extract-powerclip').onclick = () => { hideObjectMenu(); edit(d => extractPowerClip(d, selectedId)); status('Contenido extraído'); };
 $('#powerclip-extract').onclick = () => { edit(d => extractPowerClip(d, selectedId)); status('Contenido extraído'); };

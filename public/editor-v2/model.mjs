@@ -123,11 +123,12 @@ export function makePowerClip(object) {
     object.powerClip = { width: object.width, height: object.height, objects: [] };
 }
 
-export function placeInPowerClip(document, sourceIds, targetId) {
+export function placeInPowerClip(document, sourceIds, targetId, { createContainer = false } = {}) {
     const target = document.objects.find(item => item.id === targetId);
-    if (!target?.powerClip || target.locked || sourceIds.has(targetId)) throw new Error('Elige otro contenedor PowerClip sin bloquear.');
+    if (!target || target.hidden || target.locked || sourceIds.has(targetId) || (!target.powerClip && (!createContainer || !['rect', 'ellipse'].includes(target.type)))) throw new Error('Elige otro rectángulo o elipse visible y sin bloquear.');
     const sources = document.objects.filter(item => sourceIds.has(item.id));
     if (!sources.length || sources.some(item => item.locked || item.hidden || item.powerClip)) throw new Error('Selecciona contenido visible, sin bloquear y sin PowerClip anidado.');
+    if (!target.powerClip) makePowerClip(target);
     const sx = target.powerClip.width / target.width, sy = target.powerClip.height / target.height;
     const t = target.powerClip.transform || { x: 0, y: 0, scale: 1 };
     for (const source of sources) {

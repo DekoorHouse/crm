@@ -3,6 +3,27 @@ import assert from 'node:assert/strict';
 import { powerClipDropTarget } from '../public/editor-v2/geometry.mjs';
 import { blankDocument, createObject, makePowerClip, placeInPowerClip, extractPowerClip, validateDocument, exportSvg, History, clone, objectsWithContents, fitPowerClip } from '../public/editor-v2/model.mjs';
 
+test('picking a plain shape converts and inserts in one undoable operation', () => {
+    const d = blankDocument(), frame = createObject('ellipse', 10, 10), source = createObject('rect', 12, 12);
+    d.objects.push(frame, source);
+    const history = new History(d), next = clone(d), ids = new Set([source.id]);
+    placeInPowerClip(next, ids, frame.id, { createContainer: true });
+    history.commit(next);
+    assert.equal(history.document.objects.length, 1);
+    assert.equal(history.document.objects[0].powerClip.objects[0].id, source.id);
+    history.undo();
+    assert.equal(history.document.objects.length, 2);
+    assert.equal(history.document.objects[0].powerClip, undefined);
+    for (const invalid of [source.id, 'missing']) {
+        const copy = clone(d);
+        assert.throws(() => placeInPowerClip(copy, ids, invalid, { createContainer: true }));
+        assert.deepEqual(copy, d);
+    }
+    frame.locked = true;
+    assert.throws(() => placeInPowerClip(d, ids, frame.id, { createContainer: true }));
+    assert.equal(frame.powerClip, undefined);
+});
+
 test('drag target respects ellipse boundary, blockers and invalid sources', () => {
     const frame = createObject('ellipse', 100, 100, 100, 100); makePowerClip(frame);
     const source = createObject('rect', 0, 0), ids = new Set([source.id]);
