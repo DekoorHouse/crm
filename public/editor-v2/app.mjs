@@ -35,6 +35,12 @@ let cloudBinding = null, cloudSavedJson = null, cloudBusy = false, pendingSave =
 let cloudApi = null;
 let nextFill = '#b9a3ed';
 let nextStroke = '#352a49';
+// The colours for new objects survive a reload in this browser.
+try {
+    const saved = JSON.parse(localStorage.getItem('dekoor.editor-v2.paint') || 'null'), valid = value => /^(none|#[0-9a-f]{6})$/i.test(value);
+    if (valid(saved?.fill)) nextFill = saved.fill;
+    if (valid(saved?.stroke)) nextStroke = saved.stroke;
+} catch {}
 let paletteTarget = 'fill';
 let splineDraft = null, splinePointer = null, splineFinishedAt = -Infinity;
 let displayUnit = 'mm';
@@ -295,6 +301,15 @@ function render() {
     $('.inspector').hidden = !o;
     $('#cloud-badge').hidden = !o;
     renderScene();
+    // Fill and outline chips: the selected object's colours, or the ones new objects will get.
+    const paint = o || { fill: nextFill, stroke: nextStroke };
+    $('#paint-caption').textContent = o ? (selectedIds.size > 1 ? 'Selección' : 'Objeto') : 'Nuevos objetos';
+    for (const [key, chip] of [['fill', $('#fill-chip')], ['stroke', $('#stroke-chip')]]) {
+        const value = paint[key], name = key === 'fill' ? 'Relleno' : 'Contorno';
+        chip.classList.toggle('none', value === 'none');
+        chip.style[key === 'fill' ? 'backgroundColor' : 'borderColor'] = value === 'none' ? '' : value;
+        chip.title = `${name}: ${value === 'none' ? 'sin color' : value}`; chip.setAttribute('aria-label', chip.title);
+    }
     const paletteColor = o ? o[paletteTarget] : paletteTarget === 'fill' ? nextFill : nextStroke;
     $('#palette-color').value = paletteColor === 'none' ? '#000000' : paletteColor;
     document.querySelectorAll('[data-color]').forEach(button => {
@@ -1199,7 +1214,10 @@ function applyPalette(color, target = 'fill') {
     if (o) {
         edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { item[target] = color; if (target === 'stroke' && color !== 'none' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH; } });
         status(color === 'none' ? `Sin ${label}` : `Color de ${label} actualizado`);
-    } else { render(); status(color === 'none' ? `Sin ${label} para la siguiente figura` : `Color de ${label} elegido para la siguiente figura`); }
+    } else {
+        try { localStorage.setItem('dekoor.editor-v2.paint', JSON.stringify({ fill: nextFill, stroke: nextStroke })); } catch {}
+        render(); status(color === 'none' ? `Sin ${label} para los nuevos objetos` : `Color de ${label} para los nuevos objetos`);
+    }
 }
 $('#palette-color').addEventListener('click', () => { paletteTarget = 'fill'; });
 $('#palette-color').addEventListener('contextmenu', event => { event.preventDefault(); paletteTarget = 'stroke'; $('#palette-color').showPicker(); });
