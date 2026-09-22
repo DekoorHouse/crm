@@ -512,13 +512,16 @@ canvas.addEventListener('pointerdown', event => {
     render();
 });
 // Text snaps to its rendered box; every other object keeps its geometry and rotation.
+// The page itself is also a target: its corners, edge midpoints, centre and edges.
 function snapTargets() {
-    return current().objects.map(item => {
+    const d = current(), page = { id: '__page', type: 'rect', page: true, x: 0, y: 0, width: d.width, height: d.height, hidden: false };
+    return [page, ...d.objects.map(item => {
         if (item.type !== 'text') return item;
         const bounds = getBounds(item);
         return { ...item, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
-    });
+    })];
 }
+const referenceLabel = ({ target, reference }) => target?.page ? `${reference.label === 'Nodo' ? 'Esquina' : reference.label} de página` : reference.label;
 function referenceAt(position) {
     for (const item of [...current().objects].reverse()) {
         if (item.hidden || item.locked) continue;
@@ -559,11 +562,11 @@ function drawReference({ target, reference }) {
     } else if (reference.label === 'Nodo') add('path', { d: `M${x} ${y - 5}l5 5-5 5-5-5Z`, ...marker });
     else if (reference.label === 'Punto medio') add('rect', { x: x - 4, y: y - 4, width: 8, height: 8, ...marker });
     else add('circle', { cx: x, cy: y, r: 3.5, ...marker });
-    const labelWidth = reference.label.length * 7 + 18;
+    const text = referenceLabel({ target, reference }), labelWidth = text.length * 7 + 18;
     const labelX = Math.max(4, Math.min(canvas.clientWidth - labelWidth - 4, x + 14));
     const labelY = Math.max(4, Math.min(canvas.clientHeight - 28, y + 14));
     add('rect', { x: labelX, y: labelY, width: labelWidth, height: 24, rx: 5, fill: '#102b35', stroke: '#22d3ee', 'stroke-width': 1 });
-    add('text', { x: labelX + 9, y: labelY + 16, fill: '#a5f3fc', 'font-size': 12, 'font-weight': 600 }).textContent = reference.label;
+    add('text', { x: labelX + 9, y: labelY + 16, fill: '#a5f3fc', 'font-size': 12, 'font-weight': 600 }).textContent = text;
 }
 canvas.addEventListener('pointerleave', () => { $('#hover-reference').replaceChildren(); canvas.style.cursor = ''; });
 canvas.addEventListener('pointermove', event => {
@@ -616,6 +619,11 @@ canvas.addEventListener('pointermove', event => {
         // Ctrl: one object lands on multiples of 15°; a group turns in steps of 15°.
         const [single] = gesture.originals.length === 1 ? gesture.originals : [];
         if (event.ctrlKey) delta = single ? Math.round(((single.rotation || 0) + delta) / 15) * 15 - (single.rotation || 0) : Math.round(delta / 15) * 15;
+        // Without Ctrl, right angles hold the rotation within 4° so they are easy to hit.
+        else {
+            const base = single ? single.rotation || 0 : 0, right = Math.round((base + delta) / 90) * 90;
+            if (Math.abs(base + delta - right) <= 4) delta = right - base;
+        }
         for (const item of gesture.originals) Object.assign(draft.objects.find(object => object.id === item.id), rotateObject(item, gesture.centre, delta));
         status(gesture.originals.length === 1 ? `Rotación: ${formatAngle((gesture.originals[0].rotation || 0) + delta)}` : `Giro: ${formatAngle(delta)}`);
     }
@@ -720,7 +728,7 @@ canvas.addEventListener('pointerup', event => {
         }
     }
     commit(draft); if (previous.type === 'draw') setTool('select');
-    if (previous.snap) { drawReference(previous.snap); status(`Encajado en ${previous.snap.reference.label.toLowerCase()}`); }
+    if (previous.snap) { drawReference(previous.snap); status(`Encajado en ${referenceLabel(previous.snap).toLowerCase()}`); }
     else showReference(event);
 });
 function cancelGesture() {
