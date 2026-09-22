@@ -43,7 +43,8 @@ export function validateDocument(input) {
         // Whitelist fields: project files are data, never markup or executable content.
         const valid = Object.fromEntries(['id', 'type', 'name', 'x', 'y', 'width', 'height', 'fill', 'stroke', 'strokeWidth', 'text', 'fontSize', 'hidden', 'locked'].map(k => [k, o[k]]));
         if (o.type === 'spline') {
-            if (!Array.isArray(o.points) || o.points.length < 2 || o.points.length > 500 || o.points.some(p => !p || !numberIn(p.x, 0, 1) || !numberIn(p.y, 0, 1))) throw new Error('La spline contiene puntos inválidos.');
+            // Control points are normalized to the curve's bounds, so they may fall outside 0–1.
+            if (!Array.isArray(o.points) || o.points.length < 2 || o.points.length > 500 || o.points.some(p => !p || !numberIn(p.x, -10000, 10000) || !numberIn(p.y, -10000, 10000))) throw new Error('La spline contiene puntos inválidos.');
             if (o.closed !== undefined && (typeof o.closed !== 'boolean' || (o.closed && o.points.length < 3))) throw new Error('Una curva cerrada necesita al menos tres puntos.');
             valid.points = o.points.map(p => ({ x: p.x, y: p.y }));
             if (o.closed) valid.closed = true;

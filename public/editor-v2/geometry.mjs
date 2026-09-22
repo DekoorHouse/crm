@@ -53,14 +53,16 @@ export function objectReference(object, point, tolerance) {
     const cx = x + w / 2, cy = y + h / 2;
     const points = [{ x: cx, y: cy, label: 'Centro' }];
     if (object.type === 'spline') {
-        const nodes = splinePoints(object), segments = splineSegments(nodes, object.closed);
-        const refs = [...nodes.map(p => ({ ...p, label: 'Nodo' })), ...segments.map(s => ({ ...curvePoint(s, .5), label: 'Punto medio' })), ...points];
+        const segments = splineSegments(splinePoints(object), object.closed);
+        // References sit on the visible curve (segment joints and midpoints), not on the control points.
+        const joints = segments.length ? [segments[0].p0, ...segments.map(s => s.p3)] : [];
+        const refs = [...joints.map(p => ({ ...p, label: 'Nodo' })), ...segments.map(s => ({ ...curvePoint(s, .5), label: 'Punto medio' })), ...points];
         const near = refs.map(p => ({ ...p, distance: Math.hypot(point.x - p.x, point.y - p.y) })).filter(p => p.distance <= tolerance).sort((a, b) => a.distance - b.distance);
         if (near.length) return near[0];
         let best = null;
         for (const segment of segments) {
             const hit = closestOnSegment(segment, point);
-            if (!best || hit.distance < best.distance) best = { ...hit, label: 'Borde' };
+            if (!best || hit.distance < best.distance) best = { x: hit.x, y: hit.y, distance: hit.distance, label: 'Borde' };
         }
         return best?.distance <= tolerance ? best : null;
     }

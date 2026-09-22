@@ -4,7 +4,7 @@ import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTran
 import { HAIRLINE_WIDTH } from './model.mjs';
 import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
-import { normalizeSpline, pointsPath, splinePath, splinePoints, closestOnSpline, moveSplineNodes, insertSplineNode, removeSplineNodes } from './spline.mjs';
+import { normalizeSpline, pointsPath, splinePath, splinePoints, closestOnSpline, moveSplineNodes, insertSplineNode, removeSplineNodes, controlPath, closestOnControlLine, legPoint } from './spline.mjs';
 import { renderAdjusted, canvasBlob, bakeAdjustedSource, sourceKey } from './imageAdjust.mjs';
 
 decorateControls();
@@ -171,9 +171,11 @@ function drawResizeHandles(bounds, group = false) {
     }
 }
 function drawNodes(o) {
-    const unit = 1 / view.scale;
+    const unit = 1 / view.scale, nodes = splinePoints(o);
+    // Dashed control line between the control points, as in CorelDRAW; the curve is highlighted over it.
+    svgElement('path', { d: controlPath(nodes, o.closed), fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'stroke-dasharray': `${4 * unit} ${3 * unit}`, 'pointer-events': 'none' }, selection);
     svgElement('path', { d: splinePath(o), fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'pointer-events': 'none' }, selection);
-    splinePoints(o).forEach((p, index) => {
+    nodes.forEach((p, index) => {
         const active = nodeEditing.nodes.has(index);
         svgElement('rect', { x: p.x - 4 * unit, y: p.y - 4 * unit, width: 8 * unit, height: 8 * unit, fill: active ? '#8b5bd1' : 'white', stroke: active ? 'white' : '#8b5bd1', 'stroke-width': unit, cursor: 'move', 'data-node': index }, selection);
     });
@@ -222,6 +224,7 @@ function renderSplinePreview() {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', pointsPath(points, closing)); path.setAttribute('fill', 'none'); path.setAttribute('stroke', '#22d3ee');
     path.setAttribute('stroke-width', 1.5 / view.scale); preview.append(path);
+    svgElement('path', { d: controlPath(points, closing), fill: 'none', stroke: '#22d3ee', 'stroke-width': 1 / view.scale, 'stroke-dasharray': `${4 / view.scale} ${3 / view.scale}`, opacity: .7 }, preview);
     for (const p of splineDraft) {
         const node = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         node.setAttribute('cx', p.x); node.setAttribute('cy', p.y); node.setAttribute('r', (closing && p === splineDraft[0] ? 5 : 3) / view.scale);
@@ -362,15 +365,19 @@ canvas.addEventListener('pointerdown', event => {
     if (gesture || (event.button !== 0 && event.button !== 1)) return;
     const nodeTarget = event.target.closest('[data-node]'), node = nodeTarget ? Number(nodeTarget.dataset.node) : null;
     const edited = editedSpline();
-    // While editing nodes, the edited curve takes the clicks within the reference tolerance.
+    // While editing nodes, the curve and its control line take the clicks within the reference tolerance.
+    // A double click adds a control point where the control line was clicked, or on the leg that
+    // drives the clicked part of the curve.
+    const near = hit => Boolean(hit) && hit.distance * view.scale <= 7;
+    const lineHit = edited && node === null ? closestOnControlLine(edited, point(event)) : null;
     const curveHit = edited && node === null ? closestOnSpline(edited, point(event)) : null;
-    const onCurve = Boolean(curveHit) && curveHit.distance * view.scale <= 7;
-    const clickedId = onCurve ? edited.id : event.target.closest('[data-id]')?.dataset.id;
+    const insertAt = near(lineHit) ? lineHit : near(curveHit) ? legPoint(edited, curveHit) : null;
+    const clickedId = insertAt ? edited.id : event.target.closest('[data-id]')?.dataset.id;
     if (event.button === 0 && tool === 'select' && !powerClipSources) {
         const previous = lastClick;
         lastClick = { id: clickedId, node, time: event.timeStamp, x: event.clientX, y: event.clientY };
         if (previous && (clickedId || node !== null) && previous.id === clickedId && previous.node === node && event.timeStamp - previous.time < 500 &&
-            Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < 5 && doubleClick(event, clickedId, node, onCurve ? curveHit : null)) {
+            Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < 5 && doubleClick(event, clickedId, node, insertAt)) {
             // Keep the browser from selecting page text on the second click.
             event.preventDefault(); lastClick = null; return;
         }
@@ -566,11 +573,11 @@ canvas.addEventListener('dblclick', event => {
     if (nodeEditing || event.timeStamp - splineFinishedAt < 500) return;
     if (!beginNodeEditing(event.target.closest('[data-id]')?.dataset.id || selectedId)) beginPowerClipEditing(event);
 });
-function doubleClick(event, id, node, curveHit) {
+function doubleClick(event, id, node, insertAt) {
     if (!nodeEditing) return beginNodeEditing(id) || beginPowerClipEditing(event);
     if (node !== null) { deleteNodes([node]); return true; }
-    if (!curveHit) return false;
-    addNode(curveHit); return true;
+    if (!insertAt) return false;
+    addNode(insertAt); return true;
 }
 function beginNodeEditing(id) {
     const target = current().objects.find(item => item.id === id);
