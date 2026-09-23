@@ -676,17 +676,29 @@ canvas.addEventListener('pointerdown', event => {
 });
 // Text snaps to its rendered box; every other object keeps its geometry and rotation.
 // The page itself is also a target: its corners, edge midpoints, centre and edges.
+// While editing a PowerClip's content, its container (from the level around it, in the same page
+// coordinates) is a reference too: its nodes, centre, midpoints and outline.
+function editedFrame() {
+    const container = powerClipEditing?.history.document.objects.find(item => item.id === powerClipEditing.id);
+    if (!container) return null;
+    const frame = { ...container, id: '__frame', frame: true, hidden: false, locked: false };
+    delete frame.powerClip;
+    return frame;
+}
 function snapTargets() {
     const d = current(), page = { id: '__page', type: 'rect', page: true, x: 0, y: 0, width: d.width, height: d.height, hidden: false };
-    return [page, ...d.objects.map(item => {
+    const frame = editedFrame();
+    return [page, ...(frame ? [frame] : []), ...d.objects.map(item => {
         if (item.type !== 'text') return item;
         const bounds = getBounds(item);
         return { ...item, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
     })];
 }
-const referenceLabel = ({ target, reference }) => target?.page ? `${reference.label === 'Nodo' ? 'Esquina' : reference.label} de página` : reference.label;
+const referenceLabel = ({ target, reference }) => target?.page ? `${reference.label === 'Nodo' ? 'Esquina' : reference.label} de página`
+    : target?.frame ? `${reference.label} del PowerClip` : reference.label;
 function referenceAt(position) {
-    for (const item of [...current().objects].reverse()) {
+    const frame = editedFrame();
+    for (const item of [...(frame ? [frame] : []), ...current().objects].reverse()) {
         if (item.hidden || item.locked) continue;
         const bounds = item.type === 'text' ? getBounds(item) : item;
         const reference = objectReference({ ...item, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }, position, 7 / view.scale);
@@ -901,7 +913,7 @@ canvas.addEventListener('pointerup', event => {
         }
     }
     commit(draft); if (previous.type === 'draw') setTool('select');
-    if (previous.snap) { drawReference(previous.snap); status(`Encajado en ${referenceLabel(previous.snap).toLowerCase()}`); }
+    if (previous.snap) { drawReference(previous.snap); const label = referenceLabel(previous.snap); status(`Encajado en ${label[0].toLowerCase()}${label.slice(1)}`); }
     else showReference(event);
 });
 // Workshop shapes appear at their real size in the middle of the view, as cutting lines.
