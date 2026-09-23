@@ -55,8 +55,9 @@ export function fillHoles(inside, width, height) {
 export function contourLoops(value, width, height) {
     const W = width + 2, H = height + 2, at = (x, y) => (x <= 0 || y <= 0 || x > width || y > height) ? -1 : value[(y - 1) * width + (x - 1)];
     const points = new Map(), links = new Map();
+    // Each cell edge has a number: even for horizontal edges, odd for vertical ones.
     const edgePoint = (x0, y0, x1, y1) => {
-        const key = x0 === x1 ? `v${x0},${Math.min(y0, y1)}` : `h${Math.min(x0, x1)},${y0}`;
+        const key = x0 === x1 ? (Math.min(y0, y1) * W + x0) * 2 + 1 : (y0 * W + Math.min(x0, x1)) * 2;
         if (!points.has(key)) {
             const a = at(x0, y0), b = at(x1, y1), t = a === b ? .5 : a / (a - b);
             points.set(key, { x: x0 + (x1 - x0) * t - .5, y: y0 + (y1 - y0) * t - .5 });

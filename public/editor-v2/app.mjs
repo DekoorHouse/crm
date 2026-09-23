@@ -930,7 +930,7 @@ canvas.addEventListener('pointerup', event => {
     const previous = gesture; gesture = null;
     if (previous.moved || !['move', 'nodes', 'node-marquee', 'node-handle'].includes(previous.type)) lastClick = null;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    if (previous.type === 'silhouette') { finishSilhouetteDrag(); return; }
+    if (previous.type === 'silhouette') { finishSilhouetteDrag(point(event), previous.start); return; }
     if (previous.type === 'pan') return;
     if (previous.type === 'marquee') { render(); status(`${selectedIds.size} objetos seleccionados`); return; }
     if (previous.type === 'node-marquee') {
@@ -1601,9 +1601,9 @@ $('#bitmap-actual').addEventListener('change', event => $('#bitmap-frame').class
 // around it for the outside lines, and the lines are traced there and turned back into page millimetres.
 let silhouette = null, silhouetteTimer = null;
 const silhouetteInfo = text => { $('#silhouette-info').textContent = text; };
-async function rasterizeSelection(items, margin) {
+async function rasterizeSelection(items, margin, maxSide = 2500) {
     const box = unionBounds(items.map(getBounds)), x = box.x - margin, y = box.y - margin, w = box.width + 2 * margin, h = box.height + 2 * margin;
-    const scale = Math.min(10, 2500 / Math.max(w, h)), width = Math.max(1, Math.round(w * scale)), height = Math.max(1, Math.round(h * scale));
+    const scale = Math.min(10, maxSide / Math.max(w, h)), width = Math.max(1, Math.round(w * scale)), height = Math.max(1, Math.round(h * scale));
     const markup = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${x} ${y} ${w} ${h}">${items.map(item => objectMarkup(item)).join('')}</svg>`;
     const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml' }));
     try {
@@ -1695,23 +1695,29 @@ function createSilhouettes(session, direction, stroke, width) {
 }
 // Silueta by dragging, as in CorelDRAW: press on an object and drag; the line goes through the pointer
 // (outside the shape: an outside silhouette; inside it: an inside one). The distances are measured
-// once when the drag starts; moving only traces the line again.
+// once when the drag starts; moving only traces the line again. Releasing before they are ready still
+// creates the silhouette where the pointer was let go.
 let silhouetteDrag = null;
 async function startSilhouetteDrag(event, start) {
     const id = event.target.closest('[data-id]')?.dataset.id;
-    if (!id || !current().objects.some(item => item.id === id && !item.hidden)) { status('Presiona sobre un objeto y arrastra hacia afuera o hacia adentro.'); return; }
-    if (!selectedIds.has(id)) selectOnly(id);
+    // Pressing beside a thin line or an unfilled shape uses what is already selected.
+    if (id && current().objects.some(item => item.id === id && !item.hidden) && !selectedIds.has(id)) selectOnly(id);
     const items = selectedObjects().filter(item => !item.hidden);
-    const session = silhouetteDrag = { ids: items.map(item => item.id), pointer: start, fields: null, result: null, busy: false, again: false };
+    if (!items.length) { status('Presiona sobre un objeto (o selecciónalo primero) y arrastra hacia afuera o hacia adentro.'); return; }
+    const session = silhouetteDrag = { ids: items.map(item => item.id), pointer: start, fields: null, result: null, busy: false, again: false, released: false };
     gesture = { type: 'silhouette', pointerId: event.pointerId, start };
     render(); status('Preparando la silueta…');
     try {
-        const raster = await rasterizeSelection((await outlineLicensedText({ objects: clone(items) })).objects, 40);
+        const raster = await rasterizeSelection((await outlineLicensedText({ objects: clone(items) })).objects, 40, 1600);
         if (silhouetteDrag !== session) return;
         session.raster = raster;
         session.fields = { outside: silhouetteField(raster.mask, raster.width, raster.height, 'outside'), inside: silhouetteField(raster.mask, raster.width, raster.height, 'inside') };
         traceSilhouetteDrag();
-    } catch (error) { if (silhouetteDrag === session) { silhouetteDrag = null; gesture = null; status(error.message || 'No se pudo preparar la silueta.'); } }
+    } catch (error) {
+        if (silhouetteDrag !== session) return;
+        silhouetteDrag = null; if (gesture?.type === 'silhouette') gesture = null;
+        $('#hover-reference').replaceChildren(); status(error.message || 'No se pudo preparar la silueta.');
+    }
 }
 function traceSilhouetteDrag() {
     const session = silhouetteDrag;
@@ -1726,11 +1732,17 @@ function traceSilhouetteDrag() {
             const distance = Math.max(.5, session.fields[direction][at] - .5), steps = Math.max(1, Math.min(20, Math.round(Number($('#silhouette-bar-steps').value) || 1)));
             session.direction = direction; session.distance = distance / r.scale;
             session.result = traceSilhouettes(session.fields[direction], r.width, r.height, { distance, steps, direction });
-            drawSilhouetteDrag(session);
-            status(`Silueta ${direction === 'outside' ? 'exterior' : 'interior'} · ${session.distance.toFixed(1)} mm${steps > 1 ? ` · ${steps} pasos` : ''} · suelta para crearla`);
-        } finally {
+            if (!session.released) {
+                drawSilhouetteDrag(session);
+                status(`Silueta ${direction === 'outside' ? 'exterior' : 'interior'} · ${session.distance.toFixed(1)} mm${steps > 1 ? ` · ${steps} pasos` : ''} · suelta para crearla`);
+            }
+        } catch (error) { session.result = null; status(error.message || 'No se pudo trazar la silueta.'); }
+        finally {
             session.busy = false;
-            if (session.again && silhouetteDrag === session) { session.again = false; traceSilhouetteDrag(); }
+            if (silhouetteDrag === session) {
+                if (session.again) { session.again = false; traceSilhouetteDrag(); }
+                else if (session.released) completeSilhouetteDrag(session);
+            }
         }
     }, 0);
 }
@@ -1748,10 +1760,23 @@ function drawSilhouetteDrag(session) {
         svgElement('path', { d, fill: 'none', stroke: color, 'stroke-width': 1.5 / view.scale, 'stroke-dasharray': `${4 / view.scale} ${3 / view.scale}` }, group);
     }
 }
-function finishSilhouetteDrag() {
-    const session = silhouetteDrag; silhouetteDrag = null;
+// On release the line is traced once more at the release point (after the preparation if it is still
+// running), then created.
+function finishSilhouetteDrag(pointer, start) {
+    const session = silhouetteDrag;
+    if (!session) return;
+    if (Math.hypot(pointer.x - start.x, pointer.y - start.y) * view.scale < 3) {
+        silhouetteDrag = null; $('#hover-reference').replaceChildren(); render();
+        status('Arrastra desde el objeto hacia afuera o hacia adentro para crear la silueta.'); return;
+    }
+    session.pointer = pointer; session.released = true;
+    if (!session.fields) { status('Preparando la silueta… se creará en cuanto esté lista.'); return; }
+    traceSilhouetteDrag();
+}
+function completeSilhouetteDrag(session) {
+    silhouetteDrag = null;
     $('#hover-reference').replaceChildren();
-    if (!session?.result?.length) { render(); status('Arrastra un poco más lejos del objeto para crear la silueta.'); return; }
+    if (!session.result?.length) { render(); status('Arrastra un poco más lejos del objeto para crear la silueta.'); return; }
     createSilhouettes(session, session.direction, $('#silhouette-bar-color').value, $('#silhouette-bar-width').value);
     render();
 }
