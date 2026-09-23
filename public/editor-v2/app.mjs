@@ -1,9 +1,10 @@
-import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, documentKey, packDocument, unpackDocument, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
+import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, documentKey, forgetImages, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
 import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget, unionBounds, resizeSelection, resizeRotated, rotatedBounds } from './geometry.mjs';
 import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns } from './transform.mjs';
 import { HAIRLINE_WIDTH } from './model.mjs';
 import { createColorPicker } from './colorPicker.mjs';
+import { loadDraft, saveDraft } from './draftStore.mjs';
 import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
 import { normalizeSpline, pointsPath, splinePath, splinePoints, closestOnSpline, moveSplineNodes, insertSplineNode, removeSplineNodes, controlPath, closestOnControlLine, legPoint } from './spline.mjs';
@@ -13,7 +14,6 @@ decorateControls();
 
 const $ = selector => document.querySelector(selector);
 const canvas = $('#canvas'), scene = $('#scene'), objects = $('#objects'), selection = $('#selection');
-const storageKey = 'dekoor.editor-v2.document.v1';
 let history = new History(), selectedId = null, tool = 'select', gesture = null;
 let selectedIds = new Set();
 let powerClipSources = null;
@@ -60,9 +60,9 @@ const editedSpline = () => nodeEditing && current().objects.find(o => o.id === n
 const status = message => { $('#status').textContent = message; };
 
 try {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) history = new History(unpackDocument(saved));
-    const meta = JSON.parse(localStorage.getItem(storageKey + '.cloud') || 'null');
+    const restored = await loadDraft();
+    if (restored) history = new History(restored.document);
+    const meta = restored?.meta;
     // Drafts saved before image fingerprints kept the whole document JSON in the metadata.
     const matches = meta && (meta.documentKey ? meta.documentKey === documentKey(history.document) : meta.documentJson === JSON.stringify(history.document));
     if (matches && typeof meta.binding?.id === 'string' && Number.isSafeInteger(meta.binding.revision)) {
@@ -84,13 +84,12 @@ function persist() {
 }
 function persistNow() {
     clearTimeout(persistTimer); persistTimer = null;
+    forgetUnusedImages();
     if (storageBlocked) return;
-    try {
-        const saved = savedDocument();
-        localStorage.setItem(storageKey, packDocument(saved));
-        localStorage.setItem(storageKey + '.cloud', JSON.stringify({ binding: cloudBinding, savedKey: cloudSavedKey, documentKey: documentKey(saved) }));
-        $('#save-status').textContent = 'Borrador guardado en este navegador';
-    } catch { $('#save-status').textContent = 'No se pudo guardar el borrador. Descarga tu proyecto.'; }
+    const saved = savedDocument();
+    saveDraft(saved, { binding: cloudBinding, savedKey: cloudSavedKey, documentKey: documentKey(saved) })
+        .then(() => { $('#save-status').textContent = 'Borrador guardado en este navegador'; })
+        .catch(() => { $('#save-status').textContent = 'No se pudo guardar el borrador. Descarga tu proyecto.'; });
 }
 addEventListener('pagehide', () => { if (persistTimer !== null) persistNow(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && persistTimer !== null) persistNow(); });
@@ -122,20 +121,76 @@ function point(event) {
     const rect = canvas.getBoundingClientRect();
     return { x: (event.clientX - rect.left - view.x) / view.scale, y: (event.clientY - rect.top - view.y) / view.scale };
 }
-// On screen each embedded image is a blob URL made once, so copies of it and redraws while dragging do
-// not parse and decode its data again. Exports still embed the original data.
-const displayUrls = new Map();
-function displaySrc(src) {
-    if (!src.startsWith('data:')) return src;
-    let url = displayUrls.get(src);
-    if (!url) {
-        const bytes = atob(src.slice(src.indexOf(',') + 1)), data = new Uint8Array(bytes.length);
-        for (let i = 0; i < bytes.length; i++) data[i] = bytes.charCodeAt(i);
-        url = URL.createObjectURL(new Blob([data], { type: src.slice(5, src.indexOf(';')) }));
-        displayUrls.set(src, url);
-        if (displayUrls.size > 64) { const [oldest, oldUrl] = displayUrls.entries().next().value; URL.revokeObjectURL(oldUrl); displayUrls.delete(oldest); }
+// Photos are shown at the resolution the view needs, never at full size: previews of 256 to 4096 px are
+// made in the background, one image at a time, and kept per image while the document uses it. A grey
+// placeholder shows until the first preview is ready. Exports still embed the original data.
+const PREVIEW_SIZES = [256, 512, 1024, 2048, 4096];
+const PLACEHOLDER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mO88h8AAq0B1Rl1jWUAAAAASUVORK5CYII=';
+const previews = new Map();
+let previewQueue = Promise.resolve(), previewRedraw = null;
+const previewEntry = src => {
+    let entry = previews.get(src);
+    if (!entry) previews.set(src, entry = { urls: new Map(), pending: new Map(), natural: Infinity });
+    return entry;
+};
+// The smallest preview size that covers size, or the image itself once it is known to be smaller.
+const previewSize = (entry, size) => {
+    const level = PREVIEW_SIZES.find(value => value >= size) ?? PREVIEW_SIZES.at(-1);
+    return entry.natural <= level ? 'full' : level;
+};
+function makePreview(src, size) {
+    const entry = previewEntry(src);
+    if (entry.urls.has(size)) return Promise.resolve(entry.urls.get(size));
+    if (!entry.pending.has(size)) {
+        const job = previewQueue.then(async () => {
+            if (previews.get(src) !== entry) return null;
+            const blob = await (await fetch(src)).blob(), bitmap = await createImageBitmap(blob);
+            entry.natural = Math.max(bitmap.width, bitmap.height);
+            let out = blob;
+            if (size !== 'full' && entry.natural > size) {
+                const scale = size / entry.natural, canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(bitmap.width * scale)); canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+                const context = canvas.getContext('2d'); context.imageSmoothingQuality = 'high';
+                context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+                out = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', .92)) || blob;
+            }
+            bitmap.close();
+            const key = size !== 'full' && entry.natural > size ? size : 'full';
+            if (previews.get(src) !== entry) return null;
+            if (!entry.urls.has(key)) entry.urls.set(key, URL.createObjectURL(out));
+            return entry.urls.get(key);
+        }).finally(() => {
+            entry.pending.delete(size);
+            clearTimeout(previewRedraw);
+            previewRedraw = setTimeout(() => { if (!gesture) renderScene(); }, 60);
+        });
+        entry.pending.set(size, job);
+        previewQueue = job.catch(() => {});
     }
-    return url;
+    return entry.pending.get(size);
+}
+function displaySrc(src, o) {
+    if (!src.startsWith('data:')) return src;
+    const entry = previewEntry(src);
+    const size = previewSize(entry, Math.max(o.width, o.height) * view.scale * (window.devicePixelRatio || 1));
+    if (entry.urls.has(size)) return entry.urls.get(size);
+    makePreview(src, size).catch(() => status('No se pudo mostrar una imagen.'));
+    // Meanwhile show the closest preview already made: a larger one first, then a smaller one.
+    const ready = [...entry.urls.keys()].map(key => key === 'full' ? entry.natural : key).sort((a, b) => a - b);
+    const wanted = size === 'full' ? entry.natural : size, best = ready.find(value => value >= wanted) ?? ready.at(-1);
+    if (best === undefined) return PLACEHOLDER;
+    return entry.urls.get(best === entry.natural && entry.urls.has('full') ? 'full' : best);
+}
+// Previews, fingerprints and checks are kept only for images the document or its undo history still uses.
+function forgetUnusedImages() {
+    const live = new Set();
+    for (const store of [history, powerClipEditing?.history]) if (store) {
+        for (const document of [store.document, ...store.past, ...store.future]) {
+            for (const object of objectsWithContents(document.objects)) if (object.type === 'image') live.add(object.src);
+        }
+    }
+    forgetImages(live);
+    for (const [src, entry] of previews) if (!live.has(src)) { entry.urls.forEach(url => URL.revokeObjectURL(url)); previews.delete(src); }
 }
 function renderScene() {
     $('#hover-reference').replaceChildren();
@@ -1410,6 +1465,22 @@ $('#cloud-login').addEventListener('submit', event => {
         else await refreshProjects();
     });
 });
+const blobDataUrl = blob => new Promise((resolve, reject) => {
+    const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+});
+// The thumbnail uses small previews of the photos, so a draft with many photos still opens quickly.
+async function draftThumbnail(draftDocument) {
+    const small = new Map();
+    for (const object of objectsWithContents(draftDocument.objects)) {
+        if (object.type !== 'image' || !object.src.startsWith('data:') || small.has(object.src)) continue;
+        const url = await makePreview(object.src, previewSize(previewEntry(object.src), 256));
+        small.set(object.src, url ? await blobDataUrl(await (await fetch(url)).blob()) : PLACEHOLDER);
+    }
+    const { width, height } = draftDocument;
+    const body = draftDocument.objects.filter(object => !object.hidden).map(object => objectMarkup(object, src => small.get(src) ?? src)).join('');
+    return URL.createObjectURL(new Blob([`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#fff"/>${body}</svg>`], { type: 'image/svg+xml' }));
+}
 // Every load asks whether to continue the autosaved draft or start from something else.
 function showWelcome() {
     const draftDocument = history.document, hasDraft = draftDocument.objects.length > 0 || draftDocument.name !== 'Sin título';
@@ -1419,8 +1490,10 @@ function showWelcome() {
     if (hasDraft) {
         const count = draftDocument.objects.length;
         $('#welcome-draft-name').textContent = `${draftDocument.name} · ${count} ${count === 1 ? 'objeto' : 'objetos'}`;
-        try { thumbUrl = URL.createObjectURL(new Blob([exportSvg(draftDocument)], { type: 'image/svg+xml' })); thumb.src = thumbUrl; }
-        catch { thumb.removeAttribute('src'); }
+        thumb.removeAttribute('src');
+        draftThumbnail(draftDocument).then(url => {
+            if (dialog.open) { thumbUrl = url; thumb.src = url; } else URL.revokeObjectURL(url);
+        }).catch(() => {});
     }
     const release = () => { if (thumbUrl) URL.revokeObjectURL(thumbUrl); thumbUrl = null; thumb.removeAttribute('src'); };
     const choose = action => () => { dialog.close(); release(); action(); };

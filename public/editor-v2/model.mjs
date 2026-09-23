@@ -12,6 +12,7 @@ export function clone(value) {
     return value;
 }
 // A short fingerprint of an embedded image (length and two 32-bit FNV-1a hashes), computed once per image.
+// Per-image caches keep one entry per image the editor still holds; forgetImages drops the others.
 const imageTokens = new Map();
 export function imageToken(src) {
     let token = imageTokens.get(src);
@@ -20,36 +21,47 @@ export function imageToken(src) {
         for (let i = 0; i < src.length; i++) { const c = src.charCodeAt(i); a = Math.imul(a ^ c, 16777619); b = Math.imul(b ^ c, 2246822519); }
         token = `${src.length.toString(36)}.${(a >>> 0).toString(36)}.${(b >>> 0).toString(36)}`;
         imageTokens.set(src, token);
-        if (imageTokens.size > 64) imageTokens.delete(imageTokens.keys().next().value);
     }
     return token;
 }
-const embedded = (key, value) => key === 'src' && typeof value === 'string' && value.startsWith('data:');
+// The draft store already knows each image's fingerprint, so loading does not compute them again.
+export const rememberImageToken = (src, token) => { imageTokens.set(src, token); };
+export function forgetImages(live) {
+    for (const src of imageTokens.keys()) if (!live.has(src)) imageTokens.delete(src);
+    for (const src of checkedSources) if (!live.has(src)) checkedSources.delete(src);
+}
+export const embeddedImage = (key, value) => key === 'src' && typeof value === 'string' && value.startsWith('data:');
 // Compares documents without serializing their image data: images appear by fingerprint.
-export const documentKey = document => JSON.stringify(document, (key, value) => embedded(key, value) ? 'img:' + imageToken(value) : value);
-// The browser draft stores each embedded image once, however many copies the document has.
-export function packDocument(document) {
-    const images = {};
+export const documentKey = document => JSON.stringify(document, (key, value) => embeddedImage(key, value) ? 'img:' + imageToken(value) : value);
+// Splits a document into small JSON that names each embedded image by fingerprint, and the images.
+export function separateImages(document) {
+    const images = new Map();
     const json = JSON.stringify(document, (key, value) => {
-        if (!embedded(key, value)) return value;
-        const token = imageToken(value); images[token] = value; return 'img:' + token;
+        if (!embeddedImage(key, value)) return value;
+        const token = imageToken(value); images.set(token, value); return 'img:' + token;
     });
-    return `{"packed":1,"images":${JSON.stringify(images)},"document":${json}}`;
+    return { json, images };
+}
+export function restoreImages(value, images) {
+    if (Array.isArray(value)) return value.map(item => restoreImages(item, images));
+    if (!value || typeof value !== 'object') return value;
+    const copy = {};
+    for (const key of Object.keys(value)) {
+        const item = value[key];
+        if (key !== 'src' || typeof item !== 'string' || !item.startsWith('img:')) { copy[key] = restoreImages(item, images); continue; }
+        if (!images.has(item.slice(4))) throw new Error('Falta una imagen del borrador.');
+        copy[key] = images.get(item.slice(4));
+    }
+    return copy;
+}
+// A single-string form that stores each embedded image once, however many copies the document has.
+export function packDocument(document) {
+    const { json, images } = separateImages(document);
+    return `{"packed":1,"images":${JSON.stringify(Object.fromEntries(images))},"document":${json}}`;
 }
 export function unpackDocument(text) {
     const data = JSON.parse(text);
-    if (data?.packed !== 1) return data;
-    const revive = value => {
-        if (Array.isArray(value)) return value.map(revive);
-        if (!value || typeof value !== 'object') return value;
-        const copy = {};
-        for (const key of Object.keys(value)) {
-            const item = value[key];
-            copy[key] = key === 'src' && typeof item === 'string' && item.startsWith('img:') ? data.images[item.slice(4)] : revive(item);
-        }
-        return copy;
-    };
-    return revive(data.document);
+    return data?.packed === 1 ? restoreImages(data.document, new Map(Object.entries(data.images))) : data;
 }
 export const blankDocument = () => ({ version: 1, name: 'Sin título', width: 210, height: 297, objects: [] });
 
@@ -68,11 +80,7 @@ const checkedSources = new Set();
 export function validImageSource(src) {
     if (typeof src !== 'string' || src.length > 16000000) return false;
     if (checkedSources.has(src)) return true;
-    if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(src)) {
-        checkedSources.add(src);
-        if (checkedSources.size > 64) checkedSources.delete(checkedSources.values().next().value);
-        return true;
-    }
+    if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(src)) { checkedSources.add(src); return true; }
     try {
         const url = new URL(src);
         return url.protocol === 'https:' && url.hostname === 'firebasestorage.googleapis.com' && !url.username && !url.password &&
@@ -157,7 +165,7 @@ export class History {
 }
 
 const escapeXml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
-// resolve maps an image source to the URL shown; the editor passes one that decodes each image once.
+// resolve(src, object) maps an image source to the URL shown; the editor passes one that shows previews.
 export function objectMarkup(o, resolve = src => src) {
     // A rotated object turns around its pivot (see transform.mjs); a PowerClip turns with its content.
     if (turns(o)) {
@@ -177,7 +185,7 @@ export function objectMarkup(o, resolve = src => src) {
     if (o.type === 'ellipse') return `<ellipse cx="${o.x + o.width / 2}" cy="${o.y + o.height / 2}" rx="${o.width / 2}" ry="${o.height / 2}" ${style}/>`;
     if (o.type === 'spline') return `<path d="${splinePath(o)}" ${style}/>`;
     // data-adjusted lets the editor swap in the processed pixels; exports bake the adjustments first.
-    if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(resolve(o.src))}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
+    if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(resolve(o.src, o))}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
     return `<text x="${o.x}" y="${o.y + o.fontSize}" font-family="Arial, sans-serif" font-size="${o.fontSize}" ${style} xml:space="preserve">${escapeXml(o.text)}</text>`;
 }
 export function exportSvg(document) {

@@ -34,3 +34,18 @@ test('the editor can show images through another URL while exports embed the dat
     assert.match(objectMarkup(d.objects[0], () => 'blob:shown'), /href="blob:shown"/);
     assert.ok(exportSvg(d).includes(src));
 });
+test('the draft store splits images from the document and needs every image back', async () => {
+    const { separateImages, restoreImages, forgetImages, imageToken } = await import('../public/editor-v2/model.mjs');
+    const d = withCopies(4), other = 'data:image/png;base64,' + 'WFla'.repeat(1000);
+    d.objects.push({ ...createObject('image', 9, 9), src: other });
+    const { json, images } = separateImages(d);
+    assert.equal(images.size, 2);
+    assert.ok(json.length < 5 * 1000);
+    assert.deepEqual(restoreImages(JSON.parse(json), images), d);
+    images.delete(imageToken(other));
+    assert.throws(() => restoreImages(JSON.parse(json), images), /Falta una imagen/);
+    // Forgetting cached fingerprints does not change them.
+    const token = imageToken(src);
+    forgetImages(new Set());
+    assert.equal(imageToken(src), token);
+});
