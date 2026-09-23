@@ -122,11 +122,21 @@ export function simplifyLoop(loop, tolerance) {
     const first = reduce(loop.slice(0, opposite + 1)), second = reduce([...loop.slice(opposite), loop[0]]);
     return [...first.slice(0, -1), ...second.slice(0, -1)];
 }
+// Each point's tangent follows the bisector of its two sides, and each handle is a third of its own
+// segment: a short segment next to a long straight one then bends smoothly instead of overshooting into
+// a small step (as a plain Catmull–Rom curve does with unevenly spaced points).
 export function smoothLoop(points) {
     const n = points.length, out = [points[0].x, points[0].y];
+    const unit = (x, y) => { const length = Math.hypot(x, y) || 1; return { x: x / length, y: y / length }; };
+    const tangents = points.map((p, i) => {
+        const before = points[(i - 1 + n) % n], after = points[(i + 1) % n];
+        const a = unit(p.x - before.x, p.y - before.y), b = unit(after.x - p.x, after.y - p.y);
+        return unit(a.x + b.x, a.y + b.y);
+    });
     for (let i = 0; i < n; i++) {
-        const p0 = points[(i - 1 + n) % n], p1 = points[i], p2 = points[(i + 1) % n], p3 = points[(i + 2) % n];
-        out.push(p1.x + (p2.x - p0.x) / 6, p1.y + (p2.y - p0.y) / 6, p2.x - (p3.x - p1.x) / 6, p2.y - (p3.y - p1.y) / 6, p2.x, p2.y);
+        const p1 = points[i], p2 = points[(i + 1) % n], t1 = tangents[i], t2 = tangents[(i + 1) % n];
+        const handle = Math.hypot(p2.x - p1.x, p2.y - p1.y) / 3;
+        out.push(p1.x + t1.x * handle, p1.y + t1.y * handle, p2.x - t2.x * handle, p2.y - t2.y * handle, p2.x, p2.y);
     }
     return { closed: true, points: out };
 }
@@ -156,9 +166,26 @@ export function roundedValue(field, width, height, r, radius, direction) {
     for (let i = 0; i < grown.length; i++) grown[i] = direction === 'outside' ? (field[i] > r + radius ? 1 : 0) : (field[i] >= r + radius ? 1 : 0);
     const back = distanceField(grown, width, height);
     for (let i = 0; i < value.length; i++) value[i] = direction === 'outside' ? back[i] - radius : radius - back[i];
-    return value;
+    // Softening the field smooths the small steps and points the shape's own edges leave in the line.
+    return blur(value, width, height, Math.max(2, Math.round(radius * .6)));
 }
-export function traceSilhouettes(field, width, height, { distance, steps = 1, direction = 'outside', tolerance = .35, round = .5 }) {
+// Three box blurs in each direction (close to a Gaussian); edge values are repeated past the border.
+export function blur(values, width, height, size) {
+    if (size < 1) return values;
+    let from = values, to = new Float32Array(values.length);
+    const run = (count, stride, lines, lineStride) => {
+        for (let line = 0; line < lines; line++) {
+            const base = line * lineStride, at = k => from[base + Math.max(0, Math.min(count - 1, k)) * stride];
+            let sum = 0;
+            for (let k = -size; k <= size; k++) sum += at(k);
+            for (let k = 0; k < count; k++) { to[base + k * stride] = sum / (2 * size + 1); sum += at(k + size + 1) - at(k - size); }
+        }
+        [from, to] = [to, from];
+    };
+    for (let pass = 0; pass < 3; pass++) { run(width, 1, height, width); run(height, width, width, 1); }
+    return from;
+}
+export function traceSilhouettes(field, width, height, { distance, steps = 1, direction = 'outside', tolerance = .5, round = .5 }) {
     const result = [];
     for (let step = 1; step <= steps; step++) {
         // Distances run between pixel centres; the shape's edge lies half a pixel from its last pixel.
