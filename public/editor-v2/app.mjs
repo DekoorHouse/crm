@@ -569,7 +569,7 @@ canvas.addEventListener('pointerdown', event => {
         event.preventDefault();
         const id = event.target.closest('[data-id]')?.dataset.id;
         try {
-            const next = clone(history.document); placeInPowerClip(next, powerClipSources, id, { createContainer: true });
+            const next = clone(history.document); centreOn(next, powerClipSources, point(event)); placeInPowerClip(next, powerClipSources, id, { createContainer: true });
             const valid = validateDocument(next);
             powerClipSources = null; canvas.classList.remove('placing-powerclip'); selectOnly(id); commit(valid); status('Contenido colocado en PowerClip');
         } catch (error) { status(error.message + ' Esc para cancelar.'); }
@@ -879,7 +879,7 @@ canvas.addEventListener('pointerup', event => {
         const drop = previous.dropTarget;
         if (drop) {
             try {
-                const next = clone(draft); placeInPowerClip(next, selectedIds, drop.id);
+                const next = clone(draft); centreOn(next, selectedIds, previous.pointer); placeInPowerClip(next, selectedIds, drop.id);
                 const valid = validateDocument(next); selectOnly(drop.id); commit(valid); status('Contenido colocado en PowerClip'); return;
             } catch (error) { draft = null; render(); status(error.message); return; }
         }
@@ -909,6 +909,15 @@ for (const type of ['keydown', 'keyup']) window.addEventListener(type, event => 
     if (gesture?.type !== 'draw' || !gesture.delta || !['Control', 'Meta'].includes(event.key)) return;
     sizeDrawing(selected(), event.ctrlKey || event.metaKey); renderScene();
 });
+// Content placed in a PowerClip goes where the container was clicked (or where it was dropped): the
+// centre of the placed objects moves to that point, so it shows inside the container instead of
+// staying outside it, clipped away.
+function centreOn(doc, ids, point) {
+    const items = doc.objects.filter(item => ids.has(item.id));
+    if (!items.length) return;
+    const box = unionBounds(items.map(getBounds)), dx = point.x - (box.x + box.width / 2), dy = point.y - (box.y + box.height / 2);
+    for (const item of items) { item.x += dx; item.y += dy; }
+}
 function cancelGesture() {
     if (!gesture) return;
     const previous = gesture; gesture = null; draft = null;
@@ -1287,7 +1296,7 @@ $('#make-powerclip').onclick = () => {
 $('#place-powerclip').onclick = () => {
     hideObjectMenu(); setTool('select'); powerClipSources = new Set(selectedIds);
     canvas.classList.add('placing-powerclip');
-    status('Haz clic en un rectángulo o elipse para colocar el contenido dentro. Esc para cancelar.'); canvas.focus();
+    status('Haz clic dentro del PowerClip (rectángulo, elipse o curva) justo donde quieres que quede el contenido. Esc para cancelar.'); canvas.focus();
 };
 // Convertir a raster: an AI version of the image for raster engraving, shown next to the original
 // before it is applied. With "Mantener original" the result goes beside it; without, it replaces it.
