@@ -2300,14 +2300,16 @@ $('#auto-lamp-form').addEventListener('submit', event => {
                 if (performance.now() - started > 8 * 60 * 1000) throw new Error('Tardó demasiado; revisa más tarde en la lista de proyectos.');
             } while (state?.status === 'working');
         } finally { clearInterval(clock); working.hidden = true; }
-        cloudMessage(`DH${dh} · ${((performance.now() - started) / 1000).toFixed(2)} s`);
-        if (state?.status !== 'ready') throw new Error(state?.error || 'No se pudo generar la lámpara.');
-        cloudMessage('Abriendo el diseño…');
+        // How long the whole design took: the server's own count when it has it, else this page's.
+        const seconds = (state?.durationMs ?? performance.now() - started) / 1000;
+        const took = seconds < 60 ? `${seconds.toFixed(2)} s` : `${Math.floor(seconds / 60)} min ${(seconds % 60).toFixed(2)} s`;
+        if (state?.status !== 'ready') throw new Error(`${state?.error || 'No se pudo generar la lámpara.'} (después de ${took})`);
+        cloudMessage(`Diseño listo en ${took}. Abriéndolo…`);
         const loaded = await cloudApi.load(state.projectId);
-        if (!window.confirm(`La lámpara de DH${dh} está lista. ¿Abrirla y reemplazar el borrador actual? Puedes deshacerlo.`)) { await refreshProjects(); cloudMessage('Quedó en la lista de proyectos.'); return; }
+        if (!window.confirm(`La lámpara de DH${dh} quedó lista en ${took}. ¿Abrirla y reemplazar el borrador actual? Puedes deshacerlo.`)) { await refreshProjects(); cloudMessage(`Diseño listo en ${took}. Quedó en la lista de proyectos.`); return; }
         cancelGesture(); bindCloud(loaded.binding, documentKey(loaded.document));
         storageBlocked = false; selectOnly(null); commit(loaded.document); persist(); fit();
-        $('#cloud-dialog').close(); status(`Lámpara de DH${dh} generada por el sistema · revísala antes de mandarla`);
+        $('#cloud-dialog').close(); status(`Lámpara de DH${dh} generada por el sistema en ${took} · revísala antes de mandarla`);
     });
 });
 // Version history: a version is kept at most every ten minutes while editing (the newest thirty).

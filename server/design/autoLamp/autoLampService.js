@@ -138,6 +138,7 @@ async function setStatus(orderRef, patch) {
  * options.rasterUrl: usar un grabado ya hecho (pruebas) en vez de generar uno nuevo.
  */
 async function generate(dh, options = {}) {
+    const started = Date.now();
     const orderDoc = await findOrder(dh);
     const order = orderDoc.data(), ref = orderDoc.ref;
     const { name, datos } = orderName(order);
@@ -177,7 +178,7 @@ async function generate(dh, options = {}) {
             name: title, documentJson, revision: 1, objectCount: document.objects.length,
             createdAt: now(), createdBy: ACTOR.uid, updatedAt: now(), updatedBy: ACTOR.uid, orderNumber: Number(dh),
         });
-        const result = { status: 'ready', step: 'Listo para revisar', name, projectId: project.id, previewUrl, svgUrl, rasterUrl: raster.url, rasterJobId: raster.jobId, finishedAt: now() };
+        const result = { status: 'ready', step: 'Listo para revisar', name, projectId: project.id, previewUrl, svgUrl, rasterUrl: raster.url, rasterJobId: raster.jobId, finishedAt: now(), durationMs: Date.now() - started };
         await setStatus(ref, result);
         return { ...result, referenceUrl: reference.url };
     } catch (error) {
