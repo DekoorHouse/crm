@@ -214,10 +214,14 @@ function forgetUnusedImages() {
 }
 // A 1-bit image shown smaller than its pixels would sample stray dots and look noisy, so on screen
 // it is smoothed until each of its pixels covers a screen pixel. Exports always keep square pixels.
-function smoothSmallBitmaps(root, item) {
-    const natural = previews.get(item.src)?.natural, shown = Math.max(item.width, item.height) * view.scale * (window.devicePixelRatio || 1);
-    if (natural && natural !== Infinity && shown >= natural) return;
-    for (const element of root.querySelectorAll('image[image-rendering]')) { element.removeAttribute('image-rendering'); element.style.removeProperty('image-rendering'); }
+// Its size on screen is measured, so images inside PowerClips (scaled with their container) count too.
+function smoothSmallBitmaps(root, object) {
+    for (const element of root.querySelectorAll('image[data-bitmap]')) {
+        const item = [...objectsWithContents([object])].find(entry => entry.id === element.dataset.bitmap);
+        const natural = item && previews.get(item.src)?.natural, box = element.getBoundingClientRect();
+        if (natural && natural !== Infinity && Math.max(box.width, box.height) * (window.devicePixelRatio || 1) >= natural) continue;
+        element.removeAttribute('image-rendering'); element.style.removeProperty('image-rendering');
+    }
 }
 function renderScene() {
     $('#hover-reference').replaceChildren();
@@ -231,7 +235,6 @@ function renderScene() {
         // Markup comes only from validated primitives, never from imported SVG.
         group.innerHTML = objectMarkup(object, displaySrc);
         showAdjustedImages(group);
-        if (object.pixelated) smoothSmallBitmaps(group, object);
         if (object.powerClip) drawPowerClipMarker(group, object);
         // Thin lines get a wider invisible stroke so they are easy to click.
         if ((object.type === 'spline' || (object.type === 'path' && object.fill === 'none')) && !object.locked) {
@@ -244,6 +247,7 @@ function renderScene() {
         group.dataset.id = object.id;
         group.setAttribute('pointer-events', object.locked ? 'none' : 'all');
         objects.append(group);
+        smoothSmallBitmaps(group, object);
     }
     if (powerClipEditing) {
         // The container outline goes above the content, with a dark halo so it shows over any image;
