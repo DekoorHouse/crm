@@ -5,6 +5,7 @@ import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns } from
 import { HAIRLINE_WIDTH } from './model.mjs';
 import { createColorPicker } from './colorPicker.mjs';
 import { pathData } from './path.mjs';
+import { presetObject } from './presets.mjs';
 import { pathNodes, movePathNodes, movePathHandle, closestOnPath, insertPathNode, removePathNodes } from './pathEdit.mjs';
 import { importSvg, parseColor, dropImages } from './svgImport.mjs';
 import { loadDraft, saveDraft } from './draftStore.mjs';
@@ -885,6 +886,14 @@ canvas.addEventListener('pointerup', event => {
     if (previous.snap) { drawReference(previous.snap); status(`Encajado en ${referenceLabel(previous.snap).toLowerCase()}`); }
     else showReference(event);
 });
+// Workshop shapes appear at their real size in the middle of the view, as cutting lines.
+function insertPreset(key) {
+    if (gesture) return;
+    const centre = { x: (canvas.clientWidth / 2 - view.x) / view.scale, y: (canvas.clientHeight / 2 - view.y) / view.scale };
+    const object = presetObject(key, centre, nextStroke);
+    selectOnly(object.id); edit(d => d.objects.push(object)); setTool('select');
+    status(`${object.name} insertado · ${+object.width.toFixed(1)} × ${+object.height.toFixed(1)} mm`);
+}
 // Ctrl draws with equal sides (a square or a circle), as in CorelDRAW.
 function sizeDrawing(o, equal) {
     const { x: dx, y: dy } = gesture.delta;
@@ -1225,6 +1234,7 @@ const actions = {
     front() { reorderToEnd(true); }, back() { reorderToEnd(false); },
     'zoom-in'() { zoom(1.2); }, 'zoom-out'() { zoom(1 / 1.2); }, fit,
     help() { $('#help').showModal(); },
+    'lamp-frame'() { insertPreset('lamp-frame'); },
 };
 for (const name of ['new', 'open', 'cloud', 'save', 'import', 'download', 'export']) {
     const action = actions[name];
