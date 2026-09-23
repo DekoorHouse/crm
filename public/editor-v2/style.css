@@ -192,7 +192,9 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .raster-compare figcaption { font-size: 12px; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; }
 .raster-frame { position: relative; display: grid; place-items: center; height: 280px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
     background: repeating-conic-gradient(#2a2e38 0 25%, #20232b 0 50%) 0 0 / 16px 16px; }
-.raster-frame img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* The whole image always fits inside the frame, whatever its shape (a percentage max-height does not resolve in a grid cell). */
+.raster-frame img { position: absolute; inset: 0; width: 100%; height: 100%; padding: 8px; box-sizing: border-box; object-fit: contain; }
+.raster-frame img[hidden] { display: none; }
 #raster-placeholder { color: var(--muted); font-size: 13px; padding: 12px; text-align: center; }
 .raster-options { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin: 14px 0 10px; }
 .raster-options label:first-child { display: flex; align-items: center; gap: 8px; }
@@ -202,3 +204,16 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .raster-buttons { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 560px) { .raster-compare { grid-template-columns: 1fr; } .raster-frame { height: 200px; } }
 #object-menu kbd { margin-left: auto; padding-left: 16px; font: inherit; font-size: 11px; color: var(--muted); }
+
+/* Generating: a light sweep across the frame, a spinner and a stopwatch in hundredths of a second. */
+#raster-working { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #14161bcc; }
+#raster-working[hidden] { display: none; }
+#raster-working strong { font-size: 15px; letter-spacing: .5px; }
+#raster-working strong::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: raster-dots 1.2s steps(4, end) infinite; }
+#raster-timer { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 22px; font-variant-numeric: tabular-nums; color: #d0c1f3; }
+.raster-spinner { width: 34px; height: 34px; border: 3px solid #ffffff26; border-top-color: #b6a0ff; border-radius: 50%; animation: raster-spin .8s linear infinite; }
+.raster-scan { position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, #b6a0ff26 50%, transparent 70%) no-repeat; background-size: 200% 100%; animation: raster-sweep 1.6s ease-in-out infinite; pointer-events: none; }
+@keyframes raster-spin { to { transform: rotate(360deg); } }
+@keyframes raster-sweep { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@keyframes raster-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+@media (prefers-reduced-motion: reduce) { .raster-spinner, .raster-scan, #raster-working strong::after { animation: none; } }

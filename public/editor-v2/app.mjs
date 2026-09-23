@@ -1341,29 +1341,45 @@ async function rasterReference(src) {
     const png = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
     return png.size <= 5.5 * 1024 * 1024 ? png : new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .92));
 }
+// The stopwatch runs in hundredths of a second from the moment the image is sent until the result is in.
+let rasterClock = null;
+function startRasterClock() {
+    stopRasterClock();
+    const started = performance.now(), timer = $('#raster-timer');
+    $('#raster-working').hidden = false;
+    const tick = () => { timer.textContent = `${((performance.now() - started) / 1000).toFixed(2)} s`; };
+    tick(); rasterClock = setInterval(tick, 30);
+}
+function stopRasterClock() {
+    clearInterval(rasterClock); rasterClock = null;
+    $('#raster-working').hidden = true;
+}
 async function generateRaster() {
     const session = raster, object = current().objects.find(item => item.id === session?.id);
     if (!object) { $('#raster-dialog').close(); return; }
     const prompt = $('#raster-prompt').value.trim();
     if (!prompt) { rasterMessage('Escribe las instrucciones para la IA.'); return; }
     rasterButtons({ busy: true });
-    $('#raster-placeholder').hidden = false; $('#raster-after').hidden = true;
-    $('#raster-placeholder').textContent = 'Generando…';
+    $('#raster-placeholder').hidden = true; $('#raster-after').hidden = true;
+    startRasterClock();
     try {
         rasterMessage('Preparando la imagen…');
         const image = await rasterReference(object.src);
         rasterMessage('Enviando a la IA…');
         const result = await rasterize({ image, prompt, aspectRatio: $('#raster-ratio').value, token: rasterToken,
-            onProgress: seconds => { if (raster === session) rasterMessage(`La IA está trabajando… ${seconds} s (suele tardar entre 30 s y 2 min)`); } });
+            onProgress: () => { if (raster === session) rasterMessage('La IA está trabajando; suele tardar entre 30 s y 2 min.'); } });
         const blob = await (await fetch(result.url)).blob(), dataUrl = await blobDataUrl(blob);
         if (!validImageSource(dataUrl)) throw new Error('La IA devolvió una imagen que el editor no puede usar.');
         if (raster !== session) return;
+        stopRasterClock();
         session.result = { ...result, dataUrl };
         $('#raster-after').src = dataUrl; $('#raster-after').hidden = false; $('#raster-placeholder').hidden = true;
         rasterMessage(`Listo${result.cost != null ? ` · costo $${result.cost.toFixed(3)} USD` : ''}. También quedó en la galería de Imágenes.`);
         rasterButtons();
     } catch (error) {
         if (raster !== session) return;
+        stopRasterClock();
+        $('#raster-placeholder').hidden = false;
         $('#raster-placeholder').textContent = session.result ? '' : 'Aquí aparecerá el resultado';
         if (session.result) { $('#raster-after').hidden = false; $('#raster-placeholder').hidden = true; }
         rasterMessage(error.message); rasterButtons({ login: Boolean(error.login) });
@@ -1393,7 +1409,7 @@ $('#raster-image').onclick = openRaster;
 $('#raster-generate').onclick = generateRaster;
 $('#raster-apply').onclick = applyRaster;
 $('#raster-cancel').onclick = () => { raster = null; $('#raster-dialog').close(); };
-$('#raster-dialog').addEventListener('close', () => { raster = null; });
+$('#raster-dialog').addEventListener('close', () => { raster = null; stopRasterClock(); });
 $('#raster-login').onclick = () => { $('#raster-dialog').close(); showCloud(false); status('Inicia sesión y vuelve a elegir «Convertir a raster».'); };
 $('#raster-link').onclick = async () => {
     rasterButtons({ busy: true });

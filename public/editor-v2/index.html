@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dekoor · Editor V2</title>
   <meta name="theme-color" content="#191b22">
-  <link rel="stylesheet" href="/editor-v2/style.css?v=invert-1">
+  <link rel="stylesheet" href="/editor-v2/style.css?v=raster-anim-2">
 </head>
 <body>
   <header class="topbar">
@@ -148,7 +148,7 @@
     <h2 id="raster-title">Convertir a raster</h2>
     <div class="raster-compare">
       <figure><figcaption>Antes</figcaption><div class="raster-frame"><img id="raster-before" alt="Imagen original"></div></figure>
-      <figure><figcaption>Después</figcaption><div class="raster-frame"><img id="raster-after" alt="Resultado de la IA" hidden><span id="raster-placeholder">Aquí aparecerá el resultado</span></div></figure>
+      <figure><figcaption>Después</figcaption><div class="raster-frame"><img id="raster-after" alt="Resultado de la IA" hidden><span id="raster-placeholder">Aquí aparecerá el resultado</span><div id="raster-working" hidden><span class="raster-scan"></span><span class="raster-spinner"></span><strong>Generando</strong><span id="raster-timer">0.00 s</span></div></div></figure>
     </div>
     <div class="raster-options">
       <label>Relación de aspecto <select id="raster-ratio"></select></label>
@@ -164,6 +164,6 @@
       <button type="button" id="raster-apply" class="primary" hidden>Aplicar</button>
     </div>
   </dialog>
-  <script type="module" src="/editor-v2/app.mjs?v=invert-1"></script>
+  <script type="module" src="/editor-v2/app.mjs?v=raster-anim-2"></script>
 </body>
 </html>
