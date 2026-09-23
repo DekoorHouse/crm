@@ -797,17 +797,20 @@ canvas.addEventListener('dblclick', event => {
     // pointerdown already handles double clicks while editing nodes, and a click that just closed
     // a spline must not turn the rest of that double click into node editing.
     if (nodeEditing || event.timeStamp - splineFinishedAt < 500) return;
-    if (!beginNodeEditing(event.target.closest('[data-id]')?.dataset.id || selectedId)) beginPowerClipEditing(event);
+    if (!beginNodeEditing(event.target.closest('[data-id]')?.dataset.id || selectedId, point(event))) beginPowerClipEditing(event);
 });
 function doubleClick(event, id, node, insertAt) {
-    if (!nodeEditing) return beginNodeEditing(id) || beginPowerClipEditing(event);
+    if (!nodeEditing) return beginNodeEditing(id, point(event)) || beginPowerClipEditing(event);
     if (node !== null) { deleteNodes([node]); return true; }
     if (!insertAt) return false;
     addNode(insertAt); return true;
 }
-function beginNodeEditing(id) {
+// A curve that is a PowerClip edits its nodes only when double-clicked on its outline; inside, the double
+// click opens its content, as in CorelDRAW.
+function beginNodeEditing(id, at) {
     const target = current().objects.find(item => item.id === id);
     if (tool !== 'select' || powerClipSources || !nodeTools[target?.type] || target.locked || target.hidden) return false;
+    if (target.powerClip && !(at && closestOnPath(target, at).distance * view.scale <= 7)) return false;
     nodeEditing = { id, nodes: new Set() }; selectOnly(id); rotateMode = false; render();
     status(target.type === 'path' ? 'Nodos: arrastra nodos o manijas (elige un nodo para ver sus manijas) · doble clic en la curva añade · doble clic en un nodo o Supr elimina · Esc termina'
         : 'Nodos: arrastra para mover · doble clic en la curva añade · doble clic en un nodo o Supr elimina · Esc termina');
