@@ -4,7 +4,53 @@ import { normalizeAdjust } from './imageAdjust.mjs';
 import { normalizeAngle, pivot, placeAtPivot, rotatePoint, turns } from './transform.mjs';
 export const TYPES = ['rect', 'ellipse', 'text', 'spline', 'image'];
 export const HAIRLINE_WIDTH = 0.0762;
-export const clone = value => structuredClone(value);
+// Documents are plain JSON data. Objects and arrays are copied but strings are shared, so an embedded
+// image is never duplicated in memory by edits, the undo history or duplicated objects.
+export function clone(value) {
+    if (Array.isArray(value)) return value.map(clone);
+    if (value && typeof value === 'object') { const copy = {}; for (const key of Object.keys(value)) copy[key] = clone(value[key]); return copy; }
+    return value;
+}
+// A short fingerprint of an embedded image (length and two 32-bit FNV-1a hashes), computed once per image.
+const imageTokens = new Map();
+export function imageToken(src) {
+    let token = imageTokens.get(src);
+    if (!token) {
+        let a = 0x811c9dc5, b = 0x2f1d3c5b;
+        for (let i = 0; i < src.length; i++) { const c = src.charCodeAt(i); a = Math.imul(a ^ c, 16777619); b = Math.imul(b ^ c, 2246822519); }
+        token = `${src.length.toString(36)}.${(a >>> 0).toString(36)}.${(b >>> 0).toString(36)}`;
+        imageTokens.set(src, token);
+        if (imageTokens.size > 64) imageTokens.delete(imageTokens.keys().next().value);
+    }
+    return token;
+}
+const embedded = (key, value) => key === 'src' && typeof value === 'string' && value.startsWith('data:');
+// Compares documents without serializing their image data: images appear by fingerprint.
+export const documentKey = document => JSON.stringify(document, (key, value) => embedded(key, value) ? 'img:' + imageToken(value) : value);
+// The browser draft stores each embedded image once, however many copies the document has.
+export function packDocument(document) {
+    const images = {};
+    const json = JSON.stringify(document, (key, value) => {
+        if (!embedded(key, value)) return value;
+        const token = imageToken(value); images[token] = value; return 'img:' + token;
+    });
+    return `{"packed":1,"images":${JSON.stringify(images)},"document":${json}}`;
+}
+export function unpackDocument(text) {
+    const data = JSON.parse(text);
+    if (data?.packed !== 1) return data;
+    const revive = value => {
+        if (Array.isArray(value)) return value.map(revive);
+        if (!value || typeof value !== 'object') return value;
+        const copy = {};
+        for (const key of Object.keys(value)) {
+            const item = value[key];
+            copy[key] = key === 'src' && typeof item === 'string' && item.startsWith('img:') ? data.images[item.slice(4)] : revive(item);
+        }
+        return copy;
+    };
+    return revive(data.document);
+}
 export const blankDocument = () => ({ version: 1, name: 'Sin título', width: 210, height: 297, objects: [] });
 
 export function createObject(type, x, y, width = 40, height = 30) {
@@ -17,9 +63,16 @@ export function createObject(type, x, y, width = 40, height = 30) {
 
 const numberIn = (value, min, max) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 const color = value => typeof value === 'string' && /^(none|#[0-9a-f]{6})$/i.test(value);
+// Checking the base64 of a large image is slow, so each image is checked once.
+const checkedSources = new Set();
 export function validImageSource(src) {
     if (typeof src !== 'string' || src.length > 16000000) return false;
-    if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(src)) return true;
+    if (checkedSources.has(src)) return true;
+    if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(src)) {
+        checkedSources.add(src);
+        if (checkedSources.size > 64) checkedSources.delete(checkedSources.values().next().value);
+        return true;
+    }
     try {
         const url = new URL(src);
         return url.protocol === 'https:' && url.hostname === 'firebasestorage.googleapis.com' && !url.username && !url.password &&
@@ -86,7 +139,7 @@ export class History {
     constructor(document = blankDocument()) { this.document = validateDocument(document); this.past = []; this.future = []; }
     commit(next) {
         const valid = validateDocument(next);
-        if (JSON.stringify(valid) === JSON.stringify(this.document)) return false;
+        if (documentKey(valid) === documentKey(this.document)) return false;
         this.past.push(clone(this.document));
         if (this.past.length > 100) this.past.shift();
         this.document = valid;
@@ -104,31 +157,32 @@ export class History {
 }
 
 const escapeXml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
-export function objectMarkup(o) {
+// resolve maps an image source to the URL shown; the editor passes one that decodes each image once.
+export function objectMarkup(o, resolve = src => src) {
     // A rotated object turns around its pivot (see transform.mjs); a PowerClip turns with its content.
     if (turns(o)) {
         const p = pivot(o);
-        return `<g transform="rotate(${-o.rotation} ${p.x} ${p.y})">${objectMarkup({ ...o, rotation: 0 })}</g>`;
+        return `<g transform="rotate(${-o.rotation} ${p.x} ${p.y})">${objectMarkup({ ...o, rotation: 0 }, resolve)}</g>`;
     }
     if (o.powerClip) {
         const base = { ...o }; delete base.powerClip;
         const clipId = 'pc-' + Array.from(o.id).map(c => c.codePointAt(0).toString(16)).join('-');
-        const shape = objectMarkup({ ...base, fill: '#ffffff', stroke: 'none' });
-        const content = o.powerClip.objects.filter(item => !item.hidden).map(objectMarkup).join('');
+        const shape = objectMarkup({ ...base, fill: '#ffffff', stroke: 'none' }, resolve);
+        const content = o.powerClip.objects.filter(item => !item.hidden).map(item => objectMarkup(item, resolve)).join('');
         const t = o.powerClip.transform || { x: 0, y: 0, scale: 1 };
-        return `${objectMarkup({ ...base, stroke: 'none' })}<defs><clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${shape}</clipPath></defs><g clip-path="url(#${clipId})"><g transform="translate(${o.x} ${o.y}) scale(${o.width / o.powerClip.width} ${o.height / o.powerClip.height})"><g data-powerclip-content="true" transform="translate(${t.x} ${t.y}) scale(${t.scale})">${content}</g></g></g>${objectMarkup({ ...base, fill: 'none' })}`;
+        return `${objectMarkup({ ...base, stroke: 'none' }, resolve)}<defs><clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${shape}</clipPath></defs><g clip-path="url(#${clipId})"><g transform="translate(${o.x} ${o.y}) scale(${o.width / o.powerClip.width} ${o.height / o.powerClip.height})"><g data-powerclip-content="true" transform="translate(${t.x} ${t.y}) scale(${t.scale})">${content}</g></g></g>${objectMarkup({ ...base, fill: 'none' }, resolve)}`;
     }
     const style = `fill="${escapeXml(o.fill)}" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"`;
     if (o.type === 'rect') return `<rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" ${style}/>`;
     if (o.type === 'ellipse') return `<ellipse cx="${o.x + o.width / 2}" cy="${o.y + o.height / 2}" rx="${o.width / 2}" ry="${o.height / 2}" ${style}/>`;
     if (o.type === 'spline') return `<path d="${splinePath(o)}" ${style}/>`;
     // data-adjusted lets the editor swap in the processed pixels; exports bake the adjustments first.
-    if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(o.src)}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
+    if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(resolve(o.src))}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
     return `<text x="${o.x}" y="${o.y + o.fontSize}" font-family="Arial, sans-serif" font-size="${o.fontSize}" ${style} xml:space="preserve">${escapeXml(o.text)}</text>`;
 }
 export function exportSvg(document) {
     const d = validateDocument(document);
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${d.width}mm" height="${d.height}mm" viewBox="0 0 ${d.width} ${d.height}">\n<title>${escapeXml(d.name)}</title>\n${d.objects.filter(o => !o.hidden).map(objectMarkup).join('\n')}\n</svg>`;
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${d.width}mm" height="${d.height}mm" viewBox="0 0 ${d.width} ${d.height}">\n<title>${escapeXml(d.name)}</title>\n${d.objects.filter(o => !o.hidden).map(o => objectMarkup(o)).join('\n')}\n</svg>`;
 }
 
 export function* objectsWithContents(objects) {

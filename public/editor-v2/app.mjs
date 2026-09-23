@@ -1,4 +1,4 @@
-import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
+import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, documentKey, packDocument, unpackDocument, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
 import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget, unionBounds, resizeSelection, resizeRotated, rotatedBounds } from './geometry.mjs';
 import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns } from './transform.mjs';
@@ -32,7 +32,7 @@ const selectOnly = id => setSelection(id ? [id] : []);
 const selectedObjects = () => current().objects.filter(object => selectedIds.has(object.id));
 let view = { x: 0, y: 0, scale: 2 }, draft = null;
 let storageBlocked = false;
-let cloudBinding = null, cloudSavedJson = null, cloudBusy = false, pendingSave = false;
+let cloudBinding = null, cloudSavedKey = null, cloudBusy = false, pendingSave = false;
 let cloudApi = null;
 let nextFill = '#b9a3ed';
 let nextStroke = '#352a49';
@@ -61,26 +61,39 @@ const status = message => { $('#status').textContent = message; };
 
 try {
     const saved = localStorage.getItem(storageKey);
-    if (saved) history = new History(JSON.parse(saved));
+    if (saved) history = new History(unpackDocument(saved));
     const meta = JSON.parse(localStorage.getItem(storageKey + '.cloud') || 'null');
-    if (meta && meta.documentJson === JSON.stringify(history.document) && typeof meta.binding?.id === 'string' && Number.isSafeInteger(meta.binding.revision)) {
-        cloudBinding = meta.binding; cloudSavedJson = meta.savedJson;
+    // Drafts saved before image fingerprints kept the whole document JSON in the metadata.
+    const matches = meta && (meta.documentKey ? meta.documentKey === documentKey(history.document) : meta.documentJson === JSON.stringify(history.document));
+    if (matches && typeof meta.binding?.id === 'string' && Number.isSafeInteger(meta.binding.revision)) {
+        cloudBinding = meta.binding;
+        cloudSavedKey = meta.documentKey ? meta.savedKey : meta.savedJson && documentKey(JSON.parse(meta.savedJson));
     }
 } catch {
     storageBlocked = true;
     $('#save-status').textContent = 'No se pudo recuperar el borrador. Descarga tu proyecto.';
 }
 
+// The draft is written shortly after the last change, so quick repeated edits do not each serialize it.
+let persistTimer = null;
 function persist() {
     // Preserve unreadable previous data until the user explicitly opens/creates a project.
     if (storageBlocked) return;
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(persistNow, 300);
+}
+function persistNow() {
+    clearTimeout(persistTimer); persistTimer = null;
+    if (storageBlocked) return;
     try {
-        const documentJson = JSON.stringify(savedDocument());
-        localStorage.setItem(storageKey, documentJson);
-        localStorage.setItem(storageKey + '.cloud', JSON.stringify({ binding: cloudBinding, savedJson: cloudSavedJson, documentJson }));
+        const saved = savedDocument();
+        localStorage.setItem(storageKey, packDocument(saved));
+        localStorage.setItem(storageKey + '.cloud', JSON.stringify({ binding: cloudBinding, savedKey: cloudSavedKey, documentKey: documentKey(saved) }));
         $('#save-status').textContent = 'Borrador guardado en este navegador';
     } catch { $('#save-status').textContent = 'No se pudo guardar el borrador. Descarga tu proyecto.'; }
 }
+addEventListener('pagehide', () => { if (persistTimer !== null) persistNow(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && persistTimer !== null) persistNow(); });
 function commit(next) {
     try { if (history.commit(next)) persist(); }
     catch (error) { status(error.message); }
@@ -109,6 +122,21 @@ function point(event) {
     const rect = canvas.getBoundingClientRect();
     return { x: (event.clientX - rect.left - view.x) / view.scale, y: (event.clientY - rect.top - view.y) / view.scale };
 }
+// On screen each embedded image is a blob URL made once, so copies of it and redraws while dragging do
+// not parse and decode its data again. Exports still embed the original data.
+const displayUrls = new Map();
+function displaySrc(src) {
+    if (!src.startsWith('data:')) return src;
+    let url = displayUrls.get(src);
+    if (!url) {
+        const bytes = atob(src.slice(src.indexOf(',') + 1)), data = new Uint8Array(bytes.length);
+        for (let i = 0; i < bytes.length; i++) data[i] = bytes.charCodeAt(i);
+        url = URL.createObjectURL(new Blob([data], { type: src.slice(5, src.indexOf(';')) }));
+        displayUrls.set(src, url);
+        if (displayUrls.size > 64) { const [oldest, oldUrl] = displayUrls.entries().next().value; URL.revokeObjectURL(oldUrl); displayUrls.delete(oldest); }
+    }
+    return url;
+}
 function renderScene() {
     $('#hover-reference').replaceChildren();
     const d = current();
@@ -119,7 +147,7 @@ function renderScene() {
         if (object.hidden) continue;
         const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         // Markup comes only from validated primitives, never from imported SVG.
-        group.innerHTML = objectMarkup(object);
+        group.innerHTML = objectMarkup(object, displaySrc);
         showAdjustedImages(group);
         if (object.powerClip) drawPowerClipMarker(group, object);
         if (object.type === 'spline' && !object.locked) {
@@ -322,7 +350,7 @@ function render() {
     const sameWidth = widths.every(value => Math.abs(value - widths[0]) < 1e-8);
     strokeMenu.value = sameWidth ? ([...strokeMenu.options].find(option => option.value !== 'custom' && Math.abs(Number(option.value) - widths[0]) < 1e-8)?.value || 'custom') : 'custom';
     strokeMenu.disabled = !selectedObjects().some(item => !item.locked);
-    $('#cloud-badge').textContent = cloudBinding ? (JSON.stringify(d) === cloudSavedJson ? 'Guardado en Firebase' : 'Cambios sin guardar en Firebase') : 'Proyectos en Firebase';
+    $('#cloud-badge').textContent = cloudBinding ? (documentKey(d) === cloudSavedKey ? 'Guardado en Firebase' : 'Cambios sin guardar en Firebase') : 'Proyectos en Firebase';
     $('#document-name').value = d.name;
     $('#display-unit').value = displayUnit;
     $('#page-preset').value = Object.keys(pagePresets).find(key => Math.abs(d.width - pagePresets[key].width) < .001 && Math.abs(d.height - pagePresets[key].height) < .001) || 'custom';
@@ -620,12 +648,7 @@ canvas.addEventListener('pointermove', event => {
         gesture.moved ||= Math.hypot(dx, dy) * view.scale > 4;
         gesture.pointer = p; updatePowerClipDrop(gesture);
     }
-    if (gesture.type === 'draw') {
-        let w = Math.abs(dx), h = Math.abs(dy);
-        if (event.shiftKey) w = h = Math.max(w, h);
-        o.x = gesture.start.x - (dx < 0 ? w : 0); o.y = gesture.start.y - (dy < 0 ? h : 0);
-        o.width = Math.max(.1, w); o.height = Math.max(.1, h);
-    }
+    if (gesture.type === 'draw') { gesture.delta = { x: dx, y: dy }; sizeDrawing(o, event.ctrlKey || event.metaKey); }
     if (gesture.type === 'resize-group') {
         for (const item of resizeSelection(gesture.originals, gesture.box, gesture.handle, dx, dy)) Object.assign(draft.objects.find(object => object.id === item.id), item);
     }
@@ -746,6 +769,19 @@ canvas.addEventListener('pointerup', event => {
     if (previous.snap) { drawReference(previous.snap); status(`Encajado en ${referenceLabel(previous.snap).toLowerCase()}`); }
     else showReference(event);
 });
+// Ctrl draws with equal sides (a square or a circle), as in CorelDRAW.
+function sizeDrawing(o, equal) {
+    const { x: dx, y: dy } = gesture.delta;
+    let w = Math.abs(dx), h = Math.abs(dy);
+    if (equal) w = h = Math.max(w, h);
+    o.x = gesture.start.x - (dx < 0 ? w : 0); o.y = gesture.start.y - (dy < 0 ? h : 0);
+    o.width = Math.max(.1, w); o.height = Math.max(.1, h);
+}
+// Pressing or releasing Ctrl while drawing updates the shape without moving the mouse.
+for (const type of ['keydown', 'keyup']) window.addEventListener(type, event => {
+    if (gesture?.type !== 'draw' || !gesture.delta || !['Control', 'Meta'].includes(event.key)) return;
+    sizeDrawing(selected(), event.ctrlKey || event.metaKey); renderScene();
+});
 function cancelGesture() {
     if (!gesture) return;
     const previous = gesture; gesture = null; draft = null;
@@ -822,7 +858,7 @@ function previewPropertyColor(input, o) {
         const preview = { ...item, [pending.property]: pending.value };
         if (pending.property === 'stroke' && preview.strokeWidth === 0) preview.strokeWidth = HAIRLINE_WIDTH;
         // Only repaint this object. Do not reset the native picker or serialize the project while dragging.
-        group.innerHTML = objectMarkup(preview);
+        group.innerHTML = objectMarkup(preview, displaySrc);
         showAdjustedImages(group);
         if (preview.powerClip) drawPowerClipMarker(group, preview);
     });
@@ -1044,7 +1080,7 @@ $('#export-form').addEventListener('submit', async event => {
     }
 });
 function newDocument() {
-    cloudBinding = null; cloudSavedJson = null;
+    cloudBinding = null; cloudSavedKey = null;
     storageBlocked = false; selectOnly(null); commit(blankDocument()); persist(); fit(); status('Nuevo documento A4');
 }
 const actions = {
@@ -1154,7 +1190,7 @@ $('#open-file').addEventListener('change', async event => {
         if (file.size > 32 * 1024 * 1024) throw new Error('El proyecto supera el límite de 32 MB.');
         const next = validateDocument(JSON.parse(await file.text()));
         if (!window.confirm('¿Abrir este proyecto y reemplazar el borrador actual? Puedes deshacer esta acción.')) return;
-        cancelGesture(); cloudBinding = null; cloudSavedJson = null;
+        cancelGesture(); cloudBinding = null; cloudSavedKey = null;
         storageBlocked = false; selectOnly(null); commit(next); persist(); fit(); $('#cloud-dialog').close(); status('Proyecto abierto');
     } catch (error) { status(`No se abrió el archivo: ${error.message}`); }
 });
@@ -1237,7 +1273,7 @@ function previewPaletteColor(color) {
             if (!group) continue;
             const preview = { ...item, [paletteTarget]: color };
             if (paletteTarget === 'stroke' && preview.strokeWidth === 0) preview.strokeWidth = HAIRLINE_WIDTH;
-            group.innerHTML = objectMarkup(preview);
+            group.innerHTML = objectMarkup(preview, displaySrc);
             showAdjustedImages(group);
             if (preview.powerClip) drawPowerClipMarker(group, preview);
         }
@@ -1290,7 +1326,7 @@ async function refreshProjects() {
             const loaded = await cloudApi.load(project.id);
             // Guard against accidentally discarding edits; loading is also undoable.
             if (!window.confirm('¿Abrir este proyecto y reemplazar el borrador actual? Puedes deshacerlo.')) { cloudMessage('Apertura cancelada.'); return; }
-            cancelGesture(); cloudBinding = loaded.binding; cloudSavedJson = JSON.stringify(loaded.document);
+            cancelGesture(); cloudBinding = loaded.binding; cloudSavedKey = documentKey(loaded.document);
             storageBlocked = false; selectOnly(null); commit(loaded.document); persist(); fit();
             $('#cloud-dialog').close(); status('Proyecto cargado desde Firebase');
         });
@@ -1332,7 +1368,7 @@ async function saveCloud(copy = false) {
     cloudMessage('Guardando en Firebase…');
     const binding = await cloudApi.save(snapshot, copy ? null : cloudBinding);
     if (cloudBinding === previousBinding) {
-        cloudBinding = binding; cloudSavedJson = JSON.stringify(snapshot); persist(); render();
+        cloudBinding = binding; cloudSavedKey = documentKey(snapshot); persist(); render();
     }
     try {
         await refreshProjects();
