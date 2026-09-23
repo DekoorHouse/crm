@@ -172,6 +172,9 @@ export function validateDocument(input, depth = 0) {
             valid.src = o.src;
             const adjust = o.adjust === undefined ? null : normalizeAdjust(o.adjust);
             if (adjust) valid.adjust = adjust;
+            // 1-bit bitmaps are drawn with square pixels, never smoothed into greys.
+            if (o.pixelated !== undefined && typeof o.pixelated !== 'boolean') throw new Error('La imagen tiene un ajuste de píxeles inválido.');
+            if (o.pixelated) valid.pixelated = true;
         }
         if (o.powerClip !== undefined) {
             const clip = o.powerClip;
@@ -254,7 +257,7 @@ function shapeMarkup(o, style, resolve) {
     if (o.type === 'spline') return `<path d="${splinePath(o)}" ${style}/>`;
     if (o.type === 'path') return `<path d="${pathData(o)}"${o.fillRule === 'evenodd' ? ' fill-rule="evenodd" clip-rule="evenodd"' : ''} ${style}/>`;
     // data-adjusted lets the editor swap in the processed pixels; exports bake the adjustments first.
-    if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(resolve(o.src, o))}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
+    if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.pixelated ? ' image-rendering="optimizeSpeed" style="image-rendering:pixelated"' : ''}${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(resolve(o.src, o))}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
     return `<text x="${o.x}" y="${o.y + o.fontSize}" font-family="Arial, sans-serif" font-size="${o.fontSize}" ${style} xml:space="preserve">${escapeXml(o.text)}</text>`;
 }
 export function exportSvg(document) {

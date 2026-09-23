@@ -6,6 +6,7 @@ import { HAIRLINE_WIDTH } from './model.mjs';
 import { createColorPicker } from './colorPicker.mjs';
 import { pathData } from './path.mjs';
 import { presetObject } from './presets.mjs';
+import { BITMAP_METHODS, bitmapSize, dpiToStep, toBitmap, pngWithDpi } from './bitmap.mjs';
 import { RASTER_PROMPT, rasterModel, linkRasterModel, rasterize } from './rasterize.mjs';
 import { pathNodes, movePathNodes, movePathHandle, closestOnPath, insertPathNode, removePathNodes } from './pathEdit.mjs';
 import { importSvg, parseColor, dropImages } from './svgImport.mjs';
@@ -189,7 +190,7 @@ function makePreview(src, size) {
 function displaySrc(src, o) {
     if (!src.startsWith('data:')) return src;
     const entry = previewEntry(src);
-    const size = previewSize(entry, Math.max(o.width, o.height) * view.scale * (window.devicePixelRatio || 1));
+    const size = o.pixelated ? 'full' : previewSize(entry, Math.max(o.width, o.height) * view.scale * (window.devicePixelRatio || 1));
     if (entry.urls.has(size)) return entry.urls.get(size);
     makePreview(src, size).catch(() => status('No se pudo mostrar una imagen.'));
     // Meanwhile show the closest preview already made: a larger one first, then a smaller one.
@@ -211,6 +212,13 @@ function forgetUnusedImages() {
     forgetImages(live);
     for (const [src, entry] of previews) if (!live.has(src)) { entry.urls.forEach(url => URL.revokeObjectURL(url)); previews.delete(src); }
 }
+// A 1-bit image shown smaller than its pixels would sample stray dots and look noisy, so on screen
+// it is smoothed until each of its pixels covers a screen pixel. Exports always keep square pixels.
+function smoothSmallBitmaps(root, item) {
+    const natural = previews.get(item.src)?.natural, shown = Math.max(item.width, item.height) * view.scale * (window.devicePixelRatio || 1);
+    if (natural && natural !== Infinity && shown >= natural) return;
+    for (const element of root.querySelectorAll('image[image-rendering]')) { element.removeAttribute('image-rendering'); element.style.removeProperty('image-rendering'); }
+}
 function renderScene() {
     $('#hover-reference').replaceChildren();
     const d = current();
@@ -223,6 +231,7 @@ function renderScene() {
         // Markup comes only from validated primitives, never from imported SVG.
         group.innerHTML = objectMarkup(object, displaySrc);
         showAdjustedImages(group);
+        if (object.pixelated) smoothSmallBitmaps(group, object);
         if (object.powerClip) drawPowerClipMarker(group, object);
         // Thin lines get a wider invisible stroke so they are easy to click.
         if ((object.type === 'spline' || (object.type === 'path' && object.fill === 'none')) && !object.locked) {
@@ -1277,6 +1286,8 @@ canvas.addEventListener('contextmenu', event => {
     $('#extract-powerclip').disabled = !single || object.locked || !object.powerClip?.objects.length;
     $('#invert-image').hidden = object.type !== 'image';
     $('#invert-image').disabled = object.locked;
+    $('#bitmap-image').hidden = object.type !== 'image';
+    $('#bitmap-image').disabled = !single || object.locked;
     $('#raster-image').hidden = object.type !== 'image';
     $('#raster-image').disabled = !single || object.locked;
     $('#remove-powerclip').hidden = !object.powerClip;
@@ -1425,6 +1436,86 @@ $('#raster-link').onclick = async () => {
     try { await linkRasterModel(await rasterToken()); await rasterSetup(); }
     catch (error) { rasterMessage(error.message); rasterButtons({ login: Boolean(error.login), link: true }); }
 };
+// Convertir a mapa de bits (bitmap.mjs): pure black and white at the size the image has on the page and
+// the resolution of the laser's line step, with its adjustments applied first. Black is what gets burned.
+let bitmap = null, bitmapTimer = null;
+const bitmapInfo = text => { $('#bitmap-info').textContent = text; };
+const millimetres = value => +value.toFixed(1);
+function openBitmap() {
+    hideObjectMenu();
+    const object = selected();
+    if (!object || object.type !== 'image' || object.locked) return;
+    bitmap = { id: object.id, source: null, result: null, run: 0 };
+    const method = $('#bitmap-method');
+    if (!method.options.length) method.replaceChildren(...Object.entries(BITMAP_METHODS).map(([value, label]) => Object.assign(document.createElement('option'), { value, textContent: label })));
+    $('#bitmap-before').src = object.src;
+    $('#bitmap-after').hidden = true; $('#bitmap-placeholder').hidden = false;
+    $('#bitmap-dialog').showModal();
+    updateBitmap();
+}
+function scheduleBitmap() { clearTimeout(bitmapTimer); bitmapTimer = setTimeout(updateBitmap, 150); }
+async function updateBitmap() {
+    const session = bitmap;
+    if (!session) return;
+    const object = current().objects.find(item => item.id === session.id);
+    if (!object) { $('#bitmap-dialog').close(); return; }
+    const dpi = Number($('#bitmap-dpi').value), method = $('#bitmap-method').value, threshold = Number($('#bitmap-threshold').value);
+    const run = ++session.run;
+    $('#bitmap-threshold-value').textContent = threshold;
+    $('#bitmap-step').textContent = dpi >= 50 && dpi <= 1200 ? `paso ${dpiToStep(dpi).toFixed(3)} mm` : '';
+    $('#bitmap-apply').disabled = $('#bitmap-download').disabled = true;
+    try {
+        if (!(dpi >= 50 && dpi <= 1200)) throw new Error('Usa una resolución entre 50 y 1200 DPI.');
+        const { width, height } = bitmapSize(object.width, object.height, dpi);
+        bitmapInfo(`${millimetres(object.width)} × ${millimetres(object.height)} mm → ${width} × ${height} px · calculando…`);
+        session.source ||= await renderAdjusted(object.src, object.adjust);
+        const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        context.imageSmoothingQuality = 'high';
+        context.drawImage(session.source, 0, 0, width, height);
+        const pixels = context.getImageData(0, 0, width, height);
+        pixels.data.set(toBitmap(pixels.data, width, height, { method, threshold }));
+        context.putImageData(pixels, 0, 0);
+        const blob = new Blob([pngWithDpi(await (await canvasBlob(canvas, 'image/png')).arrayBuffer(), dpi)], { type: 'image/png' });
+        const dataUrl = await blobDataUrl(blob);
+        if (bitmap !== session || run !== session.run) return;
+        if (!validImageSource(dataUrl)) throw new Error('El mapa de bits es demasiado grande. Baja los DPI.');
+        session.result = { dataUrl, blob, dpi };
+        $('#bitmap-after').src = dataUrl; $('#bitmap-after').hidden = false; $('#bitmap-placeholder').hidden = true;
+        bitmapInfo(`${millimetres(object.width)} × ${millimetres(object.height)} mm → ${width} × ${height} px a ${dpi} DPI (paso ${dpiToStep(dpi).toFixed(3)} mm) · ${Math.max(1, Math.round(blob.size / 1024))} KB`);
+        $('#bitmap-apply').disabled = $('#bitmap-download').disabled = false;
+    } catch (error) {
+        if (bitmap !== session || run !== session.run) return;
+        session.result = null; bitmapInfo(error.message || 'No se pudo convertir la imagen.');
+    }
+}
+function applyBitmap() {
+    const session = bitmap, result = session?.result, object = current().objects.find(item => item.id === session?.id);
+    if (!result || !object) return;
+    const keep = $('#bitmap-keep').checked;
+    if (keep) {
+        const copy = { ...createObject('image', object.x + object.width + 5, object.y, object.width, object.height), name: (object.name + ' 1 bit').slice(0, 120),
+            src: result.dataUrl, fill: 'none', stroke: 'none', strokeWidth: 0, pixelated: true, ...(object.rotation ? { rotation: object.rotation } : {}) };
+        edit(d => d.objects.splice(d.objects.findIndex(item => item.id === object.id) + 1, 0, copy));
+        selectOnly(copy.id);
+    } else {
+        // The adjustments are already in the bitmap.
+        edit(d => { const item = d.objects.find(entry => entry.id === object.id); item.src = result.dataUrl; item.pixelated = true; delete item.adjust; });
+    }
+    bitmap = null; $('#bitmap-dialog').close(); render();
+    status(keep ? 'Mapa de bits agregado junto a la original' : 'Imagen convertida a mapa de bits');
+}
+$('#bitmap-image').onclick = openBitmap;
+$('#bitmap-apply').onclick = applyBitmap;
+$('#bitmap-download').onclick = () => {
+    const result = bitmap?.result, object = current().objects.find(item => item.id === bitmap?.id);
+    if (result) download(result.blob, 'image/png', ` ${result.dpi} dpi.png`, object?.name || 'Mapa de bits');
+};
+$('#bitmap-cancel').onclick = () => $('#bitmap-dialog').close();
+$('#bitmap-dialog').addEventListener('close', () => { bitmap = null; clearTimeout(bitmapTimer); });
+for (const id of ['#bitmap-dpi', '#bitmap-threshold']) $(id).addEventListener('input', scheduleBitmap);
+$('#bitmap-method').addEventListener('change', updateBitmap);
+$('#bitmap-actual').addEventListener('change', event => $('#bitmap-frame').classList.toggle('actual', event.target.checked));
 $('#extract-powerclip').onclick = () => { hideObjectMenu(); edit(d => extractPowerClip(d, selectedId)); status('Contenido extraído'); };
 $('#powerclip-extract').onclick = () => { edit(d => extractPowerClip(d, selectedId)); status('Contenido extraído'); };
 for (const mode of ['contain', 'cover']) $('#powerclip-' + mode).onclick = () => {
