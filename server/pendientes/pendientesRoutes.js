@@ -65,13 +65,14 @@ router.get('/', async (req, res) => {
         const { isVideoAutoWaiting, isCorazon, MANUAL_SPECIAL_RE, datosOf } = require('../design/svgAuto');
 
         // --- Candidatos de PEDIDOS: 'Corregir' (posible video) + 'Sin estatus' (posible mockup) ---
-        const [sCor, sSin, sAtn, sIa, sSus] = await Promise.all([
+        const [sCor, sSin, sAtn, sIa, sSus, sMedia] = await Promise.all([
             db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
             db.collection('pedidos').where('estatus', '==', 'Sin estatus').limit(500).get(),
             db.collection('contacts_whatsapp').where('needsAttention', '==', true).limit(200).get(),
             db.collection('contacts_whatsapp').where('status', '==', 'pendientes_ia').limit(300).get(),
             // Las alertas de la IA enriquecen la misma cola de revisión por importe.
             db.collection('contacts_whatsapp').where('suspiciousReceiptPending', '==', true).limit(200).get(),
+            db.collection('contacts_whatsapp').where('mediaDeliveryPending', '==', true).limit(200).get(),
         ]);
 
         // Previews (mockup_previews) en lote: fuente de verdad de "ya tiene mockup" y del mockup que
@@ -169,10 +170,12 @@ router.get('/', async (req, res) => {
                 ...(extra || {}),
             };
         };
-        const atencion = sAtn.docs
+        const atencion = [...new Map([...sAtn.docs, ...sMedia.docs].map(d => [d.id, d])).values()]
             .map(doc => mapContact(doc, {
                 reason: doc.data().needsAttentionReason || null,
-                at: tsToMs(doc.data().needsAttentionAt),
+                at: tsToMs(doc.data().needsAttentionAt) || tsToMs(doc.data().mediaDeliveryFailure?.at),
+                mediaDeliveryPending: doc.data().mediaDeliveryPending === true,
+                mediaDeliveryReason: doc.data().mediaDeliveryFailure?.reason || null,
             }))
             .sort((a, b) => (a.at || a.lastMessageAt || 0) - (b.at || b.lastMessageAt || 0));
 
@@ -441,7 +444,7 @@ router.post('/atencion/:contactId/atendido', async (req, res) => {
     const { contactId } = req.params;
     try {
         await db.collection('contacts_whatsapp').doc(String(contactId))
-            .update({ needsAttention: false, needsAttentionReason: null });
+            .update({ needsAttention: false, needsAttentionReason: null, mediaDeliveryPending: false });
         res.json({ success: true });
     } catch (e) {
         console.error('[PENDIENTES/atendido] error:', e.message);
@@ -454,11 +457,12 @@ router.post('/atencion/:contactId/atendido', async (req, res) => {
 // columna tal como estaba (con su antigüedad real, no como si acabara de marcarse urgente).
 router.post('/atencion/:contactId/reabrir', async (req, res) => {
     const { contactId } = req.params;
-    const { reason, at } = req.body || {};
+    const { reason, at, mediaDeliveryPending } = req.body || {};
     try {
         const upd = {
             needsAttention: true,
             needsAttentionReason: reason || null,
+            ...(mediaDeliveryPending === true ? { mediaDeliveryPending: true } : {}),
             needsAttentionAt: at
                 ? admin.firestore.Timestamp.fromMillis(Number(at))
                 : admin.firestore.FieldValue.serverTimestamp(),

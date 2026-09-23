@@ -18,6 +18,7 @@
 const cron = require('node-cron');
 const { db, admin } = require('../config');
 const { sendAdvancedWhatsAppMessage, sendMessengerMessage } = require('../services');
+const { recordDeliveryFailure } = require('./deliveryFailure');
 
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const CRON_SCHEDULE = process.env.SCHEDULED_MSG_CRON || '* * * * *'; // cada minuto
@@ -120,10 +121,8 @@ async function runScheduledMessagesSweep({ dryRun = false } = {}) {
                 console.log(`[SCHED_MSG] ✓ Programado enviado a ${contactId} (msg ${doc.id})`);
             } catch (e) {
                 const detail = e.response?.data ? JSON.stringify(e.response.data) : e.message;
-                const attempts = (data.attempts || 0) + 1;
-                const update = { attempts, lastError: (detail || '').substring(0, 500), updatedAt: new Date() };
-                if (attempts >= MAX_SEND_ATTEMPTS) update.status = 'failed'; // deja de reintentar
-                await doc.ref.update(update).catch(() => {});
+                await recordDeliveryFailure({ db, admin, messageRef: doc.ref, contactRef,
+                    data, error: e, maxAttempts: MAX_SEND_ATTEMPTS });
                 summary.errors++;
                 console.error(`[SCHED_MSG] ✗ ${contactId} (msg ${doc.id}): ${detail}`);
             }
