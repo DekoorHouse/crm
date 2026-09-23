@@ -76,6 +76,7 @@ Reglas del "message" cuando horizon="date" (se manda días/semanas después, cua
 - NO te comprometas con TIEMPOS de envío: NUNCA prometas mandar el pedido "hoy mismo", "de inmediato", "de volada" ni una fecha/hora concreta de salida. Habla de "avanzar con tu pedido" o "preparar tu envío", sin prometer cuándo sale.
 
 Reglas de "defer":
+- defer=false para seguimiento de entrega, guía, rastreo, visita fallida, garantía o recepción de un paquete. "Mañana estaré pendiente" esperando al repartidor NO aplaza una compra ni un pago. Este sistema envía recordatorios comerciales y no sirve para seguimiento de paquetería.
 - defer=true si difiere su COMPRA o su PAGO, sin importar cuánto: unos minutos/horas de hoy
   (horizon="short") o de otro día en adelante (horizon="date"). "Voy, deme unos minutos" y
   "ahorita te deposito" SÍ son defer=true con horizon="short": el cliente se despidió del chat

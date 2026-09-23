@@ -32,6 +32,7 @@ const axios = require('axios');
 const { db, admin } = require('../config');
 const { sendAdvancedWhatsAppMessage, sendMessengerMessage } = require('../services');
 const { classifyDeferral } = require('./scheduledReminderClassifier');
+const { reminderEligibility } = require('./reminderEligibility');
 const {
     normalizeReminderConfig,
     computeSendAtMs,
@@ -269,6 +270,11 @@ function buildConvText(messageDocs, contactId) {
  */
 async function armReminder(waId, { name, remindAt, remindInHours, kind, context, reason, message, source, templateName, langCode }) {
     if (!waId) return { ok: false, reason: 'sin_waId' };
+    const eligibility = await reminderEligibility(db, waId);
+    if (!eligibility.allowed) {
+        await cancelReminderForContact(waId, eligibility.reason);
+        return { ok: false, reason: eligibility.reason };
+    }
     const cfg = await getReminderConfig();
     const isShort = kind === 'short';
     const nowMs = Date.now();
@@ -283,6 +289,7 @@ async function armReminder(waId, { name, remindAt, remindInHours, kind, context,
 
     await ref.set({
         waId,
+        purchaseSessionId: eligibility.purchaseSessionId,
         name: name || (prev.exists ? prev.data().name : null) || null,
         remindAt: admin.firestore.Timestamp.fromMillis(sendMs),
         kind: isShort ? 'short' : 'date',
@@ -334,6 +341,11 @@ async function detectAndArmReminder(contactId, contactRef, conversationHistory, 
     const cfg = await getReminderConfig();
     if (!cfg.enabled || !cfg.liveDetect) return;
     if (!hasDeferralHint(conversationHistory)) return;
+    const eligibility = await reminderEligibility(db, contactId);
+    if (!eligibility.allowed) {
+        await cancelReminderForContact(contactId, eligibility.reason);
+        return;
+    }
 
     // Si el recordatorio agendado lo puso el OPERADOR, él es dueño de él: no re-armar.
     // Si lo agendó la IA, SÍ lo re-evaluamos: el cliente puede dar una fecha NUEVA más
@@ -470,6 +482,21 @@ async function runReminderSweep({ dryRun = false } = {}) {
             if (nowMs < remindMs) { summary.waiting++; continue; } // aún no toca
 
             const isShort = rem.kind === 'short';
+
+            // Recheck persisted payments/shipping even if the reminder was created later.
+            // On a read failure defer this contact; never send without checking its order.
+            try {
+                const eligibility = await reminderEligibility(db, doc.id, rem);
+                if (!eligibility.allowed) {
+                    if (!dryRun) await doc.ref.update({ status: 'cancelled', cancelReason: eligibility.reason, updatedAt: new Date() });
+                    summary.cancelled++;
+                    continue;
+                }
+            } catch (e) {
+                console.warn(`[REMINDER] No se pudo verificar el pedido de ${doc.id}:`, e.message);
+                summary.waiting++;
+                continue;
+            }
 
             // Demasiado tarde (el sweep no corrió a tiempo): expira en vez de mandar viejo.
             // Los cortos caducan mucho antes: un "¿cómo vas?" de hace 2 días no tiene sentido.
