@@ -152,3 +152,18 @@ test('un trabajo interrumpido no queda eternamente en progreso ni se reenvía', 
     expect(job).not.toHaveProperty('fingerprint');
     expect(mockFetch).not.toHaveBeenCalled();
 });
+test('un rechazo del proveedor muestra su motivo, sin la llave', async () => {
+    await service.createGeneration(fields(), [], actor);
+    await finish({ ok: false, status: 400, json: async () => ({ error: { code: 400, message: 'Provider returned error',
+        metadata: { raw: JSON.stringify({ error: { message: 'Invalid value for aspect_ratio.' } }), provider_name: 'OpenAI' } } }) });
+    expect(current().status).toBe('failed');
+    expect(current().error).toContain('no pudo aceptar la solicitud');
+    expect(current().error).toContain('Detalle: Invalid value for aspect_ratio.');
+    expect(current().error).not.toContain('test-secret');
+});
+test('un rechazo por políticas de contenido se explica en español', async () => {
+    await service.createGeneration(fields(), [], actor);
+    await finish({ ok: false, status: 400, json: async () => ({ error: { message: 'Your request was rejected by the safety system.' } }) });
+    expect(current().error).toMatch(/políticas de contenido/);
+    expect(current().error).toContain('safety system');
+});

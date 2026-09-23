@@ -160,6 +160,19 @@ async function saveOutput(id, entry, index) {
     return { fullUrl, thumbUrl, width: meta.width, height: meta.height };
 }
 
+// OpenRouter explains a rejection in error.message, and the provider's own reason in error.metadata.raw
+// (often a JSON string). Only that text is kept, trimmed, so the team can see why a request failed.
+async function providerReason(response) {
+    try {
+        const body = typeof response.json === 'function' ? await response.json() : null;
+        let reason = body?.error?.metadata?.raw ?? body?.error?.message;
+        if (typeof reason === 'string') {
+            try { const inner = JSON.parse(reason); reason = inner?.error?.message ?? inner?.message ?? reason; } catch (_) {}
+        }
+        return typeof reason === 'string' ? reason.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+    } catch (_) { return ''; }
+}
+
 async function runGeneration(ref, lockRef, request) {
     try {
         const response = await fetch(`${API}/images`, {
@@ -175,7 +188,13 @@ async function runGeneration(ref, lockRef, request) {
                 403: 'OpenRouter no permite usar este modelo con la conexión actual.',
                 429: 'El modelo está ocupado. Intenta de nuevo en unos minutos.',
             };
-            throw failure(messages[response.status] || 'OpenRouter no pudo generar la imagen. Intenta de nuevo más tarde.', 502);
+            const reason = await providerReason(response);
+            if (reason) console.warn('[IMAGENES] OpenRouter rechazó la generación:', ref.id, response.status, reason);
+            const blocked = /safety|moderat|policy|content|violat|not allowed|public figure|real person/i.test(reason);
+            const message = blocked
+                ? 'OpenAI rechazó la imagen por sus políticas de contenido (por ejemplo, fotos de personas reales o famosas). Prueba con otra imagen.'
+                : messages[response.status] || 'OpenRouter no pudo generar la imagen. Intenta de nuevo más tarde.';
+            throw failure(reason ? `${message} Detalle: ${reason}` : message, 502);
         }
         const data = await response.json();
         if (!Array.isArray(data.data) || !data.data.length) throw failure('El modelo no devolvió una imagen. Prueba con otra descripción.', 502);
