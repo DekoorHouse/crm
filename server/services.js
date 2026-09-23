@@ -1189,7 +1189,7 @@ async function buildStaticContext(botInstructions, isPostVenta = false, paymentP
     // Material de referencia va en contents (como contexto, no como instrucciones)
     const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo:** Si una de estas respuestas aplica perfectamente, puedes enviarla respondiendo ÚNICAMENTE con su atajo (ejemplo: responde exactamente "/ttt" y nada más); el sistema lo reemplazará automáticamente por su contenido completo, incluida cualquier imagen. También puedes escribir el contenido directamente si lo prefieres. NUNCA combines un atajo con más texto en el mismo mensaje.\n\n⚠️ **El cliente NO debe enterarse de que existen los atajos.** Son internos: él solo ve el texto ya expandido. Por eso NUNCA anuncies, presentes ni expliques un atajo, ni antes ni después ni en otro mensaje. PROHIBIDO escribir cosas como "te envío el comando", "te mando este otro", "usamos este comando para checar cobertura", "ahora te comparto la información de..." o dos puntos anunciando lo que sigue. Simplemente escribe el atajo SOLO (ej.: una línea que diga exactamente "/ttt") y nada más: el sistema pone el texto completo por ti y al cliente le llega una conversación natural. Si necesitas mandar dos atajos, ponlos cada uno en su propia línea, sin una sola palabra entre ellos.\n${quickReplies || 'No hay respuestas rápidas.'}`;
 
-    return { systemText, referenceText };
+    return { systemText: systemText + require('./deliveryIncidentGuard').INSTRUCTION, referenceText };
 }
 
 /**
@@ -4246,6 +4246,20 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 }
             }
         } catch (e) { console.warn('[COBERTURA] candado de /ttt falló (se continua):', e.message); }
+
+        // Persist the incident before acknowledging it; override unverified promises before command parsing.
+        const incidentCustomerTexts = [];
+        for (const d of messagesSnapshot.docs) {
+            if (d.data().from !== contactId) break;
+            incidentCustomerTexts.push(String(d.data().text || ''));
+            if (incidentCustomerTexts.length >= 3) break;
+        }
+        aiResponse = await require('./deliveryIncidentGuard').protectDeliveryIncident({
+            contactRef, contact: currentContactDoc.data() || contactData,
+            customerText: [...new Set([String(messageText || ''), ...incidentCustomerTexts])].join('\n'),
+            reply: aiResponse, timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            newPurchase: require('./orders/purchaseSessions').purchaseIntent(messageText) === 'new',
+        });
 
         // Separar la respuesta en múltiples mensajes si contiene [SPLIT]
         let aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);

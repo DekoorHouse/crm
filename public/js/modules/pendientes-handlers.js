@@ -254,7 +254,7 @@ function pendContactCard(c, col) {
             ? `<button onclick="pendPaymentRetry('${escapeHtml(c.id)}', this)" class="pd-btn">Revisar y reintentar</button><button onclick="pendPaymentConfirmSent('${escapeHtml(c.id)}', this)" class="pd-btn pd-btn-ghost">Ya lo recibió</button>`
             : `${image}<button onclick="pendPaymentReview('${escapeHtml(c.id)}', '${col}', this)" class="pd-btn" style="background:#16a34a;color:white">Validar importe</button><button onclick="pendPaymentReject('${escapeHtml(c.id)}', this)" class="pd-btn pd-btn-ghost">Descartar</button>`;
     } else if (col === 'atencion') {
-        const motivo = c.mediaDeliveryPending
+        const motivo = c.deliveryIncidentPending ? 'Entrega en disputa: contrastar dirección, guía y evidencia de recepción. Sin responsabilidad confirmada. Reporte del cliente: ' + (c.deliveryIncidentReport || '') : c.mediaDeliveryPending
             ? (c.mediaDeliveryReason === 'window_closed' ? 'Foto o archivo no enviado: fuera del período permitido. Revisar el chat y reenviar cuando sea posible.' : 'Foto o archivo no enviado tras varios intentos. Revisar el chat y reenviar.') + (c.reason ? ' ' + (PEND_ATTN_REASONS[c.reason] || '') : '')
             : PEND_ATTN_REASONS[c.reason] || 'Necesita que la atienda una persona';
         detalle = `<div class="pd-card-sub"><b>${escapeHtml(motivo)}</b>${c.lastMessage ? '<br>“' + escapeHtml(c.lastMessage) + '”' : ''}</div>`;
@@ -656,7 +656,7 @@ async function pendAtendido(contactId, el) {
             async () => {
                 // El motivo y la fecha originales viajan de vuelta para que la conversación reaparezca
                 // con su antigüedad real (si no, saldría como recién marcada).
-                await _pendPost(`pendientes/atencion/${contactId}/reabrir`, { reason: card.reason || null, at: card.at || null, mediaDeliveryPending: card.mediaDeliveryPending === true });
+                await _pendPost(`pendientes/atencion/${contactId}/reabrir`, { reason: card.reason || null, at: card.at || null, mediaDeliveryPending: card.mediaDeliveryPending === true, deliveryIncidentPending: card.deliveryIncidentPending === true });
                 enChats(true, card.reason || null);
             });
     } catch (e) { if (el) el.disabled = false; alert('No se pudo marcar como atendida: ' + (e.message || e)); }
