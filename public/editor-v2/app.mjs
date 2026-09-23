@@ -991,7 +991,7 @@ function centreOn(doc, ids, point) {
 function cancelGesture() {
     if (!gesture) return;
     const previous = gesture; gesture = null; draft = null;
-    if (previous.type === 'silhouette') { silhouetteDrag = null; $('#hover-reference').replaceChildren(); }
+    if (previous.type === 'silhouette') { silhouetteDrag = null; clearSilhouettePreview(); }
     if (previous.type === 'pan') view = previous.view;
     if (previous.type === 'marquee') setSelection(previous.originalIds);
     if (previous.type === 'node-marquee' && nodeEditing) nodeEditing.nodes = previous.originalNodes;
@@ -1335,7 +1335,15 @@ const actions = {
     },
     duplicate() {
         const originals = selectedObjects().filter(item => !item.locked); if (!originals.length) return;
-        edit(d => { const ids = []; for (const o of originals) { const copy = clone(o); for (const item of objectsWithContents([copy])) item.id = crypto.randomUUID(); copy.name = (copy.name + ' copia').slice(0, 120); copy.x += 5; copy.y += 5; d.objects.push(copy); ids.push(copy.id); } setSelection(ids); });
+        edit(d => {
+            const ids = [], renamed = new Map();
+            for (const o of originals) { const copy = clone(o); for (const item of objectsWithContents([copy])) { const id = crypto.randomUUID(); renamed.set(item.id, id); item.id = id; } copy.name = (copy.name + ' copia').slice(0, 120); copy.x += 5; copy.y += 5; d.objects.push(copy); ids.push(copy.id); }
+            // A copied silhouette follows the copy of its object; copied alone, it stands on its own.
+            for (const copy of d.objects.slice(-ids.length)) if (copy.silhouetteOf) {
+                if (copy.silhouetteOf.every(id => renamed.has(id))) copy.silhouetteOf = copy.silhouetteOf.map(id => renamed.get(id)); else delete copy.silhouetteOf;
+            }
+            setSelection(ids);
+        });
     },
     forward() { reorder(1); }, backward() { reorder(-1); },
     'rotate-left'() { rotateSelection(90); }, 'rotate-right'() { rotateSelection(-90); },
@@ -1617,7 +1625,7 @@ async function rasterizeSelection(items, margin, maxSide = 2500) {
 }
 function openSilhouette() {
     hideObjectMenu();
-    const items = selectedObjects().filter(item => !item.hidden);
+    const items = silhouetteSources(selectedObjects().filter(item => !item.hidden));
     if (!items.length) return;
     silhouette = { ids: items.map(item => item.id), raster: null, result: null, run: 0 };
     $('#silhouette-dialog').showModal();
@@ -1635,7 +1643,7 @@ async function updateSilhouette() {
     try {
         if (!(distance >= .1 && distance <= 100)) throw new Error('Usa una distancia entre 0.1 y 100 mm.');
         if (!(steps >= 1 && steps <= 20)) throw new Error('Usa entre 1 y 20 pasos.');
-        const needed = direction === 'outside' ? distance * steps + 2 : 2;
+        const needed = direction === 'outside' ? distance * steps * 1.5 + 2 : 2;
         if (!session.raster || session.raster.margin < needed) {
             silhouetteInfo('Preparando…');
             session.raster = await rasterizeSelection((await outlineLicensedText({ objects: clone(items) })).objects, needed * 1.25);
@@ -1677,21 +1685,37 @@ function applySilhouette() {
     createSilhouettes(session, $('#silhouette-direction').value, $('#silhouette-color').value, $('#silhouette-width').value);
     silhouette = null; $('#silhouette-dialog').close(); render();
 }
+// The objects a silhouette is made from, in page order: a selected silhouette stands for the objects it
+// outlines, so its line can be pulled again without selecting them.
+function silhouetteSources(items) {
+    const objects = current().objects, chosen = new Set();
+    for (const item of items) {
+        const sources = (item.silhouetteOf || []).filter(id => objects.some(o => o.id === id && !o.hidden));
+        for (const id of sources.length ? sources : [item.id]) chosen.add(id);
+    }
+    return objects.filter(o => chosen.has(o.id));
+}
+// The silhouettes already made from exactly these objects: a new one replaces them.
+const silhouettesOf = (objects, ids) => objects.filter(item => item.silhouetteOf?.length === ids.length && item.silhouetteOf.every(id => ids.includes(id)));
 function createSilhouettes(session, direction, stroke, width) {
     const r = session.raster, result = session.result, strokeWidth = Math.max(0, Math.min(10, Number(width) || 0));
     const created = result.map((loops, step) => ({
         ...createObject('path', 0, 0), name: result.length === 1 ? 'Silueta' : `Silueta ${step + 1}`,
         ...normalizePath(loops.map(({ closed, points }) => ({ closed, points: points.map((value, i) => i % 2 ? r.y + value / r.scale : r.x + value / r.scale) }))),
-        fill: 'none', stroke, strokeWidth,
+        fill: 'none', stroke, strokeWidth, silhouetteOf: [...session.ids],
     }));
+    let replaced = 0;
     edit(d => {
+        const previous = silhouettesOf(d.objects, session.ids);
+        replaced = previous.length;
+        d.objects = d.objects.filter(item => !previous.includes(item));
         // Outside lines go behind the selection, inside ones in front of it.
         const indices = d.objects.flatMap((item, i) => session.ids.includes(item.id) ? [i] : []);
         const at = direction === 'outside' ? Math.min(...indices) : Math.max(...indices) + 1;
         d.objects.splice(at, 0, ...(direction === 'outside' ? created.reverse() : created));
     });
     setSelection(created.map(item => item.id));
-    status(created.length === 1 ? 'Silueta creada' : `${created.length} siluetas creadas`);
+    status(replaced ? (created.length === 1 ? 'Silueta actualizada' : `${created.length} siluetas actualizadas`) : created.length === 1 ? 'Silueta creada' : `${created.length} siluetas creadas`);
 }
 // Silueta by dragging, as in CorelDRAW: press on an object and drag; the line goes through the pointer
 // (outside the shape: an outside silhouette; inside it: an inside one). The distances are measured
@@ -1702,13 +1726,13 @@ async function startSilhouetteDrag(event, start) {
     const id = event.target.closest('[data-id]')?.dataset.id;
     // Pressing beside a thin line or an unfilled shape uses what is already selected.
     if (id && current().objects.some(item => item.id === id && !item.hidden) && !selectedIds.has(id)) selectOnly(id);
-    const items = selectedObjects().filter(item => !item.hidden);
+    const items = silhouetteSources(selectedObjects().filter(item => !item.hidden));
     if (!items.length) { status('Presiona sobre un objeto (o selecciónalo primero) y arrastra hacia afuera o hacia adentro.'); return; }
     const session = silhouetteDrag = { ids: items.map(item => item.id), pointer: start, fields: null, result: null, busy: false, again: false, released: false };
     gesture = { type: 'silhouette', pointerId: event.pointerId, start };
     render(); status('Preparando la silueta…');
     try {
-        const raster = await rasterizeSelection((await outlineLicensedText({ objects: clone(items) })).objects, 40, 1600);
+        const raster = await rasterizeSelection((await outlineLicensedText({ objects: clone(items) })).objects, 60, 1600);
         if (silhouetteDrag !== session) return;
         session.raster = raster;
         session.fields = { outside: silhouetteField(raster.mask, raster.width, raster.height, 'outside'), inside: silhouetteField(raster.mask, raster.width, raster.height, 'inside') };
@@ -1716,7 +1740,7 @@ async function startSilhouetteDrag(event, start) {
     } catch (error) {
         if (silhouetteDrag !== session) return;
         silhouetteDrag = null; if (gesture?.type === 'silhouette') gesture = null;
-        $('#hover-reference').replaceChildren(); status(error.message || 'No se pudo preparar la silueta.');
+        clearSilhouettePreview(); status(error.message || 'No se pudo preparar la silueta.');
     }
 }
 function traceSilhouetteDrag() {
@@ -1729,7 +1753,10 @@ function traceSilhouetteDrag() {
             const r = session.raster, px = Math.round((session.pointer.x - r.x) * r.scale - .5), py = Math.round((session.pointer.y - r.y) * r.scale - .5);
             const x = Math.max(0, Math.min(r.width - 1, px)), y = Math.max(0, Math.min(r.height - 1, py)), at = y * r.width + x;
             const direction = session.fields.inside[at] > 0 ? 'inside' : 'outside';
-            const distance = Math.max(.5, session.fields[direction][at] - .5), steps = Math.max(1, Math.min(20, Math.round(Number($('#silhouette-bar-steps').value) || 1)));
+            const steps = Math.max(1, Math.min(20, Math.round(Number($('#silhouette-bar-steps').value) || 1)));
+            // Outside, the line and its rounding (half the distance) must fit in the margin around the objects.
+            const room = direction === 'outside' ? (r.margin * r.scale - 2) / 1.5 / steps : Infinity;
+            const distance = Math.min(room, Math.max(.5, session.fields[direction][at] - .5));
             session.direction = direction; session.distance = distance / r.scale;
             session.result = traceSilhouettes(session.fields[direction], r.width, r.height, { distance, steps, direction });
             if (!session.released) {
@@ -1746,9 +1773,14 @@ function traceSilhouetteDrag() {
         }
     }, 0);
 }
+function clearSilhouettePreview() {
+    $('#hover-reference').replaceChildren();
+    for (const shown of canvas.querySelectorAll('[data-id]')) if (shown.style.visibility) shown.style.visibility = '';
+}
 function drawSilhouetteDrag(session) {
     const overlay = $('#hover-reference'), r = session.raster, color = $('#silhouette-bar-color').value;
     overlay.replaceChildren();
+    for (const item of silhouettesOf(current().objects, session.ids)) { const shown = canvas.querySelector(`[data-id="${CSS.escape(item.id)}"]`); if (shown) shown.style.visibility = 'hidden'; }
     const group = svgElement('g', { transform: `translate(${view.x} ${view.y}) scale(${view.scale})` }, overlay);
     for (const loops of session.result) {
         const d = loops.map(({ points: p }) => {
@@ -1766,7 +1798,7 @@ function finishSilhouetteDrag(pointer, start) {
     const session = silhouetteDrag;
     if (!session) return;
     if (Math.hypot(pointer.x - start.x, pointer.y - start.y) * view.scale < 3) {
-        silhouetteDrag = null; $('#hover-reference').replaceChildren(); render();
+        silhouetteDrag = null; clearSilhouettePreview(); render();
         status('Arrastra desde el objeto hacia afuera o hacia adentro para crear la silueta.'); return;
     }
     session.pointer = pointer; session.released = true;
@@ -1775,7 +1807,7 @@ function finishSilhouetteDrag(pointer, start) {
 }
 function completeSilhouetteDrag(session) {
     silhouetteDrag = null;
-    $('#hover-reference').replaceChildren();
+    clearSilhouettePreview();
     if (!session.result?.length) { render(); status('Arrastra un poco más lejos del objeto para crear la silueta.'); return; }
     createSilhouettes(session, session.direction, $('#silhouette-bar-color').value, $('#silhouette-bar-width').value);
     render();

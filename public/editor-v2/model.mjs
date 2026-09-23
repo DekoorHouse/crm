@@ -175,6 +175,11 @@ export function validateDocument(input, depth = 0) {
                 if (!overlay || !/^#[0-9a-f]{6}$/i.test(overlay.fill) || !validPathSubpaths(overlay.subpaths)) throw new Error('La capa fija de la curva es inválida.');
                 valid.overlay = { fill: overlay.fill, subpaths: overlay.subpaths.map(({ closed, points }) => ({ closed, points: frozenPoints(points) })) };
             }
+            // A silhouette remembers the objects it outlines, so dragging on them again replaces it.
+            if (o.silhouetteOf !== undefined) {
+                if (!Array.isArray(o.silhouetteOf) || !o.silhouetteOf.length || o.silhouetteOf.length > 500 || o.silhouetteOf.some(id => typeof id !== 'string' || !id || id.length > 100)) throw new Error('La silueta tiene un origen inválido.');
+                valid.silhouetteOf = [...o.silhouetteOf];
+            }
         }
         for (const key of ['fillGradient', 'strokeGradient']) if (o[key] !== undefined) {
             if (o.type === 'image') throw new Error('Las imágenes no llevan degradados.');

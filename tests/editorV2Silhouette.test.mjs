@@ -61,3 +61,26 @@ test('separate shapes give separate loops and every loop closes', () => {
     const value = Float32Array.from(mask, v => v ? 1 : -1);
     for (const loop of contourLoops(value, size, size)) assert.ok(loop.length > 10);
 });
+
+test('outside silhouettes round the pointed joins between parts', () => {
+    const size = 120, mask = new Uint8Array(size * size);
+    for (const cx of [45, 75]) disc(size, cx, 60, 12).forEach((v, i) => { if (v) mask[i] = 1; });
+    // How far above the centre line the outline passes midway between the two discs.
+    const midHeight = options => {
+        const [[loop]] = silhouettes(mask, size, size, { distance: 6, ...options });
+        let best = 0;
+        for (let i = 0; i + 1 < loop.points.length; i += 2) if (Math.abs(loop.points[i] - 60) < 1.5) best = Math.max(best, 60 - loop.points[i + 1]);
+        return best;
+    };
+    const pointed = midHeight({ round: 0 }), rounded = midHeight({});
+    assert.ok(rounded > pointed + .8, `${pointed} → ${rounded}`);
+});
+
+test('a silhouette keeps the ids of the objects it outlines', async () => {
+    const { blankDocument, createObject, validateDocument } = await import('../public/editor-v2/model.mjs');
+    const d = blankDocument(), rect = createObject('rect', 0, 0, 10, 10);
+    const line = { ...createObject('path', 0, 0), subpaths: [{ closed: true, points: [0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1] }], silhouetteOf: [rect.id] };
+    d.objects.push(rect, line);
+    assert.deepEqual(validateDocument(d).objects[1].silhouetteOf, [rect.id]);
+    assert.throws(() => validateDocument({ ...d, objects: [rect, { ...line, silhouetteOf: [] }] }), /origen/);
+});

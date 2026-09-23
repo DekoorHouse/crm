@@ -142,12 +142,27 @@ export function silhouetteField(inside, width, height, direction) {
     const shape = direction === 'outside' ? fillHoles(inside, width, height) : Uint8Array.from(inside, v => v ? 0 : 1);
     return distanceField(shape, width, height);
 }
-export function traceSilhouettes(field, width, height, { distance, steps = 1, direction = 'outside', tolerance = .35 }) {
+// round: the corners the offset leaves pointed (where the rounded outlines of two parts meet, such as
+// between letters) are rounded with this fraction of the distance, like a sticker's cut line. Outside,
+// the shape is grown by the distance plus that radius and shrunk back by the radius; inside, the reverse.
+export function roundedValue(field, width, height, r, radius, direction) {
+    const value = new Float32Array(field.length);
+    if (radius < 1) {
+        for (let i = 0; i < value.length; i++) value[i] = direction === 'outside' ? r - field[i] : field[i] - r;
+        return value;
+    }
+    const grown = new Uint8Array(field.length);
+    // Outside: the pixels out of the grown shape; inside: the pixels left in the shrunken one.
+    for (let i = 0; i < grown.length; i++) grown[i] = direction === 'outside' ? (field[i] > r + radius ? 1 : 0) : (field[i] >= r + radius ? 1 : 0);
+    const back = distanceField(grown, width, height);
+    for (let i = 0; i < value.length; i++) value[i] = direction === 'outside' ? back[i] - radius : radius - back[i];
+    return value;
+}
+export function traceSilhouettes(field, width, height, { distance, steps = 1, direction = 'outside', tolerance = .35, round = .5 }) {
     const result = [];
     for (let step = 1; step <= steps; step++) {
         // Distances run between pixel centres; the shape's edge lies half a pixel from its last pixel.
-        const r = distance * step + .5, value = new Float32Array(field.length);
-        for (let i = 0; i < value.length; i++) value[i] = direction === 'outside' ? r - field[i] : field[i] - r;
+        const r = distance * step + .5, value = roundedValue(field, width, height, r, direction === 'outside' ? distance * step * round : 0, direction);
         const loops = contourLoops(value, width, height).map(loop => simplifyLoop(loop, tolerance)).filter(loop => loop.length >= 3);
         if (!loops.length) break;
         result.push(loops.map(smoothLoop));
