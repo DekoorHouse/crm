@@ -3,6 +3,7 @@ import { icon, decorateControls } from './icons.mjs';
 import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget, unionBounds, resizeSelection, resizeRotated, rotatedBounds } from './geometry.mjs';
 import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns } from './transform.mjs';
 import { HAIRLINE_WIDTH } from './model.mjs';
+import { createColorPicker } from './colorPicker.mjs';
 import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
 import { normalizeSpline, pointsPath, splinePath, splinePoints, closestOnSpline, moveSplineNodes, insertSplineNode, removeSplineNodes, controlPath, closestOnControlLine, legPoint } from './spline.mjs';
@@ -1221,22 +1222,11 @@ function applyPalette(color, target = 'fill') {
         render(); status(color === 'none' ? `Sin ${label} para los nuevos objetos` : `Color de ${label} para los nuevos objetos`);
     }
 }
-// Clicking the fill or outline chip opens the native picker for a custom colour of that kind.
-for (const [target, chip] of [['fill', $('#fill-chip')], ['stroke', $('#stroke-chip')]]) {
-    chip.addEventListener('click', () => {
-        if (gesture || selected()?.locked) return;
-        const o = selected(), current = o ? o[target] : target === 'fill' ? nextFill : nextStroke;
-        const input = $('#palette-color');
-        paletteTarget = target;
-        input.value = current === 'none' ? '#000000' : current;
-        try { input.showPicker(); } catch { input.click(); }
-    });
-}
-// While the picker is open, repaint the selection (or the chip for new objects) without
-// committing; the colour becomes one undo step when the picker closes.
-let pickerFrame = null;
-$('#palette-color').addEventListener('input', event => {
-    const color = event.target.value;
+// Clicking the fill or outline chip opens the colour picker for a custom colour of that kind. While it
+// is open the selection (or the chip for new objects) is repainted without committing; the colour
+// becomes one undo step when it is applied.
+let pickerFrame = null, pickerChip = null;
+function previewPaletteColor(color) {
     if (pickerFrame !== null) cancelAnimationFrame(pickerFrame);
     pickerFrame = requestAnimationFrame(() => {
         pickerFrame = null;
@@ -1252,11 +1242,22 @@ $('#palette-color').addEventListener('input', event => {
             if (preview.powerClip) drawPowerClipMarker(group, preview);
         }
     });
+}
+const stopPreview = () => { if (pickerFrame !== null) { cancelAnimationFrame(pickerFrame); pickerFrame = null; } pickerChip = null; };
+const colorPicker = createColorPicker($('#color-picker'), {
+    onInput: previewPaletteColor,
+    onCommit: color => { stopPreview(); applyPalette(color, paletteTarget); },
+    onCancel: () => { stopPreview(); render(); },
 });
-$('#palette-color').addEventListener('change', event => {
-    if (pickerFrame !== null) { cancelAnimationFrame(pickerFrame); pickerFrame = null; }
-    applyPalette(event.target.value, paletteTarget);
-});
+for (const [target, chip] of [['fill', $('#fill-chip')], ['stroke', $('#stroke-chip')]]) {
+    chip.addEventListener('click', () => {
+        if (colorPicker.open) { const same = pickerChip === chip; colorPicker.commit(); if (same) return; }
+        if (gesture || selected()?.locked) return;
+        const o = selected(), current = o ? o[target] : target === 'fill' ? nextFill : nextStroke;
+        paletteTarget = target; pickerChip = chip;
+        colorPicker.show(chip, current === 'none' ? '#000000' : current);
+    });
+}
 
 function cloudMessage(message) { $('#cloud-message').textContent = message; }
 function cloudState() {
