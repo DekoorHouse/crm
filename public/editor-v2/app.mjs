@@ -1679,6 +1679,10 @@ document.addEventListener('keydown', event => {
         const action = { z: event.shiftKey ? 'redo' : 'undo', y: 'redo', d: 'duplicate', s: 'save', o: 'open', i: 'import', e: 'export' }[key]; actions[action](); return;
     }
     if (mod || event.altKey || gesture) return;
+    // With a PowerClip selected, X fits its content inside and C fills it, like the floating bar.
+    if ((key === 'x' || key === 'c') && selectedIds.size === 1 && selected()?.powerClip?.objects.length && !selected().locked) {
+        event.preventDefault(); $(key === 'x' ? '#powerclip-contain' : '#powerclip-cover').onclick(); return;
+    }
     if ({ v: 'select', h: 'hand', r: 'rect', e: 'ellipse', t: 'text', b: 'spline' }[key]) { event.preventDefault(); setTool({ v: 'select', h: 'hand', r: 'rect', e: 'ellipse', t: 'text', b: 'spline' }[key]); }
     if (key === 'delete' || key === 'backspace') { event.preventDefault(); actions.delete(); }
     if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(key)) {
