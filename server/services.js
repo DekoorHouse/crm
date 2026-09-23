@@ -2929,6 +2929,9 @@ async function getModelosDisponibles() {
 const AI_HISTORY_MESSAGE_LIMIT = 50;
 const AI_MEDIA_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 h
 const OUR_IMAGE_POSTVENTA_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // foto del trabajo terminado (/cuatro)
+// Texto de /pagado (y de su respaldo sin respuesta rápida): va UNA sola vez por compra.
+const PAGADO_BLOCK = /llenaste correctamente (?:el )?formulario/i;
+const PAGADO_REPEAT_REPLY = 'Déjame revisarlo con el equipo y en un momento te confirmo 😊';
 
 /**
  * Convierte un archivo multimedia (imagen/audio/video) en una "part" inline segura
@@ -3647,7 +3650,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // (conversationHistory) queda limpio: lo leen los clasificadores de
             // recordatorios y las palabras "después"/"meses" disparaban su pre-filtro
             // (una llamada extra a Gemini por turno) en toda conversación multi-día.
-            const turnText = gapNote + text;
+            // El bloque de /pagado se le muestra a la IA como el atajo que es, no como su texto: con
+            // el texto completo en el historial la IA lo COPIABA palabra por palabra en cada turno
+            // (DH16440: 7 veces del 15 al 23-sep, a reclamos, a un pago nuevo…) y, al no llegar como
+            // "/pagado", se saltaba el candado anti-repetición de los atajos.
+            const turnText = gapNote + (!isClient && PAGADO_BLOCK.test(text) ? '/pagado' : text);
 
             // Sangría en las líneas de continuación: un mensaje multilínea del cliente no puede
             // "fabricar" renglones que empiecen con "Asistente:" en el transcript plano (inyección
@@ -3836,6 +3843,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // lee UNA sola vez (antes getLatestOrderForContact se llamaba dos veces). orderInfoNote es la
         // fuente de verdad del TOTAL; el rastreo solo se arma si el cliente pregunta por él y su pedido
         // ya tiene guía DHL.
+        // ¿Ya le mandamos el bloque de /pagado en esta compra? (messagesSnapshot ya viene acotado a
+        // la compra activa: una compra nueva sí puede recibir su propio /pagado.)
+        const pagadoYaEnviado = messagesSnapshot.docs.some(doc => {
+            const d = doc.data();
+            return d.from !== contactId && d.status !== 'scheduled' && PAGADO_BLOCK.test(d.text || '');
+        });
         const orderNotesPromise = (async () => {
             let orderInfoNote = '';
             let trackingNote = '';
@@ -3925,6 +3938,9 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS.** El sistema gestiona la confirmación de recepción (estado: ${o.shippingDataConfirmationStatus}). No emitas /pagado ni repitas la confirmación del formulario; si el cliente sólo avisa que lo llenó, agradece brevemente. Esto no implica que su pago esté aprobado ni que el envío haya salido.`;
                     } else if (de && require('./payments/paymentPolicy').awaitingPaymentApproval(o)) {
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS.** Agradece que los completó; el pago sigue pendiente de aprobación. NO emitas /pagado ni /datoscompletos, no prometas la salida del envío ni pidas el formulario otra vez.`;
+                    } else if (de && pagadoYaEnviado) {
+                        // La nota de abajo, repetida en cada turno, invitaba a volver a mandar /pagado.
+                        shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS y YA le confirmaste que los recibimos (/pagado ya se envió).** NO emitas /pagado ni repitas esa confirmación. Responde a lo que el cliente dice ahora (su guía, un reclamo, un pedido o pago NUEVO…); si no tienes el dato que pide, dile que lo revisas con el equipo.`;
                     } else if (de) {
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS en el sistema** (a nombre de ${de.nombreCompleto || 'el cliente'}). Si el cliente te confirma que llenó el formulario, respóndele ÚNICAMENTE con /pagado. NO le pidas que lo llene otra vez ni le mandes el enlace de nuevo.`;
                     } else {
@@ -4472,7 +4488,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             } catch (e) { console.warn('[PILOTO] Candado /ttt→/tttp no disponible:', e.message); }
         }
 
-        let paymentHandoff = false, mediaHandoff = false;
+        let paymentHandoff = false, mediaHandoff = false, pagadoRepeatSent = false;
         for (let i = 0; i < aiMessages.length; i++) {
             // Verificar cancelación entre mensajes si hay SPLIT
             if (i > 0) {
@@ -4605,6 +4621,20 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // En el flujo de anticipo también corrige el RESTANTE ($450 → precio − $300).
             if (priceTestPrice) {
                 try { msgText = require('./orders/priceTest').applyPrice(msgText, priceTestPrice, { anticipo: priceTestAnticipo }); } catch (_) {}
+            }
+            // RED DE SEGURIDAD de /pagado: una vez por compra, llegue como atajo o COPIADO a mano por la
+            // IA (el candado de 12 h de arriba solo ve atajos y solo 12 h: DH16440 lo recibió 7 veces en
+            // 8 días). Si se repite, el cliente preguntaba OTRA cosa: se le avisa al equipo.
+            if (pagadoYaEnviado && PAGADO_BLOCK.test(msgText || '')) {
+                console.warn(`[AI] ${contactId}: la IA iba a repetir el bloque de /pagado; se sustituye y se avisa al equipo.`);
+                msgText = PAGADO_REPEAT_REPLY;
+                qrFileUrl = null; qrFileType = null;
+                await contactRef.update({
+                    needsAttention: true, needsAttentionReason: 'equipo',
+                    needsAttentionAt: admin.firestore.FieldValue.serverTimestamp(),
+                }).catch(e => console.warn('[AI] No se pudo marcar atención por /pagado repetido:', e.message));
+                if (pagadoRepeatSent) continue; // una sola línea aunque venga en varias partes
+                pagadoRepeatSent = true;
             }
             // También cubre /confirmar y cualquier atajo que prometa un registro: su texto
             // real sólo se conoce aquí. La promesa nunca sale si la escritura falló.
