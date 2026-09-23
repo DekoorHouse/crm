@@ -124,7 +124,9 @@ export function validImageSource(src) {
             url.pathname.startsWith('/v0/b/pedidos-con-gemini.firebasestorage.app/o/editor-v2%2Fimages%2F');
     } catch { return false; }
 }
-export function validateDocument(input) {
+// PowerClips can hold other PowerClips, up to this many levels deep.
+export const MAX_POWERCLIP_DEPTH = 8;
+export function validateDocument(input, depth = 0) {
     if (!input || input.version !== 1 || typeof input.name !== 'string' || input.name.length > 120 ||
         !numberIn(input.width, 1, 5000) || !numberIn(input.height, 1, 5000) ||
         !Array.isArray(input.objects) || input.objects.length > 2000) throw new Error('El archivo no es un proyecto válido de Editor V2.');
@@ -174,14 +176,15 @@ export function validateDocument(input) {
         if (o.powerClip !== undefined) {
             const clip = o.powerClip;
             if (!POWERCLIP_TYPES.includes(o.type) || !clip || !numberIn(clip.width, .1, 10000) || !numberIn(clip.height, .1, 10000) ||
-                !Array.isArray(clip.objects) || clip.objects.some(child => !child || child.powerClip !== undefined)) throw new Error('Contenedor PowerClip inválido.');
-            valid.powerClip = { width: clip.width, height: clip.height, objects: validateDocument({ ...input, objects: clip.objects }).objects };
+                !Array.isArray(clip.objects) || clip.objects.some(child => !child)) throw new Error('Contenedor PowerClip inválido.');
+            if (depth >= MAX_POWERCLIP_DEPTH) throw new Error(`Los PowerClips admiten hasta ${MAX_POWERCLIP_DEPTH} niveles, uno dentro de otro.`);
+            valid.powerClip = { width: clip.width, height: clip.height, objects: validateDocument({ ...input, objects: clip.objects }, depth + 1).objects };
             if (clip.transform !== undefined) {
                 const t = clip.transform;
                 if (!t || !numberIn(t.x, -100000000, 100000000) || !numberIn(t.y, -100000000, 100000000) || !numberIn(t.scale, .000001, 1000000)) throw new Error('Ajuste PowerClip inválido.');
                 valid.powerClip.transform = { x: t.x, y: t.y, scale: t.scale };
             }
-            for (const child of valid.powerClip.objects) {
+            for (const child of objectsWithContents(valid.powerClip.objects)) {
                 if (ids.has(child.id)) throw new Error('El PowerClip contiene identificadores repetidos.');
                 ids.add(child.id);
             }
@@ -270,9 +273,11 @@ export function makePowerClip(object) {
 
 export function placeInPowerClip(document, sourceIds, targetId, { createContainer = false } = {}) {
     const target = document.objects.find(item => item.id === targetId);
-    if (!target || target.hidden || target.locked || sourceIds.has(targetId) || (!target.powerClip && (!createContainer || !POWERCLIP_TYPES.includes(target.type)))) throw new Error('Elige otro rectángulo o elipse visible y sin bloquear.');
+    if (!target || target.hidden || target.locked || sourceIds.has(targetId) || (!target.powerClip && (!createContainer || !POWERCLIP_TYPES.includes(target.type)))) throw new Error('Elige otro rectángulo, elipse o curva visible y sin bloquear.');
     const sources = document.objects.filter(item => sourceIds.has(item.id));
-    if (!sources.length || sources.some(item => item.locked || item.hidden || item.powerClip)) throw new Error('Selecciona contenido visible, sin bloquear y sin PowerClip anidado.');
+    if (!sources.length || sources.some(item => item.locked || item.hidden)) throw new Error('Selecciona contenido visible y sin bloquear.');
+    const depth = objects => Math.max(0, ...objects.map(item => item.powerClip ? 1 + depth(item.powerClip.objects) : 0));
+    if (1 + depth(sources) > MAX_POWERCLIP_DEPTH) throw new Error(`Los PowerClips admiten hasta ${MAX_POWERCLIP_DEPTH} niveles, uno dentro de otro.`);
     if (!target.powerClip) makePowerClip(target);
     const frame = clipFrame(target), kx = frame.sx / frame.t.scale, ky = frame.sy / frame.t.scale;
     for (const source of sources) target.powerClip.objects.push(mapObject(source, frame.toContent, kx, ky, -frame.angle));

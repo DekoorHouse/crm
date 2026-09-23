@@ -1,7 +1,7 @@
 // SVG import: converts an SVG file into the editor's own validated objects (curves, rectangles,
 // ellipses, text and images, with gradients; clip paths become PowerClips). The file is only read as
 // data: nothing from it is inserted into the page, and every object still goes through validateDocument.
-import { createObject, placeInPowerClip } from './model.mjs';
+import { createObject, placeInPowerClip, MAX_POWERCLIP_DEPTH } from './model.mjs';
 import { normalizePath } from './path.mjs';
 import { pivot } from './transform.mjs';
 
@@ -419,7 +419,7 @@ export function importSvgElement(svg, { resolveColor, maxObjects = 2000 } = {}) 
         return { ...createObject('path', 0, 0), name: named(clip, 'Contenedor'), ...normalizePath(all), fill: 'none', stroke: 'none', strokeWidth: 0, ...(parts[0].rule === 'evenodd' ? { fillRule: 'evenodd' } : {}) };
     };
 
-    const visit = (element, parentStyle, parentMatrix, depth, using, out, inClip) => {
+    const visit = (element, parentStyle, parentMatrix, depth, using, out, clipDepth) => {
         if (full || depth > 60) return;
         const tag = tagOf(element);
         if (SKIPPED.has(tag)) return;
@@ -437,10 +437,10 @@ export function importSvgElement(svg, { resolveColor, maxObjects = 2000 } = {}) 
         }
         if (style.mask && style.mask !== 'none') masked++;
         const clipValue = style['clip-path'], clip = clipValue && clipValue !== 'none' ? ids.get(urlId(clipValue)) : null;
-        // PowerClips cannot hold other PowerClips, so a clip inside clipped content is left out.
-        if (clip && tagOf(clip) === 'clippath' && !inClip) {
+        // Clips inside clipped content become PowerClips inside PowerClips, as deep as the editor allows.
+        if (clip && tagOf(clip) === 'clippath' && clipDepth < MAX_POWERCLIP_DEPTH) {
             const content = [];
-            body(element, tag, style, matrix, depth, using, content, true);
+            body(element, tag, style, matrix, depth, using, content, clipDepth + 1);
             if (!content.length) return;
             const container = clipContainer(clip, matrix, content);
             if (!container) { clipped++; out.push(...content); return; }
@@ -455,19 +455,19 @@ export function importSvgElement(svg, { resolveColor, maxObjects = 2000 } = {}) 
             return;
         }
         if (clipValue && clipValue !== 'none') clipped++;
-        body(element, tag, style, matrix, depth, using, out, inClip);
+        body(element, tag, style, matrix, depth, using, out, clipDepth);
     };
-    const body = (element, tag, style, matrix, depth, using, out, inClip) => {
+    const body = (element, tag, style, matrix, depth, using, out, clipDepth) => {
         if (tag === 'svg' || tag === 'g' || tag === 'a' || tag === 'switch') {
-            for (const child of children(element)) visit(child, style, matrix, depth + 1, using, out, inClip);
+            for (const child of children(element)) visit(child, style, matrix, depth + 1, using, out, clipDepth);
             return;
         }
         if (tag === 'use') {
             const target = ids.get((attribute(element, 'href') || attribute(element, 'xlink:href') || '').replace(/^#/, ''));
             if (!target || using.has(target)) { skipped++; return; }
             const placed = multiply(matrix, [1, 0, 0, 1, lengthIn(element, 'x'), lengthIn(element, 'y')]), next = new Set(using).add(target);
-            if (tagOf(target) === 'symbol') for (const child of children(target)) visit(child, style, placed, depth + 1, next, out, inClip);
-            else visit(target, style, placed, depth + 1, next, out, inClip);
+            if (tagOf(target) === 'symbol') for (const child of children(target)) visit(child, style, placed, depth + 1, next, out, clipDepth);
+            else visit(target, style, placed, depth + 1, next, out, clipDepth);
             return;
         }
         if (style.visibility === 'hidden' || style.visibility === 'collapse') return;
@@ -496,7 +496,7 @@ export function importSvgElement(svg, { resolveColor, maxObjects = 2000 } = {}) 
         if (tag !== 'tspan' && tag !== 'textpath') skipped++;
     };
     const rootStyle = computeStyle(svg, {}, rules);
-    visit({ ...svg, localName: 'g', children: children(svg), getAttribute: name => name === 'transform' || name === 'clip-path' || name === 'mask' ? attribute(svg, name) : null }, rootStyle, root.matrix, 0, new Set(), objects, false);
+    visit({ ...svg, localName: 'g', children: children(svg), getAttribute: name => name === 'transform' || name === 'clip-path' || name === 'mask' ? attribute(svg, name) : null }, rootStyle, root.matrix, 0, new Set(), objects, 0);
     return { objects, width: root.width, height: root.height, skipped, clipped, masked, pending, truncated: full };
 }
 

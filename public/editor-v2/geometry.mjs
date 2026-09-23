@@ -144,7 +144,7 @@ export function fullyContained(area, bounds) {
 
 export function powerClipDropTarget(objects, sourceIds, point) {
     const sources = objects.filter(item => sourceIds.has(item.id));
-    if (!sources.length || sources.some(item => item.locked || item.hidden || item.powerClip)) return null;
+    if (!sources.length || sources.some(item => item.locked || item.hidden)) return null;
     for (const item of [...objects].reverse()) {
         if (sourceIds.has(item.id) || item.hidden) continue;
         const local = turns(item) ? rotatePoint(point, pivot(item), -item.rotation) : point;

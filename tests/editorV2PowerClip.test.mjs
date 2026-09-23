@@ -54,8 +54,9 @@ test('drag target respects ellipse boundary, blockers and invalid sources', () =
     assert.equal(powerClipDropTarget([frame, blocker, source], ids, { x: 150, y: 150 }), null);
     frame.locked = true;
     assert.equal(powerClipDropTarget([frame, source], ids, { x: 150, y: 150 }), null);
+    // Another PowerClip can be dropped in too: PowerClips nest.
     frame.locked = false; makePowerClip(source);
-    assert.equal(powerClipDropTarget([frame, source], ids, { x: 150, y: 150 }), null);
+    assert.equal(powerClipDropTarget([frame, source], ids, { x: 150, y: 150 }), frame);
 });
 
 test('new objects use hairline and export does not include editor-only container markers', () => {
@@ -109,11 +110,11 @@ test('PowerClip conversion and insertion undo in one step each', () => {
     h.redo(); h.redo(); assert.equal(h.document.objects.length, 1);
 });
 
-test('PowerClip rejects nested, duplicate, locked and unsupported containers', () => {
+test('PowerClip rejects duplicate ids, self-placement and unsupported containers, and accepts nesting', () => {
     const d = blankDocument(), frame = createObject('rect', 0, 0); makePowerClip(frame); d.objects.push(frame);
     assert.throws(() => placeInPowerClip(d, new Set([frame.id]), frame.id));
     assert.throws(() => makePowerClip(createObject('text', 0, 0)));
     const child = createObject('rect', 0, 0); child.id = frame.id; frame.powerClip.objects.push(child);
     assert.throws(() => validateDocument(d));
-    child.id = 'child'; child.powerClip = { width: 1, height: 1, objects: [] }; assert.throws(() => validateDocument(d));
+    child.id = 'child'; child.powerClip = { width: 1, height: 1, objects: [] }; assert.doesNotThrow(() => validateDocument(d));
 });

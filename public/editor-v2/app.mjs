@@ -23,7 +23,14 @@ let powerClipSources = null;
 let powerClipEditing = null;
 // Double-clicking a spline edits its nodes: { id, nodes: Set of point indices }.
 let nodeEditing = null;
-const savedDocument = () => powerClipEditing ? mergePowerClipEdits(powerClipEditing.history.document, powerClipEditing.id, history.document) : history.document;
+// PowerClip editing can go several levels deep: each session keeps the history of the level around it
+// (parent is the session one level up). The saved document merges every level back into the page.
+function savedDocument() {
+    let merged = history.document;
+    for (let session = powerClipEditing; session; session = session.parent) merged = mergePowerClipEdits(session.history.document, session.id, merged);
+    return merged;
+}
+const powerClipLevels = () => { let levels = 0; for (let session = powerClipEditing; session; session = session.parent) levels++; return levels; };
 // Clicking a selected object again swaps its size handles for rotation handles, as in CorelDRAW.
 let rotateMode = false;
 function setSelection(ids) {
@@ -192,7 +199,9 @@ function displaySrc(src, o) {
 // Previews, fingerprints and checks are kept only for images the document or its undo history still uses.
 function forgetUnusedImages() {
     const live = new Set();
-    for (const store of [history, powerClipEditing?.history]) if (store) {
+    const stores = [history];
+    for (let session = powerClipEditing; session; session = session.parent) stores.push(session.history);
+    for (const store of stores) {
         for (const document of [store.document, ...store.past, ...store.future]) {
             for (const object of objectsWithContents(document.objects)) if (object.type === 'image') live.add(object.src);
         }
@@ -404,6 +413,7 @@ function localBox(o) {
 }
 function render() {
     $('#powerclip-edit-bar').hidden = !powerClipEditing;
+    $('#powerclip-edit-label').textContent = powerClipLevels() > 1 ? `Editando PowerClip · nivel ${powerClipLevels()}` : 'Editando contenido de PowerClip';
     for (const selector of ['#document-name', '#page-width', '#page-height', '#page-preset']) $(selector).disabled = Boolean(powerClipEditing);
     setSelection([...selectedIds].filter(id => current().objects.some(object => object.id === id)));
     // Leave node editing when its spline is deselected, hidden, locked or removed.
@@ -813,16 +823,17 @@ function deleteNodes(indices) {
     } catch (error) { status(error.message); }
 }
 function beginPowerClipEditing(event) {
-    if (tool !== 'select' || powerClipEditing || powerClipSources) return false;
+    if (tool !== 'select' || powerClipSources) return false;
     const id = event.target.closest('[data-id]')?.dataset.id || selectedId;
     const target = history.document.objects.find(item => item.id === id);
     if (!target?.powerClip || target.locked) return false;
     event.preventDefault(); finishPropertyColor(); cancelGesture();
     try {
         const content = powerClipEditDocument(history.document, id);
-        powerClipEditing = { id, history };
+        powerClipEditing = { id, history, parent: powerClipEditing };
         history = new History(content); selectOnly(null); setTool('select'); render();
-        status('Editando contenido de PowerClip. Terminar edición o Esc para volver.');
+        status(powerClipLevels() > 1 ? `Editando un PowerClip dentro de otro (nivel ${powerClipLevels()}). Terminar edición o Esc para subir un nivel.`
+            : 'Editando contenido de PowerClip. Terminar edición o Esc para volver.');
     } catch (error) { status(error.message); }
     return true;
 }
@@ -831,11 +842,15 @@ function finishPowerClipEditing() {
     finishPropertyColor(); cancelGesture();
     const session = powerClipEditing;
     try {
-        const next = savedDocument();
-        history = session.history; powerClipEditing = null;
+        // Only this level is merged: the level around it becomes the one being edited.
+        const next = mergePowerClipEdits(session.history.document, session.id, history.document);
+        history = session.history; powerClipEditing = session.parent;
         selectOnly(session.id); setTool('select'); commit(next);
-        status('Edición de PowerClip terminada');
+        status(powerClipEditing ? `De vuelta en el nivel ${powerClipLevels()} de PowerClip` : 'Edición de PowerClip terminada');
     } catch (error) { status(error.message); }
+}
+function finishAllPowerClipEditing() {
+    while (powerClipEditing) { const session = powerClipEditing; finishPowerClipEditing(); if (powerClipEditing === session) return; }
 }
 $('#powerclip-edit-done').onclick = finishPowerClipEditing;
 canvas.addEventListener('pointerup', event => {
@@ -1213,7 +1228,7 @@ const actions = {
 };
 for (const name of ['new', 'open', 'cloud', 'save', 'import', 'download', 'export']) {
     const action = actions[name];
-    if (action) actions[name] = (...args) => { finishPowerClipEditing(); if (!powerClipEditing) return action(...args); };
+    if (action) actions[name] = (...args) => { finishAllPowerClipEditing(); if (!powerClipEditing) return action(...args); };
 }
 function hideObjectMenu() { $('#object-menu').hidden = true; }
 canvas.addEventListener('contextmenu', event => {
@@ -1224,9 +1239,8 @@ canvas.addEventListener('contextmenu', event => {
     if (!selectedIds.has(id)) selectOnly(id);
     render();
     const menu = $('#object-menu'), single = selectedIds.size === 1;
-    $('#make-powerclip').disabled = Boolean(powerClipEditing) || !single || object.locked || Boolean(object.powerClip) || !POWERCLIP_TYPES.includes(object.type);
-    $('#place-powerclip').disabled = selectedObjects().some(item => item.locked || item.powerClip) || !current().objects.some(item => POWERCLIP_TYPES.includes(item.type) && !item.locked && !item.hidden && !selectedIds.has(item.id));
-    $('#place-powerclip').disabled ||= Boolean(powerClipEditing);
+    $('#make-powerclip').disabled = !single || object.locked || Boolean(object.powerClip) || !POWERCLIP_TYPES.includes(object.type);
+    $('#place-powerclip').disabled = selectedObjects().some(item => item.locked) || !current().objects.some(item => POWERCLIP_TYPES.includes(item.type) && !item.locked && !item.hidden && !selectedIds.has(item.id));
     $('#extract-powerclip').hidden = !object.powerClip;
     $('#extract-powerclip').disabled = !single || object.locked || !object.powerClip?.objects.length;
     $('#remove-powerclip').hidden = !object.powerClip;
@@ -1310,7 +1324,7 @@ async function importSvgFile(file) {
     $('#cloud-dialog').close();
     const count = (n, one, many) => n === 1 ? one : `${n} ${many}`;
     const notes = [result.skipped && count(result.skipped, 'se omitió 1 elemento no compatible o imagen que no se pudo cargar', 'elementos no compatibles o imágenes que no se pudieron cargar se omitieron'),
-        result.clipped && count(result.clipped, 'se ignoró 1 recorte dentro de otro (un PowerClip no puede contener otro)', 'recortes dentro de otros se ignoraron (un PowerClip no puede contener otro)'),
+        result.clipped && count(result.clipped, 'se ignoró 1 recorte que no se pudo convertir en PowerClip', 'recortes que no se pudieron convertir en PowerClip se ignoraron'),
         result.masked && count(result.masked, 'se ignoró 1 máscara', 'máscaras se ignoraron'), result.truncated && 'se llegó al límite de 2000 objetos'].filter(Boolean);
     status(`SVG importado: ${result.objects.length} ${result.objects.length === 1 ? 'objeto' : 'objetos'}${notes.length ? ' · ' + notes.join(' · ') : ''}`);
 }

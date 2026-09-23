@@ -60,9 +60,11 @@ test('clip paths become PowerClips: rectangles stay rectangles, other shapes bec
     assert.deepEqual(windowClip.powerClip.objects.map(o => o.type), ['rect', 'ellipse']);
     assert.equal(starClip.type, 'path');
     assert.equal(starClip.powerClip.objects[0].fill, '#0000ff');
-    // A clip inside clipped content cannot be another PowerClip, so it is counted and left out.
+    // A clip inside clipped content becomes a PowerClip inside the PowerClip.
     assert.equal(nested.powerClip.objects.length, 1);
-    assert.equal(result.clipped, 1); assert.equal(result.masked, 1);
+    assert.equal(nested.powerClip.objects[0].type, 'path');
+    assert.deepEqual(nested.powerClip.objects[0].powerClip.objects.map(o => o.type), ['rect']);
+    assert.equal(result.clipped, 0); assert.equal(result.masked, 1);
     const d = blankDocument(); d.objects.push(...result.objects);
     const valid = validateDocument(JSON.parse(JSON.stringify(d)));
     assert.match(exportSvg(valid), /<clipPath id="pc-[^"]+" clipPathUnits="userSpaceOnUse"><path d="M 60 10 /);
