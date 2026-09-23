@@ -758,9 +758,10 @@ canvas.addEventListener('pointerdown', event => {
         selectOnly(null); render(); return;
     }
     if (handle?.dataset.group) {
-        const items = selectedObjects().filter(item => !item.hidden && !item.locked);
+        // The box is the selection's; silhouettes and their objects outside it scale along with it.
+        const items = selectedObjects().filter(item => !item.hidden && !item.locked), scaled = withSilhouettes(items);
         draft = clone(history.document);
-        gesture = { type: 'resize-group', handle: handle.dataset.handle, start, originals: clone(items), box: unionBounds(items.map(getBounds)), pointerId: event.pointerId };
+        gesture = { type: 'resize-group', handle: handle.dataset.handle, start, originals: clone(scaled), moving: new Set(scaled.map(item => item.id)), box: unionBounds(items.map(getBounds)), pointerId: event.pointerId };
         gesture.anchor = handlePoint(gesture.box, gesture.handle); gesture.snapTargets = snapTargets();
         render(); return;
     }
@@ -773,6 +774,10 @@ canvas.addEventListener('pointerdown', event => {
         const moving = handle ? selectedObjects().filter(item => !item.locked) : withSilhouettes(selectedObjects().filter(item => !item.locked));
         gesture = { type: handle ? 'resize' : 'move', handle: handle?.dataset.handle, start, original: clone(o), originals: clone(moving), moving: new Set(moving.map(item => item.id)), pointerId: event.pointerId, reselect };
         gesture.anchor = handle ? handlePoint(o, handle.dataset.handle) : hit?.reference || start;
+        // An object with a silhouette (or a silhouette with its objects) scales together with it, from
+        // this object's box, like the move does.
+        const together = handle && !turns(o) ? withSilhouettes([o]) : [];
+        if (together.length > 1) Object.assign(gesture, { type: 'resize-group', box: getBounds(o), originals: clone(together), moving: new Set(together.map(item => item.id)) });
         gesture.snapTargets = snapTargets();
     }
     render();
@@ -909,7 +914,7 @@ canvas.addEventListener('pointermove', event => {
 });
 // The dragged resize handle snaps to the references of other objects, the page and a PowerClip's frame.
 function resizeDelta(box, dx, dy, fromCentre) {
-    const movement = snapTranslation(gesture.anchor, { x: dx, y: dy }, gesture.snapTargets, selectedIds, 7 / view.scale);
+    const movement = snapTranslation(gesture.anchor, { x: dx, y: dy }, gesture.snapTargets, gesture.moving || selectedIds, 7 / view.scale);
     gesture.snap = movement.hit;
     if (!movement.hit) return { x: dx, y: dy };
     return turns(box) ? { x: movement.x, y: movement.y } : snapResizeDelta(box, gesture.handle, movement, fromCentre);
