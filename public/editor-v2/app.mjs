@@ -4,8 +4,9 @@ import { RESIZE_HANDLES, snapResizeDelta, handlePoint, resizeBounds, objectRefer
 import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns } from './transform.mjs';
 import { HAIRLINE_WIDTH } from './model.mjs';
 import { createColorPicker } from './colorPicker.mjs';
-import { pathData } from './path.mjs';
+import { pathData, normalizePath } from './path.mjs';
 import { presetObject } from './presets.mjs';
+import { silhouettes } from './silhouette.mjs';
 import { BITMAP_METHODS, bitmapSize, dpiToStep, toBitmap, pngWithDpi } from './bitmap.mjs';
 import { RASTER_PROMPT, rasterModel, linkRasterModel, rasterize } from './rasterize.mjs';
 import { pathNodes, movePathNodes, movePathHandle, closestOnPath, insertPathNode, removePathNodes } from './pathEdit.mjs';
@@ -478,6 +479,7 @@ function render() {
         const bounds = getBounds(o);
         document.querySelectorAll('[data-property]').forEach(input => {
             const key = input.dataset.property;
+            if (typing && input === document.activeElement && key === typing.property) return;
             if (input.type === 'number') {
                 const limits = { width: [.1, 10000], height: [.1, 10000], fontSize: [.1, 1000], strokeWidth: [0, 100] }[key];
                 input.min = limits[0] / unitFactor(); input.max = limits[1] / unitFactor();
@@ -606,7 +608,7 @@ canvas.addEventListener('pointerdown', event => {
         splinePointer = null; render(); return;
     }
     if (tool === 'text') {
-        const text = createObject('text', start.x, start.y); text.fill = nextFill; text.stroke = 'none';
+        const text = createObject('text', start.x, start.y); text.fill = '#000000'; text.stroke = 'none';
         selectOnly(text.id); edit(d => d.objects.push(text)); setTool('select');
         $('[data-property="text"]').focus(); $('[data-property="text"]').select(); return;
     }
@@ -834,9 +836,20 @@ canvas.addEventListener('dblclick', event => {
     // pointerdown already handles double clicks while editing nodes, and a click that just closed
     // a spline must not turn the rest of that double click into node editing.
     if (nodeEditing || event.timeStamp - splineFinishedAt < 500) return;
-    if (!beginNodeEditing(event.target.closest('[data-id]')?.dataset.id || selectedId, point(event))) beginPowerClipEditing(event);
+    const id = event.target.closest('[data-id]')?.dataset.id || selectedId;
+    if (current().objects.find(item => item.id === id)?.type === 'text' && editText(id)) return;
+    if (!beginNodeEditing(id, point(event))) beginPowerClipEditing(event);
 });
+function editText(id) {
+    const target = current().objects.find(item => item.id === id);
+    if (tool !== 'select' || !target || target.locked || target.hidden) return false;
+    selectOnly(id); render();
+    const field = $('[data-property="text"]'); field.focus(); field.select();
+    status('Escribe el texto: se actualiza en la página mientras escribes · Enter o clic fuera para terminar');
+    return true;
+}
 function doubleClick(event, id, node, insertAt) {
+    if (!nodeEditing && current().objects.find(item => item.id === id)?.type === 'text') return editText(id);
     if (!nodeEditing) return beginNodeEditing(id, point(event)) || beginPowerClipEditing(event);
     if (node !== null) { deleteNodes([node]); return true; }
     if (!insertAt) return false;
@@ -1048,9 +1061,23 @@ function previewPropertyColor(input, o) {
         if (preview.powerClip) drawPowerClipMarker(group, preview);
     });
 }
+// A text and its size change on the page while they are typed; the whole edit is one undo step.
+let typing = null;
+function typeLive(input, o) {
+    const property = input.dataset.property;
+    if (!o || o.locked || !['text', 'fontSize'].includes(property) || !input.checkValidity()) return;
+    const next = clone(history.document), item = next.objects.find(entry => entry.id === o.id);
+    item[property] = property === 'fontSize' ? Number(input.value) * unitFactor() : input.value;
+    try {
+        const changed = typing?.id === o.id && typing.property === property ? history.amend(next) : history.commit(next);
+        typing = { id: o.id, property };
+        if (changed) { persist(); render(); }
+    } catch (error) { status(error.message); }
+}
 function updateProperty(event) {
     const input = event.target, o = selected();
-    if (event.type === 'input' && input.type !== 'color') return;
+    if (event.type === 'input' && input.type !== 'color') { typeLive(input, o); return; }
+    if (event.type === 'change') typing = null;
     if (!o || o.locked) return;
     const property = input.dataset.property;
     if (input.type === 'color' && (property === 'fill' || property === 'stroke')) {
@@ -1326,6 +1353,7 @@ canvas.addEventListener('contextmenu', event => {
     $('#extract-powerclip').disabled = !single || object.locked || !object.powerClip?.objects.length;
     $('#invert-image').hidden = object.type !== 'image';
     $('#invert-image').disabled = object.locked;
+    $('#silhouette-menu').disabled = !selectedObjects().some(item => !item.hidden);
     $('#bitmap-image').hidden = object.type !== 'image';
     $('#bitmap-image').disabled = !single || object.locked;
     $('#raster-image').hidden = object.type !== 'image';
@@ -1559,6 +1587,106 @@ $('#bitmap-dialog').addEventListener('close', () => { bitmap = null; clearTimeou
 for (const id of ['#bitmap-dpi', '#bitmap-threshold']) $(id).addEventListener('input', scheduleBitmap);
 $('#bitmap-method').addEventListener('change', updateBitmap);
 $('#bitmap-actual').addEventListener('change', event => $('#bitmap-frame').classList.toggle('actual', event.target.checked));
+// Silueta (silhouette.mjs): the selection is drawn into a grid of at most 0.1 mm per pixel, with room
+// around it for the outside lines, and the lines are traced there and turned back into page millimetres.
+let silhouette = null, silhouetteTimer = null;
+const silhouetteInfo = text => { $('#silhouette-info').textContent = text; };
+async function rasterizeSelection(items, margin) {
+    const box = unionBounds(items.map(getBounds)), x = box.x - margin, y = box.y - margin, w = box.width + 2 * margin, h = box.height + 2 * margin;
+    const scale = Math.min(10, 2500 / Math.max(w, h)), width = Math.max(1, Math.round(w * scale)), height = Math.max(1, Math.round(h * scale));
+    const markup = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${x} ${y} ${w} ${h}">${items.map(item => objectMarkup(item)).join('')}</svg>`;
+    const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml' }));
+    try {
+        const image = new Image(); image.src = url; await image.decode();
+        const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+        const context = canvas.getContext('2d', { willReadFrequently: true }); context.drawImage(image, 0, 0, width, height);
+        const pixels = context.getImageData(0, 0, width, height).data, mask = new Uint8Array(width * height);
+        for (let i = 0; i < mask.length; i++) mask[i] = pixels[i * 4 + 3] > 24 ? 1 : 0;
+        return { mask, width, height, x, y, scale, margin };
+    } finally { URL.revokeObjectURL(url); }
+}
+function openSilhouette() {
+    hideObjectMenu();
+    const items = selectedObjects().filter(item => !item.hidden);
+    if (!items.length) return;
+    silhouette = { ids: items.map(item => item.id), raster: null, result: null, run: 0 };
+    $('#silhouette-dialog').showModal();
+    updateSilhouette();
+}
+function scheduleSilhouette() { clearTimeout(silhouetteTimer); silhouetteTimer = setTimeout(updateSilhouette, 200); }
+async function updateSilhouette() {
+    const session = silhouette;
+    if (!session) return;
+    const items = current().objects.filter(item => session.ids.includes(item.id));
+    if (!items.length) { $('#silhouette-dialog').close(); return; }
+    const distance = Number($('#silhouette-distance').value), steps = Math.round(Number($('#silhouette-steps').value)), direction = $('#silhouette-direction').value;
+    const run = ++session.run;
+    $('#silhouette-apply').disabled = true;
+    try {
+        if (!(distance >= .1 && distance <= 100)) throw new Error('Usa una distancia entre 0.1 y 100 mm.');
+        if (!(steps >= 1 && steps <= 20)) throw new Error('Usa entre 1 y 20 pasos.');
+        const needed = direction === 'outside' ? distance * steps + 2 : 2;
+        if (!session.raster || session.raster.margin < needed) {
+            silhouetteInfo('Preparando…');
+            session.raster = await rasterizeSelection(items, needed * 1.25);
+        }
+        if (silhouette !== session || run !== session.run) return;
+        silhouetteInfo('Calculando…');
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const r = session.raster, result = silhouettes(r.mask, r.width, r.height, { distance: distance * r.scale, steps, direction });
+        if (silhouette !== session || run !== session.run) return;
+        session.result = result;
+        drawSilhouettePreview(r, result);
+        if (!result.length) throw new Error('Con esa distancia no queda ninguna silueta. Prueba una menor.');
+        silhouetteInfo(`${result.length} ${result.length === 1 ? 'silueta' : 'siluetas'} · precisión ${(1 / r.scale).toFixed(2)} mm`);
+        $('#silhouette-apply').disabled = false;
+    } catch (error) {
+        if (silhouette !== session || run !== session.run) return;
+        session.result = null; silhouetteInfo(error.message || 'No se pudo calcular la silueta.');
+    }
+}
+function drawSilhouettePreview(r, result) {
+    const canvas = $('#silhouette-preview'), context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    const fit = Math.min(canvas.width / r.width, canvas.height / r.height) * .92, ox = (canvas.width - r.width * fit) / 2, oy = (canvas.height - r.height * fit) / 2;
+    const shape = document.createElement('canvas'); shape.width = r.width; shape.height = r.height;
+    const shapeContext = shape.getContext('2d'), pixels = shapeContext.createImageData(r.width, r.height);
+    for (let i = 0; i < r.mask.length; i++) if (r.mask[i]) pixels.data.set([214, 219, 229, 255], i * 4);
+    shapeContext.putImageData(pixels, 0, 0);
+    context.drawImage(shape, ox, oy, r.width * fit, r.height * fit);
+    context.strokeStyle = $('#silhouette-color').value; context.lineWidth = 1.5;
+    for (const loops of result) for (const { points: p } of loops) {
+        context.beginPath(); context.moveTo(ox + p[0] * fit, oy + p[1] * fit);
+        for (let i = 2; i + 5 < p.length; i += 6) context.bezierCurveTo(ox + p[i] * fit, oy + p[i + 1] * fit, ox + p[i + 2] * fit, oy + p[i + 3] * fit, ox + p[i + 4] * fit, oy + p[i + 5] * fit);
+        context.closePath(); context.stroke();
+    }
+}
+function applySilhouette() {
+    const session = silhouette, r = session?.raster, result = session?.result;
+    if (!result?.length) return;
+    const stroke = $('#silhouette-color').value, strokeWidth = Math.max(0, Math.min(10, Number($('#silhouette-width').value) || 0)), direction = $('#silhouette-direction').value;
+    const created = result.map((loops, step) => ({
+        ...createObject('path', 0, 0), name: result.length === 1 ? 'Silueta' : `Silueta ${step + 1}`,
+        ...normalizePath(loops.map(({ closed, points }) => ({ closed, points: points.map((value, i) => i % 2 ? r.y + value / r.scale : r.x + value / r.scale) }))),
+        fill: 'none', stroke, strokeWidth,
+    }));
+    edit(d => {
+        // Outside lines go behind the selection, inside ones in front of it.
+        const indices = d.objects.flatMap((item, i) => session.ids.includes(item.id) ? [i] : []);
+        const at = direction === 'outside' ? Math.min(...indices) : Math.max(...indices) + 1;
+        d.objects.splice(at, 0, ...(direction === 'outside' ? created.reverse() : created));
+    });
+    setSelection(created.map(item => item.id));
+    silhouette = null; $('#silhouette-dialog').close(); render();
+    status(created.length === 1 ? 'Silueta creada' : `${created.length} siluetas creadas`);
+}
+$('#silhouette-menu').onclick = openSilhouette;
+$('#silhouette-apply').onclick = applySilhouette;
+$('#silhouette-cancel').onclick = () => $('#silhouette-dialog').close();
+$('#silhouette-dialog').addEventListener('close', () => { silhouette = null; clearTimeout(silhouetteTimer); });
+for (const id of ['#silhouette-distance', '#silhouette-steps']) $(id).addEventListener('input', scheduleSilhouette);
+$('#silhouette-direction').addEventListener('change', updateSilhouette);
+$('#silhouette-color').addEventListener('change', () => { if (silhouette?.result) drawSilhouettePreview(silhouette.raster, silhouette.result); });
 $('#extract-powerclip').onclick = () => { hideObjectMenu(); edit(d => extractPowerClip(d, selectedId)); status('Contenido extraído'); };
 $('#powerclip-extract').onclick = () => { edit(d => extractPowerClip(d, selectedId)); status('Contenido extraído'); };
 for (const mode of ['contain', 'cover']) $('#powerclip-' + mode).onclick = () => {

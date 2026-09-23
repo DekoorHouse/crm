@@ -217,6 +217,14 @@ export class History {
         this.future = [];
         return true;
     }
+    // Replaces the current step instead of adding one: typing a text is a single undo step.
+    amend(next) {
+        const valid = validateDocument(next);
+        if (documentKey(valid) === documentKey(this.document)) return false;
+        this.document = valid;
+        this.future = [];
+        return true;
+    }
     undo() {
         if (!this.past.length) return false;
         this.future.push(this.document); this.document = this.past.pop(); return true;
