@@ -81,8 +81,16 @@ export function outlineSilhouette(subpaths, distance, scale = LAYOUT.rasterScale
     return loops.map(({ closed, points }) => ({ closed, points: points.map((v, i) => i % 2 ? box.y + v / scale : box.x + v / scale) }));
 }
 
+// Tamaño en mm con que la imagen queda en la hoja al llenar el marco ("cover"): el mapa de bits se
+// calcula a esta medida, como "Convertir a mapa de bits" del editor sobre la imagen ya colocada.
+export function pictureSizeMm(image) {
+    const frame = frameObject(), width = frame.width, height = frame.width * image.height / image.width;
+    const scale = Math.max(frame.width / width, frame.height / height);
+    return { width: width * scale, height: height * scale };
+}
+
 /**
- * @param {{ image: { dataUrl: string, width: number, height: number }, name: string, font: object, title?: string }} input
+ * @param {{ image: { dataUrl: string, width: number, height: number, pixelated?: boolean }, name: string, font: object, title?: string }} input
  * @returns {{ document: object, textId: string, frameId: string }}
  */
 export function composeLamp({ image, name, font, title }) {
@@ -93,7 +101,7 @@ export function composeLamp({ image, name, font, title }) {
     // 1) Marco (PowerClip vacío con base blanca) e imagen de grabado llenándolo.
     const frame = frameObject();
     const picture = { ...createObject('image', frame.x, frame.y, frame.width, frame.width * image.height / image.width),
-        name: 'Grabado', src: image.dataUrl, fill: 'none', stroke: 'none', strokeWidth: 0 };
+        name: 'Grabado', src: image.dataUrl, fill: 'none', stroke: 'none', strokeWidth: 0, ...(image.pixelated ? { pixelated: true } : {}) };
     document.objects.push(frame, picture);
     placeInPowerClip(document, new Set([picture.id]), frame.id);
     const content = frame.powerClip.objects[0];

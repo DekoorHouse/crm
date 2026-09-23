@@ -17,6 +17,11 @@ const imageStudio = require('../../imagenes/imageStudioService');
 
 const RASTER_MODEL = 'openai/gpt-image-2.5-sunburst';
 const RASTER_PROMPT = 'dame el diseño de la imagen con rellenos blancos y fondos negros. En raster engrave con degradado en trama';
+// Último paso del equipo: "Convertir a mapa de bits" en difuminado (1 bit, Floyd–Steinberg) a la
+// resolución de la láser, al tamaño real que la imagen tiene en el marco.
+const BITMAP = { dpi: 254, method: 'diffusion', threshold: 128 };
+let bitmapModule = null;
+const bitmapTools = () => (bitmapModule ||= import('../../../public/editor-v2/bitmap.mjs'));
 const FONT_PATH = 'editor-v2/fonts/rows-of-sunflowers.ttf';
 const VISION_MODEL = 'gemini-3-flash-preview';
 const ACTOR = { uid: 'auto-lamp' };
@@ -142,14 +147,23 @@ async function generate(dh, options = {}) {
         await setStatus(ref, { status: 'working', step: 'Convirtiendo a grabado', referenceUrl: reference.url, referenceReason: reference.motivo });
         const raster = options.rasterUrl ? { url: options.rasterUrl, jobId: null } : await rasterize(reference);
 
-        await setStatus(ref, { status: 'working', step: 'Armando el diseño' });
         const { buffer } = await download(raster.url);
-        const png = await sharp(buffer).png().toBuffer(), meta = await sharp(png).metadata();
+        const meta = await sharp(buffer).metadata();
         const font = await loadFont();
-        const { composeLamp, renderPreview, exportLampSvg } = await composerModule();
+        const { composeLamp, renderPreview, exportLampSvg, pictureSizeMm } = await composerModule();
+
+        await setStatus(ref, { status: 'working', step: 'Convirtiendo a mapa de bits' });
+        const { bitmapSize, toBitmap, pngWithDpi } = await bitmapTools();
+        const mm = pictureSizeMm({ width: meta.width, height: meta.height });
+        const size = bitmapSize(mm.width, mm.height, BITMAP.dpi);
+        const rgba = await sharp(buffer).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
+        const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, BITMAP);
+        const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
+
+        await setStatus(ref, { status: 'working', step: 'Armando el diseño' });
         const title = `DH${dh} · ${name}`;
         const dataUrl = 'data:image/png;base64,' + png.toString('base64');
-        const { document } = composeLamp({ image: { dataUrl, width: meta.width, height: meta.height }, name, font, title });
+        const { document } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name, font, title });
 
         const folder = `${STORAGE_DIR}/DH${dh}`;
         const imageHash = crypto.createHash('sha256').update(dataUrl).digest('hex');
