@@ -94,6 +94,10 @@ La suite usa Firestore y canales simulados; no transmite mensajes ni accede a
 Firebase de producción.
 # Anticipos anteriores al registro
 
+Desde Validar importe, un recibo sin DH permite seleccionar uno existente o crear un pedido pendiente con datos extraídos del chat y revisados por el operador. Crear el borrador no aplica el pago: se mantiene la confirmación de saldo, identidad y duplicados. La creación del DH, contador y vínculo al comprobante es transaccional e idempotente.
+
+Los pedidos `receiptDraft` pueden conservar un total desconocido (`totalPending`) y abonos aprobados, sin afirmar que están liquidados. `orderDataPending` bloquea fabricación y formulario. Después del abono se programa una pregunta por los datos faltantes; las respuestas se extraen al mismo DH. Sólo datos completos de alta confianza, total consistente y anticipo mínimo cubierto habilitan la conciliación de producción. Los precios previamente confirmados no se cambian automáticamente.
+
 Los adjuntos entrantes se guardan en `payment_receipts` aunque todavía no exista un DH; el OCR descarta las imágenes que no son comprobantes. Al crear un pedido, `paymentReceiptDiscoveryPending` activa una recuperación durable, incluso en registros manuales y tras reinicios. Se consultan también los comprobantes pendientes persistidos, sin depender de los últimos 100 mensajes del chat.
 
 Un comprobante sin propietario que se vincula después, o recuperado más de dos días antes del registro, requiere confirmar su asociación (`associationNeedsReview`) antes de acreditar dinero. Se conservan los límites de nueva compra, la protección de pagos de pedidos anteriores y los índices globales contra duplicados. La búsqueda histórica se limita a 45 días; los anticipos más antiguos permanecen para selección manual.

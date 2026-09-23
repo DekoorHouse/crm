@@ -12,6 +12,14 @@ async function reconcilePaymentProduction(orderId) {
         const snap = await tx.get(ref);
         if (!snap.exists) return null;
         const order = snap.data();
+        if (order.orderDataPending || order.totalPending) {
+            tx.update(ref, { paymentProductionPending: false, paymentProductionStatus: 'pending_data', paymentProductionReason: 'Faltan datos o total confirmado. No fabricar.' });
+            return null;
+        }
+        if (Number(order.requiredDepositCents) > Number(order.paymentReceivedCents || 0)) {
+            tx.update(ref, { paymentProductionPending: false, paymentProductionStatus: 'pending_deposit', paymentProductionReason: 'El abono no cubre el anticipo mínimo acordado.' });
+            return null;
+        }
         if (terminal(order) || cancelled(order)) {
             if (order.paymentProductionPending) tx.update(ref, { paymentProductionPending: false });
             return null;

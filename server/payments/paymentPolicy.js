@@ -9,7 +9,7 @@ const cents = value => Math.round(Number(value) * 100);
 const terminal = order => /entregad|devol/i.test(order.estatus || '');
 const cancelled = order => /cancel/i.test(order.estatus || '');
 const awaitingPaymentApproval = order => !!order.shippingFormRequestedBeforeApproval && !order.comprobanteValidadoAt;
-const canRequestShippingForm = order => !!order && !terminal(order) && (
+const canRequestShippingForm = order => !!order && !order.orderDataPending && !order.totalPending && !terminal(order) && (
     (!!order.comprobanteValidadoAt && !cancelled(order)) ||
     (order.paymentReportedComplete === true && !order.paymentFormNeedsAssessment)
 );
@@ -102,6 +102,7 @@ function paymentDecision(order, amountCents, manual = false) {
     const total = cents(order.precio);
     const previous = Number(order.paymentReceivedCents) || 0;
     const received = previous + amountCents;
+    if (manual && order.receiptDraft && order.totalPending && amountCents > 0) return { status: 'partial', receivedCents: received, remainingCents: null };
     if (!(total > 0) || !(amountCents > 0)) return { status: 'review', reason: 'Importe inválido.' };
     if (!manual && received > total) return { status: 'review', reason: 'El pago supera el total registrado; confirmar el importe acordado.' };
     if (cancelled(order) && received < total && !manual) return { status: 'review', reason: 'Pedido cancelado con abono parcial: requiere revisión.' };

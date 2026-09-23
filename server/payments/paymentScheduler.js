@@ -9,6 +9,7 @@ async function runPaymentSweep() {
     running = true;
     try {
         await require('./shippingConfirmation').recoverShippingConfirmations();
+        await require('../orders/receiptOrderDraft').followupDrafts();
         await require('./receiptMedia').recoverMissingReceiptMedia();
         // Durable recovery also covers orders created manually and restarts after registration.
         const registrations = await db.collection('pedidos').where('paymentReceiptDiscoveryPending', '==', true).get();

@@ -51,6 +51,7 @@ function paymentReply(context, { customerText = '', aiText = '', receiptPresent 
         return null; // conservar la respuesta pertinente del modelo; no repetir el formulario
     }
     if (context.partialCents > 0) {
+        if (context.totalPending) return [`Tu abono de $${context.partialCents / 100} está registrado. Falta confirmar los datos y el total del pedido para calcular el saldo.`];
         const asksBalance = /(?:cuanto|cu[aá]l).*(?:falta|resta|saldo|restante)|(?:saldo|restante)\s*\?/.test(question);
         const asksPhoto = /foto|fotografia|imagen|terminad/.test(question);
         if (asksPhoto && !asksBalance && !receiptPresent) return ['El resto lo liquidas después de ver la foto de tus lámparas terminadas, como acordamos. Te compartiremos la foto cuando esté lista.'];

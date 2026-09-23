@@ -239,6 +239,7 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
         const decision = paymentDecision(order, cents(manual ? amount : receipt.monto), manual);
         if (decision.status === 'review') return decision;
         const fields = { paymentReceivedCents: decision.receivedCents, paymentUpdatedAt: stamp(), paymentFormNeedsAssessment: true, paymentProductionPending: true };
+        if (order.orderDataPending) fields.orderDataFollowupPending = true;
         if (decision.status === 'paid') {
             Object.assign(fields, { comprobanteValidadoAt: stamp(), paymentValidatedBy: manual ? 'manual' : 'receipt' });
             if (!order.shippingFormStatus && !order.shippingFormSentAt) Object.assign(fields, { shippingFormStatus: 'pending', shippingFormNextAttemptAt: stamp(), shippingFormReason: 'Pago validado; formulario pendiente.' });
@@ -497,8 +498,8 @@ async function paymentContext(contactId, { discover = false, process = false, or
         && (!selected || d.data().orderId === selected.id || !d.data().orderId));
     const latest = selected?.data();
     const hasPaid = latest?.comprobanteValidadoAt && !cancelled(latest);
-    return { hasPaid: !!hasPaid, partialCents: latest?.paymentReceivedCents || 0, totalCents: cents(latest?.precio) || 0,
-        formSent: !!latest?.shippingFormSentAt, reportedComplete: !!latest?.paymentReportedComplete && !latest?.paymentFormNeedsAssessment, reportedCents: latest?.paymentReportedCents || 0, pending: pending.length,
+    return { hasPaid: !!hasPaid, totalPending: !!latest?.totalPending, orderDataPending: !!latest?.orderDataPending, partialCents: latest?.paymentReceivedCents || 0, totalCents: cents(latest?.precio) || 0,
+        formSent: !!latest?.shippingFormSentAt, reportedComplete: !!latest?.paymentReportedComplete && !latest?.paymentFormNeedsAssessment && !latest?.totalPending && !latest?.orderDataPending, reportedCents: latest?.paymentReportedCents || 0, pending: pending.length,
         reason: pending.find(d => d.data().status === 'review')?.data().reason || latest?.shippingFormReason || '',
         registrationPending: !num && !!newOrderSince && orders.length === 0,
         ambiguous: !selected && (orders.length > 1 || !!num),

@@ -434,7 +434,7 @@ async function pendPaymentReview(id, col, button) {
         <p style="line-height:1.5">${escapeHtml(receipt.reason || '')}</p>
         ${receipt.flagged ? `<p style="color:#9a3412"><b>Alerta de la IA:</b> ${escapeHtml(receipt.alertReason || '')}</p>` : ''}
         ${receipt.imageUrl ? `<a href="${escapeHtml(receipt.imageUrl)}" target="_blank" rel="noopener">Abrir comprobante</a>` : ''}
-        ${!receipt.orderId ? `<label>Pedido de este contacto<input name="orderNumber" required value="${escapeHtml(receipt.orderNumber || '')}" placeholder="DH12345" pattern="[Dd]?[Hh]?[0-9]+" style="${fieldStyle}"></label>` : ''}
+        ${!receipt.orderId ? `<label>Pedido de este contacto (deja vacío para registrar uno)<input name="orderNumber" value="${escapeHtml(receipt.orderNumber || '')}" placeholder="DH12345 o nuevo pedido" pattern="[Dd]?[Hh]?[0-9]+" style="${fieldStyle}"></label>` : ''}
         <label>Importe recibido en este comprobante (MXN)<input name="amount" type="number" min="0.01" step="0.01" required value="${escapeHtml(String(receipt.amount || ''))}" style="${fieldStyle}"></label>
         <p style="font-size:14px;line-height:1.5">Primero revisaremos el saldo y los abonos anteriores. Todavía no se sumará este importe.</p>`, 'Revisar saldo');
     if (!values) return;
@@ -442,17 +442,31 @@ async function pendPaymentReview(id, col, button) {
     const body = { amount: Number(values.amount), reactivate, orderNumber: values.orderNumber || receipt.orderNumber, reviewToken: receipt.reviewToken };
     button.disabled = true;
     try {
+        if (!receipt.orderId && !body.orderNumber) {
+            const { suggestion: s } = await _pendPost(`${path}/order-draft`, { reviewToken: receipt.reviewToken });
+            const description = (s.items || []).map(i => `${i.cantidad} × ${i.producto}: ${i.datosProducto || ''}`).join('\n');
+            const draft = await _pendPaymentDialog('Registrar pedido y revisar abono', `
+                <p>Revisa los datos extraídos del chat. Se creará un pedido pendiente; el abono se registra únicamente después de tu confirmación del saldo.</p>
+                <label>Productos y datos conocidos<textarea name="description" required style="${fieldStyle}">${escapeHtml(description)}</textarea></label>
+                <label>Total acordado (vacío si falta confirmar)<input name="total" type="number" min="0.01" step="0.01" value="${escapeHtml(String(s.total > 0 ? s.total : ''))}" style="${fieldStyle}"></label>
+                <label>Anticipo mínimo acordado para fabricar (0 si no requiere)<input name="requiredDeposit" type="number" min="0" step="0.01" required value="${escapeHtml(String(values.amount))}" style="${fieldStyle}"></label>
+                <label>Datos que Leonel debe conseguir<textarea name="missing" style="${fieldStyle}">${escapeHtml(s.faltante || '')}</textarea></label>
+                <p>Mientras esté pendiente de datos no pasará a fabricación. Si cancelas la siguiente revisión, el pedido se conserva sin aplicar el pago.</p>`, 'Crear pedido y revisar saldo');
+            if (!draft) return;
+            const created = await _pendPost(`${path}/order-draft`, { ...draft, create: true, reviewToken: receipt.reviewToken });
+            body.orderId = created.orderId;
+        }
         const { preview: p } = await _pendPost(`${path}/preview`, body);
         const money = n => '$' + (Number(n || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 });
         const payments = [...p.previousPayments].sort((a, b) => b.receivedAt - a.receivedAt);
         const references = r => `<li style="margin:8px 0">${escapeHtml(money(r.amountCents))} · ${escapeHtml(r.orderNumber || '')} · ${escapeHtml(new Date(r.receivedAt).toLocaleDateString('es-MX'))} ${r.imageUrl ? `<a href="${escapeHtml(r.imageUrl)}" target="_blank" rel="noopener">Ver comprobante</a>` : ''}</li>`;
         const confirmation = await _pendPaymentDialog(`Confirmar abono · ${p.orderNumber}`, `
             <div style="background:#f1f5f9;padding:14px;border-radius:8px;line-height:1.8">
-                Total del pedido: <b>${money(p.totalCents)}</b><br>
+                Total del pedido: <b>${p.totalPending ? 'Pendiente de confirmar' : money(p.totalCents)}</b><br>
                 Ya registrado: <b>${money(p.receivedCents)}</b><br>
                 Nuevo abono a sumar: <b>${money(p.amountCents)}</b><br>
                 Quedaría registrado: <b>${money(p.afterCents)}</b><br>
-                Saldo restante: <b>${money(p.remainingCents)}</b>
+                Saldo restante: <b>${p.totalPending ? 'Pendiente de confirmar' : money(p.remainingCents)}</b>
             </div>
             ${receipt.imageUrl ? `<p><a href="${escapeHtml(receipt.imageUrl)}" target="_blank" rel="noopener">Abrir el comprobante que estás revisando</a></p>` : ''}
             ${payments.length ? `<details open><summary>Abonos ya registrados (${payments.length})</summary><ul style="padding-left:20px">${payments.map(references).join('')}</ul></details>` : ''}

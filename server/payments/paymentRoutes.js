@@ -20,6 +20,18 @@ async function selectReviewOrder(receipt, body) {
     return { orderId, orderNumber: `DH${order.data().consecutiveOrderNumber}` };
 }
 
+router.post('/receipts/:id/order-draft', async (req, res) => {
+    try {
+        const ref = await resolveReviewRef(req.params.id, req.body?.reviewToken);
+        const receipt = (await ref.get()).data();
+        if (!receipt?.open) throw new Error('El comprobante ya se resolvió.');
+        const draft = require('../orders/receiptOrderDraft');
+        const result = req.body?.create === true ? await draft.createDraft(ref, req.body)
+            : { suggestion: await draft.suggest(receipt.contactId) };
+        res.json({ success: true, ...result });
+    } catch (e) { res.status(409).json({ success: false, message: e.message }); }
+});
+
 router.post('/receipts/:id/preview', async (req, res) => {
     try {
         const ref = await resolveReviewRef(req.params.id, req.body?.reviewToken);

@@ -3165,6 +3165,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
     const freshContactSnap = await contactRef.get();
     if (!freshContactSnap.exists) return;
     const contactData = freshContactSnap.data();
+    let pendingReceiptOrder = null;
+    if (contactData.receiptOrderDraftId) {
+        try { pendingReceiptOrder = await require('./orders/receiptOrderDraft').completeDraft(contactId); }
+        catch (e) { console.warn('[ORDER_DATA] No se pudo completar el borrador:', e.message); }
+    }
 
     // Limpiar el campo aiNextRun al empezar el procesamiento y poner estado de generación
     await contactRef.update({ 
@@ -3428,6 +3433,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         //    (tagOrderInProgress, detectAndArmReminder).
         const historyTurns = [];
         const historyLines = contactData.activePurchaseSessionId ? ['SISTEMA: Esta conversación corresponde a una compra independiente. No reutilices pagos, nombres, fotos, domicilio ni guía de pedidos anteriores. Si pregunta por otra compra, pide su número DH antes de usar sus datos.'] : [];
+        if (pendingReceiptOrder?.orderDataPending) historyLines.push(`SISTEMA: El pedido DH${pendingReceiptOrder.consecutiveOrderNumber} YA existe. Abono registrado: $${(pendingReceiptOrder.paymentReceivedCents || 0) / 100}. Datos conocidos: ${pendingReceiptOrder.datosProducto}. Falta: ${pendingReceiptOrder.missingOrderData || 'confirmar productos, nombres y total'}. Pregunta únicamente lo faltante y confirma el resumen. No crees otro pedido, no vuelvas a pedir el abono y no prometas fabricación todavía.`);
         let prevMsgMs = null;
         for (const doc of [...messagesSnapshot.docs].reverse()) { // cronológico
             const d = doc.data();
@@ -4198,7 +4204,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 }
             }
         } catch (e) { console.warn('[COBERTURA] candado de registro falló (se continua):', e.message); }
-        const registrationNeeded = !orderCancelled && !registroBloqueadoPorCobertura && (registerOrderCmd || anticipoPaidCmd || (saleClosed && !isPostVenta && !esperaAnticipoCmd));
+        const registrationNeeded = !pendingReceiptOrder?.orderDataPending && !orderCancelled && !registroBloqueadoPorCobertura && (registerOrderCmd || anticipoPaidCmd || (saleClosed && !isPostVenta && !esperaAnticipoCmd));
         if (registrationNeeded) await ensureRegistration();
         const paymentConversation = require('./payments/paymentConversation');
         const paymentClaim = require('./payments/paymentPolicy').claimsPayment(aiResponse) || paymentConversation.fullPaymentClaim(aiResponse) || paymentConversation.blocksProductionForBalance(aiResponse);
@@ -4409,7 +4415,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
             // También cubre /confirmar y cualquier atajo que prometa un registro: su texto
             // real sólo se conoce aquí. La promesa nunca sale si la escritura falló.
-            if (registrationClaim(msgText) && (!isPostVenta || wantsNewOrder || registerOrderCmd) && !orderCancelled) {
+            if (!pendingReceiptOrder?.orderDataPending && registrationClaim(msgText) && (!isPostVenta || wantsNewOrder || registerOrderCmd) && !orderCancelled) {
                 saleClosed = true;
                 if (!await ensureRegistration(msgText)) {
                     msgText = REGISTRATION_PENDING;
