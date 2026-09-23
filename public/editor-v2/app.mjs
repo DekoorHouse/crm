@@ -481,6 +481,7 @@ function render() {
         $('#image-properties').hidden = o.type !== 'image';
         if (o.type === 'image') {
             for (const input of adjustInputs) { input.value = o.adjust?.[input.dataset.imageAdjust] ?? 0; input.disabled = o.locked; }
+            $('#image-invert').checked = Boolean(o.adjust?.invert); $('#image-invert').disabled = o.locked;
             $('#image-adjust-reset').disabled = o.locked || !o.adjust;
             showAdjustValues();
         }
@@ -1061,7 +1062,7 @@ function showAdjustedImages(root) {
     }
 }
 const adjustInputs = [...document.querySelectorAll('[data-image-adjust]')];
-const readAdjust = () => Object.fromEntries(adjustInputs.map(input => [input.dataset.imageAdjust, Number(input.value)]));
+const readAdjust = () => ({ ...Object.fromEntries(adjustInputs.map(input => [input.dataset.imageAdjust, Number(input.value)])), invert: $('#image-invert').checked });
 function showAdjustValues() {
     for (const input of adjustInputs) {
         const value = Number(input.value);
@@ -1102,6 +1103,17 @@ $('#image-properties').addEventListener('change', event => {
     if (o?.type !== 'image' || o.locked) return;
     edit(d => { d.objects.find(item => item.id === o.id).adjust = adjust; });
 });
+// Inverting colours is one more adjustment: the original pixels stay, and doing it again undoes it.
+function invertImages() {
+    const images = selectedObjects().filter(item => item.type === 'image' && !item.locked);
+    if (!images.length) return false;
+    const ids = new Set(images.map(item => item.id)), inverted = !images.every(item => item.adjust?.invert);
+    edit(d => { for (const item of d.objects) if (ids.has(item.id)) item.adjust = { ...(item.adjust || {}), invert: inverted }; });
+    status(inverted ? (images.length === 1 ? 'Colores invertidos' : `Colores invertidos en ${images.length} imágenes`) : 'Colores originales');
+    return true;
+}
+$('#image-invert').addEventListener('change', () => { if (!invertImages()) render(); });
+$('#invert-image').onclick = () => { hideObjectMenu(); invertImages(); };
 $('#image-adjust-reset').onclick = () => {
     const o = selected();
     if (o?.type !== 'image' || o.locked || !o.adjust) return;
@@ -1254,6 +1266,8 @@ canvas.addEventListener('contextmenu', event => {
     $('#place-powerclip').disabled = selectedObjects().some(item => item.locked) || !current().objects.some(item => POWERCLIP_TYPES.includes(item.type) && !item.locked && !item.hidden && !selectedIds.has(item.id));
     $('#extract-powerclip').hidden = !object.powerClip;
     $('#extract-powerclip').disabled = !single || object.locked || !object.powerClip?.objects.length;
+    $('#invert-image').hidden = object.type !== 'image';
+    $('#invert-image').disabled = object.locked;
     $('#raster-image').hidden = object.type !== 'image';
     $('#raster-image').disabled = !single || object.locked;
     $('#remove-powerclip').hidden = !object.powerClip;
@@ -1537,6 +1551,8 @@ document.addEventListener('keydown', event => {
     }
     if (mod && ['z', 'y', 'd', 's', 'o', 'i', 'e'].includes(key)) {
         event.preventDefault(); if (gesture) return;
+        // With an image selected, Ctrl+I inverts its colours; otherwise it imports.
+        if (key === 'i' && invertImages()) return;
         const action = { z: event.shiftKey ? 'redo' : 'undo', y: 'redo', d: 'duplicate', s: 'save', o: 'open', i: 'import', e: 'export' }[key]; actions[action](); return;
     }
     if (mod || event.altKey || gesture) return;

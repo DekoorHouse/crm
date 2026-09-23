@@ -16,11 +16,18 @@ export function normalizeAdjust(input) {
         if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) throw new Error('Ajustes de imagen inválidos.');
         adjust[key] = value;
     }
+    if (input.invert !== undefined && typeof input.invert !== 'boolean') throw new Error('Ajustes de imagen inválidos.');
+    if (input.invert) adjust.invert = true;
     return Object.values(adjust).some(Boolean) ? adjust : null;
 }
 
-// RGBA pixels in, new RGBA pixels out: desaturate, brightness, contrast, then sharpen. Alpha is kept.
+// RGBA pixels in, new RGBA pixels out: desaturate, brightness, contrast, sharpen, then invert. Alpha is kept.
 export function adjustPixels(source, width, height, adjust) {
+    const result = tonePixels(source, width, height, adjust);
+    if (adjust?.invert) for (let i = 0; i < result.length; i += 4) { result[i] = 255 - result[i]; result[i + 1] = 255 - result[i + 1]; result[i + 2] = 255 - result[i + 2]; }
+    return result;
+}
+function tonePixels(source, width, height, adjust) {
     const { desaturate = 0, contrast = 0, brightness = 0, sharpness = 0 } = adjust || {};
     const amount = desaturate / 100, gain = (1 + brightness / 100) / 255, slope = 1 + contrast / 100, s = sharpness / 100;
     const toned = new Uint8ClampedArray(source.length);
