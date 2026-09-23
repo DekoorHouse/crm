@@ -349,6 +349,8 @@ function renderScene() {
         if (!o.locked && selectedIds.size === 1) {
             if (rotateMode) drawRotateHandles(bounds, frame);
             else if (o.type !== 'text') drawResizeHandles(bounds, false, frame);
+            // Text scales from its corners only (it keeps its proportions), like a group.
+            else if (!turns(o)) drawResizeHandles(bounds, true, frame, true);
         }
       }
     }
@@ -380,9 +382,9 @@ function svgElement(tag, attributes, parent) {
 }
 // Reduce the outer gap of handles when zooming out; keep the node itself free to drag.
 const handleOffset = () => 4 + Math.max(1, Math.min(4, 4 * view.scale / (96 / 25.4)));
-function drawResizeHandles(bounds, group = false, parent = selection) {
+function drawResizeHandles(bounds, group = false, parent = selection, cornersOnly = false) {
     const unit = 1 / view.scale, offset = handleOffset();
-    for (const control of RESIZE_HANDLES) {
+    for (const control of RESIZE_HANDLES.filter(item => !cornersOnly || item.name.length === 2)) {
         const handle = svgElement('rect', { x: bounds.x + bounds.width * control.x + ((control.x * 2 - 1) * offset - 4) * unit, y: bounds.y + bounds.height * control.y + ((control.y * 2 - 1) * offset - 4) * unit, width: 8 * unit, height: 8 * unit, fill: 'white', stroke: '#8b5bd1', 'stroke-width': unit, cursor: control.cursor, 'data-handle': control.name }, parent);
         if (group) handle.dataset.group = 'true';
     }
