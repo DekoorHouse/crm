@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dekoor · Editor V2</title>
   <meta name="theme-color" content="#191b22">
-  <link rel="stylesheet" href="/editor-v2/style.css?v=bitmap-diffusion-1">
+  <link rel="stylesheet" href="/editor-v2/style.css?v=auto-lamp-1">
 </head>
 <body>
   <header class="topbar">
@@ -104,6 +104,7 @@
     <div id="cloud-account" hidden>
       <p id="cloud-user"></p>
       <div class="cloud-buttons"><button id="cloud-save" class="primary">Guardar en Firebase</button><button id="cloud-copy">Guardar como copia</button><button id="cloud-refresh">Actualizar lista</button><button id="cloud-versions">Historial de versiones</button></div>
+      <form id="auto-lamp-form" class="auto-lamp"><label>Lámpara automática <input id="auto-lamp-dh" placeholder="DH17220" autocomplete="off" required></label><button type="submit" id="auto-lamp-go">Generar</button><span class="subtle">El sistema elige la imagen del chat, la convierte a grabado y arma el diseño.</span></form>
       <p class="subtle">Últimos 100 proyectos · al abrir se reemplaza el borrador actual; puedes deshacerlo.</p>
       <div id="cloud-projects"></div>
     </div>
@@ -212,6 +213,6 @@
       <button type="button" id="raster-apply" class="primary" hidden>Aplicar</button>
     </div>
   </dialog>
-  <script type="module" src="/editor-v2/app.mjs?v=bitmap-diffusion-1"></script>
+  <script type="module" src="/editor-v2/app.mjs?v=auto-lamp-1"></script>
 </body>
 </html>

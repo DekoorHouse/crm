@@ -80,6 +80,7 @@ app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
 app.use('/api/imagenes', require('./imagenes/imageStudioRoutes'));
+app.use('/api/auto-lamp', require('./design/autoLamp/autoLampRoutes'));
 app.use('/api/pendientes', pendientesRouter);
 app.use('/api/payments', require('./payments/paymentRoutes'));
 app.use('/api/mercadopago', mercadopagoRouter);

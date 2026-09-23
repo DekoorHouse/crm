@@ -2271,6 +2271,38 @@ $('#cloud-dialog').addEventListener('cancel', event => { if (cloudBusy) event.pr
 $('#cloud-save').onclick = () => cloudOperation(() => saveCloud());
 $('#cloud-copy').onclick = () => cloudOperation(() => saveCloud(true));
 $('#cloud-refresh').onclick = () => cloudOperation(refreshProjects);
+// Automatic lamp: the server builds a character lamp for an order (image from the chat, engrave, frame,
+// name and silhouette) as a project here; when it is ready it opens for review.
+$('#auto-lamp-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const dh = $('#auto-lamp-dh').value.replace(/\D/g, '');
+    if (!dh) return;
+    cloudOperation(async () => {
+        const call = async (method) => {
+            const response = await fetch(`/api/auto-lamp/${dh}`, { method, headers: { Authorization: `Bearer ${await cloudApi.token()}` } });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.success === false) throw new Error(data.error || 'El servidor no pudo atender la solicitud.');
+            return data;
+        };
+        cloudMessage(`Generando la lámpara de DH${dh}…`);
+        await call('POST');
+        const started = Date.now();
+        let state;
+        do {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            state = (await call('GET')).autoLamp;
+            cloudMessage(`DH${dh} · ${state?.step || 'Trabajando'}… ${Math.round((Date.now() - started) / 1000)} s`);
+            if (Date.now() - started > 8 * 60 * 1000) throw new Error('Tardó demasiado; revisa más tarde en la lista de proyectos.');
+        } while (state?.status === 'working');
+        if (state?.status !== 'ready') throw new Error(state?.error || 'No se pudo generar la lámpara.');
+        cloudMessage('Abriendo el diseño…');
+        const loaded = await cloudApi.load(state.projectId);
+        if (!window.confirm(`La lámpara de DH${dh} está lista. ¿Abrirla y reemplazar el borrador actual? Puedes deshacerlo.`)) { await refreshProjects(); cloudMessage('Quedó en la lista de proyectos.'); return; }
+        cancelGesture(); bindCloud(loaded.binding, documentKey(loaded.document));
+        storageBlocked = false; selectOnly(null); commit(loaded.document); persist(); fit();
+        $('#cloud-dialog').close(); status(`Lámpara de DH${dh} generada por el sistema · revísala antes de mandarla`);
+    });
+});
 // Version history: a version is kept at most every ten minutes while editing (the newest thirty).
 $('#cloud-versions').onclick = () => cloudOperation(async () => {
     if (!cloudBinding) { cloudMessage('Este diseño todavía no está en Firebase.'); return; }
