@@ -677,7 +677,8 @@ canvas.addEventListener('pointerdown', event => {
     const o = selected();
     if (o && !o.locked && !o.hidden) {
         draft = clone(history.document);
-        gesture = { type: handle ? 'resize' : 'move', handle: handle?.dataset.handle, start, original: clone(o), originals: clone(selectedObjects().filter(item => !item.locked)), pointerId: event.pointerId, reselect };
+        const moving = handle ? selectedObjects().filter(item => !item.locked) : withSilhouettes(selectedObjects().filter(item => !item.locked));
+        gesture = { type: handle ? 'resize' : 'move', handle: handle?.dataset.handle, start, original: clone(o), originals: clone(moving), moving: new Set(moving.map(item => item.id)), pointerId: event.pointerId, reselect };
         gesture.anchor = handle ? handlePoint(o, handle.dataset.handle) : hit?.reference || start;
         gesture.snapTargets = snapTargets();
     }
@@ -788,7 +789,7 @@ canvas.addEventListener('pointermove', event => {
         Object.assign(o, gesture.moved ? movePathHandle(gesture.original, gesture.index, gesture.side, p) : clone(gesture.original));
     }
     if (gesture.type === 'move') {
-        const movement = snapTranslation(gesture.anchor, { x: dx, y: dy }, gesture.snapTargets, selectedIds, 7 / view.scale);
+        const movement = snapTranslation(gesture.anchor, { x: dx, y: dy }, gesture.snapTargets, gesture.moving, 7 / view.scale);
         gesture.snap = movement.hit;
         for (const original of gesture.originals) { const item = draft.objects.find(item => item.id === original.id); item.x = original.x + movement.x; item.y = original.y + movement.y; }
         gesture.moved ||= Math.hypot(dx, dy) * view.scale > 4;
@@ -949,7 +950,10 @@ canvas.addEventListener('pointerup', event => {
         const drop = previous.dropTarget;
         if (drop) {
             try {
-                const next = clone(draft); centreOn(next, selectedIds, previous.pointer); placeInPowerClip(next, selectedIds, drop.id);
+                const next = clone(draft);
+                // Only the selection goes into the PowerClip; silhouettes that moved along go back.
+                for (const original of previous.originals) if (!selectedIds.has(original.id)) Object.assign(next.objects.find(item => item.id === original.id), { x: original.x, y: original.y });
+                centreOn(next, selectedIds, previous.pointer); placeInPowerClip(next, selectedIds, drop.id);
                 const valid = validateDocument(next); selectOnly(drop.id); commit(valid); status('Contenido colocado en PowerClip'); return;
             } catch (error) { draft = null; render(); status(error.message); return; }
         }
@@ -1694,6 +1698,14 @@ function silhouetteSources(items) {
         for (const id of sources.length ? sources : [item.id]) chosen.add(id);
     }
     return objects.filter(o => chosen.has(o.id));
+}
+// What moves together: an object brings its silhouettes, and a silhouette brings its objects (and their
+// other silhouettes). Each can still be selected on its own to change its colours or width.
+function withSilhouettes(items) {
+    const objects = current().objects, ids = new Set(items.map(item => item.id));
+    for (const item of items) for (const id of item.silhouetteOf || []) ids.add(id);
+    for (const item of objects) if (item.silhouetteOf?.some(id => ids.has(id))) ids.add(item.id);
+    return objects.filter(item => ids.has(item.id) && !item.locked && !item.hidden);
 }
 // The silhouettes already made from exactly these objects: a new one replaces them.
 const silhouettesOf = (objects, ids) => objects.filter(item => item.silhouetteOf?.length === ids.length && item.silhouetteOf.every(id => ids.includes(id)));
