@@ -254,3 +254,10 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .auto-lamp { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; padding: 10px; border: 1px dashed var(--line); border-radius: 8px; }
 .auto-lamp input { width: 110px; margin-left: 6px; }
 .auto-lamp .subtle { flex-basis: 100%; font-size: 11px; }
+/* The automatic lamp shows the same sweep, spinner and hundredths stopwatch as "Convertir a raster". */
+#auto-lamp-working { position: relative; overflow: hidden; flex-basis: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 130px; border-radius: 6px; background: #14161b; }
+#auto-lamp-working[hidden] { display: none; }
+#auto-lamp-working strong { font-size: 14px; letter-spacing: .4px; }
+#auto-lamp-working strong::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: raster-dots 1.2s steps(4, end) infinite; }
+#auto-lamp-timer { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 22px; font-variant-numeric: tabular-nums; color: #d0c1f3; }
+@media (prefers-reduced-motion: reduce) { #auto-lamp-working strong::after { animation: none; } }

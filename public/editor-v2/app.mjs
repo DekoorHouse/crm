@@ -2284,16 +2284,23 @@ $('#auto-lamp-form').addEventListener('submit', event => {
             if (!response.ok || data.success === false) throw new Error(data.error || 'El servidor no pudo atender la solicitud.');
             return data;
         };
-        cloudMessage(`Generando la lámpara de DH${dh}…`);
-        await call('POST');
-        const started = Date.now();
+        cloudMessage(`Generando la lámpara de DH${dh}`);
+        // Same sweep, spinner and hundredths stopwatch as "Convertir a raster"; the step comes from the server.
+        const started = performance.now(), working = $('#auto-lamp-working'), timer = $('#auto-lamp-timer');
+        $('#auto-lamp-step').textContent = 'Empezando'; working.hidden = false;
+        const tick = () => { timer.textContent = `${((performance.now() - started) / 1000).toFixed(2)} s`; };
+        tick(); const clock = setInterval(tick, 30);
         let state;
-        do {
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            state = (await call('GET')).autoLamp;
-            cloudMessage(`DH${dh} · ${state?.step || 'Trabajando'}… ${Math.round((Date.now() - started) / 1000)} s`);
-            if (Date.now() - started > 8 * 60 * 1000) throw new Error('Tardó demasiado; revisa más tarde en la lista de proyectos.');
-        } while (state?.status === 'working');
+        try {
+            await call('POST');
+            do {
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                state = (await call('GET')).autoLamp;
+                $('#auto-lamp-step').textContent = state?.step || 'Trabajando';
+                if (performance.now() - started > 8 * 60 * 1000) throw new Error('Tardó demasiado; revisa más tarde en la lista de proyectos.');
+            } while (state?.status === 'working');
+        } finally { clearInterval(clock); working.hidden = true; }
+        cloudMessage(`DH${dh} · ${((performance.now() - started) / 1000).toFixed(2)} s`);
         if (state?.status !== 'ready') throw new Error(state?.error || 'No se pudo generar la lámpara.');
         cloudMessage('Abriendo el diseño…');
         const loaded = await cloudApi.load(state.projectId);

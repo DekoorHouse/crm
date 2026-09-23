@@ -7,6 +7,7 @@
 // Todo es puro salvo el renderizado (resvg); no toca Firestore ni la red.
 import { createRequire } from 'node:module';
 import { blankDocument, createObject, validateDocument, exportSvg, placeInPowerClip, fitPowerClip, clone } from '../../../public/editor-v2/model.mjs';
+import { pathContains } from '../../../public/editor-v2/path.mjs';
 import { presetObject, PRESETS } from '../../../public/editor-v2/presets.mjs';
 import { silhouetteField, traceSilhouettes } from '../../../public/editor-v2/silhouette.mjs';
 import { normalizePath } from '../../../public/editor-v2/path.mjs';
@@ -25,6 +26,7 @@ export const LAYOUT = {
     nameWidth: .52,        // ancho máximo del nombre, fracción del ancho del marco
     nameHeight: .11,       // alto máximo de las letras, fracción del alto del marco
     silhouette: 2,         // mm de silueta negra alrededor del nombre
+    edge: 1.5,             // mm libres entre la silueta y el borde del marco
     rasterScale: 10,       // px por mm al medir la silueta
 };
 
@@ -94,36 +96,54 @@ export function composeLamp({ image, name, font, title }) {
         name: 'Grabado', src: image.dataUrl, fill: 'none', stroke: 'none', strokeWidth: 0 };
     document.objects.push(frame, picture);
     placeInPowerClip(document, new Set([picture.id]), frame.id);
-    const inside = frame.powerClip.objects[0];
-    fitPowerClip(frame, 'cover', { x: inside.x, y: inside.y, width: inside.width, height: inside.height });
+    const content = frame.powerClip.objects[0];
+    fitPowerClip(frame, 'cover', { x: content.x, y: content.y, width: content.width, height: content.height });
 
-    // 2) Nombre centrado, tocando la base, del tamaño que quepa en ancho y alto.
+    // 2) Nombre centrado, tocando la base, del tamaño que quepa en ancho y alto…
     const unit = font.getPath(text, 0, 0, 1).getBoundingBox();
     const inkWidth = unit.x2 - unit.x1, inkHeight = unit.y2 - unit.y1;
-    const size = Math.min(frame.width * LAYOUT.nameWidth / inkWidth, frame.height * LAYOUT.nameHeight / inkHeight);
-    const ink = { x1: unit.x1 * size, x2: unit.x2 * size, y2: unit.y2 * size };
-    const x = frame.x + frame.width / 2 - (ink.x1 + ink.x2) / 2;
-    const baseline = baseTop(frame) - LAYOUT.silhouette - ink.y2;
-    const label = { ...createObject('text', x, baseline - size), name: 'Nombre', text, fontSize: size, fontFamily: FONT_FAMILY,
+    const place = size => {
+        const ink = { x1: unit.x1 * size, x2: unit.x2 * size, y2: unit.y2 * size };
+        const x = frame.x + frame.width / 2 - (ink.x1 + ink.x2) / 2;
+        const baseline = baseTop(frame) - LAYOUT.silhouette - ink.y2;
+        return { size, x, baseline, outline: outlineSilhouette(textSubpaths(font, text, x, baseline, size), LAYOUT.silhouette) };
+    };
+    // …y que su silueta quede entera dentro del marco (con un margen), porque va dentro del PowerClip:
+    // abajo el círculo se angosta, así que un nombre largo se hace más chico hasta caber.
+    const centre = { x: frame.x + frame.width / 2, y: frame.y + frame.width / 2 };
+    const inside = outline => outline.every(({ points }) => {
+        for (let i = 0; i < points.length; i += 2) {
+            const dx = points[i] - centre.x, dy = points[i + 1] - centre.y, length = Math.hypot(dx, dy) || 1;
+            if (!pathContains(frame, { x: points[i] + dx / length * LAYOUT.edge, y: points[i + 1] + dy / length * LAYOUT.edge })) return false;
+        }
+        return true;
+    });
+    let layout = place(Math.min(frame.width * LAYOUT.nameWidth / inkWidth, frame.height * LAYOUT.nameHeight / inkHeight));
+    for (let tries = 0; tries < 40 && !inside(layout.outline); tries++) layout = place(layout.size * .96);
+    const label = { ...createObject('text', layout.x, layout.baseline - layout.size), name: 'Nombre', text, fontSize: layout.size, fontFamily: FONT_FAMILY,
         fill: '#ffffff', stroke: 'none', strokeWidth: 0 };
 
-    // 3) Silueta negra detrás del nombre (enlazada a él, como la herramienta Silueta del editor).
-    const outline = outlineSilhouette(textSubpaths(font, text, x, baseline, size), LAYOUT.silhouette);
-    const silhouette = { ...createObject('path', 0, 0), name: 'Silueta', ...normalizePath(outline),
+    // 3) Silueta negra detrás del nombre (enlazada a él, como la herramienta Silueta del editor). Los dos
+    // van dentro del PowerClip, encima del grabado, como los deja el equipo.
+    const silhouette = { ...createObject('path', 0, 0), name: 'Silueta', ...normalizePath(layout.outline),
         fill: '#000000', stroke: 'none', strokeWidth: 0, silhouetteOf: [label.id] };
     document.objects.push(silhouette, label);
+    placeInPowerClip(document, new Set([silhouette.id, label.id]), frame.id);
 
     return { document: validateDocument(document), textId: label.id, frameId: frame.id };
 }
 
-// El mismo documento con el texto convertido en curvas (lo que exporta el editor para la láser).
+// El mismo documento con el texto convertido en curvas (lo que exporta el editor para la láser),
+// también dentro de los PowerClips.
 export function outlinedDocument(document, font) {
-    const copy = clone(document);
-    copy.objects = copy.objects.map(item => {
+    const outline = objects => objects.map(item => {
+        if (item.powerClip) return { ...item, powerClip: { ...item.powerClip, objects: outline(item.powerClip.objects) } };
         if (item.type !== 'text' || item.fontFamily !== FONT_FAMILY) return item;
         const subpaths = textSubpaths(font, item.text, item.x, item.y + item.fontSize, item.fontSize);
         return { ...createObject('path', 0, 0), ...normalizePath(subpaths), id: item.id, name: item.name, fill: item.fill, stroke: item.stroke, strokeWidth: item.strokeWidth };
     });
+    const copy = clone(document);
+    copy.objects = outline(copy.objects);
     return validateDocument(copy);
 }
 
