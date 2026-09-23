@@ -1638,7 +1638,8 @@ function openBitmap() {
     if (!object || object.type !== 'image' || object.locked) return;
     bitmap = { id: object.id, source: null, result: null, run: 0 };
     const method = $('#bitmap-method');
-    if (!method.options.length) method.replaceChildren(...Object.entries(BITMAP_METHODS).map(([value, label]) => Object.assign(document.createElement('option'), { value, textContent: label })));
+    // Diffusion is the usual choice for photos, so the menu starts there.
+    if (!method.options.length) { method.replaceChildren(...Object.entries(BITMAP_METHODS).map(([value, label]) => Object.assign(document.createElement('option'), { value, textContent: label }))); method.value = 'diffusion'; }
     $('#bitmap-before').src = object.src;
     $('#bitmap-keep').checked = false;
     $('#bitmap-after').hidden = true; $('#bitmap-placeholder').hidden = false;
