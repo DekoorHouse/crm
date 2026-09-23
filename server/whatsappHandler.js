@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 // SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendConversionEvent
 const { db, admin, bucket } = require('./config');
-const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent, transcribeIncomingAudioMessage, markOrderCorregirForContact, markOrderFabricarForContact, markOrderEntregadoForContact } = require('./services');
+const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent, transcribeIncomingAudioMessage, describeImageMessage, markOrderCorregirForContact, markOrderFabricarForContact, markOrderEntregadoForContact } = require('./services');
 const { aiReplyDelayMs } = require('./ai/replyDelay');
 const { armLeadFollowup } = require('./leads/leadReactivationScheduler');
 const { armOrderFollowup } = require('./leads/orderFollowupScheduler');
@@ -660,6 +660,11 @@ router.post('/', async (req, res) => {
             if (savedMsgRef && messageData.fileUrl && messageData.fileType && messageData.fileType.startsWith('audio/')) {
                 transcribeIncomingAudioMessage(savedMsgRef, messageData.fileUrl, messageData.fileType)
                     .catch(err => console.warn('[TRANSCRIBE] fallo async (wa):', err.message));
+            }
+            // Descripción de imágenes: memoria para Leonel cuando la foto ya no va adjunta (ver describeImage).
+            if (savedMsgRef && messageData.fileUrl && messageData.fileType && messageData.fileType.startsWith('image/') && messageData.type !== 'sticker') {
+                describeImageMessage(savedMsgRef, messageData.fileUrl, messageData.fileType)
+                    .catch(err => console.warn('[IMG-DESC] fallo async (wa):', err.message));
             }
 
             // Tracking de plantilla (Fase 2): marcar como "respondida" la tanda mas reciente sin respuesta

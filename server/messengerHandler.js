@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const { db, admin, bucket } = require('./config');
-const { triggerAutoReplyAI, sendMessengerMessage, cancelPendingAiTimer, transcribeIncomingAudioMessage, sendConversionEvent } = require('./services');
+const { triggerAutoReplyAI, sendMessengerMessage, cancelPendingAiTimer, transcribeIncomingAudioMessage, describeImageMessage, sendConversionEvent } = require('./services');
 const { aiReplyDelayMs } = require('./ai/replyDelay');
 
 const router = express.Router();
@@ -569,6 +569,11 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
         if (savedMsgRef && messageData.fileUrl && messageData.fileType && messageData.fileType.startsWith('audio/')) {
             transcribeIncomingAudioMessage(savedMsgRef, messageData.fileUrl, messageData.fileType)
                 .catch(err => console.warn('[TRANSCRIBE] fallo async (msgr):', err.message));
+        }
+        // Descripción de imágenes: memoria para Leonel cuando la foto ya no va adjunta (ver describeImage).
+        if (savedMsgRef && messageData.fileUrl && messageData.fileType && messageData.fileType.startsWith('image/') && messageData.type !== 'sticker') {
+            describeImageMessage(savedMsgRef, messageData.fileUrl, messageData.fileType)
+                .catch(err => console.warn('[IMG-DESC] fallo async (msgr):', err.message));
         }
     } catch (saveErr) {
         if (saveErr.code === 6 || /already exist/i.test(saveErr.message || '')) { // ALREADY_EXISTS: webhook duplicado

@@ -2582,6 +2582,103 @@ async function transcribeIncomingAudioMessage(messageRef, fileUrl, mimeType) {
     }
 }
 
+// --- Descripción de imágenes (de ambos lados) → memoria barata para Leonel ---
+// Leonel solo ve la imagen REAL de las 2 fotos recientes del cliente (<24 h); fuera de eso el
+// historial decía "[imagen]" y no sabía qué foto era ("¿cómo va la de mi foto?" a los 3 días), ni
+// qué le habíamos mandado nosotros (la lámpara terminada). Igual que la transcripción de audios:
+// cada imagen se describe UNA vez y el texto se guarda en el mensaje (campo `aiDescription`).
+// La descripción es solo del CONTENIDO; quién la mandó lo pone el historial al mostrarla, así la
+// misma foto de catálogo que mandamos a cien clientes se describe una sola vez (caché por URL en
+// ai_image_descriptions). Kill-switch: crm_settings/general.imageDescriptionActive (default encendido).
+const IMAGE_DESCRIPTION_PROMPT = 'Describe esta imagen para el historial de un chat de ventas de una tienda de lámparas y regalos personalizados (español de México). '
+    + 'Máximo 40 palabras, UNA sola línea, sin prefijos ni comillas alrededor. '
+    + 'Prioridad: (1) qué es (foto de producto, foto para grabar, referencia de otra tienda, captura de pantalla, etc.); '
+    + '(2) TODO el texto visible copiado EXACTO entre comillas (nombres, fechas, frases, direcciones); '
+    + '(3) solo los detalles que cambian un pedido: modelo/personaje, colores, cuántas personas. '
+    + 'NO describas fondo, iluminación ni ambiente. '
+    + 'Si es un comprobante, ticket o captura de un pago o transferencia, responde EXACTAMENTE: comprobante de pago (sin montos, fechas ni datos).';
+const IMAGE_DESCRIPTION_MAX_CHARS = 400;
+const IMAGE_DESCRIPTION_MAX_PER_TURN = 6;      // imágenes sin describir que rellena un turno de Leonel
+const IMAGE_DESCRIPTION_TURN_WAIT_MS = 6000;   // lo que el turno espera por ellas antes de seguir
+const imageDescriptionMemCache = new Map(); // url -> descripción (tope simple por tamaño)
+const imageDescriptionInFlight = new Map(); // url -> promesa: webhook y turno no la describen dos veces
+
+function imageDescriptionCacheRef(fileUrl) {
+    const key = crypto.createHash('sha1').update(String(fileUrl)).digest('hex');
+    return db.collection('ai_image_descriptions').doc(key);
+}
+
+async function describeImage(fileUrl, mimeType) {
+    if (!fileUrl || !/^https?:\/\//.test(fileUrl)) return null;
+    if (imageDescriptionMemCache.has(fileUrl)) return imageDescriptionMemCache.get(fileUrl);
+    if (imageDescriptionInFlight.has(fileUrl)) return imageDescriptionInFlight.get(fileUrl);
+    const job = describeImageUncached(fileUrl, mimeType).finally(() => imageDescriptionInFlight.delete(fileUrl));
+    imageDescriptionInFlight.set(fileUrl, job);
+    return job;
+}
+
+async function describeImageUncached(fileUrl, mimeType) {
+    const cacheRef = imageDescriptionCacheRef(fileUrl);
+    try {
+        const cached = await cacheRef.get();
+        if (cached.exists && cached.data().description) {
+            const d = cached.data().description;
+            imageDescriptionMemCache.set(fileUrl, d);
+            return d;
+        }
+    } catch (_) { /* sin caché: se describe */ }
+    let buffer;
+    try {
+        const response = await fetch(fileUrl, { signal: AbortSignal.timeout(15000) });
+        if (!response.ok) { console.warn(`[IMG-DESC] Imagen no accesible (HTTP ${response.status}).`); return null; }
+        buffer = Buffer.from(await response.arrayBuffer());
+    } catch (e) {
+        console.warn('[IMG-DESC] Error descargando la imagen:', e.message);
+        return null;
+    }
+    if (!buffer || !buffer.length) return null;
+    const prepared = await buildSafeGeminiMediaPart(buffer, mimeType || 'image/jpeg', 'image');
+    if (prepared.skipped || !prepared.part) return null;
+    const genResult = await generateGeminiResponse(IMAGE_DESCRIPTION_PROMPT, [prepared.part]);
+    logAiUsage('descripcion_imagen', genResult).catch(() => {});
+    const description = String(genResult.text || '').replace(/\s+/g, ' ').replace(/^["“]|["”]$/g, '').trim().slice(0, IMAGE_DESCRIPTION_MAX_CHARS);
+    if (!description) return null;
+    if (imageDescriptionMemCache.size >= 1000) imageDescriptionMemCache.delete(imageDescriptionMemCache.keys().next().value);
+    imageDescriptionMemCache.set(fileUrl, description);
+    cacheRef.set({ url: fileUrl, description, createdAt: admin.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+    return description;
+}
+
+async function isImageDescriptionActive() {
+    try {
+        const cfg = await db.collection('crm_settings').doc('general').get();
+        return !(cfg.exists && cfg.data().imageDescriptionActive === false);
+    } catch (_) {
+        return true;
+    }
+}
+
+// Describe una imagen YA guardada y escribe el texto en su doc (campo `aiDescription`). Devuelve la
+// descripción (o null). Fire-and-forget desde los handlers de entrada; el armado del turno de Leonel
+// la usa además para rellenar las que falten (las NUESTRAS se guardan por muchos caminos distintos).
+async function describeImageMessage(messageRef, fileUrl, mimeType) {
+    try {
+        if (!messageRef || !fileUrl) return null;
+        if (!(await isImageDescriptionActive())) return null;
+        const description = await describeImage(fileUrl, mimeType);
+        if (description) {
+            await messageRef.update({
+                aiDescription: description,
+                aiDescribedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+        return description;
+    } catch (e) {
+        console.warn('[IMG-DESC] No se pudo describir la imagen:', e.message);
+        return null;
+    }
+}
+
 /**
  * Genera una respuesta de Gemini usando Context Caching.
  * El contenido estático (instrucciones, conocimiento, respuestas rápidas) viene del caché.
@@ -2831,6 +2928,7 @@ async function getModelosDisponibles() {
 // que volviera a comentar fotos/comprobantes de días atrás.
 const AI_HISTORY_MESSAGE_LIMIT = 50;
 const AI_MEDIA_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 h
+const OUR_IMAGE_POSTVENTA_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // foto del trabajo terminado (/cuatro)
 
 /**
  * Convierte un archivo multimedia (imagen/audio/video) en una "part" inline segura
@@ -3354,6 +3452,33 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             return null;
         };
 
+        // Rellenar descripciones de imagen que falten (describeImage). Las del cliente suelen llegar ya
+        // descritas desde el webhook; las NUESTRAS se guardan por muchos caminos (CRM, atajos, bot) y
+        // se describen aquí la primera vez que Leonel las ve. Tope por turno y espera acotada: lo que
+        // no alcance sigue en segundo plano y queda guardado para el siguiente turno.
+        const imageDescriptions = new Map(); // fileUrl -> descripción obtenida en este turno
+        try {
+            const pendingImages = messagesSnapshot.docs.filter(doc => {
+                const d = doc.data();
+                return effectiveType(d) === 'image' && d.fileUrl && !d.aiDescription
+                    && d.status !== 'scheduled' && d.status !== 'failed';
+            }).slice(0, IMAGE_DESCRIPTION_MAX_PER_TURN); // desc: primero las más recientes
+            if (pendingImages.length && await isImageDescriptionActive()) {
+                const jobs = pendingImages.map(doc => {
+                    const d = doc.data();
+                    return describeImageMessage(doc.ref, d.fileUrl, d.fileType)
+                        .then(desc => { if (desc) imageDescriptions.set(d.fileUrl, desc); });
+                });
+                await Promise.race([
+                    Promise.allSettled(jobs),
+                    new Promise(r => setTimeout(r, IMAGE_DESCRIPTION_TURN_WAIT_MS))
+                ]);
+                if (imageDescriptions.size) console.log(`[IMG-DESC] ${imageDescriptions.size}/${pendingImages.length} imagen(es) descrita(s) para el historial de ${contactId}.`);
+            }
+        } catch (e) {
+            console.warn('[IMG-DESC] Error rellenando descripciones:', e.message);
+        }
+
         // Etiqueta legible de un mensaje. Las imágenes, audios y PDF se marcan como tales
         // (con su caption si lo tienen) para que la IA sepa que hubo un archivo, no texto vacío.
         const GENERIC_MEDIA_TEXTS = /^(📷 Imagen|🎥 Video|🎵 Audio|📄 Documento|🎤 Mensaje de voz)$/;
@@ -3361,7 +3486,19 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             let t = (d.text || '').trim();
             if (GENERIC_MEDIA_TEXTS.test(t)) t = ''; // texto de relleno, no caption real
             switch (effectiveType(d)) {
-                case 'image': return t ? `[imagen: ${t}]` : '[imagen]';
+                case 'image': {
+                    // Con descripción (describeImage) la IA sabe QUÉ foto fue y quién la mandó, aunque
+                    // ya no vaya adjunta. Sin ella queda el marcador genérico de siempre.
+                    const desc = (imageDescriptions.get(d.fileUrl || '') || d.aiDescription || '').trim();
+                    if (!desc) return t ? `[imagen: ${t}]` : '[imagen]';
+                    const who = d.from === contactId ? 'imagen del cliente' : 'imagen enviada por nosotros';
+                    // Un comprobante descrito NO es un pago: la regla "sin comprobante no hay pago"
+                    // se valida con la imagen real y el flujo de pagos, nunca con este texto.
+                    const body = /^comprobante de pago\.?$/i.test(desc)
+                        ? 'comprobante de pago — solo referencia del historial, NO valida ningún pago'
+                        : desc;
+                    return `[${who}: ${body}${t ? ` | texto del mensaje: "${t}"` : ''}]`;
+                }
                 case 'audio': {
                     // Si la nota de voz ya fue transcrita (transcribeIncomingAudioMessage la guarda
                     // en el propio mensaje), mostrar el TEXTO de lo que dijo el cliente. Sin esto la
@@ -3421,8 +3558,41 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // caemos al comportamiento normal y se adjunta el audio para no perder lo que dijo.
             if (d.type === 'audio' && (d.transcription || '').trim()) continue;
             const mimeType = d.fileType || (d.type === 'image' ? 'image/jpeg' : (d.type === 'audio' ? 'audio/mpeg' : (d.type === 'video' ? 'video/mp4' : 'application/pdf')));
-            downloadedMedia.push({ url: d.fileUrl, mimeType: mimeType, type: d.type });
+            downloadedMedia.push({ url: d.fileUrl, mimeType: mimeType, type: d.type, from: 'cliente' });
             mediaCount++;
+        }
+
+        // Una foto NUESTRA como imagen real, solo cuando el cliente está reaccionando a ella: la
+        // descripción del historial no alcanza para "le falta un acento" o "¿se puede más grande?".
+        //  - Venta y post-venta: si en nuestros mensajes justo antes del mensaje actual del cliente
+        //    (desde su mensaje anterior) hay una imagen de las últimas 24 h, va la más reciente.
+        //  - Post-venta además: si no, la última foto nuestra de 3 días (la del trabajo terminado
+        //    que va con /cuatro; el cliente suele pagar o comentarla días después).
+        {
+            const now = Date.now();
+            const tsOf = (d) => (d.timestamp && typeof d.timestamp.toMillis === 'function') ? d.timestamp.toMillis() : 0;
+            const isOurImage = (d) => d.from !== contactId && effectiveType(d) === 'image' && d.fileUrl
+                && d.status !== 'scheduled' && d.status !== 'failed';
+            let ourImage = null;
+            let phase = 'lote-cliente'; // desc: primero el lote actual del cliente, luego nuestro bloque
+            for (const doc of messagesSnapshot.docs) {
+                const d = doc.data();
+                if (d.status === 'scheduled') continue;
+                const isClient = d.from === contactId;
+                if (phase === 'lote-cliente') {
+                    if (isClient) continue;
+                    phase = 'bloque-nuestro';
+                }
+                if (isClient) break; // se acabó nuestro bloque: la foto no es a lo que reacciona
+                if (isOurImage(d) && (now - tsOf(d)) <= AI_MEDIA_MAX_AGE_MS) { ourImage = d; break; }
+            }
+            if (!ourImage && isPostVenta) {
+                ourImage = messagesSnapshot.docs.map(doc => doc.data())
+                    .find(d => isOurImage(d) && (now - tsOf(d)) <= OUR_IMAGE_POSTVENTA_MAX_AGE_MS) || null;
+            }
+            if (ourImage && !downloadedMedia.some(m => m.url === ourImage.fileUrl)) {
+                downloadedMedia.push({ url: ourImage.fileUrl, mimeType: ourImage.fileType || 'image/jpeg', type: 'image', from: 'nosotros' });
+            }
         }
 
         // Historial en dos formatos:
@@ -3507,7 +3677,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (q && (qType === 'image' || qType === 'document') && q.fileUrl) {
                 if (!downloadedMedia.some(m => m.url === q.fileUrl)) {
                     const qMime = q.fileType || (qType === 'image' ? 'image/jpeg' : 'application/pdf');
-                    downloadedMedia.push({ url: q.fileUrl, mimeType: qMime, type: qType });
+                    downloadedMedia.push({ url: q.fileUrl, mimeType: qMime, type: qType, from: q.from === contactId ? 'cliente' : 'nosotros' });
                     console.log(`[AI] Incluyendo ${qType} citado por el cliente para ${contactId}.`);
                 }
                 quotedMediaNote = `\n\n**Importante:** El cliente está respondiendo/citando ${qType === 'image' ? 'una imagen' : 'un archivo'} anterior${q.text ? ` ("${q.text}")` : ''} que está incluido entre los archivos adjuntos. Úsalo para entender su mensaje (ej.: "este no?", "ese sí", "el segundo").`;
@@ -3583,13 +3753,17 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             const mediaParts = [...departmentImageParts];
             const skippedMediaTypes = [];
             let totalMediaBytes = departmentImagesBytes;
+            const esTipoMedia = (t) => t === 'image' ? 'imagen' : t === 'audio' ? 'audio' : t === 'video' ? 'video' : t === 'document' ? 'documento/PDF' : 'archivo';
+            const conversationMediaLabels = []; // quién mandó cada archivo adjunto, en orden
+            // Si falla NUESTRA foto no se le pide nada al cliente: solo se omite.
+            const skipMedia = (media) => { if (media.from !== 'nosotros') skippedMediaTypes.push(media.type); };
             for (const media of downloadedMedia.reverse()) { // Voltear para mantener orden cronológico
                 if (!media.url || !media.url.startsWith('http')) continue;
                 try {
                     const response = await fetch(media.url, { signal: AbortSignal.timeout(15000) });
                     if (!response.ok) {
                         console.warn(`[AI] Multimedia de conversación no disponible (HTTP ${response.status}). Se omite.`);
-                        skippedMediaTypes.push(media.type);
+                        skipMedia(media);
                         continue;
                     }
                     const buffer = Buffer.from(await response.arrayBuffer());
@@ -3597,23 +3771,23 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     const prepared = await buildSafeGeminiMediaPart(buffer, media.mimeType, media.type);
                     if (prepared.skipped) {
                         console.warn(`[AI] Multimedia (${media.type}) omitida: ${prepared.skipped}.`);
-                        skippedMediaTypes.push(media.type);
+                        skipMedia(media);
                         continue;
                     }
                     if (totalMediaBytes + prepared.bytes > GEMINI_MAX_TOTAL_MEDIA_BYTES) {
                         console.warn(`[AI] Multimedia (${media.type}) omitida: excede el total permitido por request.`);
-                        skippedMediaTypes.push(media.type);
+                        skipMedia(media);
                         continue;
                     }
                     mediaParts.push(prepared.part);
+                    conversationMediaLabels.push(media.from === 'nosotros' ? 'una foto que NOSOTROS le enviamos al cliente (no es del cliente ni es comprobante)' : `${esTipoMedia(media.type)} del cliente`);
                     totalMediaBytes += prepared.bytes;
                     console.log(`[AI] Multimedia (${media.type}) lista para Gemini: ${Math.round(prepared.bytes / 1024)} KB${media.type === 'image' ? ' (redimensionada)' : ''}.`);
                 } catch (e) {
                     console.warn('[AI] Error preparando multimedia para contexto:', e.message);
-                    skippedMediaTypes.push(media.type);
+                    skipMedia(media);
                 }
             }
-            const esTipoMedia = (t) => t === 'image' ? 'imagen' : t === 'audio' ? 'audio' : t === 'video' ? 'video' : t === 'document' ? 'documento/PDF' : 'archivo';
             const skippedMediaNote = skippedMediaTypes.length > 0
                 ? `\n\n**Nota:** El cliente envió ${skippedMediaTypes.length} archivo(s) (${skippedMediaTypes.map(esTipoMedia).join(', ')}) que no se pudieron procesar (probablemente muy grandes). Pídele amablemente que te describa por texto su contenido o que lo reenvíe más corto.`
                 : '';
@@ -3622,7 +3796,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             const deptImagesNote = departmentImageParts.length > 0
                 ? `\n\n**Imágenes de referencia del producto/departamento:**\nLas primeras ${departmentImageParts.length} ${departmentImageParts.length === 1 ? 'imagen adjunta es una referencia visual' : 'imágenes adjuntas son referencias visuales'} del producto o catálogo del departamento. Úsalas para describir, comparar o responder preguntas del cliente. Los archivos posteriores (si los hay) son los que el cliente envió en la conversación.`
                 : '';
-            return { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote };
+            // Con una foto NUESTRA entre los adjuntos hay que decir cuál es cuál: si no, el modelo la
+            // toma como del cliente (o peor, como su comprobante de pago).
+            const attachmentsOrderNote = conversationMediaLabels.some(l => l.startsWith('una foto que NOSOTROS'))
+                ? `\n\n**Archivos de la conversación adjuntos${departmentImageParts.length ? ' (después de las imágenes de referencia)' : ''}, en este orden:** ${conversationMediaLabels.map((l, i) => `${i + 1}) ${l}`).join('; ')}. Si el cliente comenta nuestra foto ("le falta…", "¿se puede…?"), úsala para entender a qué se refiere.`
+                : '';
+            return { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote, attachmentsOrderNote };
         })();
 
         // (B) Cobertura/cotización T1 (server/envios/coberturaCheck.js). Se busca el C.P. en TODO el
@@ -3811,7 +3990,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         const [mediaBundle, coberturaResult, orderNotes] = await Promise.all([mediaWorkPromise, coberturaPromise, orderNotesPromise]);
         const coberturaNote = (coberturaResult && coberturaResult.note) || '';
         const coberturaCheck = (coberturaResult && coberturaResult.check) || null; // veredicto de este turno o el guardado (candados de /ttt y /registrar)
-        const { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote } = mediaBundle;
+        const { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote, attachmentsOrderNote } = mediaBundle;
         const { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote } = orderNotes;
 
         // Fase de pago/envío: además de post-venta y del pedido recién registrado, cuenta tener un
@@ -3921,7 +4100,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
         } catch (e) { console.warn('[AI] aviso pago-sin-comprobante falló (se continúa):', e.message); }
 
-        const finalUserText = `${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
@@ -5115,6 +5294,7 @@ module.exports = {
     generateGeminiResponseWithCache,
     transcribeAudio,
     transcribeIncomingAudioMessage,
+    describeImageMessage,
     getOrCreateCache,
     triggerAutoReplyAI,
     skipAiTimer,

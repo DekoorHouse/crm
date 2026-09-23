@@ -4950,6 +4950,7 @@ async function loadAIUsageStats() {
 const AI_SOURCE_LABELS = {
     bot: 'Leonel (respuestas a clientes)',
     transcripcion: 'Transcripción de audios',
+    descripcion_imagen: 'Descripción de imágenes',
     clasificador_pedido: 'Clasificador de pedidos',
     clasificador_recordatorio: 'Clasificador de recordatorios',
     registro_pedido: 'Registro de pedidos',
