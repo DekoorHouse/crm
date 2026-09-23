@@ -52,6 +52,8 @@ async function initialize() {
     };
     return {
         get user() { return auth.currentUser; },
+        // The CRM API accepts the Firebase ID token of an allowed account.
+        async token() { return auth.currentUser ? auth.currentUser.getIdToken() : null; },
         watch(callback) { return authSdk.onAuthStateChanged(auth, callback); },
         async login(email, password) { await authSdk.signInWithEmailAndPassword(auth, email, password); },
         ...createProjectRepository(dbSdk, db, () => auth.currentUser, media),

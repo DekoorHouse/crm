@@ -6,6 +6,7 @@ import { HAIRLINE_WIDTH } from './model.mjs';
 import { createColorPicker } from './colorPicker.mjs';
 import { pathData } from './path.mjs';
 import { presetObject } from './presets.mjs';
+import { RASTER_PROMPT, rasterModel, linkRasterModel, rasterize } from './rasterize.mjs';
 import { pathNodes, movePathNodes, movePathHandle, closestOnPath, insertPathNode, removePathNodes } from './pathEdit.mjs';
 import { importSvg, parseColor, dropImages } from './svgImport.mjs';
 import { loadDraft, saveDraft } from './draftStore.mjs';
@@ -1253,6 +1254,8 @@ canvas.addEventListener('contextmenu', event => {
     $('#place-powerclip').disabled = selectedObjects().some(item => item.locked) || !current().objects.some(item => POWERCLIP_TYPES.includes(item.type) && !item.locked && !item.hidden && !selectedIds.has(item.id));
     $('#extract-powerclip').hidden = !object.powerClip;
     $('#extract-powerclip').disabled = !single || object.locked || !object.powerClip?.objects.length;
+    $('#raster-image').hidden = object.type !== 'image';
+    $('#raster-image').disabled = !single || object.locked;
     $('#remove-powerclip').hidden = !object.powerClip;
     $('#remove-powerclip').disabled = !single || object.locked || Boolean(object.powerClip?.objects.length);
     menu.hidden = false;
@@ -1271,6 +1274,117 @@ $('#place-powerclip').onclick = () => {
     hideObjectMenu(); setTool('select'); powerClipSources = new Set(selectedIds);
     canvas.classList.add('placing-powerclip');
     status('Haz clic en un rectángulo o elipse para colocar el contenido dentro. Esc para cancelar.'); canvas.focus();
+};
+// Convertir a raster: an AI version of the image for raster engraving, shown next to the original
+// before it is applied. With "Mantener original" the result goes beside it; without, it replaces it.
+let raster = null;
+const rasterToken = async () => { cloudApi ||= await connect(); return cloudApi.token(); };
+const rasterMessage = text => { $('#raster-message').textContent = text; };
+function rasterButtons({ busy = false, login = false, link = false } = {}) {
+    $('#raster-generate').disabled = busy || !raster?.ready;
+    $('#raster-generate').textContent = raster?.result ? 'Generar de nuevo' : 'Generar';
+    $('#raster-apply').hidden = !raster?.result; $('#raster-apply').disabled = busy;
+    $('#raster-login').hidden = !login; $('#raster-link').hidden = !link;
+    $('#raster-ratio').disabled = busy; $('#raster-prompt').disabled = busy;
+}
+async function rasterSetup() {
+    const session = raster;
+    rasterMessage('Consultando el modelo…'); rasterButtons({ busy: true });
+    try {
+        const { linked, ratios } = await rasterModel(await rasterToken());
+        if (raster !== session) return;
+        const select = $('#raster-ratio');
+        // "Automático" comes first and is the default: the model's own "auto", or no ratio at all.
+        const options = [{ value: ratios.includes('auto') ? 'auto' : '', label: 'Automático' }, ...ratios.filter(value => value !== 'auto').map(value => ({ value, label: value }))];
+        select.replaceChildren(...options.map(({ value, label }) => Object.assign(document.createElement('option'), { value, textContent: label })));
+        select.selectedIndex = 0;
+        session.ready = linked;
+        rasterMessage(linked ? '' : 'El modelo no está vinculado en Imágenes. Vincúlalo para poder usarlo.');
+        rasterButtons({ link: !linked });
+    } catch (error) {
+        if (raster !== session) return;
+        rasterMessage(error.message); rasterButtons({ login: Boolean(error.login) });
+    }
+}
+async function openRaster() {
+    hideObjectMenu();
+    const object = selected();
+    if (!object || object.type !== 'image' || object.locked) return;
+    raster = { id: object.id, result: null, ready: false };
+    $('#raster-before').src = object.src;
+    $('#raster-after').hidden = true; $('#raster-after').removeAttribute('src');
+    $('#raster-placeholder').hidden = false; $('#raster-placeholder').textContent = 'Aquí aparecerá el resultado';
+    $('#raster-prompt').value = RASTER_PROMPT;
+    $('#raster-dialog').showModal();
+    await rasterSetup();
+}
+// The model gets the image as a reference of at most 2048 px (PNG, or JPEG if that is too heavy).
+async function rasterReference(src) {
+    const bitmap = await createImageBitmap(await (await fetch(src)).blob());
+    const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height)), canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close();
+    const png = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    return png.size <= 5.5 * 1024 * 1024 ? png : new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .92));
+}
+async function generateRaster() {
+    const session = raster, object = current().objects.find(item => item.id === session?.id);
+    if (!object) { $('#raster-dialog').close(); return; }
+    const prompt = $('#raster-prompt').value.trim();
+    if (!prompt) { rasterMessage('Escribe las instrucciones para la IA.'); return; }
+    rasterButtons({ busy: true });
+    $('#raster-placeholder').hidden = false; $('#raster-after').hidden = true;
+    $('#raster-placeholder').textContent = 'Generando…';
+    try {
+        rasterMessage('Preparando la imagen…');
+        const image = await rasterReference(object.src);
+        rasterMessage('Enviando a la IA…');
+        const result = await rasterize({ image, prompt, aspectRatio: $('#raster-ratio').value, token: rasterToken,
+            onProgress: seconds => { if (raster === session) rasterMessage(`La IA está trabajando… ${seconds} s (suele tardar entre 30 s y 2 min)`); } });
+        const blob = await (await fetch(result.url)).blob(), dataUrl = await blobDataUrl(blob);
+        if (!validImageSource(dataUrl)) throw new Error('La IA devolvió una imagen que el editor no puede usar.');
+        if (raster !== session) return;
+        session.result = { ...result, dataUrl };
+        $('#raster-after').src = dataUrl; $('#raster-after').hidden = false; $('#raster-placeholder').hidden = true;
+        rasterMessage(`Listo${result.cost != null ? ` · costo $${result.cost.toFixed(3)} USD` : ''}. También quedó en la galería de Imágenes.`);
+        rasterButtons();
+    } catch (error) {
+        if (raster !== session) return;
+        $('#raster-placeholder').textContent = session.result ? '' : 'Aquí aparecerá el resultado';
+        if (session.result) { $('#raster-after').hidden = false; $('#raster-placeholder').hidden = true; }
+        rasterMessage(error.message); rasterButtons({ login: Boolean(error.login) });
+    }
+}
+function applyRaster() {
+    const session = raster, result = session?.result, object = current().objects.find(item => item.id === session?.id);
+    if (!result || !object) return;
+    const keep = $('#raster-keep').checked, ratio = result.width && result.height ? result.width / result.height : object.width / object.height;
+    // The result keeps the original's height; its width follows the new aspect ratio.
+    const height = object.height, width = height * ratio;
+    if (keep) {
+        const copy = { ...createObject('image', object.x + object.width + 5, object.y, width, height), name: (object.name + ' raster').slice(0, 120), src: result.dataUrl, fill: 'none', stroke: 'none', strokeWidth: 0 };
+        edit(d => d.objects.splice(d.objects.findIndex(item => item.id === object.id) + 1, 0, copy));
+        selectOnly(copy.id);
+    } else {
+        edit(d => {
+            const item = d.objects.find(entry => entry.id === object.id);
+            item.src = result.dataUrl; delete item.adjust;
+            item.x = object.x + object.width / 2 - width / 2; item.width = width;
+        });
+    }
+    raster = null; $('#raster-dialog').close(); render();
+    status(keep ? 'Versión raster agregada junto a la original' : 'Imagen reemplazada por la versión raster');
+}
+$('#raster-image').onclick = openRaster;
+$('#raster-generate').onclick = generateRaster;
+$('#raster-apply').onclick = applyRaster;
+$('#raster-cancel').onclick = () => { raster = null; $('#raster-dialog').close(); };
+$('#raster-dialog').addEventListener('close', () => { raster = null; });
+$('#raster-login').onclick = () => { $('#raster-dialog').close(); showCloud(false); status('Inicia sesión y vuelve a elegir «Convertir a raster».'); };
+$('#raster-link').onclick = async () => {
+    rasterButtons({ busy: true });
+    try { await linkRasterModel(await rasterToken()); await rasterSetup(); }
+    catch (error) { rasterMessage(error.message); rasterButtons({ login: Boolean(error.login), link: true }); }
 };
 $('#extract-powerclip').onclick = () => { hideObjectMenu(); edit(d => extractPowerClip(d, selectedId)); status('Contenido extraído'); };
 $('#powerclip-extract').onclick = () => { edit(d => extractPowerClip(d, selectedId)); status('Contenido extraído'); };
