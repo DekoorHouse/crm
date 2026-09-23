@@ -1,11 +1,12 @@
-import { History, blankDocument, createObject, clone, validateDocument, objectMarkup, documentKey, forgetImages, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
+import { History, blankDocument, createObject, clone, validateDocument, validImageSource, objectMarkup, setPaint, POWERCLIP_TYPES, documentKey, forgetImages, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
 import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget, unionBounds, resizeSelection, resizeRotated, rotatedBounds } from './geometry.mjs';
 import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns } from './transform.mjs';
 import { HAIRLINE_WIDTH } from './model.mjs';
 import { createColorPicker } from './colorPicker.mjs';
 import { pathData } from './path.mjs';
-import { importSvg, parseColor } from './svgImport.mjs';
+import { pathNodes, movePathNodes, movePathHandle, closestOnPath, insertPathNode, removePathNodes } from './pathEdit.mjs';
+import { importSvg, parseColor, dropImages } from './svgImport.mjs';
 import { loadDraft, saveDraft } from './draftStore.mjs';
 import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
@@ -59,6 +60,11 @@ const pagePresets = {
 const current = () => draft || history.document;
 const selected = () => current().objects.find(o => o.id === selectedId);
 const editedSpline = () => nodeEditing && current().objects.find(o => o.id === nodeEditing.id);
+// Node editing works the same way for splines (control points) and curves (nodes with handles).
+const nodeTools = {
+    spline: { points: splinePoints, move: moveSplineNodes, remove: removeSplineNodes },
+    path: { points: pathNodes, move: movePathNodes, remove: removePathNodes },
+};
 const status = message => { $('#status').textContent = message; };
 
 try {
@@ -224,11 +230,11 @@ function renderScene() {
         // clicks pass through to the content underneath.
         const frame = { ...powerClipEditing.history.document.objects.find(item => item.id === powerClipEditing.id), powerClip: undefined, fill: 'none' };
         svgElement('g', { 'pointer-events': 'none', 'data-powerclip-frame': 'true' }, objects).innerHTML =
-            objectMarkup({ ...frame, stroke: '#0b1f26', strokeWidth: 4 / view.scale }) + objectMarkup({ ...frame, stroke: '#22d3ee', strokeWidth: 1.5 / view.scale });
+            objectMarkup({ ...frame, stroke: '#0b1f26', strokeWidth: 4 / view.scale, strokeGradient: undefined }) + objectMarkup({ ...frame, stroke: '#22d3ee', strokeWidth: 1.5 / view.scale, strokeGradient: undefined });
     }
     selection.replaceChildren();
     for (const o of selectedObjects()) {
-      if (nodeEditing?.id === o.id && o.type === 'spline' && !o.hidden) { drawNodes(o); continue; }
+      if (nodeEditing?.id === o.id && nodeTools[o.type] && !o.hidden) { drawNodes(o); continue; }
       if (!o.hidden) {
         // A rotated object gets its own frame turned with it, so the handles follow its sides.
         const unit = 1 / view.scale, bounds = turns(o) ? localBox(o) : getBounds(o);
@@ -293,10 +299,28 @@ function selectionCentre(items) {
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 function drawNodes(o) {
+    if (o.type === 'path') { drawPathNodes(o); return; }
     const unit = 1 / view.scale, nodes = splinePoints(o);
     // Dashed control line between the control points, as in CorelDRAW; the curve is highlighted over it.
     svgElement('path', { d: controlPath(nodes, o.closed), fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'stroke-dasharray': `${4 * unit} ${3 * unit}`, 'pointer-events': 'none' }, selection);
     svgElement('path', { d: splinePath(o), fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'pointer-events': 'none' }, selection);
+    nodes.forEach((p, index) => {
+        const active = nodeEditing.nodes.has(index);
+        svgElement('rect', { x: p.x - 4 * unit, y: p.y - 4 * unit, width: 8 * unit, height: 8 * unit, fill: active ? '#8b5bd1' : 'white', stroke: active ? 'white' : '#8b5bd1', 'stroke-width': unit, cursor: 'move', 'data-node': index }, selection);
+    });
+}
+function drawPathNodes(o) {
+    const unit = 1 / view.scale, nodes = pathNodes(o);
+    svgElement('path', { d: pathData(o), fill: 'none', stroke: '#8b5bd1', 'stroke-width': unit, 'pointer-events': 'none', ...(turns(o) ? { transform: rotateAttr(o) } : {}) }, selection);
+    // Handles of the selected nodes: a line from the node and a round grip, as in CorelDRAW.
+    for (const index of nodeEditing.nodes) {
+        const node = nodes[index]; if (!node) continue;
+        for (const side of ['in', 'out']) {
+            const handle = node[side]; if (!handle || Math.hypot(handle.x - node.x, handle.y - node.y) * view.scale < .5) continue;
+            svgElement('line', { x1: node.x, y1: node.y, x2: handle.x, y2: handle.y, stroke: '#8b5bd1', 'stroke-width': unit, 'stroke-dasharray': `${3 * unit} ${2 * unit}`, 'pointer-events': 'none' }, selection);
+            svgElement('circle', { cx: handle.x, cy: handle.y, r: 3.5 * unit, fill: '#8b5bd1', stroke: 'white', 'stroke-width': unit, cursor: 'move', 'data-node-handle': `${index}:${side}` }, selection);
+        }
+    }
     nodes.forEach((p, index) => {
         const active = nodeEditing.nodes.has(index);
         svgElement('rect', { x: p.x - 4 * unit, y: p.y - 4 * unit, width: 8 * unit, height: 8 * unit, fill: active ? '#8b5bd1' : 'white', stroke: active ? 'white' : '#8b5bd1', 'stroke-width': unit, cursor: 'move', 'data-node': index }, selection);
@@ -319,7 +343,8 @@ function drawPowerClipDrop(target, waiting = false) {
     const g = svgElement('g', { transform: `translate(${view.x} ${view.y}) scale(${view.scale})${turns(target) ? ' ' + rotateAttr(target) : ''}` }, overlay);
     const shape = waiting ? { fill: 'none', stroke: '#22d3ee', 'stroke-width': 1.5 / view.scale, 'stroke-dasharray': `${6 / view.scale} ${4 / view.scale}` }
         : { fill: '#22d3ee', 'fill-opacity': .2, stroke: '#22d3ee', 'stroke-width': 2 / view.scale };
-    if (target.type === 'ellipse') svgElement('ellipse', { cx: target.x + target.width / 2, cy: target.y + target.height / 2, rx: target.width / 2, ry: target.height / 2, ...shape }, g);
+    if (target.type === 'path') svgElement('path', { d: pathData(target), ...shape }, g);
+    else if (target.type === 'ellipse') svgElement('ellipse', { cx: target.x + target.width / 2, cy: target.y + target.height / 2, rx: target.width / 2, ry: target.height / 2, ...shape }, g);
     else svgElement('rect', { x: target.x, y: target.y, width: target.width, height: target.height, ...shape }, g);
     const text = waiting ? 'Mantén W para colocar dentro del PowerClip' : 'Soltar para colocar dentro del PowerClip', width = Math.round(text.length * 5.6 + 18);
     const x = Math.max(4, Math.min(canvas.clientWidth - width - 4, view.x + target.x * view.scale));
@@ -383,8 +408,8 @@ function render() {
     setSelection([...selectedIds].filter(id => current().objects.some(object => object.id === id)));
     // Leave node editing when its spline is deselected, hidden, locked or removed.
     const edited = editedSpline();
-    if (nodeEditing && (edited?.type !== 'spline' || edited.locked || edited.hidden || selectedIds.size !== 1 || !selectedIds.has(edited.id))) nodeEditing = null;
-    if (nodeEditing) nodeEditing.nodes = new Set([...nodeEditing.nodes].filter(index => index < edited.points.length));
+    if (nodeEditing && (!nodeTools[edited?.type] || edited.locked || edited.hidden || selectedIds.size !== 1 || !selectedIds.has(edited.id))) nodeEditing = null;
+    if (nodeEditing) { const count = nodeTools[edited.type].points(edited).length; nodeEditing.nodes = new Set([...nodeEditing.nodes].filter(index => index < count)); }
     const d = history.document, o = selected();
     $('.inspector').hidden = !o;
     $('#cloud-badge').hidden = !o;
@@ -396,6 +421,9 @@ function render() {
         const value = paint[key], name = key === 'fill' ? 'Relleno' : 'Contorno';
         chip.classList.toggle('none', value === 'none');
         chip.style[key === 'fill' ? 'backgroundColor' : 'borderColor'] = value === 'none' ? '' : value;
+        // A gradient shows as a strip of its colours.
+        const gradient = o?.[key + 'Gradient'] && value !== 'none' ? `linear-gradient(90deg, ${o[key + 'Gradient'].stops.map(stop => `${stop.color} ${stop.offset * 100}%`).join(', ')})` : '';
+        if (key === 'fill') chip.style.backgroundImage = gradient; else chip.style.borderImage = gradient ? `${gradient} 1` : '';
         chip.title = `${name}: ${value === 'none' ? 'sin color' : value} · Clic: color personalizado`; chip.setAttribute('aria-label', chip.title);
         chip.disabled = Boolean(o?.locked);
     }
@@ -508,9 +536,11 @@ canvas.addEventListener('pointerdown', event => {
     // A double click adds a control point where the control line was clicked, or on the leg that
     // drives the clicked part of the curve.
     const near = hit => Boolean(hit) && hit.distance * view.scale <= 7;
-    const lineHit = edited && node === null ? closestOnControlLine(edited, point(event)) : null;
-    const curveHit = edited && node === null ? closestOnSpline(edited, point(event)) : null;
-    const insertAt = near(lineHit) ? lineHit : near(curveHit) ? legPoint(edited, curveHit) : null;
+    const handleTarget = event.target.closest('[data-node-handle]'), nodeHandle = handleTarget && handleTarget.dataset.nodeHandle.split(':');
+    const isPath = edited?.type === 'path', free = edited && node === null && !nodeHandle;
+    const lineHit = free && !isPath ? closestOnControlLine(edited, point(event)) : null;
+    const curveHit = free ? (isPath ? closestOnPath(edited, point(event)) : closestOnSpline(edited, point(event))) : null;
+    const insertAt = near(lineHit) ? lineHit : near(curveHit) ? (isPath ? curveHit : legPoint(edited, curveHit)) : null;
     const clickedId = insertAt ? edited.id : event.target.closest('[data-id]')?.dataset.id;
     if (event.button === 0 && tool === 'select' && !powerClipSources) {
         const previous = lastClick;
@@ -560,12 +590,17 @@ canvas.addEventListener('pointerdown', event => {
         gesture = { type: 'draw', start, pointerId: event.pointerId }; renderScene(); return;
     }
     if (edited) {
+        if (nodeHandle) {
+            draft = clone(history.document);
+            gesture = { type: 'node-handle', start, pointerId: event.pointerId, original: clone(edited), index: Number(nodeHandle[0]), side: nodeHandle[1] };
+            render(); return;
+        }
         if (node !== null) {
             if (!event.shiftKey) { if (!nodeEditing.nodes.has(node)) nodeEditing.nodes = new Set([node]); }
             else if (!nodeEditing.nodes.delete(node)) nodeEditing.nodes.add(node);
             if (nodeEditing.nodes.has(node)) {
                 draft = clone(history.document);
-                gesture = { type: 'nodes', start, pointerId: event.pointerId, original: clone(edited), indices: [...nodeEditing.nodes], anchor: splinePoints(edited)[node], snapTargets: snapTargets() };
+                gesture = { type: 'nodes', start, pointerId: event.pointerId, original: clone(edited), indices: [...nodeEditing.nodes], anchor: nodeTools[edited.type].points(edited)[node], snapTargets: snapTargets() };
             }
             render(); return;
         }
@@ -691,7 +726,7 @@ canvas.addEventListener('pointermove', event => {
     if (gesture.type === 'node-marquee') {
         gesture.area = { x: Math.min(p.x, gesture.start.x), y: Math.min(p.y, gesture.start.y), width: Math.abs(dx), height: Math.abs(dy) };
         gesture.moved ||= Math.hypot(dx, dy) * view.scale > 3;
-        const inside = splinePoints(o).flatMap((node, index) => fullyContained(gesture.area, { ...node, width: 0, height: 0 }) ? [index] : []);
+        const inside = nodeTools[o.type].points(o).flatMap((node, index) => fullyContained(gesture.area, { ...node, width: 0, height: 0 }) ? [index] : []);
         nodeEditing.nodes = new Set([...(gesture.additive ? gesture.originalNodes : []), ...inside]);
     }
     if (gesture.type === 'nodes') {
@@ -699,7 +734,11 @@ canvas.addEventListener('pointermove', event => {
         gesture.moved ||= Math.hypot(dx, dy) * view.scale > 3;
         gesture.snap = gesture.moved ? movement.hit : null;
         // Below the drag threshold, keep the exact original geometry so a click does not add an undo step.
-        Object.assign(o, gesture.moved && (movement.x || movement.y) ? moveSplineNodes(gesture.original, gesture.indices, movement.x, movement.y) : clone(gesture.original));
+        Object.assign(o, gesture.moved && (movement.x || movement.y) ? nodeTools[o.type].move(gesture.original, gesture.indices, movement.x, movement.y) : clone(gesture.original));
+    }
+    if (gesture.type === 'node-handle') {
+        gesture.moved ||= Math.hypot(dx, dy) * view.scale > 3;
+        Object.assign(o, gesture.moved ? movePathHandle(gesture.original, gesture.index, gesture.side, p) : clone(gesture.original));
     }
     if (gesture.type === 'move') {
         const movement = snapTranslation(gesture.anchor, { x: dx, y: dy }, gesture.snapTargets, selectedIds, 7 / view.scale);
@@ -746,9 +785,10 @@ function doubleClick(event, id, node, insertAt) {
 }
 function beginNodeEditing(id) {
     const target = current().objects.find(item => item.id === id);
-    if (tool !== 'select' || powerClipSources || target?.type !== 'spline' || target.locked || target.hidden) return false;
+    if (tool !== 'select' || powerClipSources || !nodeTools[target?.type] || target.locked || target.hidden) return false;
     nodeEditing = { id, nodes: new Set() }; selectOnly(id); rotateMode = false; render();
-    status('Nodos: arrastra para mover · doble clic en la curva añade · doble clic en un nodo o Supr elimina · Esc termina');
+    status(target.type === 'path' ? 'Nodos: arrastra nodos o manijas (elige un nodo para ver sus manijas) · doble clic en la curva añade · doble clic en un nodo o Supr elimina · Esc termina'
+        : 'Nodos: arrastra para mover · doble clic en la curva añade · doble clic en un nodo o Supr elimina · Esc termina');
     return true;
 }
 function finishNodeEditing() {
@@ -756,8 +796,9 @@ function finishNodeEditing() {
 }
 function addNode(hit) {
     try {
-        const id = nodeEditing.id, geometry = insertSplineNode(editedSpline(), hit);
-        nodeEditing.nodes = new Set([hit.index + 1]);
+        const id = nodeEditing.id, edited = editedSpline();
+        const { geometry, node } = edited.type === 'path' ? insertPathNode(edited, hit) : { geometry: insertSplineNode(edited, hit), node: hit.index + 1 };
+        nodeEditing.nodes = new Set([node]);
         edit(d => Object.assign(d.objects.find(item => item.id === id), geometry));
         status('Nodo añadido');
     } catch (error) { status(error.message); }
@@ -765,7 +806,7 @@ function addNode(hit) {
 function deleteNodes(indices) {
     if (!indices.length) { status('Selecciona los nodos que quieres eliminar.'); return; }
     try {
-        const id = nodeEditing.id, geometry = removeSplineNodes(editedSpline(), indices);
+        const id = nodeEditing.id, edited = editedSpline(), geometry = nodeTools[edited.type].remove(edited, indices);
         nodeEditing.nodes = new Set();
         edit(d => Object.assign(d.objects.find(item => item.id === id), geometry));
         status(indices.length === 1 ? 'Nodo eliminado' : `${indices.length} nodos eliminados`);
@@ -800,7 +841,7 @@ $('#powerclip-edit-done').onclick = finishPowerClipEditing;
 canvas.addEventListener('pointerup', event => {
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     const previous = gesture; gesture = null;
-    if (previous.moved || !['move', 'nodes', 'node-marquee'].includes(previous.type)) lastClick = null;
+    if (previous.moved || !['move', 'nodes', 'node-marquee', 'node-handle'].includes(previous.type)) lastClick = null;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     if (previous.type === 'pan') return;
     if (previous.type === 'marquee') { render(); status(`${selectedIds.size} objetos seleccionados`); return; }
@@ -901,7 +942,7 @@ function finishPropertyColor() {
     edit(d => {
         const item = d.objects.find(item => item.id === pending.id);
         if (!item || item.locked) return;
-        item[pending.property] = pending.value;
+        setPaint(item, pending.property, pending.value);
         if (pending.property === 'stroke' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH;
     });
 }
@@ -945,11 +986,11 @@ function updateProperty(event) {
                 Object.assign(item, resizeRotated(o, property === 'width' ? 'e' : 's', along.x, along.y));
                 return;
             }
-            item[property] = value;
+            if (property === 'fill' || property === 'stroke') setPaint(item, property, value); else item[property] = value;
             if (property === 'stroke' && value !== 'none' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH;
         });
     } else if (input.id === 'no-fill' || input.id === 'no-stroke') {
-        edit(d => { d.objects.find(item => item.id === o.id)[input.id === 'no-fill' ? 'fill' : 'stroke'] = input.checked ? 'none' : '#352a49'; });
+        edit(d => { setPaint(d.objects.find(item => item.id === o.id), input.id === 'no-fill' ? 'fill' : 'stroke', input.checked ? 'none' : '#352a49'); });
     }
 }
 // Native color pickers emit input while choosing, before their final change event.
@@ -1183,8 +1224,8 @@ canvas.addEventListener('contextmenu', event => {
     if (!selectedIds.has(id)) selectOnly(id);
     render();
     const menu = $('#object-menu'), single = selectedIds.size === 1;
-    $('#make-powerclip').disabled = Boolean(powerClipEditing) || !single || object.locked || Boolean(object.powerClip) || !['rect', 'ellipse'].includes(object.type);
-    $('#place-powerclip').disabled = selectedObjects().some(item => item.locked || item.powerClip) || !current().objects.some(item => ['rect', 'ellipse'].includes(item.type) && !item.locked && !item.hidden && !selectedIds.has(item.id));
+    $('#make-powerclip').disabled = Boolean(powerClipEditing) || !single || object.locked || Boolean(object.powerClip) || !POWERCLIP_TYPES.includes(object.type);
+    $('#place-powerclip').disabled = selectedObjects().some(item => item.locked || item.powerClip) || !current().objects.some(item => POWERCLIP_TYPES.includes(item.type) && !item.locked && !item.hidden && !selectedIds.has(item.id));
     $('#place-powerclip').disabled ||= Boolean(powerClipEditing);
     $('#extract-powerclip').hidden = !object.powerClip;
     $('#extract-powerclip').disabled = !single || object.locked || !object.powerClip?.objects.length;
@@ -1258,6 +1299,7 @@ async function importSvgFile(file) {
     const base = history.document, used = [...objectsWithContents(base.objects)].length;
     if (used >= 2000) throw new Error('El proyecto ya tiene el máximo de 2000 objetos.');
     const result = importSvg(await file.text(), { resolveColor, maxObjects: 2000 - used });
+    await embedImages(result);
     if (!result.objects.length) throw new Error('El SVG no tiene formas, textos ni imágenes compatibles.');
     if (history.document !== base || gesture || splineDraft) throw new Error('El documento cambió mientras se leía el SVG. Vuelve a importarlo.');
     const resize = !base.objects.length && result.width >= 1 && result.height >= 1 && result.width <= 5000 && result.height <= 5000;
@@ -1266,11 +1308,54 @@ async function importSvgFile(file) {
     if (history.document === base) return;
     setSelection(result.objects.map(object => object.id)); render(); if (resize) fit();
     $('#cloud-dialog').close();
-    const notes = [result.skipped && `${result.skipped} elementos no compatibles se omitieron`, result.clipped && 'los recortes (clip) se ignoraron',
-        result.truncated && 'se llegó al límite de 2000 objetos'].filter(Boolean);
+    const count = (n, one, many) => n === 1 ? one : `${n} ${many}`;
+    const notes = [result.skipped && count(result.skipped, 'se omitió 1 elemento no compatible o imagen que no se pudo cargar', 'elementos no compatibles o imágenes que no se pudieron cargar se omitieron'),
+        result.clipped && count(result.clipped, 'se ignoró 1 recorte dentro de otro (un PowerClip no puede contener otro)', 'recortes dentro de otros se ignoraron (un PowerClip no puede contener otro)'),
+        result.masked && count(result.masked, 'se ignoró 1 máscara', 'máscaras se ignoraron'), result.truncated && 'se llegó al límite de 2000 objetos'].filter(Boolean);
     status(`SVG importado: ${result.objects.length} ${result.objects.length === 1 ? 'objeto' : 'objetos'}${notes.length ? ' · ' + notes.join(' · ') : ''}`);
 }
-const isSvg = file => /.svg$/i.test(file.name) || file.type === 'image/svg+xml';
+const isSvg = file => /\.svg$/i.test(file.name) || file.type === 'image/svg+xml';
+// Images the SVG links to or embeds in other formats: linked files are downloaded (after asking, since
+// that contacts the sites in the file) and GIF, BMP, SVG… become PNG. Ones that fail are left out.
+async function embedImages(result) {
+    if (!result.pending.length) return;
+    const online = result.pending.filter(object => /^https?:/i.test(object.src)).length;
+    const allowed = !online || window.confirm(online === 1 ? 'El SVG tiene 1 imagen enlazada en internet. ¿Descargarla para incluirla? Si no, se omitirá.'
+        : `El SVG tiene ${online} imágenes enlazadas en internet. ¿Descargarlas para incluirlas? Si no, se omitirán.`);
+    const failed = new Set();
+    for (const object of result.pending) {
+        try {
+            if (!allowed && /^https?:/i.test(object.src)) throw new Error('omitida');
+            object.src = await embedImage(object.src);
+        } catch { failed.add(object); }
+    }
+    dropImages(result, failed);
+}
+async function embedImage(href) {
+    const url = new URL(href); // Paths relative to the SVG file cannot be reached from the browser.
+    if (!['data:', 'https:', 'http:'].includes(url.protocol)) throw new Error('Origen no compatible.');
+    const response = await fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer' });
+    if (!response.ok) throw new Error('No se pudo descargar la imagen.');
+    const blob = await response.blob();
+    if (blob.size > 10 * 1024 * 1024) throw new Error('La imagen supera el límite de 10 MB.');
+    if (/^image\/(png|jpeg|webp)$/.test(blob.type)) { const data = await blobDataUrl(blob); if (validImageSource(data)) return data; }
+    // Bitmap formats decode directly; SVG only through an <img>.
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+        let image;
+        try { image = await createImageBitmap(blob); }
+        catch { image = new Image(); image.src = objectUrl; await image.decode(); }
+        const width = image.naturalWidth ?? image.width, height = image.naturalHeight ?? image.height;
+        const scale = Math.min(1, 4096 / Math.max(width || 1024, height || 1024));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round((width || 1024) * scale)); canvas.height = Math.max(1, Math.round((height || 1024) * scale));
+        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+        image.close?.();
+        const data = canvas.toDataURL('image/png');
+        if (!validImageSource(data)) throw new Error('La imagen no se pudo convertir.');
+        return data;
+    } finally { URL.revokeObjectURL(objectUrl); }
+}
 async function openFile(file) {
     if (isSvg(file)) { await importSvgFile(file); return; }
     if (file.size > 32 * 1024 * 1024) throw new Error('El proyecto supera el límite de 32 MB.');
@@ -1324,7 +1409,7 @@ document.addEventListener('keydown', event => {
         const amount = event.shiftKey ? 10 : 1;
         const dx = { arrowleft: -amount, arrowright: amount }[key] || 0, dy = { arrowup: -amount, arrowdown: amount }[key] || 0;
         if (nodeEditing?.nodes.size) {
-            const geometry = moveSplineNodes(o, [...nodeEditing.nodes], dx, dy);
+            const geometry = nodeTools[o.type].move(o, [...nodeEditing.nodes], dx, dy);
             edit(d => Object.assign(d.objects.find(item => item.id === o.id), geometry)); return;
         }
         edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { item.x += dx; item.y += dy; } });
@@ -1348,7 +1433,7 @@ function applyPalette(color, target = 'fill') {
     const o = selected();
     const label = target === 'fill' ? 'relleno' : 'contorno';
     if (o) {
-        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { item[target] = color; if (target === 'stroke' && color !== 'none' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH; } });
+        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { setPaint(item, target, color); if (target === 'stroke' && color !== 'none' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH; } });
         status(color === 'none' ? `Sin ${label}` : `Color de ${label} actualizado`);
     } else {
         try { localStorage.setItem('dekoor.editor-v2.paint', JSON.stringify({ fill: nextFill, stroke: nextStroke })); } catch {}

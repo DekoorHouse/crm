@@ -1,6 +1,6 @@
 import { splinePoints, splineSegments, curvePoint, closestOnSegment } from './spline.mjs';
 import { rotatePoint, pivot, turns, trig } from './transform.mjs';
-import { subpathSegments } from './path.mjs';
+import { subpathSegments, pathContains } from './path.mjs';
 export const RESIZE_HANDLES = [
     { name: 'nw', x: 0, y: 0, cursor: 'nwse-resize' },
     { name: 'n', x: .5, y: 0, cursor: 'ns-resize' },
@@ -151,6 +151,7 @@ export function powerClipDropTarget(objects, sourceIds, point) {
         const nx = (local.x - item.x) / item.width, ny = (local.y - item.y) / item.height;
         if (nx < 0 || nx > 1 || ny < 0 || ny > 1) continue;
         if (item.type === 'ellipse' && (2 * nx - 1) ** 2 + (2 * ny - 1) ** 2 > 1) continue;
+        if (item.type === 'path' && !pathContains(item, local)) continue;
         if (item.powerClip && !item.locked) return item;
         // A visible foreground object blocks a container behind it.
         return null;

@@ -80,7 +80,9 @@ test('a CorelDRAW export: mm page, viewBox, CSS classes, even-odd fill and a gra
     const d = blankDocument(); d.objects.push(...result.objects);
     const valid = validateDocument(JSON.parse(JSON.stringify(d)));
     assert.deepEqual(valid, d);
-    assert.match(exportSvg(valid), /<path d="M 10 10 C [^"]* Z M 20 15 [^"]* Z" fill-rule="evenodd" fill="#fefefe"/);
+    assert.match(exportSvg(valid), /<path d="M 10 10 C [^"]* Z M 20 15 [^"]* Z" fill-rule="evenodd" clip-rule="evenodd" fill="#fefefe"/);
+    assert.deepEqual(box.fillGradient, { type: 'linear', x1: 0, y1: 0, x2: 1, y2: 0, transform: [1, 0, 0, 1, 0, 0],
+        stops: [{ offset: 0, color: '#e42618', opacity: 1 }, { offset: 1, color: '#000000', opacity: 1 }] });
 });
 test('shapes: rectangles and ellipses stay editable, also turned; rounded or skewed ones become curves', () => {
     const objects = importOne([
@@ -119,8 +121,10 @@ test('use, symbols, hidden elements, text and embedded images', () => {
     assert.deepEqual([text.type, text.text, text.fontSize, text.x, text.y, text.fill], ['text', 'Hola mundo', 8, 10, 42, '#333333']);
     assert.deepEqual([image.type, image.width, image.height, image.rotation], ['image', 30, 20, -90]);
     close(image.x, 0); close(image.y, 0);
-    assert.equal(result.skipped, 2);
-    const d = blankDocument(); d.objects.push(...result.objects);
+    // The linked image is fetched by the editor; foreignObject cannot be imported.
+    assert.equal(result.skipped, 1);
+    assert.deepEqual(result.pending.map(o => o.src), ['https://example.com/a.png']);
+    const d = blankDocument(); d.objects.push(...result.objects.filter(object => !result.pending.includes(object)));
     assert.doesNotThrow(() => validateDocument(d));
 });
 test('curves: bounds, references, validation limits and shared point lists', () => {

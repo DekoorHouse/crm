@@ -1,8 +1,9 @@
 // SVG import: converts an SVG file into the editor's own validated objects (curves, rectangles,
-// ellipses, text and embedded images). The file is only read as data: nothing from it is inserted into
-// the page, and every object still goes through validateDocument.
-import { createObject } from './model.mjs';
+// ellipses, text and images, with gradients; clip paths become PowerClips). The file is only read as
+// data: nothing from it is inserted into the page, and every object still goes through validateDocument.
+import { createObject, placeInPowerClip } from './model.mjs';
 import { normalizePath } from './path.mjs';
+import { pivot } from './transform.mjs';
 
 // ── Numbers, lengths and transforms ─────────────────────────────────────────────────────────────
 const MM_PER = { px: 25.4 / 96, pt: 25.4 / 72, pc: 25.4 / 6, mm: 1, cm: 10, in: 25.4, q: .25 };
@@ -162,8 +163,8 @@ export function parseColor(value, resolveColor) {
 }
 
 // ── Styles: presentation attributes, simple CSS rules and style attributes ─────────────────────
-const PROPERTIES = ['fill', 'stroke', 'stroke-width', 'fill-rule', 'display', 'visibility', 'font-size', 'text-anchor', 'color', 'stop-color', 'clip-path'];
-const INHERITED = new Set(['fill', 'stroke', 'stroke-width', 'fill-rule', 'visibility', 'font-size', 'text-anchor', 'color']);
+const PROPERTIES = ['fill', 'stroke', 'stroke-width', 'fill-rule', 'display', 'visibility', 'font-size', 'text-anchor', 'color', 'stop-color', 'stop-opacity', 'clip-path', 'clip-rule', 'mask'];
+const INHERITED = new Set(['fill', 'stroke', 'stroke-width', 'fill-rule', 'visibility', 'font-size', 'text-anchor', 'color', 'clip-rule']);
 const declarations = text => {
     const out = {};
     for (const part of String(text ?? '').split(';')) {
@@ -214,6 +215,11 @@ function computeStyle(element, parent, rules) {
 const SKIPPED = new Set(['defs', 'symbol', 'clippath', 'mask', 'pattern', 'lineargradient', 'radialgradient', 'marker', 'style', 'title', 'desc', 'metadata', 'script', 'filter']);
 const children = element => [...(element.children || [])];
 function* walk(element) { yield element; for (const child of children(element)) yield* walk(child); }
+export const invert = m => {
+    const det = m[0] * m[3] - m[1] * m[2];
+    return det ? [m[3] / det, -m[1] / det, -m[2] / det, m[0] / det, (m[2] * m[5] - m[3] * m[4]) / det, (m[1] * m[4] - m[0] * m[5]) / det] : null;
+};
+const urlId = value => /^url\(\s*['"]?#([^'")\s]+)['"]?\s*\)/.exec(value ?? '')?.[1] ?? null;
 
 // Maps the root <svg> to millimetres: width/height with units, and the viewBox (centred, like "meet").
 function rootMatrix(svg) {
@@ -225,14 +231,70 @@ function rootMatrix(svg) {
         width ??= height * box[2] / box[3]; height ??= width * box[3] / box[2];
         const scale = Math.min(width / box[2], height / box[3]);
         const ox = (width - box[2] * scale) / 2, oy = (height - box[3] * scale) / 2;
-        return { matrix: [scale, 0, 0, scale, ox - box[0] * scale, oy - box[1] * scale], width, height };
+        return { matrix: [scale, 0, 0, scale, ox - box[0] * scale, oy - box[1] * scale], width, height, viewport: { width: box[2], height: box[3] } };
     }
-    return { matrix: [MM_PER.px, 0, 0, MM_PER.px, 0, 0], width: width ?? null, height: height ?? null };
+    return { matrix: [MM_PER.px, 0, 0, MM_PER.px, 0, 0], width: width ?? null, height: height ?? null,
+        viewport: { width: width ? width / MM_PER.px : 100, height: height ? height / MM_PER.px : 100 } };
 }
 const firstNumber = (element, name, fallback = 0) => numbers(attribute(element, name))[0] ?? fallback;
 const lengthIn = (element, name, fallback = 0) => { const value = parseLength(attribute(element, name)); return value && value.unit !== '%' ? value.value * (value.unit === 'px' ? 1 : MM_PER[value.unit] / MM_PER.px) : fallback; };
 
-// Returns { objects, width, height, skipped, clipped }. width/height are the SVG's page size in mm, if it has one.
+// A basic shape's outline in its own user units, or null for elements that are not shapes.
+function shapeSubpaths(element) {
+    const tag = tagOf(element), n = name => lengthIn(element, name);
+    if (tag === 'path') return parsePathData(attribute(element, 'd'));
+    if (tag === 'rect' || tag === 'circle' || tag === 'ellipse') {
+        const box = shapeBox(element);
+        if (!box) return [];
+        return [tag === 'rect' ? rectSubpath(box.x, box.y, box.width, box.height, box.rx, box.ry) : ellipseSubpath(box.x + box.width / 2, box.y + box.height / 2, box.width / 2, box.height / 2)];
+    }
+    if (tag === 'line') return [polySubpath([n('x1'), n('y1'), n('x2'), n('y2')], false)];
+    if (tag === 'polyline' || tag === 'polygon') {
+        const values = numbers(attribute(element, 'points'));
+        return values.length >= 4 ? [polySubpath(values.slice(0, values.length - values.length % 2), tag === 'polygon')] : [];
+    }
+    return null;
+}
+function shapeBox(element) {
+    const tag = tagOf(element), n = name => lengthIn(element, name);
+    let x, y, w, h, rx = 0, ry = 0;
+    if (tag === 'rect') {
+        x = n('x'); y = n('y'); w = n('width'); h = n('height'); rx = n('rx'); ry = n('ry');
+        if (!attribute(element, 'rx')) rx = ry; if (!attribute(element, 'ry')) ry = rx;
+    } else {
+        const radiusX = tag === 'circle' ? n('r') : n('rx'), radiusY = tag === 'circle' ? n('r') : n('ry');
+        x = n('cx') - radiusX; y = n('cy') - radiusY; w = 2 * radiusX; h = 2 * radiusY;
+    }
+    if (!(w > 0 && h > 0)) return null;
+    return { x, y, width: w, height: h, rx: Math.min(rx, w / 2), ry: Math.min(ry, h / 2) };
+}
+const mapSubpaths = (matrix, subpaths) => subpaths.map(({ closed, points }) => {
+    const out = new Array(points.length);
+    for (let i = 0; i < points.length; i += 2) { const [px, py] = apply(matrix, points[i], points[i + 1]); out[i] = px; out[i + 1] = py; }
+    return { closed, points: out };
+}).filter(subpath => subpath.points.length >= 8 && subpath.points.every(Number.isFinite));
+const unskewed = m => Math.abs(m[0] * m[2] + m[1] * m[3]) <= 1e-9 * (m[0] * m[0] + m[1] * m[1] + m[2] * m[2] + m[3] * m[3]);
+// Axis-aligned or turned boxes keep their own type; mirrored ones cannot.
+function placeBox(matrix, x, y, w, h) {
+    const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
+    if (det <= 0) return null;
+    const sx = Math.hypot(matrix[0], matrix[1]), sy = det / sx, angle = Math.atan2(matrix[1], matrix[0]) * 180 / Math.PI;
+    const [cx, cy] = apply(matrix, x + w / 2, y + h / 2), width = w * sx, height = h * sy;
+    // Exporters round their matrices (Corel writes 0.866025), so the angle is rounded to 1/10000 degree.
+    const rotation = Math.round(-angle * 1e4) / 1e4 || 0;
+    return { x: cx - width / 2, y: cy - height / 2, width, height, ...(rotation ? { rotation } : {}) };
+}
+// The matrix from an editor object's box units (0–1) to the page, including its turn.
+function objectBoxMatrix(object) {
+    const box = [object.width, 0, 0, object.height, object.x, object.y];
+    if (!object.rotation) return box;
+    const c = pivot(object), rad = -object.rotation * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+    return multiply([cos, sin, -sin, cos, c.x - cos * c.x + sin * c.y, c.y - sin * c.x - cos * c.y], box);
+}
+
+// Returns { objects, width, height, skipped, clipped, masked, pending, truncated }. width/height are the
+// SVG's page size in mm, if it has one. pending lists image objects whose src still has to be fetched
+// or converted (linked files, GIF, SVG…); see the editor's import.
 export function importSvgElement(svg, { resolveColor, maxObjects = 2000 } = {}) {
     if (tagOf(svg) !== 'svg') throw new Error('El archivo no es un SVG válido.');
     const ids = new Map(), cssText = [];
@@ -240,125 +302,214 @@ export function importSvgElement(svg, { resolveColor, maxObjects = 2000 } = {}) 
         const id = attribute(element, 'id'); if (id && !ids.has(id)) ids.set(id, element);
         if (tagOf(element) === 'style') cssText.push(element.textContent || '');
     }
-    const rules = parseCss(cssText.join('\n')), root = rootMatrix(svg), objects = [];
-    let skipped = 0, clipped = 0, full = false;
+    const rules = parseCss(cssText.join('\n')), root = rootMatrix(svg), objects = [], pending = [];
+    let skipped = 0, clipped = 0, masked = 0, count = 0, full = false;
+    const add = (out, object) => { if (count >= maxObjects) { full = true; return false; } count++; out.push(object); return true; };
+    const named = (element, fallback) => (attribute(element, 'id') || fallback).slice(0, 120);
+
+    // Gradients, following href chains for their stops and settings (as Inkscape writes them).
+    const gradientElement = value => { const target = ids.get(urlId(value)); return target && ['lineargradient', 'radialgradient'].includes(tagOf(target)) ? target : null; };
+    const chainOf = gradient => { const chain = []; for (let g = gradient; g && chain.length < 10 && !chain.includes(g); g = ids.get((attribute(g, 'href') || attribute(g, 'xlink:href') || '').replace(/^#/, ''))) chain.push(g); return chain; };
+    const stopsOf = chain => {
+        const stops = chain.map(g => children(g).filter(child => tagOf(child) === 'stop')).find(list => list.length) || [];
+        let last = 0;
+        return stops.map(stop => {
+            const style = computeStyle(stop, {}, rules), text = attribute(stop, 'offset') ?? '0';
+            const offset = Math.max(last, Math.min(1, Math.max(0, text.trim().endsWith('%') ? parseFloat(text) / 100 : parseFloat(text) || 0)));
+            last = offset;
+            const color = parseColor(style['stop-color'] ?? '#000000', resolveColor);
+            const opacity = Math.min(1, Math.max(0, Number.parseFloat(style['stop-opacity'] ?? '1')));
+            return { offset, color: color && color !== 'none' ? color : '#000000', opacity: color === 'none' ? 0 : Number.isFinite(opacity) ? opacity : 1 };
+        });
+    };
+    const firstColor = value => { const gradient = gradientElement(value); const stops = gradient && stopsOf(chainOf(gradient)); return stops?.length ? stops[0].color : null; };
     const paint = (value, style) => {
         if (value === undefined) return null;
-        const url = /^url\(\s*['"]?#([^'")\s]+)['"]?\s*\)/.exec(value);
-        if (url) {
-            // Gradients and patterns become their first colour.
-            const target = ids.get(url[1]);
-            const stop = target && [...walk(target)].find(element => tagOf(element) === 'stop');
-            if (stop) return parseColor(computeStyle(stop, {}, rules)['stop-color'] ?? '#000000', resolveColor) ?? '#000000';
-            const fallback = value.slice(url[0].length).trim();
-            return fallback ? parseColor(fallback, resolveColor) : '#808080';
-        }
+        if (urlId(value)) return firstColor(value) ?? (value.slice(value.indexOf(')') + 1).trim() ? parseColor(value.slice(value.indexOf(')') + 1).trim(), resolveColor) : '#808080');
         if (value.toLowerCase() === 'currentcolor') return parseColor(style.color ?? '#000000', resolveColor);
         return parseColor(value, resolveColor);
     };
-    const add = object => { if (objects.length >= maxObjects) { full = true; return; } objects.push(object); };
-    const named = (element, fallback) => (attribute(element, 'id') || fallback).slice(0, 120);
-    const common = (element, style, matrix) => {
+    // A gradient in the editor's form: box units of the object it paints, turned by a matrix.
+    const gradientFor = (value, matrix, userBox, object) => {
+        const gradient = gradientElement(value); if (!gradient) return null;
+        const chain = chainOf(gradient), stops = stopsOf(chain);
+        if (!stops.length) return null;
+        const get = name => chain.map(g => attribute(g, name)).find(v => v !== null) ?? null;
+        const box = get('gradientUnits') !== 'userSpaceOnUse';
+        const coordinate = (name, fallback, axis) => {
+            const text = get(name) ?? fallback, value = Number.parseFloat(text);
+            if (!Number.isFinite(value)) return Number.parseFloat(fallback);
+            if (!String(text).trim().endsWith('%')) return value;
+            const { width, height } = root.viewport, size = axis === 'x' ? width : axis === 'y' ? height : Math.hypot(width, height) / Math.SQRT2;
+            return box ? value / 100 : value / 100 * size;
+        };
+        const radial = tagOf(gradient) === 'radialgradient', geometry = radial
+            ? { cx: coordinate('cx', '50%', 'x'), cy: coordinate('cy', '50%', 'y'), r: coordinate('r', '50%', 'r') }
+            : { x1: coordinate('x1', '0', 'x'), y1: coordinate('y1', '0', 'y'), x2: coordinate('x2', '100%', 'x'), y2: coordinate('y2', '0', 'y') };
+        if (radial) { geometry.fx = get('fx') === null ? geometry.cx : coordinate('fx', '0', 'x'); geometry.fy = get('fy') === null ? geometry.cy : coordinate('fy', '0', 'y'); if (!(geometry.r > 0)) return null; }
+        let toPage = multiply(matrix, parseTransform(get('gradientTransform')));
+        if (box) {
+            if (!(userBox?.width > 0 && userBox?.height > 0)) return null;
+            toPage = multiply(multiply(matrix, [userBox.width, 0, 0, userBox.height, userBox.x, userBox.y]), parseTransform(get('gradientTransform')));
+        }
+        const inverse = invert(objectBoxMatrix(object)); if (!inverse) return null;
+        const transform = multiply(inverse, toPage);
+        if (!transform.every(v => Number.isFinite(v) && Math.abs(v) <= 1e6) || Object.values(geometry).some(v => !Number.isFinite(v) || Math.abs(v) > 1e6)) return null;
+        const spread = get('spreadMethod');
+        return { type: radial ? 'radial' : 'linear', ...geometry, stops, transform, ...(spread === 'reflect' || spread === 'repeat' ? { spread } : {}) };
+    };
+    const paints = (object, style, matrix, userBox) => {
+        const scale = Math.sqrt(Math.abs(matrix[0] * matrix[3] - matrix[1] * matrix[2]));
         const fill = paint(style.fill ?? '#000000', style) ?? '#000000', stroke = paint(style.stroke ?? 'none', style) ?? 'none';
-        const width = Number.parseFloat(style['stroke-width'] ?? '1'), scale = Math.sqrt(Math.abs(matrix[0] * matrix[3] - matrix[1] * matrix[2]));
-        return { fill, stroke, strokeWidth: stroke === 'none' || !Number.isFinite(width) ? 0 : Math.min(100, Math.max(0, width * scale)) };
+        const width = Number.parseFloat(style['stroke-width'] ?? '1');
+        Object.assign(object, { fill, stroke, strokeWidth: stroke === 'none' || !Number.isFinite(width) ? 0 : Math.min(100, Math.max(0, width * scale)) });
+        if (object.type === 'image') return object;
+        for (const key of ['fill', 'stroke']) {
+            const gradient = object[key] !== 'none' && gradientFor(style[key], matrix, userBox, object);
+            if (gradient) object[key + 'Gradient'] = gradient;
+        }
+        return object;
     };
-    const addCurve = (element, style, matrix, subpaths, fallbackName) => {
-        const mapped = subpaths.map(({ closed, points }) => {
-            const out = new Array(points.length);
-            for (let i = 0; i < points.length; i += 2) { const [px, py] = apply(matrix, points[i], points[i + 1]); out[i] = px; out[i + 1] = py; }
-            return { closed, points: out };
-        }).filter(subpath => subpath.points.length >= 8 && subpath.points.every(Number.isFinite));
-        if (!mapped.length) return;
+    const userBounds = subpaths => { const all = subpaths.filter(s => s.points.length >= 8); return all.length ? normalizePath(all) : null; };
+    const curve = (element, style, matrix, subpaths, fallbackName, fillRule = style['fill-rule']) => {
+        const mapped = mapSubpaths(matrix, subpaths);
+        if (!mapped.length) return null;
         const geometry = normalizePath(mapped);
-        if (Math.abs(geometry.x) > 10000 || Math.abs(geometry.y) > 10000 || geometry.width > 10000 || geometry.height > 10000) { skipped++; return; }
-        add({ ...createObject('path', 0, 0), name: named(element, fallbackName), ...common(element, style, matrix), ...geometry,
-            ...(style['fill-rule'] === 'evenodd' ? { fillRule: 'evenodd' } : {}) });
+        if (Math.abs(geometry.x) > 10000 || Math.abs(geometry.y) > 10000 || geometry.width > 10000 || geometry.height > 10000) { skipped++; return null; }
+        return paints({ ...createObject('path', 0, 0), name: named(element, fallbackName), ...geometry, ...(fillRule === 'evenodd' ? { fillRule: 'evenodd' } : {}) }, style, matrix, userBounds(subpaths));
     };
-    const unskewed = m => Math.abs(m[0] * m[2] + m[1] * m[3]) <= 1e-9 * (m[0] * m[0] + m[1] * m[1] + m[2] * m[2] + m[3] * m[3]);
-    // Axis-aligned or turned boxes (images, text) keep their own type; mirrored ones are not supported.
-    const placeBox = (matrix, x, y, w, h) => {
-        const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
-        if (det <= 0) return null;
-        const sx = Math.hypot(matrix[0], matrix[1]), sy = det / sx, angle = Math.atan2(matrix[1], matrix[0]) * 180 / Math.PI;
-        const [cx, cy] = apply(matrix, x + w / 2, y + h / 2), width = w * sx, height = h * sy;
-        // Exporters round their matrices (Corel writes 0.866025), so the angle is rounded to 1/10000 degree.
-        const rotation = Math.round(-angle * 1e4) / 1e4 || 0;
-        return { x: cx - width / 2, y: cy - height / 2, width, height, ...(rotation ? { rotation } : {}) };
+    // Rectangles and ellipses, also turned, stay editable as such; skewed, mirrored or rounded ones become curves.
+    const shape = (element, style, matrix) => {
+        const tag = tagOf(element);
+        if (tag === 'rect' || tag === 'circle' || tag === 'ellipse') {
+            const box = shapeBox(element); if (!box) return null;
+            const placed = !(box.rx > 0 && box.ry > 0) && unskewed(matrix) && placeBox(matrix, box.x, box.y, box.width, box.height);
+            const type = tag === 'rect' ? 'rect' : 'ellipse', name = tag === 'rect' ? 'Rectángulo' : 'Elipse';
+            if (placed) return paints({ ...createObject(type, 0, 0), name: named(element, name), ...placed }, style, matrix, box);
+            return curve(element, style, matrix, shapeSubpaths(element), name);
+        }
+        if (tag === 'line') return curve(element, { ...style, fill: 'none' }, matrix, shapeSubpaths(element), 'Línea');
+        return curve(element, style, matrix, shapeSubpaths(element) || [], 'Curva');
     };
-    const visit = (element, parentStyle, parentMatrix, depth, using) => {
+
+    // A clip path becomes the container of a PowerClip, in the clipped element's user space.
+    const clipContainer = (clip, matrix, content) => {
+        let base = multiply(matrix, parseTransform(attribute(clip, 'transform')));
+        if (attribute(clip, 'clipPathUnits') === 'objectBoundingBox') {
+            const bounds = content.reduce((box, o) => box ? { x: Math.min(box.x, o.x), y: Math.min(box.y, o.y), right: Math.max(box.right, o.x + o.width), bottom: Math.max(box.bottom, o.y + o.height) } : { x: o.x, y: o.y, right: o.x + o.width, bottom: o.y + o.height }, null);
+            base = multiply([bounds.right - bounds.x, 0, 0, bounds.bottom - bounds.y, bounds.x, bounds.y], parseTransform(attribute(clip, 'transform')));
+        }
+        const parts = [];
+        for (const child of children(clip)) {
+            const target = tagOf(child) === 'use' ? ids.get((attribute(child, 'href') || attribute(child, 'xlink:href') || '').replace(/^#/, '')) : child;
+            if (!target) continue;
+            let m = multiply(base, parseTransform(attribute(child, 'transform')));
+            if (target !== child) m = multiply(multiply(m, [1, 0, 0, 1, lengthIn(child, 'x'), lengthIn(child, 'y')]), parseTransform(attribute(target, 'transform')));
+            const subpaths = shapeSubpaths(target);
+            if (subpaths?.length) parts.push({ element: target, matrix: m, subpaths, rule: computeStyle(target, computeStyle(clip, {}, rules), rules)['clip-rule'] });
+        }
+        if (!parts.length) return null;
+        const style = { fill: 'none', stroke: 'none' };
+        if (parts.length === 1) {
+            const container = shape(parts[0].element, style, parts[0].matrix);
+            if (container && container.type !== 'path') return { ...container, name: named(clip, 'Contenedor') };
+        }
+        const all = parts.flatMap(part => mapSubpaths(part.matrix, part.subpaths));
+        if (!all.length) return null;
+        return { ...createObject('path', 0, 0), name: named(clip, 'Contenedor'), ...normalizePath(all), fill: 'none', stroke: 'none', strokeWidth: 0, ...(parts[0].rule === 'evenodd' ? { fillRule: 'evenodd' } : {}) };
+    };
+
+    const visit = (element, parentStyle, parentMatrix, depth, using, out, inClip) => {
         if (full || depth > 60) return;
         const tag = tagOf(element);
         if (SKIPPED.has(tag)) return;
         const style = computeStyle(element, parentStyle, rules);
         if (style.display === 'none') return;
-        if (style['clip-path'] && style['clip-path'] !== 'none') clipped++;
         let matrix = multiply(parentMatrix, parseTransform(attribute(element, 'transform')));
-        const hidden = style.visibility === 'hidden' || style.visibility === 'collapse';
         if (tag === 'svg' && element !== svg) {
             // A nested viewport: its own position, size and viewBox.
-            const box = numbers(attribute(element, 'viewBox')), x = lengthIn(element, 'x'), y = lengthIn(element, 'y');
-            matrix = multiply(matrix, [1, 0, 0, 1, x, y]);
+            const box = numbers(attribute(element, 'viewBox'));
+            matrix = multiply(matrix, [1, 0, 0, 1, lengthIn(element, 'x'), lengthIn(element, 'y')]);
             if (box.length === 4 && box[2] > 0 && box[3] > 0) {
                 const w = lengthIn(element, 'width', box[2]), h = lengthIn(element, 'height', box[3]), scale = Math.min(w / box[2], h / box[3]);
                 matrix = multiply(matrix, [scale, 0, 0, scale, -box[0] * scale, -box[1] * scale]);
             }
         }
+        if (style.mask && style.mask !== 'none') masked++;
+        const clipValue = style['clip-path'], clip = clipValue && clipValue !== 'none' ? ids.get(urlId(clipValue)) : null;
+        // PowerClips cannot hold other PowerClips, so a clip inside clipped content is left out.
+        if (clip && tagOf(clip) === 'clippath' && !inClip) {
+            const content = [];
+            body(element, tag, style, matrix, depth, using, content, true);
+            if (!content.length) return;
+            const container = clipContainer(clip, matrix, content);
+            if (!container) { clipped++; out.push(...content); return; }
+            container.powerClip = { width: container.width, height: container.height, objects: [] };
+            const holder = { objects: [container, ...content] };
+            try { placeInPowerClip(holder, new Set(content.map(item => item.id)), container.id); }
+            catch { clipped++; out.push(...content); return; }
+            // Placing copies the content, so pending images now live in the container.
+            content.forEach((item, i) => { const k = pending.indexOf(item); if (k >= 0) pending[k] = container.powerClip.objects[i]; });
+            if (add(out, container)) return;
+            count -= content.length;
+            return;
+        }
+        if (clipValue && clipValue !== 'none') clipped++;
+        body(element, tag, style, matrix, depth, using, out, inClip);
+    };
+    const body = (element, tag, style, matrix, depth, using, out, inClip) => {
         if (tag === 'svg' || tag === 'g' || tag === 'a' || tag === 'switch') {
-            for (const child of children(element)) visit(child, style, matrix, depth + 1, using);
+            for (const child of children(element)) visit(child, style, matrix, depth + 1, using, out, inClip);
             return;
         }
         if (tag === 'use') {
-            const href = (attribute(element, 'href') || attribute(element, 'xlink:href') || '').replace(/^#/, ''), target = ids.get(href);
+            const target = ids.get((attribute(element, 'href') || attribute(element, 'xlink:href') || '').replace(/^#/, ''));
             if (!target || using.has(target)) { skipped++; return; }
-            const placed = multiply(matrix, [1, 0, 0, 1, lengthIn(element, 'x'), lengthIn(element, 'y')]);
-            const next = new Set(using).add(target);
-            if (tagOf(target) === 'symbol') for (const child of children(target)) visit(child, style, placed, depth + 1, next);
-            else visit(target, style, placed, depth + 1, next);
+            const placed = multiply(matrix, [1, 0, 0, 1, lengthIn(element, 'x'), lengthIn(element, 'y')]), next = new Set(using).add(target);
+            if (tagOf(target) === 'symbol') for (const child of children(target)) visit(child, style, placed, depth + 1, next, out, inClip);
+            else visit(target, style, placed, depth + 1, next, out, inClip);
             return;
         }
-        if (hidden) return;
-        const n = name => lengthIn(element, name);
-        if (tag === 'path') addCurve(element, style, matrix, parsePathData(attribute(element, 'd')), 'Curva');
-        else if (tag === 'rect' || tag === 'circle' || tag === 'ellipse') {
-            let x, y, w, h;
-            if (tag === 'rect') { x = n('x'); y = n('y'); w = n('width'); h = n('height'); }
-            else {
-                const rx = tag === 'circle' ? n('r') : n('rx'), ry = tag === 'circle' ? n('r') : n('ry');
-                x = n('cx') - rx; y = n('cy') - ry; w = 2 * rx; h = 2 * ry;
-            }
-            if (!(w > 0 && h > 0)) return;
-            let rx = tag === 'rect' ? n('rx') : 0, ry = tag === 'rect' ? n('ry') : 0;
-            if (tag === 'rect') { if (!attribute(element, 'rx')) rx = ry; if (!attribute(element, 'ry')) ry = rx; rx = Math.min(rx, w / 2); ry = Math.min(ry, h / 2); }
-            // Rectangles and ellipses, also turned, stay editable as such; skewed, mirrored or rounded ones become curves.
-            const box = !(rx > 0 && ry > 0) && unskewed(matrix) && placeBox(matrix, x, y, w, h);
-            if (box) add({ ...createObject(tag === 'rect' ? 'rect' : 'ellipse', 0, 0), name: named(element, tag === 'rect' ? 'Rectángulo' : 'Elipse'), ...common(element, style, matrix), ...box });
-            else addCurve(element, style, matrix, [tag === 'rect' ? rectSubpath(x, y, w, h, rx, ry) : ellipseSubpath(x + w / 2, y + h / 2, w / 2, h / 2)], tag === 'rect' ? 'Rectángulo' : 'Elipse');
-        } else if (tag === 'line') addCurve(element, { ...style, fill: 'none' }, matrix, [polySubpath([n('x1'), n('y1'), n('x2'), n('y2')], false)], 'Línea');
-        else if (tag === 'polyline' || tag === 'polygon') {
-            const values = numbers(attribute(element, 'points'));
-            if (values.length >= 4) addCurve(element, style, matrix, [polySubpath(values.slice(0, values.length - values.length % 2), tag === 'polygon')], 'Curva');
-        } else if (tag === 'text') {
+        if (style.visibility === 'hidden' || style.visibility === 'collapse') return;
+        if (shapeSubpaths(element) !== null) { const object = shape(element, style, matrix); if (object) add(out, object); return; }
+        if (tag === 'text') {
             const text = (element.textContent || '').replace(/\s+/g, ' ').trim();
             if (!text) return;
             const span = [...walk(element)].find(item => tagOf(item) === 'tspan' && attribute(item, 'x') !== null);
             const x = numbers(attribute(element, 'x'))[0] ?? (span ? firstNumber(span, 'x') : 0), y = numbers(attribute(element, 'y'))[0] ?? (span ? firstNumber(span, 'y') : 0);
             const size = parseLength(style['font-size'] ?? '16')?.value || 16, estimate = text.length * size * .55;
             const shift = style['text-anchor'] === 'middle' ? estimate / 2 : style['text-anchor'] === 'end' ? estimate : 0;
-            const box = placeBox(matrix, x - shift, y - size, estimate, size * 1.2);
+            const userBox = { x: x - shift, y: y - size, width: estimate, height: size * 1.2 }, box = placeBox(matrix, userBox.x, userBox.y, userBox.width, userBox.height);
             if (!box) { skipped++; return; }
-            const fontSize = size * box.height / (size * 1.2);
-            add({ ...createObject('text', 0, 0), name: text.slice(0, 40), text: text.slice(0, 10000), ...common(element, style, matrix), ...box, fontSize });
-        } else if (tag === 'image') {
-            const href = attribute(element, 'href') || attribute(element, 'xlink:href') || '';
-            const box = placeBox(matrix, n('x'), n('y'), n('width'), n('height'));
-            if (!/^data:image\/(png|jpeg|webp);base64,/i.test(href) || !box || !(box.width > 0 && box.height > 0)) { skipped++; return; }
-            add({ ...createObject('image', 0, 0), name: named(element, 'Imagen'), src: href.replace(/\s+/g, ''), fill: 'none', stroke: 'none', strokeWidth: 0, ...box });
-        } else if (tag !== 'tspan' && tag !== 'textpath') skipped++;
+            add(out, paints({ ...createObject('text', 0, 0), name: text.slice(0, 40), text: text.slice(0, 10000), ...box, fontSize: size * box.height / userBox.height }, style, matrix, userBox));
+            return;
+        }
+        if (tag === 'image') {
+            const href = (attribute(element, 'href') || attribute(element, 'xlink:href') || '').trim();
+            const box = placeBox(matrix, lengthIn(element, 'x'), lengthIn(element, 'y'), lengthIn(element, 'width'), lengthIn(element, 'height'));
+            if (!href || !box || !(box.width > 0 && box.height > 0)) { skipped++; return; }
+            const object = { ...createObject('image', 0, 0), name: named(element, 'Imagen'), src: href.startsWith('data:') ? href.replace(/\s+/g, '') : href, fill: 'none', stroke: 'none', strokeWidth: 0, ...box };
+            // PNG, JPEG and WebP data is used as is; anything else is fetched or converted by the editor.
+            if (add(out, object) && !/^data:image\/(png|jpeg|webp);base64,/i.test(object.src)) pending.push(object);
+            return;
+        }
+        if (tag !== 'tspan' && tag !== 'textpath') skipped++;
     };
     const rootStyle = computeStyle(svg, {}, rules);
-    for (const child of children(svg)) visit(child, rootStyle, multiply(root.matrix, parseTransform(attribute(svg, 'transform'))), 0, new Set());
-    return { objects, width: root.width, height: root.height, skipped, clipped, truncated: full };
+    visit({ ...svg, localName: 'g', children: children(svg), getAttribute: name => name === 'transform' || name === 'clip-path' || name === 'mask' ? attribute(svg, name) : null }, rootStyle, root.matrix, 0, new Set(), objects, false);
+    return { objects, width: root.width, height: root.height, skipped, clipped, masked, pending, truncated: full };
+}
+
+// Pending images that failed to load are removed, also from PowerClips.
+export function dropImages(result, failed) {
+    const keep = list => list.filter(object => !failed.has(object)).map(object => {
+        if (object.powerClip) object.powerClip.objects = keep(object.powerClip.objects);
+        return object;
+    });
+    result.objects = keep(result.objects);
+    result.pending = result.pending.filter(object => !failed.has(object));
+    result.skipped += failed.size;
+    return result;
 }
 
 export function importSvg(text, options = {}) {

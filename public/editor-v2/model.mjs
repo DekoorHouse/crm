@@ -5,6 +5,34 @@ import { normalizeAdjust } from './imageAdjust.mjs';
 import { normalizeAngle, pivot, placeAtPivot, rotatePoint, turns } from './transform.mjs';
 export const TYPES = ['rect', 'ellipse', 'text', 'spline', 'image', 'path'];
 export const HAIRLINE_WIDTH = 0.0762;
+// Shapes that can hold PowerClip content.
+export const POWERCLIP_TYPES = ['rect', 'ellipse', 'path'];
+// A gradient paints a fill or an outline; fill/stroke keep a plain colour for everything else (its first
+// stop). Its geometry is in the object's box units (0–1), turned by transform, so it follows resizes.
+const GRADIENT_NUMBERS = { linear: ['x1', 'y1', 'x2', 'y2'], radial: ['cx', 'cy', 'r', 'fx', 'fy'] };
+function validGradient(g) {
+    const fail = () => { throw new Error('El proyecto contiene un degradado inválido.'); };
+    if (!g || !GRADIENT_NUMBERS[g.type] || !Array.isArray(g.stops) || !g.stops.length || g.stops.length > 64) fail();
+    const valid = { type: g.type };
+    for (const key of GRADIENT_NUMBERS[g.type]) { if (!numberIn(g[key], -1e6, 1e6)) fail(); valid[key] = g[key]; }
+    if (g.type === 'radial' && !(g.r > 0)) fail();
+    let last = 0;
+    valid.stops = g.stops.map(stop => {
+        if (!stop || !numberIn(stop.offset, 0, 1) || !/^#[0-9a-f]{6}$/i.test(stop.color) || !numberIn(stop.opacity, 0, 1)) fail();
+        last = Math.max(last, stop.offset);
+        return { offset: last, color: stop.color, opacity: stop.opacity };
+    });
+    if (!Array.isArray(g.transform) || g.transform.length !== 6 || g.transform.some(value => !numberIn(value, -1e6, 1e6))) fail();
+    valid.transform = [...g.transform];
+    if (g.spread !== undefined && !['pad', 'reflect', 'repeat'].includes(g.spread)) fail();
+    if (g.spread && g.spread !== 'pad') valid.spread = g.spread;
+    return valid;
+}
+// Setting a plain colour replaces that paint's gradient.
+export function setPaint(object, key, color) {
+    object[key] = color;
+    delete object[key + 'Gradient'];
+}
 // Documents are plain JSON data. Objects and arrays are copied but strings are shared, so an embedded
 // image is never duplicated in memory by edits, the undo history or duplicated objects.
 export function clone(value) {
@@ -133,6 +161,10 @@ export function validateDocument(input) {
             if (o.fillRule !== undefined && o.fillRule !== 'evenodd' && o.fillRule !== 'nonzero') throw new Error('La curva tiene un relleno inválido.');
             if (o.fillRule === 'evenodd') valid.fillRule = 'evenodd';
         }
+        for (const key of ['fillGradient', 'strokeGradient']) if (o[key] !== undefined) {
+            if (o.type === 'image') throw new Error('Las imágenes no llevan degradados.');
+            valid[key] = validGradient(o[key]);
+        }
         if (o.type === 'image') {
             if (!validImageSource(o.src)) throw new Error('La imagen contiene un origen inválido o es demasiado grande.');
             valid.src = o.src;
@@ -141,7 +173,7 @@ export function validateDocument(input) {
         }
         if (o.powerClip !== undefined) {
             const clip = o.powerClip;
-            if (!['rect', 'ellipse'].includes(o.type) || !clip || !numberIn(clip.width, .1, 10000) || !numberIn(clip.height, .1, 10000) ||
+            if (!POWERCLIP_TYPES.includes(o.type) || !clip || !numberIn(clip.width, .1, 10000) || !numberIn(clip.height, .1, 10000) ||
                 !Array.isArray(clip.objects) || clip.objects.some(child => !child || child.powerClip !== undefined)) throw new Error('Contenedor PowerClip inválido.');
             valid.powerClip = { width: clip.width, height: clip.height, objects: validateDocument({ ...input, objects: clip.objects }).objects };
             if (clip.transform !== undefined) {
@@ -192,17 +224,32 @@ export function objectMarkup(o, resolve = src => src) {
     }
     if (o.powerClip) {
         const base = { ...o }; delete base.powerClip;
+        const plain = { ...base }; delete plain.fillGradient; delete plain.strokeGradient;
         const clipId = 'pc-' + Array.from(o.id).map(c => c.codePointAt(0).toString(16)).join('-');
-        const shape = objectMarkup({ ...base, fill: '#ffffff', stroke: 'none' }, resolve);
+        const shape = objectMarkup({ ...plain, fill: '#ffffff', stroke: 'none' }, resolve);
         const content = o.powerClip.objects.filter(item => !item.hidden).map(item => objectMarkup(item, resolve)).join('');
         const t = o.powerClip.transform || { x: 0, y: 0, scale: 1 };
         return `${objectMarkup({ ...base, stroke: 'none' }, resolve)}<defs><clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${shape}</clipPath></defs><g clip-path="url(#${clipId})"><g transform="translate(${o.x} ${o.y}) scale(${o.width / o.powerClip.width} ${o.height / o.powerClip.height})"><g data-powerclip-content="true" transform="translate(${t.x} ${t.y}) scale(${t.scale})">${content}</g></g></g>${objectMarkup({ ...base, fill: 'none' }, resolve)}`;
     }
-    const style = `fill="${escapeXml(o.fill)}" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"`;
+    const fill = paint(o, 'fill'), stroke = paint(o, 'stroke'), defs = fill.defs + stroke.defs ? `<defs>${fill.defs}${stroke.defs}</defs>` : '';
+    const style = `fill="${fill.value}" stroke="${stroke.value}" stroke-width="${o.strokeWidth}"`;
+    return defs + shapeMarkup(o, style, resolve);
+}
+// The id of an object's gradient, unique in the page because object ids are.
+const gradientId = (o, key) => 'gr-' + key[0] + '-' + Array.from(o.id).map(c => c.codePointAt(0).toString(16)).join('-');
+function paint(o, key) {
+    const g = o[key + 'Gradient'];
+    if (!g || o[key] === 'none') return { value: escapeXml(o[key]), defs: '' };
+    const id = gradientId(o, key), tag = g.type === 'linear' ? 'linearGradient' : 'radialGradient';
+    const geometry = GRADIENT_NUMBERS[g.type].map(name => `${name}="${g[name]}"`).join(' ');
+    const stops = g.stops.map(stop => `<stop offset="${stop.offset}" stop-color="${stop.color}"${stop.opacity < 1 ? ` stop-opacity="${stop.opacity}"` : ''}/>`).join('');
+    return { value: `url(#${id})`, defs: `<${tag} id="${id}" gradientUnits="objectBoundingBox" gradientTransform="matrix(${g.transform.join(' ')})" ${geometry}${g.spread ? ` spreadMethod="${g.spread}"` : ''}>${stops}</${tag}>` };
+}
+function shapeMarkup(o, style, resolve) {
     if (o.type === 'rect') return `<rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" ${style}/>`;
     if (o.type === 'ellipse') return `<ellipse cx="${o.x + o.width / 2}" cy="${o.y + o.height / 2}" rx="${o.width / 2}" ry="${o.height / 2}" ${style}/>`;
     if (o.type === 'spline') return `<path d="${splinePath(o)}" ${style}/>`;
-    if (o.type === 'path') return `<path d="${pathData(o)}"${o.fillRule === 'evenodd' ? ' fill-rule="evenodd"' : ''} ${style}/>`;
+    if (o.type === 'path') return `<path d="${pathData(o)}"${o.fillRule === 'evenodd' ? ' fill-rule="evenodd" clip-rule="evenodd"' : ''} ${style}/>`;
     // data-adjusted lets the editor swap in the processed pixels; exports bake the adjustments first.
     if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(resolve(o.src, o))}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
     return `<text x="${o.x}" y="${o.y + o.fontSize}" font-family="Arial, sans-serif" font-size="${o.fontSize}" ${style} xml:space="preserve">${escapeXml(o.text)}</text>`;
@@ -217,13 +264,13 @@ export function* objectsWithContents(objects) {
 }
 
 export function makePowerClip(object) {
-    if (object.locked || object.powerClip || !['rect', 'ellipse'].includes(object.type)) throw new Error('Selecciona un rectángulo o una elipse sin bloquear.');
+    if (object.locked || object.powerClip || !POWERCLIP_TYPES.includes(object.type)) throw new Error('Selecciona un rectángulo, una elipse o una curva sin bloquear.');
     object.powerClip = { width: object.width, height: object.height, objects: [] };
 }
 
 export function placeInPowerClip(document, sourceIds, targetId, { createContainer = false } = {}) {
     const target = document.objects.find(item => item.id === targetId);
-    if (!target || target.hidden || target.locked || sourceIds.has(targetId) || (!target.powerClip && (!createContainer || !['rect', 'ellipse'].includes(target.type)))) throw new Error('Elige otro rectángulo o elipse visible y sin bloquear.');
+    if (!target || target.hidden || target.locked || sourceIds.has(targetId) || (!target.powerClip && (!createContainer || !POWERCLIP_TYPES.includes(target.type)))) throw new Error('Elige otro rectángulo o elipse visible y sin bloquear.');
     const sources = document.objects.filter(item => sourceIds.has(item.id));
     if (!sources.length || sources.some(item => item.locked || item.hidden || item.powerClip)) throw new Error('Selecciona contenido visible, sin bloquear y sin PowerClip anidado.');
     if (!target.powerClip) makePowerClip(target);

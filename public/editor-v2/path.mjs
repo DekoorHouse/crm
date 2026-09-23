@@ -40,6 +40,23 @@ export function pathPoints(object) {
     return object.subpaths.map(({ closed, points }) => ({ closed, points: points.map((value, i) => i % 2 ? object.y + value * object.height : object.x + value * object.width) }));
 }
 
+// Whether a point (in the curve's unturned page coordinates) is inside its fill, using its fill rule.
+export function pathContains(object, point) {
+    let winding = 0, crossings = 0;
+    for (const segments of subpathSegments(object)) {
+        const flat = [];
+        for (const s of segments) for (let i = flat.length ? 1 : 0; i <= 8; i++) {
+            const t = i / 8, u = 1 - t;
+            flat.push({ x: u ** 3 * s.p0.x + 3 * u * u * t * s.c1.x + 3 * u * t * t * s.c2.x + t ** 3 * s.p3.x, y: u ** 3 * s.p0.y + 3 * u * u * t * s.c1.y + 3 * u * t * t * s.c2.y + t ** 3 * s.p3.y });
+        }
+        for (let i = 0; i < flat.length; i++) {
+            const a = flat[i], b = flat[(i + 1) % flat.length];
+            if ((a.y > point.y) === (b.y > point.y)) continue;
+            if (point.x < a.x + (point.y - a.y) * (b.x - a.x) / (b.y - a.y)) { crossings++; winding += b.y > a.y ? 1 : -1; }
+        }
+    }
+    return object.fillRule === 'evenodd' ? crossings % 2 === 1 : winding !== 0;
+}
 export function validPathGeometry(subpaths) {
     if (!Array.isArray(subpaths) || !subpaths.length) return false;
     let total = 0;
