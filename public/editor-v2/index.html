@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dekoor · Editor V2</title>
   <meta name="theme-color" content="#191b22">
-  <link rel="stylesheet" href="/editor-v2/style.css?v=frame-template-1">
+  <link rel="stylesheet" href="/editor-v2/style.css?v=keep-off-1">
 </head>
 <body>
   <header class="topbar">
@@ -158,7 +158,7 @@
     </div>
     <div class="bitmap-options">
       <label class="check"><input id="bitmap-actual" type="checkbox"> Ver píxeles reales (100 %)</label>
-      <label class="check" title="Conserva la imagen original y pone el mapa de bits a un lado. Sin la palomita, lo reemplaza."><input id="bitmap-keep" type="checkbox" checked> Mantener original</label>
+      <label class="check" title="Conserva la imagen original y pone el mapa de bits a un lado. Sin la palomita, lo reemplaza."><input id="bitmap-keep" type="checkbox"> Mantener original</label>
     </div>
     <p id="bitmap-info" role="status" aria-live="polite"></p>
     <div class="raster-buttons">
@@ -175,7 +175,7 @@
     </div>
     <div class="raster-options">
       <label>Relación de aspecto <select id="raster-ratio"></select></label>
-      <label class="check" title="Conserva la imagen original y pone el resultado a un lado. Sin la palomita, el resultado la reemplaza."><input id="raster-keep" type="checkbox" checked> Mantener original</label>
+      <label class="check" title="Conserva la imagen original y pone el resultado a un lado. Sin la palomita, el resultado la reemplaza."><input id="raster-keep" type="checkbox"> Mantener original</label>
     </div>
     <label class="raster-prompt">Instrucciones para la IA (GPT Image 2.5 Sunburst)<textarea id="raster-prompt" rows="3" maxlength="6000"></textarea></label>
     <p id="raster-message" role="status" aria-live="polite"></p>
@@ -187,6 +187,6 @@
       <button type="button" id="raster-apply" class="primary" hidden>Aplicar</button>
     </div>
   </dialog>
-  <script type="module" src="/editor-v2/app.mjs?v=frame-template-1"></script>
+  <script type="module" src="/editor-v2/app.mjs?v=keep-off-1"></script>
 </body>
 </html>

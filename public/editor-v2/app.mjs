@@ -1389,6 +1389,8 @@ async function openRaster() {
     $('#raster-after').hidden = true; $('#raster-after').removeAttribute('src');
     $('#raster-placeholder').hidden = false; $('#raster-placeholder').textContent = 'Aquí aparecerá el resultado';
     $('#raster-prompt').value = RASTER_PROMPT;
+    // By default the result replaces the image; "Mantener original" is ticked only on purpose.
+    $('#raster-keep').checked = false;
     $('#raster-dialog').showModal();
     await rasterSetup();
 }
@@ -1489,6 +1491,7 @@ function openBitmap() {
     const method = $('#bitmap-method');
     if (!method.options.length) method.replaceChildren(...Object.entries(BITMAP_METHODS).map(([value, label]) => Object.assign(document.createElement('option'), { value, textContent: label })));
     $('#bitmap-before').src = object.src;
+    $('#bitmap-keep').checked = false;
     $('#bitmap-after').hidden = true; $('#bitmap-placeholder').hidden = false;
     $('#bitmap-dialog').showModal();
     updateBitmap();
