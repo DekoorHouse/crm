@@ -943,7 +943,7 @@ function insertPreset(key) {
     const centre = { x: (canvas.clientWidth / 2 - view.x) / view.scale, y: (canvas.clientHeight / 2 - view.y) / view.scale };
     const object = presetObject(key, centre, nextStroke);
     selectOnly(object.id); edit(d => d.objects.push(object)); setTool('select');
-    status(`${object.name} insertado · ${+object.width.toFixed(1)} × ${+object.height.toFixed(1)} mm`);
+    status(`${object.name} insertado · ${+object.width.toFixed(1)} × ${+object.height.toFixed(1)} mm${object.powerClip ? ' · PowerClip vacío: suelta tu diseño dentro (la base queda blanca)' : ''}`);
 }
 // Ctrl draws with equal sides (a square or a circle), as in CorelDRAW.
 function sizeDrawing(o, equal) {

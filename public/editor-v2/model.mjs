@@ -162,6 +162,13 @@ export function validateDocument(input, depth = 0) {
             if (curveNumbers > 5 * MAX_PATH_NUMBERS) throw new Error('El proyecto tiene demasiados puntos de curva.');
             if (o.fillRule !== undefined && o.fillRule !== 'evenodd' && o.fillRule !== 'nonzero') throw new Error('La curva tiene un relleno inválido.');
             if (o.fillRule === 'evenodd') valid.fillRule = 'evenodd';
+            // A fixed layer (e.g. the white base of the lamp frame): in the curve's box units, drawn above any
+            // PowerClip content and below the outline, whatever the curve's own colours are.
+            if (o.overlay !== undefined) {
+                const overlay = o.overlay;
+                if (!overlay || !/^#[0-9a-f]{6}$/i.test(overlay.fill) || !validPathSubpaths(overlay.subpaths)) throw new Error('La capa fija de la curva es inválida.');
+                valid.overlay = { fill: overlay.fill, subpaths: overlay.subpaths.map(({ closed, points }) => ({ closed, points: frozenPoints(points) })) };
+            }
         }
         for (const key of ['fillGradient', 'strokeGradient']) if (o[key] !== undefined) {
             if (o.type === 'image') throw new Error('Las imágenes no llevan degradados.');
@@ -232,15 +239,22 @@ export function objectMarkup(o, resolve = src => src) {
         const base = { ...o }; delete base.powerClip;
         const plain = { ...base }; delete plain.fillGradient; delete plain.strokeGradient;
         const clipId = 'pc-' + Array.from(o.id).map(c => c.codePointAt(0).toString(16)).join('-');
+        delete plain.overlay; delete base.overlay;
         const shape = objectMarkup({ ...plain, fill: '#ffffff', stroke: 'none' }, resolve);
         const content = o.powerClip.objects.filter(item => !item.hidden).map(item => objectMarkup(item, resolve)).join('');
         const t = o.powerClip.transform || { x: 0, y: 0, scale: 1 };
-        return `${objectMarkup({ ...base, stroke: 'none' }, resolve)}<defs><clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${shape}</clipPath></defs><g clip-path="url(#${clipId})"><g transform="translate(${o.x} ${o.y}) scale(${o.width / o.powerClip.width} ${o.height / o.powerClip.height})"><g data-powerclip-content="true" transform="translate(${t.x} ${t.y}) scale(${t.scale})">${content}</g></g></g>${objectMarkup({ ...base, fill: 'none' }, resolve)}`;
+        return `${objectMarkup({ ...base, stroke: 'none' }, resolve)}<defs><clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">${shape}</clipPath></defs><g clip-path="url(#${clipId})"><g transform="translate(${o.x} ${o.y}) scale(${o.width / o.powerClip.width} ${o.height / o.powerClip.height})"><g data-powerclip-content="true" transform="translate(${t.x} ${t.y}) scale(${t.scale})">${content}</g></g></g>${o.overlay && o.type === 'path' ? overlayMarkup(o) : ''}${objectMarkup({ ...base, fill: 'none' }, resolve)}`;
+    }
+    // A fixed layer goes between the fill and the outline, so the outline stays visible on top.
+    if (o.overlay && o.type === 'path') {
+        const bare = { ...o }; delete bare.overlay;
+        return objectMarkup({ ...bare, stroke: 'none', strokeGradient: undefined }, resolve) + overlayMarkup(o) + objectMarkup({ ...bare, fill: 'none', fillGradient: undefined }, resolve);
     }
     const fill = paint(o, 'fill'), stroke = paint(o, 'stroke'), defs = fill.defs + stroke.defs ? `<defs>${fill.defs}${stroke.defs}</defs>` : '';
     const style = `fill="${fill.value}" stroke="${stroke.value}" stroke-width="${o.strokeWidth}"`;
     return defs + shapeMarkup(o, style, resolve);
 }
+const overlayMarkup = o => `<path d="${pathData({ ...o, subpaths: o.overlay.subpaths })}" fill="${escapeXml(o.overlay.fill)}" stroke="none"/>`;
 // The id of an object's gradient, unique in the page because object ids are.
 const gradientId = (o, key) => 'gr-' + key[0] + '-' + Array.from(o.id).map(c => c.codePointAt(0).toString(16)).join('-');
 function paint(o, key) {
