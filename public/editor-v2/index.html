@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dekoor · Editor V2</title>
   <meta name="theme-color" content="#191b22">
-  <link rel="stylesheet" href="/editor-v2/style.css?v=silhouette-1">
+  <link rel="stylesheet" href="/editor-v2/style.css?v=silhouette-tool-1">
 </head>
 <body>
   <header class="topbar">
@@ -34,6 +34,7 @@
       <button data-tool="ellipse" title="Elipse (E)" aria-label="Elipse" aria-pressed="false">○</button>
       <button data-tool="text" title="Texto (T)" aria-label="Texto" aria-pressed="false">T</button>
       <button data-tool="spline" title="Spline (B)" aria-label="Spline" aria-pressed="false">Spline</button>
+      <button data-tool="silhouette" title="Silueta: presiona sobre un objeto y arrastra hacia afuera o hacia adentro" aria-label="Silueta" aria-pressed="false">Silueta</button>
       <button data-action="lamp-frame" title="Marco de lámpara (160 × 166.3 mm, medida real, línea de corte roja)" aria-label="Insertar marco de lámpara">Marco</button>
       <span class="spacer"></span><button data-action="help" title="Atajos y ayuda" aria-label="Ayuda">?</button>
     </nav>
@@ -57,7 +58,7 @@
         </div>
         <label>Rotación (°)<input id="rotation-input" type="number" required min="-360" max="360" step="any" title="Grados en sentido contrario a las manecillas del reloj, como en CorelDRAW"></label>
         <p class="subtle">Clic otra vez sobre el objeto para girarlo con el mouse; Ctrl gira de 15° en 15°.</p>
-        <div id="text-properties" hidden><h3>TEXTO</h3><label>Contenido<input data-property="text" maxlength="10000"></label><label>Tamaño (<span data-unit>mm</span>)<input data-property="fontSize" type="number" required min="0.1" max="1000" step="any"></label><p class="subtle">Arial · El texto se exporta editable.</p></div>
+        <div id="text-properties" hidden><h3>TEXTO</h3><label>Contenido<input data-property="text" maxlength="10000"></label><label>Tamaño (<span data-unit>mm</span>)<input data-property="fontSize" type="number" required min="0.1" max="1000" step="any"></label><label>Fuente<select data-property="fontFamily"><option value="Rows of Sunflowers">Rows of Sunflowers</option><option value="Arial">Arial</option></select></label><p class="subtle" id="font-status"></p><button type="button" id="font-upload" hidden>Subir fuente (.ttf)…</button><input id="font-file" type="file" accept=".ttf,font/ttf" hidden><p class="subtle">Al exportar, los textos en Rows of Sunflowers se convierten en curvas; los de Arial quedan editables.</p></div>
         <div id="image-properties" hidden>
           <h3>AJUSTES DE IMAGEN</h3>
           <label class="adjust"><span>Desaturar</span><output data-adjust-value="desaturate">0</output><input type="range" data-image-adjust="desaturate" min="0" max="100" step="1" value="0"></label>
@@ -130,6 +131,11 @@
     </form>
   </dialog>
   <div id="color-picker" class="color-picker" role="dialog" aria-label="Color personalizado" hidden><div class="cp-sv" aria-label="Saturación y brillo"><span class="cp-sv-cursor"></span></div><input class="cp-hue" type="range" min="0" max="360" step="1" aria-label="Tono"><div class="cp-row"><span class="cp-swatch" title="Antes · Ahora"><i class="cp-old"></i><i class="cp-new"></i></span><input class="cp-hex" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Color hexadecimal"><button type="button" class="primary cp-ok">Aplicar</button></div></div>
+  <div id="silhouette-bar" role="toolbar" aria-label="Opciones de silueta" hidden><strong>Silueta</strong>
+    <label>Pasos <input id="silhouette-bar-steps" type="number" min="1" max="20" step="1" value="1"></label>
+    <label>Línea <select id="silhouette-bar-color"><option value="#ff0000">Rojo corte</option><option value="#0000ff">Azul</option><option value="#000000">Negro</option></select></label>
+    <label>Grosor <input id="silhouette-bar-width" type="number" min="0" max="10" step="0.01" value="0.3"> mm</label>
+  </div>
   <div id="powerclip-edit-bar" role="toolbar" aria-label="Edición de PowerClip" hidden><span id="powerclip-edit-label">Editando contenido de PowerClip</span> <button type="button" id="powerclip-edit-done">Terminar edición</button></div>
   <div id="powerclip-toolbar" role="toolbar" aria-label="Contenido de PowerClip" hidden>
     <button type="button" id="powerclip-extract" title="Extraer el contenido del PowerClip">Extraer</button>
@@ -206,6 +212,6 @@
       <button type="button" id="raster-apply" class="primary" hidden>Aplicar</button>
     </div>
   </dialog>
-  <script type="module" src="/editor-v2/app.mjs?v=silhouette-1"></script>
+  <script type="module" src="/editor-v2/app.mjs?v=silhouette-tool-1"></script>
 </body>
 </html>

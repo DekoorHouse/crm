@@ -5,6 +5,8 @@ import { normalizeAdjust } from './imageAdjust.mjs';
 import { normalizeAngle, pivot, placeAtPivot, rotatePoint, turns } from './transform.mjs';
 export const TYPES = ['rect', 'ellipse', 'text', 'spline', 'image', 'path'];
 export const HAIRLINE_WIDTH = 0.0762;
+// Text fonts: Arial is built in; the others are loaded by the editor (fonts.mjs) and turned into curves on export.
+export const FONT_FAMILIES = ['Arial', 'Rows of Sunflowers'];
 // Shapes that can hold PowerClip content.
 export const POWERCLIP_TYPES = ['rect', 'ellipse', 'path'];
 // A gradient paints a fill or an outline; fill/stroke keep a plain colour for everything else (its first
@@ -148,6 +150,10 @@ export function validateDocument(input, depth = 0) {
             if (!numberIn(o.rotation, -360, 360)) throw new Error('El proyecto contiene objetos inválidos o no compatibles.');
             if (normalizeAngle(o.rotation)) valid.rotation = normalizeAngle(o.rotation);
         }
+        if (o.type === 'text' && o.fontFamily !== undefined) {
+            if (!FONT_FAMILIES.includes(o.fontFamily)) throw new Error('El texto usa una fuente no disponible.');
+            if (o.fontFamily !== 'Arial') valid.fontFamily = o.fontFamily;
+        }
         if (o.type === 'spline') {
             // Control points are normalized to the curve's bounds, so they may fall outside 0–1.
             if (!Array.isArray(o.points) || o.points.length < 2 || o.points.length > 500 || o.points.some(p => !p || !numberIn(p.x, -10000, 10000) || !numberIn(p.y, -10000, 10000))) throw new Error('La spline contiene puntos inválidos.');
@@ -280,7 +286,8 @@ function shapeMarkup(o, style, resolve) {
     if (o.type === 'path') return `<path d="${pathData(o)}"${o.fillRule === 'evenodd' ? ' fill-rule="evenodd" clip-rule="evenodd"' : ''} ${style}/>`;
     // data-adjusted lets the editor swap in the processed pixels; exports bake the adjustments first.
     if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.pixelated ? ` image-rendering="optimizeSpeed" style="image-rendering:pixelated" data-bitmap="${escapeXml(o.id)}"` : ''}${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(resolve(o.src, o))}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
-    return `<text x="${o.x}" y="${o.y + o.fontSize}" font-family="Arial, sans-serif" font-size="${o.fontSize}" ${style} xml:space="preserve">${escapeXml(o.text)}</text>`;
+    const family = o.fontFamily && o.fontFamily !== 'Arial' ? `'${o.fontFamily}', Arial, sans-serif` : 'Arial, sans-serif';
+    return `<text x="${o.x}" y="${o.y + o.fontSize}" font-family="${escapeXml(family)}" font-size="${o.fontSize}" ${style} xml:space="preserve">${escapeXml(o.text)}</text>`;
 }
 export function exportSvg(document) {
     const d = validateDocument(document);

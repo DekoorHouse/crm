@@ -132,10 +132,17 @@ export function smoothLoop(points) {
 
 // The silhouettes of a mask: one entry per step, each a list of closed subpaths in pixel coordinates.
 // distance is in pixels; outside silhouettes grow from the shape (holes filled), inside ones shrink it.
-export function silhouettes(inside, width, height, { distance, steps = 1, direction = 'outside', tolerance = .35 }) {
-    const shape = direction === 'outside' ? fillHoles(inside, width, height) : inside;
-    const out = direction === 'outside' ? shape : Uint8Array.from(shape, v => v ? 0 : 1);
-    const field = distanceField(out, width, height), result = [];
+export function silhouettes(inside, width, height, options) {
+    return traceSilhouettes(silhouetteField(inside, width, height, options.direction ?? 'outside'), width, height, options);
+}
+// The distance field for one direction, measured once so dragging only traces new lines: outside, the
+// distance to the shape (holes filled); inside, the distance to the outside.
+export function silhouetteField(inside, width, height, direction) {
+    const shape = direction === 'outside' ? fillHoles(inside, width, height) : Uint8Array.from(inside, v => v ? 0 : 1);
+    return distanceField(shape, width, height);
+}
+export function traceSilhouettes(field, width, height, { distance, steps = 1, direction = 'outside', tolerance = .35 }) {
+    const result = [];
     for (let step = 1; step <= steps; step++) {
         // Distances run between pixel centres; the shape's edge lies half a pixel from its last pixel.
         const r = distance * step + .5, value = new Float32Array(field.length);

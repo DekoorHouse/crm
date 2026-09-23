@@ -6,7 +6,8 @@ import { HAIRLINE_WIDTH } from './model.mjs';
 import { createColorPicker } from './colorPicker.mjs';
 import { pathData, normalizePath } from './path.mjs';
 import { presetObject } from './presets.mjs';
-import { silhouettes } from './silhouette.mjs';
+import { FONTS, DEFAULT_TEXT_FONT, fontReady, loadCachedFonts, loadCloudFonts, uploadFont, outlineLicensedText } from './fonts.mjs';
+import { silhouettes, silhouetteField, traceSilhouettes } from './silhouette.mjs';
 import { BITMAP_METHODS, bitmapSize, dpiToStep, toBitmap, pngWithDpi } from './bitmap.mjs';
 import { RASTER_PROMPT, rasterModel, linkRasterModel, rasterize } from './rasterize.mjs';
 import { pathNodes, movePathNodes, movePathHandle, closestOnPath, insertPathNode, removePathNodes } from './pathEdit.mjs';
@@ -134,7 +135,9 @@ function setTool(next) {
         button.setAttribute('aria-pressed', String(button.dataset.tool === next));
     });
     renderScene();
-    status({ select: 'Selecciona un objeto para moverlo o editarlo', hand: 'Arrastra para desplazar la vista', rect: 'Arrastra para dibujar · Shift: cuadrado', ellipse: 'Arrastra para dibujar · Shift: círculo', text: 'Haz clic para añadir texto', spline: 'Spline: coloca puntos con clics · clic en el primero para cerrarla · Enter o doble clic para terminar · Esc para cancelar' }[next]);
+    status({ select: 'Selecciona un objeto para moverlo o editarlo', hand: 'Arrastra para desplazar la vista', rect: 'Arrastra para dibujar · Ctrl: cuadrado', ellipse: 'Arrastra para dibujar · Ctrl: círculo', text: 'Haz clic para añadir texto', spline: 'Spline: coloca puntos con clics · clic en el primero para cerrarla · Enter o doble clic para terminar · Esc para cancelar',
+        silhouette: 'Silueta: presiona sobre un objeto y arrastra hacia afuera (exterior) o hacia adentro (interior); la línea pasa por el cursor' }[next]);
+    $('#silhouette-bar').hidden = next !== 'silhouette';
 }
 function point(event) {
     const rect = canvas.getBoundingClientRect();
@@ -484,6 +487,7 @@ function render() {
                 const limits = { width: [.1, 10000], height: [.1, 10000], fontSize: [.1, 1000], strokeWidth: [0, 100] }[key];
                 input.min = limits[0] / unitFactor(); input.max = limits[1] / unitFactor();
             }
+            if (key === 'fontFamily') { input.value = o.fontFamily || 'Arial'; return; }
             input.value = o.type === 'text' && ['width', 'height'].includes(key) ? displayMeasure(bounds[key]) :
                 input.type === 'color' && o[key] === 'none' ? '#000000' : typeof o[key] === 'number' ? displayMeasure(o[key]) : o[key];
             if (key === 'strokeWidth') input.value = Number((o[key] / unitFactor()).toFixed(6));
@@ -492,6 +496,7 @@ function render() {
         $('#no-fill').checked = o.fill === 'none'; $('#no-stroke').checked = o.stroke === 'none';
         $('#no-fill').disabled = o.locked; $('#no-stroke').disabled = o.locked;
         $('#text-properties').hidden = o.type !== 'text';
+        if (o.type === 'text') showFontStatus();
         $('#rotation-input').value = Number((o.rotation || 0).toFixed(2)); $('#rotation-input').disabled = o.locked;
         $('#image-properties').hidden = o.type !== 'image';
         if (o.type === 'image') {
@@ -596,6 +601,7 @@ canvas.addEventListener('pointerdown', event => {
     if (tool === 'hand' || event.button === 1) {
         gesture = { type: 'pan', pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, view: { ...view } }; return;
     }
+    if (tool === 'silhouette') { startSilhouetteDrag(event, start); return; }
     if (tool === 'spline') {
         selectOnly(null);
         if (!splineDraft) splineDraft = [];
@@ -608,7 +614,7 @@ canvas.addEventListener('pointerdown', event => {
         splinePointer = null; render(); return;
     }
     if (tool === 'text') {
-        const text = createObject('text', start.x, start.y); text.fill = '#000000'; text.stroke = 'none';
+        const text = createObject('text', start.x, start.y); text.fill = '#000000'; text.stroke = 'none'; text.fontFamily = DEFAULT_TEXT_FONT;
         selectOnly(text.id); edit(d => d.objects.push(text)); setTool('select');
         $('[data-property="text"]').focus(); $('[data-property="text"]').select(); return;
     }
@@ -803,6 +809,7 @@ canvas.addEventListener('pointermove', event => {
         for (const item of gesture.originals) Object.assign(draft.objects.find(object => object.id === item.id), rotateObject(item, gesture.centre, delta));
         status(gesture.originals.length === 1 ? `Rotación: ${formatAngle((gesture.originals[0].rotation || 0) + delta)}` : `Giro: ${formatAngle(delta)}`);
     }
+    if (gesture.type === 'silhouette') { silhouetteDrag.pointer = p; traceSilhouetteDrag(); return; }
     renderScene();
     if (['move', 'nodes', 'resize', 'resize-group'].includes(gesture.type) && gesture.snap && !gesture.dropTarget && !gesture.dropHint) drawReference(gesture.snap);
 });
@@ -923,6 +930,7 @@ canvas.addEventListener('pointerup', event => {
     const previous = gesture; gesture = null;
     if (previous.moved || !['move', 'nodes', 'node-marquee', 'node-handle'].includes(previous.type)) lastClick = null;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    if (previous.type === 'silhouette') { finishSilhouetteDrag(); return; }
     if (previous.type === 'pan') return;
     if (previous.type === 'marquee') { render(); status(`${selectedIds.size} objetos seleccionados`); return; }
     if (previous.type === 'node-marquee') {
@@ -983,6 +991,7 @@ function centreOn(doc, ids, point) {
 function cancelGesture() {
     if (!gesture) return;
     const previous = gesture; gesture = null; draft = null;
+    if (previous.type === 'silhouette') { silhouetteDrag = null; $('#hover-reference').replaceChildren(); }
     if (previous.type === 'pan') view = previous.view;
     if (previous.type === 'marquee') setSelection(previous.originalIds);
     if (previous.type === 'node-marquee' && nodeEditing) nodeEditing.nodes = previous.originalNodes;
@@ -1291,6 +1300,7 @@ $('#export-form').addEventListener('submit', async event => {
     $('#export-message').textContent = 'Preparando archivo…';
     try {
         await bakeAdjustedImages(snapshot);
+        await outlineLicensedText(snapshot);
         if (format === 'pdf') {
             const { exportPdf } = await import('./pdf.mjs');
             download(await exportPdf(snapshot), 'application/pdf', '.pdf', snapshot.name);
@@ -1628,7 +1638,7 @@ async function updateSilhouette() {
         const needed = direction === 'outside' ? distance * steps + 2 : 2;
         if (!session.raster || session.raster.margin < needed) {
             silhouetteInfo('Preparando…');
-            session.raster = await rasterizeSelection(items, needed * 1.25);
+            session.raster = await rasterizeSelection((await outlineLicensedText({ objects: clone(items) })).objects, needed * 1.25);
         }
         if (silhouette !== session || run !== session.run) return;
         silhouetteInfo('Calculando…');
@@ -1662,9 +1672,13 @@ function drawSilhouettePreview(r, result) {
     }
 }
 function applySilhouette() {
-    const session = silhouette, r = session?.raster, result = session?.result;
-    if (!result?.length) return;
-    const stroke = $('#silhouette-color').value, strokeWidth = Math.max(0, Math.min(10, Number($('#silhouette-width').value) || 0)), direction = $('#silhouette-direction').value;
+    const session = silhouette;
+    if (!session?.result?.length) return;
+    createSilhouettes(session, $('#silhouette-direction').value, $('#silhouette-color').value, $('#silhouette-width').value);
+    silhouette = null; $('#silhouette-dialog').close(); render();
+}
+function createSilhouettes(session, direction, stroke, width) {
+    const r = session.raster, result = session.result, strokeWidth = Math.max(0, Math.min(10, Number(width) || 0));
     const created = result.map((loops, step) => ({
         ...createObject('path', 0, 0), name: result.length === 1 ? 'Silueta' : `Silueta ${step + 1}`,
         ...normalizePath(loops.map(({ closed, points }) => ({ closed, points: points.map((value, i) => i % 2 ? r.y + value / r.scale : r.x + value / r.scale) }))),
@@ -1677,8 +1691,69 @@ function applySilhouette() {
         d.objects.splice(at, 0, ...(direction === 'outside' ? created.reverse() : created));
     });
     setSelection(created.map(item => item.id));
-    silhouette = null; $('#silhouette-dialog').close(); render();
     status(created.length === 1 ? 'Silueta creada' : `${created.length} siluetas creadas`);
+}
+// Silueta by dragging, as in CorelDRAW: press on an object and drag; the line goes through the pointer
+// (outside the shape: an outside silhouette; inside it: an inside one). The distances are measured
+// once when the drag starts; moving only traces the line again.
+let silhouetteDrag = null;
+async function startSilhouetteDrag(event, start) {
+    const id = event.target.closest('[data-id]')?.dataset.id;
+    if (!id || !current().objects.some(item => item.id === id && !item.hidden)) { status('Presiona sobre un objeto y arrastra hacia afuera o hacia adentro.'); return; }
+    if (!selectedIds.has(id)) selectOnly(id);
+    const items = selectedObjects().filter(item => !item.hidden);
+    const session = silhouetteDrag = { ids: items.map(item => item.id), pointer: start, fields: null, result: null, busy: false, again: false };
+    gesture = { type: 'silhouette', pointerId: event.pointerId, start };
+    render(); status('Preparando la silueta…');
+    try {
+        const raster = await rasterizeSelection((await outlineLicensedText({ objects: clone(items) })).objects, 40);
+        if (silhouetteDrag !== session) return;
+        session.raster = raster;
+        session.fields = { outside: silhouetteField(raster.mask, raster.width, raster.height, 'outside'), inside: silhouetteField(raster.mask, raster.width, raster.height, 'inside') };
+        traceSilhouetteDrag();
+    } catch (error) { if (silhouetteDrag === session) { silhouetteDrag = null; gesture = null; status(error.message || 'No se pudo preparar la silueta.'); } }
+}
+function traceSilhouetteDrag() {
+    const session = silhouetteDrag;
+    if (!session?.fields) return;
+    if (session.busy) { session.again = true; return; }
+    session.busy = true;
+    setTimeout(() => {
+        try {
+            const r = session.raster, px = Math.round((session.pointer.x - r.x) * r.scale - .5), py = Math.round((session.pointer.y - r.y) * r.scale - .5);
+            const x = Math.max(0, Math.min(r.width - 1, px)), y = Math.max(0, Math.min(r.height - 1, py)), at = y * r.width + x;
+            const direction = session.fields.inside[at] > 0 ? 'inside' : 'outside';
+            const distance = Math.max(.5, session.fields[direction][at] - .5), steps = Math.max(1, Math.min(20, Math.round(Number($('#silhouette-bar-steps').value) || 1)));
+            session.direction = direction; session.distance = distance / r.scale;
+            session.result = traceSilhouettes(session.fields[direction], r.width, r.height, { distance, steps, direction });
+            drawSilhouetteDrag(session);
+            status(`Silueta ${direction === 'outside' ? 'exterior' : 'interior'} · ${session.distance.toFixed(1)} mm${steps > 1 ? ` · ${steps} pasos` : ''} · suelta para crearla`);
+        } finally {
+            session.busy = false;
+            if (session.again && silhouetteDrag === session) { session.again = false; traceSilhouetteDrag(); }
+        }
+    }, 0);
+}
+function drawSilhouetteDrag(session) {
+    const overlay = $('#hover-reference'), r = session.raster, color = $('#silhouette-bar-color').value;
+    overlay.replaceChildren();
+    const group = svgElement('g', { transform: `translate(${view.x} ${view.y}) scale(${view.scale})` }, overlay);
+    for (const loops of session.result) {
+        const d = loops.map(({ points: p }) => {
+            const at = i => `${r.x + p[i] / r.scale} ${r.y + p[i + 1] / r.scale}`;
+            let text = `M ${at(0)}`;
+            for (let i = 2; i + 5 < p.length; i += 6) text += ` C ${at(i)} ${at(i + 2)} ${at(i + 4)}`;
+            return text + ' Z';
+        }).join(' ');
+        svgElement('path', { d, fill: 'none', stroke: color, 'stroke-width': 1.5 / view.scale, 'stroke-dasharray': `${4 / view.scale} ${3 / view.scale}` }, group);
+    }
+}
+function finishSilhouetteDrag() {
+    const session = silhouetteDrag; silhouetteDrag = null;
+    $('#hover-reference').replaceChildren();
+    if (!session?.result?.length) { render(); status('Arrastra un poco más lejos del objeto para crear la silueta.'); return; }
+    createSilhouettes(session, session.direction, $('#silhouette-bar-color').value, $('#silhouette-bar-width').value);
+    render();
 }
 $('#silhouette-menu').onclick = openSilhouette;
 $('#silhouette-apply').onclick = applySilhouette;
@@ -2078,4 +2153,33 @@ function showWelcome() {
     dialog.showModal();
     (hasDraft ? $('#welcome-continue') : $('#welcome-new')).focus();
 }
-setTool('select'); render(); fit(); showWelcome();
+// Licensed fonts: from this browser's cache at once, then from Firebase with the CRM session.
+let missingFonts = [];
+function showFontStatus() {
+    const o = selected(), family = o?.type === 'text' ? o.fontFamily || 'Arial' : null;
+    const missing = family && !fontReady(family);
+    $('#font-status').textContent = !missing ? '' : missingFonts.includes(family)
+        ? `${family} todavía no está en Firebase. Súbela una vez desde tu computadora.`
+        : `${family} se descarga de Firebase al iniciar sesión (Abrir → iniciar sesión).`;
+    $('#font-upload').hidden = !missing || !missingFonts.includes(family);
+}
+async function loadFonts() {
+    try {
+        await loadCachedFonts(); render();
+        if (Object.keys(FONTS).every(fontReady)) return;
+        cloudApi ||= await connect();
+        const attempt = async () => { if (cloudApi.user) { missingFonts = await loadCloudFonts(cloudApi); render(); } };
+        cloudApi.watch(() => attempt().catch(() => {}));
+    } catch { /* The page still works with the fallback font; exporting asks for the font. */ }
+}
+$('#font-upload').onclick = () => $('#font-file').click();
+$('#font-file').addEventListener('change', async event => {
+    const file = event.target.files[0]; event.target.value = ''; if (!file) return;
+    try {
+        cloudApi ||= await connect();
+        await uploadFont(cloudApi, DEFAULT_TEXT_FONT, file);
+        missingFonts = missingFonts.filter(family => family !== DEFAULT_TEXT_FONT); render();
+        status(`${DEFAULT_TEXT_FONT} subida a Firebase y cargada`);
+    } catch (error) { status(error.message || 'No se pudo subir la fuente.'); }
+});
+setTool('select'); render(); fit(); showWelcome(); loadFonts();

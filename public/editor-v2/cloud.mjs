@@ -54,6 +54,17 @@ async function initialize() {
         get user() { return auth.currentUser; },
         // The CRM API accepts the Firebase ID token of an allowed account.
         async token() { return auth.currentUser ? auth.currentUser.getIdToken() : null; },
+        // Licensed fonts live in Storage, not in the public repository (see fonts.mjs).
+        fonts: {
+            async url(file) {
+                try { return await storageSdk.getDownloadURL(storageSdk.ref(storage, `editor-v2/fonts/${file}`)); }
+                catch (error) { if (error?.code === 'storage/object-not-found') return null; throw error; }
+            },
+            async upload(file, bytes) {
+                if (!auth.currentUser) throw new Error('Inicia sesión para subir la fuente.');
+                await storageSdk.uploadBytes(storageSdk.ref(storage, `editor-v2/fonts/${file}`), bytes, { contentType: 'font/ttf', cacheControl: 'private, max-age=31536000' });
+            },
+        },
         watch(callback) { return authSdk.onAuthStateChanged(auth, callback); },
         async login(email, password) { await authSdk.signInWithEmailAndPassword(auth, email, password); },
         ...createProjectRepository(dbSdk, db, () => auth.currentUser, media),
