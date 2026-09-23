@@ -49,6 +49,10 @@ let view = { x: 0, y: 0, scale: 2 }, draft = null;
 let storageBlocked = false;
 let cloudBinding = null, cloudSavedKey = null, cloudBusy = false, pendingSave = false;
 let cloudApi = null;
+// Autosave, like Canva: a couple of seconds after the last change the project is saved to Firebase, and a
+// new design is created there on its first change. The draft in this browser still covers going offline.
+const AUTOSAVE_DELAY = 2000, AUTOSAVE_RETRY = 15000;
+let autosaveTimer = null, autosaveRunning = null, autosaveProblem = null, cloudConflict = false, cloudEpoch = 0;
 let nextFill = '#b9a3ed';
 let nextStroke = '#352a49';
 // The colours for new objects survive a reload in this browser.
@@ -101,6 +105,77 @@ function persist() {
     if (storageBlocked) return;
     clearTimeout(persistTimer);
     persistTimer = setTimeout(persistNow, 300);
+    scheduleAutosave();
+}
+// A new binding (new document, opened project or file, saved copy) starts afresh; a save still on its way
+// for the previous one does not touch it.
+function bindCloud(binding, savedKey) {
+    cloudBinding = binding; cloudSavedKey = savedKey; cloudConflict = false; autosaveProblem = null; cloudEpoch++;
+}
+const cloudPending = () => cloudBinding ? documentKey(history.document) !== cloudSavedKey : history.document.objects.length > 0;
+function scheduleAutosave(delay = AUTOSAVE_DELAY) {
+    clearTimeout(autosaveTimer); autosaveTimer = null;
+    if (cloudApi?.user && !cloudConflict && !autosaveRunning && cloudPending()) autosaveTimer = setTimeout(autosave, delay);
+    showAutosave();
+}
+const offline = error => !navigator.onLine || error instanceof TypeError || ['unavailable', 'deadline-exceeded', 'auth/network-request-failed', 'storage/retry-limit-exceeded'].includes(error?.code);
+// One save at a time (automatic or from the button); `saving` runs it and records the result.
+async function cloudSave(saving) {
+    clearTimeout(autosaveTimer); autosaveTimer = null;
+    while (autosaveRunning) await autosaveRunning;
+    let retry = null;
+    const run = (async () => {
+        const epoch = cloudEpoch;
+        try {
+            const result = await saving(epoch);
+            if (epoch === cloudEpoch) autosaveProblem = null;
+            return result;
+        } catch (error) {
+            if (epoch === cloudEpoch) {
+                if (error.code === 'editor/conflict') cloudConflict = true;
+                else if (offline(error)) { autosaveProblem = 'offline'; retry = AUTOSAVE_RETRY; }
+                else autosaveProblem = cloudError(error);
+            }
+            throw error;
+        }
+    })();
+    autosaveRunning = run.catch(() => {});
+    showAutosave();
+    try { return await run; }
+    finally {
+        autosaveRunning = null;
+        if (retry) scheduleAutosave(retry); else if (!autosaveProblem) scheduleAutosave(); else showAutosave();
+    }
+}
+async function autosave() {
+    if (autosaveRunning || !cloudApi?.user || cloudConflict || !cloudPending()) { if (!autosaveRunning) scheduleAutosave(); return; }
+    await cloudSave(async epoch => {
+        const snapshot = clone(history.document), key = documentKey(snapshot);
+        const binding = await cloudApi.save(snapshot, cloudBinding);
+        if (epoch === cloudEpoch) { cloudBinding = binding; cloudSavedKey = key; persistNow(); }
+    }).catch(() => {});
+}
+function showAutosave() {
+    const badge = $('#autosave-state');
+    let text = '', tone = '', title = 'Proyectos en Firebase';
+    if (cloudApi && !cloudApi.user) { text = 'Inicia sesión para guardar en Firebase'; tone = 'warn'; }
+    else if (!cloudApi) text = '';
+    else if (cloudConflict) { text = 'Cambió en otra sesión · guarda una copia'; tone = 'error'; title = 'Este proyecto se guardó desde otra sesión. Abre Proyectos para guardar tus cambios como copia o abrir la versión reciente.'; }
+    else if (autosaveRunning) text = 'Guardando…';
+    else if (autosaveProblem === 'offline') { text = 'Sin conexión · se guardará al reconectar'; tone = 'warn'; }
+    else if (autosaveProblem) { text = 'No se guardó en Firebase'; tone = 'error'; title = autosaveProblem; }
+    else if (autosaveTimer) text = 'Guardando…';
+    else if (cloudBinding) text = 'Guardado en Firebase';
+    badge.hidden = !text; badge.textContent = text; badge.dataset.tone = tone; badge.title = title;
+}
+let cloudConnecting = null;
+function ensureCloud() {
+    cloudConnecting ||= connect().then(api => {
+        cloudApi = api;
+        api.watch(() => { cloudState(); if (!api.user) $('#cloud-projects').replaceChildren(); scheduleAutosave(0); });
+        return api;
+    }).catch(error => { cloudConnecting = null; throw error; });
+    return cloudConnecting;
 }
 function persistNow() {
     clearTimeout(persistTimer); persistTimer = null;
@@ -111,8 +186,11 @@ function persistNow() {
         .then(() => { $('#save-status').textContent = 'Borrador guardado en este navegador'; })
         .catch(() => { $('#save-status').textContent = 'No se pudo guardar el borrador. Descarga tu proyecto.'; });
 }
-addEventListener('pagehide', () => { if (persistTimer !== null) persistNow(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden && persistTimer !== null) persistNow(); });
+addEventListener('pagehide', () => { if (persistTimer !== null) persistNow(); if (autosaveTimer) autosave(); });
+// Closing the page while a save is waiting or on its way asks first; the draft here keeps the changes anyway.
+addEventListener('beforeunload', event => { if (autosaveTimer || autosaveRunning) { autosave(); event.preventDefault(); event.returnValue = ''; } });
+addEventListener('online', () => { if (autosaveProblem === 'offline') scheduleAutosave(0); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && persistTimer !== null) persistNow(); if (document.hidden && autosaveTimer) autosave(); });
 function commit(next) {
     try { if (history.commit(next)) persist(); }
     catch (error) { status(error.message); }
@@ -1317,7 +1395,7 @@ $('#export-form').addEventListener('submit', async event => {
     }
 });
 function newDocument() {
-    cloudBinding = null; cloudSavedKey = null;
+    bindCloud(null, null);
     storageBlocked = false; selectOnly(null); commit(blankDocument()); persist(); fit(); status('Nuevo documento A4');
 }
 const actions = {
@@ -1402,7 +1480,7 @@ $('#place-powerclip').onclick = () => {
 // Convertir a raster: an AI version of the image for raster engraving, shown next to the original
 // before it is applied. With "Mantener original" the result goes beside it; without, it replaces it.
 let raster = null;
-const rasterToken = async () => { cloudApi ||= await connect(); return cloudApi.token(); };
+const rasterToken = async () => (await ensureCloud()).token();
 const rasterMessage = text => { $('#raster-message').textContent = text; };
 function rasterButtons({ busy = false, login = false, link = false } = {}) {
     $('#raster-generate').disabled = busy || !raster?.ready;
@@ -2074,6 +2152,7 @@ function cloudState() {
     $('#cloud-dialog').querySelectorAll('button, input').forEach(element => {
         element.disabled = cloudBusy;
     });
+    if (!cloudBusy) $('#cloud-versions').disabled = !cloudBinding;
 }
 async function cloudOperation(operation) {
     if (cloudBusy) return;
@@ -2090,14 +2169,14 @@ async function refreshProjects() {
         const row = document.createElement('button'); row.className = 'cloud-project';
         const title = document.createElement('strong'); title.textContent = project.name || 'Sin título';
         const detail = document.createElement('span');
-        detail.textContent = `${project.count ?? 0} objetos · ${project.updatedAt?.toLocaleString('es-MX') || 'Sin fecha'}`;
+        detail.textContent = `${project.count ?? 0} ${project.count === 1 ? 'objeto' : 'objetos'} · ${project.updatedAt?.toLocaleString('es-MX') || 'Sin fecha'}`;
         row.append(title, detail);
         row.onclick = () => cloudOperation(async () => {
             cloudMessage('Abriendo proyecto…');
             const loaded = await cloudApi.load(project.id);
             // Guard against accidentally discarding edits; loading is also undoable.
             if (!window.confirm('¿Abrir este proyecto y reemplazar el borrador actual? Puedes deshacerlo.')) { cloudMessage('Apertura cancelada.'); return; }
-            cancelGesture(); cloudBinding = loaded.binding; cloudSavedKey = documentKey(loaded.document);
+            cancelGesture(); bindCloud(loaded.binding, documentKey(loaded.document));
             storageBlocked = false; selectOnly(null); commit(loaded.document); persist(); fit();
             $('#cloud-dialog').close(); status('Proyecto cargado desde Firebase');
         });
@@ -2134,13 +2213,16 @@ $('#name-form').addEventListener('submit', event => {
 $('#name-cancel').onclick = () => $('#name-dialog').close('cancel');
 async function saveCloud(copy = false) {
     if (!await ensureProjectName()) { cloudMessage('Guardado cancelado.'); return; }
-    // Capture a snapshot: edits made while the request is in flight stay marked as pending.
-    const snapshot = clone(history.document), previousBinding = cloudBinding;
     cloudMessage('Guardando en Firebase…');
-    const binding = await cloudApi.save(snapshot, copy ? null : cloudBinding);
-    if (cloudBinding === previousBinding) {
-        cloudBinding = binding; cloudSavedKey = documentKey(snapshot); persist(); render();
-    }
+    await cloudSave(async epoch => {
+        // Capture a snapshot: edits made while the request is in flight stay marked as pending.
+        const snapshot = clone(history.document), key = documentKey(snapshot);
+        const binding = await cloudApi.save(snapshot, copy ? null : cloudBinding);
+        if (epoch !== cloudEpoch) return;
+        // A copy becomes the project being edited, and later changes save to it.
+        if (copy) bindCloud(binding, key); else { cloudBinding = binding; cloudSavedKey = key; }
+        persistNow(); render();
+    });
     try {
         await refreshProjects();
         cloudMessage(copy ? 'Copia guardada en Firebase.' : 'Proyecto guardado en Firebase.');
@@ -2153,25 +2235,49 @@ async function showCloud(saveRequested) {
     if (!$('#cloud-dialog').open) $('#cloud-dialog').showModal();
     await cloudOperation(async () => {
         cloudMessage('Conectando con Firebase…');
-        if (!cloudApi) {
-            cloudApi = await connect();
-            cloudApi.watch(() => { cloudState(); if (!cloudApi.user) $('#cloud-projects').replaceChildren(); });
-        }
+        await ensureCloud();
         cloudState();
         if (!cloudApi.user) { cloudMessage('Inicia sesión con tu cuenta del CRM.'); return; }
         if (pendingSave) { pendingSave = false; await saveCloud(); }
         else await refreshProjects();
+        if (cloudConflict) cloudMessage('Este proyecto se guardó desde otra sesión. Usa «Guardar como copia» para conservar tus cambios, o abre la versión reciente de la lista.');
     });
 }
+$('#autosave-state').onclick = () => showCloud(false);
 $('#cloud-close').onclick = () => $('#cloud-dialog').close();
 $('#cloud-dialog').addEventListener('cancel', event => { if (cloudBusy) event.preventDefault(); });
 $('#cloud-save').onclick = () => cloudOperation(() => saveCloud());
 $('#cloud-copy').onclick = () => cloudOperation(() => saveCloud(true));
 $('#cloud-refresh').onclick = () => cloudOperation(refreshProjects);
+// Version history: a version is kept at most every ten minutes while editing (the newest thirty).
+$('#cloud-versions').onclick = () => cloudOperation(async () => {
+    if (!cloudBinding) { cloudMessage('Este diseño todavía no está en Firebase.'); return; }
+    cloudMessage('Cargando versiones…');
+    // Pending changes first, so the newest version is up to date.
+    if (cloudPending() && !cloudConflict) await autosave();
+    const id = cloudBinding.id, versions = await cloudApi.versions(id), list = $('#cloud-projects');
+    list.replaceChildren();
+    versions.forEach((version, index) => {
+        const row = document.createElement('button'); row.className = 'cloud-project';
+        const title = document.createElement('strong'); title.textContent = version.savedAt.toLocaleString('es-MX') + (index === 0 ? ' · más reciente' : '');
+        const detail = document.createElement('span'); detail.textContent = `${version.count ?? 0} ${version.count === 1 ? 'objeto' : 'objetos'}`;
+        row.append(title, detail);
+        row.onclick = () => cloudOperation(async () => {
+            cloudMessage('Abriendo versión…');
+            const restored = await cloudApi.loadVersion(id, version.id);
+            if (!window.confirm(`¿Volver a la versión del ${version.savedAt.toLocaleString('es-MX')}? Puedes deshacerlo con Ctrl+Z.`)) { cloudMessage('Restauración cancelada.'); return; }
+            if (cloudBinding?.id !== id) { cloudMessage('Se abrió otro proyecto mientras tanto.'); return; }
+            cancelGesture(); selectOnly(null); commit(restored); fit();
+            $('#cloud-dialog').close(); status(`Versión del ${version.savedAt.toLocaleString('es-MX')} restaurada · se guardará como la más reciente`);
+        });
+        list.append(row);
+    });
+    cloudMessage(versions.length ? 'Elige una versión para volver a ella. «Actualizar lista» regresa a los proyectos.' : 'Todavía no hay versiones de este proyecto.');
+});
 $('#cloud-login').addEventListener('submit', event => {
     event.preventDefault();
     cloudOperation(async () => {
-        if (!cloudApi) cloudApi = await connect();
+        await ensureCloud();
         cloudMessage('Iniciando sesión…');
         const password = $('#cloud-password').value;
         $('#cloud-password').value = '';
@@ -2236,7 +2342,7 @@ async function loadFonts() {
     try {
         await loadCachedFonts(); render();
         if (Object.keys(FONTS).every(fontReady)) return;
-        cloudApi ||= await connect();
+        await ensureCloud();
         const attempt = async () => { if (cloudApi.user) { missingFonts = await loadCloudFonts(cloudApi); render(); } };
         cloudApi.watch(() => attempt().catch(() => {}));
     } catch { /* The page still works with the fallback font; exporting asks for the font. */ }
@@ -2245,10 +2351,11 @@ $('#font-upload').onclick = () => $('#font-file').click();
 $('#font-file').addEventListener('change', async event => {
     const file = event.target.files[0]; event.target.value = ''; if (!file) return;
     try {
-        cloudApi ||= await connect();
+        await ensureCloud();
         await uploadFont(cloudApi, DEFAULT_TEXT_FONT, file);
         missingFonts = missingFonts.filter(family => family !== DEFAULT_TEXT_FONT); render();
         status(`${DEFAULT_TEXT_FONT} subida a Firebase y cargada`);
     } catch (error) { status(error.message || 'No se pudo subir la fuente.'); }
 });
 setTool('select'); render(); fit(); showWelcome(); loadFonts();
+ensureCloud().catch(() => showAutosave());

@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dekoor · Editor V2</title>
   <meta name="theme-color" content="#191b22">
-  <link rel="stylesheet" href="/editor-v2/style.css?v=silhouette-smooth-3">
+  <link rel="stylesheet" href="/editor-v2/style.css?v=autosave-1">
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">D</span><strong>dekoor<span> / editor</span></strong><small>V2 · BASE</small></div>
     <input id="document-name" aria-label="Nombre del documento" value="Sin título" maxlength="120">
     <div class="file-actions">
-      <button data-action="new">Nuevo</button><button data-action="open">Abrir</button><button data-action="save" title="Guardar proyecto (Ctrl+S)">Guardar proyecto</button><button data-action="export" class="primary" title="Exportar (Ctrl+E)" aria-keyshortcuts="Control+E">Exportar ↗</button>
+      <button id="autosave-state" class="autosave-state" hidden></button><button data-action="new">Nuevo</button><button data-action="open">Abrir</button><button data-action="save" title="Guardar proyecto (Ctrl+S)">Guardar proyecto</button><button data-action="export" class="primary" title="Exportar (Ctrl+E)" aria-keyshortcuts="Control+E">Exportar ↗</button>
     </div>
   </header>
   <div class="commandbar">
@@ -94,7 +94,7 @@
   </dialog>
   <dialog id="cloud-dialog" aria-labelledby="cloud-title">
     <div class="cloud-heading"><h2 id="cloud-title">Proyectos en Firebase</h2><button id="cloud-close" aria-label="Cerrar proyectos">Cerrar</button></div>
-    <p>Proyectos compartidos con el equipo del CRM. El borrador de trabajo se conserva en este navegador.</p>
+    <p>Proyectos compartidos con el equipo del CRM. Con la sesión iniciada, cada cambio se guarda solo en Firebase; el borrador también se conserva en este navegador.</p>
     <p id="cloud-message" role="status" aria-live="polite"></p>
     <form id="cloud-login" hidden>
       <label>Correo del CRM<input id="cloud-email" type="email" autocomplete="username" required></label>
@@ -103,7 +103,7 @@
     </form>
     <div id="cloud-account" hidden>
       <p id="cloud-user"></p>
-      <div class="cloud-buttons"><button id="cloud-save" class="primary">Guardar en Firebase</button><button id="cloud-copy">Guardar como copia</button><button id="cloud-refresh">Actualizar lista</button></div>
+      <div class="cloud-buttons"><button id="cloud-save" class="primary">Guardar en Firebase</button><button id="cloud-copy">Guardar como copia</button><button id="cloud-refresh">Actualizar lista</button><button id="cloud-versions">Historial de versiones</button></div>
       <p class="subtle">Últimos 100 proyectos · al abrir se reemplaza el borrador actual; puedes deshacerlo.</p>
       <div id="cloud-projects"></div>
     </div>
@@ -212,6 +212,6 @@
       <button type="button" id="raster-apply" class="primary" hidden>Aplicar</button>
     </div>
   </dialog>
-  <script type="module" src="/editor-v2/app.mjs?v=silhouette-smooth-3"></script>
+  <script type="module" src="/editor-v2/app.mjs?v=autosave-1"></script>
 </body>
 </html>
