@@ -8,6 +8,8 @@ import { parsePathData } from './svgImport.mjs';
 export const PRESETS = {
     'lamp-frame': {
         name: 'Marco de lámpara',
+        // Pure red (#FF0000) is what K40 Whisperer cuts as a vector line.
+        stroke: '#ff0000',
         strokeWidth: .3,
         // coso.svg (CorelDRAW 2021): viewBox 35000 × 33000 for 350 × 330 mm.
         unit: .01,
@@ -15,7 +17,8 @@ export const PRESETS = {
     },
 };
 
-// A cutting line: no fill and the preset's outline width (a hairline by default), centred on the given point.
+// A cutting line: no fill, the preset's own outline colour and width (else the given colour and a
+// hairline), centred on the given point.
 export function presetObject(key, centre, stroke) {
     const preset = PRESETS[key];
     if (!preset) throw new Error('Forma no encontrada.');
@@ -24,6 +27,6 @@ export function presetObject(key, centre, stroke) {
     return {
         ...createObject('path', 0, 0), name: preset.name, ...geometry,
         x: centre.x - geometry.width / 2, y: centre.y - geometry.height / 2,
-        fill: 'none', stroke: stroke === 'none' ? '#000000' : stroke, strokeWidth: preset.strokeWidth ?? HAIRLINE_WIDTH,
+        fill: 'none', stroke: preset.stroke ?? (stroke === 'none' ? '#000000' : stroke), strokeWidth: preset.strokeWidth ?? HAIRLINE_WIDTH,
     };
 }
