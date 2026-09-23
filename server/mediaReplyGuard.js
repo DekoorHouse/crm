@@ -33,8 +33,10 @@ async function truthfulProductionReply(contactId, text) {
             if (order && ['Sin estatus', 'Fabricar', 'Esperando anticipo'].includes(order.estatus)) {
                 return 'Cuando tu pedido esté terminado, recibirás la foto para continuar con el proceso.';
             }
+            // Sin pedido estamos a media venta: la foto del trabajo terminado ES el proceso
+            // (se paga al verla). "Todavía no puedo confirmar una fecha" sonaba a problema.
             return order ? 'El envío de la foto depende del avance del pedido; todavía no puedo confirmar una fecha.'
-                : 'Si confirmas tu pedido, recibirás la foto cuando esté terminado; todavía no puedo confirmar una fecha.';
+                : 'Te mandamos la foto de tu lámpara terminada antes de enviarla 📸';
         }
         if (productionClaim(part) && order?.estatus !== 'Fabricar') {
             return order ? 'Tu pedido está registrado. Todavía no puedo confirmar que esté en fabricación.'
@@ -44,8 +46,15 @@ async function truthfulProductionReply(contactId, text) {
     }).join('\n');
 }
 
+// Pasar DATOS no es prometer un archivo: "te comparto los datos para el anticipo de tu diseño"
+// bloqueaba la cuenta del anticipo (5219623330114, 23-sep-2026).
+const SHARES_DATA = /\b(?:te|le|les)\s+(?:comparto|paso|mando|envio|dejo|doy)\s+(?:(?:los|las|el|la|mis|nuestros|nuestras|unos)\s+)?(?:datos|informacion|info|cuenta|numero|enlace|link|liga|precio|costo|detalles)\b/g;
+// Una oración con datos de pago nunca se quita: sin ella el cliente no puede pagar.
+const PAYMENT_DATA = /\b\d(?:[\s-]?\d){15,17}\b|\b(?:bbva|clabe|oxxo|spin)\b/;
+const FAKE_MARKER = /\[(?:imagen|foto|video|archivo adjunto|adjunto)\b[^\]]*\]/gi;
+
 function unsupportedMediaClaim(text, fileUrl) {
-    const value = normalize(text);
+    const value = normalize(text).replace(SHARES_DATA, 'negado');
     // Un marcador escrito por el modelo nunca es un archivo, ni siquiera junto
     // a otro adjunto real procedente de una respuesta rápida.
     if (/\[(?:imagen|foto|video|archivo adjunto|adjunto)\b[^\]]*\]/.test(value)) return true;
@@ -55,6 +64,7 @@ function unsupportedMediaClaim(text, fileUrl) {
     // La acción y el archivo deben pertenecer a la misma oración. "El equipo
     // revisa tu pago. No reenvíes la imagen" no es una promesa de adjuntar nada.
     return value.split(/[.!?\n]+/).some(sentence => {
+        if (PAYMENT_DATA.test(sentence)) return false;
         if (!MEDIA.test(sentence)) {
             // Pronombre que retoma la foto en la oración anterior.
             return /\bte (?:la|lo) (?:envio|mando|comparto|adjunto)\b/.test(sentence) && !/\bno\s+te\b/.test(sentence);
@@ -76,6 +86,10 @@ async function protectMediaReply({ contactId, text, fileUrl = null, source = 'ai
         text = await truthfulProductionReply(contactId, text);
     }
     if (!unsupportedMediaClaim(text, fileUrl)) return { text, blocked: false };
+    // Se quita SOLO lo que promete un archivo inexistente y el resto se manda. Antes se tiraba
+    // la respuesta entera: con ella se iban los datos del anticipo y el cliente recibía un aviso
+    // interno ("Este mensaje no incluye un archivo adjunto…").
+    const kept = stripUnsupportedMediaClaims(text, fileUrl);
     const ref = db.collection('contacts_whatsapp').doc(contactId);
     const first = await db.runTransaction(async tx => {
         const contact = (await tx.get(ref)).data();
@@ -100,15 +114,31 @@ async function protectMediaReply({ contactId, text, fileUrl = null, source = 'ai
                 : 'La respuesta anuncia un adjunto que no incluye; revisar el archivo solicitado.',
                 priorAttachmentIds: priorAttachments, orderId: latest?.id || null,
                 orderStatus: latest?.data().estatus || null,
-                requestedText: String(text).slice(0, 1500), source,
+                requestedText: String(text).slice(0, 1500), sentText: kept ? kept.slice(0, 1500) : null, source,
                 at: admin.firestore.FieldValue.serverTimestamp() },
         });
         return !pending;
     });
+    // El equipo ya quedó avisado; el cliente recibe lo que sí era cierto de la respuesta.
+    if (kept) return { blocked: false, flagged: true, text: kept };
     // Los seguimientos no vuelven a contactar al cliente para repetir la promesa.
-    return { blocked: true, text: source === 'ai' && first
-        ? 'Este mensaje no incluye un archivo adjunto. Dejé el caso al equipo para que revise lo que necesitas y los archivos que ya están en la conversación.'
-        : null };
+    return { blocked: true, text: source === 'ai' && first ? MEDIA_HOLD_REPLY : null };
 }
 
-module.exports = { unsupportedMediaClaim, protectMediaReply };
+const MEDIA_HOLD_REPLY = 'Déjame revisarlo con el equipo y en un momento te confirmo 😊';
+
+// Devuelve el texto sin las oraciones que prometen un archivo que no va adjunto (ni los marcadores
+// "[imagen]" que escribe el modelo), o null si no queda nada que valga la pena mandar.
+function stripUnsupportedMediaClaims(text, fileUrl) {
+    const lines = String(text || '').replace(FAKE_MARKER, '').split('\n').map(line => line
+        .split(/(?<=[.!?…])\s+/)
+        .filter(sentence => !unsupportedMediaClaim(sentence, fileUrl))
+        .join(' ')
+        .replace(/\s+$/, ''));
+    const out = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    // Solo emojis o un "¡Claro!" suelto no es una respuesta.
+    const words = normalize(out).replace(/[^a-z0-9ñ\s]/g, ' ').split(/\s+/).filter(Boolean);
+    return words.length >= 4 ? out : null;
+}
+
+module.exports = { unsupportedMediaClaim, stripUnsupportedMediaClaims, protectMediaReply, MEDIA_HOLD_REPLY };

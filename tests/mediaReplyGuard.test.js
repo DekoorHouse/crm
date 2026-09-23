@@ -1,6 +1,6 @@
 const mockDb = require('./helpers/paymentFirestore')();
 jest.mock('../server/config', () => ({ db: mockDb, admin: { firestore: { FieldValue: { serverTimestamp: () => new Date() } } } }));
-const { unsupportedMediaClaim, protectMediaReply } = require('../server/mediaReplyGuard');
+const { unsupportedMediaClaim, protectMediaReply, MEDIA_HOLD_REPLY } = require('../server/mediaReplyGuard');
 beforeEach(() => {
     mockDb.reset();
     mockDb.seed('contacts_whatsapp/customer', { name: 'Cliente', needsAttention: false });
@@ -31,12 +31,48 @@ test.each([null, 'Cancelado', 'Foto enviada'])('does not invent production or a 
     expect(result.blocked).toBe(false);
     expect(result.text).not.toContain('Ya está en fabricación');
     expect(result.text).not.toContain('Mañana');
-    expect(result.text).toContain('todavía no puedo confirmar una fecha');
+    expect(result.text).toContain(estatus ? 'todavía no puedo confirmar una fecha' : 'Te mandamos la foto de tu lámpara terminada');
 });
 
-test.each(['Aquí te mando la foto.', '[imagen]'])('future production notice cannot hide an unsupported attachment: %s', async claim => {
+test('future production notice cannot hide an unsupported attachment: the claim is removed and the team is notified', async () => {
     mockDb.seed('pedidos/current', { contactId: 'customer', estatus: 'Fabricar', createdAt: new Date() });
-    expect((await protectMediaReply({ contactId: 'customer', text: 'Cuando esté terminado, te enviaremos la foto. ' + claim })).blocked).toBe(true);
+    const result = await protectMediaReply({ contactId: 'customer', text: 'Cuando esté terminado, te enviaremos la foto. Aquí te mando la foto.' });
+    expect(result).toMatchObject({ blocked: false, flagged: true });
+    expect(result.text).toContain('Cuando tu pedido esté terminado');
+    expect(result.text).not.toContain('Aquí te mando');
+    expect(mockDb.read('contacts_whatsapp/customer').needsAttention).toBe(true);
+});
+
+test('a fake marker beside an unrewritten promise leaves nothing to send', async () => {
+    mockDb.seed('pedidos/current', { contactId: 'customer', estatus: 'Fabricar', createdAt: new Date() });
+    expect((await protectMediaReply({ contactId: 'customer', text: 'Cuando esté terminado, te enviaremos la foto. [imagen]' })).blocked).toBe(true);
+});
+
+test('5219623330114: sharing the deposit data for a special design is not a media promise', async () => {
+    const text = `¡Con gusto! Te comparto los datos para el anticipo de tu diseño especial:
+
+🏦 **BBVA**
+🤵‍♂️ **Christian Morales**
+💳 **4152 3145 7069 0670**
+
+En cuanto realices el depósito de los *$300*, por favor me compartes una foto de tu comprobante por aquí para registrar tu pedido y que nuestro equipo comience con el diseño de tu lámpara. ✨`;
+    expect(await protectMediaReply({ contactId: 'customer', text })).toEqual({ blocked: false, text });
+    expect(mockDb.read('contacts_whatsapp/customer').needsAttention).toBe(false);
+    expect(unsupportedMediaClaim('Aquí te dejo los datos para que apartes tu diseño.')).toBe(false);
+    expect(unsupportedMediaClaim('Te paso el enlace del catálogo con los diseños.')).toBe(false);
+});
+
+test('removes only the unsupported sentence and keeps payment data', async () => {
+    const text = 'Aquí te mando la foto del diseño. Para apartarlo son $300.\n💳 BBVA 4152 3145 7069 0670';
+    const result = await protectMediaReply({ contactId: 'customer', text });
+    expect(result).toEqual({ blocked: false, flagged: true, text: 'Para apartarlo son $300.\n💳 BBVA 4152 3145 7069 0670' });
+    expect(mockDb.read('contacts_whatsapp/customer').mediaRequest).toMatchObject({ requestedText: text, sentText: result.text });
+});
+
+test('when nothing true remains, the client gets a natural hold message, never the internal notice', async () => {
+    const result = await protectMediaReply({ contactId: 'customer', text: '¡Listo! ✨ Aquí te mando la foto del diseño.' });
+    expect(result).toEqual({ blocked: true, text: MEDIA_HOLD_REPLY });
+    expect(result.text).not.toMatch(/archivo adjunto/i);
 });
 
 test('does not send a production assertion if reading its saved status fails', async () => {
@@ -48,7 +84,7 @@ test('4921128336 and +50931927297: sales photo notice does not require an existi
     const text = '¡Excelente! 🎉\n\n✅ *¡Ya hemos enviado varias veces a tu zona!* 📦✨\n\nMañana te enviaremos la foto de tu pedido personalizado para que puedas realizar tu pago y enviarlo.✨\n\nEl ENVIO ES GRATIS por DHL ✈️ y *tu pedido llegará en 3 a 5 días hábiles* (sin contar sábados ni domingos) después de que recibamos tu pago y enviemos la guia de envio. 🚛💨';
     const result = await protectMediaReply({ contactId: 'customer', text });
     expect(result.blocked).toBe(false);
-    expect(result.text).toContain('Si confirmas tu pedido');
+    expect(result.text).toContain('Te mandamos la foto de tu lámpara terminada');
     expect(result.text).not.toContain('Mañana');
     expect(mockDb.read('contacts_whatsapp/customer').needsAttention).toBe(false);
 });

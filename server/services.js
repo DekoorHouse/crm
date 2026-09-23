@@ -4635,6 +4635,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 
             const mediaGuard = await require('./mediaReplyGuard').protectMediaReply({ contactId, text: msgText, fileUrl: qrFileUrl });
             msgText = mediaGuard.text;
+            if (mediaGuard.flagged) console.warn(`[AI] Se quitó una promesa de archivo sin adjunto en la respuesta a ${contactId}; se manda el resto y el equipo quedó avisado.`);
             if (mediaGuard.blocked) {
                 mediaHandoff = true;
                 msgText = mediaGuard.text;
