@@ -1,6 +1,6 @@
 import { History, blankDocument, createObject, clone, validateDocument, validImageSource, objectMarkup, setPaint, POWERCLIP_TYPES, documentKey, forgetImages, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
-import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget, unionBounds, resizeSelection, resizeRotated, rotatedBounds } from './geometry.mjs';
+import { RESIZE_HANDLES, snapResizeDelta, handlePoint, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget, unionBounds, resizeSelection, resizeRotated, rotatedBounds } from './geometry.mjs';
 import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns } from './transform.mjs';
 import { HAIRLINE_WIDTH } from './model.mjs';
 import { createColorPicker } from './colorPicker.mjs';
@@ -660,6 +660,7 @@ canvas.addEventListener('pointerdown', event => {
         const items = selectedObjects().filter(item => !item.hidden && !item.locked);
         draft = clone(history.document);
         gesture = { type: 'resize-group', handle: handle.dataset.handle, start, originals: clone(items), box: unionBounds(items.map(getBounds)), pointerId: event.pointerId };
+        gesture.anchor = handlePoint(gesture.box, gesture.handle); gesture.snapTargets = snapTargets();
         render(); return;
     }
     // A plain click on an object that was already selected switches between size and rotation handles.
@@ -669,7 +670,7 @@ canvas.addEventListener('pointerdown', event => {
     if (o && !o.locked && !o.hidden) {
         draft = clone(history.document);
         gesture = { type: handle ? 'resize' : 'move', handle: handle?.dataset.handle, start, original: clone(o), originals: clone(selectedObjects().filter(item => !item.locked)), pointerId: event.pointerId, reselect };
-        gesture.anchor = hit?.reference || start;
+        gesture.anchor = handle ? handlePoint(o, handle.dataset.handle) : hit?.reference || start;
         gesture.snapTargets = snapTargets();
     }
     render();
@@ -786,9 +787,7 @@ canvas.addEventListener('pointermove', event => {
         gesture.pointer = p; updatePowerClipDrop(gesture);
     }
     if (gesture.type === 'draw') { gesture.delta = { x: dx, y: dy }; sizeDrawing(o, event.ctrlKey || event.metaKey); }
-    if (gesture.type === 'resize-group') {
-        for (const item of resizeSelection(gesture.originals, gesture.box, gesture.handle, dx, dy)) Object.assign(draft.objects.find(object => object.id === item.id), item);
-    }
+    if (gesture.type === 'resize' || gesture.type === 'resize-group') { gesture.delta = { x: dx, y: dy }; applyResize(event.shiftKey); }
     if (gesture.type === 'rotate') {
         let delta = normalizeAngle(angleOf(p, gesture.centre) - gesture.startAngle);
         // Ctrl: one object lands on multiples of 15°; a group turns in steps of 15°.
@@ -802,11 +801,33 @@ canvas.addEventListener('pointermove', event => {
         for (const item of gesture.originals) Object.assign(draft.objects.find(object => object.id === item.id), rotateObject(item, gesture.centre, delta));
         status(gesture.originals.length === 1 ? `Rotación: ${formatAngle((gesture.originals[0].rotation || 0) + delta)}` : `Giro: ${formatAngle(delta)}`);
     }
-    if (gesture.type === 'resize') {
-        Object.assign(o, turns(gesture.original) ? resizeRotated(gesture.original, gesture.handle, dx, dy) : resizeBounds(gesture.original, gesture.handle, dx, dy));
-    }
     renderScene();
-    if (['move', 'nodes'].includes(gesture.type) && gesture.snap && !gesture.dropTarget && !gesture.dropHint) drawReference(gesture.snap);
+    if (['move', 'nodes', 'resize', 'resize-group'].includes(gesture.type) && gesture.snap && !gesture.dropTarget && !gesture.dropHint) drawReference(gesture.snap);
+});
+// The dragged resize handle snaps to the references of other objects, the page and a PowerClip's frame.
+function resizeDelta(box, dx, dy, fromCentre) {
+    const movement = snapTranslation(gesture.anchor, { x: dx, y: dy }, gesture.snapTargets, selectedIds, 7 / view.scale);
+    gesture.snap = movement.hit;
+    if (!movement.hit) return { x: dx, y: dy };
+    return turns(box) ? { x: movement.x, y: movement.y } : snapResizeDelta(box, gesture.handle, movement, fromCentre);
+}
+// Shift resizes from the centre, as in CorelDRAW: both sides of the axis move (corners keep the proportion).
+function applyResize(fromCentre) {
+    const { x: dx, y: dy } = gesture.delta;
+    if (gesture.type === 'resize-group') {
+        const delta = resizeDelta(gesture.box, dx, dy, fromCentre);
+        for (const item of resizeSelection(gesture.originals, gesture.box, gesture.handle, delta.x, delta.y, fromCentre)) Object.assign(draft.objects.find(object => object.id === item.id), item);
+        return;
+    }
+    const original = gesture.original, delta = resizeDelta(original, dx, dy, fromCentre);
+    Object.assign(draft.objects.find(item => item.id === original.id), turns(original)
+        ? resizeRotated(original, gesture.handle, delta.x, delta.y, fromCentre) : resizeBounds(original, gesture.handle, delta.x, delta.y, fromCentre));
+}
+// Pressing or releasing Shift while resizing updates the size without moving the mouse.
+for (const type of ['keydown', 'keyup']) window.addEventListener(type, event => {
+    if (!['resize', 'resize-group'].includes(gesture?.type) || !gesture.delta || event.key !== 'Shift') return;
+    applyResize(event.shiftKey); renderScene();
+    if (gesture.snap) drawReference(gesture.snap);
 });
 canvas.addEventListener('dblclick', event => {
     if (tool === 'spline') { event.preventDefault(); finishSpline(); return; }

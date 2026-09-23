@@ -14,7 +14,13 @@ export const RESIZE_HANDLES = [
 
 // Corners scale uniformly about the opposite corner. Edge handles affect one axis.
 // Crossing the fixed anchor stops at the minimum size instead of flipping the object.
-export function resizeBounds(original, handle, dx, dy) {
+// fromCentre (Shift, as in CorelDRAW): the centre stays, so both sides of the axis move; the handle
+// still follows the pointer.
+export function resizeBounds(original, handle, dx, dy, fromCentre = false) {
+    if (fromCentre) {
+        const next = resizeBounds(original, handle, 2 * dx, 2 * dy);
+        return { ...next, x: original.x + (original.width - next.width) / 2, y: original.y + (original.height - next.height) / 2 };
+    }
     if (!RESIZE_HANDLES.some(item => item.name === handle)) throw new Error('Control de tamaño desconocido.');
     const sx = handle.includes('w') ? -1 : handle.includes('e') ? 1 : 0;
     const sy = handle.includes('n') ? -1 : handle.includes('s') ? 1 : 0;
@@ -32,11 +38,30 @@ export function resizeBounds(original, handle, dx, dy) {
     return { x: sx < 0 ? x + w - width : x, y: sy < 0 ? y + h - height : y, width, height };
 }
 
+// A resize handle snapped to a point: side handles take the movement as it is; corners, which scale in
+// proportion, get the scale that puts the corner exactly on the point along the axis where it is closer.
+export function snapResizeDelta(box, handle, delta, fromCentre = false) {
+    const control = RESIZE_HANDLES.find(item => item.name === handle);
+    const sx = control.x === 0 ? -1 : control.x === 1 ? 1 : 0, sy = control.y === 0 ? -1 : control.y === 1 ? 1 : 0;
+    if (!sx || !sy) return delta;
+    // From the centre, the corner moves half as much as the size grows.
+    const k = fromCentre ? 2 : 1, { width: w, height: h } = box, fx = 1 + k * sx * delta.x / w, fy = 1 + k * sy * delta.y / h;
+    const factor = Math.abs(sy * (fx - 1) * h / k - delta.y) <= Math.abs(sx * (fy - 1) * w / k - delta.x) ? fx : fy;
+    return { x: sx * (factor - 1) * w / k, y: sy * (factor - 1) * h / k };
+}
+// The page point of a resize handle, also on a turned box.
+export function handlePoint(box, handle) {
+    const control = RESIZE_HANDLES.find(item => item.name === handle), local = { x: box.x + box.width * control.x, y: box.y + box.height * control.y };
+    return box.rotation ? rotatePoint(local, pivot(box), box.rotation) : local;
+}
+
 // Resize a rotated shape along its own axes: the pointer delta is turned into the shape's frame, and
 // the point opposite the dragged handle stays where it was on the page.
-export function resizeRotated(original, handle, dx, dy) {
+export function resizeRotated(original, handle, dx, dy, fromCentre = false) {
     const local = rotatePoint({ x: dx, y: dy }, { x: 0, y: 0 }, -original.rotation);
-    const next = resizeBounds(original, handle, local.x, local.y), control = RESIZE_HANDLES.find(item => item.name === handle);
+    const next = resizeBounds(original, handle, local.x, local.y, fromCentre), control = RESIZE_HANDLES.find(item => item.name === handle);
+    // From the centre, the shape turns around the same point, so nothing else moves.
+    if (fromCentre && original.type !== 'text') return next;
     const fixed = box => ({ x: box.x + box.width * (1 - control.x), y: box.y + box.height * (1 - control.y) });
     const before = rotatePoint(fixed(original), pivot(original), original.rotation);
     const after = rotatePoint(fixed(next), pivot({ ...original, ...next }), original.rotation);
@@ -59,8 +84,8 @@ export function unionBounds(list) {
 
 // Scale a selection inside its bounding box with the same handles as one object: corners keep
 // proportions, sides stretch one axis. Text cannot stretch, so its size changes only on corners.
-export function resizeSelection(items, box, handle, dx, dy) {
-    const next = resizeBounds(box, handle, dx, dy);
+export function resizeSelection(items, box, handle, dx, dy, fromCentre = false) {
+    const next = resizeBounds(box, handle, dx, dy, fromCentre);
     const sx = next.width / box.width, sy = next.height / box.height, corner = handle.length === 2;
     return items.map(item => {
         const moved = { ...item, x: next.x + (item.x - box.x) * sx, y: next.y + (item.y - box.y) * sy };
