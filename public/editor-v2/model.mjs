@@ -1,13 +1,15 @@
 // Coordinates and stroke widths are always millimetres; viewport state is separate.
 import { splinePath, splinePoints, normalizeSpline } from './spline.mjs';
+import { pathData, validPathGeometry, MAX_PATH_NUMBERS } from './path.mjs';
 import { normalizeAdjust } from './imageAdjust.mjs';
 import { normalizeAngle, pivot, placeAtPivot, rotatePoint, turns } from './transform.mjs';
-export const TYPES = ['rect', 'ellipse', 'text', 'spline', 'image'];
+export const TYPES = ['rect', 'ellipse', 'text', 'spline', 'image', 'path'];
 export const HAIRLINE_WIDTH = 0.0762;
 // Documents are plain JSON data. Objects and arrays are copied but strings are shared, so an embedded
 // image is never duplicated in memory by edits, the undo history or duplicated objects.
 export function clone(value) {
-    if (Array.isArray(value)) return value.map(clone);
+    // Curve point lists are frozen once validated, so copies can share them too.
+    if (Array.isArray(value)) return Object.isFrozen(value) ? value : value.map(clone);
     if (value && typeof value === 'object') { const copy = {}; for (const key of Object.keys(value)) copy[key] = clone(value[key]); return copy; }
     return value;
 }
@@ -67,7 +69,7 @@ export const blankDocument = () => ({ version: 1, name: 'Sin título', width: 21
 
 export function createObject(type, x, y, width = 40, height = 30) {
     if (!TYPES.includes(type)) throw new Error('Tipo de objeto no compatible.');
-    return { id: crypto.randomUUID(), type, name: { rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[type],
+    return { id: crypto.randomUUID(), type, name: { rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen', path: 'Curva' }[type],
         x, y, width, height, fill: '#b9a3ed', stroke: '#352a49', strokeWidth: HAIRLINE_WIDTH,
         text: 'Tu texto', fontSize: 10, hidden: false, locked: false,
         ...(type === 'spline' ? { points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] } : {}) };
@@ -75,6 +77,13 @@ export function createObject(type, x, y, width = 40, height = 30) {
 
 const numberIn = (value, min, max) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 const color = value => typeof value === 'string' && /^(none|#[0-9a-f]{6})$/i.test(value);
+// Curves can hold hundreds of thousands of numbers, so a checked point list is frozen and not checked again.
+const checkedPoints = new WeakSet();
+const frozenPoints = points => {
+    if (checkedPoints.has(points)) return points;
+    const frozen = Object.freeze(points.slice()); checkedPoints.add(frozen); return frozen;
+};
+const validPathSubpaths = subpaths => Array.isArray(subpaths) && subpaths.length > 0 && subpaths.every(s => s && checkedPoints.has(s.points) && typeof s.closed === 'boolean') || validPathGeometry(subpaths);
 // Checking the base64 of a large image is slow, so each image is checked once.
 const checkedSources = new Set();
 export function validImageSource(src) {
@@ -92,6 +101,7 @@ export function validateDocument(input) {
         !numberIn(input.width, 1, 5000) || !numberIn(input.height, 1, 5000) ||
         !Array.isArray(input.objects) || input.objects.length > 2000) throw new Error('El archivo no es un proyecto válido de Editor V2.');
     const ids = new Set();
+    let curveNumbers = 0;
     const objects = input.objects.map(o => {
         if (!o || typeof o.id !== 'string' || !o.id || o.id.length > 100 || ids.has(o.id) || !TYPES.includes(o.type) ||
             typeof o.name !== 'string' || o.name.length > 120 || typeof o.text !== 'string' || o.text.length > 10000 ||
@@ -114,6 +124,14 @@ export function validateDocument(input) {
             if (o.closed !== undefined && (typeof o.closed !== 'boolean' || (o.closed && o.points.length < 3))) throw new Error('Una curva cerrada necesita al menos tres puntos.');
             valid.points = o.points.map(p => ({ x: p.x, y: p.y }));
             if (o.closed) valid.closed = true;
+        }
+        if (o.type === 'path') {
+            if (!validPathSubpaths(o.subpaths)) throw new Error('La curva contiene puntos inválidos o demasiados puntos.');
+            valid.subpaths = o.subpaths.map(({ closed, points }) => ({ closed, points: frozenPoints(points) }));
+            curveNumbers += valid.subpaths.reduce((sum, subpath) => sum + subpath.points.length, 0);
+            if (curveNumbers > 5 * MAX_PATH_NUMBERS) throw new Error('El proyecto tiene demasiados puntos de curva.');
+            if (o.fillRule !== undefined && o.fillRule !== 'evenodd' && o.fillRule !== 'nonzero') throw new Error('La curva tiene un relleno inválido.');
+            if (o.fillRule === 'evenodd') valid.fillRule = 'evenodd';
         }
         if (o.type === 'image') {
             if (!validImageSource(o.src)) throw new Error('La imagen contiene un origen inválido o es demasiado grande.');
@@ -184,6 +202,7 @@ export function objectMarkup(o, resolve = src => src) {
     if (o.type === 'rect') return `<rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" ${style}/>`;
     if (o.type === 'ellipse') return `<ellipse cx="${o.x + o.width / 2}" cy="${o.y + o.height / 2}" rx="${o.width / 2}" ry="${o.height / 2}" ${style}/>`;
     if (o.type === 'spline') return `<path d="${splinePath(o)}" ${style}/>`;
+    if (o.type === 'path') return `<path d="${pathData(o)}"${o.fillRule === 'evenodd' ? ' fill-rule="evenodd"' : ''} ${style}/>`;
     // data-adjusted lets the editor swap in the processed pixels; exports bake the adjustments first.
     if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(resolve(o.src, o))}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
     return `<text x="${o.x}" y="${o.y + o.fontSize}" font-family="Arial, sans-serif" font-size="${o.fontSize}" ${style} xml:space="preserve">${escapeXml(o.text)}</text>`;

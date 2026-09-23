@@ -4,6 +4,8 @@ import { RESIZE_HANDLES, resizeBounds, objectReference, fullyContained, snapTran
 import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns } from './transform.mjs';
 import { HAIRLINE_WIDTH } from './model.mjs';
 import { createColorPicker } from './colorPicker.mjs';
+import { pathData } from './path.mjs';
+import { importSvg, parseColor } from './svgImport.mjs';
 import { loadDraft, saveDraft } from './draftStore.mjs';
 import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
 import { connect, cloudError } from './cloud.mjs';
@@ -205,9 +207,11 @@ function renderScene() {
         group.innerHTML = objectMarkup(object, displaySrc);
         showAdjustedImages(group);
         if (object.powerClip) drawPowerClipMarker(group, object);
-        if (object.type === 'spline' && !object.locked) {
+        // Thin lines get a wider invisible stroke so they are easy to click.
+        if ((object.type === 'spline' || (object.type === 'path' && object.fill === 'none')) && !object.locked) {
             const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            hitArea.setAttribute('d', splinePath(object)); hitArea.setAttribute('fill', 'none');
+            hitArea.setAttribute('d', object.type === 'spline' ? splinePath(object) : pathData(object)); hitArea.setAttribute('fill', 'none');
+            if (turns(object)) hitArea.setAttribute('transform', rotateAttr(object));
             hitArea.setAttribute('stroke', 'transparent'); hitArea.setAttribute('stroke-width', Math.max(object.strokeWidth, 10 / view.scale));
             hitArea.setAttribute('pointer-events', 'stroke'); group.append(hitArea);
         }
@@ -416,7 +420,7 @@ function render() {
     $('#empty-selection').hidden = Boolean(o); $('#properties').hidden = !o || selectedIds.size > 1;
     $('#multi-selection').hidden = selectedIds.size < 2;
     $('#multi-selection').textContent = `${selectedIds.size} objetos seleccionados. Puedes moverlos juntos, escalarlos con los controles del recuadro (clic otra vez para girarlos), cambiar el contorno o eliminarlos.`;
-    $('#selection-kind').textContent = selectedIds.size > 1 ? `${selectedIds.size} objetos` : o ? ({ rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen' }[o.type] + (o.closed ? ' cerrada' : '') + (o.powerClip ? ' · PowerClip' : '') + (nodeEditing ? ' · nodos' : '') + (o.locked ? ' · bloqueado' : '')) : 'Documento';
+    $('#selection-kind').textContent = selectedIds.size > 1 ? `${selectedIds.size} objetos` : o ? ({ rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen', path: 'Curva' }[o.type] + (o.closed ? ' cerrada' : '') + (o.powerClip ? ' · PowerClip' : '') + (nodeEditing ? ' · nodos' : '') + (o.locked ? ' · bloqueado' : '')) : 'Documento';
     if (o) {
         const bounds = getBounds(o);
         document.querySelectorAll('[data-property]').forEach(input => {
@@ -649,6 +653,7 @@ function drawReference({ target, reference }) {
         const outline = add('g', { transform: `translate(${view.x} ${view.y}) scale(${view.scale})${turns(target) ? ' ' + rotateAttr(target) : ''}` });
         const attrs = { fill: 'none', stroke: '#22d3ee', 'stroke-width': 1.5 / view.scale };
         if (target.type === 'spline') add('path', { d: splinePath(target), ...attrs }, outline);
+        else if (target.type === 'path') add('path', { d: pathData(target), ...attrs }, outline);
         else if (target.type === 'ellipse') add('ellipse', { cx: target.x + target.width / 2, cy: target.y + target.height / 2, rx: target.width / 2, ry: target.height / 2, ...attrs }, outline);
         else add('rect', { x: target.x, y: target.y, width: target.width, height: target.height, ...attrs }, outline);
     }
@@ -1239,15 +1244,52 @@ document.addEventListener('click', event => {
         actions[button.dataset.action]?.();
     }
 });
-$('#open-file').addEventListener('change', async event => {
+// Other CSS colour names are resolved by the browser; anything it does not know is left out.
+const colorContext = document.createElement('canvas').getContext('2d');
+function resolveColor(name) {
+    colorContext.fillStyle = '#010203'; colorContext.fillStyle = name;
+    const value = colorContext.fillStyle;
+    return value === '#010203' && name !== '#010203' ? null : parseColor(value);
+}
+// An SVG is added to the current document as editable objects, at its own position on the page. When
+// the document is still empty, the page also takes the SVG's size.
+async function importSvgFile(file) {
+    if (file.size > 32 * 1024 * 1024) throw new Error('El SVG supera el límite de 32 MB.');
+    const base = history.document, used = [...objectsWithContents(base.objects)].length;
+    if (used >= 2000) throw new Error('El proyecto ya tiene el máximo de 2000 objetos.');
+    const result = importSvg(await file.text(), { resolveColor, maxObjects: 2000 - used });
+    if (!result.objects.length) throw new Error('El SVG no tiene formas, textos ni imágenes compatibles.');
+    if (history.document !== base || gesture || splineDraft) throw new Error('El documento cambió mientras se leía el SVG. Vuelve a importarlo.');
+    const resize = !base.objects.length && result.width >= 1 && result.height >= 1 && result.width <= 5000 && result.height <= 5000;
+    cancelGesture();
+    commit({ ...clone(base), ...(resize ? { width: result.width, height: result.height } : {}), objects: [...base.objects, ...result.objects] });
+    if (history.document === base) return;
+    setSelection(result.objects.map(object => object.id)); render(); if (resize) fit();
+    $('#cloud-dialog').close();
+    const notes = [result.skipped && `${result.skipped} elementos no compatibles se omitieron`, result.clipped && 'los recortes (clip) se ignoraron',
+        result.truncated && 'se llegó al límite de 2000 objetos'].filter(Boolean);
+    status(`SVG importado: ${result.objects.length} ${result.objects.length === 1 ? 'objeto' : 'objetos'}${notes.length ? ' · ' + notes.join(' · ') : ''}`);
+}
+const isSvg = file => /.svg$/i.test(file.name) || file.type === 'image/svg+xml';
+async function openFile(file) {
+    if (isSvg(file)) { await importSvgFile(file); return; }
+    if (file.size > 32 * 1024 * 1024) throw new Error('El proyecto supera el límite de 32 MB.');
+    const next = validateDocument(JSON.parse(await file.text()));
+    if (!window.confirm('¿Abrir este proyecto y reemplazar el borrador actual? Puedes deshacer esta acción.')) return;
+    cancelGesture(); cloudBinding = null; cloudSavedKey = null;
+    storageBlocked = false; selectOnly(null); commit(next); persist(); fit(); $('#cloud-dialog').close(); status('Proyecto abierto');
+}
+$('#open-file').addEventListener('change', event => {
     const file = event.target.files[0]; event.target.value = ''; if (!file) return;
-    try {
-        if (file.size > 32 * 1024 * 1024) throw new Error('El proyecto supera el límite de 32 MB.');
-        const next = validateDocument(JSON.parse(await file.text()));
-        if (!window.confirm('¿Abrir este proyecto y reemplazar el borrador actual? Puedes deshacer esta acción.')) return;
-        cancelGesture(); cloudBinding = null; cloudSavedKey = null;
-        storageBlocked = false; selectOnly(null); commit(next); persist(); fit(); $('#cloud-dialog').close(); status('Proyecto abierto');
-    } catch (error) { status(`No se abrió el archivo: ${error.message}`); }
+    openFile(file).catch(error => status(`No se abrió el archivo: ${error.message}`));
+});
+// Dropping an SVG or a project file on the work area opens it too.
+$('#viewport').addEventListener('dragover', event => { if ([...event.dataTransfer.types].includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } });
+$('#viewport').addEventListener('drop', event => {
+    const file = event.dataTransfer.files[0]; if (!file) return;
+    event.preventDefault();
+    if (gesture || splineDraft) { status('Termina lo que estás haciendo antes de soltar un archivo.'); return; }
+    openFile(file).catch(error => status(`No se abrió el archivo: ${error.message}`));
 });
 document.addEventListener('keydown', event => {
     if (event.key === 'Escape') { hideObjectMenu(); powerClipSources = null; }

@@ -81,8 +81,12 @@ export function controlPath(points, closed = false) {
 }
 // The bounds follow the visible curve, so control points may fall outside them (normalized outside 0–1).
 export function normalizeSpline(points, closed = false) {
-    const segments = splineSegments(points, closed);
-    const extrema = segments.length ? segments.flatMap(s => [s.p0, s.p3]) : [...points];
+    const { x, y, width, height } = segmentsBounds(splineSegments(points, closed), points);
+    return { x, y, width, height, points: points.map(p => ({ x: (p.x - x) / width, y: (p.y - y) / height })) };
+}
+// Exact bounds of cubic Bézier segments (end points and the curve's turning points), at least 0.1 mm.
+export function segmentsBounds(segments, fallback = []) {
+    const extrema = segments.length ? segments.flatMap(s => [s.p0, s.p3]) : [...fallback];
     for (const segment of segments) {
         for (const axis of ['x', 'y']) {
             const a = -segment.p0[axis] + 3 * segment.c1[axis] - 3 * segment.c2[axis] + segment.p3[axis];
@@ -94,9 +98,10 @@ export function normalizeSpline(points, closed = false) {
             for (const t of roots) if (t > 0 && t < 1) extrema.push(curvePoint(segment, t));
         }
     }
-    const x = Math.min(...extrema.map(p => p.x)), y = Math.min(...extrema.map(p => p.y));
-    const width = Math.max(.1, Math.max(...extrema.map(p => p.x)) - x), height = Math.max(.1, Math.max(...extrema.map(p => p.y)) - y);
-    return { x, y, width, height, points: points.map(p => ({ x: (p.x - x) / width, y: (p.y - y) / height })) };
+    // A loop, not Math.min(...points): imported curves can have more points than a call takes arguments.
+    let x = Infinity, y = Infinity, right = -Infinity, bottom = -Infinity;
+    for (const p of extrema) { x = Math.min(x, p.x); y = Math.min(y, p.y); right = Math.max(right, p.x); bottom = Math.max(bottom, p.y); }
+    return { x, y, width: Math.max(.1, right - x), height: Math.max(.1, bottom - y) };
 }
 // Node edits work in page coordinates and renormalize, so the bounds stay exact.
 export function moveSplineNodes(object, indices, dx, dy) {

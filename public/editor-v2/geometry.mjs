@@ -1,5 +1,6 @@
 import { splinePoints, splineSegments, curvePoint, closestOnSegment } from './spline.mjs';
 import { rotatePoint, pivot, turns, trig } from './transform.mjs';
+import { subpathSegments } from './path.mjs';
 export const RESIZE_HANDLES = [
     { name: 'nw', x: 0, y: 0, cursor: 'nwse-resize' },
     { name: 'n', x: .5, y: 0, cursor: 'ns-resize' },
@@ -84,10 +85,10 @@ export function objectReference(object, point, tolerance) {
     if (point.x < x - tolerance || point.x > x + w + tolerance || point.y < y - tolerance || point.y > y + h + tolerance) return null;
     const cx = x + w / 2, cy = y + h / 2;
     const points = [{ x: cx, y: cy, label: 'Centro' }];
-    if (object.type === 'spline') {
-        const segments = splineSegments(splinePoints(object), object.closed);
+    if (object.type === 'spline' || object.type === 'path') {
+        const runs = object.type === 'spline' ? [splineSegments(splinePoints(object), object.closed)] : subpathSegments(object), segments = runs.flat();
         // References sit on the visible curve (segment joints and midpoints), not on the control points.
-        const joints = segments.length ? [segments[0].p0, ...segments.map(s => s.p3)] : [];
+        const joints = runs.flatMap(run => run.length ? [run[0].p0, ...run.map(s => s.p3)] : []);
         const refs = [...joints.map(p => ({ ...p, label: 'Nodo' })), ...segments.map(s => ({ ...curvePoint(s, .5), label: 'Punto medio' })), ...points];
         const near = refs.map(p => ({ ...p, distance: Math.hypot(point.x - p.x, point.y - p.y) })).filter(p => p.distance <= tolerance).sort((a, b) => a.distance - b.distance);
         if (near.length) return near[0];
