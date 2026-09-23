@@ -59,9 +59,9 @@ test('drag target respects ellipse boundary, blockers and invalid sources', () =
     assert.equal(powerClipDropTarget([frame, source], ids, { x: 150, y: 150 }), frame);
 });
 
-test('new objects use hairline and export does not include editor-only container markers', () => {
+test('new objects use a 0.3 mm outline and export does not include editor-only container markers', () => {
     const d = blankDocument();
-    for (const type of ['rect', 'ellipse', 'text', 'spline', 'image']) assert.equal(createObject(type, 0, 0).strokeWidth, .0762);
+    for (const type of ['rect', 'ellipse', 'text', 'spline', 'image']) assert.equal(createObject(type, 0, 0).strokeWidth, .3);
     const frame = createObject('rect', 0, 0); makePowerClip(frame); d.objects.push(frame);
     assert.doesNotMatch(exportSvg(d), /data-editor-marker|Soltar para|>PC</);
 });

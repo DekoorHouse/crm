@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dekoor · Editor V2</title>
   <meta name="theme-color" content="#191b22">
-  <link rel="stylesheet" href="/editor-v2/style.css?v=text-handles-1">
+  <link rel="stylesheet" href="/editor-v2/style.css?v=stroke-default-1">
 </head>
 <body>
   <header class="topbar">
@@ -21,8 +21,8 @@
     <select id="page-preset" aria-label="Tamaño de página"><option value="custom">Personalizado</option><option value="tabloid">Tabloide (11 × 17 pulg)</option><option value="letter">Carta (8.5 × 11 pulg)</option><option value="12x18">12 × 18 pulg</option><option value="a4" selected>A4 (210 × 297 mm)</option></select>
     <label>Ancho <input id="page-width" type="number" required min="1" max="5000" step="any" value="210"></label>
     <label>Alto <input id="page-height" type="number" required min="1" max="5000" step="any" value="297"></label><select id="display-unit" aria-label="Unidad de medida"><option value="mm">mm</option><option value="in">Pulgadas</option></select>
-    <span class="separator"></span><button data-action="duplicate" title="Duplicar (Ctrl+D)">Duplicar</button><button data-action="delete" title="Eliminar (Supr)">Eliminar</button><button data-action="rotate-left" title="Girar 90° a la izquierda" aria-label="Girar 90° a la izquierda">⟲ 90°</button><button data-action="rotate-right" title="Girar 90° a la derecha" aria-label="Girar 90° a la derecha">⟳ 90°</button>
-    <label id="stroke-menu-label" hidden>Grosor <select id="stroke-menu" aria-label="Grosor de línea"><option value="0.0762">Muy fina</option><option value="0.1">0.1 mm</option><option value="0.25">0.25 mm</option><option value="0.5">0.5 mm</option><option value="1">1 mm</option><option value="2">2 mm</option><option value="custom">Personalizado / Mixto</option></select></label>
+    <span class="separator"></span><button data-action="duplicate" title="Duplicar (Ctrl+D)">Duplicar</button><button data-action="delete" title="Eliminar (Supr)">Eliminar</button><button data-action="rotate-left" title="Girar 90° a la izquierda" aria-label="Girar 90° a la izquierda">⟲ 90°</button><button data-action="rotate-right" title="Girar 90° a la derecha" aria-label="Girar 90° a la derecha">⟳ 90°</button><button data-action="flip-h" title="Reflejar horizontalmente" aria-label="Reflejar horizontalmente">⇋</button><button data-action="flip-v" title="Reflejar verticalmente" aria-label="Reflejar verticalmente">⇵</button>
+    <label id="stroke-menu-label" hidden>Grosor <select id="stroke-menu" aria-label="Grosor de línea"><option value="0.0762">Muy fina</option><option value="0.1">0.1 mm</option><option value="0.25">0.25 mm</option><option value="0.3">0.3 mm</option><option value="0.5">0.5 mm</option><option value="1">1 mm</option><option value="2">2 mm</option><option value="custom">Personalizado / Mixto</option></select></label>
     <span class="spacer"></span><button data-action="cloud" class="local-badge" id="cloud-badge" hidden>Proyectos en Firebase</button>
   </div>
   <main class="workspace">
@@ -212,6 +212,6 @@
       <button type="button" id="raster-apply" class="primary" hidden>Aplicar</button>
     </div>
   </dialog>
-  <script type="module" src="/editor-v2/app.mjs?v=text-handles-1"></script>
+  <script type="module" src="/editor-v2/app.mjs?v=stroke-default-1"></script>
 </body>
 </html>

@@ -89,6 +89,8 @@ export async function textToCurve(text) {
     const d = font.getPath(text.text, text.x, text.y + text.fontSize, text.fontSize).toPathData(4);
     let subpaths = parsePathData(d);
     if (!subpaths.length) return null;
+    // Mirrored text turns over around its anchor before it turns (as the markup draws it).
+    if (text.flipX || text.flipY) subpaths = subpaths.map(({ closed, points }) => ({ closed, points: points.map((value, i) => i % 2 ? (text.flipY ? 2 * text.y - value : value) : (text.flipX ? 2 * text.x - value : value)) }));
     if (text.rotation) {
         const centre = pivot(text);
         subpaths = subpaths.map(({ closed, points }) => {

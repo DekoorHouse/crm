@@ -1,7 +1,7 @@
 // Ready-made shapes from the workshop, inserted at their real cutting size from the tools bar.
 // Each keeps the path data exactly as exported from CorelDRAW, in its SVG user units, with the
 // millimetres per unit of that file.
-import { createObject, HAIRLINE_WIDTH } from './model.mjs';
+import { createObject, DEFAULT_STROKE_WIDTH } from './model.mjs';
 import { normalizePath } from './path.mjs';
 import { parsePathData } from './svgImport.mjs';
 
@@ -32,7 +32,7 @@ export function presetObject(key, centre, stroke) {
     const object = {
         ...createObject('path', 0, 0), name: preset.name, ...geometry,
         x: centre.x - geometry.width / 2, y: centre.y - geometry.height / 2,
-        fill: 'none', stroke: preset.stroke ?? (stroke === 'none' ? '#000000' : stroke), strokeWidth: preset.strokeWidth ?? HAIRLINE_WIDTH,
+        fill: 'none', stroke: preset.stroke ?? (stroke === 'none' ? '#000000' : stroke), strokeWidth: preset.strokeWidth ?? DEFAULT_STROKE_WIDTH,
     };
     if (preset.overlay) {
         // In the frame's box units, so it follows the frame when it is moved, resized or turned.

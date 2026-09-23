@@ -25,6 +25,8 @@ const paths = {
     fit: '<path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/><rect x="8" y="7" width="8" height="10" rx="1"/>',
     'rotate-left': '<path d="M3 4v5h5"/><path d="M3.6 9A8.5 8.5 0 1 1 6 18"/>',
     'rotate-right': '<path d="M21 4v5h-5"/><path d="M20.4 9A8.5 8.5 0 1 0 18 18"/>',
+    'flip-h': '<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7 3 17h6z"/><path d="M15 7l6 10h-6z"/>',
+    'flip-v': '<path d="M3 12h18" stroke-dasharray="2 2"/><path d="M7 9 17 3v6z"/><path d="M7 15l10 6v-6z"/>',
     backward: '<path d="M12 4v16m-6-6 6 6 6-6"/>',
     forward: '<path d="M12 20V4m-6 6 6-6 6 6"/>',
     visible: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',

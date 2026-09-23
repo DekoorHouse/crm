@@ -5,6 +5,8 @@ import { normalizeAdjust } from './imageAdjust.mjs';
 import { normalizeAngle, pivot, placeAtPivot, rotatePoint, turns } from './transform.mjs';
 export const TYPES = ['rect', 'ellipse', 'text', 'spline', 'image', 'path'];
 export const HAIRLINE_WIDTH = 0.0762;
+// New objects, and outlines added to objects without one, start at this width (mm).
+export const DEFAULT_STROKE_WIDTH = 0.3;
 // Text fonts: Arial is built in; the others are loaded by the editor (fonts.mjs) and turned into curves on export.
 export const FONT_FAMILIES = ['Arial', 'Rows of Sunflowers'];
 // Shapes that can hold PowerClip content.
@@ -100,7 +102,7 @@ export const blankDocument = () => ({ version: 1, name: 'Sin título', width: 21
 export function createObject(type, x, y, width = 40, height = 30) {
     if (!TYPES.includes(type)) throw new Error('Tipo de objeto no compatible.');
     return { id: crypto.randomUUID(), type, name: { rect: 'Rectángulo', ellipse: 'Elipse', text: 'Texto', spline: 'Spline', image: 'Imagen', path: 'Curva' }[type],
-        x, y, width, height, fill: '#b9a3ed', stroke: '#352a49', strokeWidth: HAIRLINE_WIDTH,
+        x, y, width, height, fill: '#b9a3ed', stroke: '#352a49', strokeWidth: DEFAULT_STROKE_WIDTH,
         text: 'Tu texto', fontSize: 10, hidden: false, locked: false,
         ...(type === 'spline' ? { points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] } : {}) };
 }
@@ -181,6 +183,11 @@ export function validateDocument(input, depth = 0) {
                 valid.silhouetteOf = [...o.silhouetteOf];
             }
         }
+        // Text and images keep their mirroring as a mark (other shapes mirror their geometry).
+        for (const key of ['flipX', 'flipY']) if (o[key] !== undefined) {
+            if (typeof o[key] !== 'boolean' || !['text', 'image'].includes(o.type)) throw new Error('El reflejo del objeto es inválido.');
+            if (o[key]) valid[key] = true;
+        }
         for (const key of ['fillGradient', 'strokeGradient']) if (o[key] !== undefined) {
             if (o.type === 'image') throw new Error('Las imágenes no llevan degradados.');
             valid[key] = validGradient(o[key]);
@@ -253,6 +260,12 @@ export function objectMarkup(o, resolve = src => src) {
     if (turns(o)) {
         const p = pivot(o);
         return `<g transform="rotate(${-o.rotation} ${p.x} ${p.y})">${objectMarkup({ ...o, rotation: 0 }, resolve)}</g>`;
+    }
+    // Mirrored text turns over around its anchor, a mirrored image around its centre.
+    if ((o.flipX || o.flipY) && (o.type === 'text' || o.type === 'image')) {
+        const c = o.type === 'text' ? { x: o.x, y: o.y } : { x: o.x + o.width / 2, y: o.y + o.height / 2 }, plain = { ...o };
+        delete plain.flipX; delete plain.flipY;
+        return `<g transform="translate(${c.x} ${c.y}) scale(${o.flipX ? -1 : 1} ${o.flipY ? -1 : 1}) translate(${-c.x} ${-c.y})">${objectMarkup(plain, resolve)}</g>`;
     }
     if (o.powerClip) {
         const base = { ...o }; delete base.powerClip;

@@ -1,8 +1,8 @@
 import { History, blankDocument, createObject, clone, validateDocument, validImageSource, objectMarkup, setPaint, POWERCLIP_TYPES, documentKey, forgetImages, exportSvg, makePowerClip, placeInPowerClip, extractPowerClip, objectsWithContents, fitPowerClip } from './model.mjs';
 import { icon, decorateControls } from './icons.mjs';
 import { RESIZE_HANDLES, snapResizeDelta, handlePoint, resizeBounds, objectReference, fullyContained, snapTranslation, powerClipDropTarget, unionBounds, resizeSelection, resizeRotated, rotatedBounds } from './geometry.mjs';
-import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns } from './transform.mjs';
-import { HAIRLINE_WIDTH } from './model.mjs';
+import { rotateObject, rotatePoint, angleOf, normalizeAngle, pivot, turns, mirrorObject } from './transform.mjs';
+import { HAIRLINE_WIDTH, DEFAULT_STROKE_WIDTH } from './model.mjs';
 import { createColorPicker } from './colorPicker.mjs';
 import { pathData, normalizePath } from './path.mjs';
 import { presetObject } from './presets.mjs';
@@ -508,7 +508,20 @@ function getBounds(o) {
 // An object's box in its own, unrotated frame (the rendered text box for text).
 function localBox(o) {
     const text = o.type === 'text' && [...objects.children].find(g => g.dataset.id === o.id)?.querySelector('text');
-    return text ? text.getBBox() : { x: o.x, y: o.y, width: o.width, height: o.height };
+    if (!text) return { x: o.x, y: o.y, width: o.width, height: o.height };
+    // Mirrored text turns over around its anchor.
+    const box = text.getBBox();
+    return { x: o.flipX ? 2 * o.x - box.x - box.width : box.x, y: o.flipY ? 2 * o.y - box.y - box.height : box.y, width: box.width, height: box.height };
+}
+// Reflect the selection across the centre of its box, like CorelDRAW's mirror buttons. Silhouettes of the
+// reflected objects are reflected with them, so they still fit.
+function mirrorSelection(axis) {
+    const chosen = selectedObjects().filter(item => !item.locked && !item.hidden);
+    if (!chosen.length || gesture) return;
+    const box = unionBounds(chosen.map(getBounds)), centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const ids = new Set(withSilhouettes(chosen).map(item => item.id));
+    edit(d => { d.objects = d.objects.map(item => ids.has(item.id) ? mirrorObject(item, centre, axis) : item); });
+    status(axis === 'x' ? 'Reflejado horizontalmente' : 'Reflejado verticalmente');
 }
 function render() {
     $('#powerclip-edit-bar').hidden = !powerClipEditing;
@@ -588,7 +601,7 @@ function render() {
     }
     $('[data-action="undo"]').disabled = !history.past.length;
     $('[data-action="redo"]').disabled = !history.future.length;
-    for (const action of ['delete', 'duplicate', 'forward', 'backward', 'rotate-left', 'rotate-right']) $('[data-action="' + action + '"]').disabled = !o || o.locked;
+    for (const action of ['delete', 'duplicate', 'forward', 'backward', 'rotate-left', 'rotate-right', 'flip-h', 'flip-v']) $('[data-action="' + action + '"]').disabled = !o || o.locked;
     if (o) {
         $('[data-action="forward"]').disabled ||= !d.objects.some((item, index) => selectedIds.has(item.id) && index < d.objects.length - 1 && !selectedIds.has(d.objects[index + 1].id));
         $('[data-action="backward"]').disabled ||= !d.objects.some((item, index) => selectedIds.has(item.id) && index > 0 && !selectedIds.has(d.objects[index - 1].id));
@@ -1133,7 +1146,7 @@ function finishPropertyColor() {
         const item = d.objects.find(item => item.id === pending.id);
         if (!item || item.locked) return;
         setPaint(item, pending.property, pending.value);
-        if (pending.property === 'stroke' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH;
+        if (pending.property === 'stroke' && item.strokeWidth === 0) item.strokeWidth = DEFAULT_STROKE_WIDTH;
     });
 }
 function previewPropertyColor(input, o) {
@@ -1147,7 +1160,7 @@ function previewPropertyColor(input, o) {
         const group = [...objects.children].find(group => group.dataset.id === pending.id);
         if (!item || !group) return;
         const preview = { ...item, [pending.property]: pending.value };
-        if (pending.property === 'stroke' && preview.strokeWidth === 0) preview.strokeWidth = HAIRLINE_WIDTH;
+        if (pending.property === 'stroke' && preview.strokeWidth === 0) preview.strokeWidth = DEFAULT_STROKE_WIDTH;
         // Only repaint this object. Do not reset the native picker or serialize the project while dragging.
         group.innerHTML = objectMarkup(preview, displaySrc);
         showAdjustedImages(group);
@@ -1191,7 +1204,7 @@ function updateProperty(event) {
                 return;
             }
             if (property === 'fill' || property === 'stroke') setPaint(item, property, value); else item[property] = value;
-            if (property === 'stroke' && value !== 'none' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH;
+            if (property === 'stroke' && value !== 'none' && item.strokeWidth === 0) item.strokeWidth = DEFAULT_STROKE_WIDTH;
         });
     } else if (input.id === 'no-fill' || input.id === 'no-stroke') {
         edit(d => { setPaint(d.objects.find(item => item.id === o.id), input.id === 'no-fill' ? 'fill' : 'stroke', input.checked ? 'none' : '#352a49'); });
@@ -1431,6 +1444,7 @@ const actions = {
     },
     forward() { reorder(1); }, backward() { reorder(-1); },
     'rotate-left'() { rotateSelection(90); }, 'rotate-right'() { rotateSelection(-90); },
+    'flip-h'() { mirrorSelection('x'); }, 'flip-v'() { mirrorSelection('y'); },
     front() { reorderToEnd(true); }, back() { reorderToEnd(false); },
     'zoom-in'() { zoom(1.2); }, 'zoom-out'() { zoom(1 / 1.2); }, fit,
     help() { $('#help').showModal(); },
@@ -2102,7 +2116,7 @@ function applyPalette(color, target = 'fill') {
     const o = selected();
     const label = target === 'fill' ? 'relleno' : 'contorno';
     if (o) {
-        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { setPaint(item, target, color); if (target === 'stroke' && color !== 'none' && item.strokeWidth === 0) item.strokeWidth = HAIRLINE_WIDTH; } });
+        edit(d => { for (const item of d.objects.filter(item => selectedIds.has(item.id) && !item.locked)) { setPaint(item, target, color); if (target === 'stroke' && color !== 'none' && item.strokeWidth === 0) item.strokeWidth = DEFAULT_STROKE_WIDTH; } });
         status(color === 'none' ? `Sin ${label}` : `Color de ${label} actualizado`);
     } else {
         try { localStorage.setItem('dekoor.editor-v2.paint', JSON.stringify({ fill: nextFill, stroke: nextStroke })); } catch {}
@@ -2123,7 +2137,7 @@ function previewPaletteColor(color) {
             const group = [...objects.children].find(group => group.dataset.id === item.id);
             if (!group) continue;
             const preview = { ...item, [paletteTarget]: color };
-            if (paletteTarget === 'stroke' && preview.strokeWidth === 0) preview.strokeWidth = HAIRLINE_WIDTH;
+            if (paletteTarget === 'stroke' && preview.strokeWidth === 0) preview.strokeWidth = DEFAULT_STROKE_WIDTH;
             group.innerHTML = objectMarkup(preview, displaySrc);
             showAdjustedImages(group);
             if (preview.powerClip) drawPowerClipMarker(group, preview);
