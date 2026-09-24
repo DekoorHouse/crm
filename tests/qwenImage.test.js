@@ -122,3 +122,27 @@ test('rechaza generar con la GPU apagada', async () => {
     await expect(qwen.generate({ model: qwen.MODEL_ID, prompt: 'x' }, 'job')).rejects.toMatchObject({ status: 503 });
     expect(mockFetch).not.toHaveBeenCalled();
 });
+
+test('mejora la descripción antes de generar y la reporta con su costo', async () => {
+    mockDocs.set('crm_settings/qwen_pod', { podId: 'pod789', nonce: 'n', status: 'ready', createdAt: new Date().toISOString() });
+    process.env.OPENROUTER_API_KEY = 'or-key';
+    let workflow;
+    mockFetch.mockImplementation(async (url, options = {}) => {
+        if (url.includes('openrouter.ai')) return reply({ choices: [{ message: { content: '{"rewritten_prompt": "A detailed English description of Spider-Man running.", "wh_ratio": "1:1"}' } }], usage: { cost: 0.002 } });
+        if (url.endsWith('/dekoor/health')) return reply({ ready: true });
+        if (url.endsWith('/prompt')) { workflow = JSON.parse(options.body).prompt; return reply({ prompt_id: 'p2' }); }
+        if (url.endsWith('/history/p2')) return reply({ p2: { status: { completed: true, status_str: 'success' }, outputs: { save: { images: [{ filename: 'x.png', subfolder: '', type: 'output' }] } } } });
+        if (url.includes('/view?')) return reply(null);
+        throw new Error(`fetch inesperado ${url}`);
+    });
+    try {
+        const result = await qwen.generate({ model: qwen.MODEL_ID, prompt: 'Spiderman corriendo', aspect_ratio: '1:1', resolution: '1K', enhance: true }, 'job');
+        expect(workflow.encode.inputs.prompt).toBe('A detailed English description of Spider-Man running.');
+        expect(result).toMatchObject({ usage: { cost: 0.002 }, enhancedPrompt: 'A detailed English description of Spider-Man running.' });
+        mockFetch.mockClear();
+        const plain = await qwen.generate({ model: qwen.MODEL_ID, prompt: 'Spiderman corriendo', resolution: '1K', enhance: false }, 'job');
+        expect(workflow.encode.inputs.prompt).toBe('Spiderman corriendo');
+        expect(plain.enhancedPrompt).toBeNull();
+        expect(mockFetch.mock.calls.some(([url]) => url.includes('openrouter.ai'))).toBe(false);
+    } finally { delete process.env.OPENROUTER_API_KEY; }
+}, 20000);

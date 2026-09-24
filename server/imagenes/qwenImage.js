@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const FormData = require('form-data');
 const pod = require('./qwenPod');
+const { enhancePrompt } = require('./qwenPromptEnhancer');
 
 const MODEL_ID = 'dekoor/qwen-image-2.1';
 const ASPECTS = ['1:1', '3:4', '4:3', '2:3', '3:2', '9:16', '16:9'];
@@ -74,15 +75,18 @@ function executionError(entry) {
     return String(error?.exception_message || 'error desconocido').replace(/\s+/g, ' ').trim().slice(0, 300);
 }
 
-// Mismo contrato que la respuesta de OpenRouter que consume runGeneration: { data: [{ b64_json }] }.
+// Mismo contrato que la respuesta de OpenRouter que consume runGeneration: { data: [{ b64_json }], usage: { cost } },
+// más enhancedPrompt cuando el mejorador reescribió la descripción (el costo es solo el del mejorador; la GPU se paga por hora).
 async function generate(request, jobId) {
     const status = await pod.getStatus();
     if (status.status !== 'ready') throw failure(`Qwen no está disponible: ${status.message}`, 503);
     await pod.markUsed();
     const references = request.input_references || [];
+    const enhanced = request.enhance === false ? { prompt: request.prompt, cost: null }
+        : await enhancePrompt({ prompt: request.prompt, references, aspect_ratio: request.aspect_ratio });
     const images = [];
     for (const [i, reference] of references.entries()) images.push(await uploadReference(reference.image_url.url, `crm_${jobId}_${i + 1}.png`));
-    const workflow = buildWorkflow({ ...request, images, seed: crypto.randomInt(0, 2 ** 48 - 1) });
+    const workflow = buildWorkflow({ ...request, prompt: enhanced.prompt, images, seed: crypto.randomInt(0, 2 ** 48 - 1) });
     const queued = await json(await pod.comfy('/prompt', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: workflow }),
     }), 'aceptar la solicitud');
@@ -98,7 +102,10 @@ async function generate(request, jobId) {
         const view = await pod.comfy(`/view?${new URLSearchParams({ filename: image.filename, subfolder: image.subfolder, type: image.type })}`);
         if (!view.ok) throw failure('No se pudo descargar la imagen de la GPU.');
         await pod.markUsed();
-        return { data: [{ b64_json: Buffer.from(await view.arrayBuffer()).toString('base64') }] };
+        return {
+            data: [{ b64_json: Buffer.from(await view.arrayBuffer()).toString('base64') }],
+            usage: { cost: enhanced.cost }, enhancedPrompt: enhanced.prompt !== request.prompt ? enhanced.prompt : null,
+        };
     }
     throw failure('Qwen tardó demasiado en responder. Intenta de nuevo.', 504);
 }

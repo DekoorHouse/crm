@@ -97,6 +97,7 @@ function validateGeneration(fields, model, files = []) {
         request[key] = value;
     }
     if (model.parameters.output_format?.values?.includes('png')) request.output_format = 'png';
+    if (model.local) request.enhance = !['0', 'false'].includes(String(fields.enhance ?? '1'));
     return request;
 }
 
@@ -126,7 +127,7 @@ function publicJob(id, data) {
     return {
         id, status, error, prompt: data.prompt, modelId: data.modelId, modelName: data.modelName,
         options: data.options, referenceCount: data.referenceCount, createdAt: data.createdAt,
-        images: data.images || [], cost: data.cost ?? null,
+        images: data.images || [], cost: data.cost ?? null, enhancedPrompt: data.enhancedPrompt || null,
     };
 }
 async function getJob(id) {
@@ -212,7 +213,7 @@ async function runGeneration(ref, lockRef, request) {
         const images = [];
         for (const [index, entry] of data.data.slice(0, 1).entries()) images.push(await saveOutput(ref.id, entry, index));
         const reportedCost = data.usage?.cost;
-        await ref.update({ status: 'completed', images, cost: reportedCost != null && Number.isFinite(Number(reportedCost)) ? Number(reportedCost) : null, completedAt: new Date().toISOString() });
+        await ref.update({ status: 'completed', images, ...(data.enhancedPrompt ? { enhancedPrompt: data.enhancedPrompt } : {}), cost: reportedCost != null && Number.isFinite(Number(reportedCost)) ? Number(reportedCost) : null, completedAt: new Date().toISOString() });
     } catch (err) {
         const error = err.status ? err.message : 'No se pudo completar o guardar la imagen. La solicitud no se reenvió automáticamente.';
         console.warn('[IMAGENES] Generación fallida:', ref.id, err.type || err.code || 'generation_error');

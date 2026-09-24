@@ -72,6 +72,7 @@
             $('qwen-power').dataset.action = qwen.status === 'off' ? 'start' : 'stop';
             $('aspect-field').hidden = $('aspect-field').hidden || state.references.length > 0;
         }
+        $('enhance-field').hidden = !local;
         clearTimeout(state.qwenTimer);
         if (local) state.qwenTimer = setTimeout(refreshQwen, qwen.status === 'starting' ? 15000 : 60000);
     }
@@ -150,6 +151,8 @@
         $('result-model').textContent = job.modelName;
         $('result-details').textContent = [image ? `${image.width} × ${image.height} px` : null, money(job.cost)].filter(Boolean).join(' · ');
         $('download').hidden = !image;
+        $('result-enhanced').hidden = !job.enhancedPrompt;
+        $('result-enhanced').querySelector('p').textContent = job.enhancedPrompt || '';
     }
     function elapsed() {
         if (!state.active) return;
@@ -195,6 +198,7 @@
         const form = new FormData();
         form.append('requestId', requestId); form.append('prompt', $('prompt').value); form.append('model', selected.id);
         for (const key of ['aspect_ratio', 'resolution', 'quality']) if ($(key).value) form.append(key, $(key).value);
+        if (selected.local) form.append('enhance', $('enhance').checked ? '1' : '0');
         state.references.forEach(ref => form.append('references', ref.file));
         try {
             const { job } = await api('/generations', { method: 'POST', body: form });

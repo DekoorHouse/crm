@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/imagenes/style.css?v=1">
-    <link rel="stylesheet" href="/imagenes/lab.css?v=4">
+    <link rel="stylesheet" href="/imagenes/lab.css?v=5">
     <link rel="stylesheet" href="/imagenes/portal.css?v=1">
 </head>
 <body>
@@ -40,6 +40,7 @@
                     <select id="model" required disabled><option value="">Cargando modelos…</option></select>
                     <div class="model-meta"><span id="model-description">Tus modelos, en un solo lugar.</span><a id="model-pricing" href="https://openrouter.ai/models?output_modalities=image" target="_blank" rel="noopener noreferrer">Ver precios <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a><button id="qwen-power" type="button" class="text-button" hidden></button></div>
                     <div class="options-grid"><div id="aspect-field"><label for="aspect_ratio">Formato</label><select id="aspect_ratio"></select></div><div id="resolution-field"><label for="resolution">Resolución</label><select id="resolution"></select></div><div id="quality-field" hidden><label for="quality">Calidad</label><select id="quality"></select></div></div>
+                    <label id="enhance-field" class="enhance-field" hidden><input id="enhance" type="checkbox" checked><span><strong>Mejorar mi descripción</strong>Una IA la detalla en inglés antes de generar. Escribe en español, corto y claro.</span></label>
                 </div>
                 <div class="generate-footer"><button id="generate" class="button primary" type="submit" disabled><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span>Generar imagen</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button><p>Se usa el saldo de tu cuenta de OpenRouter.</p></div>
             </form>
@@ -60,7 +61,7 @@
                     </div>
                     <div id="result-preview" class="result-preview" hidden><img id="result-image" alt="Imagen generada"><div id="result-error" class="result-error" hidden></div></div>
                 </div>
-                <div id="result-footer" class="result-footer" hidden><div><strong id="result-model"></strong><span id="result-details"></span></div><div class="result-actions"><button id="reuse-prompt" class="button secondary" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Reutilizar</button><button id="download" class="button primary" type="button"><i class="fa-solid fa-download" aria-hidden="true"></i> Descargar</button></div></div>
+                <div id="result-footer" class="result-footer" hidden><div><strong id="result-model"></strong><span id="result-details"></span></div><details id="result-enhanced" class="result-enhanced" hidden><summary>Ver la descripción que usó Qwen</summary><p></p></details><div class="result-actions"><button id="reuse-prompt" class="button secondary" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Reutilizar</button><button id="download" class="button primary" type="button"><i class="fa-solid fa-download" aria-hidden="true"></i> Descargar</button></div></div>
                 <div class="studio-note"><i class="fa-regular fa-bookmark" aria-hidden="true"></i><p><strong>Las buenas ideas merecen guardarse.</strong> Tus imágenes se guardan automáticamente con el modelo y la descripción que usaste.</p></div>
             </div>
         </section>
@@ -73,6 +74,6 @@
     <script src="/js/auth-guard.js"></script>
     <script src="/js/auth-fetch.js?v=1"></script>
     <script src="/imagenes/portal.js?v=1"></script>
-    <script src="/imagenes/script.js?v=6"></script>
+    <script src="/imagenes/script.js?v=7"></script>
 </body>
 </html>
