@@ -198,7 +198,7 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
         const os = await tx.get(orderRef);
         if (!os.exists || os.data().contactId !== r.contactId) return { status: 'review', reason: 'El pedido no pertenece a este contacto.' };
         const order = os.data();
-        if (terminal(order)) return { status: 'review', reason: 'El pedido ya está entregado o devuelto.' };
+        if (terminal(order)) return { status: 'review', reason: 'El pedido ya está entregado o devuelto. Si es una compra nueva, crea el pedido nuevo y pásale este comprobante; no lo apliques ni lo regreses a Fabricar.' };
         if (cancelled(order) && !(order.canceladoPorCobranza === true || (manual && reactivate))) {
             return { status: 'review', reason: 'Pago en pedido cancelado: confirmar su reactivación.' };
         }

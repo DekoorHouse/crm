@@ -37,3 +37,15 @@ test('history isolates old names, photos and payments but keeps the opening mess
     expect(inPurchase({ timestamp: new Date(1000) }, contact)).toBe(true);
     expect(inPurchase({ timestamp: new Date(2000), purchaseSessionId: 'old' }, contact)).toBe(false);
 });
+test('DH17006: a delivered customer asking for a new lamp is asked once, then the lamp opens the purchase', async () => {
+    expect(await scopeIncomingMessage('c', 'q', { text: '¿Tendrán más variedad? Como otros estilos?', timestamp: new Date(1000) })).toEqual({ purchaseNeedsClarification: true });
+    const reply = await scopeIncomingMessage('c', 'lamp', { text: 'Si yo soy transportista y quisiera una lámpara con un trailer', timestamp: new Date(2000) });
+    expect(reply.purchaseSessionId).toBeTruthy();
+    expect(mockDb.read('contacts_whatsapp/c').purchaseClarificationPending).toBe(false);
+});
+test('the clarification is asked only once: a vague answer returns to the previous order', async () => {
+    await scopeIncomingMessage('c', 'q', { text: 'Quiero otra', timestamp: new Date(1000) });
+    expect(await scopeIncomingMessage('c', 'yes', { text: 'Sí', timestamp: new Date(2000) })).toEqual({});
+    expect(mockDb.read('contacts_whatsapp/c').purchaseClarificationPending).toBe(false);
+    expect(mockDb.read('contacts_whatsapp/c').activePurchaseSessionId).toBeUndefined();
+});

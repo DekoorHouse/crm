@@ -6,13 +6,17 @@ const clarification = '¿Te refieres al pedido anterior o quieres hacer una comp
 function purchaseIntent(text, pending = false) {
     const t = clean(text);
     if (/\b(?:no quiero|no necesito|no voy a)\b/.test(t)) return 'existing';
-    if (pending && /\b(?:nuevo|nueva|otra compra)\b/.test(t)) return 'new';
+    if (pending && (/\b(?:nuevo|nueva|otra compra)\b/.test(t) || WANTS_LAMP.test(t))) return 'new';
     if (/\b(?:reembolso|garantia|reposicion)\b/.test(t)) return 'existing';
     if (/\b(?:quiero|quisiera|necesito|gustaria|comprar|pedir|encargar)\b.{0,45}\b(?:otr[oa]s?\s+(?:lamparas?|pedidos?)|(?:nuevo pedido|otra compra))\b/.test(t)) return 'new';
     if (/\b(?:guia|rastreo|paquete)\b/.test(t)) return 'existing';
-    if (/\b(?:otra|otro|tendras|tienen|venden)\b|\b(?:quiero|interesa|gustaria|puedes hacer)\b.{0,50}\blampara\b/.test(t)) return 'ambiguous';
+    // DH17006 (24-sep-2026): ya entregado, el cliente escribió "¿Tendrán más variedad? Como otros
+    // estilos?" y "quisiera una lámpara con un trailer"; ninguna frase abría compra nueva y su anticipo
+    // cayó en el pedido entregado. "quisiera", "tendrán", "otros estilos"… ahora preguntan.
+    if (/\b(?:otra|otro|otros|otras|tendras|tendran|tienen|venden|manejan)\b/.test(t) || WANTS_LAMP.test(t)) return 'ambiguous';
     return 'existing';
 }
+const WANTS_LAMP = /\b(?:quiero|quisiera|interesa|gustaria|encantaria|necesito|ocupo|encargar|puedes hacer|pueden hacer)\b.{0,50}\blampara\b/;
 
 async function scopeIncomingMessage(contactId, messageId, message) {
     const ref = db.collection('contacts_whatsapp').doc(contactId);
@@ -36,11 +40,14 @@ async function scopeIncomingMessage(contactId, messageId, message) {
                 activePurchaseOrderId: null, paymentNewOrderRequestedAt: startedAt, purchaseClarificationPending: false, aiStage: 'venta', awaitingShippingData: false });
             return { purchaseSessionId: sessionId };
         }
-        if (previous && intent === 'ambiguous' && canStart) {
+        // Se pregunta UNA vez: mientras está pendiente, services.js cambia TODA respuesta de la IA por la
+        // pregunta, así que un "sí" (que no dice cuál) la repetía sin fin. Lo que no pida una compra
+        // nueva se toma como el pedido anterior y la IA vuelve a contestar normal.
+        if (previous && intent === 'ambiguous' && canStart && !c.purchaseClarificationPending) {
             tx.update(ref, { purchaseClarificationPending: true });
             return { purchaseNeedsClarification: true };
         }
-        if (c.purchaseClarificationPending && /\b(?:anterior|rastreo|guia)\b/.test(clean(message.text))) tx.update(ref, { purchaseClarificationPending: false });
+        if (c.purchaseClarificationPending) tx.update(ref, { purchaseClarificationPending: false });
         return c.activePurchaseSessionId ? { purchaseSessionId: c.activePurchaseSessionId } : {};
     });
 }

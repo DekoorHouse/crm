@@ -77,7 +77,7 @@ function validateReceipt(order, receipt, receivedAt, destinations = DESTINATIONS
     if (isDefinitivelyFailed(receipt)) return { status: 'rejected', reason: 'Intento de pago fallido: el ticket indica que la operación no se realizó.' };
     if (receipt.esComprobante === false) return { status: 'ignored', reason: 'La imagen no es un comprobante de pago.' };
     if (receipt.esComprobante !== true) return { status: 'review', reason: 'No se pudo determinar si la imagen es un comprobante; revisar a mano.' };
-    if (terminal(order)) return { status: 'review', reason: 'El pedido ya fue entregado o devuelto.' };
+    if (terminal(order)) return { status: 'review', reason: 'El pedido ya está entregado o devuelto. Si es una compra nueva, crea el pedido nuevo y pásale este comprobante; no lo apliques ni lo regreses a Fabricar.' };
     if (receipt.pagoRealizado === false) return { status: 'review', reason: 'La operación aparece en proceso o no completada. Confirmar que el dinero se acreditó antes de aprobar el anticipo.' };
     const destination = String(receipt.cuentaDestino || '').replace(/\D/g, '').slice(-4);
     const folio = normalize(receipt.claveRastreo || receipt.referencia);
