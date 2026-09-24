@@ -99,3 +99,16 @@ test('sin canvas disponible conserva los estados de generación sin romper la p�
     expect(env.pauseButton.hidden).toBe(true);
     expect(env.frames.size).toBe(0);
 });
+
+test('la animación es ligera: 30 cuadros por segundo y sin desenfoque de sombra', () => {
+    const env = setup();
+    env.portal.setActive(true);
+    env.advance(1000);
+    const draws = env.context.fillRect.mock.calls.length;
+    env.advance(1010);
+    expect(env.context.fillRect).toHaveBeenCalledTimes(draws);
+    expect(env.frames.size).toBe(1);
+    env.advance(1040);
+    expect(env.context.fillRect.mock.calls.length).toBeGreaterThan(draws);
+    expect(env.context.shadowBlur).toBeUndefined();
+});
