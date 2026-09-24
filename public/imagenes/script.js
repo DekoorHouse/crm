@@ -287,6 +287,17 @@
     for (const name of ['dragenter', 'dragover']) $('dropzone').addEventListener(name, event => { event.preventDefault(); $('dropzone').classList.add('dragging'); });
     $('dropzone').addEventListener('dragleave', () => $('dropzone').classList.remove('dragging'));
     $('dropzone').addEventListener('drop', event => { event.preventDefault(); $('dropzone').classList.remove('dragging'); addFiles([...event.dataTransfer.files]); });
+    // Ctrl+V en cualquier parte de "Crear imagen": si el portapapeles trae una imagen, se agrega como referencia.
+    // Si solo trae texto, se pega normal (por ejemplo, en la descripción).
+    document.addEventListener('paste', event => {
+        if ($('create-view').hidden) return;
+        const images = [...(event.clipboardData?.items || [])].filter(item => item.kind === 'file' && item.type.startsWith('image/')).map(item => item.getAsFile()).filter(Boolean);
+        if (!images.length) return;
+        event.preventDefault();
+        if (!model()) return notice('Elige un modelo antes de pegar una referencia.', true);
+        const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, '');
+        addFiles(images.map((file, i) => new File([file], `pegada-${stamp}-${i + 1}.${(file.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: file.type })));
+    });
     $('generate-form').addEventListener('submit', generate);
     $('tab-create').addEventListener('click', () => showTab('create')); $('tab-gallery').addEventListener('click', () => showTab('gallery'));
     $('refresh-gallery').addEventListener('click', () => loadGallery().catch(err => notice(err.message, true)));
