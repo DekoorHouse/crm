@@ -62,9 +62,7 @@ async function startPod(reason) {
         return true;
     });
     if (!claimed) return getStatus();
-    bootstrapScript ||= fs.readFileSync(path.join(__dirname, 'qwenPodBootstrap.sh'), 'utf8').replace(/
-/g, '
-');
+    bootstrapScript ||= fs.readFileSync(path.join(__dirname, 'qwenPodBootstrap.sh'), 'utf8').replace(/\r\n/g, '\n');
     const nonce = crypto.randomUUID();
     try {
         const pod = await runpod('POST', '/pods', {
