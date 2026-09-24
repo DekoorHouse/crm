@@ -8,7 +8,7 @@
     const SPEED = 1;
     const FRAME_MS = 1000 / 30;
     const MAX_DPR = 1.5;
-    const CELL = 16, GAP = 1, BAND = .12;
+    const CELL = 16, BAND = .12;
     const SWEEP = 3.2, HOLD = 1.6, DISSOLVE = .9, CYCLE = SWEEP + HOLD + DISSOLVE;
     const hex = value => [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16));
     const PALETTES = [
@@ -50,7 +50,8 @@
             const sweeping = cycle < SWEEP, dissolving = cycle > SWEEP + HOLD;
             const front = sweeping ? cycle / SWEEP * (1 + BAND * 2) - BAND : 2;
             const dissolve = dissolving ? (cycle - SWEEP - HOLD) / DISSOLVE : 0;
-            const offsetX = (width - cols * CELL) / 2, offsetY = (height - rows * CELL) / 2;
+            // Posiciones enteras y sin separación: así no aparecen líneas entre los cuadros.
+            const offsetX = Math.floor((width - cols * CELL) / 2), offsetY = Math.floor((height - rows * CELL) / 2);
 
             ctx.fillStyle = '#070b14'; ctx.fillRect(0, 0, width, height);
             for (let y = 0; y < rows; y++) {
@@ -62,7 +63,7 @@
                     let value = k * field(nx, ny, clock) + (1 - k) * noise[i] * .8;
                     if (sweeping) { const d = (nx - front) / .03; value += .45 * Math.exp(-d * d); }
                     ctx.fillStyle = colorAt(stops, value);
-                    ctx.fillRect(offsetX + x * CELL + GAP, offsetY + y * CELL + GAP, CELL - GAP, CELL - GAP);
+                    ctx.fillRect(offsetX + x * CELL, offsetY + y * CELL, CELL, CELL);
                 }
             }
             // Viñeta para que el mosaico se funda con el panel.
