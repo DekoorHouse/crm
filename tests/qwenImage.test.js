@@ -30,7 +30,7 @@ test('calcula tamaños nativos en múltiplos de 32', () => {
 test('sin referencias crea desde texto con el grafo de la plantilla t2i', () => {
     const graph = qwen.buildWorkflow({ prompt: 'una lámpara', aspect_ratio: '16:9', resolution: '1K', seed: 7 });
     expect(graph.latent.inputs).toMatchObject({ width: 1376, height: 768 });
-    expect(graph.sampler.inputs).toMatchObject({ model: ['unet', 0], latent_image: ['latent', 0], seed: 7, steps: 25, cfg: 1 });
+    expect(graph.sampler.inputs).toMatchObject({ model: ['unet', 0], latent_image: ['latent', 0], seed: 7, steps: 25, cfg: 2.5 });
     expect(graph.cache).toBeUndefined();
     expect(graph.encode.inputs.vae).toBeUndefined();
 });
@@ -39,7 +39,7 @@ test('con referencias edita y conserva el tamaño de la primera imagen', () => {
     const graph = qwen.buildWorkflow({ prompt: 'cambia el personaje', images: ['a.png', 'b.png'], aspect_ratio: '16:9', resolution: '2K', seed: 1 });
     expect(graph.ref1.inputs.image).toBe('a.png');
     expect(graph.encode.inputs).toMatchObject({ 'images.image_1': ['ref1', 0], 'images.image_2': ['ref2', 0], vae: ['vae', 0], resolution: 2048 });
-    expect(graph.sampler.inputs).toMatchObject({ model: ['cache', 0], latent_image: ['encode', 2] });
+    expect(graph.sampler.inputs).toMatchObject({ model: ['cache', 0], latent_image: ['encode', 2], cfg: 1 });
     expect(graph.latent).toBeUndefined();
 });
 

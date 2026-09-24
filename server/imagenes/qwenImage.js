@@ -12,6 +12,9 @@ const MODEL_ID = 'dekoor/qwen-image-2.1';
 const ASPECTS = ['1:1', '3:4', '4:3', '2:3', '3:2', '9:16', '16:9'];
 const POLL_MS = 2000;
 const LIMIT_MS = 5 * 60 * 1000;
+// Prueba A/B del 24-sep-2026 con la misma semilla: al crear, CFG 2.5 da un resultado más nítido (~60 % más tiempo);
+// al editar, CFG 1 conserva el aspecto de grabado real y con más CFG el personaje sale "pintado". 40 pasos no mejoran nada.
+const CFG = { create: 2.5, edit: 1 };
 
 function failure(message, status = 502) { return Object.assign(new Error(message), { status }); }
 
@@ -43,7 +46,7 @@ function buildWorkflow({ prompt, images = [], aspect_ratio, resolution, seed }) 
         } },
         sampler: { class_type: 'KSampler', inputs: {
             model: [images.length ? 'cache' : 'unet', 0], positive: ['encode', 0], negative: ['encode', 1], latent_image: images.length ? ['encode', 2] : ['latent', 0],
-            seed, steps: 25, cfg: 1, sampler_name: 'euler', scheduler: 'simple', denoise: 1,
+            seed, steps: 25, cfg: images.length ? CFG.edit : CFG.create, sampler_name: 'euler', scheduler: 'simple', denoise: 1,
         } },
         decode: { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } },
         save: { class_type: 'SaveImage', inputs: { images: ['decode', 0], filename_prefix: 'crm' } },
