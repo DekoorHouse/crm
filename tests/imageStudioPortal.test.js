@@ -6,15 +6,19 @@ const source = fs.readFileSync(path.join(__dirname, '../public/imagenes/portal.j
 function setup({ reduced = false, contextAvailable = true } = {}) {
     const frames = new Map(), events = {}, mediaEvents = {}, windowEvents = {};
     let sequence = 0, intersection;
-    const context = Object.fromEntries(['fillRect', 'clearRect', 'beginPath', 'arc', 'fill', 'moveTo', 'lineTo', 'stroke', 'setTransform'].map(name => [name, jest.fn()]));
-    context.createRadialGradient = () => ({ addColorStop() {} });
-    const styles = [];
-    Object.defineProperty(context, 'fillStyle', { set: value => styles.push(value), get: () => styles.at(-1) });
+    const context = Object.fromEntries(['clearRect', 'drawImage', 'setTransform'].map(name => [name, jest.fn()]));
+    // Búfer de baja resolución donde se calcula el orbe; cada imagen que se sube se guarda como copia.
+    const images = [], buffers = [];
+    const bufferContext = {
+        createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
+        putImageData: image => images.push(Uint8ClampedArray.from(image.data)),
+    };
     const canvas = { getContext: () => contextAvailable ? context : null, isConnected: true };
     const field = { getBoundingClientRect: () => ({ width: 700, height: 390 }) };
     const pauseButton = { textContent: '', addEventListener: (type, callback) => { events[type] = callback; } };
     const pauseStatus = { hidden: true };
-    const document = { hidden: false, addEventListener: (type, callback) => { events[type] = callback; } };
+    const document = { hidden: false, addEventListener: (type, callback) => { events[type] = callback; },
+        createElement: () => { const buffer = { getContext: () => bufferContext }; buffers.push(buffer); return buffer; } };
     const window = {
         devicePixelRatio: 1,
         matchMedia: () => ({ matches: reduced, addEventListener: (type, callback) => { mediaEvents[type] = callback; } }),
@@ -32,7 +36,7 @@ function setup({ reduced = false, contextAvailable = true } = {}) {
         const pending = [...frames.values()]; frames.clear();
         pending.forEach(callback => callback(now));
     };
-    return { portal, frames, context, styles, canvas, document, pauseButton, pauseStatus, advance,
+    return { portal, frames, context, images, buffers, canvas, document, pauseButton, pauseStatus, advance,
         click: () => events.click(),
         reducedMotion: () => mediaEvents.change({ matches: true }),
         visibility: hidden => { document.hidden = hidden; events.visibilitychange(); },
@@ -46,9 +50,10 @@ test('el portal comienza con la generación y se mueve sin eventos del puntero',
     expect(env.frames.size).toBe(0);
     env.portal.setActive(true);
     env.advance(1000);
-    const first = env.styles.splice(0).filter(style => typeof style === 'string');
+    const first = env.images.at(-1);
+    expect(first.some(value => value > 0)).toBe(true);
     env.advance(1100);
-    expect(env.styles.filter(style => typeof style === 'string')).not.toEqual(first);
+    expect(env.images.at(-1)).not.toEqual(first);
     expect(env.frames.size).toBe(1);
     env.portal.setActive(true);
     expect(env.frames.size).toBe(1);
@@ -68,10 +73,10 @@ test('pausa y reanuda la animación sin terminar el trabajo', () => {
 test('terminar o fallar cancela el cuadro pendiente y no revive al volver a la pestaña', () => {
     const env = setup(); env.portal.setActive(true);
     env.portal.setActive(false);
-    const draws = env.context.fillRect.mock.calls.length;
+    const draws = env.context.drawImage.mock.calls.length;
     env.visibility(true); env.visibility(false); env.intersection(true); env.advance(2000);
     expect(env.frames.size).toBe(0);
-    expect(env.context.fillRect).toHaveBeenCalledTimes(draws);
+    expect(env.context.drawImage).toHaveBeenCalledTimes(draws);
 });
 
 test('no dibuja al ocultar la sección, la pestaña o el portal fuera de pantalla', () => {
@@ -102,15 +107,18 @@ test('sin canvas disponible conserva los estados de generación sin romper la p�
     expect(env.frames.size).toBe(0);
 });
 
-test('la animación es ligera: 30 cuadros por segundo y sin desenfoque de sombra', () => {
+test('la animación es ligera: búfer a 1/4, 30 cuadros por segundo y sin desenfoque de sombra', () => {
     const env = setup();
     env.portal.setActive(true);
     env.advance(1000);
-    const draws = env.context.fillRect.mock.calls.length;
+    expect(env.buffers).toHaveLength(1);
+    expect(env.buffers[0]).toMatchObject({ width: 175, height: 98 });
+    const draws = env.context.drawImage.mock.calls.length;
     env.advance(1010);
-    expect(env.context.fillRect).toHaveBeenCalledTimes(draws);
+    expect(env.context.drawImage).toHaveBeenCalledTimes(draws);
     expect(env.frames.size).toBe(1);
     env.advance(1040);
-    expect(env.context.fillRect.mock.calls.length).toBeGreaterThan(draws);
+    expect(env.context.drawImage).toHaveBeenCalledTimes(draws + 2);
+    expect(env.buffers).toHaveLength(1);
     expect(env.context.shadowBlur).toBeUndefined();
 });
