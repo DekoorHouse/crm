@@ -128,17 +128,29 @@ function evaluarCotizacionT1(q, umbral = umbralEnvio()) {
  * Cotiza un C.P. en T1 y lo evalúa. Nunca lanza: si T1 falla, verdict = 'error' (la IA no debe
  * confirmar cobertura con ese veredicto).
  */
-async function cotizarCp(cp, { t1 } = {}) {
+async function cotizarCp(cp, { t1, sepomex } = {}) {
     const cpLimpio = String(cp || '').replace(/\D/g, '');
     const base = { cp: cpLimpio, at: Date.now(), umbral: umbralEnvio() };
     if (!/^\d{5}$/.test(cpLimpio)) return { ...base, verdict: 'error', error: 'cp_invalido', dhl: null, fedex: null, ops: [], claves: [] };
+    let check;
     try {
         const client = t1 || require('../t1/t1Client');
         const q = await client.cotizar({ cpDestino: cpLimpio });
-        return { ...base, ...evaluarCotizacionT1(q, base.umbral), error: null };
+        check = { ...base, ...evaluarCotizacionT1(q, base.umbral), error: null };
     } catch (e) {
-        return { ...base, verdict: 'error', error: String(e && e.message || e).slice(0, 200), dhl: null, fedex: null, ops: [], claves: [] };
+        check = { ...base, verdict: 'error', error: String(e && e.message || e).slice(0, 200), dhl: null, fedex: null, ops: [], claves: [] };
     }
+    // Un C.P. que no existe hace fallar a T1 igual que una caída, y la IA le decía al cliente "lo reviso
+    // con el equipo" (Flor Monsivais, 98095, 24-sep-2026) en vez de pedirle que lo revise. Si T1 no dio
+    // tarifas y SEPOMEX tampoco conoce el C.P., es un error de dedo. SEPOMEX solo decide cuando T1 no
+    // cotizó: un C.P. nuevo que falte en el catálogo pero que T1 sí cotice sigue su curso normal.
+    if (check.verdict === 'error' || check.verdict === 'sin_tarifas') {
+        try {
+            const svc = sepomex || require('../data/sepomex/sepomexService');
+            if (!svc.getByCp(cpLimpio)) check = { ...check, verdict: 'cp_inexistente' };
+        } catch (_) { /* sin catálogo: se queda el veredicto de T1 */ }
+    }
+    return check;
 }
 
 function _fmtOps(check) {
@@ -175,6 +187,9 @@ function notaCobertura(check, { recordatorio = false } = {}) {
             ? 'DHL NO cotiza esa zona (las demás paqueterías no cuentan para esta decisión)'
             : `DHL cuesta ${dhl}, por arriba de nuestro límite de $${umbral}`;
         return `\n\n**Cobertura de envío para el C.P. ${cp}${cuando} (cotización real vía T1, desde Durango):** NO tenemos cobertura en esa zona — ${motivo}. ${recordatorio ? 'Es el último C.P. verificado y el cliente NO ha dado uno nuevo de 5 dígitos: el veredicto sigue siendo NO. No respondas "/ttt", no digas que sí llegamos y no registres el pedido. ' : 'En este caso NO tomamos el pedido: responde ÚNICAMENTE con "/lamento" (en su propio renglón, sólo eso, sin ningún texto adicional). '}NO le menciones al cliente el costo del envío ni ningún monto. (Referencia interna de opciones: ${_fmtOps(check)}.) ${REGLA_INSISTE} ${IGNORA}`;
+    }
+    if (check.verdict === 'cp_inexistente') {
+        return `\n\n**Cobertura de envío para el C.P. ${cp}${cuando}:** ese código postal NO EXISTE en el catálogo oficial de SEPOMEX y la paquetería no lo pudo cotizar: casi seguro es un error de dedo. NO confirmes cobertura, NO respondas "/ttt", NO escribas /equipo ni digas que lo revisas con el equipo: pídele con amabilidad que revise su código postal y te lo comparta de nuevo (5 dígitos). Sin un C.P. válido NO continúes la venta ni registres el pedido. ${IGNORA}`;
     }
     if (check.verdict === 'sin_tarifas') {
         return `\n\n**Cobertura de envío para el C.P. ${cp}${cuando}:** ninguna paquetería (DHL/FedEx) devolvió tarifa para ese C.P. — posible zona sin cobertura o C.P. inválido. NO confirmes cobertura ni respondas "/ttt". Pídele al cliente que revise su código postal y, si insiste en que es correcto, avísale con amabilidad que lo confirmarás con el equipo y escribe /equipo (en su propio renglón) antes de prometer la entrega. ${REGLA_INSISTE} ${IGNORA}`;
@@ -230,6 +245,7 @@ function decidirGuardTtt(cov) {
     if (!cov) return { ok: false, motivo: 'sin_cp', escalar: false, texto: '¡Con gusto reviso la cobertura de envío a tu domicilio! 📍 ¿Me compartes tu *código postal* de 5 dígitos, por favor?' };
     if (cov.verdict === 'servible' && !cov.stale) return { ok: true };
     if (cov.stale) return { ok: false, motivo: 'cp_viejo', escalar: false, texto: 'Para confirmarte la cobertura con datos actuales, ¿me compartes de nuevo tu *código postal* de 5 dígitos, por favor? 📍' };
+    if (cov.verdict === 'cp_inexistente') return { ok: false, motivo: 'cp_inexistente', escalar: false, texto: `Mmm, no encuentro el código postal ${cov.cp || ''} 🤔 ¿Me lo confirmas, por favor? Son 5 dígitos 📍`.replace('  ', ' ') };
     if (cov.verdict === 'error') return { ok: false, motivo: 'error_cotizacion', escalar: true, texto: 'En este momento no puedo confirmar la cobertura de tu zona 🙏 Lo reviso con el equipo y te aviso por aquí en cuanto tenga respuesta.' };
     return { ok: false, motivo: cov.verdict, escalar: true, texto: 'Entiendo 🙏 Déjame revisar con el equipo si podemos llegar a tu zona; en cuanto tenga respuesta te confirmo por aquí.' };
 }
@@ -238,7 +254,7 @@ function decidirGuardTtt(cov) {
 function bloqueaRegistro(cov) {
     if (!cov) return false;
     if (cov.source === 'humano') return false;
-    return cov.verdict === 'reexpedicion' || cov.verdict === 'sin_tarifas';
+    return cov.verdict === 'reexpedicion' || cov.verdict === 'sin_tarifas' || cov.verdict === 'cp_inexistente';
 }
 
 // ---------------------------------------------------------------------------------------------

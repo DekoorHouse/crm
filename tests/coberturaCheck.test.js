@@ -72,6 +72,23 @@ describe('cotizarCp', () => {
         expect(r.verdict).toBe('error');
         expect(r.error).toMatch(/timeout/);
     });
+    test('Flor Monsivais 98095: C.P. que no existe -> se le pide revisarlo, no se escala al equipo', async () => {
+        const noExiste = { getByCp: () => null };
+        const r = await cob.cotizarCp('98095', { t1: { cotizar: async () => { throw new Error('400'); } }, sepomex: noExiste });
+        expect(r.verdict).toBe('cp_inexistente');
+        const nota = cob.notaCobertura(r);
+        expect(nota).toMatch(/NO EXISTE/);
+        expect(nota).toMatch(/NO escribas \/equipo/);
+        expect(cob.decidirGuardTtt(r)).toMatchObject({ ok: false, escalar: false, motivo: 'cp_inexistente' });
+        expect(cob.bloqueaRegistro(r)).toBe(true);
+        const sinTarifas = await cob.cotizarCp('98095', { t1: { cotizar: async () => ({ result: [] }) }, sepomex: noExiste });
+        expect(sinTarifas.verdict).toBe('cp_inexistente');
+    });
+    test('SEPOMEX no pisa a T1: un C.P. fuera del catálogo que T1 sí cotiza sigue normal, y una caída con C.P. real sigue siendo error', async () => {
+        const t1 = { cotizar: async () => ({ result: [{ clave: 'DHL', cotizacion: { servicios: { x: { servicio: 'DHL', costo_total: 120 } } } }] }) };
+        expect((await cob.cotizarCp('98095', { t1, sepomex: { getByCp: () => null } })).verdict).toBe('servible');
+        expect((await cob.cotizarCp('34000', { t1: { cotizar: async () => { throw new Error('timeout'); } }, sepomex: { getByCp: () => ({}) } })).verdict).toBe('error');
+    });
     test('C.P. inválido no llama a T1', async () => {
         const r = await cob.cotizarCp('abc', { t1: { cotizar: async () => { throw new Error('no debía llamar'); } } });
         expect(r.verdict).toBe('error');
