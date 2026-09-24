@@ -113,6 +113,24 @@
         for (const name of ['create', 'gallery']) { $(`tab-${name}`).classList.toggle('active', name === tab); $(`tab-${name}`).setAttribute('aria-selected', String(name === tab)); }
         if (tab === 'gallery') loadGallery().catch(err => notice(err.message, true));
     }
+    // Arrastrar la imagen de la vista previa a las referencias la copia como referencia. Solo se aceptan imágenes
+    // de esta página (tipo propio en el arrastre), nunca URLs soltadas desde otros sitios.
+    const PREVIEW_DRAG = 'application/x-dekoor-image';
+    async function addFromPreview(url) {
+        notice('Copiando la imagen a tus referencias…');
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('descarga');
+            let blob = await response.blob();
+            if (blob.size > 6 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(blob.type)) {
+                const bitmap = await createImageBitmap(blob), copy = document.createElement('canvas');
+                copy.width = bitmap.width; copy.height = bitmap.height; copy.getContext('2d').drawImage(bitmap, 0, 0);
+                blob = await new Promise(resolve => copy.toBlob(resolve, 'image/jpeg', .92));
+            }
+            notice();
+            addFiles([new File([blob], `vista-previa-${(state.current?.id || 'imagen').slice(0, 8)}.${blob.type === 'image/jpeg' ? 'jpg' : blob.type.split('/')[1]}`, { type: blob.type })]);
+        } catch (_) { notice('No se pudo copiar la imagen de la vista previa. Descárgala y súbela como referencia.', true); }
+    }
     async function addFiles(files) {
         const max = Math.min(4, Number(model()?.parameters.input_references?.max) || 0);
         for (const file of files) {
@@ -286,7 +304,15 @@
     $('reference-list').addEventListener('click', event => { const button = event.target.closest('[data-remove]'); if (button) { URL.revokeObjectURL(state.references.splice(Number(button.dataset.remove), 1)[0].url); renderReferences(); } });
     for (const name of ['dragenter', 'dragover']) $('dropzone').addEventListener(name, event => { event.preventDefault(); $('dropzone').classList.add('dragging'); });
     $('dropzone').addEventListener('dragleave', () => $('dropzone').classList.remove('dragging'));
-    $('dropzone').addEventListener('drop', event => { event.preventDefault(); $('dropzone').classList.remove('dragging'); addFiles([...event.dataTransfer.files]); });
+    $('dropzone').addEventListener('drop', event => {
+        event.preventDefault(); $('dropzone').classList.remove('dragging');
+        const previewUrl = event.dataTransfer.getData(PREVIEW_DRAG);
+        if (previewUrl) addFromPreview(previewUrl); else addFiles([...event.dataTransfer.files]);
+    });
+    $('result-image').addEventListener('dragstart', event => {
+        const image = state.current?.images?.[0];
+        if (image) { event.dataTransfer.setData(PREVIEW_DRAG, image.fullUrl); event.dataTransfer.effectAllowed = 'copy'; }
+    });
     // Ctrl+V en cualquier parte de "Crear imagen": si el portapapeles trae una imagen, se agrega como referencia.
     // Si solo trae texto, se pega normal (por ejemplo, en la descripción).
     document.addEventListener('paste', event => {

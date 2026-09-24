@@ -158,3 +158,4 @@ dialog { max-width: 820px; }
 .enhance-field{display:flex;gap:10px;align-items:flex-start;margin-top:16px;cursor:pointer;font-size:10px;line-height:1.6;color:#7f8c9b}.enhance-field input{margin-top:3px;accent-color:#9fc36f}.enhance-field strong{display:block;color:#c7ced9;font-weight:600;font-size:11px}
 .result-enhanced{flex-basis:100%;order:3;font-size:11px;color:#8e9aa8}.result-enhanced summary{cursor:pointer;color:#b5d68e}.result-enhanced p{margin-top:8px;line-height:1.7;max-height:160px;overflow:auto;color:#a9b5c3}.result-footer{flex-wrap:wrap}
 .button.danger{color:#e4a29b;border-color:#61352f;background:#1a1212}.button.danger:hover:not(:disabled){background:#291816}
+#result-image{cursor:grab}#result-image:active{cursor:grabbing}

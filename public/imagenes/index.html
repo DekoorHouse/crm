@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/imagenes/style.css?v=1">
-    <link rel="stylesheet" href="/imagenes/lab.css?v=6">
+    <link rel="stylesheet" href="/imagenes/lab.css?v=7">
     <link rel="stylesheet" href="/imagenes/portal.css?v=2">
 </head>
 <body>
@@ -59,7 +59,7 @@
                             <div class="generation-controls"><p>Puedes cambiar de sección. El resultado se guarda en tu galería.</p><button id="generation-pause" class="button secondary" type="button">Pausar animación</button></div>
                         </div>
                     </div>
-                    <div id="result-preview" class="result-preview" hidden><img id="result-image" alt="Imagen generada"><div id="result-error" class="result-error" hidden></div></div>
+                    <div id="result-preview" class="result-preview" hidden><img id="result-image" alt="Imagen generada" title="Arrástrala a Imágenes de referencia para editarla"><div id="result-error" class="result-error" hidden></div></div>
                 </div>
                 <div id="result-footer" class="result-footer" hidden><div><strong id="result-model"></strong><span id="result-details"></span></div><details id="result-enhanced" class="result-enhanced" hidden><summary>Ver la descripción que usó Qwen</summary><p></p></details><div class="result-actions"><button id="delete-job" class="button secondary danger" type="button"><i class="fa-regular fa-trash-can" aria-hidden="true"></i> Eliminar</button><button id="reuse-prompt" class="button secondary" type="button"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Reutilizar</button><button id="download" class="button primary" type="button"><i class="fa-solid fa-download" aria-hidden="true"></i> Descargar</button></div></div>
                 <div class="studio-note"><i class="fa-regular fa-bookmark" aria-hidden="true"></i><p><strong>Las buenas ideas merecen guardarse.</strong> Tus imágenes se guardan automáticamente con el modelo y la descripción que usaste.</p></div>
@@ -74,6 +74,6 @@
     <script src="/js/auth-guard.js"></script>
     <script src="/js/auth-fetch.js?v=1"></script>
     <script src="/imagenes/portal.js?v=5"></script>
-    <script src="/imagenes/script.js?v=9"></script>
+    <script src="/imagenes/script.js?v=10"></script>
 </body>
 </html>
