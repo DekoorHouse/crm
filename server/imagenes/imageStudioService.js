@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 const sharp = require('sharp');
 const { db, bucket } = require('../config');
+const qwenPod = require('./qwenPod');
+const qwenImage = require('./qwenImage');
 
 const API = 'https://openrouter.ai/api/v1';
 const COLLECTION = 'image_studio_generations';
@@ -32,6 +34,7 @@ async function getCatalog() {
             parameters: model.supported_parameters || {},
         })).sort((a, b) => a.name.localeCompare(b.name));
         if (!models.length) throw failure('No hay modelos de imagen disponibles en OpenRouter.', 503);
+        if (qwenPod.enabled()) models.unshift(qwenImage.modelEntry());
         catalogCache = { models, at: Date.now() };
         return models;
     })();
@@ -57,7 +60,11 @@ function configuredIds(data, catalog) {
 async function getModels() {
     const catalog = await getCatalog();
     const snapshot = await db.collection('crm_settings').doc('image_studio').get();
-    return { connected: connected(), models: catalog, linkedIds: configuredIds(snapshot.data(), catalog), maxReferences: MAX_REFERENCES };
+    const linkedIds = configuredIds(snapshot.data(), catalog);
+    // Qwen corre en la GPU propia: siempre está a mano mientras RunPod esté conectado.
+    if (qwenPod.enabled() && !linkedIds.includes(qwenImage.MODEL_ID)) linkedIds.unshift(qwenImage.MODEL_ID);
+    const qwen = qwenPod.enabled() ? await qwenPod.getStatus().catch(() => ({ status: 'error', message: 'No se pudo consultar la GPU.', error: true })) : null;
+    return { connected: connected(), models: catalog, linkedIds, maxReferences: MAX_REFERENCES, qwen };
 }
 async function linkModel(id, action) {
     if (!['link', 'unlink'].includes(action)) throw failure('Acción de modelo no válida.');
@@ -173,30 +180,34 @@ async function providerReason(response) {
     } catch (_) { return ''; }
 }
 
+async function openRouterImages(request, jobId) {
+    const response = await fetch(`${API}/images`, {
+        method: 'POST', timeout: 240000, size: 40 * 1024 * 1024,
+        headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://app.dekoormx.com', 'X-Title': 'Dekoor Imágenes' },
+        body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+        const messages = {
+            400: 'El modelo no pudo aceptar la solicitud. Revisa la descripción y las referencias.',
+            401: 'La conexión de OpenRouter necesita revisión.',
+            402: 'No hay saldo suficiente en OpenRouter. Recarga para generar imágenes.',
+            403: 'OpenRouter no permite usar este modelo con la conexión actual.',
+            429: 'El modelo está ocupado. Intenta de nuevo en unos minutos.',
+        };
+        const reason = await providerReason(response);
+        if (reason) console.warn('[IMAGENES] OpenRouter rechazó la generación:', jobId, response.status, reason);
+        const blocked = /safety|moderat|policy|content|violat|not allowed|public figure|real person/i.test(reason);
+        const message = blocked
+            ? 'OpenAI rechazó la imagen por sus políticas de contenido (por ejemplo, fotos de personas reales o famosas). Prueba con otra imagen.'
+            : messages[response.status] || 'OpenRouter no pudo generar la imagen. Intenta de nuevo más tarde.';
+        throw failure(reason ? `${message} Detalle: ${reason}` : message, 502);
+    }
+    return response.json();
+}
+
 async function runGeneration(ref, lockRef, request) {
     try {
-        const response = await fetch(`${API}/images`, {
-            method: 'POST', timeout: 240000, size: 40 * 1024 * 1024,
-            headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://app.dekoormx.com', 'X-Title': 'Dekoor Imágenes' },
-            body: JSON.stringify(request),
-        });
-        if (!response.ok) {
-            const messages = {
-                400: 'El modelo no pudo aceptar la solicitud. Revisa la descripción y las referencias.',
-                401: 'La conexión de OpenRouter necesita revisión.',
-                402: 'No hay saldo suficiente en OpenRouter. Recarga para generar imágenes.',
-                403: 'OpenRouter no permite usar este modelo con la conexión actual.',
-                429: 'El modelo está ocupado. Intenta de nuevo en unos minutos.',
-            };
-            const reason = await providerReason(response);
-            if (reason) console.warn('[IMAGENES] OpenRouter rechazó la generación:', ref.id, response.status, reason);
-            const blocked = /safety|moderat|policy|content|violat|not allowed|public figure|real person/i.test(reason);
-            const message = blocked
-                ? 'OpenAI rechazó la imagen por sus políticas de contenido (por ejemplo, fotos de personas reales o famosas). Prueba con otra imagen.'
-                : messages[response.status] || 'OpenRouter no pudo generar la imagen. Intenta de nuevo más tarde.';
-            throw failure(reason ? `${message} Detalle: ${reason}` : message, 502);
-        }
-        const data = await response.json();
+        const data = request.model === qwenImage.MODEL_ID ? await qwenImage.generate(request, ref.id) : await openRouterImages(request, ref.id);
         if (!Array.isArray(data.data) || !data.data.length) throw failure('El modelo no devolvió una imagen. Prueba con otra descripción.', 502);
         const images = [];
         for (const [index, entry] of data.data.slice(0, 1).entries()) images.push(await saveOutput(ref.id, entry, index));
@@ -215,11 +226,12 @@ async function runGeneration(ref, lockRef, request) {
 }
 
 async function createGeneration(fields, files, actor) {
-    if (!connected()) throw failure('Falta conectar OpenRouter en el servidor.', 503);
+    if (fields.model !== qwenImage.MODEL_ID && !connected()) throw failure('Falta conectar OpenRouter en el servidor.', 503);
     if (!/^[a-f0-9-]{36}$/i.test(fields.requestId || '')) throw failure('Identificador de generación no válido.');
-    const { models, linkedIds } = await getModels();
+    const { models, linkedIds, qwen } = await getModels();
     const model = models.find(m => m.id === fields.model);
     if (!model || !linkedIds.includes(model.id)) throw failure('Vincula y selecciona un modelo de imágenes disponible.');
+    if (model.local && qwen?.status !== 'ready') throw failure(`Qwen no está disponible: ${qwen?.message || 'GPU apagada'}.`, 503);
     const request = validateGeneration(fields, model, files);
     if (files.length) request.input_references = await prepareReferences(files);
     const fingerprint = requestFingerprint(request);

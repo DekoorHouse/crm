@@ -38,7 +38,7 @@
                     <div class="divider"></div>
                     <div class="field-title"><label for="model">Modelo de IA</label><button id="add-model" type="button" class="text-button">+ Vincular</button></div>
                     <select id="model" required disabled><option value="">Cargando modelos…</option></select>
-                    <div class="model-meta"><span id="model-description">Tus modelos, en un solo lugar.</span><a id="model-pricing" href="https://openrouter.ai/models?output_modalities=image" target="_blank" rel="noopener noreferrer">Ver precios <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></div>
+                    <div class="model-meta"><span id="model-description">Tus modelos, en un solo lugar.</span><a id="model-pricing" href="https://openrouter.ai/models?output_modalities=image" target="_blank" rel="noopener noreferrer">Ver precios <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a><button id="qwen-power" type="button" class="text-button" hidden></button></div>
                     <div class="options-grid"><div id="aspect-field"><label for="aspect_ratio">Formato</label><select id="aspect_ratio"></select></div><div id="resolution-field"><label for="resolution">Resolución</label><select id="resolution"></select></div><div id="quality-field" hidden><label for="quality">Calidad</label><select id="quality"></select></div></div>
                 </div>
                 <div class="generate-footer"><button id="generate" class="button primary" type="submit" disabled><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span>Generar imagen</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button><p>Se usa el saldo de tu cuenta de OpenRouter.</p></div>
@@ -73,6 +73,6 @@
     <script src="/js/auth-guard.js"></script>
     <script src="/js/auth-fetch.js?v=1"></script>
     <script src="/imagenes/portal.js?v=1"></script>
-    <script src="/imagenes/script.js?v=5"></script>
+    <script src="/imagenes/script.js?v=6"></script>
 </body>
 </html>

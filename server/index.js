@@ -615,6 +615,8 @@ function startSchedulers() {
   startShippingDigestScheduler();
   // Recuperar Purchase pendientes de Envíos aunque nadie tenga abierto el CRM.
   startMetaPurchaseScheduler();
+  // Encender/apagar la GPU de Qwen Image en RunPod según el horario (solo si hay RUNPOD_API_KEY).
+  require('./imagenes/qwenPod').startQwenPodScheduler();
   require('./payments/paymentScheduler').startPaymentScheduler();
   // Iniciar scheduler de alerta de límite publicitario Meta Ads (cada 30 min)
   startSpendCapAlertScheduler();

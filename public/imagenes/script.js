@@ -1,7 +1,7 @@
 (() => {
     'use strict';
     const $ = id => document.getElementById(id);
-    const state = { models: [], linkedIds: [], connected: false, references: [], jobs: [], nextCursor: null, active: null, current: null, polling: null, busy: false, started: false };
+    const state = { models: [], linkedIds: [], connected: false, qwen: null, qwenTimer: null, references: [], jobs: [], nextCursor: null, active: null, current: null, polling: null, busy: false, started: false };
     const portal = window.createImageStudioPortal({ canvas: $('generation-portal'), field: $('generation-portal-field'), pauseButton: $('generation-pause'), pauseStatus: $('generation-motion-status') });
     const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const money = value => value == null ? 'Costo no reportado' : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 4 }).format(value)} USD`;
@@ -28,7 +28,7 @@
     function model() { return state.models.find(m => m.id === $('model').value); }
     function applyModels(data) {
         $('session-required').hidden = true;
-        Object.assign(state, { models: data.models, linkedIds: data.linkedIds, connected: data.connected });
+        Object.assign(state, { models: data.models, linkedIds: data.linkedIds, connected: data.connected, qwen: data.qwen || null });
         const previous = $('model').value || localStorage.getItem('imageStudioModel');
         const linked = state.models.filter(m => state.linkedIds.includes(m.id));
         $('model').replaceChildren(...(linked.length ? linked.map(m => new Option(m.name, m.id)) : [new Option('Vincula un modelo para empezar', '')]));
@@ -53,10 +53,42 @@
         const max = Math.min(4, Number(selected?.parameters.input_references?.max) || 0);
         $('model-description').textContent = selected ? (max ? `Admite hasta ${max} referencias${selected.parameters.input_references.min > 0 ? ' · requiere referencia' : ''}` : 'Generación a partir de texto') : 'Agrega modelos con el botón Vincular.';
         $('model-pricing').href = selected ? `https://openrouter.ai/${selected.id}` : 'https://openrouter.ai/models?output_modalities=image';
+        renderQwen(selected);
         $('references').disabled = max === 0;
         $('dropzone').style.opacity = max ? '1' : '.5';
-        $('generate').disabled = !selected || !state.connected || state.busy;
+        $('generate').disabled = !selected || state.busy || (selected.local ? state.qwen?.status !== 'ready' : !state.connected);
         if (selected) localStorage.setItem('imageStudioModel', selected.id);
+    }
+    // Qwen corre en la GPU propia de RunPod: con referencia edita la foto, sin referencia crea desde texto.
+    function renderQwen(selected) {
+        const local = !!selected?.local;
+        const qwen = state.qwen || { status: 'off', message: 'Consultando la GPU…' };
+        $('model-pricing').hidden = local; $('qwen-power').hidden = !local;
+        $('generate-form').querySelector('.generate-footer p').textContent = local ? 'Corre en tu GPU rentada en RunPod: no cobra por imagen, solo por las horas encendida.' : 'Se usa el saldo de tu cuenta de OpenRouter.';
+        if (local) {
+            const mode = state.references.length ? 'Editará tu referencia (conserva el formato de la primera foto)' : 'Creará desde tu descripción';
+            $('model-description').textContent = qwen.status === 'ready' ? `${mode} · GPU lista` : qwen.message;
+            $('qwen-power').textContent = qwen.status === 'off' ? 'Encender GPU ahora' : 'Apagar GPU';
+            $('qwen-power').dataset.action = qwen.status === 'off' ? 'start' : 'stop';
+            $('aspect-field').hidden = $('aspect-field').hidden || state.references.length > 0;
+        }
+        clearTimeout(state.qwenTimer);
+        if (local) state.qwenTimer = setTimeout(refreshQwen, qwen.status === 'starting' ? 15000 : 60000);
+    }
+    async function refreshQwen() {
+        try { state.qwen = (await api('/qwen')).qwen; } catch (_) { /* se reintenta en el siguiente ciclo */ }
+        renderOptions();
+    }
+    async function toggleQwen() {
+        const action = $('qwen-power').dataset.action;
+        const question = action === 'start'
+            ? 'La GPU cobra ~0.75 USD por hora mientras está encendida y tarda unos 10 minutos en quedar lista. Fuera de horario se apaga sola tras 45 minutos sin uso. ¿Encenderla?'
+            : 'Se apagará la GPU para todo el equipo. ¿Apagarla?';
+        if (!confirm(question)) return;
+        $('qwen-power').disabled = true;
+        try { state.qwen = (await api('/qwen/power', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) })).qwen; notice(); }
+        catch (err) { notice(err.message, true); }
+        finally { $('qwen-power').disabled = false; renderOptions(); }
     }
     function renderCatalog() {
         const term = $('model-search').value.trim().toLowerCase();
@@ -90,6 +122,7 @@
         renderReferences(); $('references').value = '';
     }
     function renderReferences() {
+        if (model()?.local) renderOptions();
         $('reference-list').innerHTML = state.references.map((ref, index) => `<div class="reference-item"><img src="${escape(ref.url)}" alt="${escape(ref.file.name)}"><button type="button" data-remove="${index}" aria-label="Quitar referencia ${index + 1}">×</button></div>`).join('');
     }
     function setBusy(busy) {
@@ -221,6 +254,7 @@
         catch (err) { $('models-status').textContent = err.message; button.disabled = false; }
     });
     $('model').addEventListener('change', renderOptions);
+    $('qwen-power').addEventListener('click', toggleQwen);
     $('prompt').addEventListener('input', () => { $('prompt-count').textContent = `${$('prompt').value.length.toLocaleString('en-US')} / 6,000`; localStorage.setItem('imageStudioPrompt', $('prompt').value); });
     const ideas = {
         producto: 'Fotografía de producto de una lámpara personalizada sobre una mesa de madera clara. Fondo neutro, luz cálida y suave, detalles nítidos y un estilo elegante y natural.',
