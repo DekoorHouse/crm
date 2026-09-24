@@ -8,6 +8,8 @@ function setup({ reduced = false, contextAvailable = true } = {}) {
     let sequence = 0, intersection;
     const context = Object.fromEntries(['fillRect', 'beginPath', 'arc', 'fill', 'moveTo', 'lineTo', 'stroke', 'setTransform'].map(name => [name, jest.fn()]));
     context.createRadialGradient = () => ({ addColorStop() {} });
+    const styles = [];
+    Object.defineProperty(context, 'fillStyle', { set: value => styles.push(value), get: () => styles.at(-1) });
     const canvas = { getContext: () => contextAvailable ? context : null, isConnected: true };
     const field = { getBoundingClientRect: () => ({ width: 700, height: 390 }) };
     const pauseButton = { textContent: '', addEventListener: (type, callback) => { events[type] = callback; } };
@@ -30,7 +32,7 @@ function setup({ reduced = false, contextAvailable = true } = {}) {
         const pending = [...frames.values()]; frames.clear();
         pending.forEach(callback => callback(now));
     };
-    return { portal, frames, context, canvas, document, pauseButton, pauseStatus, advance,
+    return { portal, frames, context, styles, canvas, document, pauseButton, pauseStatus, advance,
         click: () => events.click(),
         reducedMotion: () => mediaEvents.change({ matches: true }),
         visibility: hidden => { document.hidden = hidden; events.visibilitychange(); },
@@ -44,9 +46,9 @@ test('el portal comienza con la generación y se mueve sin eventos del puntero',
     expect(env.frames.size).toBe(0);
     env.portal.setActive(true);
     env.advance(1000);
-    const initial = env.context.moveTo.mock.calls.at(-1);
+    const first = env.styles.splice(0).filter(style => typeof style === 'string');
     env.advance(1100);
-    expect(env.context.moveTo.mock.calls.at(-1)).not.toEqual(initial);
+    expect(env.styles.filter(style => typeof style === 'string')).not.toEqual(first);
     expect(env.frames.size).toBe(1);
     env.portal.setActive(true);
     expect(env.frames.size).toBe(1);

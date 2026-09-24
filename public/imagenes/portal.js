@@ -1,113 +1,81 @@
 (() => {
     'use strict';
 
-    // Animación mientras se genera: un láser grabando diseños en un disco de acrílico sobre su base de LED,
-    // como las lámparas de Dekoor. Ligera a propósito: la versión anterior (shadowBlur en 32 anillos a 60 fps)
-    // llegó a colgar el driver de gráficas integradas AMD en generaciones largas. Aquí el brillo es una segunda
-    // línea ancha y tenue, a 30 fps y con resolución máxima de 1.5×.
+    // Pantalla de carga mientras se genera: un mosaico de ruido que una línea de luz va "revelando" en una imagen
+    // suave, como un modelo de difusión que parte de ruido. Se sostiene, se disuelve y vuelve a empezar con otra paleta.
+    // Ligera a propósito: una versión anterior con shadowBlur a 60 fps colgaba el driver de gráficas integradas AMD.
+    // Aquí solo hay rectángulos y líneas, sin desenfoque, a 30 fps y con resolución máxima de 1.5×.
     const SPEED = 1;
     const FRAME_MS = 1000 / 30;
     const MAX_DPR = 1.5;
-    const DRAW_TIME = 3.4, HOLD_TIME = 1.3, FADE_TIME = .7, CYCLE = DRAW_TIME + HOLD_TIME + FADE_TIME;
-    const ENGRAVE = '#7ff3ff', LASER = '#c5f67a', BASE = '#ac96ff', SPARKS = ['#c5f67a', '#ffd27a', '#ffffff'];
-    const MAX_SPARKS = 70;
-    const rgba = (hex, alpha) => `rgba(${[1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(',')},${alpha})`;
-    const sample = (count, fn) => Array.from({ length: count + 1 }, (_, i) => fn(i / count));
-    // Centra cada diseño y lo lleva a [-1, 1] para que todos ocupen lo mismo dentro del disco.
-    function normalize(points) {
-        const xs = points.map(p => p.x), ys = points.map(p => p.y);
-        const midX = (Math.max(...xs) + Math.min(...xs)) / 2, midY = (Math.max(...ys) + Math.min(...ys)) / 2;
-        const half = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2;
-        return points.map(p => ({ x: (p.x - midX) / half, y: (p.y - midY) / half }));
+    const CELL = 16, GAP = 1, BAND = .12;
+    const SWEEP = 3.2, HOLD = 1.6, DISSOLVE = .9, CYCLE = SWEEP + HOLD + DISSOLVE;
+    const hex = value => [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16));
+    const PALETTES = [
+        ['#0b1020', '#3b2f8f', '#6b5cff', '#78e6df', '#c5f67a'],
+        ['#0b1020', '#15465a', '#78e6df', '#ac96ff', '#f3eeff'],
+        ['#0b1020', '#1e3a1f', '#6fae45', '#c5f67a', '#fff3b0'],
+    ].map(stops => stops.map(hex));
+    const clamp = value => Math.max(0, Math.min(1, value));
+    function colorAt(stops, value) {
+        const position = clamp(value) * (stops.length - 1), i = Math.min(Math.floor(position), stops.length - 2), f = position - i;
+        const a = stops[i], b = stops[i + 1];
+        return `rgb(${Math.round(a[0] + (b[0] - a[0]) * f)},${Math.round(a[1] + (b[1] - a[1]) * f)},${Math.round(a[2] + (b[2] - a[2]) * f)})`;
     }
-    const starPoint = k => { const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? .42 : 1; return { x: Math.cos(a) * r, y: Math.sin(a) * r }; };
-    const DESIGNS = [
-        // Infinito, como la lámpara infinito personalizada.
-        normalize(sample(220, t => { const a = t * Math.PI * 2, d = 1 + Math.sin(a) ** 2; return { x: Math.cos(a) / d, y: Math.sin(a) * Math.cos(a) / d }; })),
-        normalize(sample(200, t => { const a = t * Math.PI * 2; return { x: 16 * Math.sin(a) ** 3, y: -(13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a)) }; })),
-        normalize(sample(200, t => { const i = Math.min(Math.floor(t * 10), 9), f = t * 10 - i, p = starPoint(i), q = starPoint(i + 1); return { x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f }; })),
-        normalize(sample(260, t => { const a = t * Math.PI * 2, r = .35 + .65 * Math.abs(Math.cos(a * 2.5)); return { x: Math.cos(a) * r, y: Math.sin(a) * r }; })),
-    ];
+    // Imagen "limpia": ondas suaves y un punto de luz que se pasea.
+    function field(nx, ny, t) {
+        const bx = .5 + .3 * Math.sin(t * .6), by = .5 + .25 * Math.cos(t * .45);
+        const dx = nx - bx, dy = (ny - by) * .7;
+        return .42 + .22 * Math.sin(nx * 6 + t * .9) + .14 * Math.sin(ny * 7 - t * 1.2 + nx * 3)
+            + .08 * Math.sin((nx + ny) * 10 + t * 1.7) + .3 * Math.exp(-(dx * dx + dy * dy) * 14);
+    }
 
-    window.createImageStudioPortal = ({ canvas, field, pauseButton, pauseStatus }) => {
+    window.createImageStudioPortal = ({ canvas, field: container, pauseButton, pauseStatus }) => {
         const ctx = canvas.getContext('2d');
         const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
         let active = false, viewVisible = true, intersecting = true, pageVisible = true;
         let paused = reduced.matches, frame = 0, previousTime = null, time = 0, width = 1, height = 1;
-        let sparks = [], sparkTime = null;
+        let noise = [], seeds = [];
         pauseButton.hidden = !ctx;
         if (!ctx) return { setActive() {}, setVisible() {} };
 
-        function glowStroke(color, alpha, lineWidth, glow) {
-            ctx.strokeStyle = rgba(color, alpha * .18); ctx.lineWidth = lineWidth + glow; ctx.stroke();
-            ctx.strokeStyle = rgba(color, alpha); ctx.lineWidth = lineWidth; ctx.stroke();
-        }
-        function updateSparks(x, y, emitting) {
-            const step = sparkTime === null ? 0 : Math.max(0, Math.min(time - sparkTime, .1));
-            sparkTime = time;
-            if (emitting) for (const color of SPARKS) if (sparks.length < MAX_SPARKS) {
-                sparks.push({ x, y, vx: (Math.random() - .5) * 170, vy: -20 - Math.random() * 150, life: .35 + Math.random() * .45, color });
-            }
-            sparks = sparks.filter(spark => (spark.life -= step) > 0);
-            for (const color of SPARKS) {
-                ctx.beginPath();
-                for (const spark of sparks) {
-                    if (spark.color !== color) continue;
-                    spark.vy += 380 * step; spark.x += spark.vx * step; spark.y += spark.vy * step;
-                    ctx.moveTo(spark.x, spark.y); ctx.lineTo(spark.x - spark.vx * .025, spark.y - spark.vy * .025);
-                }
-                ctx.strokeStyle = rgba(color, .85); ctx.lineWidth = 1.3; ctx.stroke();
-            }
-        }
         function draw() {
-            const radius = Math.min(width * .3, height * .37), cx = width / 2, cy = height * .45;
+            const cols = Math.max(1, Math.ceil(width / CELL)), rows = Math.max(1, Math.ceil(height / CELL)), total = cols * rows;
+            if (noise.length !== total) { noise = Array.from({ length: total }, Math.random); seeds = Array.from({ length: total }, Math.random); }
+            // Grano: una parte del ruido cambia en cada cuadro.
+            for (let n = Math.ceil(total * .18); n > 0; n--) noise[Math.floor(Math.random() * total)] = Math.random();
+
+            const clock = reduced.matches ? SWEEP + .5 : time;
+            const cycle = clock % CYCLE, stops = PALETTES[Math.floor(clock / CYCLE) % PALETTES.length];
+            const sweeping = cycle < SWEEP, dissolving = cycle > SWEEP + HOLD;
+            const front = sweeping ? cycle / SWEEP * (1 + BAND * 2) - BAND : 2;
+            const dissolve = dissolving ? (cycle - SWEEP - HOLD) / DISSOLVE : 0;
+            const offsetX = (width - cols * CELL) / 2, offsetY = (height - rows * CELL) / 2;
+
             ctx.fillStyle = '#070b14'; ctx.fillRect(0, 0, width, height);
-            const halo = ctx.createRadialGradient(cx, cy, radius * .2, cx, cy, radius * 1.7);
-            halo.addColorStop(0, '#11253a'); halo.addColorStop(1, '#070b14');
-            ctx.fillStyle = halo; ctx.fillRect(0, 0, width, height);
-            // Cuadrícula tenue de la cama del láser.
-            ctx.beginPath();
-            for (let x = (width % 34) / 2; x < width; x += 34) { ctx.moveTo(x, 0); ctx.lineTo(x, height); }
-            for (let y = (height % 34) / 2; y < height; y += 34) { ctx.moveTo(0, y); ctx.lineTo(width, y); }
-            ctx.strokeStyle = 'rgba(128,140,162,.05)'; ctx.lineWidth = 1; ctx.stroke();
-
-            // Con movimiento reducido se muestra un diseño terminado, sin láser.
-            const clock = reduced.matches ? DRAW_TIME + .2 : time;
-            const cycle = clock % CYCLE, design = DESIGNS[Math.floor(clock / CYCLE) % DESIGNS.length];
-            const progress = Math.min(cycle / DRAW_TIME, 1);
-            const fade = cycle > DRAW_TIME + HOLD_TIME ? 1 - (cycle - DRAW_TIME - HOLD_TIME) / FADE_TIME : 1;
-            const pulse = progress < 1 ? 1 : .85 + .15 * Math.sin((cycle - DRAW_TIME) * 6);
-
-            ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-            ctx.fillStyle = rgba(ENGRAVE, .025); ctx.fill();
-            glowStroke(ENGRAVE, .32, 1.2, 5);
-            // Base de LED: cuerpo oscuro con su tira de luz, que brilla más cuando el diseño está terminado.
-            const baseWidth = radius * 1.15, baseHeight = radius * .3, baseY = cy + radius * .88, glow = .45 + .35 * fade * pulse;
-            ctx.fillStyle = '#18202f'; ctx.fillRect(cx - baseWidth / 2, baseY, baseWidth, baseHeight);
-            ctx.fillStyle = '#222c3e'; ctx.fillRect(cx - baseWidth / 2, baseY, baseWidth, 3);
-            ctx.fillStyle = rgba(BASE, glow * .5); ctx.fillRect(cx - baseWidth * .32, baseY + baseHeight * .45, baseWidth * .64, 2);
-            ctx.beginPath(); ctx.moveTo(cx - baseWidth / 2, baseY); ctx.lineTo(cx + baseWidth / 2, baseY);
-            glowStroke(BASE, glow, 1.5, 6);
-
-            const scale = radius * .62, point = p => [cx + p.x * scale, cy + p.y * scale];
-            const count = Math.max(2, Math.round(progress * (design.length - 1)) + 1);
-            ctx.beginPath();
-            for (let i = 0; i < count; i++) { const [x, y] = point(design[i]); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
-            glowStroke(ENGRAVE, .9 * fade * pulse, progress < 1 ? 1.8 : 2.2, progress < 1 ? 7 : 9);
-
-            const drawing = progress < 1;
-            const [headX, headY] = point(design[count - 1]);
-            if (drawing) {
-                // Riel, cabezal y rayo del láser.
-                ctx.fillStyle = '#1b2433'; ctx.fillRect(0, 14, width, 4);
-                ctx.fillStyle = '#c9d4e1'; ctx.fillRect(headX - 9, 8, 18, 14);
-                ctx.beginPath(); ctx.moveTo(headX, 22); ctx.lineTo(headX, headY);
-                glowStroke(LASER, .55, 1, 5);
-                const spot = ctx.createRadialGradient(headX, headY, 0, headX, headY, 16);
-                spot.addColorStop(0, 'rgba(255,255,255,.95)'); spot.addColorStop(.25, rgba(LASER, .8)); spot.addColorStop(1, rgba(LASER, 0));
-                ctx.fillStyle = spot; ctx.beginPath(); ctx.arc(headX, headY, 16, 0, Math.PI * 2); ctx.fill();
+            for (let y = 0; y < rows; y++) {
+                const ny = (y + .5) / rows;
+                for (let x = 0; x < cols; x++) {
+                    const i = y * cols + x, nx = (x + .5) / cols;
+                    let k = sweeping ? clamp((front - nx) / BAND) : 1;
+                    if (dissolving) k = clamp((1 - dissolve) * 1.4 - seeds[i] * .4);
+                    let value = k * field(nx, ny, clock) + (1 - k) * noise[i] * .8;
+                    if (sweeping) { const d = (nx - front) / .03; value += .45 * Math.exp(-d * d); }
+                    ctx.fillStyle = colorAt(stops, value);
+                    ctx.fillRect(offsetX + x * CELL + GAP, offsetY + y * CELL + GAP, CELL - GAP, CELL - GAP);
+                }
             }
-            updateSparks(headX, headY, drawing && !reduced.matches);
+            // Viñeta para que el mosaico se funda con el panel.
+            const vignette = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * .25, width / 2, height / 2, Math.hypot(width, height) * .6);
+            vignette.addColorStop(0, 'rgba(7,11,20,0)'); vignette.addColorStop(1, 'rgba(7,11,20,.85)');
+            ctx.fillStyle = vignette; ctx.fillRect(0, 0, width, height);
+            // Línea de luz que va revelando la imagen.
+            if (sweeping && front > 0 && front < 1) {
+                const lineX = offsetX + front * cols * CELL;
+                ctx.beginPath(); ctx.moveTo(lineX, 0); ctx.lineTo(lineX, height);
+                ctx.strokeStyle = 'rgba(230,255,200,.14)'; ctx.lineWidth = 10; ctx.stroke();
+                ctx.strokeStyle = 'rgba(240,255,220,.85)'; ctx.lineWidth = 1.5; ctx.stroke();
+            }
         }
         function stop() {
             if (frame) cancelAnimationFrame(frame);
@@ -127,7 +95,7 @@
         }
         function resize() {
             if (!active || !viewVisible) return;
-            const rect = field.getBoundingClientRect();
+            const rect = container.getBoundingClientRect();
             if (!rect.width || !rect.height) return;
             width = rect.width; height = rect.height;
             const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
@@ -144,8 +112,8 @@
         document.addEventListener('visibilitychange', () => { stop(); schedule(); });
         window.addEventListener('pagehide', () => { pageVisible = false; stop(); });
         window.addEventListener('pageshow', () => { pageVisible = true; schedule(); });
-        new IntersectionObserver(entries => { intersecting = entries[0].isIntersecting; stop(); schedule(); }, { threshold: .05 }).observe(field);
-        new ResizeObserver(resize).observe(field);
+        new IntersectionObserver(entries => { intersecting = entries[0].isIntersecting; stop(); schedule(); }, { threshold: .05 }).observe(container);
+        new ResizeObserver(resize).observe(container);
         renderPause();
         return {
             setActive(value) { active = !!value; if (active) resize(); else stop(); },
