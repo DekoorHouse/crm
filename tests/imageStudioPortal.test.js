@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(__dirname, '../public/imagenes/portal.j
 function setup({ reduced = false, contextAvailable = true } = {}) {
     const frames = new Map(), events = {}, mediaEvents = {}, windowEvents = {};
     let sequence = 0, intersection;
-    const context = Object.fromEntries(['fillRect', 'beginPath', 'arc', 'fill', 'moveTo', 'lineTo', 'stroke', 'setTransform'].map(name => [name, jest.fn()]));
+    const context = Object.fromEntries(['fillRect', 'clearRect', 'beginPath', 'arc', 'fill', 'moveTo', 'lineTo', 'stroke', 'setTransform'].map(name => [name, jest.fn()]));
     context.createRadialGradient = () => ({ addColorStop() {} });
     const styles = [];
     Object.defineProperty(context, 'fillStyle', { set: value => styles.push(value), get: () => styles.at(-1) });

@@ -1,14 +1,15 @@
 (() => {
     'use strict';
 
-    // Pantalla de carga mientras se genera: un mosaico de ruido que una línea de luz va "revelando" en una imagen
-    // suave, como un modelo de difusión que parte de ruido. Se sostiene, se disuelve y vuelve a empezar con otra paleta.
+    // Pantalla de carga mientras se genera: una nube de pixeles de ruido que una línea de luz va "revelando" en una
+    // imagen suave, como un modelo de difusión que parte de ruido. Se sostiene, se disuelve y vuelve a empezar con otra
+    // paleta. La nube no tiene bordes rectos: su contorno respira y en la orilla los pixeles se desintegran.
     // Ligera a propósito: una versión anterior con shadowBlur a 60 fps colgaba el driver de gráficas integradas AMD.
-    // Aquí solo hay rectángulos y líneas, sin desenfoque, a 30 fps y con resolución máxima de 1.5×.
+    // Aquí solo hay rectángulos, sin desenfoque, a 30 fps y con resolución máxima de 1.5×.
     const SPEED = 1;
     const FRAME_MS = 1000 / 30;
     const MAX_DPR = 1.5;
-    const CELL = 16, BAND = .12;
+    const CELL = 12, BAND = .12;
     const SWEEP = 3.2, HOLD = 1.6, DISSOLVE = .9, CYCLE = SWEEP + HOLD + DISSOLVE;
     const hex = value => [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16));
     const PALETTES = [
@@ -17,10 +18,14 @@
         ['#0b1020', '#1e3a1f', '#6fae45', '#c5f67a', '#fff3b0'],
     ].map(stops => stops.map(hex));
     const clamp = value => Math.max(0, Math.min(1, value));
-    function colorAt(stops, value) {
+    function colorAt(stops, value, alpha) {
         const position = clamp(value) * (stops.length - 1), i = Math.min(Math.floor(position), stops.length - 2), f = position - i;
         const a = stops[i], b = stops[i + 1];
-        return `rgb(${Math.round(a[0] + (b[0] - a[0]) * f)},${Math.round(a[1] + (b[1] - a[1]) * f)},${Math.round(a[2] + (b[2] - a[2]) * f)})`;
+        return `rgba(${Math.round(a[0] + (b[0] - a[0]) * f)},${Math.round(a[1] + (b[1] - a[1]) * f)},${Math.round(a[2] + (b[2] - a[2]) * f)},${alpha.toFixed(2)})`;
+    }
+    // Contorno de la nube: un círculo que ondula lento en tres frecuencias.
+    function edge(angle, t) {
+        return .36 + .045 * Math.sin(3 * angle + t * .8) + .035 * Math.sin(5 * angle - t * 1.1) + .025 * Math.sin(2 * angle + t * .5);
     }
     // Imagen "limpia": ondas suaves y un punto de luz que se pasea.
     function field(nx, ny, t) {
@@ -53,29 +58,25 @@
             // Posiciones enteras y sin separación: así no aparecen líneas entre los cuadros.
             const offsetX = Math.floor((width - cols * CELL) / 2), offsetY = Math.floor((height - rows * CELL) / 2);
 
-            ctx.fillStyle = '#070b14'; ctx.fillRect(0, 0, width, height);
+            // Fondo transparente: la nube flota sobre la cuadrícula de la vista previa.
+            ctx.clearRect(0, 0, width, height);
+            // Un poco arriba del centro: abajo flotan el título, el tiempo y el botón.
+            const unit = Math.min(width, height), centerY = height * .42;
             for (let y = 0; y < rows; y++) {
-                const ny = (y + .5) / rows;
+                const ny = (y + .5) / rows, py = offsetY + (y + .5) * CELL - centerY;
                 for (let x = 0; x < cols; x++) {
-                    const i = y * cols + x, nx = (x + .5) / cols;
+                    const i = y * cols + x, nx = (x + .5) / cols, px = offsetX + (x + .5) * CELL - width / 2;
+                    const distance = Math.hypot(px, py) / unit;
+                    const alpha = clamp((edge(Math.atan2(py, px), clock) - distance) / .07 + (seeds[i] - .5) * .9);
+                    if (alpha < .03) continue;
                     let k = sweeping ? clamp((front - nx) / BAND) : 1;
                     if (dissolving) k = clamp((1 - dissolve) * 1.4 - seeds[i] * .4);
                     let value = k * field(nx, ny, clock) + (1 - k) * noise[i] * .8;
-                    if (sweeping) { const d = (nx - front) / .03; value += .45 * Math.exp(-d * d); }
-                    ctx.fillStyle = colorAt(stops, value);
+                    // La línea de luz: los pixeles junto al frente del barrido brillan.
+                    if (sweeping) { const d = (nx - front) / .025; value += .6 * Math.exp(-d * d); }
+                    ctx.fillStyle = colorAt(stops, value, alpha);
                     ctx.fillRect(offsetX + x * CELL, offsetY + y * CELL, CELL, CELL);
                 }
-            }
-            // Viñeta para que el mosaico se funda con el panel.
-            const vignette = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * .25, width / 2, height / 2, Math.hypot(width, height) * .6);
-            vignette.addColorStop(0, 'rgba(7,11,20,0)'); vignette.addColorStop(1, 'rgba(7,11,20,.85)');
-            ctx.fillStyle = vignette; ctx.fillRect(0, 0, width, height);
-            // Línea de luz que va revelando la imagen.
-            if (sweeping && front > 0 && front < 1) {
-                const lineX = offsetX + front * cols * CELL;
-                ctx.beginPath(); ctx.moveTo(lineX, 0); ctx.lineTo(lineX, height);
-                ctx.strokeStyle = 'rgba(230,255,200,.14)'; ctx.lineWidth = 10; ctx.stroke();
-                ctx.strokeStyle = 'rgba(240,255,220,.85)'; ctx.lineWidth = 1.5; ctx.stroke();
             }
         }
         function stop() {
