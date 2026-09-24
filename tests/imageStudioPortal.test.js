@@ -107,12 +107,12 @@ test('sin canvas disponible conserva los estados de generación sin romper la p�
     expect(env.frames.size).toBe(0);
 });
 
-test('la animación es ligera: búfer a 1/4, 30 cuadros por segundo y sin desenfoque de sombra', () => {
+test('la animación es ligera: búfer a 1/3, 30 cuadros por segundo y sin desenfoque de sombra', () => {
     const env = setup();
     env.portal.setActive(true);
     env.advance(1000);
     expect(env.buffers).toHaveLength(1);
-    expect(env.buffers[0]).toMatchObject({ width: 175, height: 98 });
+    expect(env.buffers[0]).toMatchObject({ width: 234, height: 130 });
     const draws = env.context.drawImage.mock.calls.length;
     env.advance(1010);
     expect(env.context.drawImage).toHaveBeenCalledTimes(draws);

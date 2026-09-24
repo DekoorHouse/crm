@@ -5,13 +5,13 @@
     // central, flotan y vuelven a fundirse (metaballs: la silueta es donde la suma de sus campos pasa un umbral, así se
     // unen con un "cuello" suave). Cada campo tiene alcance limitado (1.5× su radio) para que puedan soltarse del todo.
     // Los colores fluyen por dentro y cambian de paleta con una transición suave.
-    // Se calcula en un búfer a 1/4 de resolución y se amplía suavizado: miles de pixeles sin dibujar cuadro por cuadro.
+    // Se calcula en un búfer a 1/3 de resolución y se amplía con el suavizado de mejor calidad del navegador.
     // Ligera a propósito: una versión anterior con shadowBlur a 60 fps colgaba el driver de gráficas integradas AMD.
     // Aquí la gráfica solo amplía una imagen por cuadro, a 30 fps y con resolución máxima 1.5×.
     const SPEED = 1;
     const FRAME_MS = 1000 / 30;
     const MAX_DPR = 1.5;
-    const SCALE = 4, CENTER_Y = .45, RADIUS = .27, REACH = 2.25, SOFT = .12;
+    const SCALE = 3, CENTER_Y = .45, RADIUS = .27, REACH = 2.25, SOFT = .2;
     // Umbral: donde un orbe solo tiene su borde, a exactamente su radio.
     const EDGE = (1 - 1 / REACH) ** 2;
     const PALETTE_TIME = 8, BLEND_TIME = 2;
@@ -116,7 +116,7 @@
             if (!geometry || geometry.w !== w || geometry.h !== h) prepare(w, h);
             render(reduced.matches ? 2.5 : time);
             ctx.clearRect(0, 0, width, height);
-            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(buffer, 0, 0, w * SCALE, h * SCALE);
         }
         function stop() {
