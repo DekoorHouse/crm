@@ -19,6 +19,7 @@ router.post('/qwen/power', handle(async (req, res) => {
 }));
 router.get('/generations', handle(async (req, res) => res.json({ success: true, ...await service.getGallery(req.query.before) })));
 router.get('/generations/:id', handle(async (req, res) => res.json({ success: true, job: await service.getJob(req.params.id) })));
+router.delete('/generations/:id', handle(async (req, res) => { await service.deleteGeneration(req.params.id, req.apiAuth); res.json({ success: true }); }));
 router.post('/generations', upload.array('references', 4), handle(async (req, res) => {
     res.status(202).json({ success: true, job: await service.createGeneration(req.body, req.files || [], req.apiAuth) });
 }));

@@ -147,6 +147,19 @@ async function getGallery(before) {
     return { jobs, nextCursor: jobs.length === 24 ? jobs[jobs.length - 1].createdAt : null };
 }
 
+// Borra para siempre una imagen de la galería compartida: sus archivos en Storage y su registro.
+async function deleteGeneration(id, actor) {
+    if (!/^[a-f0-9-]{36}$/i.test(id)) throw failure('Generación no válida.');
+    const ref = db.collection(COLLECTION).doc(id);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) throw failure('No se encontró esta generación.', 404);
+    if (publicJob(id, snapshot.data()).status === 'generating') throw failure('Espera a que termine esta imagen antes de borrarla.', 409);
+    const files = (snapshot.data().images || []).flatMap((_, index) => [`image_studio/${id}/${index}_full.png`, `image_studio/${id}/${index}_thumb.webp`]);
+    await Promise.all(files.map(filePath => bucket.file(filePath).delete({ ignoreNotFound: true })));
+    await ref.delete();
+    console.log('[IMAGENES] Imagen borrada:', id, 'por', actor?.email || actor?.uid || 'worker');
+}
+
 async function saveOutput(id, entry, index) {
     if (typeof entry.b64_json !== 'string' || entry.b64_json.length > 30 * 1024 * 1024) throw failure('El modelo devolvió una imagen demasiado grande.', 502);
     const raw = Buffer.from(entry.b64_json, 'base64');
@@ -259,4 +272,4 @@ async function createGeneration(fields, files, actor) {
     return created ? publicJob(ref.id, job) : getJob(ref.id);
 }
 
-module.exports = { getModels, linkModel, getGallery, getJob, createGeneration, validateGeneration, publicJob, prepareReferences };
+module.exports = { getModels, linkModel, getGallery, getJob, createGeneration, deleteGeneration, validateGeneration, publicJob, prepareReferences };

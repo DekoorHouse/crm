@@ -2,12 +2,14 @@ const mockDocs = new Map();
 const mockWrites = [];
 const mockFetch = jest.fn();
 const mockSave = jest.fn().mockResolvedValue();
+const mockFileDelete = jest.fn().mockResolvedValue();
 const mockDelete = Symbol('delete');
 function mockRef(collection, id) {
     const key = `${collection}/${id}`;
     return { id, key,
         get: async () => ({ exists: mockDocs.has(key), data: () => mockDocs.get(key) }),
         update: async data => { mockDocs.set(key, { ...mockDocs.get(key), ...data }); mockWrites.push({ key, data }); },
+        delete: async () => { mockDocs.delete(key); },
     };
 }
 let mockTransactions = Promise.resolve();
@@ -31,7 +33,7 @@ jest.mock('../server/config', () => ({
             return run;
         },
     },
-    bucket: { name: 'test-bucket', file: () => ({ save: (...args) => mockSave(...args) }) },
+    bucket: { name: 'test-bucket', file: filePath => ({ save: (...args) => mockSave(...args), delete: options => mockFileDelete(filePath, options) }) },
 }));
 jest.mock('node-fetch', () => (...args) => mockFetch(...args));
 const sharp = require('sharp');
@@ -166,4 +168,19 @@ test('un rechazo por políticas de contenido se explica en español', async () =
     await finish({ ok: false, status: 400, json: async () => ({ error: { message: 'Your request was rejected by the safety system.' } }) });
     expect(current().error).toMatch(/políticas de contenido/);
     expect(current().error).toContain('safety system');
+});
+
+test('borra para siempre la imagen y sus archivos, pero no una en proceso', async () => {
+    const id = requestId;
+    mockDocs.set(`image_studio_generations/${id}`, { status: 'generating', prompt: 'x', createdAt: new Date().toISOString() });
+    await expect(service.deleteGeneration(id, actor)).rejects.toMatchObject({ status: 409 });
+    mockDocs.set(`image_studio_generations/${id}`, { status: 'completed', prompt: 'x', createdAt: new Date().toISOString(), images: [{ fullUrl: 'a', thumbUrl: 'b' }] });
+    await service.deleteGeneration(id, actor);
+    expect(mockDocs.has(`image_studio_generations/${id}`)).toBe(false);
+    expect(mockFileDelete.mock.calls).toEqual([
+        [`image_studio/${id}/0_full.png`, { ignoreNotFound: true }],
+        [`image_studio/${id}/0_thumb.webp`, { ignoreNotFound: true }],
+    ]);
+    await expect(service.deleteGeneration(id, actor)).rejects.toMatchObject({ status: 404 });
+    await expect(service.deleteGeneration('../otro', actor)).rejects.toMatchObject({ status: 400 });
 });

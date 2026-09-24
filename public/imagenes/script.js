@@ -154,6 +154,22 @@
         $('result-enhanced').hidden = !job.enhancedPrompt;
         $('result-enhanced').querySelector('p').textContent = job.enhancedPrompt || '';
     }
+    function clearPreview() {
+        state.current = null; portal.setActive(false);
+        $('empty-preview').hidden = false; $('generating-preview').hidden = true; $('result-preview').hidden = true; $('result-footer').hidden = true;
+        $('preview-badge').textContent = 'Tu espacio para crear';
+    }
+    async function removeJob() {
+        const job = state.current;
+        if (!job || !confirm('¿Borrar esta imagen para siempre? Se elimina de la galería de todo el equipo y no se puede recuperar.')) return;
+        $('delete-job').disabled = true;
+        try {
+            await api(`/generations/${job.id}`, { method: 'DELETE' });
+            state.jobs = state.jobs.filter(j => j.id !== job.id); renderGallery(); clearPreview();
+            notice('La imagen se borró de la galería.');
+        } catch (err) { notice(err.message, true); }
+        finally { $('delete-job').disabled = false; }
+    }
     function elapsed() {
         if (!state.active) return;
         const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(state.active.createdAt)) / 1000));
@@ -276,7 +292,7 @@
     $('refresh-gallery').addEventListener('click', () => loadGallery().catch(err => notice(err.message, true)));
     $('load-more').addEventListener('click', async () => { $('load-more').disabled = true; try { await loadGallery(true); } catch (err) { notice(err.message, true); } finally { $('load-more').disabled = false; } });
     $('gallery').addEventListener('click', event => { const button = event.target.closest('[data-job]'); if (button) { const job = state.jobs.find(j => j.id === button.dataset.job); showTab('create'); showJob(job); if (job.status === 'generating' && !state.active) track(job); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
-    $('reuse-prompt').addEventListener('click', reuse); $('download').addEventListener('click', download);
+    $('reuse-prompt').addEventListener('click', reuse); $('delete-job').addEventListener('click', removeJob); $('download').addEventListener('click', download);
     setInterval(elapsed, 1000);
     firebase.auth().onAuthStateChanged(async user => {
         if (!user || state.started) return; state.started = true;
