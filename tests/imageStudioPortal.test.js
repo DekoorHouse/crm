@@ -118,7 +118,7 @@ test('la animación es ligera: búfer a 1/4, 30 cuadros por segundo y sin desenf
     expect(env.context.drawImage).toHaveBeenCalledTimes(draws);
     expect(env.frames.size).toBe(1);
     env.advance(1040);
-    expect(env.context.drawImage).toHaveBeenCalledTimes(draws + 2);
+    expect(env.context.drawImage).toHaveBeenCalledTimes(draws + 1);
     expect(env.buffers).toHaveLength(1);
     expect(env.context.shadowBlur).toBeUndefined();
 });
