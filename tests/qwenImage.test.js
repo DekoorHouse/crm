@@ -115,6 +115,7 @@ test('genera a través del pod y devuelve la imagen en base64', async () => {
         input_references: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${Buffer.from('ref').toString('base64')}` } }] }, 'job');
     expect(Buffer.from(result.data[0].b64_json, 'base64').toString()).toBe('png-bytes');
     expect(workflow.ref1.inputs.image).toBe('crm_job_1.png');
+    expect(workflow.save.inputs.filename_prefix).toBe('crm_job');
     expect(workflow.encode.inputs.prompt).toBe('edita');
 }, 15000);
 
@@ -146,3 +147,17 @@ test('mejora la descripción antes de generar y la reporta con su costo', async 
         expect(mockFetch.mock.calls.some(([url]) => url.includes('openrouter.ai'))).toBe(false);
     } finally { delete process.env.OPENROUTER_API_KEY; }
 }, 20000);
+
+test('purga en el pod las copias de una generación', async () => {
+    mockDocs.set('crm_settings/qwen_pod', { podId: 'podP', nonce: 'nn', status: 'ready', createdAt: new Date().toISOString() });
+    mockFetch.mockResolvedValue(reply({ removed: 2, history: 1 }));
+    await expect(pod.purge('a2e6caa5-21d1-4f39-b44c-98b46ad1cb9b')).resolves.toEqual({ removed: 2, history: 1 });
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe('https://podP-3000.proxy.runpod.net/dekoor/purge');
+    expect(JSON.parse(options.body)).toEqual({ prefix: 'crm_a2e6caa5-21d1-4f39-b44c-98b46ad1cb9b' });
+    expect(options.headers['X-Dekoor-Token']).toBe(crypto.createHmac('sha256', 'rp-secret').update('qwen-pod:nn').digest('hex'));
+    mockDocs.set('crm_settings/qwen_pod', { podId: null, status: 'off' });
+    mockFetch.mockClear();
+    await expect(pod.purge('a2e6caa5-21d1-4f39-b44c-98b46ad1cb9b')).resolves.toEqual({ skipped: true });
+    expect(mockFetch).not.toHaveBeenCalled();
+});

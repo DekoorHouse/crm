@@ -184,3 +184,9 @@ test('borra para siempre la imagen y sus archivos, pero no una en proceso', asyn
     await expect(service.deleteGeneration(id, actor)).rejects.toMatchObject({ status: 404 });
     await expect(service.deleteGeneration('../otro', actor)).rejects.toMatchObject({ status: 400 });
 });
+
+test('borrar una imagen de Qwen con la GPU apagada no falla', async () => {
+    mockDocs.set(`image_studio_generations/${requestId}`, { status: 'completed', modelId: 'dekoor/qwen-image-2.1', prompt: 'x', createdAt: new Date().toISOString(), images: [{}] });
+    await service.deleteGeneration(requestId, actor);
+    expect(mockDocs.has(`image_studio_generations/${requestId}`)).toBe(false);
+});

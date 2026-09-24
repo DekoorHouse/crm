@@ -134,6 +134,16 @@ async function comfy(pathname, options = {}) {
     return response;
 }
 
+// Borra del pod los archivos y el historial de una generación (el proxy lo hace en /dekoor/purge). Si la GPU
+// está apagada no hay nada que borrar: el disco del pod se destruye al terminarlo.
+async function purge(jobId) {
+    const data = enabled() ? (await stateRef().get()).data() || {} : {};
+    if (!data.podId) return { skipped: true };
+    const response = await comfy('/dekoor/purge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prefix: `crm_${jobId}` }) });
+    if (!response.ok) throw failure(`El pod no pudo borrar las copias (${response.status}).`, 502);
+    return response.json();
+}
+
 async function markUsed() { await stateRef().set({ lastUsedAt: new Date().toISOString() }, { merge: true }).catch(() => {}); }
 
 // Revisión periódica: apaga pods olvidados fuera de horario, los que no pudieron arrancar y limpia pods que ya no existen.
@@ -165,4 +175,4 @@ function startQwenPodScheduler() {
     console.log(`[QWEN] Scheduler iniciado: GPU ${scheduleLabel()} (${TIMEZONE}).`);
 }
 
-module.exports = { enabled, getStatus, startPod, stopPod, comfy, markUsed, reconcile, inSchedule, startQwenPodScheduler };
+module.exports = { enabled, getStatus, startPod, stopPod, comfy, purge, markUsed, reconcile, inSchedule, startQwenPodScheduler };

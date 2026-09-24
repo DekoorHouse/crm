@@ -9,16 +9,36 @@ MODELS=/ComfyUI/models
 HF=https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main
 
 cat > /dekoor_proxy.py <<'PYEOF'
-import hmac, os, subprocess
+import glob, hmac, json, os, re, subprocess
 import aiohttp
 from aiohttp import web
 TOKEN = os.environ['DEKOOR_TOKEN']
 UPSTREAM = 'http://127.0.0.1:8188'
 
+# Borra todo rastro de una imagen del CRM en el pod: sus archivos (crm_<id>...) y su entrada del historial de ComfyUI.
+async def purge(request, session):
+    prefix = (await request.json()).get('prefix', '')
+    if not re.fullmatch(r'crm_[0-9a-fA-F-]{36}', prefix):
+        return web.json_response({'error': 'prefijo no valido'}, status=400)
+    removed = 0
+    for folder in ('/ComfyUI/input', '/ComfyUI/output', '/ComfyUI/temp'):
+        for path in glob.glob(os.path.join(folder, glob.escape(prefix) + '*')):
+            os.remove(path)
+            removed += 1
+    async with session.get(UPSTREAM + '/history') as response:
+        history = await response.json()
+    ids = [pid for pid, entry in history.items() if prefix in json.dumps(entry.get('prompt', [])) or prefix in json.dumps(entry.get('outputs', {}))]
+    if ids:
+        async with session.post(UPSTREAM + '/history', json={'delete': ids}):
+            pass
+    return web.json_response({'removed': removed, 'history': len(ids)})
+
 async def handle(request):
     if not hmac.compare_digest(request.headers.get('X-Dekoor-Token', ''), TOKEN):
         return web.Response(status=401)
     session = request.app['session']
+    if request.path == '/dekoor/purge' and request.method == 'POST':
+        return await purge(request, session)
     if request.path == '/dekoor/health':
         stage = open('/tmp/dekoor_stage').read().strip() if os.path.exists('/tmp/dekoor_stage') else 'iniciando'
         try:

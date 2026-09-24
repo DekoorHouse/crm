@@ -34,7 +34,8 @@ function outputSize(aspect = '1:1', resolution = '1K') {
     return { width: round(side * Math.sqrt(w / h)), height: round(side * Math.sqrt(h / w)) };
 }
 
-function buildWorkflow({ prompt, images = [], aspect_ratio, resolution, seed }) {
+// filePrefix lleva el id de la generación para poder borrar después sus copias del pod (qwenPod.purge).
+function buildWorkflow({ prompt, images = [], aspect_ratio, resolution, seed, filePrefix = 'crm' }) {
     const encoderImages = Object.fromEntries(images.map((_, i) => [`images.image_${i + 1}`, [`ref${i + 1}`, 0]]));
     const graph = {
         unet: { class_type: 'UNETLoader', inputs: { unet_name: 'qwen_image_2.1_int8_convrot.safetensors', weight_dtype: 'default' } },
@@ -49,7 +50,7 @@ function buildWorkflow({ prompt, images = [], aspect_ratio, resolution, seed }) 
             seed, steps: 25, cfg: images.length ? CFG.edit : CFG.create, sampler_name: 'euler', scheduler: 'simple', denoise: 1,
         } },
         decode: { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } },
-        save: { class_type: 'SaveImage', inputs: { images: ['decode', 0], filename_prefix: 'crm' } },
+        save: { class_type: 'SaveImage', inputs: { images: ['decode', 0], filename_prefix: filePrefix } },
     };
     images.forEach((name, i) => { graph[`ref${i + 1}`] = { class_type: 'LoadImage', inputs: { image: name } }; });
     // Con referencias, el codificador recibe el VAE y entrega el latente del tamaño de la primera imagen (plantilla de edición).
@@ -89,7 +90,7 @@ async function generate(request, jobId) {
         : await enhancePrompt({ prompt: request.prompt, references, aspect_ratio: request.aspect_ratio });
     const images = [];
     for (const [i, reference] of references.entries()) images.push(await uploadReference(reference.image_url.url, `crm_${jobId}_${i + 1}.png`));
-    const workflow = buildWorkflow({ ...request, prompt: enhanced.prompt, images, seed: crypto.randomInt(0, 2 ** 48 - 1) });
+    const workflow = buildWorkflow({ ...request, prompt: enhanced.prompt, images, seed: crypto.randomInt(0, 2 ** 48 - 1), filePrefix: `crm_${jobId}` });
     const queued = await json(await pod.comfy('/prompt', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: workflow }),
     }), 'aceptar la solicitud');

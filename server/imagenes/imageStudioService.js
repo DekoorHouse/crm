@@ -154,6 +154,11 @@ async function deleteGeneration(id, actor) {
     const snapshot = await ref.get();
     if (!snapshot.exists) throw failure('No se encontró esta generación.', 404);
     if (publicJob(id, snapshot.data()).status === 'generating') throw failure('Espera a que termine esta imagen antes de borrarla.', 409);
+    // Las de Qwen también dejan copias en la GPU. Se intenta borrarlas, pero no bloquean el borrado del CRM.
+    if (snapshot.data().modelId === qwenImage.MODEL_ID) {
+        await qwenPod.purge(id).then(result => { if (!result.skipped) console.log('[IMAGENES] Copias borradas del pod de Qwen:', id, JSON.stringify(result)); })
+            .catch(err => console.warn('[IMAGENES] No se pudieron borrar las copias del pod de Qwen:', id, err.message));
+    }
     const files = (snapshot.data().images || []).flatMap((_, index) => [`image_studio/${id}/${index}_full.png`, `image_studio/${id}/${index}_thumb.webp`]);
     await Promise.all(files.map(filePath => bucket.file(filePath).delete({ ignoreNotFound: true })));
     await ref.delete();
