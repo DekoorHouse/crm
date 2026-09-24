@@ -293,7 +293,7 @@
     });
     $('model').addEventListener('change', renderOptions);
     $('qwen-power').addEventListener('click', toggleQwen);
-    $('prompt').addEventListener('input', () => { $('prompt-count').textContent = `${$('prompt').value.length.toLocaleString('en-US')} / 6,000`; localStorage.setItem('imageStudioPrompt', $('prompt').value); });
+    $('prompt').addEventListener('input', () => { $('prompt-count').textContent = `${$('prompt').value.length.toLocaleString('en-US')} / 6,000`; });
     const ideas = {
         producto: 'Fotografía de producto de una lámpara personalizada sobre una mesa de madera clara. Fondo neutro, luz cálida y suave, detalles nítidos y un estilo elegante y natural.',
         escena: 'Un rincón de lectura acogedor al atardecer, con una lámpara encendida, plantas y un sillón de lino. Colores cálidos, luz natural y una composición serena.',
@@ -333,7 +333,8 @@
     setInterval(elapsed, 1000);
     firebase.auth().onAuthStateChanged(async user => {
         if (!user || state.started) return; state.started = true;
-        $('prompt').value = localStorage.getItem('imageStudioPrompt') || ''; $('prompt').dispatchEvent(new Event('input'));
+        // Al recargar la descripción empieza vacía. Se borra lo que guardaban versiones anteriores de la página.
+        localStorage.removeItem('imageStudioPrompt'); $('prompt').dispatchEvent(new Event('input'));
         const results = await Promise.allSettled([api('/models').then(applyModels), loadGallery()]);
         results.forEach(result => { if (result.status === 'rejected' && result.reason.status !== 401) notice(result.reason.message, true); });
         if (results[0].status === 'rejected' && results[0].reason.status !== 401) {
