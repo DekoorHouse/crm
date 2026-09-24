@@ -73,10 +73,25 @@ function possibleSamePayment(a, b) {
     return true;
 }
 
+// DH16721 (14-sep-2026): la clienta mandó su recibo de PREDIAL de 2021 para dar su dirección; el
+// lector lo tomó por comprobante y quedó 10 días en la cola de validación. Un documento de hace más de
+// 6 meses que no trae monto NI una de nuestras cuentas no puede ser el pago de un pedido. Si trae
+// monto o cuenta nuestra (p. ej. un año mal leído) sigue yendo a revisión humana como siempre.
+function oldDocumentNotOurs(receipt, receivedAt, destinations = DESTINATIONS) {
+    const day = Date.parse(String(receipt.fecha || '') + 'T12:00:00Z');
+    const arrival = ms(receivedAt);
+    if (!Number.isFinite(day) || !arrival || arrival - day <= 180 * DAY) return false;
+    const destination = String(receipt.cuentaDestino || '').replace(/\D/g, '').slice(-4);
+    return !(cents(receipt.monto) > 0) && !destinations.includes(destination);
+}
+
 function validateReceipt(order, receipt, receivedAt, destinations = DESTINATIONS) {
     if (isDefinitivelyFailed(receipt)) return { status: 'rejected', reason: 'Intento de pago fallido: el ticket indica que la operación no se realizó.' };
     if (receipt.esComprobante === false) return { status: 'ignored', reason: 'La imagen no es un comprobante de pago.' };
     if (receipt.esComprobante !== true) return { status: 'review', reason: 'No se pudo determinar si la imagen es un comprobante; revisar a mano.' };
+    if (oldDocumentNotOurs(receipt, receivedAt, destinations)) {
+        return { status: 'ignored', reason: 'Documento antiguo sin monto ni cuenta nuestra (p. ej. un recibo de predial o una factura): no es un pago de este pedido.' };
+    }
     if (terminal(order)) return { status: 'review', reason: 'El pedido ya está entregado o devuelto. Si es una compra nueva, crea el pedido nuevo y pásale este comprobante; no lo apliques ni lo regreses a Fabricar.' };
     if (receipt.pagoRealizado === false) return { status: 'review', reason: 'La operación aparece en proceso o no completada. Confirmar que el dinero se acreditó antes de aprobar el anticipo.' };
     const destination = String(receipt.cuentaDestino || '').replace(/\D/g, '').slice(-4);

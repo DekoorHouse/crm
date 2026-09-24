@@ -822,6 +822,13 @@ test('preview archives an explicit failed receipt instead of allowing manual cre
 
 test.each(['Ya validamos su depósito', 'Gracias por tu pago', 'Tu pedido está liquidado', 'Ya confirmamos la transferencia'])('confirmation guard recognizes %s', text => expect(claimsPayment(text)).toBe(true));
 test('stable folio key survives a corrected OCR amount', () => expect(receiptKeys(ocr({ monto: 900 }))[1]).toBe(receiptKeys(ocr())[1]));
+test('DH16721: an old property-tax receipt sent for the address is ignored, not queued for validation', () => {
+    const predial = { esComprobante: true, monto: null, fecha: '2021-07-01', cuentaDestino: null, referencia: '82153027', concepto: 'PAGO DEL IMPUESTO PREDIAL DEL 201305 al 202106' };
+    expect(validateReceipt(order(), predial, new Date('2026-09-14T13:46:29Z')).status).toBe('ignored');
+    // Con monto o con una de nuestras cuentas sigue a revisión humana (p. ej. un año mal leído).
+    expect(validateReceipt(order(), { ...predial, monto: 750 }, new Date('2026-09-14T13:46:29Z')).status).not.toBe('ignored');
+    expect(validateReceipt(order(), { ...predial, cuentaDestino: '•0670' }, new Date('2026-09-14T13:46:29Z')).status).not.toBe('ignored');
+});
 test('receipt date is checked against arrival, not the time IA is enabled', () => {
     const received = new Date(now() - 5 * DAY);
     expect(validateReceipt(order(), ocr({ fecha: received.toISOString().slice(0, 10) }), received).status).toBe('valid');
