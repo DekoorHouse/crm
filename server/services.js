@@ -4426,7 +4426,36 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 }
             }
         } catch (e) { console.warn('[COBERTURA] candado de registro falló (se continua):', e.message); }
-        const registrationNeeded = !pendingReceiptOrder?.orderDataPending && !orderCancelled && !registroBloqueadoPorCobertura && (registerOrderCmd || anticipoPaidCmd || (saleClosed && !isPostVenta && !esperaAnticipoCmd));
+        // RED DE SEGURIDAD del anticipo (5219612728125, 25-sep-2026): la clienta pagó los $300 de su
+        // lámpara con foto y la IA NO escribió /registrar ni /anticipopagado; el comprobante quedó "sin
+        // pedido asignado" y el pedido no existía. Si el mensaje de este turno es un COMPROBANTE (ya lo
+        // leyó el lector de pagos, o su descripción lo dice), ya le hablamos de anticipo y no hay pedido
+        // abierto, se intenta registrar igual: el extractor solo registra si los datos están completos.
+        // Una FOTO para grabar no dispara nada: se exige que la imagen sea un comprobante.
+        let anticipoSinPedido = false;
+        try {
+            if (!isPostVenta && !registerOrderCmd && !anticipoPaidCmd && ['image', 'document'].includes(message.type) && message.id
+                && messagesSnapshot.docs.some(d => d.data().from !== contactId && /anticipo/i.test(d.data().text || ''))) {
+                const [receiptSnap, ordersSnap, msgSnap] = await Promise.all([
+                    db.collection('payment_receipts').where('contactId', '==', contactId).where('messageId', '==', message.id).limit(1).get(),
+                    db.collection('pedidos').where('contactId', '==', contactId).get(),
+                    contactRef.collection('messages').where('id', '==', message.id).limit(1).get(),
+                ]);
+                const ocr = receiptSnap.empty ? null : receiptSnap.docs[0].data().ocr;
+                const desc = msgSnap.empty ? '' : String(msgSnap.docs[0].data().aiDescription || '');
+                const esComprobante = (ocr && ocr.esComprobante === true) || /^comprobante de pago/i.test(desc);
+                const pedidoAbierto = ordersSnap.docs.some(d => {
+                    const o = d.data();
+                    if (contactData.activePurchaseSessionId && o.purchaseSessionId !== contactData.activePurchaseSessionId) return false;
+                    return !/^(cancelado|entregado|devoluci[oó]n|enviado)$/i.test(String(o.estatus || '').trim()) && !(o.guiaEnvio && o.guiaEnvio.guia);
+                });
+                // Mismo candado de cobertura que /registrar: sin cobertura vigente no se registra.
+                const sinCobertura = generalSettings.coberturaGuardsActive !== false && require('./envios/coberturaCheck').bloqueaRegistro(coberturaCheck);
+                anticipoSinPedido = esComprobante && !pedidoAbierto && !sinCobertura;
+                if (anticipoSinPedido) console.warn(`[AI] ${contactId}: comprobante de anticipo sin pedido y sin /registrar; se intenta registrar.`);
+            }
+        } catch (e) { console.warn('[AI] red de seguridad del anticipo falló (se continúa):', e.message); }
+        const registrationNeeded = !pendingReceiptOrder?.orderDataPending && !orderCancelled && !registroBloqueadoPorCobertura && (registerOrderCmd || anticipoPaidCmd || anticipoSinPedido || (saleClosed && !isPostVenta && !esperaAnticipoCmd));
         if (registrationNeeded) await ensureRegistration();
         const paymentConversation = require('./payments/paymentConversation');
         const paymentClaim = require('./payments/paymentPolicy').claimsPayment(aiResponse) || paymentConversation.fullPaymentClaim(aiResponse) || paymentConversation.blocksProductionForBalance(aiResponse);
