@@ -54,13 +54,13 @@ ANTI-REPETICIÓN (muy importante — revisa tus mensajes anteriores antes de esc
 
 DATOS DE PAGO (compártelos cuando el cliente pregunte cómo pagar — solo los que apliquen — y pídele que te envíe su comprobante al pagar):
 - Transferencia BBVA, a nombre de Christian Morales: cuenta terminación 3262 o tarjeta terminación 0670. Es la cuenta PREFERIDA para transferir. La tarjeta de OXXO (Scotiabank, a nombre de Jessica Delgado, tarjeta 5579 2091 5525 1983) también recibe transferencias, pero SOLO menciónala si el cliente pregunta expresamente si puede transferir a ella; nunca la ofrezcas por tu cuenta y nunca inventes dígitos.
-- Pago en OXXO: depósito a tarjeta terminación 1983 (cuenta NUEVA desde el 14-sep-2026; la anterior terminaba en 9250). Si el cliente NO PUDO pagar con esa tarjeta (llegó al límite, se lo rechazaron), NO se la repitas: usa el comando /oxxomp con el monto (ver la regla "Referencia OXXO nueva por Mercado Pago").
+- Pago en OXXO: depósito a tarjeta terminación 1983 (cuenta NUEVA desde el 14-sep-2026; la anterior terminaba en 9250). Si el cliente NO PUDO pagar con esa tarjeta (llegó al límite, se lo rechazaron), NO se la repitas: dile que una persona del equipo le manda en un momento una referencia nueva de OXXO (con código de barras) y escribe /equipo en su propio renglón para que el equipo la genere desde el CRM.
 
 VALIDACIÓN DE COMPROBANTES (cuando el cliente envíe una imagen o PDF de su pago):
 Analízalo y extrae: monto, fecha y hora, banco, folio o clave de rastreo, y la cuenta/tarjeta DESTINO (a quién se le pagó, NO la del cliente). Luego verifica:
 1) DESTINO correcto:
    - Si es TRANSFERENCIA: debe ir a Christian Morales (BBVA: cuenta terminación 3262 o tarjeta 0670) O a Jessica Delgado (Scotiabank: tarjeta terminación 1983, la misma de OXXO).
-   - Si es TICKET DE OXXO: la tarjeta/cuenta destino debe terminar en 1983 (cuenta nueva) o en 9250 (cuenta anterior; sigue siendo válida para depósitos ya hechos), O ser el ticket de una referencia de Mercado Pago que generaste con /oxxomp (esa NO termina en 1983 ni 9250 y es válida si el monto coincide; no la marques sospechosa por eso).
+   - Si es TICKET DE OXXO: la tarjeta/cuenta destino debe terminar en 1983 (cuenta nueva) o en 9250 (cuenta anterior; sigue siendo válida para depósitos ya hechos), O ser el ticket de una referencia de Mercado Pago que el equipo le mandó (esa NO termina en 1983 ni 9250 y es válida si el monto coincide; no la marques sospechosa por eso).
    - Si el destino NO coincide (otro nombre u otra terminación), NO confirmes el pago: dile con amabilidad que el comprobante no coincide con nuestros datos y que un agente lo revisará. No acuses ni regañes, solo escala.
 2) MONTO: compáralo con el total acordado en la conversación. Si es menor, indícale cuánto falta. Si no hay un total claro, no lo inventes.
 3) FOLIO y FECHA: deben estar presentes y la fecha ser reciente/coherente. Si falta el folio, la imagen está ilegible, o el PDF viene protegido y no puedes leerlo, pide amablemente que reenvíe el comprobante como captura clara.
@@ -1112,7 +1112,7 @@ const PAYMENT_PROOF_NOTE = `
 
 **SIN COMPROBANTE NO HAY PAGO:** solo puedes decir que recibimos un pago o un ANTICIPO si en ESTA conversacion el cliente MANDO una IMAGEN o PDF del comprobante y tu lo pudiste ver. Que el cliente ESCRIBA \"ya te deposite\", \"ya hice la transferencia\", \"ya pague\", \"ya quedo\" —o que solo conteste \"ok\", \"va\" o un emoji— NO es comprobante: es texto. En esos casos agradece y PIDE con amabilidad la foto o captura del comprobante; NUNCA escribas \"recibimos tu anticipo\", \"ya nos llego tu pago\" ni digas que ya arrancamos su diseño. Jamas confirmes un pago por tu cuenta ni lo des por hecho porque el cliente prometio pagar.
 
-**UNA IMAGEN NO BASTA — TIENE QUE SER UN COMPROBANTE COMPLETO:** para dar por bueno un pago necesitas LEER en la imagen los CUATRO datos: (1) el DESTINO/beneficiario (transferencia a nombre de Christian Morales, cuenta/tarjeta/CLABE terminada en 3262, 0670 o 2629, O transferencia a Jessica Delgado en Scotiabank con tarjeta terminación 1983; en OXXO la tarjeta destino termina en 1983 —o en 9250 si depositó a la cuenta anterior—; un ticket de OXXO de una referencia de Mercado Pago generada con /oxxomp NO termina en ninguna de las dos y es válido si el monto coincide), (2) el MONTO, (3) el FOLIO o clave de rastreo, y (4) la FECHA reciente. Si te FALTA cualquiera de los cuatro —o la imagen es una simple NOTIFICACION del banco tipo \\"cargo a tu cuenta\\", un aviso de app, un saldo o una captura sin destinatario ni folio— NO lo valides: no es comprobante suficiente, por mas que se vea el monto correcto.
+**UNA IMAGEN NO BASTA — TIENE QUE SER UN COMPROBANTE COMPLETO:** para dar por bueno un pago necesitas LEER en la imagen los CUATRO datos: (1) el DESTINO/beneficiario (transferencia a nombre de Christian Morales, cuenta/tarjeta/CLABE terminada en 3262, 0670 o 2629, O transferencia a Jessica Delgado en Scotiabank con tarjeta terminación 1983; en OXXO la tarjeta destino termina en 1983 —o en 9250 si depositó a la cuenta anterior—; un ticket de OXXO de una referencia de Mercado Pago que el equipo le mandó NO termina en ninguna de las dos y es válido si el monto coincide), (2) el MONTO, (3) el FOLIO o clave de rastreo, y (4) la FECHA reciente. Si te FALTA cualquiera de los cuatro —o la imagen es una simple NOTIFICACION del banco tipo \\"cargo a tu cuenta\\", un aviso de app, un saldo o una captura sin destinatario ni folio— NO lo valides: no es comprobante suficiente, por mas que se vea el monto correcto.
 
 **ANTICIPO ≠ PAGO COMPLETO — EL FORMULARIO DE ENVÍO SOLO CON EL PEDIDO 100% PAGADO:** los datos de envío se piden HASTA que el cliente liquida el TOTAL. Un ANTICIPO (los $300 POR LÁMPARA de un diseño especial —foto, logo, modificación o personaje fuera de catálogo—, el apartado de tu departamento, o los ~$500 de 5+ piezas) NO es pago completo, por mas que el comprobante sea valido. Con un anticipo valido: confirmalo, avisa que arranca el diseño/fabricacion y que el RESTO se paga al ver la foto del trabajo terminado — y NADA de datos de envio. ⚠️ **NUNCA emitas /comprobante por un anticipo:** ese comando hace que el SISTEMA le mande solo el formulario de envio y se genere la guia; si el cliente tarda en liquidar, la guia CADUCA. /comprobante es EXCLUSIVO del pago del TOTAL (de una vez, o el restante despues de la foto). Reconocer que es un anticipo y aun asi emitir /comprobante o pedir la direccion es el error a evitar.
 
@@ -1150,14 +1150,15 @@ async function buildStaticContext(botInstructions, isPostVenta = false, paymentP
         .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
         .join('\n');
 
-    // Referencia OXXO por Mercado Pago (/oxxomp): la nota solo se le enseña a la IA si el kill-switch
-    // crm_settings/general.mpOxxoReferencesActive está en true. Chris la apagó el 14-sep-2026 al
-    // cambiar la cuenta OXXO (tarjeta terminación 1983): sin la nota la IA no conoce el comando y no
-    // lo emite; y si lo emitiera, createOxxoReference también está bloqueado por el mismo flag.
+    // Referencia OXXO por Mercado Pago (/oxxomp): la nota solo se le enseña a la IA si DOS flags de
+    // crm_settings/general están en true: mpOxxoReferencesActive (las referencias existen: botón del
+    // CRM + IA) y mpOxxoAiActive (la IA puede pedirlas sola). Chris (25-sep-2026): por ahora SOLO
+    // MANUAL — el equipo genera la referencia desde el CRM y se la manda al cliente cuando haga falta;
+    // la IA no la emite. Sin la nota la IA no conoce el comando; si lo emitiera, se convierte en /equipo.
     let oxxoMpActive = false;
     try {
         const generalCfg = (await db.collection('crm_settings').doc('general').get()).data() || {};
-        oxxoMpActive = generalCfg.mpOxxoReferencesActive === true;
+        oxxoMpActive = generalCfg.mpOxxoReferencesActive === true && generalCfg.mpOxxoAiActive === true;
     } catch (e) { console.warn('[AI] No se pudo leer mpOxxoReferencesActive; la nota /oxxomp queda apagada:', e.message); }
 
     // Con el registro automático por IA activo (crm_settings/ai_order_registration), la regla
@@ -4265,6 +4266,16 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
         } catch (e) { console.warn('[COBERTURA] candado de /ttt falló (se continua):', e.message); }
 
+        // /oxxomp SOLO MANUAL (Chris, 25-sep-2026): la referencia OXXO de Mercado Pago la genera y manda
+        // el equipo desde el CRM ("Generar Pago OXXO" → "Enviar al cliente"). Si la IA llegara a emitir
+        // el comando (p. ej. por un prompt viejo), se convierte en /equipo: el chat cae en Atención con
+        // alerta y una persona le manda la referencia. Para dejar que la IA la pida sola:
+        // crm_settings/general.mpOxxoAiActive = true (además de mpOxxoReferencesActive).
+        if (generalSettings.mpOxxoAiActive !== true && /\/oxxomp\b/i.test(aiResponse)) {
+            console.warn(`[OXXO MP] ${contactId}: la IA emitió /oxxomp con el modo MANUAL; se convierte en /equipo.`);
+            aiResponse = aiResponse.replace(/\/oxxomp\b[^\n]*/ig, '/equipo');
+        }
+
         // Persist the incident before acknowledging it; override unverified promises before command parsing.
         const incidentCustomerTexts = [];
         for (const d of messagesSnapshot.docs) {
@@ -4310,7 +4321,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // siempre (tarjeta al límite, "no se puede"): el sistema genera una referencia de Mercado
         // Pago con el monto que corresponde y le manda la imagen (ver el manejo después del loop).
         // Solo en fase de pago: sin pedido registrado no hay nada que cobrar.
-        const oxxoMpMatch = paymentPhaseActive ? aiResponse.match(/\/oxxomp\b[^\S\n]*:?[^\S\n]*\$?[^\S\n]*(\d[\d,]*(?:\.\d+)?)?/i) : null;
+        const oxxoMpMatch = (paymentPhaseActive && generalSettings.mpOxxoAiActive === true) ? aiResponse.match(/\/oxxomp\b[^\S\n]*:?[^\S\n]*\$?[^\S\n]*(\d[\d,]*(?:\.\d+)?)?/i) : null;
         const oxxoMpAmount = oxxoMpMatch && oxxoMpMatch[1] ? Number(oxxoMpMatch[1].replace(/,/g, '')) : null;
         // Motivo breve que la IA escribe DESPUÉS de /sospechoso (ej. "/sospechoso el monto no coincide")
         // para mostrarlo en la columna "Comprobante sospechoso" de Pendientes. El cliente NO lo ve (se
