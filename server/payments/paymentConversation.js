@@ -21,7 +21,7 @@ function paymentCourtesyReply(text) {
 // nunca recibe una confirmación basada en el pedido anterior mientras se crea el nuevo.
 async function preparePaymentTurn(contactId, { register = null, orderNumber = null, newOrderIntent = false } = {}) {
     const registeredOrderNumber = register ? await register() : null;
-    if (register && !registeredOrderNumber) return { registeredOrderNumber, context: { registrationPending: true, hasPaid: false, pending: 1 } };
+    if (register && !registeredOrderNumber) return { registeredOrderNumber, context: { registrationPending: true, registrationFailed: true, hasPaid: false, pending: 1 } };
     const context = await require('./paymentWorkflow').paymentContext(contactId, {
         discover: true, process: true, orderNumber: registeredOrderNumber || orderNumber, newOrderIntent,
     });
@@ -34,7 +34,12 @@ function paymentReply(context, { customerText = '', aiText = '', receiptPresent 
     const courtesy = !receiptPresent && paymentCourtesyReply(customerText);
     if (courtesy && !context.registrationPending && !context.ambiguous) return [courtesy];
     const question = clean(customerText).trim();
-    if (context.registrationPending) return [(receiptPresent ? 'Recibimos tu comprobante. ' : '') + 'El equipo dará seguimiento al registro de este pedido y a su pago.'];
+    // "Compra nueva todavía sin registrar" NO es una falla: es la venta en curso (DH17249, 25-sep-2026:
+    // la clienta pidió 2 lámparas más, Leonel le pedía el C.P. y este aviso lo reemplazó y apagó la IA
+    // sin que se hubiera intentado registrar nada). Solo va al equipo si el registro falló de verdad o
+    // si ya llegó un comprobante que no tiene a qué pedido aplicarse.
+    if (context.registrationPending && (context.registrationFailed || receiptPresent)) return [(receiptPresent ? 'Recibimos tu comprobante. ' : '') + 'El equipo dará seguimiento al registro de este pedido y a su pago.'];
+    if (context.registrationPending) return null;
     if (context.ambiguous) return ['El equipo revisará a cuál de tus pedidos corresponde este comprobante para registrarlo correctamente.'];
     if (context.hasPaid || context.reportedComplete) {
         if (requestsPaymentAgain(aiText) || paymentComplaint(customerText)) {

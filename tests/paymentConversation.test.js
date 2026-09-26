@@ -64,7 +64,7 @@ test('only an explicit unique order number selects a paid order; arbitrary amoun
 });
 
 test('requesting another order does not assert a receipt was received when there is no image', () => {
-    expect(paymentReply({ registrationPending: true }, { customerText: 'Quiero otro pedido' })[0]).not.toContain('Recibimos tu comprobante');
+    expect(paymentReply({ registrationPending: true }, { customerText: 'Quiero otro pedido' })).toBeNull();
 });
 
 test.each([{ hasPaid: false }, deposit])('legitimate payment instructions remain available for an unpaid balance', context => {
@@ -100,7 +100,12 @@ test('pending payments still cannot be described as approved or complete', () =>
 });
 
 test('a real registration failure still reaches the team even after an acknowledgment', () => {
-    expect(paymentReply({ registrationPending: true }, { customerText: 'Sí claro.' })[0]).toContain('seguimiento al registro');
+    expect(paymentReply({ registrationPending: true, registrationFailed: true }, { customerText: 'Sí claro.' })[0]).toContain('seguimiento al registro');
+});
+
+test('DH17249: a new purchase still being collected keeps the AI reply (no failure, no receipt)', () => {
+    expect(paymentReply({ registrationPending: true }, { customerText: 'Si', aiText: '¿Me compartes de nuevo tu código postal?' })).toBeNull();
+    expect(paymentReply({ registrationPending: true }, { customerText: 'Listo', receiptPresent: true })[0]).toContain('Recibimos tu comprobante');
 });
 
 test('accepting payment instructions preserves the account details for an unpaid order', () => {
