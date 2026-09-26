@@ -1,5 +1,5 @@
 const clean = text => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-const fullPaymentClaim = text => /(?:pago|pedido|total)[^.!?\n]{0,30}(?:completo|liquidado|pagado)|(?:liquidaste|pagaste todo)|datos-estafeta\//i.test(text);
+const fullPaymentClaim = text => /(?:pago|pedido|total)[^.!?\n]{0,30}(?:completo|liquidado|pagado)|(?:liquidaste|pagaste todo)|datos-(?:envio|estafeta)\//i.test(text);
 const blocksProductionForBalance = text => /(?:resto|restante|saldo|liquidar|pago completo|falta)[^.!?\n]{0,100}(?:para|antes de)[^.!?\n]{0,40}(?:registr|fabric|empez|inici|arranc)/i.test(text);
 // Revisar también las solicitudes de cobro, no sólo las afirmaciones de haber recibido dinero.
 const requestsPaymentAgain = text => /(?:manda|envia|comparte|compartir|adjunta|necesit|falta|pendiente|espera|requier|proporcion)[^.!?\n]{0,100}(?:comprobante|pago|deposito|transferencia)|(?:comprobante|pago)[^.!?\n]{0,60}(?:pendiente|falta|no (?:aparece|esta registrado|hemos recibido))|(?:realiza|haz|hacer|efectua|completa)[^.!?\n]{0,50}(?:pago|deposito|transferencia)|(?:liquida|liquidar|pagar)[^.!?\n]{0,50}(?:saldo|resto|pedido)|(?:puedes|debes|necesitas|falta)[^.!?\n]{0,30}(?:pagar|depositar|transferir)|\/(?:oxxo|oxxomp)\b/.test(clean(text));

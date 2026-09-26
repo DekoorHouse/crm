@@ -418,8 +418,8 @@ async function deliverForm(orderId, { force = false } = {}) {
         const number = `DH${claimed.consecutiveOrderNumber}`;
         const base = (process.env.APP_BASE_URL || 'https://app.dekoormx.com').replace(/\/$/, '');
         const text = awaitingPaymentApproval(claimed)
-            ? `¡Gracias por compartir tu comprobante de ${number}! 🙌\n\nPara adelantar tus datos de envío, llena este formulario 👇\n${base}/datos-estafeta/${number}\n\n📌 Usa una dirección donde haya alguien todo el día para recibir el paquete. Mientras tanto, el equipo revisará tu pago.`
-            : `¡Gracias! 🙌 Ya validamos tu pago completo de ${number} ✅\n\nAhora llena tus datos de envío en este formulario 👇\n${base}/datos-estafeta/${number}\n\n📌 Usa una dirección donde haya alguien todo el día para recibir el paquete. En cuanto completes tus datos preparamos el envío 📦✨`;
+            ? `¡Gracias por compartir tu comprobante de ${number}! 🙌\n\nPara adelantar tus datos de envío, llena este formulario 👇\n${base}/datos-envio/${number}\n\n📌 Usa una dirección donde haya alguien todo el día para recibir el paquete. Mientras tanto, el equipo revisará tu pago.`
+            : `¡Gracias! 🙌 Ya validamos tu pago completo de ${number} ✅\n\nAhora llena tus datos de envío en este formulario 👇\n${base}/datos-envio/${number}\n\n📌 Usa una dirección donde haya alguien todo el día para recibir el paquete. En cuanto completes tus datos preparamos el envío 📦✨`;
         const channel = cd.channel || 'whatsapp';
         sending = true;
         const sent = channel === 'messenger' || channel === 'instagram'

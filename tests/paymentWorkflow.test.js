@@ -215,7 +215,7 @@ test('DH16368: worker processes a receipt five days later with chat IA off', asy
     expect(job(id).status).toBe('applied');
     expect(order()).toMatchObject({ paymentReceivedCents: 120000, shippingFormStatus: 'sent' });
     expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(mockSend.mock.calls[0][1].text).toContain('/datos-estafeta/DH16368');
+    expect(mockSend.mock.calls[0][1].text).toContain('/datos-envio/DH16368');
 });
 
 test('DH16328: asks shipping data while cancellation remains pending, approval does not resend', async () => {

@@ -533,8 +533,10 @@ app.get('/sitio/*', (req, res) => {
 });
 
 // --- Formulario de datos de envío (post-venta, DHL nacional) ---
-// El cliente lo recibe por WhatsApp con su número de pedido precargado (/datos-estafeta/DHxxxx).
-app.get(['/datos-estafeta', '/datos-estafeta/:pedido'], (req, res) => {
+// El cliente lo recibe por WhatsApp con su número de pedido precargado (/datos-envio/DHxxxx).
+// /datos-estafeta es la ruta vieja: se enviaba por DHL y el nombre confundía a los clientes ("¿no es
+// por DHL?"). Se conserva para los enlaces que ya se mandaron.
+app.get(['/datos-envio', '/datos-envio/:pedido', '/datos-estafeta', '/datos-estafeta/:pedido'], (req, res) => {
     res.set('Cache-Control', 'no-cache'); // que el cliente reciba siempre la última versión del formulario
     res.sendFile(path.join(__dirname, '..', 'public', 'datos-estafeta', 'index.html'));
 });

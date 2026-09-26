@@ -1482,7 +1482,7 @@ async function getLatestOrderForContact(contactId) {
 }
 
 /**
- * ¿Ya llegaron los DATOS DE ENVÍO (formulario /datos-estafeta) de un pedido? Devuelve el registro
+ * ¿Ya llegaron los DATOS DE ENVÍO (formulario /datos-envio) de un pedido? Devuelve el registro
  * de `datos_envio` más reciente de ese pedido, o null si el cliente todavía no lo ha llenado.
  * El formulario guarda `numeroPedido` tal cual viene en la URL ("DH13041") y la edición manual del
  * CRM usa el mismo formato, pero se consultan también los dígitos sueltos por si algún registro
@@ -3936,7 +3936,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : null;
                 if (num && (o.comprobanteValidadoAt || o.shippingFormRequestedBeforeApproval)) {
                     const de = await getShippingDataForOrder(num);
-                    const formUrl = `${APP_BASE_URL}/datos-estafeta/${num}`;
+                    const formUrl = `${APP_BASE_URL}/datos-envio/${num}`;
                     if (de && o.shippingDataConfirmationStatus) {
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS.** El sistema gestiona la confirmación de recepción (estado: ${o.shippingDataConfirmationStatus}). No emitas /pagado ni repitas la confirmación del formulario; si el cliente sólo avisa que lo llenó, agradece brevemente. Esto no implica que su pago esté aprobado ni que el envío haya salido.`;
                     } else if (de && require('./payments/paymentPolicy').awaitingPaymentApproval(o)) {
@@ -4581,7 +4581,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     skipShortcutExpansion = true;
                 } else if (orderNumber && !de) {
                     console.warn(`[ENVIOS] ${contactId} dijo que llenó el formulario, pero ${orderNumber} NO tiene datos en datos_envio; se le pide de nuevo (no se manda /pagado).`);
-                    msgText = `¡Gracias! 🙌 Solo que tus datos de envío todavía no nos llegan al sistema 😕 A veces el formulario no alcanza a guardarse.\n\n¿Me haces el favor de llenarlo otra vez aquí? 👇 (tu número de pedido ya viene cargado)\n${APP_BASE_URL}/datos-estafeta/${orderNumber}\n\nAsegúrate de tocar el botón de enviar hasta el final ✅ En cuanto me lleguen, preparamos tu envío 📦✨`;
+                    msgText = `¡Gracias! 🙌 Solo que tus datos de envío todavía no nos llegan al sistema 😕 A veces el formulario no alcanza a guardarse.\n\n¿Me haces el favor de llenarlo otra vez aquí? 👇 (tu número de pedido ya viene cargado)\n${APP_BASE_URL}/datos-envio/${orderNumber}\n\nAsegúrate de tocar el botón de enviar hasta el final ✅ En cuanto me lleguen, preparamos tu envío 📦✨`;
                     skipShortcutExpansion = true; // el texto ya quedó resuelto: no expandir el atajo
                 }
             }

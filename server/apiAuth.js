@@ -71,7 +71,7 @@ const PUBLIC_RULES = [
     { method: 'GET', path: '/api/wa/file' },                   // proxy de imágenes (sitio + galería referencias)
 
     // Formularios que el cliente abre desde un link de WhatsApp.
-    { method: 'GET', path: '/api/envio/pedido/*' },            // precarga de /datos-estafeta
+    { method: 'GET', path: '/api/envio/pedido/*' },            // precarga de /datos-envio (y /datos-estafeta)
     { method: 'POST', path: '/api/datos-envio' },              // el cliente manda sus datos de envío
     { method: 'GET', path: '/api/codigo-postal/*' },
     { method: 'GET', path: '/api/buscar-cp' },

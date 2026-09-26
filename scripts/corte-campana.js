@@ -96,7 +96,7 @@ const dinero = n => '$' + Math.round(n).toLocaleString('es-MX');
 
 // La plantilla que manda services.js cuando la IA emite /comprobante (o el
 // operador aprieta el botón): significa PAGO COMPLETO, el pedido pasa a Envíos.
-const VALIDACION_TOTAL = /(ya validamos tu comprobante de pago|\/datos-estafeta\/|quedamos al pendiente de tus datos de envío en el formulario)/i;
+const VALIDACION_TOTAL = /(ya validamos tu comprobante de pago|\/datos-(?:envio|estafeta)\/|quedamos al pendiente de tus datos de envío en el formulario)/i;
 // Confirmaciones libres de Andrea: "ya recibimos tu anticipo de $200",
 // "recibimos tu comprobante por los $550 y quedó validado", "ya quedó validado el pago de $400".
 // El hueco permite "!" porque el arranque más común es "¡Recibido! Muchísimas gracias por tu

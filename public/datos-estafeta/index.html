@@ -269,8 +269,8 @@
   const $ = id => document.getElementById(id);
   const form=$('form'), btn=$('btn'), alertEl=$('alert'), thanks=$('thanks');
   const cpInput=$('cp'), cpHint=$('cpHint');
-  // El número de pedido viene en la URL: /datos-estafeta/DHxxxx
-  const pedidoUrl=((window.location.pathname.match(/\/datos-estafeta\/(DH\d+)/i)||[])[1]||'').toUpperCase();
+  // El número de pedido viene en la URL: /datos-envio/DHxxxx (o la ruta vieja /datos-estafeta/DHxxxx)
+  const pedidoUrl=((window.location.pathname.match(/\/datos-(?:envio|estafeta)\/(DH\d+)/i)||[])[1]||'').toUpperCase();
   const MX = { lat: 23.6345, lng: -102.5528 }; // centro de México (vista inicial del mapa)
   let coloniaManual=false;
   let picked=null, marker=null, geocoder=null, geoTimer=null;
