@@ -6,6 +6,7 @@ import * as services from './services.js';
 import * as charts from './charts.js';
 import * as utils from './utils.js';
 import { state, elements } from './state.js';
+import { initPrivado } from './privado.js';
 
 function initializeAppUI() {
     console.log("Usuario autenticado. Inicializando UI...");
@@ -87,6 +88,7 @@ const app = {
         ui.initDarkMode(); // Inicializar el Dark Mode
         ui.initTestModeToggle(); // Banner amarillo + botón "Modo prueba"
         Handlers.initEventListeners();
+        initPrivado();
         initFirebase(initializeAppUI);
         
         // Registrar Service Worker para PWA
