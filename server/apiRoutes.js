@@ -8951,6 +8951,27 @@ router.post('/design-pending/force', async (req, res) => {
     }
 });
 
+// POST /api/design-pending/add — añade un pedido a Pendientes por su NÚMERO (campo "+ Añadir" de la
+// página). Pone designForce + designForceAt: la fecha lo reactiva aunque ya estuviera marcado Diseñado,
+// lo regresa a la columna Pendientes del tablero y lo muestra aunque su estatus sea terminal.
+// Body: { orderNumber } ("DH17330" o "17330").
+router.post('/design-pending/add', async (req, res) => {
+    const num = Number(String((req.body && req.body.orderNumber) || '').replace(/\D/g, ''));
+    if (!num) return res.status(400).json({ success: false, message: 'Escribe un número de pedido (ej. DH17330).' });
+    try {
+        const snap = await db.collection('pedidos').where('consecutiveOrderNumber', '==', num).limit(1).get();
+        if (snap.empty) return res.status(404).json({ success: false, message: `No existe el pedido DH${num}.` });
+        const doc = snap.docs[0];
+        await doc.ref.update({ designForce: true, designForceAt: admin.firestore.FieldValue.serverTimestamp() });
+        const d = doc.data();
+        try { await require('./design/designPending').recomputeForContact(d.contactId || d.telefono); } catch (_) {}
+        res.json({ success: true, orderId: doc.id, orderNumber: `DH${num}` });
+    } catch (e) {
+        console.error('[design-pending/add] error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // POST /api/design-pending/:orderId/done — marca un pedido como "ya diseñado": lo saca de Pendientes
 // y lo pasa a Diseñados. NO cambia el estatus real del pedido, solo pone la marca del tablero.
 router.post('/design-pending/:orderId/done', async (req, res) => {

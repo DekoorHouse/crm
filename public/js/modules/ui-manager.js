@@ -465,8 +465,35 @@ const DP_BOARD_COLS = [
 // Barra de pestañas compartida por la tabla y el tablero (para poder cambiar entre vistas).
 function _dpTabsBar(tab) {
     const b = (key, label) => `<button onclick="switchDesignPendingTab('${key}')" style="border:none;background:none;padding:8px 4px;margin-right:18px;font-size:.95rem;font-weight:700;cursor:pointer;color:${tab === key ? 'var(--color-primary,#ef4444)' : 'var(--color-text-light,#94a3b8)'};border-bottom:3px solid ${tab === key ? 'var(--color-primary,#ef4444)' : 'transparent'}">${label}</button>`;
-    return `<div style="display:flex;align-items:center;border-bottom:1px solid var(--color-border);margin-bottom:14px">${b('tablero', 'Tablero')}${b('pendientes', 'Pendientes')}${b('svgia', 'SVG IA')}${b('disenados', 'Diseñados ✓')}</div>`;
+    // "+ Añadir": mete a Pendientes cualquier pedido por su número (aunque no tenga un motivo automático).
+    const add = `<form onsubmit="event.preventDefault();addDesignPendingByNumber(this)" style="margin-left:auto;display:flex;gap:6px;align-items:center;padding-bottom:4px">
+        <input name="num" placeholder="DH17330" autocomplete="off" title="Número del pedido que quieres añadir a Pendientes" style="width:110px;padding:5px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;font-size:.85rem;background:var(--color-bg,#fff);color:inherit">
+        <button type="submit" class="btn btn-sm" style="background:#6f42c1;color:#fff;border:none;white-space:nowrap"><i class="fas fa-plus"></i> Añadir a Pendientes</button>
+    </form>`;
+    return `<div style="display:flex;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--color-border);margin-bottom:14px">${b('tablero', 'Tablero')}${b('pendientes', 'Pendientes')}${b('svgia', 'SVG IA')}${b('disenados', 'Diseñados ✓')}${add}</div>`;
 }
+
+// Añade un pedido a Pendientes por su número (POST /api/design-pending/add) y refresca la vista.
+async function addDesignPendingByNumber(form) {
+    const input = form.querySelector('input[name="num"]');
+    const btn = form.querySelector('button');
+    const num = String(input.value || '').trim();
+    if (!num) { input.focus(); return; }
+    btn.disabled = true;
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/design-pending/add`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderNumber: num }),
+        });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
+        input.value = '';
+        if (typeof showToast === 'function') showToast(`${d.orderNumber} añadido a Pendientes ✅`, 'success');
+        await renderDesignPendingView(true);
+    } catch (e) {
+        alert('No se pudo añadir: ' + (e.message || e));
+    } finally { btn.disabled = false; }
+}
+window.addDesignPendingByNumber = addDesignPendingByNumber;
 
 const DP_BOARD_CSS = `
 <style>

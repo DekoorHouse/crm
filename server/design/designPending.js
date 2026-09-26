@@ -92,6 +92,7 @@ function pendienteRenovadoMs(d) {
         _ms(d.productoAgregadoPostPagoAt), // 2º producto tras pagar
         _ms(d.comprobanteValidadoAt),      // pagó -> falta corte
         _ms(d.reenvioAt),                  // reposición -> re-hacer el diseño desde el principio
+        _ms(d.designForceAt),              // añadido a mano por número ("+ Añadir" en Pendientes de Diseño)
     );
 }
 
@@ -132,7 +133,10 @@ function reasonsForOrderData(d) {
     // sigue) vs DH13608/13586 (marcados Diseñado tras la corrección -> fuera). Chris, 2026-07-31.
     const hechoMs = disenoMarcadoHechoMs(d);
     if (hechoMs && hechoMs >= pendienteRenovadoMs(d)) return [];
-    if (DONE.has(estatus)) return [];
+    // Añadido a mano por número (designForceAt): alguien lo pidió explícitamente, así que aparece aunque
+    // su estatus sea terminal (p. ej. un Entregado que hay que volver a cortar). El "A Diseño" de Mockup
+    // no pone fecha y conserva el comportamiento de antes.
+    if (DONE.has(estatus)) return (d.designForce && _ms(d.designForceAt)) ? ['manual'] : [];
 
     // Envío ya gestionado (tiene guía o lo quitaron de Envíos) -> el diseño ya se hizo (no aplica a Corregir).
     const shipped = (d.guiaEnvio && d.guiaEnvio.guia) || d.ocultoDeEnvios;
