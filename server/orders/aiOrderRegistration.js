@@ -691,6 +691,28 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
     } catch (e) {
         console.warn(`[AI_ORDER] No se pudo registrar automáticamente el pedido de ${contactId}: ${e.message}. Cae al flujo manual (Pendientes IA).`);
         await logFailure(contactId, name, e.message);
+        // REINTENTO (registrationRetry.js): ya pagó el anticipo y solo faltan datos → la IA sigue
+        // encendida pidiéndolos y el siguiente turno vuelve a intentar. Se cuenta el intento; al
+        // agotarse, cae al flujo manual de abajo como siempre.
+        try {
+            const retry = require('./registrationRetry');
+            const current = (await contactRef.get()).data() || {};
+            if (retry.isMissingDataFailure(e.message) && retry.retryActive(current)) {
+                const attempts = (Number(current.registrationRetry.attempts) || 0) + 1;
+                await contactRef.update({
+                    'registrationRetry.attempts': attempts,
+                    'registrationRetry.faltante': String(e.message).slice(0, 400),
+                    'registrationRetry.lastAt': admin.firestore.FieldValue.serverTimestamp(),
+                });
+                if (retry.retryActive({ registrationRetry: { ...current.registrationRetry, attempts } })) {
+                    console.log(`[AI_ORDER] ${contactId}: faltan datos (intento ${attempts}/${retry.RETRY_MAX_ATTEMPTS}); la IA sigue encendida pidiéndolos.`);
+                    return null;
+                }
+            }
+            if (current.registrationRetry) await contactRef.update({ registrationRetry: admin.firestore.FieldValue.delete() });
+        } catch (retryErr) {
+            console.warn('[AI_ORDER] No se pudo evaluar el reintento de registro:', retryErr.message);
+        }
         // Fallback: dejar al contacto en "Pendientes IA" (flujo manual de siempre) y avisar.
         try {
             await db.collection('contacts_whatsapp').doc(contactId).update({

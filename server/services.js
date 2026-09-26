@@ -4119,7 +4119,9 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
         } catch (e) { console.warn('[AI] aviso pago-sin-comprobante falló (se continúa):', e.message); }
 
-        const finalUserText = `${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        // Reintento de registro vigente (server/orders/registrationRetry.js): pedir SOLO lo que falta.
+        const registroPendienteNote = require('./orders/registrationRetry').retryNote(contactData);
+        const finalUserText = `${registroPendienteNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
@@ -4432,18 +4434,30 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // leyó el lector de pagos, o su descripción lo dice), ya le hablamos de anticipo y no hay pedido
         // abierto, se intenta registrar igual: el extractor solo registra si los datos están completos.
         // Una FOTO para grabar no dispara nada: se exige que la imagen sea un comprobante.
+        // Se mira TODO el lote del cliente desde nuestra última respuesta, no solo el mensaje que disparó
+        // el turno: en DH17366 el comprobante llegó y luego "El código postal es 81247", que fue el que
+        // disparó el turno, y la red no lo vio.
+        // REINTENTO (server/orders/registrationRetry.js): si ya hubo un comprobante sin pedido y faltaban
+        // datos, cada turno vuelve a intentar el registro con la IA encendida hasta que estén completos.
+        const registrationRetry = require('./orders/registrationRetry');
         let anticipoSinPedido = false;
+        let registroEnReintento = false;
         try {
-            if (!isPostVenta && !registerOrderCmd && !anticipoPaidCmd && ['image', 'document'].includes(message.type) && message.id
-                && messagesSnapshot.docs.some(d => d.data().from !== contactId && /anticipo/i.test(d.data().text || ''))) {
-                const [receiptSnap, ordersSnap, msgSnap] = await Promise.all([
-                    db.collection('payment_receipts').where('contactId', '==', contactId).where('messageId', '==', message.id).limit(1).get(),
+            const lote = [];
+            for (const d of messagesSnapshot.docs) { if (d.data().from !== contactId) break; lote.push(d.data()); }
+            const archivosLote = lote.filter(m => m.id && (effectiveType(m) === 'image' || effectiveType(m) === 'document'));
+            const retryVigente = registrationRetry.retryActive(contactData);
+            const hablamosDeAnticipo = messagesSnapshot.docs.some(d => d.data().from !== contactId && /anticipo/i.test(d.data().text || ''));
+            // Con reintento vigente se evalúa aunque la IA sí haya escrito /registrar: si ese registro
+            // también falla por falta de datos, la IA debe seguir encendida igual.
+            if (!isPostVenta && (retryVigente || (!registerOrderCmd && !anticipoPaidCmd && archivosLote.length && hablamosDeAnticipo))) {
+                const ids = archivosLote.map(m => m.id).slice(0, 10);
+                const [receiptSnap, ordersSnap] = await Promise.all([
+                    ids.length ? db.collection('payment_receipts').where('contactId', '==', contactId).where('messageId', 'in', ids).get() : null,
                     db.collection('pedidos').where('contactId', '==', contactId).get(),
-                    contactRef.collection('messages').where('id', '==', message.id).limit(1).get(),
                 ]);
-                const ocr = receiptSnap.empty ? null : receiptSnap.docs[0].data().ocr;
-                const desc = msgSnap.empty ? '' : String(msgSnap.docs[0].data().aiDescription || '');
-                const esComprobante = (ocr && ocr.esComprobante === true) || /^comprobante de pago/i.test(desc);
+                const ocrComprobante = !!receiptSnap && receiptSnap.docs.some(d => d.data().ocr && d.data().ocr.esComprobante === true);
+                const esComprobante = ocrComprobante || archivosLote.some(m => /^comprobante de pago/i.test(String(m.aiDescription || '')));
                 const pedidoAbierto = ordersSnap.docs.some(d => {
                     const o = d.data();
                     if (contactData.activePurchaseSessionId && o.purchaseSessionId !== contactData.activePurchaseSessionId) return false;
@@ -4451,8 +4465,21 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 });
                 // Mismo candado de cobertura que /registrar: sin cobertura vigente no se registra.
                 const sinCobertura = generalSettings.coberturaGuardsActive !== false && require('./envios/coberturaCheck').bloqueaRegistro(coberturaCheck);
-                anticipoSinPedido = esComprobante && !pedidoAbierto && !sinCobertura;
-                if (anticipoSinPedido) console.warn(`[AI] ${contactId}: comprobante de anticipo sin pedido y sin /registrar; se intenta registrar.`);
+                anticipoSinPedido = !pedidoAbierto && !sinCobertura && (esComprobante || retryVigente);
+                registroEnReintento = anticipoSinPedido;
+                if (anticipoSinPedido) {
+                    console.warn(`[AI] ${contactId}: comprobante de anticipo sin pedido y sin /registrar; se intenta registrar${retryVigente ? ' (reintento)' : ''}.`);
+                    // El reintento se abre ANTES del registro: si falla por falta de datos, aiOrderRegistration
+                    // lo ve vigente y deja la IA encendida en vez de mandar el caso al equipo.
+                    if (!retryVigente) {
+                        const retryData = { since: admin.firestore.Timestamp.now(), attempts: 0 };
+                        await contactRef.set({ registrationRetry: retryData }, { merge: true });
+                        contactData.registrationRetry = retryData;
+                    }
+                }
+                if (pedidoAbierto && contactData.registrationRetry) {
+                    contactRef.update({ registrationRetry: admin.firestore.FieldValue.delete() }).catch(() => {});
+                }
             }
         } catch (e) { console.warn('[AI] red de seguridad del anticipo falló (se continúa):', e.message); }
         const registrationNeeded = !pendingReceiptOrder?.orderDataPending && !orderCancelled && !registroBloqueadoPorCobertura && (registerOrderCmd || anticipoPaidCmd || anticipoSinPedido || (saleClosed && !isPostVenta && !esperaAnticipoCmd));
@@ -4484,7 +4511,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const reply = paymentConversation.paymentReply(p, { customerText: messageText, aiText: aiResponse, receiptPresent,
                     onlyPreventRepeatRequest,
                     recentReplies: history.filter(m => m.from !== contactId).slice(0, 10).map(m => m.text || '') });
-                if (reply !== null) aiMessages = reply;
+                // En reintento el aviso "el equipo dará seguimiento al registro" NO sale: además de no ser
+                // cierto (lo registra el sistema en cuanto estén los datos), el candado de pagos apaga la IA
+                // al verlo. Se conserva la respuesta de la IA (ver retrySigue más abajo).
+                const reintentoSinRegistro = registroEnReintento && !paymentRegisteredOrderNumber && p.registrationPending;
+                if (reply !== null && !reintentoSinRegistro) aiMessages = reply;
             } catch (error) {
                 // Nunca enviar la confirmación original si la comprobación del sistema falló.
                 aiMessages = ['El equipo revisará el estado de tu pago y te ayudará a continuar por aquí.'];
@@ -4492,7 +4523,24 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 console.warn('[PAYMENTS] No se pudo comprobar el pago:', error.message);
             }
         }
-        if (paymentRegistrationAttempted && !paymentRegisteredOrderNumber) aiMessages = [REGISTRATION_PENDING];
+        // Reintento: si el registro falló por FALTA DE DATOS y el reintento sigue vigente (aiOrderRegistration
+        // no lo agotó), la IA sigue pidiendo lo que falta; solo se quitan las frases que den por registrado
+        // o por pagado algo que aún no lo está.
+        let retrySigue = false;
+        if (registroEnReintento) {
+            if (paymentRegisteredOrderNumber) {
+                contactRef.update({ registrationRetry: admin.firestore.FieldValue.delete() }).catch(() => {});
+            } else {
+                try { retrySigue = registrationRetry.retryActive((await contactRef.get()).data()); } catch (_) {}
+            }
+        }
+        if (retrySigue) {
+            const pp = require('./payments/paymentPolicy');
+            const inseguro = s => registrationClaim(s) || pp.claimsPayment(s) || paymentConversation.fullPaymentClaim(s);
+            const seguros = aiMessages.map(m => String(m).split(/(?<=[.!?])\s+|\n+/).filter(s => s.trim() && !inseguro(s)).join(' ').trim()).filter(Boolean);
+            aiMessages = seguros.length ? seguros
+                : ['¡Gracias, recibimos tu comprobante! 🙌 Para registrar tu pedido, ¿me confirmas los datos que llevará (nombres o textos)?'];
+        } else if (paymentRegistrationAttempted && !paymentRegisteredOrderNumber) aiMessages = [REGISTRATION_PENDING];
 
         // Limpiar los comandos internos (/final, /nuevopedido, /sospechoso, /datoscompletos, /equipo, /cancelado, /comprobante, /registrar) de los mensajes antes de enviar.
         // /cuatro también se elimina pero por otra razón: es EXCLUSIVO del equipo humano
@@ -4683,7 +4731,8 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (!pendingReceiptOrder?.orderDataPending && registrationClaim(msgText) && (!isPostVenta || wantsNewOrder || registerOrderCmd) && !orderCancelled) {
                 saleClosed = true;
                 if (!await ensureRegistration(msgText)) {
-                    msgText = REGISTRATION_PENDING;
+                    // En reintento no se manda el caso al equipo (ese texto apaga la IA en el candado de pagos).
+                    msgText = retrySigue ? 'En cuanto tenga los datos que faltan registramos tu pedido ✨' : REGISTRATION_PENDING;
                     qrFileUrl = null; qrFileType = null;
                 }
             }
