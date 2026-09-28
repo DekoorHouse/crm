@@ -300,7 +300,23 @@ async function processReceipt(id, options = {}) {
             await ref.update({ status: 'ignored', open: false, reason: 'La imagen no es un comprobante de pago.', leaseUntil: null, updatedAt: stamp() });
             return { status: 'ignored' };
         }
-        if (!claimed.orderId) return await reviewReceipt(ref, 'Comprobante sin pedido asignado: registrar o seleccionar el pedido correcto.');
+        if (!claimed.orderId) {
+            // DH17315 (28-sep-2026): la clienta reenvió los DOS comprobantes que ya estaban aplicados
+            // (reclamando su guía). Como el pedido ya estaba pagado no se les asignó pedido y caían aquí,
+            // a la cola de revisión, antes de revisar si eran repetidos. Si la imagen o el folio ya se
+            // aplicaron a un pedido de este cliente, se cierra como duplicado sin pedirle nada a nadie.
+            const previous = (await receipts().where('contactId', '==', claimed.contactId).get()).docs
+                .find(d => d.id !== ref.id && d.data().status === 'applied' && d.data().orderId
+                    && require('./paymentPolicy').possibleSamePayment({ contactId: claimed.contactId, ocr }, d.data()));
+            if (previous) {
+                const p = previous.data();
+                await ref.update({ status: 'duplicate', open: false, orderId: p.orderId, orderNumber: p.orderNumber || null,
+                    reason: `Mismo comprobante que ya se aplicó${p.orderNumber ? ' a ' + p.orderNumber : ''}; no se vuelve a sumar.`,
+                    leaseUntil: null, updatedAt: stamp() });
+                return { status: 'duplicate', orderId: p.orderId };
+            }
+            return await reviewReceipt(ref, 'Comprobante sin pedido asignado: registrar o seleccionar el pedido correcto.');
+        }
         if (!options.manual && claimed.associationNeedsReview) return await reviewReceipt(ref, 'Anticipo anterior al registro: confirmar a qué compra corresponde antes de sumarlo.');
         const os = await db.collection('pedidos').doc(claimed.orderId).get();
         if (!os.exists) return await reviewReceipt(ref, 'El pedido ya no existe.');

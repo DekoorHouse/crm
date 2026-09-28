@@ -1125,3 +1125,24 @@ test('discarding a repeated image invalidates the pending form assessment on eve
     expect(mockDb.read('pedidos/other').paymentFormNeedsAssessment).toBe(true);
     await runPaymentSweep(); expect(mockSend).not.toHaveBeenCalled();
 });
+
+test('DH17315: re-sending an already applied receipt with no order assigned closes as duplicate, not review', async () => {
+    mockDb.seed('payment_receipts/paid-before', { contactId: 'customer', status: 'applied', open: false, orderId: 'order', orderNumber: 'DH16368',
+        amountCents: 45000, ocr: ocr({ monto: 450, imageHash: 'paid-image', referencia: null, claveRastreo: '0075269996' }) });
+    mockOcr.mockResolvedValue(ocr({ monto: 450, imageHash: 'paid-image', referencia: null, claveRastreo: '0075269996' }));
+    const id = await enqueue('resent');
+    mockDb.seed('payment_receipts/' + id, { ...job(id), orderId: null, orderNumber: null });
+    await flow.processReceipt(id);
+    expect(job(id)).toMatchObject({ status: 'duplicate', open: false, orderId: 'order' });
+    expect(job(id).reason).toContain('DH16368');
+    expect(order().paymentReceivedCents).toBeUndefined();
+});
+
+test('a receipt with no order and no applied twin still goes to review', async () => {
+    mockOcr.mockResolvedValue(ocr({ monto: 450, imageHash: 'brand-new', referencia: '99999999' }));
+    const id = await enqueue('new-one');
+    mockDb.seed('payment_receipts/' + id, { ...job(id), orderId: null, orderNumber: null });
+    await flow.processReceipt(id);
+    expect(job(id).status).toBe('review');
+    expect(job(id).reason).toContain('sin pedido asignado');
+});
