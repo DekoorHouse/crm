@@ -71,6 +71,11 @@ async function reconcilePaymentProduction(orderId) {
             await require('../services').sendPurchaseEventOnFabricar(orderId, claimed, claimed.paymentProductionPreviousStatus || '');
         }
         await ref.update({ fabricarSinVenta: false, paymentProductionPending: false, paymentProductionStatus: 'done', paymentProductionReason: '', paymentProductionLeaseUntil: null, paymentProductionNextAttemptAt: null });
+        // Un ABONO acaba de mandar el pedido a Fabricar: avisarle al cliente (DH17441). El pago completo
+        // ya tiene su aviso con el formulario de envío. Un fallo aquí no deshace la fabricación.
+        if (claimed.advance && !claimed.comprobanteValidadoAt) {
+            await require('./paymentWorkflow').notifyAnticipo(orderId).catch(e => console.warn('[PAYMENTS] Aviso de anticipo pendiente:', e.message));
+        }
         return { status: 'fabricar', orderNumber: `DH${claimed.consecutiveOrderNumber}` };
     } catch (error) {
         await ref.update({ paymentProductionPending: true, paymentProductionStatus: 'retry', paymentProductionReason: error.message.slice(0, 180), paymentProductionLeaseUntil: null,

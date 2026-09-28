@@ -395,6 +395,41 @@ async function recordShippingDataForOrder(orderNumber) {
     await require('./paymentProduction').reconcilePaymentProduction(ref.id);
 }
 
+// AVISO DE ANTICIPO VALIDADO (DH17441, 28-sep-2026): antes la IA confirmaba el anticipo ella misma
+// ("¡Listo, recibimos tu anticipo! Ya arrancamos tu diseño"). Desde que los pagos se validan en esta
+// cola, el cliente solo recibía "el equipo está revisando…" y, al aprobarse el abono, nada: el pedido
+// pasaba a Fabricar sin que se enterara. El pago completo ya tenía su aviso (deliverForm); el abono no.
+// Lo llama paymentProduction cuando un ABONO (no el pago completo, que ya avisa deliverForm) pasa el
+// pedido a Fabricar: así "pasa a fabricación" siempre es cierto. Un aviso por pedido (id de mensaje
+// fijo), solo dentro de la ventana de 24 h del canal y solo con total y datos completos.
+async function notifyAnticipo(orderId) {
+    if (!orderId) return { status: 'missing' };
+    const order = (await db.collection('pedidos').doc(orderId).get()).data();
+    if (!order || order.totalPending || order.orderDataPending || cancelled(order)) return { status: 'skipped' };
+    const total = cents(order.precio), received = Number(order.paymentReceivedCents) || 0;
+    if (!(total > 0) || !(received > 0) || received >= total) return { status: 'skipped' };
+    const contactId = order.contactId || order.telefono;
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+    const messageRef = contactRef.collection('messages').doc('anticipo_ok_' + orderId);
+    if ((await messageRef.get()).exists) return { status: 'sent', already: true };
+    const cd = (await contactRef.get()).data() || {};
+    if (ms(cd.lastClientMsgAt) && Date.now() - ms(cd.lastClientMsgAt) > DAY) return { status: 'window_closed' };
+    const peso = c => '$' + (c / 100).toLocaleString('es-MX');
+    const text = `¡Listo! 🎉 Ya validamos tu anticipo de *${peso(received)}* de DH${order.consecutiveOrderNumber} ✅\n\nTu pedido pasa a fabricación y el equipo ya comienza con tu diseño ✨ El resto (*${peso(total - received)}*) lo pagas al ver la foto de tu lámpara terminada 📸`;
+    const channel = cd.channel || 'whatsapp';
+    const sent = channel === 'messenger' || channel === 'instagram'
+        ? await services().sendMessengerMessage(cd.psid || cd.igsid || contactId.replace(/^(fb_|ig_)/, ''), { text, channel })
+        : await services().sendAdvancedWhatsAppMessage(contactId, { text });
+    const messageId = sent.id || sent.messages?.[0]?.id || null;
+    const batch = db.batch();
+    batch.set(messageRef, { from: process.env.PHONE_NUMBER_ID || 'system', status: 'sent', timestamp: stamp(), id: messageId, text, isAutoReply: true, channel, anticipoOrderId: orderId });
+    batch.update(contactRef, { lastMessage: text.slice(0, 100), lastMessageTimestamp: stamp() });
+    // paymentReply lo lee para no repetir la confirmación si esto pasó dentro del turno de la IA.
+    batch.update(db.collection('pedidos').doc(orderId), { anticipoNotifiedAt: stamp() });
+    await batch.commit();
+    return { status: 'sent' };
+}
+
 async function deliverForm(orderId, { force = false } = {}) {
     if (!orderId) return { status: 'missing' };
     const orderRef = db.collection('pedidos').doc(orderId);
@@ -520,6 +555,7 @@ async function paymentContext(contactId, { discover = false, process = false, or
         registrationPending: !num && !!newOrderSince && orders.length === 0,
         ambiguous: !selected && (orders.length > 1 || !!num),
         productionStatus: latest?.estatus || null,
+        anticipoNotifiedRecently: !!latest?.anticipoNotifiedAt && Date.now() - ms(latest.anticipoNotifiedAt) < 10 * 60000,
         productionReason: latest?.paymentProductionReason || '',
         contextSince: Math.max(ms(latest?.createdAt), ms(latest?.paymentUpdatedAt)),
         orderId: selected?.id, orderNumber: latest?.consecutiveOrderNumber ? `DH${latest.consecutiveOrderNumber}` : null };
@@ -567,4 +603,4 @@ async function pendingPayments(suspiciousDocs) {
         pago_cancelado: reviews.filter(r => /cancelad/i.test(r.reason || '')), pago_formulario };
 }
 
-module.exports = { enqueueReceipt, discoverReceipts, processReceipt, creditReceipt, previewReceiptReview, deliverForm, manualValidateAndSend, paymentContext, recordProviderPayment, pendingPayments, ordersForContact, refreshReportedPayment, recordShippingDataForOrder };
+module.exports = { enqueueReceipt, discoverReceipts, processReceipt, creditReceipt, previewReceiptReview, deliverForm, notifyAnticipo, manualValidateAndSend, paymentContext, recordProviderPayment, pendingPayments, ordersForContact, refreshReportedPayment, recordShippingDataForOrder };

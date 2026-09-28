@@ -15,6 +15,8 @@ const now = () => Date.now();
 const ocr = (extra = {}) => ({ sourceIdentityVersion: 1, esComprobante: true, monto: 1200, fecha: new Date().toISOString().slice(0, 10), cuentaDestino: '3262', referencia: '12345678', moneda: 'MXN', pagoRealizado: true, imageHash: 'sample-image', ...extra });
 const order = () => mockDb.read('pedidos/order');
 const job = id => mockDb.read('payment_receipts/' + id);
+const sentTexts = () => mockSend.mock.calls.map(c => c[1].text);
+const noShippingForm = () => expect(sentTexts().some(t => /datos-envio/.test(t))).toBe(false);
 async function enqueue(id = 'message', extra = {}) {
     const receiptId = await flow.enqueueReceipt('customer', id, { from: 'customer', id, timestamp: new Date(), type: 'image', fileUrl: 'https://test.invalid/receipt.png', fileType: 'image/png', ...extra }, { historical: false });
     if (receiptId) mockDb.seed('payment_receipts/' + receiptId, { ...job(receiptId), nextAttemptAt: new Date(0) });
@@ -882,7 +884,9 @@ test.each([[16832, 3000, 1200], [16814, 1500, 500]])('DH%s: approved deposit sta
     await enqueue(); await runPaymentSweep(); await runPaymentSweep();
     expect(order()).toMatchObject({ estatus: 'Fabricar', paymentReceivedCents: deposit * 100, paymentProductionStatus: 'done', paymentProductionPending: false });
     expect(order().comprobanteValidadoAt).toBeUndefined();
-    expect(mockSend).not.toHaveBeenCalled(); expect(mockInventory).toHaveBeenCalledTimes(1);
+    // DH17441: el anticipo que manda a Fabricar se le avisa al cliente, una sola vez y sin formulario de envío.
+    noShippingForm(); expect(sentTexts()).toEqual([expect.stringContaining('Ya validamos tu anticipo')]);
+    expect(mockInventory).toHaveBeenCalledTimes(1);
     expect(mockPurchase).toHaveBeenCalledTimes(1);
 });
 
@@ -898,7 +902,7 @@ test('DH16821: transfer in progress stays outside mockups until operator confirm
     expect(order()).toMatchObject({ estatus: 'Fabricar', paymentReceivedCents: 30000, paymentProductionStatus: 'done' });
     expect(order().comprobanteValidadoAt).toBeUndefined();
     expect(mockDb.read('contacts_whatsapp/customer').suspiciousReceiptPending).toBe(false);
-    expect(mockSend).not.toHaveBeenCalled();
+    noShippingForm(); expect(sentTexts()).toEqual([expect.stringContaining('Ya validamos tu anticipo de *$300*')]);
 });
 
 test('DH16816: approved full payment recovers production without resending an existing form', async () => {
@@ -954,7 +958,9 @@ test('DH16832: registration completes before looking up payment, leaving the ear
         return 'DH16832';
     } });
     expect(result.context).toMatchObject({ orderId: 'new', hasPaid: false, partialCents: 120000, productionStatus: 'Fabricar' });
-    expect(order()).toEqual(previous); expect(mockSend).not.toHaveBeenCalled();
+    expect(order()).toEqual(previous); noShippingForm();
+    expect(result.context.anticipoNotifiedRecently).toBe(true);
+    expect(require('../server/payments/paymentConversation').paymentReply(result.context, { receiptPresent: true })).toEqual([]);
 });
 
 test('failed new registration or explicit new-order intent cannot borrow the previous paid order', async () => {

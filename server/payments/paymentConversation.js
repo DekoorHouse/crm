@@ -60,6 +60,8 @@ function paymentReply(context, { customerText = '', aiText = '', receiptPresent 
         const asksBalance = /(?:cuanto|cu[aá]l).*(?:falta|resta|saldo|restante)|(?:saldo|restante)\s*\?/.test(question);
         const asksPhoto = /foto|fotografia|imagen|terminad/.test(question);
         if (asksPhoto && !asksBalance && !receiptPresent) return ['El resto lo liquidas después de ver la foto de tus lámparas terminadas, como acordamos. Te compartiremos la foto cuando esté lista.'];
+        // El aviso de anticipo validado (notifyAnticipo) ya salió en este mismo turno: no repetirlo.
+        if (receiptPresent && !asksBalance && context.anticipoNotifiedRecently) return [];
         const unsafe = fullPaymentClaim(aiText) || blocksProductionForBalance(aiText) || /\/anticipopagado\b|\/comprobante\b/i.test(aiText);
         if (!receiptPresent && !asksBalance && !unsafe) return null;
         const amount = (context.partialCents / 100).toLocaleString('es-MX');
