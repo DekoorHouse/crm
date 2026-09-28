@@ -249,8 +249,10 @@ const ES_INFANTIL_RE = /l[aá]mpara\s+infantil/i;
 // pide asi (DH16082, 2026-09-04: "el tiranosaurio llevaría el nombre de Alejandro"; Andrea misma lo
 // resumio como "Dinosaurio (T-Rex)"). Sin el alias el pedido salia 'sin_plantilla' y, por ser mixto,
 // se iba ENTERO a manual arrastrando tambien la lampara de Spiderman del mismo pedido.
+// "T-Rex rompiendo pared" (campaña Dino v2, 2026-09-28) es OTRO diseño y todavía no tiene plantilla:
+// sin el `no` se habría cortado con la del T-Rex de cuerpo completo. Queda en manual hasta que exista.
 const PERSONAJE_ALIAS = [
-    { tpl: 'rex', re: /\bt-?rex\b|\brex\b|\bdino|\btirano/, no: /cuello\s*largo|bebe/ },
+    { tpl: 'rex', re: /\bt-?rex\b|\brex\b|\bdino|\btirano/, no: /cuello\s*largo|bebe|rompiendo|pared/ },
     { tpl: 'spiderman', re: /spider|hombre\s*ara/ },
 ];
 // Lista de plantillas que el worker sabe emparejar. Se deriva de PERSONAJE_ALIAS para que no se
