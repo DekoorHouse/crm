@@ -23,3 +23,19 @@ test('marcarlo Diseñado después de añadirlo lo saca otra vez', () => {
     const order = { estatus: 'Entregado', designForce: false, designForceAt: ts('2026-09-26T10:00:00Z'), disenoListoAt: ts('2026-09-26T12:00:00Z') };
     expect(reasonsForOrderData(order)).toEqual([]);
 });
+
+const { enTerminado } = require('../server/design/designPending');
+test('enTerminado: tarjeta movida a Terminado y sin pendiente posterior', () => {
+    const movida = { disenoBoardCol: 'terminado', disenoBoardColAt: ts('2026-09-28T10:00:00Z') };
+    expect(enTerminado(movida)).toBe(true);
+    expect(enTerminado({ ...movida, pendienteDisenoAt: ts('2026-09-29T10:00:00Z') })).toBe(false);
+    expect(enTerminado({ disenoBoardCol: 'esperando_pago', disenoBoardColAt: ts('2026-09-28T10:00:00Z') })).toBe(false);
+    expect(enTerminado({})).toBe(false);
+});
+
+test('corrección en venta (designForceAt) regresa la tarjeta de Terminado a Pendientes', () => {
+    const order = { estatus: 'Sin estatus', disenoBoardCol: 'terminado', disenoBoardColAt: ts('2026-09-28T10:00:00Z'),
+        designForce: true, designForceAt: ts('2026-09-29T10:00:00Z') };
+    expect(enTerminado(order)).toBe(false);
+    expect(reasonsForOrderData(order)).toEqual(['manual']);
+});

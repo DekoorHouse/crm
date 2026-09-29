@@ -3972,7 +3972,16 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     }
                 } catch (e) { console.warn('[AI] Nota de rastreo falló:', e.message); }
             }
-            return { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote };
+            // Tarjeta del pedido en "Terminado" del tablero de Diseño: si el cliente pide cambiar algo, la IA
+            // escribe /corregir y el pedido regresa a Pendientes con la IA apagada (ver después del loop).
+            let disenoTerminado = null;
+            try {
+                if (lastOrderDoc && require('./design/designPending').enTerminado(lastOrderDoc.data())) {
+                    const n = lastOrderDoc.data().consecutiveOrderNumber;
+                    disenoTerminado = { ref: lastOrderDoc.ref, id: lastOrderDoc.id, num: n != null ? `DH${n}` : lastOrderDoc.id };
+                }
+            } catch (_) {}
+            return { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote, disenoTerminado };
         })();
 
         // Fecha/hora actual de México para que la IA calcule bien los tiempos de entrega. Sin esto el
@@ -4010,7 +4019,10 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         const coberturaNote = (coberturaResult && coberturaResult.note) || '';
         const coberturaCheck = (coberturaResult && coberturaResult.check) || null; // veredicto de este turno o el guardado (candados de /ttt y /registrar)
         const { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote, attachmentsOrderNote } = mediaBundle;
-        const { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote } = orderNotes;
+        const { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote, disenoTerminado } = orderNotes;
+        const disenoTerminadoNote = disenoTerminado
+            ? `\n\n**DISEÑO TERMINADO de ${disenoTerminado.num}:** el equipo ya terminó el diseño de su pedido. Si el cliente pide CAMBIAR o CORREGIR algo del diseño o de sus datos (nombre, fecha, frase, personaje, foto, colores…), confirma con él el cambio exacto y escribe /corregir en su propio renglón: el pedido regresa al equipo de diseño y una persona continúa la conversación. Si solo agradece, pregunta o aprueba, NO escribas /corregir.`
+            : '';
 
         // Fase de pago/envío: además de post-venta y del pedido recién registrado, cuenta tener un
         // PEDIDO ACTIVO (reciente y no cancelado/entregado). Sin esto, un contacto cuyo pedido ya
@@ -4137,7 +4149,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 
         // Reintento de registro vigente (server/orders/registrationRetry.js): pedir SOLO lo que falta.
         const registroPendienteNote = require('./orders/registrationRetry').retryNote(contactData);
-        const finalUserText = `${registroPendienteNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${registroPendienteNote}${disenoTerminadoNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
@@ -4396,7 +4408,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // terminado, reporta que nos equivocamos en algo (ej. faltó una frase, un nombre mal
         // escrito). Cambia el pedido a estatus "Corregir" y avisa al equipo. Solo en post-venta
         // (es cuando ya se le envió la foto del pedido). Ver el manejo después del loop.
-        const needsCorrection = isPostVenta && /\/corregir/i.test(aiResponse);
+        const needsCorrection = (isPostVenta || !!disenoTerminado) && /\/corregir/i.test(aiResponse);
         // La IA emite /pidevideo cuando el cliente pide un VIDEO o una FOTO ADICIONAL de su
         // pedido terminado (ej. con otro color de luz): el pedido pasa a "Corregir" con motivo
         // 'video' (cola visible de Pendientes de Diseño, SIN re-fabricación) y se avisa al admin
@@ -4976,9 +4988,32 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 
         // Reporte de error en el pedido terminado (/corregir): cambiar el pedido a "Corregir" y
         // avisar al admin. Fire-and-forget: nunca debe tumbar la respuesta al cliente.
-        if (needsCorrection) {
+        if (needsCorrection && isPostVenta) {
             markOrderCorregirForContact(contactId, contactData, messageText, 'error', conversationHistory)
                 .catch(e => console.warn('[POSTVENTA] markOrderCorregirForContact falló:', e.message));
+        }
+        // Corrección de un pedido con el diseño en "Terminado": la tarjeta regresa a Pendientes y la IA se
+        // apaga para que una persona siga (pedido de Chris, 29-sep-2026). En post-venta el cambio a
+        // 'Corregir' de arriba ya reactiva la tarjeta; en venta (diseño/mockup por aprobar) no se toca el
+        // estatus: se empuja a Pendientes con designForceAt y se protege del corte automático.
+        if (needsCorrection && disenoTerminado) {
+            try {
+                if (!isPostVenta) {
+                    await disenoTerminado.ref.update({
+                        designForce: true,
+                        designForceAt: admin.firestore.FieldValue.serverTimestamp(),
+                        pendienteDisenoAt: admin.firestore.FieldValue.serverTimestamp(),
+                        datosReportadoAt: admin.firestore.FieldValue.serverTimestamp(),
+                        corregirMotivo: 'datos',
+                    });
+                    await require('./design/designPending').recomputeForContact(contactId).catch(() => {});
+                }
+                await contactRef.update({
+                    botActive: false, needsAttention: true, needsAttentionReason: 'correccion_diseno',
+                    needsAttentionAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                console.log(`[DISEÑO] ${contactId} pidió corregir ${disenoTerminado.num} (diseño en Terminado): regresa a Pendientes y se apaga la IA.`);
+            } catch (e) { console.warn('[DISEÑO] No se pudo regresar a Pendientes la corrección:', e.message); }
         }
 
         // El cliente pide video/foto extra de su pedido terminado (/pidevideo): a "Corregir"

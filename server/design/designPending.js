@@ -119,6 +119,14 @@ function disenoMarcadoHechoMs(d) {
     return _ms(d.disenoListoAt);
 }
 
+// ¿La tarjeta del pedido está en la columna "Terminado" del tablero? Misma regla que usa el tablero
+// (apiRoutes /design-pending): movida a mano a 'terminado' y sin un pendiente nuevo posterior.
+function enTerminado(d) {
+    if (!d || d.disenoBoardCol !== 'terminado') return false;
+    const movidaMs = _ms(d.disenoBoardColAt);
+    return !(movidaMs && pendienteRenovadoMs(d) > movidaMs);
+}
+
 // Evalúa los motivos de "pendiente de DISEÑO" sobre los datos de UN pedido (puede ser []).
 // Los de la sección "Pendientes" (mockup/video) van en pendientesReasonsForOrderData.
 function reasonsForOrderData(d) {
@@ -320,7 +328,7 @@ function pendientesReasonsForOrderData(d, hasMockup) {
 }
 
 module.exports = {
-    recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, pendienteRenovadoMs,
+    recomputeForContact, recomputeForOrder, markPreviewSent, reasonsForOrderData, pendienteRenovadoMs, enTerminado,
     disenoMarcadoHechoMs, correccionAbierta, orderHasMockup, REASONS, DONE,
     // Sección "Pendientes"
     pendientesReasonsForOrderData, esVideoPendiente, faltaMockup, PENDIENTES_REASONS,
