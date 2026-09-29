@@ -3,7 +3,11 @@ const fullPaymentClaim = text => /(?:pago|pedido|total)[^.!?\n]{0,30}(?:completo
 const blocksProductionForBalance = text => /(?:resto|restante|saldo|liquidar|pago completo|falta)[^.!?\n]{0,100}(?:para|antes de)[^.!?\n]{0,40}(?:registr|fabric|empez|inici|arranc)/i.test(text);
 // Revisar también las solicitudes de cobro, no sólo las afirmaciones de haber recibido dinero.
 const requestsPaymentAgain = text => /(?:manda|envia|comparte|compartir|adjunta|necesit|falta|pendiente|espera|requier|proporcion)[^.!?\n]{0,100}(?:comprobante|pago|deposito|transferencia)|(?:comprobante|pago)[^.!?\n]{0,60}(?:pendiente|falta|no (?:aparece|esta registrado|hemos recibido))|(?:realiza|haz|hacer|efectua|completa)[^.!?\n]{0,50}(?:pago|deposito|transferencia)|(?:liquida|liquidar|pagar)[^.!?\n]{0,50}(?:saldo|resto|pedido)|(?:puedes|debes|necesitas|falta)[^.!?\n]{0,30}(?:pagar|depositar|transferir)|\/(?:oxxo|oxxomp)\b/.test(clean(text));
-const paymentComplaint = text => /ya\s+(?:(?:te|lo|les)\s+)?(?:pague|page|pago|pagado|pago esta|deposite|transferi)|(?:mandan|piden|cobran|cobrando|cobrar)[^.!?\n]{0,60}(?:pague|page|pago|pagar|otra vez|nuevo)/.test(clean(text));
+// Reclamo de REEMBOLSO (5214521824676, 28-sep-2026): "quedaron de rembolsarme el dinero", "me da más
+// vergüenza estarles cobrando que a ustedes pagar". No es un pago por registrar: pedirle el comprobante
+// la confundió y su comprobante viejo terminó en la cola como pago nuevo.
+const refundRequest = text => /re?e?m?bols|devoluci[oó]n (?:de(?:l| mi) )?dinero|(?:regres|devolv|devuelv|reintegr)\w*[^.!?\n]{0,30}\bdinero\b|(?:mi|el) dinero de vuelta/.test(clean(text));
+const paymentComplaint = text => !refundRequest(text) && /ya\s+(?:(?:te|lo|les)\s+)?(?:pague|page|pago|pagado|pago esta|deposite|transferi)|(?:mandan|piden|cobran|cobrando|cobrar)[^.!?\n]{0,60}(?:pague|page|pago|pagar|otra vez|nuevo)/.test(clean(text));
 const orderNumberInMessage = text => {
     const numbers = [...new Set([...String(text || '').matchAll(/\bDH\s*(\d{4,6})\b/gi)].map(m => 'DH' + m[1]))];
     return numbers.length === 1 ? numbers[0] : null;
@@ -29,6 +33,8 @@ async function preparePaymentTurn(contactId, { register = null, orderNumber = nu
 }
 
 function paymentReply(context, { customerText = '', aiText = '', receiptPresent = false, recentReplies = [], onlyPreventRepeatRequest = false } = {}) {
+    // Un reclamo de reembolso no es un pago por registrar: la respuesta la lleva la IA (y el equipo).
+    if (refundRequest(customerText)) return null;
     // Una instrucción legítima para pagar un pedido aún no pagado conserva los datos bancarios.
     if (onlyPreventRepeatRequest && !context.hasPaid && !context.reportedComplete && !context.pending) return null;
     const courtesy = !receiptPresent && paymentCourtesyReply(customerText);
@@ -81,4 +87,4 @@ function paymentReply(context, { customerText = '', aiText = '', receiptPresent 
     return ['Para registrar el pago necesitamos la foto o el PDF del comprobante. ¿Nos lo compartes por aquí, por favor?'];
 }
 
-module.exports = { preparePaymentTurn, paymentReply, paymentCourtesyReply, fullPaymentClaim, blocksProductionForBalance, requestsPaymentAgain, paymentComplaint, orderNumberInMessage };
+module.exports = { preparePaymentTurn, paymentReply, paymentCourtesyReply, fullPaymentClaim, blocksProductionForBalance, requestsPaymentAgain, paymentComplaint, refundRequest, orderNumberInMessage };

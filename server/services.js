@@ -4098,8 +4098,24 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // cuando se detecta el reclamo de pago SIN imagen/PDF reciente se le avisa aqui, en el turno,
         // que es donde el modelo si lo ve. Kill-switch: crm_settings/general.avisoPagoSinComprobante=false.
         let pagoSinComprobanteNote = '';
+        // RECLAMO DE REEMBOLSO en los últimos 3 días (5214521824676, 28-sep-2026): el flujo de pagos NO
+        // aplica (le pedía "la foto de su comprobante" a quien exige que le devolvamos su dinero). La IA
+        // atiende con la nota de abajo y el chat queda marcado para que el equipo resuelva el reembolso.
+        const reembolsoReciente = messagesSnapshot.docs.some(mdoc => {
+            const md = mdoc.data();
+            const t = (md.timestamp && typeof md.timestamp.toMillis === 'function') ? md.timestamp.toMillis() : 0;
+            return md.from === contactId && t && (Date.now() - t) < 3 * 86400000
+                && require('./payments/paymentConversation').refundRequest(md.text || '');
+        });
+        if (reembolsoReciente) {
+            pagoSinComprobanteNote = '\n\n**⚠️ RECLAMO DE REEMBOLSO:** el cliente pide que le devolvamos su dinero de un pedido anterior. NO le pidas comprobante ni datos de pago, NO registres un pedido nuevo y NO le ofrezcas reenviar la lámpara salvo que él lo pida. Discúlpate con calidez, dile que el equipo está gestionando su reembolso y NO prometas fechas ni horas (ni "hoy mismo").';
+            if (!(contactData.needsAttention && contactData.needsAttentionReason === 'reembolso')) {
+                contactRef.set({ needsAttention: true, needsAttentionReason: 'reembolso', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
+                    .catch(e => console.warn('[AI] no se pudo marcar el reembolso para el equipo:', e.message));
+            }
+        }
         try {
-            if (generalSettings.avisoPagoSinComprobante !== false) {
+            if (!reembolsoReciente && generalSettings.avisoPagoSinComprobante !== false) {
                 const durablePayment = await require('./payments/paymentWorkflow').paymentContext(contactId, { discover: true });
                 const hayComprobante = durablePayment.pending > 0 || durablePayment.hasPaid || durablePayment.partialCents > 0;
                 if (durablePayment.hasPaid) pagoSinComprobanteNote = `\n\n**PAGO COMPLETO VALIDADO de ${durablePayment.orderNumber}:** este pedido ya está pagado. No vuelvas a cobrar ni a pedir su comprobante, aunque el cliente reenvíe imágenes o capturas. Si reclama un cobro repetido, confirma que su pago está registrado y disculpa la confusión. No apliques este pago a un pedido nuevo.`;
@@ -4488,7 +4504,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         const paymentClaim = require('./payments/paymentPolicy').claimsPayment(aiResponse) || paymentConversation.fullPaymentClaim(aiResponse) || paymentConversation.blocksProductionForBalance(aiResponse);
         const paymentComplaint = paymentConversation.paymentComplaint(messageText);
         const onlyPreventRepeatRequest = !comprobanteValidado && !formularioPedidos.length && !anticipoPaidCmd && !paymentClaim && !paymentComplaint;
-        if (!onlyPreventRepeatRequest || paymentConversation.requestsPaymentAgain(aiResponse)) {
+        if (!reembolsoReciente && (!onlyPreventRepeatRequest || paymentConversation.requestsPaymentAgain(aiResponse))) {
             try {
                 const paymentPolicy = require('./payments/paymentPolicy');
                 const history = messagesSnapshot.docs.map(d => d.data());

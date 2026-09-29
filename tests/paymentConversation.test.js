@@ -111,3 +111,13 @@ test('DH17249: a new purchase still being collected keeps the AI reply (no failu
 test('accepting payment instructions preserves the account details for an unpaid order', () => {
     expect(paymentReply({}, { customerText: 'Sí, por favor.', aiText: 'Transfiere a esta cuenta y manda el comprobante.', onlyPreventRepeatRequest: true })).toBeNull();
 });
+
+test('5214521824676: a refund claim is not a payment to register and never asks for a receipt', () => {
+    const { refundRequest, paymentComplaint } = require('../server/payments/paymentConversation');
+    const text = 'Buenas tardes disculpe quedaron de rembolsarme el dinero dela lámpara que nunca me llego';
+    expect(refundRequest(text)).toBe(true);
+    expect(paymentComplaint(text)).toBe(false);
+    expect(refundRequest('quiero que me regresen mi dinero')).toBe(true);
+    expect(refundRequest('¿Dónde está mi guía?')).toBe(false);
+    expect(paymentReply({}, { customerText: text })).toBeNull();
+});
