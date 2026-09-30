@@ -475,6 +475,7 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
         return true;
     });
     let claimed = false;
+    let existingForCatch = null;   // pedido ya registrado de esta compra (lo usa el catch de abajo)
     try {
         claimed = await claimInFlight();
         if (!claimed) {
@@ -497,6 +498,7 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
         // contexto al extractor y luego para decidir si es cambio, fusión o pedido nuevo.
         const purchaseContact = (await contactRef.get()).data() || {};
         const existingRec = await findRecentOrderForContact(contactId, purchaseContact.activePurchaseSessionId).catch(() => null);
+        existingForCatch = existingRec;
         const completeHistory = await require('./registrationHistory').loadRegistrationHistory(contactRef, contactId, conversationText);
         const { extraction, motivo: motivoExtraccion } = await extractOrderDetailed({
             conversationText: completeHistory,
@@ -691,6 +693,16 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
     } catch (e) {
         console.warn(`[AI_ORDER] No se pudo registrar automáticamente el pedido de ${contactId}: ${e.message}. Cae al flujo manual (Pendientes IA).`);
         await logFailure(contactId, name, e.message);
+        // El pedido de esta compra YA ESTÁ REGISTRADO y este intento solo era una confirmación más que el
+        // extractor no ve "lista" (DH17517, 30-sep-2026: registrado a las 20:20; al "Ok perfecto" del
+        // cliente se volvió a intentar, el extractor dudó entre "Grace" y "Graciela" y el cliente recibió
+        // "el registro necesita revisión del equipo", con la IA apagada y el chat en Pendientes IA). Nada
+        // se perdió: se conserva el pedido, se deja registrada la falla y la IA sigue atendiendo.
+        if (existingForCatch && !isOrderDone(existingForCatch.data) && require('./registrationRetry').isMissingDataFailure(e.message)) {
+            const n = existingForCatch.data.consecutiveOrderNumber;
+            console.log(`[AI_ORDER] ${contactId}: ya existe ${n != null ? 'DH' + n : existingForCatch.id}; la confirmación extra no se manda al equipo.`);
+            return n != null ? `DH${n}` : existingForCatch.id;
+        }
         // REINTENTO (registrationRetry.js): ya pagó el anticipo y solo faltan datos → la IA sigue
         // encendida pidiéndolos y el siguiente turno vuelve a intentar. Se cuenta el intento; al
         // agotarse, cae al flujo manual de abajo como siempre.

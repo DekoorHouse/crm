@@ -206,3 +206,24 @@ test('Maribel: la indicación del equipo llega al extractor sin acreditar dinero
     expect(services.generateGeminiResponse.mock.calls[0][2]).toContain('ya no quiere cancelar');
     expect(createOrder.mock.calls[0][0].extraFields.comprobanteValidadoAt).toBeUndefined();
 });
+
+test('DH17517: una confirmación extra con el pedido ya registrado no lo manda al equipo ni apaga la IA', async () => {
+    mockDocs.set('pedidos/p1', { ...order(), estatus: 'Sin estatus' });
+    services.generateGeminiResponse.mockResolvedValue({ text: JSON.stringify({
+        listo: false, faltante: 'El cliente aún no ha confirmado cuál de los dos nombres prefiere (Grace o Graciela)',
+        items: [], total: 0, confianza: 60, esAdicional: false,
+    }) });
+    expect(await run('Cliente: Ok perfecto')).toBe('DH16731');
+    expect(contact()).toMatchObject({ botActive: true });
+    expect(contact().status).toBeUndefined();
+    expect(contact().needsAttention).toBeUndefined();
+    expect(mockFailures).toHaveLength(1);
+    expect(createOrder).not.toHaveBeenCalled();
+});
+
+test('sin pedido registrado, un registro con datos incompletos sigue yendo al equipo', async () => {
+    mockDocs.delete('pedidos/p1');
+    services.generateGeminiResponse.mockResolvedValue({ text: JSON.stringify({ listo: false, faltante: 'Falta el nombre', items: [], total: 0, confianza: 60 }) });
+    expect(await run('Cliente: Sí')).toBeNull();
+    expect(contact()).toMatchObject({ botActive: false, status: 'pendientes_ia', needsAttentionReason: 'registro_pedido' });
+});
