@@ -29,19 +29,8 @@ const PEND_COLS = [
 const PEND_ORDER_COLS = ['video', 'mockup', 'corregir'];
 
 // Por qué la conversación pide un humano (campo needsAttentionReason del contacto).
-const PEND_ATTN_REASONS = {
-    ai_off: 'La IA está apagada y el cliente escribió',
-    equipo: 'El cliente pidió algo que la IA no puede dar',
-    pago_sin_comprobante: 'Dice que pagó y no mandó comprobante',
-    pago_no_registrado: 'Dice que pagó y no encontramos el pago',
-    registro_pedido: 'El pedido no se pudo registrar; revisar datos, precio y confirmación',
-    payment_reply_loop: 'IA pausada para evitar repetir solicitudes de comprobante; revisar el chat y el pago',
-    reembolso: 'El cliente pide que le devolvamos su dinero; gestionar el reembolso',
-    correccion_diseno: 'Pidió corregir un diseño ya terminado; el pedido regresó a Pendientes de Diseño y la IA se apagó',
-    // Lo pone el barrido de server/monitoring/mensajesSinAtender.js: con la IA encendida no salió
-    // nada después del mensaje del cliente. Si aparece, algo del sistema falló.
-    sin_respuesta: 'La IA estaba encendida y aun así nadie contestó',
-};
+// Motivos compartidos con la lista de chats: viven en ui_templates.js (window.ATTENTION_REASONS).
+const PEND_ATTN_REASONS = window.ATTENTION_REASONS;
 
 const PEND_CSS = `
 <style>

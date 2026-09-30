@@ -4564,6 +4564,11 @@ router.get('/contacts/:contactId/window-state', async (req, res) => {
 });
 
 // --- Endpoint POST /api/contacts/:contactId/messages (Enviar mensaje) ---
+// Responder desde el CRM = conversación ATENDIDA: se limpian las mismas marcas que el botón "Atendido"
+// de Pendientes (POST /pendientes/atencion/:id/atendido), así el chat sale también de "Apoyo humano".
+// Si el cliente vuelve a escribir con la IA apagada, el webhook lo re-marca.
+const ATENDIDO_FIELDS = { needsAttention: false, needsAttentionReason: null, mediaDeliveryPending: false, deliveryIncidentPending: false };
+
 router.post('/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid, template, templateMediaUrl, tempId, forwarded } = req.body; // tempId es opcional, para UI optimista
@@ -4674,7 +4679,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             // /corazon: encender la IA del contacto (todos los canales). La IA responderá el próximo
             // mensaje del cliente (aquí el último mensaje es saliente, así que no contesta de inmediato).
             if (isCorazonCommand) { msgrContactUpdate.botActive = true; console.log(`[CORAZON] IA activada (${channel}) para ${contactId}.`); }
-            await contactRef.update(msgrContactUpdate);
+            await contactRef.update({ ...msgrContactUpdate, ...ATENDIDO_FIELDS });
 
             return res.status(200).json({ success: true, message: `Mensaje(s) enviado(s) por ${channelName}.` });
         }
@@ -4866,7 +4871,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         // saliente); la IA contestará el próximo mensaje del cliente.
         if (isCorazonCommand) { contactUpdateData.botActive = true; console.log(`[CORAZON] IA activada (whatsapp) para ${contactId}.`); }
 
-        await contactRef.update(contactUpdateData);
+        await contactRef.update({ ...contactUpdateData, ...ATENDIDO_FIELDS });
 
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
     } catch (error) {

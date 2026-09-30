@@ -39,11 +39,13 @@ window.scheduleContactListRender = scheduleContactListRender;
 async function clearNeedsAttention(contactId) {
     if (!contactId) return;
     const c = state.contacts.find(x => x.id === contactId);
-    if (c && c.needsAttention !== true) return; // ya está limpio, no hagas nada
-    if (c) { c.needsAttention = false; c.needsAttentionReason = null; } // optimista: quita el parpadeo ya
+    // Mismas marcas que el "Atendido" de Pendientes: también la foto/video fallido y la entrega en disputa,
+    // para que el chat salga de "Apoyo humano" al responderle.
+    if (c && c.needsAttention !== true && c.mediaDeliveryPending !== true && c.deliveryIncidentPending !== true) return; // ya está limpio
+    if (c) { c.needsAttention = false; c.needsAttentionReason = null; c.mediaDeliveryPending = false; c.deliveryIncidentPending = false; } // optimista
     scheduleContactListRender();
     try {
-        await db.collection('contacts_whatsapp').doc(contactId).update({ needsAttention: false, needsAttentionReason: null });
+        await db.collection('contacts_whatsapp').doc(contactId).update({ needsAttention: false, needsAttentionReason: null, mediaDeliveryPending: false, deliveryIncidentPending: false });
     } catch (e) { console.warn('[ATENCION] no se pudo limpiar:', e.message); }
 }
 window.clearNeedsAttention = clearNeedsAttention;
@@ -140,7 +142,8 @@ function handleSearchContacts() {
     // Ordenar: las conversaciones que NECESITAN ATENCIÓN (IA no pudo / IA apagada y el cliente
     // escribe) van FIJADAS arriba (parpadean navy); el resto por fecha descendente.
     contactsToRender.sort((a, b) => {
-        const au = a.needsAttention === true ? 1 : 0, bu = b.needsAttention === true ? 1 : 0;
+        const atn = x => (x.needsAttention === true || x.mediaDeliveryPending === true || x.deliveryIncidentPending === true) ? 1 : 0;
+        const au = atn(a), bu = atn(b);
         if (au !== bu) return bu - au;
         return (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0);
     });

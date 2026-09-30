@@ -1719,15 +1719,15 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
     // la IA estaba encendida y aun así nadie contestó (sin_respuesta, lo detecta el barrido de
     // server/monitoring/mensajesSinAtender.js — ahí sí falló algo del sistema).
     // La fila se fija arriba (sort en chat-handlers) y parpadea azul navy (.needs-attention en style.css).
-    const ATTN_TITULOS = {
-        ai_off: 'la IA está apagada y el cliente escribió',
-        sin_respuesta: 'la IA estaba encendida y aun así nadie contestó',
-        pago_sin_comprobante: 'dice que pagó y no mandó comprobante',
-        pago_no_registrado: 'dice que pagó y no encontramos el pago'
-    };
-    const attnClass = contact.needsAttention === true ? 'needs-attention' : '';
-    const attnBadge = contact.needsAttention === true
-        ? `<span class="dp-badge attn-badge" title="Necesita atención humana: ${ATTN_TITULOS[contact.needsAttentionReason] || 'el cliente pidió algo que la IA no puede dar'}">🔵 Atender</span>`
+    // Mismos casos y mismo motivo que la columna "Apoyo humano" de Pendientes (window.ATTENTION_REASONS,
+    // definido abajo): además de needsAttention, una foto/video que no se pudo mandar o una entrega en disputa.
+    const attnReason = contact.deliveryIncidentPending === true ? 'Entrega en disputa: revisar dirección, guía y evidencia de recepción'
+        : contact.mediaDeliveryPending === true ? 'No se pudo enviar una foto o video programado'
+        : (window.ATTENTION_REASONS[contact.needsAttentionReason] || window.ATTENTION_REASONS.equipo);
+    const necesitaAtencion = contact.needsAttention === true || contact.mediaDeliveryPending === true || contact.deliveryIncidentPending === true;
+    const attnClass = necesitaAtencion ? 'needs-attention' : '';
+    const attnBadge = necesitaAtencion
+        ? `<span class="dp-badge attn-badge" title="Necesita atención humana: ${attnReason}">🔵 Atender</span>`
         : '';
 
     const mainContent = `
@@ -3518,3 +3518,22 @@ const CampanaFormModalTemplate = (campana) => {
 };
 
 // Nota: `escapeHtml` ya está definido globalmente en ui-manager.js — los templates de arriba lo usan.
+
+
+// Por qué una conversación necesita a una persona (campo needsAttentionReason del contacto). ÚNICA fuente
+// para la lista de chats (badge 🔵 Atender) y para la columna "Apoyo humano" de Pendientes.
+window.ATTENTION_REASONS = {
+    ai_off: 'La IA está apagada y el cliente escribió',
+    equipo: 'El cliente pidió algo que la IA no puede dar',
+    pago_sin_comprobante: 'Dice que pagó y no mandó comprobante',
+    pago_no_registrado: 'Dice que pagó y no encontramos el pago',
+    payment_review: 'Revisar el estado del pago del cliente',
+    registro_pedido: 'El pedido no se pudo registrar; revisar datos, precio y confirmación',
+    payment_reply_loop: 'IA pausada para evitar repetir solicitudes de comprobante; revisar el chat y el pago',
+    cobertura_registro: 'La IA quiso registrar un pedido a un C.P. sin cobertura',
+    reembolso: 'El cliente pide que le devolvamos su dinero; gestionar el reembolso',
+    correccion_diseno: 'Pidió corregir un diseño ya terminado; el pedido regresó a Pendientes de Diseño y la IA se apagó',
+    // Lo pone el barrido de server/monitoring/mensajesSinAtender.js: con la IA encendida no salió
+    // nada después del mensaje del cliente. Si aparece, algo del sistema falló.
+    sin_respuesta: 'La IA estaba encendida y aun así nadie contestó',
+};
