@@ -1,5 +1,5 @@
 import { elements, state } from './state.js';
-import { formatCurrency, autoCategorize, autoCategorizeWithRulesOnly, extractMerchantKey, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange, getActiveKeywordRules, categorizeWithTrace, buildRegionReport, getRegionConfig } from './utils.js';
+import { formatCurrency, fechaContable, autoCategorize, autoCategorizeWithRulesOnly, extractMerchantKey, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange, getActiveKeywordRules, categorizeWithTrace, buildRegionReport, getRegionConfig } from './utils.js';
 import * as services from './services.js';
 import { isTestMode, setTestMode, isDevMode, setDevMode, describeMode } from './config.js';
 
@@ -181,7 +181,13 @@ export function renderTable(expenses) {
         }
 
         tr.innerHTML = `
-            <td>${expense.date || ''}</td>
+            <td>${expense.date || ''}${(() => {
+                // Movimiento que cuenta en otro mes (p. ej. renta de sep pagada el 1-oct)
+                const f = fechaContable(expense);
+                if (!expense.date || f.slice(0, 7) === expense.date.slice(0, 7)) return '';
+                const mes = new Date(f + 'T12:00:00Z').toLocaleDateString('es-MX', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+                return `<br><span title="Cuenta en los reportes de ${mes}" style="display:inline-block; margin-top:3px; padding:1px 7px; border-radius:10px; font-size:10.5px; font-weight:600; background:rgba(99,102,241,0.12); color:var(--primary);">cuenta en ${mes}</span>`;
+            })()}</td>
             <td>${expense.concept || ''}</td>
             <td>${charge > 0 ? formatCurrency(charge) : ''}</td>
             <td>${credit > 0 ? formatCurrency(credit) : ''}</td>
@@ -768,6 +774,11 @@ export function openExpenseModal(expense = {}) {
                         <input type="date" id="expense-date" class="modal-input" value="${expense.date || new Date().toISOString().split('T')[0]}" required>
                     </div>
                     <div class="form-group">
+                        <label for="expense-mes-contable">Cuenta en el mes de <span style="font-weight:400; color:var(--text-secondary);">(opcional)</span></label>
+                        <input type="month" id="expense-mes-contable" class="modal-input" value="${expense.mesContable || ''}">
+                        <small style="color:var(--text-secondary); font-size:12px;">Para pagos de un mes que salieron en otro (p. ej. la renta de septiembre pagada el 1 de octubre). La fecha del banco no cambia.</small>
+                    </div>
+                    <div class="form-group">
                         <label for="expense-concept">Concepto</label>
                         <input type="text" id="expense-concept" class="modal-input" placeholder="Concepto del movimiento" value="${expense.concept || ''}" required>
                     </div>
@@ -816,6 +827,11 @@ export function openExpenseModal(expense = {}) {
                 const expenseData = {
                     ...expense, 
                     date: document.getElementById('expense-date').value,
+                    // Vacío o igual al mes de la fecha = sin mes contable.
+                    mesContable: (() => {
+                        const v = document.getElementById('expense-mes-contable')?.value || '';
+                        return v && v !== document.getElementById('expense-date').value.slice(0, 7) ? v : '';
+                    })(),
                     concept: document.getElementById('expense-concept').value,
                     charge: parseFloat(document.getElementById('expense-charge').value) || 0,
                     credit: creditValue,

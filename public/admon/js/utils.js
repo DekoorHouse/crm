@@ -739,6 +739,21 @@ export function generateWhatsAppMessage(employee) {
  * Filtra los gastos basándose en fecha y categoría.
  * MEJORA: Comparación exacta por timestamps UTC.
  */
+/**
+ * Fecha con la que un movimiento cuenta en los reportes por mes.
+ *
+ * `mesContable` ('AAAA-MM', opcional) manda un movimiento a otro mes sin tocar
+ * su fecha de banco: p. ej. la renta de septiembre que se pagó el 1-oct. Cuenta
+ * como el último día de ese mes. La fecha de banco (`date`) sigue mandando en
+ * el saldo, la conciliación y las importaciones, que tienen que cuadrar con BBVA.
+ */
+export function fechaContable(expense) {
+    const mes = expense && /^\d{4}-\d{2}$/.test(expense.mesContable || '') ? expense.mesContable : '';
+    if (!mes) return (expense && expense.date) || '';
+    const [a, m] = mes.split('-').map(Number);
+    return `${mes}-${String(new Date(Date.UTC(a, m, 0)).getUTCDate()).padStart(2, '0')}`;
+}
+
 export function getFilteredExpenses(includeFinancial = false) {
     if (includeFinancial) return [...state.expenses];
 
@@ -750,10 +765,11 @@ export function getFilteredExpenses(includeFinancial = false) {
     const endTs = end ? new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate())).getTime() : null;
 
     return state.expenses.filter(expense => {
-        if (!expense.date) return false;
+        const fecha = fechaContable(expense);
+        if (!fecha) return false;
 
-        // Parsear la fecha del gasto YYYY-MM-DD
-        const parts = expense.date.split('-');
+        // Parsear la fecha del gasto YYYY-MM-DD (la contable, si la trae)
+        const parts = fecha.split('-');
         const expenseTs = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))).getTime();
 
         // Comparar milisegundos (Timestamps)

@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { formatCurrency, getExpenseParts } from './utils.js';
+import { formatCurrency, getExpenseParts, fechaContable } from './utils.js';
 
 /**
  * @file Vista privada de los gastos de Chris.
@@ -47,7 +47,7 @@ export function movimientosChris(expenses) {
         if (!partes.length) continue;
         const sub = partes.find(p => p.subcategory)?.subcategory;
         out.push({
-            date: e.date,
+            date: fechaContable(e),   // la renta de sep pagada el 1-oct cuenta en sep
             concept: String(e.concept || '').replace(/\s+/g, ' ').trim(),
             monto: partes.reduce((s, p) => s + (Number(p.amount) || 0), 0),
             grupo: sub || grupoDe(e.concept),
