@@ -577,6 +577,37 @@ function caso10_mismaFirmaMovimientosDistintos() {
         parseBalance('') === null && parseBalance('En tránsito') === null && parseBalance(null) === null);
 }
 
+function caso11_ventanaNoLaDefinenLosPendientes() {
+    // Corte de octubre: 1 liquidado del 1-oct y En tránsito fechados en septiembre.
+    const archivo = [
+        attachSignatures({ date: '2026-10-01', concept: 'SPEI ENVIADO albo / 0087430409 721 2309260destapador', charge: 288, credit: 0, pending: false, bankBalance: 46333.41 }),
+        attachSignatures({ date: '2026-10-01', concept: 'RENDER.COM', charge: 522.09, credit: 0, pending: true, bankBalance: null }),
+        attachSignatures({ date: '2026-09-30', concept: 'OPENROUTER, INC', charge: 383.17, credit: 0, pending: true, bankBalance: null }),
+        attachSignatures({ date: '2026-09-23', concept: 'DLO*SOFT BOLT', charge: 56, credit: 0, pending: true, bankBalance: null }),
+    ];
+    const base = [
+        attachSignatures({ id: 's1', date: '2026-09-24', concept: 'MINISUPER NATALIA / ****0670 AUT: 1', charge: 28, credit: 0, source: 'xlsx' }),
+        attachSignatures({ id: 's2', date: '2026-09-26', concept: 'PAGO CUENTA DE TERCERO / 0034050307 BNET lampara', charge: 0, credit: 450, source: 'xlsx' }),
+        attachSignatures({ id: 's3', date: '2026-09-30', concept: 'MERPAGO*MERCADOLIBRE / ****8493 AUT: 2', charge: 539, credit: 0, source: 'xlsx' }),
+        attachSignatures({ id: 'p1', date: '2026-09-23', concept: 'DLO*SOFT BOLT', charge: 56, credit: 0, source: 'xlsx', pending: true }),
+    ];
+    const plan = planStatementReplace(archivo, base);
+    const todos = [...plan.stale, ...plan.staleConfirmed, ...plan.staleLiquidados].map(e => e.id);
+    assert('Caso 11.a — la ventana arranca en el primer liquidado (1-oct)', plan.from === '2026-10-01', plan.from);
+    assert('Caso 11.b — no se borra nada de septiembre que el archivo no cubre', todos.length === 0, todos.join(','));
+
+    // Un archivo sólo con En tránsito no define ventana.
+    const soloPend = planStatementReplace([archivo[1], archivo[2]], base);
+    assert('Caso 11.c — sólo En tránsito: no hay ventana ni borrados',
+        soloPend.from === '' && soloPend.stale.length === 0, `from=${soloPend.from} stale=${soloPend.stale.length}`);
+
+    // Dentro de la ventana todo sigue igual: lo del 1-oct que ya no aparece, sobra.
+    const viejo = attachSignatures({ id: 'v1', date: '2026-10-01', concept: 'RENDER.CO', charge: 522.09, credit: 0, source: 'xlsx', pending: true });
+    const plan2 = planStatementReplace(archivo, [...base, viejo]);
+    assert('Caso 11.d — dentro de la ventana se sigue limpiando lo que ya no lista el banco',
+        plan2.stale.map(e => e.id).join(',') === 'v1', plan2.stale.map(e => e.id).join(','));
+}
+
 // ---------------------------------------------------------------------------
 //  Runner público
 // ---------------------------------------------------------------------------
@@ -595,6 +626,7 @@ export function runAllTests() {
     test('Caso 8: reemplazo por ventana (tránsito → liquidado)', caso8_reemplazoPorVentana);
     test('Caso 9: pendiente liquidado fuera de la ventana', caso9_pendienteLiquidadoFueraDeVentana);
     test('Caso 10: misma firma, movimientos distintos', caso10_mismaFirmaMovimientosDistintos);
+    test('Caso 11: los En tránsito no definen la ventana', caso11_ventanaNoLaDefinenLosPendientes);
 
     const pass = results.filter(r => r.ok).length;
     const fail = results.length - pass;

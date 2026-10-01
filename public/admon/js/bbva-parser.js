@@ -526,7 +526,8 @@ export function classifyForImport(newTxs, existingTxs) {
  * NUNCA se marcan para borrar:
  *   - capturas manuales (`source` 'manual' o 'modified'): no vienen de ningún
  *     estado de cuenta, así que el archivo no puede contradecirlas,
- *   - nada fuera del rango [from, to] del archivo.
+ *   - nada fuera del rango [from, to] del archivo. `from` es la fecha del
+ *     primer movimiento LIQUIDADO: los En tránsito anteriores no la recorren.
  *
  * Caso aparte: los `duplicateStatus === 'confirmed_real'`. Esa marca dice
  * "en la importación revisé este posible duplicado y es real", una afirmación
@@ -553,7 +554,18 @@ export function planStatementReplace(newTxs, existingTxs) {
 
     const fechas = newTxs.map(t => t && t.date).filter(Boolean).sort();
     if (fechas.length === 0) return vacio;
-    let from = fechas[0];
+
+    // LA VENTANA EMPIEZA EN EL PRIMER LIQUIDADO, no en el primer renglón.
+    // La fecha de un En tránsito no es definitiva y BBVA lo lista aunque el
+    // resto de ese día no venga en el archivo. (Caso real: el corte de octubre
+    // traía 1 liquidado del 1-oct y 12 En tránsito fechados del 23 al 30-sep;
+    // tomando la ventana desde el 23-sep habría borrado 302 movimientos buenos
+    // de septiembre que ese archivo simplemente no cubre.) Desde el primer
+    // liquidado en adelante el archivo sí es completo, En tránsito incluidos.
+    // Un archivo sin ningún liquidado no define ventana: sólo agrega.
+    const fechasLiq = newTxs.filter(t => t && t.date && t.pending !== true).map(t => t.date).sort();
+    if (fechasLiq.length === 0) return vacio;
+    let from = fechasLiq[0];
     const to = fechas[fechas.length - 1];
 
     // GUARDA CONTRA EXPORTS TRUNCADOS.
@@ -574,7 +586,7 @@ export function planStatementReplace(newTxs, existingTxs) {
     let primerDiaParcial = false;
     if (primerDiaBase > primerDiaArchivo) {
         primerDiaParcial = true;
-        const siguiente = fechas.find(d => d > from);
+        const siguiente = fechasLiq.find(d => d > from);
         if (!siguiente) return { ...vacio, from, to, primerDiaParcial };  // el archivo cubre un solo día, y parcial
         from = siguiente;
     }
@@ -640,7 +652,7 @@ export function planStatementReplace(newTxs, existingTxs) {
     // cubrir, y la UI tiene que decirlo.
     const MARGEN_MS = 10 * 24 * 60 * 60 * 1000;
     const dia = f => Date.parse(String(f) + 'T00:00:00Z');
-    const desde = new Date(dia(fechas[0]) - MARGEN_MS).toISOString().slice(0, 10);
+    const desde = new Date(dia(fechasLiq[0]) - MARGEN_MS).toISOString().slice(0, 10);
 
     // Copias de cada firma del archivo que quedaron libres tras el pase anterior.
     const libres = new Map(enArchivo);
