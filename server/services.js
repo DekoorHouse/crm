@@ -3982,7 +3982,19 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     disenoTerminado = { ref: lastOrderDoc.ref, id: lastOrderDoc.id, num: n != null ? `DH${n}` : lastOrderDoc.id };
                 }
             } catch (_) {}
-            return { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote, disenoTerminado };
+            // Agregar lámparas a un pedido ya registrado y todavía sin pagar/enviar (conciliación 1-oct-2026:
+            // DH16884/DH17170 sumaron lámparas en el chat y la IA nunca pidió actualizar el pedido).
+            let agregarNote = '';
+            try {
+                const o = lastOrderDoc && lastOrderDoc.data();
+                if (o && !(o.guiaEnvio && o.guiaEnvio.guia) && !o.comprobanteValidadoAt && !/cancel|entregad/i.test(String(o.estatus || ''))) {
+                    const n = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : 'su pedido';
+                    agregarNote = `
+
+**SI EL CLIENTE AGREGA LÁMPARAS a ${n}:** van en el MISMO pedido. Confírmale el resumen COMPLETO (las que ya tenía + las nuevas, con nombres, modelos y el total con la promoción) y, cuando lo confirme, escribe /registrar en su propio renglón: el sistema actualiza el pedido y el total. Sin /registrar la lámpara nueva NO queda en el pedido.`;
+                }
+            } catch (_) {}
+            return { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote, disenoTerminado, agregarNote };
         })();
 
         // Fecha/hora actual de México para que la IA calcule bien los tiempos de entrega. Sin esto el
@@ -4020,7 +4032,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         const coberturaNote = (coberturaResult && coberturaResult.note) || '';
         const coberturaCheck = (coberturaResult && coberturaResult.check) || null; // veredicto de este turno o el guardado (candados de /ttt y /registrar)
         const { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote, attachmentsOrderNote } = mediaBundle;
-        const { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote, disenoTerminado } = orderNotes;
+        const { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote, disenoTerminado, agregarNote } = orderNotes;
         const disenoTerminadoNote = disenoTerminado
             ? `\n\n**DISEÑO TERMINADO de ${disenoTerminado.num}:** el equipo ya terminó el diseño de su pedido. Si el cliente pide CAMBIAR o CORREGIR algo del diseño o de sus datos (nombre, fecha, frase, personaje, foto, colores…), confirma con él el cambio exacto y escribe /corregir en su propio renglón: el pedido regresa al equipo de diseño y una persona continúa la conversación. Si solo agradece, pregunta o aprueba, NO escribas /corregir.`
             : '';
@@ -4150,7 +4162,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 
         // Reintento de registro vigente (server/orders/registrationRetry.js): pedir SOLO lo que falta.
         const registroPendienteNote = require('./orders/registrationRetry').retryNote(contactData);
-        const finalUserText = `${registroPendienteNote}${disenoTerminadoNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${registroPendienteNote}${disenoTerminadoNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${agregarNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).

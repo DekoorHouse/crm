@@ -276,6 +276,25 @@ function saneaExtraccion(parsed) {
 // Confirmar otra vez un pedido no es cambiarlo (DH16731, anticipo ya en Fabricar).
 // Compara TODAS las piezas, cantidades, precios y datos; un subconjunto no basta.
 // Solo ignora formato: conserva acentos, signos y cualquier dato de personalización.
+// ¿La extracción es el pedido ANTERIOR + lámparas nuevas? Devuelve las piezas agregadas (o null si
+// cambió o quitó alguna de las que ya tenía). El precio no cuenta: al agregar una segunda lámpara
+// entra la promoción y el unitario baja ($750 → $600). Conciliación del 1-oct-2026: DH17262, DH17039,
+// DH16884 y DH17170 sumaron lámparas que se fabricaron viendo el chat, pero el pedido se quedó con las
+// originales (total, valor declarado de la guía e inventario mal).
+function itemsAgregados(orderItems, extractionItems) {
+    const textKey = value => String(value || '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
+    const keyOf = item => JSON.stringify([textKey(item.producto),
+        normalizarFechaEnDatos(String(item.datosProducto || '')).split('|').map(part => textKey(part).replace(/\s*:\s*/g, ':')).sort()]);
+    const expand = items => (Array.isArray(items) ? items : []).flatMap(it => Array(Math.max(1, Number(it.cantidad) || 1)).fill(it));
+    const pool = expand(extractionItems).map(it => ({ key: keyOf(it), it }));
+    for (const old of expand(orderItems)) {
+        const i = pool.findIndex(p => p.key === keyOf(old));
+        if (i < 0) return null;            // una lámpara que ya tenía cambió o desapareció: no es solo agregar
+        pool.splice(i, 1);
+    }
+    return pool.length ? pool.map(p => p.it) : null;
+}
+
 function sameRegisteredOrder(order, extraction) {
     if (!Array.isArray(order.items) || !order.items.length || Number(order.precio) !== extraction.total) return false;
     const textKey = value => String(value || '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -583,6 +602,34 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
                     await clearRepeatedRegistrationPending(contactRef);
                     return rNum;
                 }
+                // El cliente solo AGREGÓ lámparas (las que tenía siguen igual) y el pedido todavía no se fabrica,
+                // no está pagado completo ni enviado: se agregan al MISMO pedido con el total nuevo, y se manda a
+                // Pendientes de Diseño para que se haga la lámpara nueva. Pagado o enviado: aviso al equipo.
+                const agregadas = itemsAgregados(r.items, extraction.items);
+                const enviado = !!(r.guiaEnvio && r.guiaEnvio.guia) || isOrderDone(r);
+                // Solo antes de producir y cobrar ('Foto enviada' / 'Esperando pago'): un pedido en Fabricar que
+                // cambia sigue pidiendo revisión humana (decisión previa, ver tests de cambio_no_aplicado).
+                const tieneItems = Array.isArray(r.items) && r.items.length > 0;
+                if (agregadas && tieneItems && !enviado && !r.comprobanteValidadoAt && /^(foto enviada|esperando pago)$/i.test(estActual)) {
+                    const { computeOrderMainFields } = require('./createOrderCore');
+                    const { mainDatosProducto } = computeOrderMainFields(extraction.items);
+                    const now = admin.firestore.FieldValue.serverTimestamp();
+                    const nuevasTxt = agregadas.map(it => `${it.producto}${it.datosProducto ? ` (${it.datosProducto})` : ''}`).join('; ');
+                    const upd = {
+                        items: extraction.items,
+                        precio: extraction.total,
+                        datosProducto: extraction.items.length > 1 ? mainDatosProducto : (extraction.items[0].datosProducto || ''),
+                        productoAgregadoAt: now, aiUpdatedAt: now,
+                        designForce: true, designForceAt: now,
+                        comentarios: `${(r.comentarios || '').trim()}\nLa IA agregó al pedido: ${nuevasTxt}. Total nuevo: $${extraction.total} (antes $${r.precio}).`.trim(),
+                    };
+                    if (Number(r.paymentReceivedCents) > 0 || /pagado|fabricar/i.test(estActual)) upd.productoAgregadoPostPagoAt = now;
+                    await recent.ref.update(upd);
+                    try { await require('../design/designPending').recomputeForContact(contactId); } catch (_) {}
+                    console.log(`[AI_ORDER] ${rNum}: el cliente agregó ${agregadas.length} pieza(s); total $${r.precio} → $${extraction.total}.`);
+                    await alertAdmin(`➕ *${name} agregó lámpara(s) a ${rNum}* (${estActual})\n\n${itemsTxt}\nTotal nuevo: $${extraction.total} (antes $${r.precio}).\n\nYa quedó en el pedido y en Pendientes de Diseño.`).catch(() => {});
+                    return rNum;
+                }
                 console.warn(`[AI_ORDER] ${contactId} confirmó un cambio pero ${rNum} ya no es editable (${r.vendedor || 'manual'}, ${r.estatus}, review: ${r.aiReviewStatus || '-'}). Se avisa al admin.`);
                 await logFailure(contactId, name, `cambio_no_aplicado: ${rNum} ya no es editable (${r.estatus}${r.registeredByAI ? ', IA' : ', manual'})`);
                 await alertAdmin(`⚠️ *El cliente cambió/confirmó un pedido, pero ya existe ${rNum} reciente* (${r.estatus || 'Sin estatus'}${r.registeredByAI ? ', registrado por IA' : ', registrado manual'}${r.aiReviewStatus === 'approved' ? ', ya revisado' : ''}).\n\n*Cliente:* ${name}\n*Tel:* ${contactId}\n\nLo que el cliente confirmó ahora:\n${itemsTxt}\nTotal: $${extraction.total}\n\nRevisa el chat y edita/registra tú desde el CRM. La IA no creó ni modificó nada.`);
@@ -751,6 +798,7 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
 }
 
 module.exports = {
+    itemsAgregados,
     getAiOrderConfig,
     buildRegistrationRule,
     extractOrderFromChat,

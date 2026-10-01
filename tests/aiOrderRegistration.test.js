@@ -227,3 +227,42 @@ test('sin pedido registrado, un registro con datos incompletos sigue yendo al eq
     expect(await run('Cliente: Sí')).toBeNull();
     expect(contact()).toMatchObject({ botActive: false, status: 'pendientes_ia', needsAttentionReason: 'registro_pedido' });
 });
+
+describe('conciliación 1-oct-2026: el cliente agrega lámparas a un pedido que ya avanzó', () => {
+    const dino = (nombre, precio) => ({ producto: 'Lámpara infantil T-Rex', cantidad: 1, precio, datosProducto: `Nombre: ${nombre} | Personaje: Dinosaurio` });
+    const { itemsAgregados } = require('../server/orders/aiOrderRegistration');
+
+    test('itemsAgregados: solo agregar devuelve las nuevas; cambiar una existente devuelve null', () => {
+        expect(itemsAgregados([dino('Dominic', 750)], [dino('Dominic', 600), dino('Emiliano', 600)])).toEqual([dino('Emiliano', 600)]);
+        expect(itemsAgregados([dino('Dominic', 750)], [dino('Dominik', 600), dino('Emiliano', 600)])).toBeNull();
+        expect(itemsAgregados([dino('Dominic', 750)], [dino('Dominic', 750)])).toBeNull();
+    });
+
+    test('DH17262: en "Foto enviada" sin pagar, se agregan al mismo pedido con el total de la promoción', async () => {
+        mockDocs.set('pedidos/p1', { ...order(), items: [dino('Dominic', 750)], precio: 750, estatus: 'Foto enviada' });
+        extract([dino('Dominic', 600), dino('Emiliano', 600)]);
+        expect(await run('Cliente: Y otra con el nombre de Emiliano')).toBe('DH16731');
+        expect(order()).toMatchObject({ precio: 1200, designForce: true });
+        expect(order().items).toHaveLength(2);
+        expect(order().comentarios).toMatch(/Emiliano/);
+        expect(createOrder).not.toHaveBeenCalled();
+        expect(contact().needsAttention).toBeUndefined();
+    });
+
+    test('ya pagado: el pedido original no se toca (las nuevas van en un pedido aparte, como antes)', async () => {
+        mockDocs.set('pedidos/p1', { ...order(), items: [dino('Dominic', 750)], precio: 750, estatus: 'Pagado', comprobanteValidadoAt: mockTimestamp(Date.now()) });
+        extract([dino('Dominic', 600), dino('Emiliano', 600)]);
+        expect(await run('Cliente: Y otra con el nombre de Emiliano')).toBe('DH16732');
+        expect(order().precio).toBe(750);
+        expect(order().items).toHaveLength(1);
+        expect(createOrder).toHaveBeenCalledTimes(1);
+    });
+
+    test('en Fabricar: agregar sigue pidiendo revisión humana', async () => {
+        mockDocs.set('pedidos/p1', { ...order(), items: [dino('Dominic', 750)], precio: 750, estatus: 'Fabricar' });
+        extract([dino('Dominic', 600), dino('Emiliano', 600)]);
+        expect(await run('Cliente: Y otra con el nombre de Emiliano')).toBeNull();
+        expect(order().precio).toBe(750);
+        expect(contact().needsAttentionReason).toBe('cambio_no_aplicado');
+    });
+});
