@@ -4160,9 +4160,27 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             }
         } catch (e) { console.warn('[AI] aviso pago-sin-comprobante falló (se continúa):', e.message); }
 
+        // MENSAJE DE UNA PERSONA DEL EQUIPO (DH17413, 1-oct-2026): el equipo pidió la ubicación de Maps; la
+        // clienta preguntó "¿te mando mi ubicación o cómo?" y la IA contestó "No es necesario", porque en el
+        // historial esos mensajes se ven igual que los suyos. Los mensajes humanos del CRM no llevan
+        // isAutoReply ni source (los de la IA, plantillas, recordatorios y seguimientos sí).
+        let equipoNote = '';
+        try {
+            const SEIS_H = 6 * 60 * 60 * 1000;
+            const humano = messagesSnapshot.docs.map(d => d.data()).find(m => {
+                const t = (m.timestamp && typeof m.timestamp.toMillis === 'function') ? m.timestamp.toMillis() : 0;
+                return m.from !== contactId && !m.isAutoReply && !m.source && m.status !== 'scheduled'
+                    && (m.text || '').trim() && t && (Date.now() - t) < SEIS_H;
+            });
+            if (humano) {
+                equipoNote = `
+
+**UNA PERSONA DEL EQUIPO le escribió al cliente hace poco:** «${String(humano.text).trim().slice(0, 400)}». Lo que el equipo pide o dice MANDA sobre tus notas: si el cliente responde a eso o pregunta cómo hacerlo, ayúdale a cumplirlo (explícale cómo, en su canal) y NUNCA le digas que no es necesario ni lo contradigas. Si no sabes para qué lo pidió, dile que el equipo lo necesita para su pedido.`;
+            }
+        } catch (_) {}
         // Reintento de registro vigente (server/orders/registrationRetry.js): pedir SOLO lo que falta.
         const registroPendienteNote = require('./orders/registrationRetry').retryNote(contactData);
-        const finalUserText = `${registroPendienteNote}${disenoTerminadoNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${agregarNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${equipoNote}${registroPendienteNote}${disenoTerminadoNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${agregarNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
@@ -4663,7 +4681,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const orderNumber = lastOrderNum != null ? `DH${lastOrderNum}` : null;
                 const de = orderNumber ? await getShippingDataForOrder(orderNumber) : null;
                 if (de && lastOrder.data().shippingDataConfirmationStatus) {
-                    msgText = '¡Gracias! 😊';
+                    // Antes era solo "¡Gracias! 😊", y respondía así a preguntas reales ("¿qué pasó, sigue?", DH17413).
+                    msgText = '¡Gracias! Ya tenemos tus datos de envío ✅ En cuanto salga tu paquete te comparto tu número de guía por aquí 📦';
+                    const yaDicho = messagesSnapshot.docs.some(d => { const m = d.data(); const t = m.timestamp && m.timestamp.toMillis ? m.timestamp.toMillis() : 0;
+                        return m.from !== contactId && t && Date.now() - t < 12 * 3600000 && /Ya tenemos tus datos de envío/.test(m.text || ''); });
+                    if (yaDicho) msgText = '¡Con gusto! ✨ Te comparto tu guía por aquí en cuanto salga tu paquete 📦';
                     skipShortcutExpansion = true;
                 } else if (de && require('./payments/paymentPolicy').awaitingPaymentApproval(lastOrder.data())) {
                     msgText = '¡Gracias! Tus datos de envío ya quedaron guardados. El equipo dará seguimiento a la revisión de tu pago.';
