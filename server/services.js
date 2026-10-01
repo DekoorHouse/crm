@@ -1023,6 +1023,7 @@ const INFANTIL_SPECIAL_NOTE = `\n\n**ANTICIPO DE $300 POR LÁMPARA EN DISEÑOS E
   – Lleva un LOGOTIPO de empresa, negocio o profesión.
   – Es un modelo estándar MODIFICADO: modificarlo lo vuelve especial. Ej.: corazones con nombres DENTRO de los corazones, más nombres o más datos de los que lleva el modelo, otra distribución, frase larga, cambiar la cantidad de corazones.
 • El anticipo es POR LÁMPARA ESPECIAL: 1 = $300, 2 = $600, 3 = $900. Las piezas estándar del mismo pedido NO llevan anticipo (se pagan al ver la foto, como siempre). Calcula y di el total del anticipo cuando haya varias.
+• ⚠️ UNA OPCIÓN POR LÁMPARA: si el cliente menciona dos modelos o dos nombres para la misma lámpara ("un angelito o un Mickey", "Grace o Graciela"), pregúntale cuál quiere ANTES del resumen y del anticipo. Nunca pongas "X o Y" en un resumen: el pedido no se puede registrar así (caso 5218713494183: pagó el anticipo con "Angelito o Mickey" sin definir y el registro falló).
 • ⚠️ PEDIDO MIXTO (catálogo + especial): cuenta SOLO las especiales. Ej.: el dinosaurio del anuncio + una lámpara con foto = 1 especial → anticipo de *$300*, NO $600. Caso real (DH17474): el cliente ya tenía su dinosaurio registrado SIN anticipo, agregó una con foto, y se le cobraron $600 "por las dos": la pieza de catálogo NUNCA suma anticipo, aunque esté en el mismo pedido o se haya pedido antes. Antes de decir el monto, enumera cuáles piezas son especiales y multiplica solo esas.
 • Si el cliente reclama que "al principio dijiste que no había anticipo y ahora sí": NO te retractes ni lo quites. Explícale con amabilidad que el diseño que pidió AHORA es especial (foto, logo, cambio, personaje fuera de catálogo) y por eso lleva anticipo. Si regresa al diseño normal, se queda SIN anticipo como al inicio.
 • FLUJO del especial: explica el anticipo con calidez, da los datos de pago, y NO registres el pedido ni digas "ya registramos" hasta ver el comprobante del anticipo (por el monto correcto). NUNCA menciones derechos de autor, licencias, permisos ni marcas como motivo: di solo que es un DISEÑO ESPECIAL hecho a su medida. Como es diseño a mano, NO prometas una foto/preview "para mañana".
@@ -4509,7 +4510,10 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             const hablamosDeAnticipo = messagesSnapshot.docs.some(d => d.data().from !== contactId && /anticipo/i.test(d.data().text || ''));
             // Con reintento vigente se evalúa aunque la IA sí haya escrito /registrar: si ese registro
             // también falla por falta de datos, la IA debe seguir encendida igual.
-            if (!isPostVenta && (retryVigente || (!registerOrderCmd && !anticipoPaidCmd && archivosLote.length && hablamosDeAnticipo))) {
+            // También cuando la IA SÍ escribió /registrar o /anticipopagado: si ese registro falla por falta de
+            // datos, la IA debe seguir encendida pidiéndolos (5218713494183, 1-oct-2026: pagó el anticipo, la IA
+            // escribió /registrar, faltaba elegir "Angelito o Mickey" y se apagó con "necesita revisión").
+            if (!isPostVenta && (retryVigente || (archivosLote.length && hablamosDeAnticipo))) {
                 const ids = archivosLote.map(m => m.id).slice(0, 10);
                 const [receiptSnap, ordersSnap] = await Promise.all([
                     ids.length ? db.collection('payment_receipts').where('contactId', '==', contactId).where('messageId', 'in', ids).get() : null,
