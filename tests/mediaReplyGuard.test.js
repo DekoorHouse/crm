@@ -185,3 +185,11 @@ test('includes previously sent files and latest order without treating them as a
         reason: expect.stringContaining('Ya hay archivos enviados'),
     });
 });
+
+test('después de "Atendido" por el mismo motivo, una nueva promesa no vuelve a marcar el chat', async () => {
+    mockDb.seed('contacts_whatsapp/customer', { name: 'Cliente', needsAttention: false, attendedAt: new Date(), attendedReason: 'equipo' });
+    const result = await protectMediaReply({ contactId: 'customer', text: 'Aquí te mando la foto del diseño.' });
+    expect(result.blocked).toBe(true);
+    expect(mockDb.read('contacts_whatsapp/customer').needsAttention).toBe(false);
+    expect(mockDb.read('contacts_whatsapp/customer').mediaRequestPending).toBe(true);
+});

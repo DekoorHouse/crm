@@ -446,8 +446,11 @@ router.post('/mockup/:orderId/ocultar', async (req, res) => {
 router.post('/atencion/:contactId/atendido', async (req, res) => {
     const { contactId } = req.params;
     try {
-        await db.collection('contacts_whatsapp').doc(String(contactId))
-            .update({ needsAttention: false, needsAttentionReason: null, mediaDeliveryPending: false, deliveryIncidentPending: false });
+        const ref = db.collection('contacts_whatsapp').doc(String(contactId));
+        const prev = ((await ref.get()).data() || {}).needsAttentionReason || null;
+        // attendedAt/attendedReason: ese mismo motivo no vuelve a marcar el chat en 12 h (server/attentionSilence.js).
+        await ref.update({ needsAttention: false, needsAttentionReason: null, mediaDeliveryPending: false, deliveryIncidentPending: false,
+            mediaRequestPending: false, attendedAt: admin.firestore.FieldValue.serverTimestamp(), attendedReason: prev });
         res.json({ success: true });
     } catch (e) {
         console.error('[PENDIENTES/atendido] error:', e.message);
@@ -467,6 +470,7 @@ router.post('/atencion/:contactId/reabrir', async (req, res) => {
             needsAttentionReason: reason || null,
             ...(mediaDeliveryPending === true ? { mediaDeliveryPending: true } : {}),
             ...(deliveryIncidentPending === true ? { deliveryIncidentPending: true } : {}),
+            attendedAt: admin.firestore.FieldValue.delete(), attendedReason: admin.firestore.FieldValue.delete(),
             needsAttentionAt: at
                 ? admin.firestore.Timestamp.fromMillis(Number(at))
                 : admin.firestore.FieldValue.serverTimestamp(),

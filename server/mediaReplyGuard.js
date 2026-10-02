@@ -105,9 +105,10 @@ async function protectMediaReply({ contactId, text, fileUrl = null, source = 'ai
             return ms(b.data().createdAt) - ms(a.data().createdAt);
         })[0];
         const pending = contact.needsAttention === true && contact.needsAttentionReason === 'equipo' && contact.mediaRequestPending === true;
+        // Si el equipo ya le dio "Atendido" por este motivo, se registra la petición pero no se vuelve a marcar.
+        const silenciado = require('./attentionSilence').silenciadoPorAtendido(contact, 'equipo');
         tx.update(ref, {
-            needsAttention: true, needsAttentionReason: 'equipo',
-            needsAttentionAt: admin.firestore.FieldValue.serverTimestamp(),
+            ...(silenciado ? {} : { needsAttention: true, needsAttentionReason: 'equipo', needsAttentionAt: admin.firestore.FieldValue.serverTimestamp() }),
             mediaRequestPending: true,
             mediaRequest: { reason: priorAttachments.length
                 ? 'La respuesta anuncia un adjunto que no incluye. Ya hay archivos enviados en el historial; revisar cuál corresponde, sin asumir que falta el diseño.'

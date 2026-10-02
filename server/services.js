@@ -5000,7 +5000,8 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // Además, marca la conversación para ATENCIÓN humana en el CRM (se fija arriba de la lista
             // y parpadea azul navy): el cliente pidió algo que la IA no puede dar. Se limpia cuando un
             // humano responde / enciende la IA / da "Atendido". Fire-and-forget.
-            contactRef.update({
+            // Si el equipo ya le dio "Atendido" por este motivo hace menos de 12 h, no se vuelve a marcar.
+            if (!require('./attentionSilence').silenciadoPorAtendido(contactData, 'equipo')) contactRef.update({
                 needsAttention: true,
                 needsAttentionReason: 'equipo',
                 needsAttentionAt: admin.firestore.FieldValue.serverTimestamp()

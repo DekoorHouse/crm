@@ -36,23 +36,27 @@ window.scheduleContactListRender = scheduleContactListRender;
 
 // --- ATENCIÓN URGENTE: limpiar el estado "necesita atención" de una conversación. ---
 // Se llama cuando un humano RESPONDE, ENCIENDE la IA, o le da clic a "Atendido".
-async function clearNeedsAttention(contactId) {
+async function clearNeedsAttention(contactId, { manual = false } = {}) {
     if (!contactId) return;
     const c = state.contacts.find(x => x.id === contactId);
     // Mismas marcas que el "Atendido" de Pendientes: también la foto/video fallido y la entrega en disputa,
     // para que el chat salga de "Apoyo humano" al responderle.
     if (c && c.needsAttention !== true && c.mediaDeliveryPending !== true && c.deliveryIncidentPending !== true) return; // ya está limpio
+    const motivo = c ? (c.needsAttentionReason || null) : null;
     if (c) { c.needsAttention = false; c.needsAttentionReason = null; c.mediaDeliveryPending = false; c.deliveryIncidentPending = false; } // optimista
     scheduleContactListRender();
     try {
-        await db.collection('contacts_whatsapp').doc(contactId).update({ needsAttention: false, needsAttentionReason: null, mediaDeliveryPending: false, deliveryIncidentPending: false });
+        const upd = { needsAttention: false, needsAttentionReason: null, mediaDeliveryPending: false, deliveryIncidentPending: false };
+        // Botón "Atendido": ese mismo motivo no vuelve a marcar el chat en 12 h (server/attentionSilence.js).
+        if (manual) Object.assign(upd, { mediaRequestPending: false, attendedAt: firebase.firestore.FieldValue.serverTimestamp(), attendedReason: motivo });
+        await db.collection('contacts_whatsapp').doc(contactId).update(upd);
     } catch (e) { console.warn('[ATENCION] no se pudo limpiar:', e.message); }
 }
 window.clearNeedsAttention = clearNeedsAttention;
 // Botón "Atendido" (en la cabecera del chat): quita lo urgente sin tener que responder.
 function handleMarkAttended(event, contactId) {
     if (event) event.stopPropagation();
-    clearNeedsAttention(contactId || state.selectedContactId);
+    clearNeedsAttention(contactId || state.selectedContactId, { manual: true });
 }
 window.handleMarkAttended = handleMarkAttended;
 
