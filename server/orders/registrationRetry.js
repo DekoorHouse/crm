@@ -30,7 +30,10 @@ function retryNote(contact) {
     const r = contact && contact.registrationRetry;
     if (!retryActive(contact)) return '';
     const falta = String((r && r.faltante) || '').replace(/^el extractor no lo ve listo:\s*/i, '').trim();
-    return `\n\n**REGISTRO PENDIENTE (el cliente YA mandó el comprobante del anticipo):** su pedido todavía no se puede registrar porque faltan datos${falta ? ` — según el sistema: ${falta}` : ''}. Pídele con amabilidad SOLO lo que falta (y confirma el resumen si hace falta). NO le pidas otra vez el comprobante ni el pago, y NO digas que ya está registrado: el sistema lo registra solo en cuanto estén los datos.`;
+    // conComprobante === false: el reintento lo abrió un registro normal (sin anticipo pagado), no hay que
+    // decirle a la IA que ya pagó.
+    const sinPago = r.conComprobante === false;
+    return `\n\n**REGISTRO PENDIENTE${sinPago ? '' : ' (el cliente YA mandó el comprobante del anticipo)'}:** su pedido todavía no se puede registrar porque faltan datos${falta ? ` — según el sistema: ${falta}` : ''}. Pídele con amabilidad SOLO lo que falta (y confirma el resumen completo, con el total).${sinPago ? '' : ' NO le pidas otra vez el comprobante ni el pago.'} NO digas que ya está registrado: el sistema lo registra en cuanto estén los datos.`;
 }
 
 module.exports = { retryActive, isMissingDataFailure, retryNote, RETRY_MAX_ATTEMPTS, RETRY_WINDOW_MS };

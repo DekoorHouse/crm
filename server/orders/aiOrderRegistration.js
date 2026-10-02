@@ -495,6 +495,7 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
     });
     let claimed = false;
     let existingForCatch = null;   // pedido ya registrado de esta compra (lo usa el catch de abajo)
+    let extraccionForCatch = null; // lo último que vio el extractor (¿era un pedido NUEVO?)
     try {
         claimed = await claimInFlight();
         if (!claimed) {
@@ -519,7 +520,7 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
         const existingRec = await findRecentOrderForContact(contactId, purchaseContact.activePurchaseSessionId).catch(() => null);
         existingForCatch = existingRec;
         const completeHistory = await require('./registrationHistory').loadRegistrationHistory(contactRef, contactId, conversationText);
-        const { extraction, motivo: motivoExtraccion } = await extractOrderDetailed({
+        const detallada = await extractOrderDetailed({
             conversationText: completeHistory,
             name,
             catalogText: cfg.catalogText,
@@ -538,6 +539,8 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             } : null
         });
 
+        const { extraction, motivo: motivoExtraccion } = detallada;
+        extraccionForCatch = extraction || null;
         if (!extraction) throw new Error(motivoExtraccion || 'el extractor no devolvió nada');
         if (!extraction.listo) throw new Error(`el extractor no lo ve listo: ${extraction.faltante || 'sin motivo'}`);
         if (extraction.items.length === 0) throw new Error('el extractor no devolvió productos');
@@ -745,7 +748,10 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
         // cliente se volvió a intentar, el extractor dudó entre "Grace" y "Graciela" y el cliente recibió
         // "el registro necesita revisión del equipo", con la IA apagada y el chat en Pendientes IA). Nada
         // se perdió: se conserva el pedido, se deja registrada la falla y la IA sigue atendiendo.
-        if (existingForCatch && !isOrderDone(existingForCatch.data) && require('./registrationRetry').isMissingDataFailure(e.message)) {
+        // Si lo que no estaba listo era un pedido NUEVO (esAdicional), devolver el anterior lo daría por
+        // registrado sin estarlo (DH17381, 29-sep-2026: "Chris y Danna Ariana" eran otra compra): va al reintento.
+        const esPedidoNuevo = !!(extraccionForCatch && extraccionForCatch.esAdicional === true);
+        if (existingForCatch && !esPedidoNuevo && !isOrderDone(existingForCatch.data) && require('./registrationRetry').isMissingDataFailure(e.message)) {
             const n = existingForCatch.data.consecutiveOrderNumber;
             console.log(`[AI_ORDER] ${contactId}: ya existe ${n != null ? 'DH' + n : existingForCatch.id}; la confirmación extra no se manda al equipo.`);
             return n != null ? `DH${n}` : existingForCatch.id;
@@ -756,13 +762,19 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
         try {
             const retry = require('./registrationRetry');
             const current = (await contactRef.get()).data() || {};
+            // FALTAN DATOS (con o sin anticipo): la IA sigue encendida pidiéndolos y cada turno reintenta. Antes
+            // esto apagaba la IA y dejaba al cliente sin respuesta días (DH17381: 3 días). Se abre el reintento
+            // si no había uno; al agotarse (intentos o 48 h) cae al flujo manual de abajo.
+            if (retry.isMissingDataFailure(e.message) && !current.registrationRetry) {
+                current.registrationRetry = { since: new Date(), attempts: 0, conComprobante: false };
+                await contactRef.update({ registrationRetry: current.registrationRetry });
+            }
             if (retry.isMissingDataFailure(e.message) && retry.retryActive(current)) {
                 const attempts = (Number(current.registrationRetry.attempts) || 0) + 1;
-                await contactRef.update({
-                    'registrationRetry.attempts': attempts,
-                    'registrationRetry.faltante': String(e.message).slice(0, 400),
-                    'registrationRetry.lastAt': admin.firestore.FieldValue.serverTimestamp(),
-                });
+                await contactRef.update({ registrationRetry: {
+                    ...current.registrationRetry, attempts,
+                    faltante: String(e.message).slice(0, 400), lastAt: new Date(),
+                } });
                 if (retry.retryActive({ registrationRetry: { ...current.registrationRetry, attempts } })) {
                     console.log(`[AI_ORDER] ${contactId}: faltan datos (intento ${attempts}/${retry.RETRY_MAX_ATTEMPTS}); la IA sigue encendida pidiéndolos.`);
                     return null;

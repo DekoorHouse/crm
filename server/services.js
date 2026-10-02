@@ -4590,9 +4590,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // no lo agotó), la IA sigue pidiendo lo que falta; solo se quitan las frases que den por registrado
         // o por pagado algo que aún no lo está.
         let retrySigue = false;
-        if (registroEnReintento) {
+        // También cuando el registro lo pidió la IA (/registrar, cierre) y falló por falta de datos:
+        // aiOrderRegistration abre el reintento y aquí se evita el "necesita revisión" que apagaba la IA.
+        if (registroEnReintento || paymentRegistrationAttempted) {
             if (paymentRegisteredOrderNumber) {
-                contactRef.update({ registrationRetry: admin.firestore.FieldValue.delete() }).catch(() => {});
+                if (registroEnReintento || contactData.registrationRetry) contactRef.update({ registrationRetry: admin.firestore.FieldValue.delete() }).catch(() => {});
             } else {
                 try { retrySigue = registrationRetry.retryActive((await contactRef.get()).data()); } catch (_) {}
             }

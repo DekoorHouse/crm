@@ -221,10 +221,27 @@ test('DH17517: una confirmación extra con el pedido ya registrado no lo manda a
     expect(createOrder).not.toHaveBeenCalled();
 });
 
-test('sin pedido registrado, un registro con datos incompletos sigue yendo al equipo', async () => {
+test('DH17381: datos incompletos ya no apagan la IA: se abre el reintento y se pide lo que falta', async () => {
+    mockDocs.delete('pedidos/p1');
+    services.generateGeminiResponse.mockResolvedValue({ text: JSON.stringify({ listo: false, faltante: 'Falta confirmar el modelo', items: [], total: 0, confianza: 60 }) });
+    expect(await run('Cliente: Chris y Danna Ariana')).toBeNull();
+    expect(contact().botActive).toBe(true);
+    expect(contact().status).toBeUndefined();
+    expect(contact().registrationRetry).toMatchObject({ attempts: 1, conComprobante: false });
+    expect(contact().registrationRetry.faltante).toMatch(/modelo/);
+});
+
+test('DH17381: con un pedido anterior, si lo incompleto es un pedido NUEVO no se da por registrado el anterior', async () => {
+    mockDocs.set('pedidos/p1', { ...order(), estatus: 'Foto enviada' });
+    services.generateGeminiResponse.mockResolvedValue({ text: JSON.stringify({ listo: false, esAdicional: true, faltante: 'Falta confirmar el resumen del pedido nuevo', items: [], total: 0, confianza: 60 }) });
+    expect(await run('Cliente: Chris y Danna Ariana')).toBeNull();
+    expect(contact().registrationRetry).toBeTruthy();
+});
+
+test('los intentos se agotan y entonces sí va al equipo', async () => {
     mockDocs.delete('pedidos/p1');
     services.generateGeminiResponse.mockResolvedValue({ text: JSON.stringify({ listo: false, faltante: 'Falta el nombre', items: [], total: 0, confianza: 60 }) });
-    expect(await run('Cliente: Sí')).toBeNull();
+    for (let i = 0; i < 6; i++) await run('Cliente: Sí');
     expect(contact()).toMatchObject({ botActive: false, status: 'pendientes_ia', needsAttentionReason: 'registro_pedido' });
 });
 
