@@ -8736,7 +8736,7 @@ router.get('/design-pending', async (req, res) => {
             // Ya NO se traen los 'Sin estatus': su único motivo aquí era "falta mockup", que desde el
             // 2026-08-06 vive en la sección "Pendientes". Si uno de ellos tiene otro pendiente real
             // (pagado sin cortar, 2º producto, empujado a mano) entra igual por sPag/sProd/sForce.
-            const [sFab, sCor, sProd, sPag, sForce, sReenvio] = await Promise.all([
+            const [sFab, sCor, sProd, sPag, sForce, sReenvio, sAnt] = await Promise.all([
                 db.collection('pedidos').where('estatus', '==', 'Fabricar').limit(1000).get(),
                 db.collection('pedidos').where('estatus', '==', 'Corregir').get(),
                 db.collection('pedidos').orderBy('productoAgregadoPostPagoAt', 'desc').limit(200).get(),
@@ -8748,8 +8748,10 @@ router.get('/design-pending', async (req, res) => {
                 // suele ser VIEJO (el pedido se entregó hace días) y no entraría por el orderBy de arriba,
                 // así que se traen aparte para que siempre reaparezcan en Pendientes. Chris, 2026-08-01.
                 db.collection('pedidos').where('estatus', '==', 'Reenvio').limit(300).get(),
+                // Anticipo recibido y en revisión: el diseño empieza sin esperar la validación (motivo 'anticipo_revision').
+                db.collection('pedidos').where('estatus', '==', 'Esperando anticipo').limit(300).get(),
             ]);
-            [sFab, sCor, sProd, sPag, sForce, sReenvio].forEach(s => s.forEach(d => byId.set(d.id, d)));
+            [sFab, sCor, sProd, sPag, sForce, sReenvio, sAnt].forEach(s => s.forEach(d => byId.set(d.id, d)));
 
             // Previews (mockup_previews) de los 'Fabricar' y los 'Corregir' (para saber si el worker los
             // va a cortar solo). Un solo lote reutilizable.

@@ -39,3 +39,11 @@ test('corrección en venta (designForceAt) regresa la tarjeta de Terminado a Pen
     expect(enTerminado(order)).toBe(false);
     expect(reasonsForOrderData(order)).toEqual(['manual']);
 });
+
+test('anticipo con comprobante en revisión aparece en Diseño sin esperar la validación', () => {
+    expect(reasonsForOrderData({ estatus: 'Esperando anticipo', paymentProductionStatus: 'review' })).toEqual(['anticipo_revision']);
+    // Sin comprobante (solo prometió pagar) todavía no.
+    expect(reasonsForOrderData({ estatus: 'Esperando anticipo' })).toEqual([]);
+    // Ya marcado Diseñado después del comprobante: no reaparece.
+    expect(reasonsForOrderData({ estatus: 'Esperando anticipo', paymentProductionStatus: 'review', disenoListoAt: ts('2026-10-02T12:00:00Z') })).toEqual([]);
+});

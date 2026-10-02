@@ -49,7 +49,12 @@ async function reconcilePaymentProduction(orderId) {
         });
         return { ...order, estatus: 'Fabricar', advance };
     });
-    if (!claimed) return { status: 'unchanged' };
+    if (!claimed) {
+        // El comprobante del anticipo pudo dejar el pedido en 'Esperando anticipo' (revisión): refrescar la
+        // bandera de Pendientes de Diseño para que el diseño empiece sin esperar la validación.
+        try { await require('../design/designPending').recomputeForOrder(orderId); } catch (_) { /* nunca frena el pago */ }
+        return { status: 'unchanged' };
+    }
     try {
         // Estos efectos ya son idempotentes por pedido; una caída conserva la cola.
         const inventory = await require('../inventario/inventarioService').descontarInventarioPorPedido(orderId, claimed, 'Fabricar');

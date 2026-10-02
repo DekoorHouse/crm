@@ -287,6 +287,7 @@ const DP_MOTIVOS = {
     datos: ['Datos', '#fd7e14', 'fa-triangle-exclamation'],
     video: ['Video', '#e83e8c', 'fa-video'],
     segundo_producto: ['+Producto', '#2563eb', 'fa-plus'],
+    anticipo_revision: ['Anticipo por validar', '#b45309', 'fa-hourglass-half'],   // ya mandó el comprobante; se diseña sin esperar la validación
     manual: ['Desde Mockup', '#0d9488', 'fa-wand-magic-sparkles'],   // empujado a mano desde la sección Mockup ("A Diseño")
     reenvio: ['Reenvío', '#c026d3', 'fa-rotate-right'],              // reposición: re-hacer el diseño desde el principio
 };

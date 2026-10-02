@@ -31,7 +31,7 @@ const DONE = new Set([
     'cancelado', 'entregado', 'devolución', 'devolucion', 'mns amenazador',
 ]);
 
-const REASONS = ['fabricar', 'corte', 'datos', 'video', 'segundo_producto', 'manual', 'reenvio'];
+const REASONS = ['fabricar', 'corte', 'datos', 'video', 'segundo_producto', 'manual', 'reenvio', 'anticipo_revision'];
 // Motivos de la OTRA sección ("Pendientes", Lupita). 'video' vive en las DOS listas a propósito
 // desde el 2026-09-09: ahí lo graba y lo manda Lupita, aquí se ve como corrección abierta (ver
 // reasonsForOrderData). Es el único motivo compartido.
@@ -178,6 +178,12 @@ function reasonsForOrderData(d) {
     // Red de seguridad: pagado y sin diseñar sigue siendo un pendiente aunque su estatus sea 'Pagado'
     // y aunque ya tenga guía (ver CORTE_DESDE_MS arriba). Solo si ningún otro motivo lo cubre ya.
     if (!reasons.length && faltaCorte(d)) reasons.push('corte');
+
+    // ANTICIPO EN REVISIÓN (Chris, 2-oct-2026): "todos los anticipos que he checado son válidos y
+    // checarlos entorpece el diseño". Con el comprobante del anticipo recibido (paymentProduction lo pone
+    // en 'Esperando anticipo' + paymentProductionStatus 'review'), el diseño ya puede empezar. Lo demás
+    // (Fabricar, evento Purchase, inventario) sigue esperando a que se valide el pago.
+    if (!reasons.length && estatus === 'esperando anticipo' && d.paymentProductionStatus === 'review') reasons.push('anticipo_revision');
 
     if (d.productoAgregadoPostPagoAt) reasons.push('segundo_producto');
 
