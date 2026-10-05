@@ -54,6 +54,14 @@ function paymentReply(context, { customerText = '', aiText = '', receiptPresent 
                 ? `Tu pago completo${name} ya está registrado. No necesitas volver a pagar ni reenviar el comprobante.${paymentComplaint(customerText) ? ' Disculpa la confusión.' : ''}`
                 : `Ya recibimos los comprobantes${name} que cubren el total. El equipo está revisando su acreditación; no necesitas reenviarlos.`];
         }
+        // El formulario ya incluye el agradecimiento... salvo que el comprobante de AHORA no sea de este
+        // pedido: si quedó uno abierto sin pedido (pending), callar dejaba al cliente sin respuesta
+        // (DH17356, 3-oct-2026: anticipo de una lámpara nueva tras un pedido ya pagado y enviado).
+        if (receiptPresent && context.formSent && context.pending > 0) {
+            return (requestsPaymentAgain(aiText) || fullPaymentClaim(aiText) || require('./paymentPolicy').claimsPayment(aiText))
+                ? ['Recibimos tu comprobante y el equipo está revisando a qué pedido corresponde. En un momento te confirmamos 😊']
+                : null;
+        }
         if (receiptPresent && context.formSent) return []; // el formulario ya incluye el agradecimiento
         if (!context.formSent) return [context.hasPaid
             ? 'Tu pago completo está registrado. Tu formulario de envío quedó pendiente y el equipo le dará seguimiento.'

@@ -29,7 +29,12 @@ async function scopeIncomingMessage(contactId, messageId, message) {
         if (named) return { purchaseOrderId: named.id, ...(named.data().purchaseSessionId ? { purchaseSessionId: named.data().purchaseSessionId } : {}) };
         const previous = orders.some(d => d.data().guiaEnvio?.guia || /^(Enviado|Entregado|Pagado)$/.test(d.data().estatus || ''));
         const activeOrder = orders.find(d => d.data().purchaseSessionId === c.activePurchaseSessionId && c.activePurchaseSessionId);
-        const intent = purchaseIntent(message.text, c.purchaseClarificationPending);
+        // Llegó desde un ANUNCIO y su pedido anterior ya salió (guía) o se entregó: es una compra nueva, sin
+        // preguntar. DH17356 (3-oct-2026): "Me interesa una lámpara con nombre" quedó como pregunta
+        // pendiente, la bienvenida del anuncio contestó en lugar de la IA, el siguiente mensaje la borró y
+        // el anticipo de la lámpara nueva se cruzó con el pedido ya pagado (la IA se quedó callada).
+        const yaSalio = orders.some(d => d.data().guiaEnvio?.guia || /^(Enviado|Entregado)$/.test(d.data().estatus || ''));
+        const intent = (message.adId && yaSalio) ? 'new' : purchaseIntent(message.text, c.purchaseClarificationPending);
         const start = ms(message.timestamp);
         const canStart = previous && (!c.activePurchaseSessionId || (activeOrder && (activeOrder.data().guiaEnvio?.guia || /^(Enviado|Entregado|Pagado)$/.test(activeOrder.data().estatus || ''))));
         if (intent === 'new' && canStart && start > ms(c.activePurchaseStartedAt)) {

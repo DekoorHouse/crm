@@ -49,3 +49,8 @@ test('the clarification is asked only once: a vague answer returns to the previo
     expect(mockDb.read('contacts_whatsapp/c').purchaseClarificationPending).toBe(false);
     expect(mockDb.read('contacts_whatsapp/c').activePurchaseSessionId).toBeUndefined();
 });
+test('DH17356: un cliente con pedido ya enviado que vuelve por un anuncio abre compra nueva sin preguntar', async () => {
+    const r = await scopeIncomingMessage('c', 'ad', { text: '🌟 ¡Hola! Me interesa una lámpara con nombre 🌟 ¿Me das info? 😊', adId: '123', timestamp: new Date(3000) });
+    expect(r.purchaseSessionId).toBeTruthy();
+    expect(mockDb.read('contacts_whatsapp/c').purchaseClarificationPending).toBe(false);
+});

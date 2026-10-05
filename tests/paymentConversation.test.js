@@ -121,3 +121,8 @@ test('5214521824676: a refund claim is not a payment to register and never asks 
     expect(refundRequest('¿Dónde está mi guía?')).toBe(false);
     expect(paymentReply({}, { customerText: text })).toBeNull();
 });
+
+test('DH17356: un comprobante nuevo sin pedido no se calla aunque el pedido anterior ya tenga formulario', () => {
+    expect(paymentReply({ hasPaid: true, formSent: true, pending: 1 }, { receiptPresent: true, aiText: '¡Gracias! En cuanto lo revisemos registramos el pedido de Mateo.' })).toBeNull();
+    expect(paymentReply({ hasPaid: true, formSent: true, pending: 0 }, { receiptPresent: true })).toEqual([]);
+});
