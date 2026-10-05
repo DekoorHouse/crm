@@ -397,13 +397,16 @@ async function _pendPost(path, body) {
 }
 
 // Diálogo dentro de la página: conserva el comprobante y el motivo a la vista.
-function _pendPaymentDialog(title, contents, submitLabel = 'Confirmar') {
+// altLabel: botón extra (rojo, a la izquierda) que resuelve { __alt: true } sin validar el formulario.
+function _pendPaymentDialog(title, contents, submitLabel = 'Confirmar', altLabel = '') {
     return new Promise(resolve => {
         const dialog = document.createElement('dialog');
         dialog.style.cssText = 'max-width:540px;max-height:90vh;overflow:auto;width:calc(100% - 32px);box-sizing:border-box;padding:24px;border:1px solid #cbd5e1;border-radius:14px;color:#334155;background:white;box-shadow:0 20px 80px #0004';
-        dialog.innerHTML = `<form><h2 style="font-size:20px;margin:0 0 16px">${escapeHtml(title)}</h2>${contents}<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:22px"><button type="button" data-cancel class="pd-btn pd-btn-ghost" style="padding:10px 16px">Cancelar</button><button type="submit" class="pd-btn" style="padding:10px 16px;background:#15803d;color:white">${escapeHtml(submitLabel)}</button></div></form>`;
+        const alt = altLabel ? `<button type="button" data-alt class="pd-btn" style="padding:10px 16px;margin-right:auto;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5">${escapeHtml(altLabel)}</button>` : '';
+        dialog.innerHTML = `<form><h2 style="font-size:20px;margin:0 0 16px">${escapeHtml(title)}</h2>${contents}<div style="display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:22px">${alt}<button type="button" data-cancel class="pd-btn pd-btn-ghost" style="padding:10px 16px">Cancelar</button><button type="submit" class="pd-btn" style="padding:10px 16px;background:#15803d;color:white">${escapeHtml(submitLabel)}</button></div></form>`;
         const finish = value => { dialog.close(); dialog.remove(); resolve(value); };
         dialog.querySelector('[data-cancel]').onclick = () => finish(null);
+        if (alt) dialog.querySelector('[data-alt]').onclick = () => finish({ __alt: true });
         dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
         dialog.querySelector('form').onsubmit = event => { event.preventDefault(); finish(Object.fromEntries(new FormData(event.target))); };
         document.body.appendChild(dialog);
@@ -429,8 +432,9 @@ async function pendPaymentReview(id, col, button) {
         ${receipt.imageUrl ? `<a href="${escapeHtml(receipt.imageUrl)}" target="_blank" rel="noopener">Abrir comprobante</a>` : ''}
         ${!receipt.orderId ? `<label>Pedido de este contacto (deja vacío para registrar uno)<input name="orderNumber" value="${escapeHtml(receipt.orderNumber || '')}" placeholder="DH12345 o nuevo pedido" pattern="[Dd]?[Hh]?[0-9]+" style="${fieldStyle}"></label>` : ''}
         <label>Importe recibido en este comprobante (MXN)<input name="amount" type="number" min="0.01" step="0.01" required value="${escapeHtml(String(receipt.amount || ''))}" style="${fieldStyle}"></label>
-        <p style="font-size:14px;line-height:1.5">Primero revisaremos el saldo y los abonos anteriores. Todavía no se sumará este importe.</p>`, 'Revisar saldo');
+        <p style="font-size:14px;line-height:1.5">Primero revisaremos el saldo y los abonos anteriores. Todavía no se sumará este importe.</p>`, 'Revisar saldo', 'Descartar comprobante');
     if (!values) return;
+    if (values.__alt) return pendPaymentReject(id, button);
     const path = `payments/receipts/${encodeURIComponent(id)}`;
     const body = { amount: Number(values.amount), reactivate, orderNumber: values.orderNumber || receipt.orderNumber, reviewToken: receipt.reviewToken };
     button.disabled = true;
@@ -466,8 +470,10 @@ async function pendPaymentReview(id, col, button) {
             ${p.similarReceipts.length ? `<details open><summary>Comprobantes que podrían ser el mismo pago</summary><ul style="padding-left:20px">${p.similarReceipts.map(references).join('')}</ul></details>` : ''}
             ${p.risks.map(r => `<div style="margin:12px 0;padding:12px;border:1px solid #fca5a5;background:#fef2f2;border-radius:8px;color:#991b1b"><b>${escapeHtml(r.message)}</b><label style="display:flex;gap:8px;margin-top:10px;line-height:1.5"><input type="checkbox" required name="risk_${escapeHtml(r.code)}"> ${r.code === 'possible_duplicate' ? 'Comprobé que es otro ingreso, distinto de los abonos ya registrados.' : 'Revisé esta alerta y confirmé el importe recibido en el banco.'}</label></div>`).join('')}
             ${p.risks.length ? `<label style="display:flex;gap:8px;line-height:1.5;margin:14px 0"><input type="checkbox" required name="bankVerified"> Verifiqué el ingreso en el banco; no me basé únicamente en esta imagen.</label><label>Folio o evidencia del ingreso verificado<input name="bankEvidence" required minlength="8" maxlength="1000" placeholder="Folio, fecha e importe del movimiento en banco" style="${fieldStyle}"></label>` : ''}
-            <label style="display:flex;gap:8px;line-height:1.5;margin-top:14px"><input type="checkbox" required name="reviewed"> Confirmo que recibimos este nuevo abono y que el saldo mostrado es correcto.${reactivate ? ' Autorizo reactivar el pedido cancelado cuando quede liquidado.' : ''}</label>`, p.risks.length ? 'Registrar pago verificado en banco' : 'Registrar abono');
+            <label style="display:flex;gap:8px;line-height:1.5;margin-top:14px"><input type="checkbox" required name="reviewed"> Confirmo que recibimos este nuevo abono y que el saldo mostrado es correcto.${reactivate ? ' Autorizo reactivar el pedido cancelado cuando quede liquidado.' : ''}</label>`, p.risks.length ? 'Registrar pago verificado en banco' : 'Registrar abono',
+            p.similarReceipts.length ? 'Es duplicado: descartar' : 'Descartar comprobante');
         if (!confirmation) return;
+        if (confirmation.__alt) return await pendPaymentReject(id, button);
         await _pendPost(`${path}/review`, { ...body, verification: { safetyToken: p.safetyToken,
             confirmedRisks: p.risks.filter(r => confirmation[`risk_${r.code}`]).map(r => r.code),
             bankVerified: !!confirmation.bankVerified, bankEvidence: confirmation.bankEvidence || '' } });

@@ -300,14 +300,19 @@ async function processReceipt(id, options = {}) {
             await ref.update({ status: 'ignored', open: false, reason: 'La imagen no es un comprobante de pago.', leaseUntil: null, updatedAt: stamp() });
             return { status: 'ignored' };
         }
-        if (!claimed.orderId) {
-            // DH17315 (28-sep-2026): la clienta reenvió los DOS comprobantes que ya estaban aplicados
-            // (reclamando su guía). Como el pedido ya estaba pagado no se les asignó pedido y caían aquí,
-            // a la cola de revisión, antes de revisar si eran repetidos. Si la imagen o el folio ya se
-            // aplicaron a un pedido de este cliente, se cierra como duplicado sin pedirle nada a nadie.
+        // DH17315 (28-sep-2026): la clienta reenvió los DOS comprobantes que ya estaban aplicados
+        // (reclamando su guía). Como el pedido ya estaba pagado no se les asignó pedido y caían a la cola
+        // de revisión antes de revisar si eran repetidos. DH17112 (5-oct-2026): lo mismo CON pedido: los
+        // reenvíos llegaron días después y la regla de la fecha los mandaba a revisión como "duplicados".
+        // Sin pedido basta la imagen o el folio; con pedido, solo la MISMA imagen (un folio parecido podría
+        // ser otro depósito real del mismo cliente).
+        if (!claimed.orderId || !options.manual) {
+            const policy = require('./paymentPolicy');
             const previous = (await receipts().where('contactId', '==', claimed.contactId).get()).docs
                 .find(d => d.id !== ref.id && d.data().status === 'applied' && d.data().orderId
-                    && require('./paymentPolicy').possibleSamePayment({ contactId: claimed.contactId, ocr }, d.data()));
+                    && (claimed.orderId
+                        ? (ocr.imageHash && ocr.imageHash === d.data().ocr?.imageHash)
+                        : policy.possibleSamePayment({ contactId: claimed.contactId, ocr }, d.data())));
             if (previous) {
                 const p = previous.data();
                 await ref.update({ status: 'duplicate', open: false, orderId: p.orderId, orderNumber: p.orderNumber || null,
@@ -315,8 +320,8 @@ async function processReceipt(id, options = {}) {
                     leaseUntil: null, updatedAt: stamp() });
                 return { status: 'duplicate', orderId: p.orderId };
             }
-            return await reviewReceipt(ref, 'Comprobante sin pedido asignado: registrar o seleccionar el pedido correcto.');
         }
+        if (!claimed.orderId) return await reviewReceipt(ref, 'Comprobante sin pedido asignado: registrar o seleccionar el pedido correcto.');
         if (!options.manual && claimed.associationNeedsReview) return await reviewReceipt(ref, 'Anticipo anterior al registro: confirmar a qué compra corresponde antes de sumarlo.');
         const os = await db.collection('pedidos').doc(claimed.orderId).get();
         if (!os.exists) return await reviewReceipt(ref, 'El pedido ya no existe.');

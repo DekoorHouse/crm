@@ -1144,6 +1144,16 @@ test('DH17315: re-sending an already applied receipt with no order assigned clos
     expect(order().paymentReceivedCents).toBeUndefined();
 });
 
+test('DH17112: re-sending the same image of an applied receipt WITH its order closes as duplicate', async () => {
+    mockDb.seed('payment_receipts/paid-before', { contactId: 'customer', status: 'applied', open: false, orderId: 'order', orderNumber: 'DH17112',
+        amountCents: 30000, ocr: ocr({ monto: 300, imageHash: 'same-image', fecha: '2026-01-01' }) });
+    mockOcr.mockResolvedValue(ocr({ monto: 300, imageHash: 'same-image', fecha: '2026-01-01' }));
+    const id = await enqueue('resent-with-order');
+    await flow.processReceipt(id);
+    expect(job(id)).toMatchObject({ status: 'duplicate', open: false, orderId: 'order' });
+    expect(order().paymentReceivedCents).toBeUndefined();
+});
+
 test('a receipt with no order and no applied twin still goes to review', async () => {
     mockOcr.mockResolvedValue(ocr({ monto: 450, imageHash: 'brand-new', referencia: '99999999' }));
     const id = await enqueue('new-one');
