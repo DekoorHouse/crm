@@ -5584,7 +5584,55 @@ function openImageModal(imageUrl) {
     modal.classList.remove('hidden');
     modal.style.display = '';
     modalImage.src = imageUrl; // Establece la imagen
+    _imgZoomReset();
+    _imgZoomBind();
     modal.classList.add('visible'); // Muestra el modal
+}
+
+// Zoom con la rueda del mouse sobre la imagen ampliada (hacia donde apunta el cursor);
+// con zoom se arrastra para moverla y doble clic regresa al tamaño normal.
+const _imgZoom = { scale: 1, x: 0, y: 0, drag: null };
+function _imgZoomApply() {
+    const img = document.getElementById('modal-image-content');
+    if (!img) return;
+    img.style.transform = `translate(${_imgZoom.x}px, ${_imgZoom.y}px) scale(${_imgZoom.scale})`;
+    img.style.cursor = _imgZoom.scale > 1 ? (_imgZoom.drag ? 'grabbing' : 'grab') : 'zoom-in';
+}
+function _imgZoomReset() { Object.assign(_imgZoom, { scale: 1, x: 0, y: 0, drag: null }); _imgZoomApply(); }
+function _imgZoomBind() {
+    const img = document.getElementById('modal-image-content');
+    if (!img || img._zoomBound) return;
+    img._zoomBound = true;
+    img.style.transformOrigin = '0 0';
+    img.draggable = false;
+    img.addEventListener('wheel', e => {
+        e.preventDefault();
+        const r = img.getBoundingClientRect();
+        // Punto bajo el cursor (en píxeles de la imagen sin escalar): se queda fijo al hacer zoom.
+        const px = (e.clientX - r.left) / _imgZoom.scale, py = (e.clientY - r.top) / _imgZoom.scale;
+        // Proporcional al giro: una rueda normal (~100 por paso) ≈ ×1.25; el touchpad va suave.
+        const delta = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+        const next = Math.min(8, Math.max(1, _imgZoom.scale * Math.exp(-Math.max(-300, Math.min(300, delta)) * 0.0022)));
+        if (next === 1) return _imgZoomReset();
+        _imgZoom.x += px * (_imgZoom.scale - next);
+        _imgZoom.y += py * (_imgZoom.scale - next);
+        _imgZoom.scale = next;
+        _imgZoomApply();
+    }, { passive: false });
+    img.addEventListener('mousedown', e => {
+        if (_imgZoom.scale <= 1 || e.button !== 0) return;
+        e.preventDefault();
+        _imgZoom.drag = { sx: e.clientX - _imgZoom.x, sy: e.clientY - _imgZoom.y };
+        _imgZoomApply();
+    });
+    window.addEventListener('mousemove', e => {
+        if (!_imgZoom.drag) return;
+        _imgZoom.x = e.clientX - _imgZoom.drag.sx;
+        _imgZoom.y = e.clientY - _imgZoom.drag.sy;
+        _imgZoomApply();
+    });
+    window.addEventListener('mouseup', () => { if (_imgZoom.drag) { _imgZoom.drag = null; _imgZoomApply(); } });
+    img.addEventListener('dblclick', _imgZoomReset);
 }
 
 // Cierra el modal de imagen ampliada
@@ -5593,7 +5641,7 @@ function closeImageModal() {
     modal.classList.remove('visible'); // Oculta el modal
     const modalImage = document.getElementById('modal-image-content');
     // Limpia la imagen después de la animación para evitar saltos visuales
-    setTimeout(() => { modalImage.src = ''; }, 300);
+    setTimeout(() => { modalImage.src = ''; _imgZoomReset(); }, 300);
 }
 
 // Abre la barra lateral de detalles del contacto
