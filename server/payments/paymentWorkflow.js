@@ -304,15 +304,22 @@ async function processReceipt(id, options = {}) {
         // (reclamando su guía). Como el pedido ya estaba pagado no se les asignó pedido y caían a la cola
         // de revisión antes de revisar si eran repetidos. DH17112 (5-oct-2026): lo mismo CON pedido: los
         // reenvíos llegaron días después y la regla de la fecha los mandaba a revisión como "duplicados".
-        // Sin pedido basta la imagen o el folio; con pedido, solo la MISMA imagen (un folio parecido podría
-        // ser otro depósito real del mismo cliente).
+        // Solo se cierra solo con PRUEBA: la misma imagen o el mismo folio. DH17532 (30-sep-2026): "mismo
+        // monto, misma cuenta y sin folio legible" cerró como repetido un anticipo NUEVO de $300 porque su
+        // pedido anterior (DH17171) también tuvo uno de $300; la clienta pagó y el pedido quedó en $450.
+        // La simple coincidencia de monto sigue yendo a revisión (con la alerta de posible duplicado).
         if (!claimed.orderId || !options.manual) {
             const policy = require('./paymentPolicy');
+            const sameProof = prev => {
+                const y = prev.ocr || {};
+                if (ocr.imageHash && ocr.imageHash === y.imageHash) return true;
+                if (claimed.orderId) return false; // con pedido, solo la MISMA imagen
+                const mine = policy.receiptFolios(ocr), theirs = policy.receiptFolios(y);
+                return mine.length > 0 && mine.some(f => theirs.includes(f))
+                    && policy.possibleSamePayment({ contactId: claimed.contactId, ocr }, prev);
+            };
             const previous = (await receipts().where('contactId', '==', claimed.contactId).get()).docs
-                .find(d => d.id !== ref.id && d.data().status === 'applied' && d.data().orderId
-                    && (claimed.orderId
-                        ? (ocr.imageHash && ocr.imageHash === d.data().ocr?.imageHash)
-                        : policy.possibleSamePayment({ contactId: claimed.contactId, ocr }, d.data())));
+                .find(d => d.id !== ref.id && d.data().status === 'applied' && d.data().orderId && sameProof(d.data()));
             if (previous) {
                 const p = previous.data();
                 await ref.update({ status: 'duplicate', open: false, orderId: p.orderId, orderNumber: p.orderNumber || null,
