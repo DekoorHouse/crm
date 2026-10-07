@@ -199,9 +199,6 @@
               <option value="">Ingresa tu C.P. primero</option>
             </select>
           </div>
-          <div class="hint" id="coloniaManualHint" style="display:none;">
-            ¿No aparece tu colonia? <a href="#" id="coloniaManualLink" style="color:var(--primary);font-weight:600;">Escríbela manualmente</a>
-          </div>
         </div>
 
         <div class="row2">
@@ -375,7 +372,6 @@
         if(ciudad) $('ciudad').value=ciudad;
         if(d.estado) setEstado(d.estado);
         cpHint.textContent=(ciudad?ciudad:'')+(d.estado?(', '+d.estado):'')+' · '+d.colonias.length+' colonias'; cpHint.className='hint ok';
-        $('coloniaManualHint').style.display='block';
       }else{
         cpHint.textContent='C.P. no encontrado. Escribe tu colonia y localidad manualmente.'; cpHint.className='hint error';
         habilitarColoniaManual(preferColonia);
@@ -393,10 +389,8 @@
     const sel=$('colonia'); const wrap=sel.parentElement;
     wrap.innerHTML='<i class="fas fa-building"></i><input type="text" id="colonia" placeholder="Escribe tu colonia" required />';
     if(initial) $('colonia').value=initial;
-    $('coloniaManualHint').style.display='none';
     $('colonia').addEventListener('change', onDireccionChange);
   }
-  $('coloniaManualLink').addEventListener('click',(e)=>{e.preventDefault();habilitarColoniaManual();});
 
   // ---------- Google: sugerencias (Places) + geocodificar texto ----------
   if(window.gmapsReady) window.gmapsReady.then(initGoogle);
