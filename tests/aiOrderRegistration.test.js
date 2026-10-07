@@ -259,11 +259,28 @@ describe('conciliación 1-oct-2026: el cliente agrega lámparas a un pedido que 
         mockDocs.set('pedidos/p1', { ...order(), items: [dino('Dominic', 750)], precio: 750, estatus: 'Foto enviada' });
         extract([dino('Dominic', 600), dino('Emiliano', 600)]);
         expect(await run('Cliente: Y otra con el nombre de Emiliano')).toBe('DH16731');
-        expect(order()).toMatchObject({ precio: 1200, designForce: true });
+        expect(order()).toMatchObject({ precio: 1200, designForce: true, estatus: 'Corregir', corregirMotivo: 'agregado' });
         expect(order().items).toHaveLength(2);
         expect(order().comentarios).toMatch(/Emiliano/);
         expect(createOrder).not.toHaveBeenCalled();
         expect(contact().needsAttention).toBeUndefined();
+    });
+
+    test('DH17851: aunque el extractor lo marque adicional, si trae el pedido vigente completo se agrega a ese', async () => {
+        mockDocs.set('pedidos/p1', { ...order(), items: [dino('Diego', 750)], precio: 750, estatus: 'Foto enviada' });
+        extract([dino('Diego', 600), dino('Ian Zaid', 600)], { esAdicional: true });
+        expect(await run('Cliente: Voy a querer otra lámpara para la promoción de 2 por $1200')).toBe('DH16731');
+        expect(order()).toMatchObject({ precio: 1200, estatus: 'Corregir' });
+        expect(order().items).toHaveLength(2);
+        expect(createOrder).not.toHaveBeenCalled();
+    });
+
+    test('adicional con SOLO lámparas nuevas sigue creando un pedido aparte', async () => {
+        mockDocs.set('pedidos/p1', { ...order(), items: [dino('Diego', 750)], precio: 750, estatus: 'Foto enviada' });
+        extract([dino('Ian Zaid', 750)], { esAdicional: true });
+        await run('Cliente: Quiero otro pedido aparte para Ian Zaid');
+        expect(order().precio).toBe(750);
+        expect(createOrder).toHaveBeenCalledTimes(1);
     });
 
     test('ya pagado: el pedido original no se toca (las nuevas van en un pedido aparte, como antes)', async () => {

@@ -160,7 +160,9 @@ function reasonsForOrderData(d) {
         // "Corte IA en cola" (autoCutQueued) avisa cuándo el worker ya lo tiene, para no cortarlo dos veces.
         // Al empujar un motivo, la red de seguridad 'corte' de abajo ya no lo recoge (mismo efecto que
         // el return viejo).
-        reasons.push(String(d.corregirMotivo || '').toLowerCase() === 'video' ? 'video' : 'datos');
+        // 'agregado': el cliente sumó lámparas antes de pagar (aiOrderRegistration) → badge '+Producto'.
+        const motivo = String(d.corregirMotivo || '').toLowerCase();
+        reasons.push(motivo === 'video' ? 'video' : motivo === 'agregado' ? 'segundo_producto' : 'datos');
     } else if (estatus === 'reenvio') {
         // REPOSICIÓN: el pedido se vuelve a hacer desde el principio (Chris, 2026-08-01). Además de
         // re-meterse a Envíos, REACTIVA el diseño: reaparece en Pendientes (motivo 'reenvio') aunque el

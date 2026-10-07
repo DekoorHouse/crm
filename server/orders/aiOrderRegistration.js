@@ -295,6 +295,14 @@ function itemsAgregados(orderItems, extractionItems) {
     return pool.length ? pool.map(p => p.it) : null;
 }
 
+// ¿Se le pueden agregar lámparas a este pedido? Solo con la foto enviada o esperando el pago, sin pago
+// validado y sin guía: ya pagado, en Fabricar o enviado, el cambio lo decide una persona.
+function puedeAgregarSinPagar(order) {
+    return Array.isArray(order.items) && order.items.length > 0
+        && !(order.guiaEnvio && order.guiaEnvio.guia) && !isOrderDone(order) && !order.comprobanteValidadoAt
+        && /^(foto enviada|esperando pago)$/i.test(order.estatus || '');
+}
+
 function sameRegisteredOrder(order, extraction) {
     if (!Array.isArray(order.items) || !order.items.length || Number(order.precio) !== extraction.total) return false;
     const textKey = value => String(value || '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -348,7 +356,7 @@ PEDIDO YA REGISTRADO en el sistema para este cliente: ${existingOrder.num} — $
 ${!cerrado && Array.isArray(existingOrder.items) && existingOrder.items.length ? `Productos guardados (JSON): ${JSON.stringify(existingOrder.items)}\nConserva exactamente producto, datosProducto, cantidad y precio de cada pieza que el cliente NO haya cambiado. No reformules sus datos. Si solo confirma de nuevo el mismo pedido o su anticipo, devuelve estos mismos items y total, con esAdicional=false.` : ''}
 ${cerrado
         ? `Ese pedido YA ESTÁ CERRADO (${existingOrder.done ? 'pagado/enviado' : 'la lámpara ya está fabricada y el cliente está en post-venta'}): NO se puede modificar. Todo lo que el cliente confirmó DESPUÉS de ese pedido es un pedido NUEVO e independiente: devuelve SOLO los productos nuevos (esAdicional=true) y NO incluyas los del pedido ya registrado. Si el cliente no confirmó ningún producto nuevo (solo habla del pedido que ya tiene), responde listo=false y explícalo en "faltante".`
-        : `Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelve el pedido COMPLETO como debe quedar al final (todos sus items, esAdicional=false). Si el cliente pidió OTRO pedido independiente además de aquel, devuelve SOLO los productos nuevos (esAdicional=true).`}
+        : `Decide con la conversación: si el cliente CAMBIÓ/corrigió ese pedido, devuelve el pedido COMPLETO como debe quedar al final (todos sus items, esAdicional=false). Si el cliente pidió OTRO pedido independiente además de aquel, devuelve SOLO los productos nuevos (esAdicional=true). Si ese pedido todavía NO está pagado y el cliente AGREGA lámparas ("otra lámpara", "para la promoción de 2 por $1200", "a la misma dirección"), NO es otro pedido: es un CAMBIO; devuelve el pedido COMPLETO (las de antes con el precio de la promoción + las nuevas) con esAdicional=false.`}
 ` : '';
 
     const prompt = `Cliente: ${name || 'desconocido'}\n\nConversación (más antiguo arriba):\n${conversationText}\n\nDevuelve solo el JSON.`;
@@ -586,6 +594,11 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
             const editableA = rd.registeredByAI === true && rd.aiReviewStatus === 'pending' && (estA === 'Sin estatus' || estA === 'Esperando anticipo');
             if (createdMs && (Date.now() - createdMs) <= ADICIONAL_MERGE_WINDOW_MS && editableA) {
                 mergeAdicional = true;
+            } else if (puedeAgregarSinPagar(rd) && itemsAgregados(rd.items, extraction.items)) {
+                // DH17851 (7-oct-2026): con la foto ya enviada y SIN pagar, la clienta pidió "otra lámpara para
+                // la promoción de 2 por $1200". El extractor devolvió las dos (la vieja + la nueva) marcadas como
+                // adicionales y se creó DH17889 con la primera repetida. Si lo extraído CONTIENE el pedido
+                // vigente sin cambios, es agregar a ese pedido: se sigue al camino de "agregó lámparas".
             } else {
                 recent = null;   // pedido viejo o bloqueado: si es una compra nueva de verdad
             }
@@ -609,11 +622,9 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
                 // no está pagado completo ni enviado: se agregan al MISMO pedido con el total nuevo, y se manda a
                 // Pendientes de Diseño para que se haga la lámpara nueva. Pagado o enviado: aviso al equipo.
                 const agregadas = itemsAgregados(r.items, extraction.items);
-                const enviado = !!(r.guiaEnvio && r.guiaEnvio.guia) || isOrderDone(r);
                 // Solo antes de producir y cobrar ('Foto enviada' / 'Esperando pago'): un pedido en Fabricar que
                 // cambia sigue pidiendo revisión humana (decisión previa, ver tests de cambio_no_aplicado).
-                const tieneItems = Array.isArray(r.items) && r.items.length > 0;
-                if (agregadas && tieneItems && !enviado && !r.comprobanteValidadoAt && /^(foto enviada|esperando pago)$/i.test(estActual)) {
+                if (agregadas && puedeAgregarSinPagar(r)) {
                     const { computeOrderMainFields } = require('./createOrderCore');
                     const { mainDatosProducto } = computeOrderMainFields(extraction.items);
                     const now = admin.firestore.FieldValue.serverTimestamp();
@@ -624,6 +635,9 @@ async function registerOrderFromAI({ contactId, contactData = {}, conversationTe
                         datosProducto: extraction.items.length > 1 ? mainDatosProducto : (extraction.items[0].datosProducto || ''),
                         productoAgregadoAt: now, aiUpdatedAt: now,
                         designForce: true, designForceAt: now,
+                        // A 'Corregir': la foto que ya vio el cliente no incluye la lámpara nueva; la tarjeta regresa a
+                        // Pendientes de Diseño y la cobranza de 'Foto enviada' se detiene hasta mandarle la foto nueva.
+                        estatus: 'Corregir', corregirAt: now, pendienteDisenoAt: now, corregirMotivo: 'agregado',
                         comentarios: `${(r.comentarios || '').trim()}\nLa IA agregó al pedido: ${nuevasTxt}. Total nuevo: $${extraction.total} (antes $${r.precio}).`.trim(),
                     };
                     if (Number(r.paymentReceivedCents) > 0 || /pagado|fabricar/i.test(estActual)) upd.productoAgregadoPostPagoAt = now;
