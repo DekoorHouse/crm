@@ -300,3 +300,33 @@ describe('conciliación 1-oct-2026: el cliente agrega lámparas a un pedido que 
         expect(contact().needsAttentionReason).toBe('cambio_no_aplicado');
     });
 });
+
+describe('DH17853: el mismo cliente escribe desde otro número', () => {
+    const { mismasLamparas } = require('../server/orders/aiOrderRegistration');
+    const it2 = (producto, nombre, personaje) => ({ producto, cantidad: 1, precio: 600, datosProducto: `Nombre: ${nombre} | Personaje: ${personaje}` });
+    const otro = [it2('Lámpara infantil Dinosaurio', 'Hasen', 'Dinosaurio'), it2('Lámpara infantil Stitch', 'Galea', 'Stitch')];
+
+    test('mismasLamparas ignora el orden, el precio y el nombre del modelo', () => {
+        expect(mismasLamparas(otro, [it2('Lámpara infantil Stitch', 'Galea', 'Stitch'), it2('Lámpara infantil Dinosaurio T-Rex', 'Hasen', 'Dinosaurio T-Rex')])).toBe(true);
+        expect(mismasLamparas(otro, [it2('Lámpara infantil Stitch', 'Galea', 'Stitch')])).toBe(false);
+        expect(mismasLamparas(otro, [it2('Lámpara infantil Stitch', 'Galea', 'Stitch'), it2('Lámpara infantil Dinosaurio', 'Omar', 'Dinosaurio')])).toBe(false);
+    });
+
+    test('no crea otro pedido con las mismas lámparas de un pedido de otro número', async () => {
+        mockDocs.delete('pedidos/p1');
+        mockDocs.set('pedidos/ajeno', { contactId: 'otro', consecutiveOrderNumber: 17788, items: otro, precio: 1200, estatus: 'Pagado' });
+        mockDocs.set('contacts_whatsapp/c1', { botActive: true, pedidoOtroNumero: { orderId: 'ajeno', num: 'DH17788', contactId: 'otro', at: mockTimestamp(Date.now()) } });
+        extract([it2('Lámpara infantil Stitch', 'Galea', 'Stitch'), it2('Lámpara infantil Dinosaurio T-Rex', 'Hasen', 'Dinosaurio T-Rex')]);
+        expect(await run('Cliente: Una Hasen y la otra Galea')).toBe('DH17788');
+        expect(createOrder).not.toHaveBeenCalled();
+    });
+
+    test('si son lámparas distintas, sí es un pedido nuevo', async () => {
+        mockDocs.delete('pedidos/p1');
+        mockDocs.set('pedidos/ajeno', { contactId: 'otro', consecutiveOrderNumber: 17788, items: otro, precio: 1200, estatus: 'Pagado' });
+        mockDocs.set('contacts_whatsapp/c1', { botActive: true, pedidoOtroNumero: { orderId: 'ajeno', num: 'DH17788', contactId: 'otro', at: mockTimestamp(Date.now()) } });
+        extract([it2('Lámpara infantil Stitch', 'Valeria', 'Stitch')]);
+        await run('Cliente: Quiero otra para Valeria');
+        expect(createOrder).toHaveBeenCalledTimes(1);
+    });
+});

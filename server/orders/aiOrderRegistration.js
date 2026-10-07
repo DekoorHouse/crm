@@ -295,6 +295,17 @@ function itemsAgregados(orderItems, extractionItems) {
     return pool.length ? pool.map(p => p.it) : null;
 }
 
+// ¿Son las mismas lámparas? Se comparan los datos grabados (nombres, fechas…), sin precio, orden ni el
+// nombre del modelo: el extractor escribe "Dinosaurio" en un pedido y "Dinosaurio T-Rex" en el otro.
+function mismasLamparas(a, b) {
+    const textKey = value => String(value || '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
+    const keyOf = it => JSON.stringify(normalizarFechaEnDatos(String(it.datosProducto || '')).split('|')
+        .map(part => textKey(part).replace(/\s*:\s*/g, ':')).filter(part => part && !/^personaje:/.test(part)).sort());
+    const expand = items => (Array.isArray(items) ? items : []).flatMap(it => Array(Math.max(1, Number(it.cantidad) || 1)).fill(it));
+    const x = expand(a).map(keyOf).sort(), y = expand(b).map(keyOf).sort();
+    return x.length > 0 && !x.includes('[]') && JSON.stringify(x) === JSON.stringify(y);
+}
+
 // ¿Se le pueden agregar lámparas a este pedido? Solo con la foto enviada o esperando el pago, sin pago
 // validado y sin guía: ya pagado, en Fabricar o enviado, el cambio lo decide una persona.
 function puedeAgregarSinPagar(order) {
@@ -735,6 +746,21 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
             }
         }
 
+        // El MISMO pedido ya existe desde otro número del cliente (services.js sella pedidoOtroNumero cuando el
+        // cliente menciona un DH de otro contacto). DH17853 duplicó DH17788 así. No se crea; se devuelve aquel.
+        // Lectura fresca: el sello se escribe en este mismo turno, después de que se leyó contactData.
+        const otro = ((await contactRef.get().catch(() => null))?.data() || contactData).pedidoOtroNumero;
+        const otroMs = otro && otro.at && typeof otro.at.toMillis === 'function' ? otro.at.toMillis() : 0;
+        if (otro && otro.orderId && Date.now() - otroMs < 14 * 24 * 60 * 60 * 1000) {
+            const os = await db.collection('pedidos').doc(otro.orderId).get().catch(() => null);
+            if (os && os.exists && mismasLamparas(os.data().items, extraction.items)) {
+                console.warn(`[AI_ORDER] ${contactId}: lo extraído son las mismas lámparas de ${otro.num} (otro número); no se crea otro pedido.`);
+                await logFailure(contactId, name, `duplicado_evitado: mismas lámparas que ${otro.num}, registrado desde otro número (${otro.contactId})`);
+                await clearRepeatedRegistrationPending(contactRef);
+                return otro.num;
+            }
+        }
+
         // require perezoso (mismo motivo que arriba)
         const { createOrder } = require('./createOrderCore');
         const { orderNumber, totalValue } = await createOrder({
@@ -825,6 +851,7 @@ CAMBIO PEDIDO POR EL CLIENTE SIN APLICAR (${r.estatus}): revisa el chat antes de
 
 module.exports = {
     itemsAgregados,
+    mismasLamparas,
     getAiOrderConfig,
     buildRegistrationRule,
     extractOrderFromChat,

@@ -4179,9 +4179,40 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
 **UNA PERSONA DEL EQUIPO le escribió al cliente hace poco:** «${String(humano.text).trim().slice(0, 400)}». Lo que el equipo pide o dice MANDA sobre tus notas: si el cliente responde a eso o pregunta cómo hacerlo, ayúdale a cumplirlo (explícale cómo, en su canal) y NUNCA le digas que no es necesario ni lo contradigas. Si no sabes para qué lo pidió, dile que el equipo lo necesita para su pedido.`;
             }
         } catch (_) {}
+        // PEDIDO DE OTRO NÚMERO (DH17853, 6-oct-2026): la clienta de DH17788 llenó el formulario de envío y el
+        // botón de WhatsApp lo mandó desde OTRO teléfono ("Ya llené mi formulario… para mi pedido DH17788").
+        // La IA tomó 17788 como C.P., le volvió a tomar las mismas dos lámparas y registró un duplicado. Si
+        // el cliente menciona un DH que existe en otro contacto, se le dice a la IA qué pedido es y se deja
+        // sellado en el contacto para que el registro no cree otro igual (aiOrderRegistration).
+        let pedidoAjenoNote = '';
+        try {
+            const DIAS7 = 7 * 24 * 60 * 60 * 1000;
+            const nums = new Set();
+            for (const d of messagesSnapshot.docs) {
+                const m = d.data();
+                const t = (m.timestamp && typeof m.timestamp.toMillis === 'function') ? m.timestamp.toMillis() : 0;
+                if (m.from !== contactId || !t || (Date.now() - t) > DIAS7) continue;
+                for (const x of String(m.text || '').matchAll(/\bDH\s*(\d{4,6})\b/gi)) nums.add(Number(x[1]));
+            }
+            for (const num of [...nums].slice(0, 2)) {
+                const snap = await db.collection('pedidos').where('consecutiveOrderNumber', '==', num).limit(1).get();
+                const o = snap.docs[0];
+                const od = o && o.data();
+                if (!od || !od.contactId || od.contactId === contactId) continue;
+                const guia = od.guiaEnvio && od.guiaEnvio.guia;
+                pedidoAjenoNote += `
+
+**PEDIDO REGISTRADO DESDE OTRO NÚMERO:** el cliente mencionó *DH${num}*. Ese pedido YA EXISTE y se hizo desde otro teléfono (termina en ${String(od.contactId).slice(-4)}): ${String(od.datosProducto || od.producto || '').replace(/\s+/g, ' ').slice(0, 300)} — Total $${od.precio} — Estatus: ${od.estatus || 'Sin estatus'}${guia ? ` — Guía: ${guia}` : ''}. Es el MISMO cliente escribiendo desde otro número: "DH${num}" es su número de pedido (NO es un código postal). NO le tomes otra vez esas lámparas ni escribas /registrar por ellas: contéstale sobre ESE pedido. Solo si pide claramente lámparas ADICIONALES distintas es un pedido nuevo.`;
+                if (!(contactData.pedidoOtroNumero && contactData.pedidoOtroNumero.orderId === o.id)) {
+                    await db.collection('contacts_whatsapp').doc(contactId).update({
+                        pedidoOtroNumero: { orderId: o.id, num: `DH${num}`, contactId: od.contactId, at: admin.firestore.Timestamp.now() },
+                    }).catch(() => {});
+                }
+            }
+        } catch (e) { console.warn('[AI] aviso de pedido de otro número falló (se continúa):', e.message); }
         // Reintento de registro vigente (server/orders/registrationRetry.js): pedir SOLO lo que falta.
         const registroPendienteNote = require('./orders/registrationRetry').retryNote(contactData);
-        const finalUserText = `${equipoNote}${registroPendienteNote}${disenoTerminadoNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${agregarNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${pedidoAjenoNote}${equipoNote}${registroPendienteNote}${disenoTerminadoNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${agregarNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
