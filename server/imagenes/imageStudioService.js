@@ -233,8 +233,10 @@ async function runGeneration(ref, lockRef, request) {
         const reportedCost = data.usage?.cost;
         await ref.update({ status: 'completed', images, ...(data.enhancedPrompt ? { enhancedPrompt: data.enhancedPrompt } : {}), cost: reportedCost != null && Number.isFinite(Number(reportedCost)) ? Number(reportedCost) : null, completedAt: new Date().toISOString() });
     } catch (err) {
-        const error = err.status ? err.message : 'No se pudo completar o guardar la imagen. La solicitud no se reenvió automáticamente.';
-        console.warn('[IMAGENES] Generación fallida:', ref.id, err.type || err.code || 'generation_error');
+        // Sin status = error inesperado (red, formato, Storage): ahora se muestra su causa, que antes se perdía.
+        const detalle = String(err.message || err.type || err.code || 'desconocido').replace(/\s+/g, ' ').slice(0, 200);
+        const error = err.status ? err.message : `No se pudo completar o guardar la imagen. La solicitud no se reenvió automáticamente. Detalle: ${detalle}`;
+        console.warn('[IMAGENES] Generación fallida:', ref.id, err.type || err.code || 'generation_error', detalle);
         await ref.update({ status: 'failed', error, completedAt: new Date().toISOString() }).catch(() => {});
     } finally {
         await db.runTransaction(async tx => {

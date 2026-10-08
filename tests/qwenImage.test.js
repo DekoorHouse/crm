@@ -161,3 +161,21 @@ test('purga en el pod las copias de una generación', async () => {
     await expect(pod.purge('a2e6caa5-21d1-4f39-b44c-98b46ad1cb9b')).resolves.toEqual({ skipped: true });
     expect(mockFetch).not.toHaveBeenCalled();
 });
+
+test('un tropiezo de red al consultar el avance se reintenta y la imagen sale', async () => {
+    mockDocs.set('crm_settings/qwen_pod', { podId: 'pod123', nonce: 'n', status: 'ready', createdAt: new Date().toISOString() });
+    let historyCalls = 0;
+    mockFetch.mockImplementation(async (url) => {
+        if (url.endsWith('/dekoor/health')) return reply({ ready: true });
+        if (url.endsWith('/prompt')) return reply({ prompt_id: 'p1' });
+        if (url.endsWith('/history/p1')) {
+            if (++historyCalls === 1) throw Object.assign(new Error('network timeout'), { type: 'request-timeout' });
+            return reply({ p1: { status: { completed: true, status_str: 'success' }, outputs: { save: { images: [{ filename: 'crm_00001_.png', subfolder: '', type: 'output' }] } } } });
+        }
+        if (url.includes('/view?')) return reply(null);
+        throw new Error(`fetch inesperado ${url}`);
+    });
+    const result = await qwen.generate({ model: qwen.MODEL_ID, prompt: 'crea', resolution: '1K', enhance: false }, 'job');
+    expect(Buffer.from(result.data[0].b64_json, 'base64').toString()).toBe('png-bytes');
+    expect(historyCalls).toBe(2);
+}, 15000);

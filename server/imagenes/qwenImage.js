@@ -61,6 +61,20 @@ function buildWorkflow({ prompt, images = [], aspect_ratio, resolution, seed, fi
     return graph;
 }
 
+// Tropiezos de red con el proxy del pod (8-oct-2026: tres ediciones fallaron con el mensaje genérico, sin
+// causa a la vista). Subir, consultar el avance o descargar se reintenta; el siguiente intento suele salir.
+const transient = err => !err.status || err.status >= 500;
+async function withRetry(fn, tries = 3) {
+    for (let i = 1; ; i++) {
+        try { return await fn(); }
+        catch (err) {
+            if (i >= tries || !transient(err)) throw err;
+            console.warn('[QWEN] Reintento tras error de red con la GPU:', err.type || err.code || err.message);
+            await new Promise(resolve => setTimeout(resolve, 1500 * i));
+        }
+    }
+}
+
 async function json(response, what) {
     if (!response.ok) throw failure(`La GPU no pudo ${what} (${response.status}).`);
     return response.json();
@@ -89,7 +103,7 @@ async function generate(request, jobId) {
     const enhanced = request.enhance === false ? { prompt: request.prompt, cost: null }
         : await enhancePrompt({ prompt: request.prompt, references, aspect_ratio: request.aspect_ratio });
     const images = [];
-    for (const [i, reference] of references.entries()) images.push(await uploadReference(reference.image_url.url, `crm_${jobId}_${i + 1}.png`));
+    for (const [i, reference] of references.entries()) images.push(await withRetry(() => uploadReference(reference.image_url.url, `crm_${jobId}_${i + 1}.png`)));
     const workflow = buildWorkflow({ ...request, prompt: enhanced.prompt, images, seed: crypto.randomInt(0, 2 ** 48 - 1), filePrefix: `crm_${jobId}` });
     const queued = await json(await pod.comfy('/prompt', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: workflow }),
@@ -98,13 +112,18 @@ async function generate(request, jobId) {
     const started = Date.now();
     while (Date.now() - started < LIMIT_MS) {
         await new Promise(resolve => setTimeout(resolve, POLL_MS));
-        const entry = (await json(await pod.comfy(`/history/${queued.prompt_id}`), 'informar el avance'))[queued.prompt_id];
+        const entry = (await withRetry(async () => json(await pod.comfy(`/history/${queued.prompt_id}`), 'informar el avance')))[queued.prompt_id];
         if (!entry?.status) continue;
         if (entry.status.status_str === 'error') throw failure(`Qwen no pudo generar la imagen: ${executionError(entry)}`);
         const image = entry.outputs?.save?.images?.[0];
         if (!entry.status.completed || !image) continue;
-        const view = await pod.comfy(`/view?${new URLSearchParams({ filename: image.filename, subfolder: image.subfolder, type: image.type })}`);
-        if (!view.ok) throw failure('No se pudo descargar la imagen de la GPU.');
+        const view = await withRetry(async () => {
+            const r = await pod.comfy(`/view?${new URLSearchParams({ filename: image.filename, subfolder: image.subfolder, type: image.type })}`);
+            // Una página de error del proxy (HTML/JSON con 200) no es la imagen: se reintenta.
+            const type = (r.headers && typeof r.headers.get === 'function' && r.headers.get('content-type')) || '';
+            if (!r.ok || /text\/html|application\/json/i.test(type)) throw failure(`No se pudo descargar la imagen de la GPU (${r.status}).`);
+            return r;
+        });
         await pod.markUsed();
         return {
             data: [{ b64_json: Buffer.from(await view.arrayBuffer()).toString('base64') }],
