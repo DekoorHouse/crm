@@ -57,7 +57,28 @@ function normResolution(r) {
 // Punto de entrada único. `provider` elige el motor: 'gemini' (producción) u 'openai'
 // (ChatGPT / gpt-image-1, en pruebas). Si no se pasa, manda la env MOCKUP_IMAGE_PROVIDER
 // y, en su defecto, Gemini — el comportamiento de siempre.
+// Saturación momentánea del modelo (8-oct-2026: "Retry limit exceeded - status: 503" al generar un
+// mockup). Nano Banana Pro solo lo sirve Google y a ratos responde 503/429 por exceso de demanda; a
+// los segundos vuelve. Se reintenta solo ante esos errores (nunca ante un prompt rechazado).
+const IMAGE_RETRY_DELAYS_MS = [4000, 10000];
+const isTransientImageError = e => /\b(?:429|500|502|503|504)\b|retry limit|overloaded|unavailable|high demand|rate.?limit|timeout|ECONNRESET|ETIMEDOUT/i.test(String(e && e.message || ''));
+
 async function generateImage(prompt, aspectRatio = '1:1', refImages = [], resolution = '2K', maxRefSize = 1024, provider = null) {
+    for (let intento = 0; ; intento++) {
+        try {
+            return await generateImageOnce(prompt, aspectRatio, refImages, resolution, maxRefSize, provider);
+        } catch (e) {
+            if (!isTransientImageError(e)) throw e;
+            if (intento >= IMAGE_RETRY_DELAYS_MS.length) {
+                throw new Error(`El generador de imágenes de Google está saturado en este momento (${e.message.slice(0, 120)}). Espera un par de minutos y vuelve a intentar.`);
+            }
+            console.warn(`[MOCKUPS] Error temporal del generador (intento ${intento + 1}): ${e.message.slice(0, 200)}. Reintentando…`);
+            await new Promise(r => setTimeout(r, IMAGE_RETRY_DELAYS_MS[intento]));
+        }
+    }
+}
+
+async function generateImageOnce(prompt, aspectRatio, refImages, resolution, maxRefSize, provider) {
     // Un `provider` explícito (p. ej. desde la pestaña Pruebas) manda; si no, el ajuste del CRM.
     const p = provider ? String(provider).toLowerCase() : await getImageProviderCached();
     if (['openai', 'chatgpt', 'gpt', 'gpt-image-1'].includes(p)) {
@@ -184,6 +205,9 @@ async function generateImageOpenRouter(prompt, aspectRatio = '1:1', refImages = 
     }
 
     const data = await res.json();
+    // OpenRouter puede contestar 200 con el error del proveedor dentro (p. ej. el 503 de Google).
+    const upstreamErr = data.error || data.choices?.[0]?.error;
+    if (upstreamErr) throw new Error(`OpenRouter Image API error ${upstreamErr.code || ''}: ${upstreamErr.message || JSON.stringify(upstreamErr).slice(0, 300)}`);
     const msg = data.choices?.[0]?.message || {};
     const images = [];
     for (const it of (msg.images || [])) {
@@ -690,7 +714,7 @@ async function verifyAndStoreLayout(orderId, blockId) {
 }
 
 module.exports = {
-    generateImage, generateImageGemini, generateImageOpenAI,
+    generateImage, generateImageGemini, generateImageOpenAI, IMAGE_RETRY_DELAYS_MS,
     saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch,
     listTemplates, getTemplate, createTemplate, updateTemplate, deleteTemplate,
     listDesigns, createDesign, updateDesign, deleteDesign, fetchOwnImageAsBase64,
