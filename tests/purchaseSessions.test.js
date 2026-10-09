@@ -54,3 +54,6 @@ test('DH17356: un cliente con pedido ya enviado que vuelve por un anuncio abre c
     expect(r.purchaseSessionId).toBeTruthy();
     expect(mockDb.read('contacts_whatsapp/c').purchaseClarificationPending).toBe(false);
 });
+test.each(['Hola quisera ordenar otra lamparita', 'Quisiera otra lamparita', 'Me gustaría hacer otra lámpara'])('DH17463: abre compra nueva sin preguntar: %s', text => {
+    expect(purchaseIntent(text)).toBe('new');
+});

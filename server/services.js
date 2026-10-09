@@ -4544,7 +4544,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // También cuando la IA SÍ escribió /registrar o /anticipopagado: si ese registro falla por falta de
             // datos, la IA debe seguir encendida pidiéndolos (5218713494183, 1-oct-2026: pagó el anticipo, la IA
             // escribió /registrar, faltaba elegir "Angelito o Mickey" y se apagó con "necesita revisión").
-            if (!isPostVenta && (retryVigente || (archivosLote.length && hablamosDeAnticipo))) {
+            // En post-venta también (DH17463, 9-oct-2026): la clienta, con su pedido anterior ya enviado, pidió
+            // otra lámpara, pagó el anticipo y la IA le contestó "el equipo dará seguimiento" con la IA apagada:
+            // al seguir en post-venta esta red ni se evaluaba. Un pedido enviado no cuenta como abierto y el
+            // extractor, con el pedido anterior cerrado, solo registra las lámparas NUEVAS.
+            if (retryVigente || (archivosLote.length && hablamosDeAnticipo)) {
                 const ids = archivosLote.map(m => m.id).slice(0, 10);
                 const [receiptSnap, ordersSnap] = await Promise.all([
                     ids.length ? db.collection('payment_receipts').where('contactId', '==', contactId).where('messageId', 'in', ids).get() : null,
