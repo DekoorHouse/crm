@@ -249,7 +249,7 @@ async function creditReceipt(ref, receipt, { manual = false, amount = null, reac
         // Cada pago conserva además su imagen y su clave de rastreo propias.
         for (const key of keys) if (!existing.has(key)) tx.set(db.collection('payment_receipt_keys').doc(key), {
             orderId: r.orderId, receiptId: ref.id, amountCents: cents(manual ? amount : receipt.monto), createdAt: stamp(),
-            identity: { claveRastreo: receipt.claveRastreo || null, cuentaOrigen: receipt.cuentaOrigen || null,
+            identity: { claveRastreo: receipt.claveRastreo || null, cuentaOrigen: receipt.cuentaOrigen || null, hora: receipt.hora || null,
                 sourceIdentityVersion: receipt.sourceIdentityVersion || null },
         });
         tx.update(orderRef, fields);

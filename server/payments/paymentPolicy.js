@@ -44,10 +44,22 @@ const sourceAccount = receipt => {
     const suffix = value.replace(/[\s.\-]/g, '').match(/(\d{4,})$/)?.[1];
     return suffix ? suffix.slice(-4) : null;
 };
+// Terminación de 3 dígitos: Banamex muestra la cuenta de origen como "**293", y con el mínimo de 4 de
+// sourceAccount esa diferencia no contaba. Solo se comparan cuando AMBAS lecturas son de 3 dígitos (mismo
+// formato de banco); una lectura corta contra una larga sigue sin ser prueba (puede ser un OCR parcial).
+const sourceTail = receipt => String(receipt?.cuentaOrigen || '').replace(/[\s.\-]/g, '').match(/(?:^|\D)(\d{3})$/)?.[1] || null;
+const minutes = receipt => { const m = /^(\d{1,2}):(\d{2})/.exec(String(receipt?.hora || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
 const differentPayment = (a, b) => {
     // Una misma clave completa pesa más que una cuenta leída de forma distinta.
     if (trackingCode(a) && trackingCode(b)) return differentTracking(a, b);
-    return !!sourceAccount(a) && !!sourceAccount(b) && sourceAccount(a) !== sourceAccount(b);
+    if (sourceAccount(a) && sourceAccount(b)) return sourceAccount(a) !== sourceAccount(b);
+    // DH17926 (9-oct-2026): dos clientes pagaron $750 el mismo día con la referencia "91026" (la fecha,
+    // que Banamex pone por defecto). Uno traía clave de rastreo y el otro no, y sus cuentas de origen
+    // solo se leían con 3 dígitos: se tomó como el mismo pago y el segundo quedó "aplicado a otro pedido".
+    // Otra terminación de origen o una hora a más de 2 minutos de distancia son otro depósito.
+    if (sourceTail(a) && sourceTail(b) && sourceTail(a) !== sourceTail(b)) return true;
+    const ma = minutes(a), mb = minutes(b);
+    return ma != null && mb != null && Math.abs(ma - mb) > 2;
 };
 
 // Las referencias pueden repetirse (p. ej. fecha + 0 en BanCoppel).
