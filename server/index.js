@@ -619,6 +619,9 @@ function startSchedulers() {
   startMetaPurchaseScheduler();
   // Encender/apagar la GPU de Qwen Image en RunPod según el horario (solo si hay RUNPOD_API_KEY).
   require('./imagenes/qwenPod').startQwenPodScheduler();
+  // Imágenes que se estaban generando cuando se reinició el servidor: marcarlas interrumpidas de una vez.
+  require('./imagenes/imageStudioService').recoverInterrupted(new Date(Date.now() - process.uptime() * 1000).toISOString())
+    .catch(e => console.warn('[IMAGENES] No se pudieron revisar las generaciones interrumpidas:', e.message));
   require('./payments/paymentScheduler').startPaymentScheduler();
   // Iniciar scheduler de alerta de límite publicitario Meta Ads (cada 30 min)
   startSpendCapAlertScheduler();

@@ -279,4 +279,22 @@ async function createGeneration(fields, files, actor) {
     return created ? publicJob(ref.id, job) : getJob(ref.id);
 }
 
-module.exports = { getModels, linkModel, getGallery, getJob, createGeneration, deleteGeneration, validateGeneration, publicJob, prepareReferences };
+// Una generación vive en la memoria del proceso que la lanzó: si el servidor se reinicia (un deploy), se
+// pierde y la página la mostraba "generándose" hasta 10 minutos (9-oct-2026: una de GPT Image 2.5 iba en
+// 7:23 porque un deploy reinició Render a la mitad). Al arrancar, las que se crearon ANTES de este arranque
+// se marcan interrumpidas y se libera el candado, para que la página lo diga y deje generar otra de una vez.
+// Si el proceso anterior alcanza a terminarla durante el relevo, su resultado sobrescribe esta marca.
+async function recoverInterrupted(bootAt = new Date().toISOString()) {
+    const snap = await db.collection(COLLECTION).where('status', '==', 'generating').get();
+    const viejas = snap.docs.filter(d => String(d.data().createdAt || '') < bootAt);
+    for (const d of viejas) {
+        await d.ref.update({ status: 'failed', completedAt: new Date().toISOString(),
+            error: 'El servidor se reinició mientras se generaba esta imagen y se interrumpió. No se volvió a enviar automáticamente; puedes crear otra.' }).catch(() => {});
+        const locks = await db.collection('image_studio_locks').where('jobId', '==', d.id).get().catch(() => ({ docs: [] }));
+        await Promise.all(locks.docs.map(l => l.ref.delete().catch(() => {})));
+    }
+    if (viejas.length) console.log(`[IMAGENES] ${viejas.length} generación(es) interrumpidas por el reinicio.`);
+    return viejas.length;
+}
+
+module.exports = { recoverInterrupted, getModels, linkModel, getGallery, getJob, createGeneration, deleteGeneration, validateGeneration, publicJob, prepareReferences };
