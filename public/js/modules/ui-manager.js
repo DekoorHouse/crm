@@ -513,6 +513,10 @@ const DP_BOARD_CSS = `
 .dp-card-actions{display:flex;align-items:center;gap:6px}
 /* Burbuja "el cliente te respondió" (a TI, no a la IA): pulsa para que salte a la vista. */
 .dp-resp{display:inline-flex;align-items:center;gap:3px;background:#16a34a;color:#fff;border:none;border-radius:999px;padding:2px 7px;font-size:10.5px;font-weight:800;cursor:pointer;line-height:1.5;animation:dpPulse 2s infinite}
+.dp-card-conf{border:2px solid #16a34a;background:#f0fdf4;box-shadow:0 0 0 3px rgba(22,163,74,.15)}
+.dp-conf{margin:4px 0;padding:5px 7px;border-radius:6px;background:#dcfce7;color:#166534;font-size:.72rem;line-height:1.3;cursor:pointer}
+.dp-conf-txt{font-style:italic;color:#14532d;margin-top:2px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+body.dark-mode .dp-card-conf{background:#052e16}body.dark-mode .dp-conf{background:#14532d;color:#bbf7d0}body.dark-mode .dp-conf-txt{color:#dcfce7}
 @keyframes dpPulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.55)}70%{box-shadow:0 0 0 6px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
 .dp-icon-btn{border:none;background:transparent;color:#0ea5e9;cursor:pointer;font-size:14px;padding:2px}
 .dp-card-datos{font-weight:600;font-size:.8rem;line-height:1.25;margin-bottom:2px}
@@ -582,13 +586,21 @@ function dpBoardCard(o, checkedSet) {
         : '';
     const ia = dpIaControls(o);
     const mockupBtn = dpMockupBtn(o);
-    return `<div class="dp-card" data-order="${escapeHtml(o.id)}">
+    // "Esperando confirmación": el cliente ya contestó o reaccionó al diseño que le mandamos (el server
+    // calcula `confirmacion`). La tarjeta se pinta de verde y sube al inicio de la columna.
+    const conf = o.boardCol === 'esperando_confirmacion' && o.confirmacion;
+    const confBox = conf ? `<div class="dp-conf" onclick="openDesignPendingChat('${o.id}')" title="Clic para ver el chat">
+            <b>${conf.texto ? '💬 Respondió' : 'Reaccionó'}${conf.reaccion ? ' ' + escapeHtml(conf.reaccion) : ''}</b>${conf.at ? ' · ' + escapeHtml(dpHaceTxt(conf.at)) : ''}
+            ${conf.texto ? `<div class="dp-conf-txt">“${escapeHtml(conf.texto)}”</div>` : ''}
+        </div>` : '';
+    return `<div class="dp-card${conf ? ' dp-card-conf' : ''}" data-order="${escapeHtml(o.id)}">
         <div class="dp-card-top">
             <span class="dp-card-num" onclick="copyDesignOrderNumber(this,'${escapeHtml(o.orderNumber)}')" title="Clic para copiar el número">${escapeHtml(o.orderNumber)}</span>
             <span class="dp-card-actions">${respBubble}${chk}${chatBtn}</span>
         </div>
         <div class="dp-card-datos" title="Cliente: ${escapeHtml(o.clienteName || '')} — ${escapeHtml(o.datos || '')}">${chan} ${escapeHtml(datosTxt)}</div>
         <div class="dp-card-prod">${escapeHtml(o.producto || '')}${o.itemCount > 1 ? ' <span style="color:#94a3b8">+' + (o.itemCount - 1) + '</span>' : ''}</div>
+        ${confBox}
         ${(motivos || iaBadge || colaBadge) ? `<div class="dp-card-motivos">${motivos}${iaBadge}${colaBadge}</div>` : ''}
         ${(ia || mockupBtn) ? `<div class="dp-ia-row">${ia}${mockupBtn}</div>` : ''}
         <textarea class="dp-card-note" data-dp-comment="${o.id}" onblur="changeDesignComentario('${o.id}', this)" placeholder="Nota interna…" title="Notas del diseñador (solo para el equipo)">${escapeHtml(o.comentarioDiseno || '')}</textarea>
@@ -612,6 +624,10 @@ function _paintDesignBoard() {
         if (c === 'terminado') { const est = String(o.estatus || '').trim().toLowerCase(); if (est === 'pagado' || est === 'cancelado') continue; }
         byCol[c].push(o);
     }
+    // Los que ya contestaron al diseño van primero (los más recientes arriba); el resto conserva su orden.
+    const confMs = o => (o.confirmacion && o.confirmacion.at) || 0;
+    byCol.esperando_confirmacion = byCol.esperando_confirmacion.map((o, i) => [o, i])
+        .sort(([a, i], [b, j]) => (!!b.confirmacion - !!a.confirmacion) || (confMs(b) - confMs(a)) || (i - j)).map(([o]) => o);
     window._designShownOrders = DP_BOARD_COLS.flatMap(([k]) => byCol[k]);   // orden plano para ← →
     const checkedSet = _dpVisualChecks();
     const cols = DP_BOARD_COLS.map(([key, label, color]) => {

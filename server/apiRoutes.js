@@ -8829,6 +8829,37 @@ router.get('/design-pending', async (req, res) => {
             o.clienteRespondioAt = o.clienteRespondio ? c.lastClientMsgAt : null;
         });
 
+        // "Esperando confirmación": ¿el cliente ya contestó o reaccionó al DISEÑO que le mandamos? (Chris,
+        // 9-oct-2026: había que abrir los chats uno por uno para ver quién ya respondió.) El ancla es la
+        // última IMAGEN que le mandó una persona o el envío de mockups (no la IA); si no hay, el último
+        // mensaje de una persona. Cuenta un mensaje del cliente después del ancla o una reacción suya a
+        // cualquiera de nuestros mensajes desde el ancla. La columna es corta: una consulta por tarjeta.
+        if (boardMode) {
+            const enConfirmacion = orders.filter(o => o.boardCol === 'esperando_confirmacion' && o.contactId);
+            await Promise.all(enConfirmacion.map(async o => {
+                try {
+                    const snap = await db.collection('contacts_whatsapp').doc(String(o.contactId)).collection('messages')
+                        .orderBy('timestamp', 'desc').limit(30).get();
+                    const msgs = snap.docs.map(d => d.data());
+                    const nuestro = m => m.from !== o.contactId;
+                    const ancla = msgs.find(m => nuestro(m) && !m.isAutoReply && m.status !== 'scheduled' && (m.type === 'image' || m.fileType?.startsWith?.('image/') || m.mediaType === 'image'))
+                        || msgs.find(m => nuestro(m) && !m.isAutoReply && !m.source && m.status !== 'scheduled');
+                    if (!ancla) return;
+                    const anclaMs = tsToMs(ancla.timestamp);
+                    const despues = msgs.filter(m => tsToMs(m.timestamp) >= anclaMs);
+                    const reaccion = despues.find(m => nuestro(m) && m.reaction);
+                    const respuestas = despues.filter(m => m.from === o.contactId && tsToMs(m.timestamp) > anclaMs);
+                    const ultima = respuestas[0];
+                    if (!ultima && !reaccion) return;
+                    o.confirmacion = {
+                        at: ultima ? tsToMs(ultima.timestamp) : anclaMs,
+                        texto: ultima ? String(ultima.text || (ultima.type === 'image' ? '📷 Imagen' : ultima.type === 'audio' ? '🎤 Audio' : '')).slice(0, 120) : '',
+                        reaccion: reaccion ? reaccion.reaction : null,
+                    };
+                } catch (_) { /* sin resaltado si falla la consulta */ }
+            }));
+        }
+
         if (svgIaMode) {
             // Primero la cola (esperando pareja; más viejo arriba = más cerca de salir), luego los ya
             // diseñados por IA (recientes arriba).
