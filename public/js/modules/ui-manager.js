@@ -3977,6 +3977,7 @@ function renderAdResponsesView() {
                 <td class="font-mono text-sm">${adIdsText}</td>
                 <td class="text-gray-600 max-w-sm truncate" title="${response.message}">${response.message || ''} ${response.fileUrl ? '<i class="fas fa-paperclip text-gray-400 ml-2"></i>' : ''}</td>
                 <td class="actions-cell">
+                    <button onclick="openAdResponseHistory('${response.id}')" class="p-2" title="Historial de cambios"><i class="fas fa-clock-rotate-left"></i></button>
                     <button onclick="openAdResponseModal('${response.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
                     <button onclick="handleDeleteAdResponse('${response.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
                 </td>
@@ -3987,6 +3988,59 @@ function renderAdResponsesView() {
 
 
 
+
+// Historial de cambios de un mensaje de bienvenida por anuncio (server: ad_responses_history).
+const AD_HIST_LABELS = { adName: 'Nombre', adIds: 'Ad IDs', message: 'Mensaje', fileUrl: 'Archivo adjunto', fileType: 'Tipo de archivo' };
+function _adHistValue(field, value) {
+    if (value == null || value === '') return '<i style="color:#94a3b8">(vacío)</i>';
+    if (field === 'fileUrl') {
+        const url = escapeHtml(String(value));
+        return /\.(png|jpe?g|webp|gif)(\?|$)/i.test(String(value))
+            ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" style="max-width:150px;max-height:150px;border-radius:6px;border:1px solid #e5e7eb;display:block"></a>`
+            : `<a href="${url}" target="_blank" rel="noopener">${escapeHtml(String(value).split('/').pop())}</a>`;
+    }
+    if (Array.isArray(value)) return escapeHtml(value.join(', '));
+    return `<span style="white-space:pre-wrap">${escapeHtml(String(value))}</span>`;
+}
+async function openAdResponseHistory(id) {
+    const response = (state.adResponses || []).find(r => r.id === id) || {};
+    const dialog = document.createElement('dialog');
+    dialog.style.cssText = 'max-width:760px;width:calc(100% - 32px);max-height:88vh;overflow:auto;box-sizing:border-box;padding:22px;border:1px solid #cbd5e1;border-radius:14px;background:var(--color-container-bg,#fff);color:var(--color-text,#334155);box-shadow:0 20px 80px #0004';
+    dialog.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+            <h2 style="font-size:18px;font-weight:700;margin:0">Historial · ${escapeHtml(response.adName || '')}</h2>
+            <button data-close class="p-2" title="Cerrar"><i class="fas fa-times"></i></button></div>
+        <div data-body style="font-size:14px">Cargando…</div>`;
+    const close = () => { dialog.close(); dialog.remove(); };
+    dialog.querySelector('[data-close]').onclick = close;
+    dialog.addEventListener('cancel', e => { e.preventDefault(); close(); });
+    dialog.addEventListener('click', e => { if (e.target === dialog) close(); });
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    const body = dialog.querySelector('[data-body]');
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/ad-responses/${encodeURIComponent(id)}/history`);
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.message || 'No se pudo leer el historial.');
+        if (!data.items.length) { body.innerHTML = '<p style="color:#64748b">Todavía no hay cambios registrados. A partir de ahora cada cambio queda aquí.</p>'; return; }
+        const icon = { creado: 'fa-plus', editado: 'fa-pen', eliminado: 'fa-trash' };
+        body.innerHTML = data.items.map(it => {
+            const who = it.by ? escapeHtml(it.by.name || it.by.email || 'Usuario') : (it.reconstruido ? 'Reconstruido de los mensajes enviados' : 'Sin usuario registrado');
+            const when = it.at ? new Date(it.at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+            const changes = it.changes ? Object.entries(it.changes).filter(([f]) => f !== 'fileType' || !it.changes.fileUrl).map(([f, c]) => `
+                <div style="margin-top:8px"><b>${AD_HIST_LABELS[f] || escapeHtml(f)}</b>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+                        <div style="flex:1;min-width:200px;padding:8px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca"><div style="font-size:11px;color:#991b1b;margin-bottom:3px">Antes</div>${_adHistValue(f, c.antes)}</div>
+                        <div style="flex:1;min-width:200px;padding:8px;border-radius:6px;background:#f0fdf4;border:1px solid #bbf7d0"><div style="font-size:11px;color:#166534;margin-bottom:3px">Después</div>${_adHistValue(f, c.despues)}</div>
+                    </div></div>`).join('') : '';
+            return `<div style="border:1px solid var(--color-border,#e5e7eb);border-radius:10px;padding:12px;margin-bottom:10px">
+                <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b><i class="fas ${icon[it.action] || 'fa-pen'}" style="margin-right:5px"></i>${escapeHtml(it.action || '')}</b><span style="color:#64748b">${escapeHtml(when)} · ${who}</span></div>
+                ${it.nota ? `<div style="margin-top:6px;color:#64748b">${escapeHtml(it.nota)}</div>` : ''}${changes}</div>`;
+        }).join('');
+    } catch (e) {
+        body.innerHTML = `<p style="color:#dc2626">${escapeHtml(e.message)}</p>`;
+    }
+}
+window.openAdResponseHistory = openAdResponseHistory;
 
 // Renderiza la vista del pipeline de ventas
 function renderPipelineView() {

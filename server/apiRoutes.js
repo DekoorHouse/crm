@@ -7517,6 +7517,56 @@ router.post('/notebooks/:id/pages/:pageId/desarrollar', async (req, res) => {
 
 
 // --- Endpoints para Mensajes de Anuncios (/api/ad-responses) ---
+// HISTORIAL de los mensajes de bienvenida por anuncio (Chris, 10-oct-2026): al de "Nacional Dinosaurios"
+// le pusieron la imagen del UNICORNIO el 1-sep y 2,846 clientes de anuncios de dinosaurios la recibieron
+// hasta el 9-oct; sin historial hubo que reconstruirlo de los chats. Cada alta, cambio o borrado queda en
+// ad_responses_history (colección aparte: sobrevive al borrado del mensaje) con quién lo hizo.
+const AD_RESPONSE_FIELDS = ['adName', 'adIds', 'message', 'fileUrl', 'fileType'];
+async function adResponseActor(req) {
+    const header = req.headers.authorization || '';
+    if (!header.startsWith('Bearer ')) return null;
+    try {
+        const u = await admin.auth().verifyIdToken(header.slice(7));
+        return { uid: u.uid || null, email: u.email || null, name: u.name || null };
+    } catch (_) { return null; }
+}
+function adResponseChanges(before = {}, after = {}) {
+    const changes = {};
+    for (const f of AD_RESPONSE_FIELDS) {
+        const a = before[f] ?? null, b = after[f] ?? null;
+        if (JSON.stringify(a) !== JSON.stringify(b)) changes[f] = { antes: a, despues: b };
+    }
+    return changes;
+}
+async function logAdResponseHistory(req, responseId, action, before, after) {
+    try {
+        const changes = action === 'editado' ? adResponseChanges(before, after) : null;
+        if (action === 'editado' && !Object.keys(changes).length) return;
+        await db.collection('ad_responses_history').add({
+            responseId, action, adName: (after && after.adName) || (before && before.adName) || null,
+            at: admin.firestore.FieldValue.serverTimestamp(), by: await adResponseActor(req),
+            ...(changes ? { changes } : {}),
+            ...(action === 'creado' ? { despues: after } : {}),
+            ...(action === 'eliminado' ? { antes: before } : {}),
+        });
+    } catch (e) { console.warn('[AD-RESPONSES] No se pudo guardar el historial:', e.message); }
+}
+
+// GET historial de un mensaje (más reciente primero)
+router.get('/ad-responses/:id/history', async (req, res) => {
+    try {
+        const snap = await db.collection('ad_responses_history').where('responseId', '==', req.params.id).get();
+        const items = snap.docs.map(d => {
+            const x = d.data();
+            return { id: d.id, ...x, at: x.at && x.at.toMillis ? x.at.toMillis() : (typeof x.at === 'number' ? x.at : null) };
+        }).sort((a, b) => (b.at || 0) - (a.at || 0));
+        res.json({ success: true, items });
+    } catch (error) {
+        console.error('Error reading ad response history:', error);
+        res.status(500).json({ success: false, message: 'No se pudo leer el historial.' });
+    }
+});
+
 // POST (Crear)
 router.post('/ad-responses', async (req, res) => {
     const { adName, adIds: adIdsInput, message, fileUrl, fileType } = req.body;
@@ -7551,6 +7601,7 @@ router.post('/ad-responses', async (req, res) => {
         // Guardar en Firestore
         const data = { adName, adIds, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
         const newResponse = await db.collection('ad_responses').add(data);
+        await logAdResponseHistory(req, newResponse.id, 'creado', null, data);
         res.status(201).json({ success: true, id: newResponse.id, data });
     } catch (error) {
         console.error("Error creating ad response:", error);
@@ -7597,7 +7648,9 @@ router.put('/ad-responses/:id', async (req, res) => {
 
         // Actualizar en Firestore
         const data = { adName, adIds, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
+        const beforeSnap = await db.collection('ad_responses').doc(id).get();
         await db.collection('ad_responses').doc(id).update(data);
+        await logAdResponseHistory(req, id, 'editado', beforeSnap.exists ? beforeSnap.data() : {}, data);
         res.status(200).json({ success: true, message: 'Mensaje de anuncio actualizado.' });
     } catch (error) {
         console.error("Error updating ad response:", error);
@@ -7607,8 +7660,10 @@ router.put('/ad-responses/:id', async (req, res) => {
 // DELETE (Borrar)
 router.delete('/ad-responses/:id', async (req, res) => {
     try {
-        // Borrar de Firestore
+        // Borrar de Firestore (el historial se queda, con una copia de lo que tenía)
+        const beforeSnap = await db.collection('ad_responses').doc(req.params.id).get();
         await db.collection('ad_responses').doc(req.params.id).delete();
+        if (beforeSnap.exists) await logAdResponseHistory(req, req.params.id, 'eliminado', beforeSnap.data(), null);
         res.status(200).json({ success: true, message: 'Mensaje de anuncio eliminado.' });
         // Nota: No se borra el archivo de GCS asociado.
     } catch (error) {
