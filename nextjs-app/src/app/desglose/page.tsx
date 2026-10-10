@@ -52,9 +52,9 @@ const ID_SIN_CAMPANA = "__sin_campana__";
 // Las campañas necesitan tarjeta más ancha: sus nombres son del estilo
 // "Ventas 1407//Corazones//4ads//" y en 220px no se alcanza a leer ninguno.
 const GRID: Record<Agrupacion, string> = {
-  producto: "[grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]",
-  campana: "[grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]",
-  mensajes: "[grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]",
+  producto: "grid-cols-2 sm:[grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]",
+  campana: "grid-cols-1 sm:[grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]",
+  mensajes: "grid-cols-1 sm:[grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]",
 };
 
 // Color fijo por producto (no del tema): la tarjeta tiene que verse igual en los
@@ -243,7 +243,7 @@ export default function DesglosePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="bg-background/80 backdrop-blur-md sticky top-0 z-50 flex justify-between items-center px-8 py-4 border-b border-outline-variant/20">
+      <header className="bg-background/80 backdrop-blur-md sticky top-0 z-50 flex justify-between items-center gap-3 px-4 sm:px-8 py-3 sm:py-4 border-b border-outline-variant/20">
         <nav className="flex items-center gap-2 text-sm font-medium text-on-surface-variant">
           <Link href="/pedidos" className="hover:text-on-surface transition-colors">
             Pedidos
@@ -252,22 +252,23 @@ export default function DesglosePage() {
           <span className="text-primary font-bold border-b-2 border-primary pb-1">Desglose</span>
         </nav>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <ThemeMenu variant="icon" />
           <Link
             href="/pedidos"
-            className="bg-surface-container-high text-on-surface-variant px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-surface-container-highest transition-all"
+            className="bg-surface-container-high text-on-surface-variant px-3 sm:px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 whitespace-nowrap hover:bg-surface-container-highest transition-all"
+            aria-label="Volver a pedidos"
           >
             <span className="material-symbols-outlined text-sm">arrow_back</span>
-            Volver a pedidos
+            <span className="hidden sm:inline">Volver a pedidos</span>
           </Link>
         </div>
       </header>
 
-      <section className="px-8 py-6">
-        <div className="flex flex-wrap items-end justify-between gap-6 bg-surface-container-lowest p-6 rounded-3xl shadow-sm border border-outline-variant/10">
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="space-y-1.5">
+      <section className="px-4 sm:px-8 py-4 sm:py-6">
+        <div className="flex flex-wrap items-end justify-between gap-4 sm:gap-6 bg-surface-container-lowest p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-sm border border-outline-variant/10">
+          <div className="grid grid-cols-2 gap-3 w-full sm:flex sm:flex-wrap sm:gap-4 sm:items-end sm:w-auto">
+            <div className={`space-y-1.5 min-w-0 ${porMensajes ? "col-span-2" : ""}`}>
               <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">
                 Rango de Fecha
               </label>
@@ -275,11 +276,11 @@ export default function DesglosePage() {
                 value={dateFilter}
                 onChange={setDateFilter}
                 options={DATE_OPTIONS}
-                className="w-48"
+                className="w-full sm:w-48"
               />
             </div>
 
-            <div className={`space-y-1.5 ${porMensajes ? "hidden" : ""}`}>
+            <div className={`space-y-1.5 min-w-0 ${porMensajes ? "hidden" : ""}`}>
               <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">
                 Estatus
               </label>
@@ -287,15 +288,15 @@ export default function DesglosePage() {
                 value={estatus}
                 onChange={setEstatus}
                 options={STATUS_SELECT_OPTIONS}
-                className="w-52"
+                className="w-full sm:w-52"
               />
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 col-span-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">
                 Agrupar por
               </label>
-              <div className="inline-flex gap-1 bg-surface-container-low rounded-xl p-1">
+              <div className="flex w-full sm:inline-flex sm:w-auto gap-1 bg-surface-container-low rounded-xl p-1">
                 {AGRUPACIONES.map((op) => (
                   <button
                     key={op.value}
@@ -305,7 +306,7 @@ export default function DesglosePage() {
                       setExpandido(null);
                     }}
                     aria-pressed={agrupar === op.value}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors cursor-pointer ${
+                    className={`flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-2 sm:px-3 py-2 sm:py-1.5 rounded-lg text-[13px] sm:text-sm font-bold transition-colors cursor-pointer ${
                       agrupar === op.value
                         ? "bg-primary text-on-primary"
                         : "text-on-surface-variant hover:bg-surface-container"
@@ -319,9 +320,9 @@ export default function DesglosePage() {
             </div>
           </div>
 
-          <div className="flex gap-8 items-center border-l border-outline-variant/30 pl-8">
+          <div className="w-full sm:w-auto grid grid-cols-2 gap-x-3 gap-y-4 border-t border-outline-variant/30 pt-4 sm:flex sm:gap-8 sm:items-center sm:border-t-0 sm:pt-0 sm:border-l sm:pl-8">
             <div
-              className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-on-surface-variant"
+              className="col-span-2 flex items-center gap-1.5 text-[10px] font-bold uppercase text-on-surface-variant"
               title={
                 ultimaActualizacion
                   ? `La tabla se actualiza sola cuando entra un pedido. Último refresco: ${ultimaActualizacion.toLocaleTimeString("es-MX")}`
@@ -335,35 +336,35 @@ export default function DesglosePage() {
               <>
                 <div className="text-center" title="Conversaciones iniciadas que reporta Meta en el rango">
                   <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Meta</p>
-                  <p className="text-xl font-black text-primary">{dataMensajes?.totalMeta ?? 0}</p>
+                  <p className="text-lg sm:text-xl font-black text-primary">{dataMensajes?.totalMeta ?? 0}</p>
                 </div>
                 <div className="text-center" title="Conversaciones de anuncio que registró el CRM (contacto + anuncio + día)">
                   <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">CRM</p>
-                  <p className="text-xl font-black text-secondary">{dataMensajes?.totalCrm ?? 0}</p>
+                  <p className="text-lg sm:text-xl font-black text-secondary">{dataMensajes?.totalCrm ?? 0}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Gasto</p>
-                  <p className="text-xl font-black text-on-surface">{pesos.format(dataMensajes?.gasto ?? 0)}</p>
+                  <p className="text-lg sm:text-xl font-black text-on-surface">{pesos.format(dataMensajes?.gasto ?? 0)}</p>
                 </div>
                 {dataMensajes && dataMensajes.totalCrm > 0 && dataMensajes.gasto > 0 && (
                   <div className="text-center" title="Gasto ÷ mensajes que registró el CRM">
                     <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Costo/mensaje</p>
-                    <p className="text-xl font-black text-warning">{pesosExactos.format(dataMensajes.gasto / dataMensajes.totalCrm)}</p>
+                    <p className="text-lg sm:text-xl font-black text-warning">{pesosExactos.format(dataMensajes.gasto / dataMensajes.totalCrm)}</p>
                   </div>
                 )}
               </>
             ) : (<>
             <div className="text-center">
               <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Piezas</p>
-              <p className="text-xl font-black text-primary">{actual?.totalPiezas ?? 0}</p>
+              <p className="text-lg sm:text-xl font-black text-primary">{actual?.totalPiezas ?? 0}</p>
             </div>
             <div className="text-center">
               <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Pedidos</p>
-              <p className="text-xl font-black text-secondary">{totalPedidos}</p>
+              <p className="text-lg sm:text-xl font-black text-secondary">{totalPedidos}</p>
             </div>
             <div className="text-center">
               <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Monto</p>
-              <p className="text-xl font-black text-on-surface">
+              <p className="text-lg sm:text-xl font-black text-on-surface">
                 {pesos.format(actual?.totalMonto ?? 0)}
               </p>
             </div>
@@ -375,7 +376,7 @@ export default function DesglosePage() {
                 <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">
                   Costo/pedido
                 </p>
-                <p className="text-xl font-black text-warning">
+                <p className="text-lg sm:text-xl font-black text-warning">
                   {pesosExactos.format(dataCampanas.costoPorPedidoGlobal)}
                 </p>
               </div>
@@ -385,7 +386,7 @@ export default function DesglosePage() {
         </div>
       </section>
 
-      <section className="px-8 pb-10">
+      <section className="px-4 sm:px-8 pb-10">
         {actual?.truncado && (
           <div className="mb-4 px-4 py-3 rounded-2xl bg-error-container/40 border border-error/20 text-sm text-on-surface">
             El rango supera los {actual.max} pedidos. Se están contando los{" "}
@@ -428,7 +429,7 @@ export default function DesglosePage() {
             {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="h-36 rounded-3xl bg-surface-container-lowest border border-outline-variant/10 animate-pulse"
+                className="h-36 rounded-2xl sm:rounded-3xl bg-surface-container-lowest border border-outline-variant/10 animate-pulse"
               />
             ))}
           </div>
@@ -523,7 +524,7 @@ function Tarjeta({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-sm p-5 hover:shadow-md hover:border-outline-variant/30 transition-all">
+    <div className="bg-surface-container-lowest rounded-2xl sm:rounded-3xl border border-outline-variant/10 shadow-sm p-4 sm:p-5 min-w-0 hover:shadow-md hover:border-outline-variant/30 transition-all">
       <button
         type="button"
         onClick={onToggle}
@@ -612,7 +613,7 @@ function TarjetaProducto({
         <span className="text-xs font-bold text-on-surface-variant shrink-0">{porcentaje}%</span>
       </div>
 
-      <p className="text-4xl font-black text-on-surface leading-none">{producto.pedidos}</p>
+      <p className="text-3xl sm:text-4xl font-black text-on-surface leading-none">{producto.pedidos}</p>
       <p className="text-xs text-on-surface-variant mt-1.5">
         {producto.pedidos === 1 ? "pedido" : "pedidos"} · {producto.piezas}{" "}
         {producto.piezas === 1 ? "pieza" : "piezas"} · {pesos.format(producto.monto)}
@@ -714,7 +715,7 @@ function TarjetaCampana({
         <span className="text-xs font-bold text-on-surface-variant shrink-0">{porcentaje}%</span>
       </div>
 
-      <p className="text-4xl font-black text-on-surface leading-none">{campana.pedidos}</p>
+      <p className="text-3xl sm:text-4xl font-black text-on-surface leading-none">{campana.pedidos}</p>
       <p className="text-xs text-on-surface-variant mt-1.5">
         {campana.pedidos === 1 ? "pedido" : "pedidos"} · {campana.piezas}{" "}
         {campana.piezas === 1 ? "pieza" : "piezas"} · {pesos.format(campana.monto)}
@@ -802,14 +803,14 @@ function TarjetaMensajes({
           {campana.nombre}
         </span>
       </div>
-      <div className="flex items-end gap-6">
+      <div className="flex items-end gap-4 sm:gap-6 flex-wrap">
         <div title="Conversaciones iniciadas que reporta Meta">
           <p className="text-[10px] font-black uppercase text-on-surface-variant">Meta</p>
-          <p className="text-4xl font-black text-on-surface leading-none">{campana.meta}</p>
+          <p className="text-3xl sm:text-4xl font-black text-on-surface leading-none">{campana.meta}</p>
         </div>
         <div title="Conversaciones que registró el CRM">
           <p className="text-[10px] font-black uppercase text-on-surface-variant">CRM</p>
-          <p className="text-4xl font-black text-on-surface leading-none">{campana.crm}</p>
+          <p className="text-3xl sm:text-4xl font-black text-on-surface leading-none">{campana.crm}</p>
         </div>
         {diff !== 0 && (
           <span
