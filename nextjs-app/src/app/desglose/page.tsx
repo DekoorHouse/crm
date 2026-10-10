@@ -306,13 +306,13 @@ export default function DesglosePage() {
                       setExpandido(null);
                     }}
                     aria-pressed={agrupar === op.value}
-                    className={`flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-2 sm:px-3 py-2 sm:py-1.5 rounded-lg text-[13px] sm:text-sm font-bold transition-colors cursor-pointer ${
+                    className={`flex flex-1 sm:flex-none min-w-0 items-center justify-center gap-1 sm:gap-1.5 px-1.5 sm:px-3 py-2 sm:py-1.5 rounded-lg text-[13px] sm:text-sm font-bold transition-colors cursor-pointer ${
                       agrupar === op.value
                         ? "bg-primary text-on-primary"
                         : "text-on-surface-variant hover:bg-surface-container"
                     }`}
                   >
-                    <span className="material-symbols-outlined text-sm">{op.icon}</span>
+                    <span className="material-symbols-outlined text-[18px]! sm:text-[20px]!">{op.icon}</span>
                     {op.label}
                   </button>
                 ))}
@@ -600,13 +600,14 @@ function TarjetaProducto({
         </>
       }
     >
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="flex items-start gap-2 min-w-0">
           <span
-            className="w-2.5 h-2.5 rounded-full shrink-0"
+            className="w-2.5 h-2.5 rounded-full shrink-0 mt-1"
             style={{ backgroundColor: color }}
           />
-          <span className="text-sm font-bold text-on-surface truncate">
+          {/* Dos renglones: en celular la tarjeta mide ~150 px y "Lámpara infantil Spiderman" no cabe en uno. */}
+          <span className="text-sm font-bold text-on-surface line-clamp-2 break-words" title={producto.producto}>
             {producto.producto}
           </span>
         </div>
