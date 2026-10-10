@@ -52,7 +52,7 @@ const ID_SIN_CAMPANA = "__sin_campana__";
 // Las campañas necesitan tarjeta más ancha: sus nombres son del estilo
 // "Ventas 1407//Corazones//4ads//" y en 220px no se alcanza a leer ninguno.
 const GRID: Record<Agrupacion, string> = {
-  producto: "grid-cols-2 sm:[grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]",
+  producto: "grid-cols-1 sm:[grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]",
   campana: "grid-cols-1 sm:[grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]",
   mensajes: "grid-cols-1 sm:[grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]",
 };
