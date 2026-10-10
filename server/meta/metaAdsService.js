@@ -483,6 +483,39 @@ async function getCampaignSpendForAccounts(accountIds, dateFrom, dateTo) {
 }
 
 /**
+ * Conversaciones de mensajes que Meta atribuye a cada campaña en el rango (pestaña Mensajes de
+ * /desglose). Meta las reporta como la acción "onsite_conversion.messaging_conversation_started_7d"
+ * (WhatsApp, Messenger e Instagram juntos); también devuelve el gasto para el costo por mensaje.
+ */
+async function getCampaignMessagingForAccounts(accountIds, dateFrom, dateTo) {
+    const campaigns = [];
+    const errors = [];
+    const STARTED = 'onsite_conversion.messaging_conversation_started_7d';
+    for (const accId of accountIds) {
+        try {
+            const actId = normalizeAccountId(accId);
+            let after = null, safety = 20;
+            do {
+                const params = { fields: 'campaign_id,campaign_name,spend,actions', level: 'campaign',
+                    time_range: JSON.stringify({ since: dateFrom, until: dateTo }), limit: 500 };
+                if (after) params.after = after;
+                const data = await metaGet(`${actId}/insights`, params, accId);
+                for (const r of (data.data || [])) {
+                    const act = (r.actions || []).find(a => a.action_type === STARTED);
+                    campaigns.push({ accountId: String(accId).replace('act_', ''), campaignId: r.campaign_id,
+                        campaignName: r.campaign_name, spend: Number(r.spend) || 0, conversations: act ? Number(act.value) || 0 : 0 });
+                }
+                after = (data.paging && data.paging.next && data.paging.cursors && data.paging.cursors.after) || null;
+                safety--;
+            } while (after && safety > 0);
+        } catch (err) {
+            errors.push({ accountId: accId, error: err.response?.data?.error?.message || err.message });
+        }
+    }
+    return { campaigns, errors };
+}
+
+/**
  * Resuelve una lista de Ad IDs a su campana usando el batch-read de Meta
  * (GET /?ids=ad1,ad2,...&fields=campaign{id,name}, max 50 por llamada).
  * Los anuncios borrados o sin acceso simplemente no aparecen en el mapa.
@@ -811,7 +844,7 @@ module.exports = {
     // Insights
     getInsights, getInsightsByLevel, getDailySpend,
     // Reporte por region
-    getCampaignSpendForAccounts, resolveAdsToCampaigns,
+    getCampaignSpendForAccounts, getCampaignMessagingForAccounts, resolveAdsToCampaigns,
     // Audiences
     searchTargeting, listCustomAudiences,
     // Pages

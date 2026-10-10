@@ -101,6 +101,31 @@ export interface DesgloseCampanasResponse {
   gastoError: string | null;
 }
 
+/** Una campaña en la pestaña Mensajes de /desglose. */
+export interface CampanaMensajes {
+  campaignId: string;
+  nombre: string;
+  /** Conversaciones iniciadas que reporta Meta. */
+  meta: number;
+  /** Conversaciones que registró el CRM (contacto + anuncio + día). */
+  crm: number;
+  gasto: number;
+  costoMeta: number | null;
+  costoCrm: number | null;
+  canales: Record<string, number>;
+  anuncios: string[];
+}
+
+export interface DesgloseMensajesResponse {
+  campanas: CampanaMensajes[];
+  totalMeta: number;
+  totalCrm: number;
+  gasto: number;
+  metaError: string | null;
+  desde: string;
+  hasta: string;
+}
+
 export interface PaginationState {
   lastVisibleId: string | null;
   hasMore: boolean;

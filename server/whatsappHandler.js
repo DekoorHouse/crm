@@ -654,6 +654,8 @@ router.post('/', async (req, res) => {
                 savedMsgRef = await contactRef.collection('messages').add(messageData);
             }
             console.log(`[LOG] Mensaje de ${from} guardado en Firestore.`);
+            // Pestaña Mensajes de /desglose: un registro por contacto + anuncio + día.
+            if (messageData.adId) void require('./meta/adMessageEvents').recordAdMessage({ adId: messageData.adId, contactId: from, channel: 'whatsapp', at: messageData.timestamp });
 
             // Transcripción automática de notas de voz: nota INTERNA para el operador (campo transcription
             // del mensaje). NO se envía al cliente. Fire-and-forget para no bloquear el webhook.

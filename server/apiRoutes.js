@@ -1396,6 +1396,67 @@ router.get('/orders/desglose', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/orders/desglose-mensajes (pestaña Mensajes de /desglose) ---
+// Mensajes que llegaron por anuncio en el rango, por campaña: los que REPORTA Meta (conversaciones
+// iniciadas) contra los que REGISTRÓ el CRM (ad_message_events: uno por contacto + anuncio + día).
+// Chris, 10-oct-2026: para ver si Meta cobra mensajes que nunca llegaron (o el CRM pierde algunos).
+const _msgDesgloseCache = new Map();
+router.get('/orders/desglose-mensajes', async (req, res) => {
+    try {
+        const { dateFilter, customStart, customEnd } = req.query;
+        const { ordersDateRange, metaDateRange } = require('./orders/rangoFechas');
+        const rango = ordersDateRange({ dateFilter: dateFilter || 'hoy', customStart, customEnd });
+        if (!rango) return res.status(400).json({ success: false, message: 'Elige un rango de fechas.' });
+        const meta = metaDateRange({ dateFilter: dateFilter || 'hoy', customStart, customEnd });
+        const llave = `${rango.startDate.getTime()}|${rango.endDate.getTime()}`;
+        const hit = _msgDesgloseCache.get(llave);
+        if (hit && Date.now() - hit.ts < 3 * 60 * 1000) return res.json(hit.body);
+
+        const eventos = await require('./meta/adMessageEvents').adMessagesInRange(rango.startDate, rango.endDate);
+        const { map, error: mapError } = await mapAdsToCampaigns(eventos.map(e => e.adId));
+        // Cuentas: las de los anuncios que trajeron mensajes + las configuradas para KPIs (una campaña
+        // que gastó y no trajo un solo mensaje al CRM también tiene que verse).
+        const metaAds = require('./meta/metaAdsService');
+        let kpi = [];
+        try { kpi = await metaAds.getKpiAccountIds(); } catch (_) {}
+        const cuentas = [...new Set([...Object.values(map).map(c => c.accountId), ...(kpi || [])].filter(Boolean).map(a => String(a).replace('act_', '')))];
+        const { campaigns: metaRows, errors: metaErrors } = cuentas.length
+            ? await metaAds.getCampaignMessagingForAccounts(cuentas, meta.dateFrom, meta.dateTo)
+            : { campaigns: [], errors: [] };
+
+        const porCampana = new Map();
+        const fila = (id, nombre) => {
+            if (!porCampana.has(id)) porCampana.set(id, { campaignId: id, nombre: nombre || 'Campaña no identificada', meta: 0, crm: 0, gasto: 0, canales: {}, anuncios: new Set() });
+            return porCampana.get(id);
+        };
+        for (const r of metaRows) {
+            const f = fila(String(r.campaignId), r.campaignName);
+            f.meta += r.conversations; f.gasto += r.spend;
+        }
+        for (const e of eventos) {
+            const c = map[e.adId];
+            const f = fila(c ? String(c.campaignId) : 'sin_campana', c ? c.campaignName : null);
+            f.crm += 1; f.canales[e.channel || 'whatsapp'] = (f.canales[e.channel || 'whatsapp'] || 0) + 1; f.anuncios.add(e.adId);
+        }
+        const campanas = [...porCampana.values()]
+            .filter(f => f.meta > 0 || f.crm > 0)
+            .map(f => ({ ...f, anuncios: [...f.anuncios],
+                costoMeta: f.meta > 0 ? f.gasto / f.meta : null, costoCrm: f.crm > 0 && f.gasto > 0 ? f.gasto / f.crm : null }))
+            .sort((a, b) => Math.max(b.meta, b.crm) - Math.max(a.meta, a.crm));
+        const totalMeta = campanas.reduce((s, c) => s + c.meta, 0);
+        const totalCrm = campanas.reduce((s, c) => s + c.crm, 0);
+        const gasto = campanas.reduce((s, c) => s + c.gasto, 0);
+        const body = { success: true, campanas, totalMeta, totalCrm, gasto,
+            metaError: (metaErrors.length && metaErrors.length === cuentas.length) ? metaErrors[0].error : (mapError || null),
+            desde: meta.dateFrom, hasta: meta.dateTo };
+        _msgDesgloseCache.set(llave, { ts: Date.now(), body });
+        res.json(body);
+    } catch (error) {
+        console.error('Error armando el desglose de mensajes:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener los mensajes por anuncio.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/orders/today (Pedidos del día con origen de anuncio) ---
 router.get('/orders/today', async (req, res) => {
     try {

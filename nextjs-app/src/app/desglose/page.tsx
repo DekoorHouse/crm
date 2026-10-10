@@ -6,10 +6,12 @@ import { db } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { fetchDesglose, fetchDesgloseCampanas } from "@/lib/api/orders";
+import { fetchDesglose, fetchDesgloseCampanas, fetchDesgloseMensajes } from "@/lib/api/orders";
 import type {
   CampanaDesglose,
+  CampanaMensajes,
   DesgloseCampanasResponse,
+  DesgloseMensajesResponse,
   DesgloseResponse,
   OrderFilters,
   PedidoDesglose,
@@ -35,11 +37,12 @@ const STATUS_SELECT_OPTIONS: SelectOption[] = [
   ...STATUS_OPTIONS.map((s) => ({ value: s.label, label: s.label })),
 ];
 
-type Agrupacion = "producto" | "campana";
+type Agrupacion = "producto" | "campana" | "mensajes";
 
 const AGRUPACIONES: { value: Agrupacion; label: string; icon: string }[] = [
   { value: "producto", label: "Producto", icon: "inventory_2" },
   { value: "campana", label: "Campaña", icon: "campaign" },
+  { value: "mensajes", label: "Mensajes", icon: "chat" },
 ];
 
 // IDs de las cubetas que no son una campaña real (los pone el backend).
@@ -51,6 +54,7 @@ const ID_SIN_CAMPANA = "__sin_campana__";
 const GRID: Record<Agrupacion, string> = {
   producto: "[grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]",
   campana: "[grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]",
+  mensajes: "[grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]",
 };
 
 // Color fijo por producto (no del tema): la tarjeta tiene que verse igual en los
@@ -114,6 +118,8 @@ export default function DesglosePage() {
   const [agrupar, setAgrupar] = useState<Agrupacion>("campana");
   const [data, setData] = useState<DesgloseResponse | null>(null);
   const [dataCampanas, setDataCampanas] = useState<DesgloseCampanasResponse | null>(null);
+  // Pestaña Mensajes: conversaciones por anuncio, las que reporta Meta contra las que registró el CRM.
+  const [dataMensajes, setDataMensajes] = useState<DesgloseMensajesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandido, setExpandido] = useState<string | null>(null);
@@ -137,7 +143,9 @@ export default function DesglosePage() {
         setError(null);
       }
       try {
-        if (modo === "campana") {
+        if (modo === "mensajes") {
+          setDataMensajes(await fetchDesgloseMensajes(filters.dateFilter || "hoy"));
+        } else if (modo === "campana") {
           setDataCampanas(await fetchDesgloseCampanas(filters));
         } else {
           setData(await fetchDesglose(filters));
@@ -151,6 +159,7 @@ export default function DesglosePage() {
         setError(err instanceof Error ? err.message : "Error al cargar el desglose");
         setData(null);
         setDataCampanas(null);
+        setDataMensajes(null);
       } finally {
         if (!silencioso) setLoading(false);
       }
@@ -213,7 +222,10 @@ export default function DesglosePage() {
   if (authLoading || !user) return <LoadingOverlay />;
 
   const porCampana = agrupar === "campana";
-  const actual = porCampana ? dataCampanas : data;
+  const porMensajes = agrupar === "mensajes";
+  const actual = porMensajes ? null : porCampana ? dataCampanas : data;
+  const campanasMsg = dataMensajes?.campanas ?? [];
+  const maxMsg = campanasMsg.reduce((m, c) => Math.max(m, c.meta, c.crm), 0);
 
   const productos = data?.productos ?? [];
   const campanas = dataCampanas?.campanas ?? [];
@@ -221,6 +233,7 @@ export default function DesglosePage() {
   const filas = porCampana ? campanas : productos;
   // El backend ya ordena por pedidos, así que el primero es el máximo.
   const maxPedidos = filas.length > 0 ? filas[0].pedidos : 0;
+  const hayFilas = porMensajes ? campanasMsg.length > 0 : filas.length > 0;
 
   // Los anuncios que la Graph API no pudo traducir se juntan en una tarjeta
   // "Campaña no identificada": hay que decir por qué, o parece un dato perdido.
@@ -266,7 +279,7 @@ export default function DesglosePage() {
               />
             </div>
 
-            <div className="space-y-1.5">
+            <div className={`space-y-1.5 ${porMensajes ? "hidden" : ""}`}>
               <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">
                 Estatus
               </label>
@@ -318,6 +331,28 @@ export default function DesglosePage() {
               <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
               En vivo
             </div>
+            {porMensajes ? (
+              <>
+                <div className="text-center" title="Conversaciones iniciadas que reporta Meta en el rango">
+                  <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Meta</p>
+                  <p className="text-xl font-black text-primary">{dataMensajes?.totalMeta ?? 0}</p>
+                </div>
+                <div className="text-center" title="Conversaciones de anuncio que registró el CRM (contacto + anuncio + día)">
+                  <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">CRM</p>
+                  <p className="text-xl font-black text-secondary">{dataMensajes?.totalCrm ?? 0}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Gasto</p>
+                  <p className="text-xl font-black text-on-surface">{pesos.format(dataMensajes?.gasto ?? 0)}</p>
+                </div>
+                {dataMensajes && dataMensajes.totalCrm > 0 && dataMensajes.gasto > 0 && (
+                  <div className="text-center" title="Gasto ÷ mensajes que registró el CRM">
+                    <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Costo/mensaje</p>
+                    <p className="text-xl font-black text-warning">{pesosExactos.format(dataMensajes.gasto / dataMensajes.totalCrm)}</p>
+                  </div>
+                )}
+              </>
+            ) : (<>
             <div className="text-center">
               <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Piezas</p>
               <p className="text-xl font-black text-primary">{actual?.totalPiezas ?? 0}</p>
@@ -345,6 +380,7 @@ export default function DesglosePage() {
                 </p>
               </div>
             )}
+            </>)}
           </div>
         </div>
       </section>
@@ -375,6 +411,12 @@ export default function DesglosePage() {
           </div>
         )}
 
+        {porMensajes && !loading && !error && dataMensajes?.metaError && (
+          <div className="mb-4 px-4 py-3 rounded-2xl bg-surface-container-high border border-outline-variant/20 text-sm text-on-surface-variant">
+            No se pudieron traer los datos de Meta ({dataMensajes.metaError}). Solo se muestran los mensajes que registró el CRM.
+          </div>
+        )}
+
         {error && (
           <div className="px-4 py-3 rounded-2xl bg-error-container/40 border border-error/20 text-sm text-on-surface">
             {error}
@@ -392,18 +434,32 @@ export default function DesglosePage() {
           </div>
         )}
 
-        {!loading && !error && filas.length === 0 && (
+        {!loading && !error && !hayFilas && (
           <div className="text-center py-20">
             <span className="material-symbols-outlined text-5xl text-on-surface-variant/40">
-              {porCampana ? "campaign" : "inventory_2"}
+              {porMensajes ? "chat" : porCampana ? "campaign" : "inventory_2"}
             </span>
             <p className="mt-3 text-sm text-on-surface-variant">
-              No hay pedidos en este filtro.
+              {porMensajes ? "No llegaron mensajes por anuncio en este rango." : "No hay pedidos en este filtro."}
             </p>
           </div>
         )}
 
-        {!loading && !error && filas.length > 0 && (
+        {!loading && !error && porMensajes && campanasMsg.length > 0 && (
+          <div className={`grid gap-4 items-start ${GRID.mensajes}`}>
+            {campanasMsg.map((c) => (
+              <TarjetaMensajes
+                key={c.campaignId}
+                campana={c}
+                maxMsg={maxMsg}
+                abierto={expandido === c.campaignId}
+                onToggle={() => setExpandido((a) => (a === c.campaignId ? null : c.campaignId))}
+              />
+            ))}
+          </div>
+        )}
+
+        {!loading && !error && !porMensajes && filas.length > 0 && (
           <div className={`grid gap-4 items-start ${GRID[agrupar]}`}>
             {porCampana
               ? campanas.map((c) => (
@@ -681,6 +737,104 @@ function TarjetaCampana({
         </p>
       )}
 
+      <BarraProporcion ancho={ancho} color={color} />
+    </Tarjeta>
+  );
+}
+
+const CANAL_LABEL: Record<string, string> = { whatsapp: "WhatsApp", messenger: "Messenger", instagram: "Instagram" };
+
+/** Tarjeta de la pestaña Mensajes: conversaciones que reporta Meta contra las que registró el CRM. */
+function TarjetaMensajes({
+  campana,
+  maxMsg,
+  abierto,
+  onToggle,
+}: {
+  campana: CampanaMensajes;
+  maxMsg: number;
+  abierto: boolean;
+  onToggle: () => void;
+}) {
+  const color = colorCampana(campana.campaignId === "sin_campana" ? ID_SIN_CAMPANA : campana.campaignId);
+  const diff = campana.meta - campana.crm;
+  const ancho = maxMsg > 0 ? Math.round((Math.max(campana.meta, campana.crm) / maxMsg) * 100) : 0;
+  return (
+    <Tarjeta
+      abierto={abierto}
+      onToggle={onToggle}
+      detalle={
+        <>
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Por canal (CRM)</p>
+            {Object.keys(campana.canales).length === 0 && (
+              <p className="text-xs text-on-surface-variant">Sin mensajes registrados en el CRM.</p>
+            )}
+            {Object.entries(campana.canales)
+              .sort((a, b) => b[1] - a[1])
+              .map(([canal, n]) => (
+                <div key={canal} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-on-surface-variant">{CANAL_LABEL[canal] || canal}</span>
+                  <span className="font-bold text-on-surface">{n}</span>
+                </div>
+              ))}
+          </div>
+          {campana.anuncios.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+                Anuncios · {campana.anuncios.length}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {campana.anuncios.map((adId) => (
+                  <span key={adId} className="rounded-lg bg-surface-container-high px-2 py-0.5 text-[11px] font-mono text-on-surface-variant">
+                    {adId}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      }
+    >
+      <div className="flex items-start gap-2 mb-3 min-w-0">
+        <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: color }} />
+        <span className="text-sm font-bold text-on-surface line-clamp-2" title={campana.nombre}>
+          {campana.nombre}
+        </span>
+      </div>
+      <div className="flex items-end gap-6">
+        <div title="Conversaciones iniciadas que reporta Meta">
+          <p className="text-[10px] font-black uppercase text-on-surface-variant">Meta</p>
+          <p className="text-4xl font-black text-on-surface leading-none">{campana.meta}</p>
+        </div>
+        <div title="Conversaciones que registró el CRM">
+          <p className="text-[10px] font-black uppercase text-on-surface-variant">CRM</p>
+          <p className="text-4xl font-black text-on-surface leading-none">{campana.crm}</p>
+        </div>
+        {diff !== 0 && (
+          <span
+            className={`text-xs font-bold mb-1 ${diff > 0 ? "text-warning" : "text-success"}`}
+            title={diff > 0 ? "Meta reporta más de las que llegaron al CRM" : "Llegaron al CRM más de las que reporta Meta"}
+          >
+            {diff > 0 ? `Meta +${diff}` : `CRM +${-diff}`}
+          </span>
+        )}
+      </div>
+      {campana.gasto > 0 && (
+        <p className="text-xs mt-2 flex items-center gap-1 flex-wrap">
+          <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 14 }}>
+            sell
+          </span>
+          {campana.costoCrm != null && (
+            <span className="font-bold text-on-surface">{pesosExactos.format(campana.costoCrm)}</span>
+          )}
+          <span className="text-on-surface-variant">
+            {campana.costoCrm != null ? "por mensaje (CRM)" : ""}
+            {campana.costoMeta != null ? ` · ${pesosExactos.format(campana.costoMeta)} según Meta` : ""} ·{" "}
+            {pesos.format(campana.gasto)} gastados
+          </span>
+        </p>
+      )}
       <BarraProporcion ancho={ancho} color={color} />
     </Tarjeta>
   );

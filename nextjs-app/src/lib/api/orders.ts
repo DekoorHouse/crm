@@ -1,5 +1,6 @@
 import type {
   DesgloseCampanasResponse,
+  DesgloseMensajesResponse,
   DesgloseResponse,
   Order,
   OrderFilters,
@@ -80,6 +81,13 @@ export async function fetchDesgloseCampanas(
   const response = await fetch(`/api/orders/desglose?${params.toString()}`);
   const data = await response.json();
   if (!data.success) throw new Error(data.message || "Error al obtener el desglose");
+  return data;
+}
+
+export async function fetchDesgloseMensajes(dateFilter: string): Promise<DesgloseMensajesResponse> {
+  const response = await fetch(`/api/orders/desglose-mensajes?${new URLSearchParams({ dateFilter }).toString()}`);
+  const data = await response.json();
+  if (!data.success) throw new Error(data.message || "Error al obtener los mensajes por anuncio");
   return data;
 }
 

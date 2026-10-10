@@ -439,6 +439,7 @@ async function handleReferralEvent(senderId, referral, eventTimestamp, channel =
     }
 
     const adReferral = buildAdReferralData(referral, channel, ts);
+    void require('./meta/adMessageEvents').recordAdMessage({ adId: adReferralId, contactId, channel, at: ts });
     await contactRef.update({
         adReferral,
         adSourceIds: admin.firestore.FieldValue.arrayUnion(String(adReferralId))
@@ -657,6 +658,7 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
         // Persistir el anuncio de origen (para el banner, la atribución del Purchase y el enrutamiento).
         contactUpdateData.adReferral = buildAdReferralData(referral, channel, messageData.timestamp);
         contactUpdateData.adSourceIds = admin.firestore.FieldValue.arrayUnion(String(adReferralId));
+        void require('./meta/adMessageEvents').recordAdMessage({ adId: adReferralId, contactId, channel, at: messageData.timestamp });
     }
 
     await contactRef.set(contactUpdateData, { merge: true });
