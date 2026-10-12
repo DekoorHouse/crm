@@ -11,6 +11,9 @@ const API = 'https://openrouter.ai/api/v1';
 const COLLECTION = 'image_studio_generations';
 const MAX_REFERENCES = 4;
 const JOB_TTL_MS = 10 * 60 * 1000;
+// Imágenes en proceso a la vez por usuario. OpenRouter las atiende en paralelo; Qwen corre en UNA GPU propia.
+const MAX_CONCURRENT = 3;
+const MAX_CONCURRENT_LOCAL = 1;
 let catalogCache;
 let catalogFlight;
 function failure(message, status = 400) { return Object.assign(new Error(message), { status }); }
@@ -258,19 +261,31 @@ async function createGeneration(fields, files, actor) {
     const fingerprint = requestFingerprint(request);
     const ref = db.collection(COLLECTION).doc(fields.requestId);
     const owner = actor.uid || actor.email || 'worker';
-    const lockRef = db.collection('image_studio_locks').doc(crypto.createHash('sha256').update(owner).digest('hex'));
+    // Un candado por "turno": hasta MAX_CONCURRENT a la vez (Qwen tiene su propio turno único).
+    const ownerHash = crypto.createHash('sha256').update(owner).digest('hex');
+    const slots = model.local
+        ? Array.from({ length: MAX_CONCURRENT_LOCAL }, (_, i) => `${ownerHash}_local_${i}`)
+        : Array.from({ length: MAX_CONCURRENT }, (_, i) => `${ownerHash}_${i}`);
+    const slotRefs = slots.map(id => db.collection('image_studio_locks').doc(id));
+    let lockRef = null;
     const job = {
         status: 'generating', prompt: request.prompt, modelId: model.id, modelName: model.name,
         options: Object.fromEntries(['aspect_ratio', 'resolution', 'quality'].filter(k => request[k]).map(k => [k, request[k]])),
         referenceCount: files.length, createdAt: new Date().toISOString(), fingerprint, owner,
     };
     const created = await db.runTransaction(async tx => {
-        const [existing, lock] = await Promise.all([tx.get(ref), tx.get(lockRef)]);
+        const [existing, ...locks] = await Promise.all([tx.get(ref), ...slotRefs.map(r => tx.get(r))]);
         if (existing.exists) {
             if (existing.data().owner !== owner || existing.data().fingerprint !== fingerprint) throw failure('Este identificador ya se usó para otra generación.', 409);
             return false;
         }
-        if (lock.exists && lock.data().expiresAt > Date.now()) throw failure('Ya tienes una imagen en proceso. Espera a que termine antes de generar otra.', 409);
+        const free = locks.findIndex(lock => !(lock.exists && lock.data().expiresAt > Date.now()));
+        if (free < 0) {
+            throw failure(model.local
+                ? 'Ya tienes una imagen en proceso con Qwen. Espera a que termine antes de generar otra.'
+                : `Ya tienes ${MAX_CONCURRENT} imágenes en proceso. Espera a que termine alguna antes de generar otra.`, 409);
+        }
+        lockRef = slotRefs[free];
         tx.set(ref, job);
         tx.set(lockRef, { jobId: ref.id, expiresAt: Date.now() + JOB_TTL_MS });
         return true;
@@ -297,4 +312,4 @@ async function recoverInterrupted(bootAt = new Date().toISOString()) {
     return viejas.length;
 }
 
-module.exports = { recoverInterrupted, getModels, linkModel, getGallery, getJob, createGeneration, deleteGeneration, validateGeneration, publicJob, prepareReferences };
+module.exports = { MAX_CONCURRENT, recoverInterrupted, getModels, linkModel, getGallery, getJob, createGeneration, deleteGeneration, validateGeneration, publicJob, prepareReferences };

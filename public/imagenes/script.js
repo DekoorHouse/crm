@@ -1,7 +1,13 @@
 (() => {
     'use strict';
     const $ = id => document.getElementById(id);
-    const state = { models: [], linkedIds: [], connected: false, qwen: null, qwenTimer: null, references: [], jobs: [], nextCursor: null, active: null, current: null, polling: null, busy: false, started: false };
+    const state = { models: [], linkedIds: [], connected: false, qwen: null, qwenTimer: null, references: [], jobs: [], nextCursor: null, active: new Map(), current: null, polling: null, busy: false, started: false };
+    // Hasta 3 imágenes de OpenRouter a la vez (el servidor pone el mismo tope); Qwen, una (una sola GPU).
+    const MAX_ACTIVE = 3;
+    const isLocalJob = job => !!state.models.find(m => m.id === job.modelId)?.local || !!job.local;
+    const activeOf = local => [...state.active.values()].filter(job => isLocalJob(job) === !!local).length;
+    const atLimit = selected => !!selected && activeOf(selected.local) >= (selected.local ? 1 : MAX_ACTIVE);
+    const saveActive = () => { try { localStorage.setItem('imageStudioActive', JSON.stringify([...state.active.keys()])); } catch (_) {} };
     const portal = window.createImageStudioPortal({ canvas: $('generation-portal'), field: $('generation-portal-field'), pauseButton: $('generation-pause'), pauseStatus: $('generation-motion-status') });
     const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const money = value => value == null ? 'Costo no reportado' : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 4 }).format(value)} USD`;
@@ -56,7 +62,11 @@
         renderQwen(selected);
         $('references').disabled = max === 0;
         $('dropzone').style.opacity = max ? '1' : '.5';
-        $('generate').disabled = !selected || state.busy || (selected.local ? state.qwen?.status !== 'ready' : !state.connected);
+        $('generate').disabled = !selected || state.busy || atLimit(selected) || (selected.local ? state.qwen?.status !== 'ready' : !state.connected);
+        const enProceso = state.active.size;
+        $('generate').querySelector('span').textContent = state.busy ? 'Enviando…'
+            : atLimit(selected) ? (selected.local ? 'Generando…' : `${MAX_ACTIVE} en proceso…`)
+            : enProceso ? `Generar otra (${enProceso} en proceso)` : 'Generar imagen';
         if (selected) localStorage.setItem('imageStudioModel', selected.id);
     }
     // Qwen corre en la GPU propia de RunPod: con referencia edita la foto, sin referencia crea desde texto.
@@ -146,7 +156,6 @@
     }
     function setBusy(busy) {
         state.busy = busy;
-        $('generate').querySelector('span').textContent = busy ? 'Generando…' : 'Generar imagen';
         renderOptions();
     }
     function mergeJob(job) {
@@ -189,41 +198,49 @@
         finally { $('delete-job').disabled = false; }
     }
     function elapsed() {
-        if (!state.active) return;
-        const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(state.active.createdAt)) / 1000));
+        const job = state.current && state.active.get(state.current.id);
+        if (!job) return;
+        const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(job.createdAt)) / 1000));
         $('elapsed').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
     }
-    function track(job) {
-        state.active = job; localStorage.setItem('imageStudioActive', job.id); setBusy(true); showJob(job); elapsed();
+    // Sigue una imagen en proceso. show=false la agrega a la cola sin cambiar la vista previa.
+    function track(job, show = true) {
+        state.active.set(job.id, job); saveActive(); renderOptions();
+        if (show) { showJob(job); elapsed(); }
         clearTimeout(state.polling);
         state.polling = setTimeout(poll, 2500);
     }
+    function finishActive(job, message, isError) {
+        state.active.delete(job.id); saveActive(); renderOptions();
+        // Solo cambia la vista previa si es la imagen que se está viendo (o no se está viendo ninguna).
+        if (!state.current || state.current.id === job.id) showJob(job);
+        notice(message, isError);
+    }
     async function poll() {
-        if (!state.active) return;
-        try {
-            const { job } = await api(`/generations/${state.active.id}`);
-            mergeJob(job);
-            if (job.status !== 'generating') {
-                state.active = null; localStorage.removeItem('imageStudioActive'); setBusy(false); showJob(job);
-                notice(job.status === 'completed' ? 'Tu imagen está lista y se guardó en la galería.' : job.error, job.status !== 'completed');
-                return;
+        if (!state.active.size) return;
+        await Promise.all([...state.active.values()].map(async active => {
+            try {
+                const { job } = await api(`/generations/${active.id}`);
+                mergeJob(job);
+                if (job.status !== 'generating') finishActive(job, job.status === 'completed' ? 'Tu imagen está lista y se guardó en la galería.' : job.error, job.status !== 'completed');
+            } catch (err) {
+                if (err.status === 404 || err.status === 401) {
+                    const msg = err.status === 404 ? 'La solicitud no se registró. Puedes volver a generar.' : err.message;
+                    finishActive({ ...active, status: 'failed', error: msg }, msg, true);
+                    return;
+                }
+                notice('No se pudo consultar el progreso. La solicitud ya fue enviada; reconectando…', true);
             }
-        } catch (err) {
-            if (err.status === 404 || err.status === 401) {
-                showJob({ ...state.active, status: 'failed', error: err.status === 404 ? 'La solicitud no se registró. Puedes volver a generar.' : err.message });
-                state.active = null; localStorage.removeItem('imageStudioActive'); setBusy(false);
-                notice(err.status === 404 ? 'La solicitud no se registró. Puedes volver a generar.' : err.message, true);
-                return;
-            }
-            notice('No se pudo consultar el progreso. La solicitud ya fue enviada; reconectando…', true);
-        }
-        state.polling = setTimeout(poll, 3500);
+        }));
+        clearTimeout(state.polling);
+        if (state.active.size) state.polling = setTimeout(poll, 3500);
     }
     async function generate(event) {
         event.preventDefault();
         if (state.busy) return;
         const selected = model();
         if (!selected) return showModels();
+        if (atLimit(selected)) return notice(selected.local ? 'Ya tienes una imagen en proceso con Qwen. Espera a que termine.' : `Ya tienes ${MAX_ACTIVE} imágenes en proceso. Espera a que termine alguna.`, true);
         const max = Math.min(4, Number(selected.parameters.input_references?.max) || 0);
         if (state.references.length > max) return notice(`Quita referencias: este modelo admite hasta ${max}.`, true);
         if (state.references.length < (Number(selected.parameters.input_references?.min) || 0)) return notice('Este modelo necesita una imagen de referencia.', true);
@@ -236,16 +253,17 @@
         state.references.forEach(ref => form.append('references', ref.file));
         try {
             const { job } = await api('/generations', { method: 'POST', body: form });
-            mergeJob(job); track(job);
+            mergeJob(job); state.busy = false; track(job);
         } catch (err) {
             // Si se perdió la respuesta después de aceptar el trabajo, recuperar el mismo ID evita cobros repetidos.
-            try { const { job } = await api(`/generations/${requestId}`); mergeJob(job); track(job); }
+            try { const { job } = await api(`/generations/${requestId}`); mergeJob(job); state.busy = false; track(job); }
             catch (lookupError) {
                 if (err.status && err.status < 500 || lookupError.status === 404 || lookupError.status === 401) {
                     setBusy(false); notice(err.message, true);
                 } else {
-                    track({ id: requestId, status: 'generating', createdAt: new Date().toISOString(), modelName: selected.name });
-                    notice('Se perdió la conexión. Estamos comprobando la solicitud antes de permitir otra generación.', true);
+                    state.busy = false;
+                    track({ id: requestId, status: 'generating', createdAt: new Date().toISOString(), modelId: selected.id, modelName: selected.name, local: !!selected.local });
+                    notice('Se perdió la conexión. Estamos comprobando la solicitud; ese turno queda ocupado hasta confirmarla.', true);
                 }
             }
         }
@@ -328,7 +346,7 @@
     $('tab-create').addEventListener('click', () => showTab('create')); $('tab-gallery').addEventListener('click', () => showTab('gallery'));
     $('refresh-gallery').addEventListener('click', () => loadGallery().catch(err => notice(err.message, true)));
     $('load-more').addEventListener('click', async () => { $('load-more').disabled = true; try { await loadGallery(true); } catch (err) { notice(err.message, true); } finally { $('load-more').disabled = false; } });
-    $('gallery').addEventListener('click', event => { const button = event.target.closest('[data-job]'); if (button) { const job = state.jobs.find(j => j.id === button.dataset.job); showTab('create'); showJob(job); if (job.status === 'generating' && !state.active) track(job); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+    $('gallery').addEventListener('click', event => { const button = event.target.closest('[data-job]'); if (button) { const job = state.jobs.find(j => j.id === button.dataset.job); showTab('create'); showJob(job); if (job.status === 'generating' && !state.active.has(job.id)) track(job); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
     $('reuse-prompt').addEventListener('click', reuse); $('delete-job').addEventListener('click', removeJob); $('download').addEventListener('click', download);
     setInterval(elapsed, 1000);
     firebase.auth().onAuthStateChanged(async user => {
@@ -342,10 +360,13 @@
             $('connection').innerHTML = '<span></span>Sin conexión';
             $('model').replaceChildren(new Option('No se pudo cargar · pulsa Vincular para reintentar', ''));
         }
-        const activeId = localStorage.getItem('imageStudioActive');
-        if (activeId) {
-            try { const { job } = await api(`/generations/${activeId}`); if (job.status === 'generating') track(job); else { localStorage.removeItem('imageStudioActive'); showJob(job); } }
-            catch (_) { localStorage.removeItem('imageStudioActive'); }
-        }
+        // Imágenes que seguían en proceso al recargar (versiones anteriores guardaban un solo id, no una lista).
+        let activeIds = [];
+        try { const raw = localStorage.getItem('imageStudioActive'); activeIds = raw ? (raw.startsWith('[') ? JSON.parse(raw) : [raw]) : []; } catch (_) {}
+        const restored = await Promise.all(activeIds.map(id => api(`/generations/${id}`).then(r => r.job).catch(() => null)));
+        restored.filter(job => job && job.status === 'generating').forEach((job, i, list) => track(job, i === list.length - 1));
+        const done = restored.filter(job => job && job.status !== 'generating');
+        if (!state.active.size && done.length) showJob(done[done.length - 1]);
+        saveActive();
     });
 })();

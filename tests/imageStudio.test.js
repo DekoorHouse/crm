@@ -123,10 +123,13 @@ test('un ID repetido no puede cambiar prompt ni propietario', async () => {
     await expect(service.createGeneration(fields(), [], { uid: 'otro' })).rejects.toMatchObject({ status: 409 });
     await finish();
 });
-test('limita a una generación simultánea por usuario', async () => {
-    await service.createGeneration(fields(), [], actor);
-    await expect(service.createGeneration(fields({ requestId: 'b2e6caa5-21d1-4f39-b44c-98b46ad1cb9b' }), [], actor)).rejects.toMatchObject({ status: 409 });
-    await finish();
+test('permite hasta 3 generaciones simultáneas por usuario y rechaza la cuarta', async () => {
+    const ids = ['a', 'b', 'c', 'd'].map(c => `${c}2e6caa5-21d1-4f39-b44c-98b46ad1cb9b`);
+    for (const id of ids.slice(0, 3)) expect((await service.createGeneration(fields({ requestId: id }), [], actor)).status).toBe('generating');
+    await expect(service.createGeneration(fields({ requestId: ids[3] }), [], actor)).rejects.toMatchObject({ status: 409 });
+    expect(mockFetch.mock.calls.filter(([url]) => url.endsWith('/images'))).toHaveLength(3);
+    // Otro usuario tiene sus propios turnos.
+    expect((await service.createGeneration(fields({ requestId: 'e2e6caa5-21d1-4f39-b44c-98b46ad1cb9b' }), [], { uid: 'otro' })).status).toBe('generating');
 });
 test('no genera con modelos sin vincular o sin conexión', async () => {
     await service.linkModel(model.id, 'unlink');
