@@ -7628,6 +7628,21 @@ router.get('/ad-responses/:id/history', async (req, res) => {
     }
 });
 
+// Hace público el archivo de la bienvenida y, si es de ad_responses/ (nombre único por subida),
+// le pone caché de 30 días: WhatsApp respeta Cache-Control al descargar por link, así no baja
+// el archivo de Firebase en cada envío. Seguro porque un archivo nuevo siempre lleva otro nombre.
+const AD_RESPONSE_CACHE_CONTROL = 'public, max-age=2592000, immutable';
+async function prepareAdResponseFile(fileUrl) {
+    if (!fileUrl || !fileUrl.includes(bucket.name)) return;
+    try {
+        const filePath = decodeURIComponent(fileUrl.split(`${bucket.name}/`)[1].split('?')[0]);
+        const file = bucket.file(filePath);
+        await file.makePublic();
+        if (filePath.startsWith('ad_responses/')) await file.setMetadata({ cacheControl: AD_RESPONSE_CACHE_CONTROL });
+        console.log(`[GCS-AD] Archivo ${filePath} hecho público.`);
+    } catch (gcsError) { console.error(`[GCS-AD] Warn: No se pudo preparar ${fileUrl}:`, gcsError.message); }
+}
+
 // POST (Crear)
 router.post('/ad-responses', async (req, res) => {
     const { adName, adIds: adIdsInput, message, fileUrl, fileType } = req.body;
@@ -7638,13 +7653,7 @@ router.post('/ad-responses', async (req, res) => {
     }
 
     try {
-        if (fileUrl && fileUrl.includes(bucket.name)) { // Hacer público archivo GCS
-            try {
-                const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
-                await bucket.file(decodeURIComponent(filePath)).makePublic();
-                console.log(`[GCS-AD] Archivo ${decodeURIComponent(filePath)} hecho público.`);
-            } catch (gcsError) { console.error(`[GCS-AD] Warn: No se pudo hacer público ${fileUrl}:`, gcsError); }
-        }
+        await prepareAdResponseFile(fileUrl);
 
         // Verificar conflictos de Ad ID
         const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains-any', adIds).get();
@@ -7680,13 +7689,7 @@ router.put('/ad-responses/:id', async (req, res) => {
         return res.status(400).json({ success: false, message: 'Nombre, al menos un Ad ID válido, y un mensaje o archivo son obligatorios.' });
     }
     try {
-        if (fileUrl && fileUrl.includes(bucket.name)) { // Hacer público archivo GCS
-            try {
-                const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
-                await bucket.file(decodeURIComponent(filePath)).makePublic();
-                console.log(`[GCS-AD] Archivo ${decodeURIComponent(filePath)} hecho público.`);
-            } catch (gcsError) { console.error(`[GCS-AD] Warn: No se pudo hacer público ${fileUrl}:`, gcsError); }
-        }
+        await prepareAdResponseFile(fileUrl);
 
         // Verificar conflictos (excluyendo el documento actual)
         const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains-any', adIds).get();
