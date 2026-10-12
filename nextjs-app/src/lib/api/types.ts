@@ -78,7 +78,14 @@ export interface CampanaDesglose {
   /** Ad IDs que alimentaron la campaña (vacío en el orgánico). */
   ads: string[];
   /** Pedidos por anuncio con su nombre en Ads Manager (null si Meta no lo resolvió). */
-  anuncios?: { adId: string; nombre: string | null; pedidos: number }[];
+  anuncios?: {
+    adId: string;
+    nombre: string | null;
+    pedidos: number;
+    /** Gasto del anuncio en el rango. null si no hay rango o es orgánico/sin campaña. */
+    gasto?: number | null;
+    costoPorPedido?: number | null;
+  }[];
 }
 
 export interface DesgloseCampanasResponse {

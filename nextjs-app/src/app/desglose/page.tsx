@@ -680,18 +680,29 @@ function TarjetaCampana({
                   ? `Anuncios · ${campana.ads.length}`
                   : `IDs de anuncio sin campaña · ${campana.ads.length}`}
               </p>
-              {(campana.anuncios ?? campana.ads.map((adId) => ({ adId, nombre: null, pedidos: 0 }))).map((a) => (
-                <div key={a.adId} className="flex items-center justify-between gap-2 text-xs min-w-0">
-                  <span
-                    className={`truncate ${a.nombre ? "text-on-surface-variant" : "font-mono text-[11px] text-on-surface-variant"}`}
-                    title={a.nombre ? `${a.nombre} · ID ${a.adId}` : a.adId}
-                  >
-                    {a.nombre || a.adId}
-                  </span>
-                  {a.pedidos > 0 && (
-                    <span className="shrink-0 font-bold text-on-surface">
-                      {a.pedidos} {a.pedidos === 1 ? "pedido" : "pedidos"}
+              {(campana.anuncios ?? campana.ads.map((adId) => ({ adId, nombre: null, pedidos: 0, gasto: null, costoPorPedido: null }))).map((a) => (
+                <div key={a.adId} className="text-xs min-w-0">
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <span
+                      className={`truncate ${a.nombre ? "text-on-surface-variant" : "font-mono text-[11px] text-on-surface-variant"}`}
+                      title={a.nombre ? `${a.nombre} · ID ${a.adId}` : a.adId}
+                    >
+                      {a.nombre || a.adId}
                     </span>
+                    {a.pedidos > 0 && (
+                      <span className="shrink-0 font-bold text-on-surface">
+                        {a.pedidos} {a.pedidos === 1 ? "pedido" : "pedidos"}
+                      </span>
+                    )}
+                  </div>
+                  {a.costoPorPedido != null && a.gasto != null && a.gasto > 0 && (
+                    <p className="mt-0.5 flex items-center gap-1 flex-wrap text-[11px]">
+                      <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 12 }}>
+                        sell
+                      </span>
+                      <span className="font-bold text-on-surface">{pesosExactos.format(a.costoPorPedido)}</span>
+                      <span className="text-on-surface-variant">por pedido · {pesos.format(a.gasto)} gastados</span>
+                    </p>
                   )}
                 </div>
               ))}

@@ -31,24 +31,28 @@ const cache = new Map();
 async function gastoPorCampana(accountIds, dateFrom, dateTo) {
     const cuentas = [...new Set((accountIds || []).filter(Boolean).map(String))].sort();
     if (!cuentas.length || !dateFrom || !dateTo) {
-        return { porCampana: {}, total: 0, error: null };
+        return { porCampana: {}, porAnuncio: {}, total: 0, error: null };
     }
 
     const llave = `${cuentas.join(',')}|${dateFrom}|${dateTo}`;
     const hit = cache.get(llave);
     if (hit && (Date.now() - hit.ts) < TTL_MS) {
-        return { porCampana: hit.porCampana, total: hit.total, error: hit.error };
+        return { porCampana: hit.porCampana, porAnuncio: hit.porAnuncio, total: hit.total, error: hit.error };
     }
 
     try {
-        const { campaigns, errors } = await metaAdsService.getCampaignSpendForAccounts(cuentas, dateFrom, dateTo);
+        // Se pide a nivel ANUNCIO y se suma por campaña: el total cuadra igual que
+        // pidiéndolo por campaña y de paso sale el costo por pedido de cada anuncio.
+        const { ads, errors } = await metaAdsService.getAdSpendForAccounts(cuentas, dateFrom, dateTo);
 
         const porCampana = {};
+        const porAnuncio = {};
         let total = 0;
-        for (const c of campaigns) {
-            if (!c.campaignId) continue;
-            porCampana[String(c.campaignId)] = (porCampana[String(c.campaignId)] || 0) + c.spend;
-            total += c.spend;
+        for (const a of ads) {
+            if (a.adId) porAnuncio[String(a.adId)] = (porAnuncio[String(a.adId)] || 0) + a.spend;
+            if (!a.campaignId) continue;
+            porCampana[String(a.campaignId)] = (porCampana[String(a.campaignId)] || 0) + a.spend;
+            total += a.spend;
         }
 
         // Si TODAS las cuentas fallaron no hay gasto que enseñar; hay que
@@ -58,11 +62,11 @@ async function gastoPorCampana(accountIds, dateFrom, dateTo) {
             ? errors[0].error
             : null;
 
-        const entrada = { porCampana, total, error, ts: Date.now() };
+        const entrada = { porCampana, porAnuncio, total, error, ts: Date.now() };
         cache.set(llave, entrada);
-        return { porCampana, total, error };
+        return { porCampana, porAnuncio, total, error };
     } catch (err) {
-        return { porCampana: {}, total: 0, error: err.message };
+        return { porCampana: {}, porAnuncio: {}, total: 0, error: err.message };
     }
 }
 

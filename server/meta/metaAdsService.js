@@ -482,6 +482,26 @@ async function getCampaignSpendForAccounts(accountIds, dateFrom, dateTo) {
     return { campaigns, errors };
 }
 
+/** Gasto por ANUNCIO en el rango (trae también su campaña), para el costo por pedido de cada anuncio. */
+async function getAdSpendForAccounts(accountIds, dateFrom, dateTo) {
+    const ads = [];
+    const errors = [];
+    for (const accId of accountIds) {
+        try {
+            const rows = await getInsightsByLevel(accId, 'ad', dateFrom, dateTo);
+            rows.forEach(r => ads.push({
+                accountId: String(accId).replace('act_', ''),
+                adId: r.ad_id,
+                campaignId: r.campaign_id,
+                spend: Number(r.spend) || 0
+            }));
+        } catch (err) {
+            errors.push({ accountId: accId, error: err.response?.data?.error?.message || err.message });
+        }
+    }
+    return { ads, errors };
+}
+
 /**
  * Conversaciones de mensajes que Meta atribuye a cada campaña en el rango (pestaña Mensajes de
  * /desglose). Meta las reporta como la acción "onsite_conversion.messaging_conversation_started_7d"
@@ -845,7 +865,7 @@ module.exports = {
     // Insights
     getInsights, getInsightsByLevel, getDailySpend,
     // Reporte por region
-    getCampaignSpendForAccounts, getCampaignMessagingForAccounts, resolveAdsToCampaigns,
+    getCampaignSpendForAccounts, getAdSpendForAccounts, getCampaignMessagingForAccounts, resolveAdsToCampaigns,
     // Audiences
     searchTargeting, listCustomAudiences,
     // Pages

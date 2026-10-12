@@ -257,9 +257,25 @@ describe('agregarPorCampana — pedidos por anuncio', () => {
         const r = agregarPorCampana([
             pedido({ attributedAdId: 'a1' }), pedido({ attributedAdId: 'a2' }), pedido({ attributedAdId: 'a1' })
         ], mapa);
-        expect(porNombre(r, 'Dinosaurios').anuncios).toEqual([
+        expect(porNombre(r, 'Dinosaurios').anuncios.map(({ adId, nombre, pedidos }) => ({ adId, nombre, pedidos }))).toEqual([
             { adId: 'a1', nombre: 'Video papá dino', pedidos: 2 },
             { adId: 'a2', nombre: null, pedidos: 1 }
         ]);
+    });
+});
+
+describe('agregarPorCampana — costo por pedido de cada anuncio', () => {
+    test('reparte el gasto de cada anuncio entre sus pedidos', () => {
+        const mapa = { a1: { campaignId: 'c1', campaignName: 'Dino' }, a2: { campaignId: 'c1', campaignName: 'Dino' } };
+        const r = agregarPorCampana([
+            pedido({ attributedAdId: 'a1' }), pedido({ attributedAdId: 'a1' }), pedido({ attributedAdId: 'a2' })
+        ], mapa, { c1: 300 }, { a1: 200, a2: 100 });
+        const [a1, a2] = porNombre(r, 'Dino').anuncios;
+        expect(a1).toMatchObject({ adId: 'a1', gasto: 200, costoPorPedido: 100 });
+        expect(a2).toMatchObject({ adId: 'a2', gasto: 100, costoPorPedido: 100 });
+    });
+    test('sin gasto por anuncio (sin rango) no inventa costo', () => {
+        const r = agregarPorCampana([pedido({ attributedAdId: 'a1' })], { a1: { campaignId: 'c1', campaignName: 'Dino' } });
+        expect(porNombre(r, 'Dino').anuncios[0]).toMatchObject({ gasto: null, costoPorPedido: null });
     });
 });

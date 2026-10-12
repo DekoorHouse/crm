@@ -43,9 +43,10 @@ function cubetaDelPedido(pedido, adToCampaign) {
  * @param {Array<object>} pedidos - documentos de `pedidos` (ya filtrados).
  * @param {Object<string,{campaignId:string, campaignName:string}>} adToCampaign - mapa adId -> campaña.
  * @param {Object<string,number>} gastoPorCampana - mapa campaignId -> gasto de Meta en el MISMO rango.
+ * @param {Object<string,number>|null} gastoPorAnuncio - mapa adId -> gasto en el mismo rango (null = sin gasto que enseñar).
  * @returns {{campanas: Array<{id:string, nombre:string, piezas:number, pedidos:number, monto:number, gasto:number|null, costoPorPedido:number|null, porEstatus:object, porProducto:Array<{producto:string, piezas:number}>, listaPedidos:Array<{numero:number|null, estatus:string, piezas:number, contactId:string|null}>, ads:string[]}>, totalPiezas:number, totalPedidos:number, totalMonto:number}}
  */
-function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}) {
+function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}, gastoPorAnuncio = null) {
     const acumulado = new Map();
     let totalPiezas = 0;
     let totalMonto = 0;
@@ -117,11 +118,18 @@ function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}) {
                 // Pedidos por anuncio, con el nombre que tiene en Ads Manager (null si
                 // Meta no lo resolvió). Del que más trajo al que menos.
                 anuncios: [..._ads.entries()]
-                    .map(([adId, pedidos]) => ({
-                        adId,
-                        nombre: (adToCampaign[adId] && adToCampaign[adId].adName) || null,
-                        pedidos
-                    }))
+                    .map(([adId, pedidos]) => {
+                        const gastoAd = esCampanaReal && gastoPorAnuncio
+                            ? Number(gastoPorAnuncio[adId] || 0)
+                            : null;
+                        return {
+                            adId,
+                            nombre: (adToCampaign[adId] && adToCampaign[adId].adName) || null,
+                            pedidos,
+                            gasto: gastoAd,
+                            costoPorPedido: gastoAd != null && pedidos > 0 ? gastoAd / pedidos : null
+                        };
+                    })
                     .sort((a, b) => b.pedidos - a.pedidos)
             };
         })
