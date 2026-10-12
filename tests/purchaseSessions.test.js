@@ -57,3 +57,8 @@ test('DH17356: un cliente con pedido ya enviado que vuelve por un anuncio abre c
 test.each(['Hola quisera ordenar otra lamparita', 'Quisiera otra lamparita', 'Me gustaría hacer otra lámpara'])('DH17463: abre compra nueva sin preguntar: %s', text => {
     expect(purchaseIntent(text)).toBe('new');
 });
+
+test('DH17838: hablar de la dirección con DHL es del pedido actual, no pregunta compra nueva', () => {
+    expect(purchaseIntent('Checa con DHL mi dirección por favor, atese que tienen dudas, y yo no puedo revisar eso ahora.')).toBe('existing');
+    expect(purchaseIntent('Nó me ha llegado????')).toBe('existing');
+});

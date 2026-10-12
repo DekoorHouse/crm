@@ -12,7 +12,9 @@ function purchaseIntent(text, pending = false) {
     // "ordenar", "lamparita"); quedó como pregunta pendiente, la foto y el nombre que mandó enseguida la
     // borraron, y su anticipo cayó sin pedido. Diminutivos, typos comunes y "ordenar/hacer" también cuentan.
     if (/\b(?:quiero|quisiera|quisera|kisiera|necesito|gustaria|comprar|pedir|encargar|ordenar|hacer|mandar a hacer)\b.{0,45}\b(?:otr[oa]s?\s+(?:lampar\w*|pedidos?)|(?:nuevo pedido|otra compra))\b/.test(t)) return 'new';
-    if (/\b(?:guia|rastreo|paquete)\b/.test(t)) return 'existing';
+    // DH17838 (11-oct-2026): "Checa con DHL mi dirección… tienen dudas" preguntó "¿pedido anterior o compra
+    // nueva?" por el "tienen". Hablar de la paquetería, la dirección o que no ha llegado es del pedido actual.
+    if (/\b(?:guia|rastreo|paquete|paqueteria|dhl|fedex|estafeta|direccion|domicilio|llegado|llego|entrega)\b/.test(t)) return 'existing';
     // DH17006 (24-sep-2026): ya entregado, el cliente escribió "¿Tendrán más variedad? Como otros
     // estilos?" y "quisiera una lámpara con un trailer"; ninguna frase abría compra nueva y su anticipo
     // cayó en el pedido entregado. "quisiera", "tendrán", "otros estilos"… ahora preguntan.
