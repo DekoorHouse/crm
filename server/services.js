@@ -5197,6 +5197,20 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             aiLastError: String(error && error.message || error).slice(0, 600),
             aiLastErrorAt: admin.firestore.FieldValue.serverTimestamp()
         });
+        // 5218611135536 (12-oct-2026): se cortó la conexión con Meta al enviar (ETIMEDOUT/ENETUNREACH) y el
+        // cliente se quedó sin respuesta. Un corte de red pasajero se reintenta UNA vez, solo si seguimos
+        // sin contestarle (el último mensaje del chat es suyo), para no duplicar una respuesta ya enviada.
+        try {
+            const transitorio = /ETIMEDOUT|ENETUNREACH|ECONNRESET|ECONNREFUSED|EAI_AGAIN|socket hang up|timeout of \d+ms exceeded/i
+                .test(String(error && (error.code || '') + ' ' + (error.message || '')));
+            if (transitorio && !(message && message._netRetry)) {
+                const last = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(1).get();
+                if (!last.empty && last.docs[0].data().from === contactId) {
+                    console.warn(`[AI] Corte de red para ${contactId}; reintentando la respuesta en 15s.`);
+                    await triggerAutoReplyAI({ ...(message || {}), _netRetry: true }, contactRef, {}, 15000);
+                }
+            }
+        } catch (e) { console.warn('[AI] No se pudo programar el reintento por red:', e.message); }
     }
 }
 
