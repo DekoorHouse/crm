@@ -764,8 +764,24 @@ async function handleIncomingMessage(senderId, message, eventTimestamp, channel 
         const autoCorazon = !adId && !(generalSettingsDoc.exists && generalSettingsDoc.data().autoCorazonOnFirstMessage === false);
         if (!adResponseSent) {
             let welcomePayload = null;
+            // Messenger: bienvenida = un mensaje de bienvenida por anuncio elegido en
+            // crm_settings/general.messengerWelcomeAdResponseId (12-oct-2026: "Nacional Dinosaurios" en vez
+            // de /corazon). Si no está configurado o ya no existe, sigue el flujo de siempre.
+            if (channel === 'messenger') {
+                try {
+                    const adResponseId = generalSettingsDoc.exists ? generalSettingsDoc.data().messengerWelcomeAdResponseId : null;
+                    const ar = adResponseId ? await db.collection('ad_responses').doc(String(adResponseId)).get() : null;
+                    if (ar && ar.exists && (ar.data().message || ar.data().fileUrl)) {
+                        const d = ar.data();
+                        welcomePayload = { text: d.message || '', fileUrl: d.fileUrl || null, fileType: d.fileType || null };
+                        console.log(`[${logPrefix}] Bienvenida de FB: mensaje de anuncio "${d.adName}" para ${contactId}.`);
+                    }
+                } catch (e) {
+                    console.warn(`[${logPrefix}] No se pudo leer la bienvenida de anuncio para FB: ${e.message}`);
+                }
+            }
             // Preferir /corazon si autoCorazon está activo y la quick reply existe.
-            if (autoCorazon) {
+            if (autoCorazon && !welcomePayload) {
                 const corSnap = await db.collection('quick_replies').where('shortcut', '==', 'corazon').limit(1).get();
                 if (!corSnap.empty) {
                     const cor = corSnap.docs[0].data();
