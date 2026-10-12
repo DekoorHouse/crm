@@ -680,16 +680,21 @@ function TarjetaCampana({
                   ? `Anuncios · ${campana.ads.length}`
                   : `IDs de anuncio sin campaña · ${campana.ads.length}`}
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {campana.ads.map((adId) => (
+              {(campana.anuncios ?? campana.ads.map((adId) => ({ adId, nombre: null, pedidos: 0 }))).map((a) => (
+                <div key={a.adId} className="flex items-center justify-between gap-2 text-xs min-w-0">
                   <span
-                    key={adId}
-                    className="rounded-lg bg-surface-container-high px-2 py-0.5 text-[11px] font-mono text-on-surface-variant"
+                    className={`truncate ${a.nombre ? "text-on-surface-variant" : "font-mono text-[11px] text-on-surface-variant"}`}
+                    title={a.nombre ? `${a.nombre} · ID ${a.adId}` : a.adId}
                   >
-                    {adId}
+                    {a.nombre || a.adId}
                   </span>
-                ))}
-              </div>
+                  {a.pedidos > 0 && (
+                    <span className="shrink-0 font-bold text-on-surface">
+                      {a.pedidos} {a.pedidos === 1 ? "pedido" : "pedidos"}
+                    </span>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 

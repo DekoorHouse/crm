@@ -77,6 +77,8 @@ export interface CampanaDesglose {
   listaPedidos: PedidoDesglose[];
   /** Ad IDs que alimentaron la campaña (vacío en el orgánico). */
   ads: string[];
+  /** Pedidos por anuncio con su nombre en Ads Manager (null si Meta no lo resolvió). */
+  anuncios?: { adId: string; nombre: string | null; pedidos: number }[];
 }
 
 export interface DesgloseCampanasResponse {

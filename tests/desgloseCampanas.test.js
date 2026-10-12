@@ -247,3 +247,19 @@ describe('agregarPorCampana — orden', () => {
         ]);
     });
 });
+
+describe('agregarPorCampana — pedidos por anuncio', () => {
+    test('cuenta los pedidos de cada anuncio y usa el nombre de Ads Manager', () => {
+        const mapa = {
+            a1: { campaignId: 'c1', campaignName: 'Dinosaurios', adName: 'Video papá dino' },
+            a2: { campaignId: 'c1', campaignName: 'Dinosaurios', adName: null }
+        };
+        const r = agregarPorCampana([
+            pedido({ attributedAdId: 'a1' }), pedido({ attributedAdId: 'a2' }), pedido({ attributedAdId: 'a1' })
+        ], mapa);
+        expect(porNombre(r, 'Dinosaurios').anuncios).toEqual([
+            { adId: 'a1', nombre: 'Video papá dino', pedidos: 2 },
+            { adId: 'a2', nombre: null, pedidos: 1 }
+        ]);
+    });
+});

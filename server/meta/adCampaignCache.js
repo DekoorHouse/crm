@@ -18,7 +18,7 @@ const metaAdsService = require('./metaAdsService');
 const TTL_OK_MS = 6 * 60 * 60 * 1000;   // 6 h: por si renombran la campaña
 const TTL_FAIL_MS = 10 * 60 * 1000;     // 10 min: reintentar tras un fallo pasajero
 
-// adId -> { campaignId: string|null, campaignName: string|null, accountId: string|null, ts: number }
+// adId -> { campaignId: string|null, campaignName: string|null, adName: string|null, accountId: string|null, ts: number }
 const cache = new Map();
 
 function vigente(entrada, ahora) {
@@ -48,6 +48,7 @@ async function mapAdsToCampaigns(adIds) {
         map[id] = {
             campaignId: entrada.campaignId,
             campaignName: entrada.campaignName,
+            adName: entrada.adName || null,
             accountId: entrada.accountId || null
         };
     };
@@ -70,6 +71,7 @@ async function mapAdsToCampaigns(adIds) {
                 const entrada = {
                     campaignId: campana ? String(campana.campaignId) : null,
                     campaignName: campana ? campana.campaignName : null,
+                    adName: campana ? campana.adName || null : null,
                     accountId: campana ? campana.accountId : null,
                     ts: ahora
                 };

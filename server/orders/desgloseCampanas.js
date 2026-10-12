@@ -64,7 +64,7 @@ function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}) {
             porEstatus: {},
             listaPedidos: [],
             _porProducto: new Map(),
-            _ads: new Set()
+            _ads: new Map() // adId -> pedidos que trajo
         };
 
         // Las piezas del pedido se cuentan una vez y se reparten a la campaña
@@ -87,7 +87,7 @@ function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}) {
             piezas: piezasPedido,
             contactId: contactoDelPedido(pedido)
         });
-        if (adId) acc._ads.add(adId);
+        if (adId) acc._ads.set(adId, (acc._ads.get(adId) || 0) + 1);
 
         acumulado.set(id, acc);
         totalPiezas += piezasPedido;
@@ -113,7 +113,16 @@ function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}) {
                 // Folios de más nuevo a más viejo (el consecutivo crece con el tiempo);
                 // los legacy sin folio (null) caen al final.
                 listaPedidos: acc.listaPedidos.sort((a, b) => (b.numero || 0) - (a.numero || 0)),
-                ads: [..._ads]
+                ads: [..._ads.keys()],
+                // Pedidos por anuncio, con el nombre que tiene en Ads Manager (null si
+                // Meta no lo resolvió). Del que más trajo al que menos.
+                anuncios: [..._ads.entries()]
+                    .map(([adId, pedidos]) => ({
+                        adId,
+                        nombre: (adToCampaign[adId] && adToCampaign[adId].adName) || null,
+                        pedidos
+                    }))
+                    .sort((a, b) => b.pedidos - a.pedidos)
             };
         })
         // Por PEDIDOS, igual que el desglose por producto: es el número grande

@@ -538,7 +538,7 @@ async function resolveAdsToCampaigns(adIds) {
         // Batch API REAL de Meta: cada sub-request es independiente, asi que un
         // anuncio borrado NO tumba al resto del lote (a diferencia de /?ids=,
         // que falla entero y obligaba a reintentar 1x1 -> lentisimo). 50/lote.
-        const batch = slice.map(id => ({ method: 'GET', relative_url: `${id}?fields=campaign{id,name},account_id` }));
+        const batch = slice.map(id => ({ method: 'GET', relative_url: `${id}?fields=name,campaign{id,name},account_id` }));
         try {
             const resp = await axios.post(`${META_API_BASE}/`, {
                 access_token: token,
@@ -553,6 +553,7 @@ async function resolveAdsToCampaigns(adIds) {
                         map[slice[idx]] = {
                             campaignId: obj.campaign.id,
                             campaignName: obj.campaign.name,
+                            adName: obj.name || null,
                             accountId: obj.account_id ? String(obj.account_id).replace('act_', '') : null
                         };
                     }
