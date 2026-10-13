@@ -2490,6 +2490,7 @@ function renderTemplatePicker() {
 // Para plantillas con HEADER de IMAGE/VIDEO/DOCUMENT: abre file picker, sube a Storage, envia.
 async function handleSendMediaTemplate(templateObject) {
     if (!state.selectedContactId) return;
+    if (!confirmarPlantillaSensible(templateObject && templateObject.name)) return;
     const header = templateObject.components?.find(c => c.type === 'HEADER');
     const fmt = header?.format;
     const acceptByFmt = { IMAGE: 'image/*', VIDEO: 'video/mp4,video/3gp,video/quicktime', DOCUMENT: 'application/pdf' };
@@ -2607,6 +2608,7 @@ function renderEmojiPicker() {
 
 async function handleSendTemplate(templateObject) {
     if (!state.selectedContactId) return;
+    if (!confirmarPlantillaSensible(templateObject && templateObject.name)) return;
 
     const currentContactId = state.selectedContactId;
     const tempId = `temp_${Date.now()}`;

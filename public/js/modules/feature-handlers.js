@@ -576,6 +576,7 @@ async function handleSendCampaign() {
 
     const contactIds = recipients.map(c => c.id); // Array de IDs
     const template = JSON.parse(templateString); // Parsea el objeto de plantilla
+    if (!confirmarPlantillaSensible(template && template.name, contactIds.length)) return;
 
     // Deshabilita botón y muestra carga
     button.disabled = true;
@@ -644,6 +645,7 @@ async function handleSendCampaignWithImage() {
     }
 
     const contactIds = phoneNumber ? [] : recipients.map(c => c.id); // Array de IDs (vacío si es por teléfono)
+    if (!confirmarPlantillaSensible(templateObject && templateObject.name, phoneNumber ? 1 : contactIds.length)) return;
 
     // Deshabilita botón y muestra carga
     button.disabled = true;
@@ -1095,6 +1097,7 @@ async function handleSendUnifiedCampaign() {
 
     const total = phoneNumber ? 1 : recipients.length;
     if (!confirm(`Se enviará la plantilla "${templateName}" a ${total} destinatario(s). ¿Continuar?`)) return;
+    if (!confirmarPlantillaSensible(templateName, total)) return;
 
     button.disabled = true;
     button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...`;

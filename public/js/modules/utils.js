@@ -110,3 +110,15 @@ function formatDateSeparator(date) {
     }
     return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
 }
+
+
+// Plantillas internas que NO son para clientes: piden DOBLE confirmación antes de mandarse
+// (13-oct-2026, a pedido: que el reporte de inventario no se mande por error).
+const PLANTILLAS_DOBLE_CONFIRMACION = ['reporte_inventario_diario'];
+function confirmarPlantillaSensible(nombre, total = 1) {
+    if (!PLANTILLAS_DOBLE_CONFIRMACION.includes(String(nombre || ''))) return true;
+    const a = total > 1 ? ` a ${total} destinatarios` : '';
+    if (!confirm(`⚠️ "${nombre}" es el REPORTE DE INVENTARIO interno, no un mensaje para clientes.\n\n¿Seguro que quieres mandarlo${a}?`)) return false;
+    return confirm(`Segunda confirmación: vas a mandar el reporte de inventario${a}.\n\n¿Mandarlo de todos modos?`);
+}
+window.confirmarPlantillaSensible = confirmarPlantillaSensible;
