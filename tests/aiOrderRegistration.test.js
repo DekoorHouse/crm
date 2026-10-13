@@ -330,3 +330,20 @@ describe('DH17853: el mismo cliente escribe desde otro número', () => {
         expect(createOrder).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('detectAdPersonaje usa el anuncio más reciente (DH17753/DH17850)', () => {
+    const { detectAdPersonaje } = require('../server/orders/aiOrderRegistration');
+    const hints = {
+        '^(?![\s\S]*(?:dino\s*v2|rompiendo))[\s\S]*(?:dino|t-?rex)': 'T-Rex',
+        'dino\s*v2|rompiendo': 'T-Rex rompiendo pared'
+    };
+    const viejo = { source_id: '1', ad_name: 'Dino Hook 3//Mujer hablando', firstSeenAt: '2026-08-25T16:27:00Z' };
+    const nuevo = { source_id: '2', ad_name: 'Dino v2//Lo último que vió', firstSeenAt: '2026-09-30T16:36:00Z' };
+    test('llegó primero por el T-Rex normal y luego por el de rompiendo pared', () => {
+        expect(detectAdPersonaje({ adReferral: viejo, adReferralHistory: [viejo, nuevo] }, hints)).toBe('T-Rex rompiendo pared');
+    });
+    test('un solo anuncio sigue funcionando (con o sin historial)', () => {
+        expect(detectAdPersonaje({ adReferral: viejo, adReferralHistory: [viejo] }, hints)).toBe('T-Rex');
+        expect(detectAdPersonaje({ adReferral: nuevo }, hints)).toBe('T-Rex rompiendo pared');
+    });
+});

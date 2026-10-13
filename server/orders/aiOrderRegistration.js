@@ -93,9 +93,16 @@ const DEFAULT_CONFIG = {
  */
 function detectAdPersonaje(contactData = {}, hints = {}) {
     if (!hints || typeof hints !== 'object') return null;
-    const ref = contactData.adReferral || {};
-    const hist = (Array.isArray(contactData.adReferralHistory) && contactData.adReferralHistory[0]) || {};
-    const heno = [ref.ad_name, ref.headline, ref.body, hist.headline, hist.body, hist.source_url]
+    // El anuncio MÁS RECIENTE, no el primero: adReferral y adReferralHistory[0] guardan el anuncio con el
+    // que el cliente llegó la PRIMERA vez. DH17753/DH17850 (oct-2026) llegaron antes por "Dino Hook 3"
+    // (T-Rex normal) y luego por "Dino v2" (T-Rex rompiendo pared), y se registraban como T-Rex normal.
+    const ms = v => (v && typeof v.toMillis === 'function') ? v.toMillis()
+        : (v && typeof v.toDate === 'function') ? v.toDate().getTime() : (Date.parse(v) || 0);
+    const histArr = Array.isArray(contactData.adReferralHistory) ? contactData.adReferralHistory.filter(Boolean) : [];
+    const ref = histArr.length
+        ? histArr.reduce((a, b) => (ms(b.firstSeenAt) >= ms(a.firstSeenAt) ? b : a))
+        : (contactData.adReferral || {});
+    const heno = [ref.ad_name, ref.headline, ref.body, ref.source_url]
         .filter(Boolean).join(' ');
     if (!heno.trim()) return null;
     for (const [pattern, personaje] of Object.entries(hints)) {
