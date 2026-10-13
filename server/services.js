@@ -3982,7 +3982,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             // escribe /corregir y el pedido regresa a Pendientes con la IA apagada (ver después del loop).
             let disenoTerminado = null;
             try {
-                if (lastOrderDoc && require('./design/designPending').enTerminado(lastOrderDoc.data())) {
+                // También estatus "Diseñado" (diseño terminado y en fabricación) sin guía, aunque la tarjeta
+                // no se haya movido a la columna Terminado del tablero.
+                const od = lastOrderDoc && lastOrderDoc.data();
+                const disenado = od && /^dise[ñn]ado$/i.test(String(od.estatus || '').trim()) && !(od.guiaEnvio && od.guiaEnvio.guia);
+                if (od && (require('./design/designPending').enTerminado(od) || disenado)) {
                     const n = lastOrderDoc.data().consecutiveOrderNumber;
                     disenoTerminado = { ref: lastOrderDoc.ref, id: lastOrderDoc.id, num: n != null ? `DH${n}` : lastOrderDoc.id };
                 }
@@ -4039,7 +4043,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         const { mediaParts, departmentImageParts, skippedMediaNote, deptImagesNote, attachmentsOrderNote } = mediaBundle;
         const { orderInfoNote, trackingNote, shippingFormNote, isRepeatBuyer, hasActiveOrder, multiOrderNote, disenoTerminado, agregarNote } = orderNotes;
         const disenoTerminadoNote = disenoTerminado
-            ? `\n\n**DISEÑO TERMINADO de ${disenoTerminado.num}:** el equipo ya terminó el diseño de su pedido. Si el cliente pide CAMBIAR o CORREGIR algo del diseño o de sus datos (nombre, fecha, frase, personaje, foto, colores…), confirma con él el cambio exacto y escribe /corregir en su propio renglón: el pedido regresa al equipo de diseño y una persona continúa la conversación. Si solo agradece, pregunta o aprueba, NO escribas /corregir.`
+            ? `\n\n**DISEÑO TERMINADO de ${disenoTerminado.num}:** el equipo ya terminó el diseño y el pedido YA SE ESTÁ FABRICANDO. Si el cliente pide CAMBIAR o CORREGIR algo del diseño o de sus datos (nombre, fecha, frase, personaje, foto, colores…), NO le confirmes el cambio ni le prometas que sí se puede: respóndele corto y amable algo como «Permítame consultar si todavía podemos cambiarlo, ya que su pedido ya se está fabricando 🙏 En un momento le confirmo.» y escribe /corregir en su propio renglón. El pedido regresa a Pendientes de diseño y una persona le confirma. Si no queda claro QUÉ quiere cambiar, pregúntaselo en esa misma respuesta. Si solo agradece, pregunta algo general o aprueba, NO escribas /corregir.`
             : '';
 
         // Fase de pago/envío: además de post-venta y del pedido recién registrado, cuenta tener un
