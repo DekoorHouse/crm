@@ -43,7 +43,23 @@ async function gastoPorCampana(accountIds, dateFrom, dateTo) {
     try {
         // Se pide a nivel ANUNCIO y se suma por campaña: el total cuadra igual que
         // pidiéndolo por campaña y de paso sale el costo por pedido de cada anuncio.
-        const { ads, errors } = await metaAdsService.getAdSpendForAccounts(cuentas, dateFrom, dateTo);
+        // Un 5xx de Meta suele ser pasajero (13-oct-2026: "Request failed with status code 503" dejó el
+        // desglose sin costos): se reintenta una vez. Si el nivel anuncio sigue fallando en una cuenta,
+        // esa cuenta se pide por CAMPAÑA: se pierde el costo por anuncio pero no el de la campaña.
+        let { ads, errors } = await metaAdsService.getAdSpendForAccounts(cuentas, dateFrom, dateTo);
+        if (errors.length) {
+            await new Promise(r => setTimeout(r, 1500));
+            const reintento = await metaAdsService.getAdSpendForAccounts(errors.map(e => e.accountId), dateFrom, dateTo);
+            ads = ads.concat(reintento.ads);
+            errors = reintento.errors;
+        }
+        let campanasRespaldo = [];
+        if (errors.length) {
+            const porCamp = await metaAdsService.getCampaignSpendForAccounts(errors.map(e => e.accountId), dateFrom, dateTo);
+            campanasRespaldo = porCamp.campaigns;
+            if (porCamp.errors.length) console.warn('[DESGLOSE] Gasto de Meta no disponible:', porCamp.errors.map(e => `${e.accountId}: ${e.error}`).join(' | '));
+            errors = porCamp.errors;
+        }
 
         const porCampana = {};
         const porAnuncio = {};
@@ -54,6 +70,11 @@ async function gastoPorCampana(accountIds, dateFrom, dateTo) {
             porCampana[String(a.campaignId)] = (porCampana[String(a.campaignId)] || 0) + a.spend;
             total += a.spend;
         }
+        for (const c of campanasRespaldo) {
+            if (!c.campaignId) continue;
+            porCampana[String(c.campaignId)] = (porCampana[String(c.campaignId)] || 0) + c.spend;
+            total += c.spend;
+        }
 
         // Si TODAS las cuentas fallaron no hay gasto que enseñar; hay que
         // decirlo en vez de pintar un costo por pedido de $0, que se leería
@@ -62,7 +83,12 @@ async function gastoPorCampana(accountIds, dateFrom, dateTo) {
             ? errors[0].error
             : null;
 
-        const entrada = { porCampana, porAnuncio, total, error, ts: Date.now() };
+        // Si Meta falló del todo pero hay un dato bueno anterior del mismo rango, se enseña ese (unos
+        // minutos viejo) en vez de dejar las tarjetas sin costo. No se cachea el fallo.
+        if (error && hit && !hit.error) {
+            return { porCampana: hit.porCampana, porAnuncio: hit.porAnuncio, total: hit.total, error: null };
+        }
+        const entrada = { porCampana, porAnuncio, total, error, ts: error ? Date.now() - TTL_MS + 30000 : Date.now() };
         cache.set(llave, entrada);
         return { porCampana, porAnuncio, total, error };
     } catch (err) {
