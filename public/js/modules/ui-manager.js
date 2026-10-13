@@ -2585,12 +2585,14 @@ function _renderLoteModal() {
         const cli = escapeHtml((it.cliente || '').slice(0, 26) || it.orderNumber);
         const pedTd = `<td style="padding:8px 10px 8px 0;font-weight:700;color:var(--color-primary);white-space:nowrap">${escapeHtml(it.orderNumber)}</td>`;
         if (it.error || !it.servicios || !it.servicios.length) {
-            return `<tr style="border-bottom:1px solid var(--color-border,#e5e7eb)">${pedTd}<td style="padding:8px 10px 8px 0">${cli}</td><td style="padding:8px 10px 8px 0">${escapeHtml(it.cp || '')}</td><td colspan="2" style="padding:8px 0;color:#b45309;font-size:.8rem">⚠️ ${escapeHtml(it.error || 'Sin servicios — revisa el C.P.')}</td></tr>`;
+            return `<tr style="border-bottom:1px solid var(--color-border,#e5e7eb)"><td></td>${pedTd}<td style="padding:8px 10px 8px 0">${cli}</td><td style="padding:8px 10px 8px 0">${escapeHtml(it.cp || '')}</td><td colspan="2" style="padding:8px 0;color:#b45309;font-size:.8rem">⚠️ ${escapeHtml(it.error || 'Sin servicios — revisa el C.P.')}</td></tr>`;
         }
         const opts = it.servicios.map((s, si) => `<option value="${si}">${escapeHtml((s.paqueteria || '') + ' · ' + (s.servicio || ''))} — $${Number(s.costo || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</option>`).join('');
         const sel = `<select id="lote-sel-${i}" style="font-size:12px;padding:4px 6px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;max-width:280px;background:var(--color-surface,#fff);color:var(--color-text,#334155)">${opts}</select>`;
         const btn = `<button id="lote-btn-${i}" onclick="crearGuiaLote(${i})" style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap">Crear guía</button>`;
-        return `<tr style="border-bottom:1px solid var(--color-border,#e5e7eb)">${pedTd}
+        const hecha = it.status === 'creada';
+        const chk = `<td style="padding:8px 8px 8px 0"><input type="checkbox" class="lote-chk" id="lote-chk-${i}" data-i="${i}" onchange="_loteSelCount()" ${hecha ? 'disabled' : ''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--color-primary,#ef4444)" aria-label="Seleccionar ${escapeHtml(it.orderNumber)}"></td>`;
+        return `<tr style="border-bottom:1px solid var(--color-border,#e5e7eb)">${chk}${pedTd}
             <td style="padding:8px 10px 8px 0;white-space:nowrap">${cli}</td>
             <td style="padding:8px 10px 8px 0">${escapeHtml(it.cp || '')}</td>
             <td style="padding:8px 10px 8px 0">${sel}</td>
@@ -2608,8 +2610,13 @@ function _renderLoteModal() {
           <input type="checkbox" id="lote-skip-notify" style="width:16px;height:16px;cursor:pointer;accent-color:var(--color-primary,#ef4444)">
           <span>No enviar mensaje a los clientes <span style="color:#94a3b8">(ya se les avisó)</span></span>
         </label>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 10px">
+          <span id="lote-sel-info" style="font-size:.8rem;color:var(--color-text-light,#64748b)">Ninguna seleccionada</span>
+          <button id="lote-crear-sel" onclick="crearGuiasSeleccionadas()" disabled style="background:var(--color-primary,#ef4444);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.85rem;font-weight:600;cursor:pointer;opacity:.5">Crear guías seleccionadas</button>
+        </div>
         <table style="width:100%;border-collapse:collapse;font-size:.875rem">
           <thead><tr style="text-align:left;border-bottom:2px solid var(--color-border);color:var(--color-text-light);white-space:nowrap">
+            <th style="padding:6px 8px 6px 0"><input type="checkbox" id="lote-chk-all" onchange="_loteSelAll(this.checked)" title="Seleccionar todas" aria-label="Seleccionar todas" style="width:16px;height:16px;cursor:pointer;accent-color:var(--color-primary,#ef4444)"></th>
             <th style="padding:6px 10px 6px 0">Pedido</th><th style="padding:6px 10px 6px 0">Cliente</th><th style="padding:6px 10px 6px 0">C.P.</th><th style="padding:6px 10px 6px 0">Paquetería / servicio</th><th style="padding:6px 0">Acción</th>
           </tr></thead>
           <tbody>${rows}</tbody>
@@ -2639,6 +2646,8 @@ async function crearGuiaLote(i) {
         it.status = 'creada';
         if (btn) btn.style.display = 'none';
         if (sel) sel.disabled = true;
+        const chk = document.getElementById('lote-chk-' + i);
+        if (chk) { chk.checked = false; chk.disabled = true; _loteSelCount(); }
         if (estado) estado.innerHTML = `<span style="color:#166534;font-size:.82rem;font-weight:600">✓ ${escapeHtml(j.guia)}</span>`;
     } catch (err) {
         it.status = 'idle';
@@ -2647,6 +2656,39 @@ async function crearGuiaLote(i) {
     }
 }
 window.crearGuiaLote = crearGuiaLote;
+
+// Selección múltiple del lote: cuenta, "seleccionar todas" y crear las marcadas (de 3 en 3 para no
+// saturar al proveedor; cada una sigue su propio flujo de crearGuiaLote, con su anti doble clic).
+function _loteChecks() { return [...document.querySelectorAll('#lote-modal-box .lote-chk')]; }
+function _loteSelCount() {
+    const disponibles = _loteChecks().filter(c => !c.disabled);
+    const n = disponibles.filter(c => c.checked).length;
+    const info = document.getElementById('lote-sel-info');
+    const btn = document.getElementById('lote-crear-sel');
+    const all = document.getElementById('lote-chk-all');
+    if (info) info.textContent = n ? `${n} seleccionada(s)` : 'Ninguna seleccionada';
+    if (btn) { btn.disabled = !n; btn.style.opacity = n ? '1' : '.5'; btn.textContent = n ? `Crear guías seleccionadas (${n})` : 'Crear guías seleccionadas'; }
+    if (all) { all.checked = !!disponibles.length && n === disponibles.length; all.indeterminate = n > 0 && n < disponibles.length; }
+}
+window._loteSelCount = _loteSelCount;
+function _loteSelAll(on) { _loteChecks().forEach(c => { if (!c.disabled) c.checked = on; }); _loteSelCount(); }
+window._loteSelAll = _loteSelAll;
+async function crearGuiasSeleccionadas() {
+    const idx = _loteChecks().filter(c => c.checked && !c.disabled).map(c => parseInt(c.dataset.i, 10));
+    if (!idx.length) return;
+    if (!confirm(`¿Crear ${idx.length} guía(s)? Cada una se cobra en el saldo de la paquetería.`)) return;
+    const btn = document.getElementById('lote-crear-sel');
+    if (btn) { btn.disabled = true; btn.style.opacity = '.5'; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creando…'; }
+    idx.forEach(i => { const c = document.getElementById('lote-chk-' + i); if (c) c.disabled = true; });
+    const cola = idx.slice();
+    await Promise.all(Array.from({ length: Math.min(3, cola.length) }, async () => {
+        while (cola.length) await crearGuiaLote(cola.shift());
+    }));
+    // Las que fallaron se pueden volver a marcar.
+    idx.forEach(i => { const it = (window._loteData || [])[i]; const c = document.getElementById('lote-chk-' + i); if (c && it && it.status !== 'creada') c.disabled = false; });
+    _loteSelCount();
+}
+window.crearGuiasSeleccionadas = crearGuiasSeleccionadas;
 
 // Pedido activo en el modal (se guarda el OBJETO, no el índice, para no desincronizar tras un re-render).
 let _guiaEnvioActual = null;
