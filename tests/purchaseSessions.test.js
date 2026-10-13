@@ -69,3 +69,7 @@ test('DH17486: pedir un diseño nuevo tras la entrega abre compra nueva; pedir u
     expect(purchaseIntent('¿Me puede hacer un cambio en el diseño?')).not.toBe('new');
     expect(purchaseIntent('Ya me llegó, gracias')).toBe('existing');
 });
+
+test('DH17979: "quiero otro trabajo aparte" abre compra nueva', () => {
+    expect(purchaseIntent('Quiero otro trabajo aparte del yá registrado con DH17979')).toBe('new');
+});

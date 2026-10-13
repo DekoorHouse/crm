@@ -11,7 +11,7 @@ function purchaseIntent(text, pending = false) {
     // DH17463 (9-oct-2026): "Hola quisera ordenar otra lamparita" no abría compra nueva ("quisera" sin i,
     // "ordenar", "lamparita"); quedó como pregunta pendiente, la foto y el nombre que mandó enseguida la
     // borraron, y su anticipo cayó sin pedido. Diminutivos, typos comunes y "ordenar/hacer" también cuentan.
-    if (/\b(?:quiero|quisiera|quisera|kisiera|necesito|gustaria|comprar|pedir|encargar|ordenar|hacer|mandar a hacer)\b.{0,45}\b(?:otr[oa]s?\s+(?:lampar\w*|pedidos?)|(?:nuevo pedido|otra compra))\b/.test(t)) return 'new';
+    if (/\b(?:quiero|quisiera|quisera|kisiera|necesito|gustaria|comprar|pedir|encargar|ordenar|hacer|mandar a hacer)\b.{0,45}\b(?:otr[oa]s?\s+(?:lampar\w*|pedidos?|trabajos?|disenos?)|(?:nuevo pedido|otra compra))\b/.test(t)) return 'new';
     // DH17486 (12-oct-2026): ya entregado, "¿nos puede hacer un diseño parecido a este?" (foto de su perrito)
     // no abrió compra nueva: no dice "lámpara". Pedir que le HAGAN un diseño/otra lámpara es compra nueva.
     if (!/\b(?:cambi\w*|correg\w*|corrig\w*|modific\w*|arregl\w*)\b/.test(t)

@@ -32,11 +32,18 @@ async function preparePaymentTurn(contactId, { register = null, orderNumber = nu
     return { registeredOrderNumber, context };
 }
 
-function paymentReply(context, { customerText = '', aiText = '', receiptPresent = false, recentReplies = [], onlyPreventRepeatRequest = false } = {}) {
+// El cliente aclara que el pago/anticipo es de OTRO pedido, no del que ya pagó (DH17979, 13-oct-2026:
+// "El anticipo es para el último pedido", "Quiero otro trabajo aparte del ya registrado").
+const otherOrderMention = text => /\b(?:otro|otra|nuevo|nueva|ultimo|ultima|siguiente)\s+(?:trabajo|pedido|diseno|lampara|orden|compra)\b|\baparte del\b/.test(clean(text));
+
+function paymentReply(context, { customerText = '', aiText = '', receiptPresent = false, recentReplies = [], onlyPreventRepeatRequest = false, newSale = false } = {}) {
     // Un reclamo de reembolso no es un pago por registrar: la respuesta la lleva la IA (y el equipo).
     if (refundRequest(customerText)) return null;
     // Una instrucción legítima para pagar un pedido aún no pagado conserva los datos bancarios.
     if (onlyPreventRepeatRequest && !context.hasPaid && !context.reportedComplete && !context.pending) return null;
+    // La IA está pidiendo el anticipo de un pedido NUEVO (/esperaanticipo, /nuevopedido): su respuesta
+    // lleva los datos de pago de ESE pedido y no se cambia por avisos del pedido anterior.
+    if (newSale && !receiptPresent) return null;
     const courtesy = !receiptPresent && paymentCourtesyReply(customerText);
     if (courtesy && !context.registrationPending && !context.ambiguous) return [courtesy];
     const question = clean(customerText).trim();
@@ -48,6 +55,10 @@ function paymentReply(context, { customerText = '', aiText = '', receiptPresent 
     if (context.registrationPending) return null;
     if (context.ambiguous) return ['El equipo revisará a cuál de tus pedidos corresponde este comprobante para registrarlo correctamente.'];
     if (context.hasPaid || context.reportedComplete) {
+        // Venta NUEVA en curso (la IA pide el anticipo de otro pedido, o el cliente dice que es otro): el
+        // pago completo del pedido anterior no aplica; se respeta la respuesta de la IA con sus datos de pago.
+        // Un pedido ya pagado completo no tiene anticipo pendiente: si la IA habla de ANTICIPO, es del nuevo.
+        if (!receiptPresent && (newSale || otherOrderMention(customerText) || (context.hasPaid && /\banticipo\b/.test(clean(aiText)) && /\b(?:nuev[oa]|otr[oa]|diseno especial)\b/.test(clean(aiText))))) return null;
         if (requestsPaymentAgain(aiText) || paymentComplaint(customerText)) {
             const name = context.orderNumber ? ` de ${context.orderNumber}` : '';
             return [context.hasPaid

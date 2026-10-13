@@ -126,3 +126,21 @@ test('DH17356: un comprobante nuevo sin pedido no se calla aunque el pedido ante
     expect(paymentReply({ hasPaid: true, formSent: true, pending: 1 }, { receiptPresent: true, aiText: '¡Gracias! En cuanto lo revisemos registramos el pedido de Mateo.' })).toBeNull();
     expect(paymentReply({ hasPaid: true, formSent: true, pending: 0 }, { receiptPresent: true })).toEqual([]);
 });
+
+describe('DH17979: anticipo de un pedido NUEVO con el anterior ya pagado', () => {
+    const pagado = { hasPaid: true, formSent: true, orderNumber: 'DH17979' };
+    const aiAnticipo = 'Te comparto los datos para tu anticipo de $300 de este nuevo pedido. Puedes depositar en OXXO a la tarjeta 4152 3145 7069 0670.';
+    test('la IA pide el anticipo del pedido nuevo: se respeta su respuesta', () => {
+        expect(paymentReply(pagado, { customerText: 'Si, al número del pago en Oxxo.', aiText: aiAnticipo })).toBeNull();
+    });
+    test('el cliente aclara que es otro pedido: no se repite "tu pago ya está registrado"', () => {
+        expect(paymentReply(pagado, { customerText: 'El pago del pedido DH17979, ya pasó. El anticipo es para el último pedido', aiText: 'Claro, te paso los datos de pago.' })).toBeNull();
+        expect(paymentReply(pagado, { customerText: 'Quiero otro trabajo aparte del ya registrado con DH17979', aiText: 'Realiza el pago a esta cuenta.' })).toBeNull();
+    });
+    test('con newSale (/esperaanticipo) también se respeta', () => {
+        expect(paymentReply(pagado, { customerText: 'ok', aiText: 'Realiza tu depósito.', newSale: true })).toBeNull();
+    });
+    test('sin venta nueva, pedir otra vez el pago del pedido pagado sigue bloqueado', () => {
+        expect(paymentReply(pagado, { customerText: '¿y ahora?', aiText: 'Por favor realiza tu pago para enviarlo.' })[0]).toContain('ya está registrado');
+    });
+});

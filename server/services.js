@@ -4615,7 +4615,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                     p.formSent = p.formSent || delivery.status === 'sent';
                 }
                 const reply = paymentConversation.paymentReply(p, { customerText: messageText, aiText: aiResponse, receiptPresent,
-                    onlyPreventRepeatRequest,
+                    onlyPreventRepeatRequest, newSale: esperaAnticipoCmd || wantsNewOrder,
                     recentReplies: history.filter(m => m.from !== contactId).slice(0, 10).map(m => m.text || '') });
                 // En reintento el aviso "el equipo dará seguimiento al registro" NO sale: además de no ser
                 // cierto (lo registra el sistema en cuanto estén los datos), el candado de pagos apaga la IA
