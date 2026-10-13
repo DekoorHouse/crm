@@ -334,8 +334,8 @@ describe('DH17853: el mismo cliente escribe desde otro número', () => {
 describe('detectAdPersonaje usa el anuncio más reciente (DH17753/DH17850)', () => {
     const { detectAdPersonaje } = require('../server/orders/aiOrderRegistration');
     const hints = {
-        '^(?![\s\S]*(?:dino\s*v2|rompiendo))[\s\S]*(?:dino|t-?rex)': 'T-Rex',
-        'dino\s*v2|rompiendo': 'T-Rex rompiendo pared'
+        '^(?![\\s\\S]*(?:dino\\s*v2|rompiendo))[\\s\\S]*(?:dino|t-?rex)': 'T-Rex',
+        'dino\\s*v2|rompiendo': 'T-Rex rompiendo pared'
     };
     const viejo = { source_id: '1', ad_name: 'Dino Hook 3//Mujer hablando', firstSeenAt: '2026-08-25T16:27:00Z' };
     const nuevo = { source_id: '2', ad_name: 'Dino v2//Lo último que vió', firstSeenAt: '2026-09-30T16:36:00Z' };
