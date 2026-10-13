@@ -44,6 +44,12 @@ const { cobrarContacto, loadContactCobranzaContext } = require('./cobranzaServic
 const { decideCobranzaAction, MAX_ATTEMPTS, MAX_DAYS } = require('./cobranzaLogic');
 
 const ESTATUS_COBRABLES = ['Foto enviada', 'Esperando pago', 'Corregido'];
+// Un pedido con el pago validado/registrado o con guía ya no se cobra ni se cancela, aunque su
+// estatus siga diciendo "Foto enviada" (el estatus no siempre se mueve al validar).
+function yaPagadoOEnviado(o) {
+    return !!(o.comprobanteValidadoAt || (o.guiaEnvio && o.guiaEnvio.guia)
+        || Number(o.paymentReceivedCents) > 0 || o.paymentReportedComplete === true);
+}
 const LOOKBACK_DAYS = 30;        // ventana de búsqueda de pedidos por DEFAULT (configurable: cobranza_auto.lookbackDays)
 const SEND_DELAY_MS = 1500;      // pausa entre envíos (rate limit de Meta)
 const CRON_SCHEDULE = '*/15 * * * *'; // el gate interno decide si ya toca correr cada pase
@@ -159,7 +165,8 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
             .map(doc => ({ ref: doc.ref, id: doc.id, ...doc.data() }))
             .filter(o => ESTATUS_COBRABLES.includes(String(o.estatus || '').trim()))
             .filter(o => o.telefono && o.consecutiveOrderNumber != null)
-            .filter(o => !(o.cobranzaAuto && o.cobranzaAuto.done));
+            .filter(o => !(o.cobranzaAuto && o.cobranzaAuto.done))
+            .filter(o => !yaPagadoOEnviado(o));
 
         // Agrupar por cliente: un solo mensaje cubre todos sus pedidos pendientes.
         const byContact = new Map();
@@ -182,15 +189,37 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
         await flushProgress(true); // marcar "en curso" de inmediato para la página
 
         const nowMs = Date.now();
-        for (const [contactId, orders, attemptsPrev] of contactsToProcess) {
+        for (let [contactId, orders, attemptsPrev] of contactsToProcess) {
             if (report.enviados >= cfg.maxPerRun) {
                 pushDetail({ contactId, resultado: 'tope diario alcanzado, queda para mañana' });
                 report.saltados++;
                 continue;
             }
-            const dhList = orders.map(o => 'DH' + o.consecutiveOrderNumber).join(', ');
+            let dhList = orders.map(o => 'DH' + o.consecutiveOrderNumber).join(', ');
 
             try {
+                // DH17339 (13-oct-2026): la lista se lee al empezar la corrida; el pago se validó a las 10:59
+                // y la cobranza lo canceló a las 11:00 con esa foto vieja. Se relee cada pedido justo antes
+                // de decidir, y se salta al cliente si ya pagó o tiene un comprobante abierto en revisión.
+                const frescos = (await Promise.all(orders.map(async o => {
+                    const s = await o.ref.get();
+                    return s.exists ? { ref: o.ref, id: o.id, ...s.data() } : null;
+                }))).filter(o => o && !yaPagadoOEnviado(o) && ESTATUS_COBRABLES.includes(String(o.estatus || '').trim())
+                    && !(o.cobranzaAuto && o.cobranzaAuto.done));
+                if (!frescos.length) {
+                    report.saltados++;
+                    pushDetail({ contactId, pedidos: dhList, resultado: 'saltado: ya pagó o cambió de estatus durante la corrida' });
+                    continue;
+                }
+                const abiertos = await db.collection('payment_receipts').where('contactId', '==', contactId).where('open', '==', true).limit(1).get()
+                    .catch(() => ({ empty: true }));
+                if (!abiertos.empty) {
+                    report.saltados++;
+                    pushDetail({ contactId, pedidos: dhList, resultado: 'saltado: tiene un comprobante de pago en revisión' });
+                    continue;
+                }
+                orders = frescos;
+                dhList = orders.map(o => 'DH' + o.consecutiveOrderNumber).join(', ');
                 // Recordatorio YA agendado para este cliente (p. ej. Andrea lo armó en el chat
                 // cuando el cliente dijo "te pago el 23"): ese mecanismo es el dueño del siguiente
                 // contacto — la cobranza no se le encima. No cobra NI cancela mientras esté vigente.
@@ -222,13 +251,22 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
 
                 if (decision.action === 'cancel') {
                     for (const o of orders) {
-                        await o.ref.update({
-                            estatus: 'Cancelado',
-                            canceladoPorCobranza: true,
-                            canceladoPorCobranzaAt: admin.firestore.FieldValue.serverTimestamp(),
-                            'cobranzaAuto.done': 'cancelado_4_cobros'
+                        // Transacción: si en este último instante se validó el pago o cambió el estatus, no se cancela.
+                        const cancelado = await db.runTransaction(async tx => {
+                            const s = await tx.get(o.ref);
+                            const d = s.exists ? s.data() : null;
+                            if (!d || yaPagadoOEnviado(d) || !ESTATUS_COBRABLES.includes(String(d.estatus || '').trim())) return false;
+                            tx.update(o.ref, {
+                                estatus: 'Cancelado',
+                                canceladoPorCobranza: true,
+                                canceladoPorCobranzaAt: admin.firestore.FieldValue.serverTimestamp(),
+                                'cobranzaAuto.done': 'cancelado_4_cobros'
+                            });
+                            return true;
                         });
-                        console.log(`[COBRANZA_AUTO] ✗ DH${o.consecutiveOrderNumber} CANCELADO (${decision.reason}).`);
+                        console.log(cancelado
+                            ? `[COBRANZA_AUTO] ✗ DH${o.consecutiveOrderNumber} CANCELADO (${decision.reason}).`
+                            : `[COBRANZA_AUTO] DH${o.consecutiveOrderNumber} no se canceló: ya pagó o cambió de estatus.`);
                     }
                     report.cancelados += orders.length;
                     pushDetail({ contactId, pedidos: dhList, resultado: `CANCELADO (${decision.reason})` });
