@@ -7,7 +7,9 @@ const requestsPaymentAgain = text => /(?:manda|envia|comparte|compartir|adjunta|
 // vergüenza estarles cobrando que a ustedes pagar". No es un pago por registrar: pedirle el comprobante
 // la confundió y su comprobante viejo terminó en la cola como pago nuevo.
 const refundRequest = text => /re?e?m?bols|devoluci[oó]n (?:de(?:l| mi) )?dinero|(?:regres|devolv|devuelv|reintegr)\w*[^.!?\n]{0,30}\bdinero\b|(?:mi|el) dinero de vuelta/.test(clean(text));
-const paymentComplaint = text => !refundRequest(text) && /ya\s+(?:(?:te|lo|les)\s+)?(?:pague|page|pago|pagado|pago esta|deposite|transferi)|(?:mandan|piden|cobran|cobrando|cobrar)[^.!?\n]{0,60}(?:pague|page|pago|pagar|otra vez|nuevo)/.test(clean(text));
+// DH17946 (13-oct-2026): "Mi pago ya se la había enviado" no contaba como reclamo y, como el comprobante
+// era repetido, el cliente se quedó SIN respuesta.
+const paymentComplaint = text => !refundRequest(text) && /ya\s+(?:(?:te|lo|les)\s+)?(?:pague|page|pago|pagado|pago esta|deposite|transferi)|(?:mandan|piden|cobran|cobrando|cobrar)[^.!?\n]{0,60}(?:pague|page|pago|pagar|otra vez|nuevo)|(?:pago|comprobante|deposito|transferencia)[^.!?\n]{0,15}\bya\s+(?:(?:se|te|lo|la|les|los)\s+){0,2}(?:habia|haber|envie|mande|enviado|mandado|hice|hecho)|\bya\s+(?:(?:se|te|lo|la|les|los)\s+){0,2}(?:habia|habiamos)\s+(?:enviado|mandado|pagado|depositado|transferido)/.test(clean(text));
 const orderNumberInMessage = text => {
     const numbers = [...new Set([...String(text || '').matchAll(/\bDH\s*(\d{4,6})\b/gi)].map(m => 'DH' + m[1]))];
     return numbers.length === 1 ? numbers[0] : null;

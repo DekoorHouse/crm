@@ -144,3 +144,11 @@ describe('DH17979: anticipo de un pedido NUEVO con el anterior ya pagado', () =>
         expect(paymentReply(pagado, { customerText: '¿y ahora?', aiText: 'Por favor realiza tu pago para enviarlo.' })[0]).toContain('ya está registrado');
     });
 });
+
+test('DH17946: "Mi pago ya se la había enviado" con comprobante repetido recibe respuesta, no silencio', () => {
+    expect(paymentComplaint('Mi pago ya se la había enviado')).toBe(true);
+    expect(paymentComplaint('ya se los había mandado ayer')).toBe(true);
+    expect(paymentComplaint('Te mando la foto del diseño')).toBe(false);
+    const reply = paymentReply({ hasPaid: true, formSent: true, orderNumber: 'DH17946' }, { customerText: 'Mi pago ya se la había enviado', aiText: '', receiptPresent: true });
+    expect(reply[0]).toContain('ya está registrado');
+});
