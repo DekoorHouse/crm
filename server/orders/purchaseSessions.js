@@ -12,6 +12,11 @@ function purchaseIntent(text, pending = false) {
     // "ordenar", "lamparita"); quedó como pregunta pendiente, la foto y el nombre que mandó enseguida la
     // borraron, y su anticipo cayó sin pedido. Diminutivos, typos comunes y "ordenar/hacer" también cuentan.
     if (/\b(?:quiero|quisiera|quisera|kisiera|necesito|gustaria|comprar|pedir|encargar|ordenar|hacer|mandar a hacer)\b.{0,45}\b(?:otr[oa]s?\s+(?:lampar\w*|pedidos?)|(?:nuevo pedido|otra compra))\b/.test(t)) return 'new';
+    // DH17486 (12-oct-2026): ya entregado, "¿nos puede hacer un diseño parecido a este?" (foto de su perrito)
+    // no abrió compra nueva: no dice "lámpara". Pedir que le HAGAN un diseño/otra lámpara es compra nueva.
+    if (!/\b(?:cambi\w*|correg\w*|corrig\w*|modific\w*|arregl\w*)\b/.test(t)
+        && (/\b(?:puede|pueden|podria|podrian|podras|podrias)\s+(?:hacer|hacerme|hacernos|realizar)\b.{0,40}\b(?:diseno|lampar\w*|otr[oa]\s+(?:lampar\w*|igual|asi))\b/.test(t)
+            || /\bdiseno\s+(?:parecido|igual|como\s+(?:este|esta|esto))\b/.test(t))) return 'new';
     // DH17838 (11-oct-2026): "Checa con DHL mi dirección… tienen dudas" preguntó "¿pedido anterior o compra
     // nueva?" por el "tienen". Hablar de la paquetería, la dirección o que no ha llegado es del pedido actual.
     if (/\b(?:guia|rastreo|paquete|paqueteria|dhl|fedex|estafeta|direccion|domicilio|llegado|llego|entrega)\b/.test(t)) return 'existing';

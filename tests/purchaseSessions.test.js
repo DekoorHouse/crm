@@ -62,3 +62,10 @@ test('DH17838: hablar de la dirección con DHL es del pedido actual, no pregunta
     expect(purchaseIntent('Checa con DHL mi dirección por favor, atese que tienen dudas, y yo no puedo revisar eso ahora.')).toBe('existing');
     expect(purchaseIntent('Nó me ha llegado????')).toBe('existing');
 });
+
+test('DH17486: pedir un diseño nuevo tras la entrega abre compra nueva; pedir un cambio no', () => {
+    expect(purchaseIntent('Hola nos puede hacer un diseño parecido a este')).toBe('new');
+    expect(purchaseIntent('¿Pueden hacerme otra lámpara igual?')).toBe('new');
+    expect(purchaseIntent('¿Me puede hacer un cambio en el diseño?')).not.toBe('new');
+    expect(purchaseIntent('Ya me llegó, gracias')).toBe('existing');
+});
