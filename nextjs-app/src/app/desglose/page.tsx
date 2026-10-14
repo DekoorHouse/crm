@@ -30,7 +30,17 @@ const DATE_OPTIONS: SelectOption[] = [
   { value: "hoy", label: "Hoy" },
   { value: "ayer", label: "Ayer" },
   { value: "este-mes", label: "Este mes" },
+  { value: "personalizado", label: "Personalizado…" },
 ];
+
+// Fecha de hoy en México (YYYY-MM-DD) y el rango personalizado en milisegundos: inicio del día
+// "desde" y fin del día "hasta", hora de México, como lo espera rangoFechas.js del servidor.
+const hoyMx = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+function rangoPersonalizado(dateFilter: string, desde: string, hasta: string) {
+  if (dateFilter !== "personalizado" || !desde || !hasta) return {};
+  const [a, b] = desde <= hasta ? [desde, hasta] : [hasta, desde];
+  return { customStart: Date.parse(`${a}T00:00:00-06:00`), customEnd: Date.parse(`${b}T23:59:59.999-06:00`) };
+}
 
 const STATUS_SELECT_OPTIONS: SelectOption[] = [
   { value: "", label: "Todos" },
@@ -114,6 +124,8 @@ export default function DesglosePage() {
 
   // La vista que se usa a diario es "cómo va el día por campaña", así que la página abre ahí.
   const [dateFilter, setDateFilter] = useState("hoy");
+  const [desde, setDesde] = useState(hoyMx);
+  const [hasta, setHasta] = useState(hoyMx);
   const [estatus, setEstatus] = useState("");
   const [agrupar, setAgrupar] = useState<Agrupacion>("campana");
   const [data, setData] = useState<DesgloseResponse | null>(null);
@@ -144,7 +156,7 @@ export default function DesglosePage() {
       }
       try {
         if (modo === "mensajes") {
-          setDataMensajes(await fetchDesgloseMensajes(filters.dateFilter || "hoy"));
+          setDataMensajes(await fetchDesgloseMensajes(filters.dateFilter || "hoy", filters.customStart, filters.customEnd));
         } else if (modo === "campana") {
           setDataCampanas(await fetchDesgloseCampanas(filters));
         } else {
@@ -169,13 +181,13 @@ export default function DesglosePage() {
 
   useEffect(() => {
     if (!user) return;
-    cargar({ dateFilter, estatus: estatus || undefined }, agrupar);
-  }, [user, dateFilter, estatus, agrupar, cargar]);
+    cargar({ dateFilter, estatus: estatus || undefined, ...rangoPersonalizado(dateFilter, desde, hasta) }, agrupar);
+  }, [user, dateFilter, desde, hasta, estatus, agrupar, cargar]);
 
   // Los filtros vivos, en un ref, para que el listener de abajo no tenga que re-suscribirse cada
   // vez que cambias el rango o el agrupado (re-suscribirse vuelve a cobrar las lecturas).
-  const filtrosRef = useRef({ dateFilter, estatus, agrupar });
-  filtrosRef.current = { dateFilter, estatus, agrupar };
+  const filtrosRef = useRef({ dateFilter, estatus, agrupar, desde, hasta });
+  filtrosRef.current = { dateFilter, estatus, agrupar, desde, hasta };
   const refrescoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ultimoRefresco = useRef(0);
 
@@ -188,7 +200,7 @@ export default function DesglosePage() {
     refrescoTimer.current = setTimeout(() => {
       ultimoRefresco.current = Date.now();
       const f = filtrosRef.current;
-      cargar({ dateFilter: f.dateFilter, estatus: f.estatus || undefined }, f.agrupar, true);
+      cargar({ dateFilter: f.dateFilter, estatus: f.estatus || undefined, ...rangoPersonalizado(f.dateFilter, f.desde, f.hasta) }, f.agrupar, true);
       setUltimaActualizacion(new Date());
     }, espera);
   }, [cargar]);
@@ -278,6 +290,27 @@ export default function DesglosePage() {
                 options={DATE_OPTIONS}
                 className="w-full sm:w-48"
               />
+              {dateFilter === "personalizado" && (
+                <div className="flex items-center gap-1.5 pt-1">
+                  <input
+                    type="date"
+                    value={desde}
+                    max={hoyMx()}
+                    onChange={(e) => e.target.value && setDesde(e.target.value)}
+                    aria-label="Desde"
+                    className="min-w-0 flex-1 sm:w-[8.5rem] rounded-xl bg-surface-container-low px-2 py-1.5 text-sm text-on-surface border border-outline-variant/20"
+                  />
+                  <span className="text-xs text-on-surface-variant">a</span>
+                  <input
+                    type="date"
+                    value={hasta}
+                    max={hoyMx()}
+                    onChange={(e) => e.target.value && setHasta(e.target.value)}
+                    aria-label="Hasta"
+                    className="min-w-0 flex-1 sm:w-[8.5rem] rounded-xl bg-surface-container-low px-2 py-1.5 text-sm text-on-surface border border-outline-variant/20"
+                  />
+                </div>
+              )}
             </div>
 
             <div className={`space-y-1.5 min-w-0 ${porMensajes ? "hidden" : ""}`}>
@@ -689,12 +722,17 @@ function TarjetaCampana({
                     >
                       {a.nombre || a.adId}
                     </span>
-                    {a.pedidos > 0 && (
+                    {a.pedidos > 0 ? (
                       <span className="shrink-0 font-bold text-on-surface">
                         {a.pedidos} {a.pedidos === 1 ? "pedido" : "pedidos"}
                       </span>
-                    )}
+                    ) : a.gasto != null && a.gasto > 0 ? (
+                      <span className="shrink-0 font-bold text-error">0 pedidos</span>
+                    ) : null}
                   </div>
+                  {a.pedidos === 0 && a.gasto != null && a.gasto > 0 && (
+                    <p className="mt-0.5 text-[11px] text-on-surface-variant">{pesos.format(a.gasto)} gastados sin pedidos</p>
+                  )}
                   {a.costoPorPedido != null && a.gasto != null && a.gasto > 0 && (
                     <p className="mt-0.5 flex items-center gap-1 flex-wrap text-[11px]">
                       <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 12 }}>
@@ -738,6 +776,9 @@ function TarjetaCampana({
         {campana.piezas === 1 ? "pieza" : "piezas"} · {pesos.format(campana.monto)}
       </p>
 
+      {campana.pedidos === 0 && campana.gasto != null && campana.gasto > 0 && (
+        <p className="text-xs mt-1 text-error font-bold">{pesos.format(campana.gasto)} gastados sin pedidos</p>
+      )}
       {campana.costoPorPedido != null && (
         <p className="text-xs mt-1 flex items-center gap-1">
           <span

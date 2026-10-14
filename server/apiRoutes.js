@@ -1356,7 +1356,7 @@ router.get('/orders/desglose', async (req, res) => {
                 ? await gastoPorCampana(cuentas, rangoMeta.dateFrom, rangoMeta.dateTo)
                 : { porCampana: {}, porAnuncio: {}, total: 0, error: null };
 
-            const desglose = agregarPorCampana(pedidos, map, gasto.porCampana, rangoMeta ? gasto.porAnuncio : null);
+            const desglose = agregarPorCampana(pedidos, map, gasto.porCampana, rangoMeta ? gasto.porAnuncio : null, rangoMeta ? gasto.detalle : null);
 
             return res.status(200).json({
                 success: true,

@@ -84,8 +84,11 @@ export async function fetchDesgloseCampanas(
   return data;
 }
 
-export async function fetchDesgloseMensajes(dateFilter: string): Promise<DesgloseMensajesResponse> {
-  const response = await fetch(`/api/orders/desglose-mensajes?${new URLSearchParams({ dateFilter }).toString()}`);
+export async function fetchDesgloseMensajes(dateFilter: string, customStart?: number | null, customEnd?: number | null): Promise<DesgloseMensajesResponse> {
+  const params = new URLSearchParams({ dateFilter });
+  if (customStart) params.set("customStart", String(customStart));
+  if (customEnd) params.set("customEnd", String(customEnd));
+  const response = await fetch(`/api/orders/desglose-mensajes?${params.toString()}`);
   const data = await response.json();
   if (!data.success) throw new Error(data.message || "Error al obtener los mensajes por anuncio");
   return data;

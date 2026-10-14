@@ -31,13 +31,13 @@ const cache = new Map();
 async function gastoPorCampana(accountIds, dateFrom, dateTo) {
     const cuentas = [...new Set((accountIds || []).filter(Boolean).map(String))].sort();
     if (!cuentas.length || !dateFrom || !dateTo) {
-        return { porCampana: {}, porAnuncio: {}, total: 0, error: null };
+        return { porCampana: {}, porAnuncio: {}, detalle: {}, total: 0, error: null };
     }
 
     const llave = `${cuentas.join(',')}|${dateFrom}|${dateTo}`;
     const hit = cache.get(llave);
     if (hit && (Date.now() - hit.ts) < TTL_MS) {
-        return { porCampana: hit.porCampana, porAnuncio: hit.porAnuncio, total: hit.total, error: hit.error };
+        return { porCampana: hit.porCampana, porAnuncio: hit.porAnuncio, detalle: hit.detalle || {}, total: hit.total, error: hit.error };
     }
 
     try {
@@ -63,15 +63,23 @@ async function gastoPorCampana(accountIds, dateFrom, dateTo) {
 
         const porCampana = {};
         const porAnuncio = {};
+        // Nombres y campaña de cada anuncio y campaña con gasto: el desglose también enseña los que
+        // gastaron sin traer pedidos (a pedido, 13-oct-2026).
+        const detalle = { anuncios: {}, campanas: {} };
         let total = 0;
         for (const a of ads) {
-            if (a.adId) porAnuncio[String(a.adId)] = (porAnuncio[String(a.adId)] || 0) + a.spend;
+            if (a.adId) {
+                porAnuncio[String(a.adId)] = (porAnuncio[String(a.adId)] || 0) + a.spend;
+                detalle.anuncios[String(a.adId)] = { nombre: a.adName || null, campaignId: a.campaignId ? String(a.campaignId) : null };
+            }
+            if (a.campaignId && a.campaignName) detalle.campanas[String(a.campaignId)] = a.campaignName;
             if (!a.campaignId) continue;
             porCampana[String(a.campaignId)] = (porCampana[String(a.campaignId)] || 0) + a.spend;
             total += a.spend;
         }
         for (const c of campanasRespaldo) {
             if (!c.campaignId) continue;
+            if (c.campaignName) detalle.campanas[String(c.campaignId)] = c.campaignName;
             porCampana[String(c.campaignId)] = (porCampana[String(c.campaignId)] || 0) + c.spend;
             total += c.spend;
         }
@@ -86,13 +94,13 @@ async function gastoPorCampana(accountIds, dateFrom, dateTo) {
         // Si Meta falló del todo pero hay un dato bueno anterior del mismo rango, se enseña ese (unos
         // minutos viejo) en vez de dejar las tarjetas sin costo. No se cachea el fallo.
         if (error && hit && !hit.error) {
-            return { porCampana: hit.porCampana, porAnuncio: hit.porAnuncio, total: hit.total, error: null };
+            return { porCampana: hit.porCampana, porAnuncio: hit.porAnuncio, detalle: hit.detalle || {}, total: hit.total, error: null };
         }
-        const entrada = { porCampana, porAnuncio, total, error, ts: error ? Date.now() - TTL_MS + 30000 : Date.now() };
+        const entrada = { porCampana, porAnuncio, detalle, total, error, ts: error ? Date.now() - TTL_MS + 30000 : Date.now() };
         cache.set(llave, entrada);
-        return { porCampana, porAnuncio, total, error };
+        return { porCampana, porAnuncio, detalle, total, error };
     } catch (err) {
-        return { porCampana: {}, porAnuncio: {}, total: 0, error: err.message };
+        return { porCampana: {}, porAnuncio: {}, detalle: {}, total: 0, error: err.message };
     }
 }
 

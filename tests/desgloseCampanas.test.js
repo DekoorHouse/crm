@@ -279,3 +279,18 @@ describe('agregarPorCampana — costo por pedido de cada anuncio', () => {
         expect(porNombre(r, 'Dino').anuncios[0]).toMatchObject({ gasto: null, costoPorPedido: null });
     });
 });
+
+describe('agregarPorCampana — anuncios y campañas con gasto y sin pedidos', () => {
+    test('se agregan con 0 pedidos, nombre de Meta y sin costo por pedido', () => {
+        const mapa = { a1: { campaignId: 'c1', campaignName: 'Dino', adName: 'Hook 1' } };
+        const detalle = { anuncios: { a1: { nombre: 'Hook 1', campaignId: 'c1' }, a2: { nombre: 'Hook 2', campaignId: 'c1' }, a3: { nombre: 'Solo gasto', campaignId: 'c9' }, a4: { nombre: 'Sin gasto', campaignId: 'c1' } }, campanas: { c1: 'Dino', c9: 'Araña nueva' } };
+        const r = agregarPorCampana([pedido({ attributedAdId: 'a1' })], mapa, { c1: 300, c9: 120 }, { a1: 200, a2: 100, a3: 120, a4: 0 }, detalle);
+        const dino = porNombre(r, 'Dino');
+        expect(dino.anuncios.map(a => [a.nombre, a.pedidos, a.gasto, a.costoPorPedido])).toEqual([['Hook 1', 1, 200, 200], ['Hook 2', 0, 100, null]]);
+        const arana = porNombre(r, 'Araña nueva');
+        expect(arana).toMatchObject({ pedidos: 0, gasto: 120, costoPorPedido: null });
+        expect(arana.anuncios[0]).toMatchObject({ nombre: 'Solo gasto', pedidos: 0, gasto: 120 });
+        expect(r.totalPedidos).toBe(1);
+        expect(r.campanas[r.campanas.length - 1].nombre).toBe('Araña nueva');
+    });
+});

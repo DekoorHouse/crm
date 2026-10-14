@@ -46,7 +46,7 @@ function cubetaDelPedido(pedido, adToCampaign) {
  * @param {Object<string,number>|null} gastoPorAnuncio - mapa adId -> gasto en el mismo rango (null = sin gasto que enseñar).
  * @returns {{campanas: Array<{id:string, nombre:string, piezas:number, pedidos:number, monto:number, gasto:number|null, costoPorPedido:number|null, porEstatus:object, porProducto:Array<{producto:string, piezas:number}>, listaPedidos:Array<{numero:number|null, estatus:string, piezas:number, contactId:string|null}>, ads:string[]}>, totalPiezas:number, totalPedidos:number, totalMonto:number}}
  */
-function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}, gastoPorAnuncio = null) {
+function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}, gastoPorAnuncio = null, detalleGasto = null) {
     const acumulado = new Map();
     let totalPiezas = 0;
     let totalMonto = 0;
@@ -95,6 +95,22 @@ function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}, gas
         totalMonto += monto;
     }
 
+    // Campañas y anuncios que GASTARON en el rango sin traer un solo pedido: también se enseñan
+    // (con 0 pedidos) para ver en qué se fue el dinero. Solo con gasto > 0.
+    if (detalleGasto && gastoPorAnuncio) {
+        for (const [adId, info] of Object.entries(detalleGasto.anuncios || {})) {
+            const gasto = Number(gastoPorAnuncio[adId] || 0);
+            if (!(gasto > 0) || !info.campaignId) continue;
+            let acc = acumulado.get(info.campaignId);
+            if (!acc) {
+                acc = { id: info.campaignId, nombre: (detalleGasto.campanas || {})[info.campaignId] || `Campaña ${info.campaignId}`,
+                    piezas: 0, pedidos: 0, monto: 0, porEstatus: {}, listaPedidos: [], _porProducto: new Map(), _ads: new Map() };
+                acumulado.set(info.campaignId, acc);
+            }
+            if (!acc._ads.has(adId)) acc._ads.set(adId, 0);
+        }
+    }
+
     const campanas = [...acumulado.values()]
         .map(({ _porProducto, _ads, ...acc }) => {
             // Orgánico y "sin campaña" no tienen gasto que repartir: va null, no
@@ -124,18 +140,19 @@ function agregarPorCampana(pedidos, adToCampaign = {}, gastoPorCampana = {}, gas
                             : null;
                         return {
                             adId,
-                            nombre: (adToCampaign[adId] && adToCampaign[adId].adName) || null,
+                            nombre: (adToCampaign[adId] && adToCampaign[adId].adName)
+                                || (detalleGasto && detalleGasto.anuncios && detalleGasto.anuncios[adId] && detalleGasto.anuncios[adId].nombre) || null,
                             pedidos,
                             gasto: gastoAd,
                             costoPorPedido: gastoAd != null && pedidos > 0 ? gastoAd / pedidos : null
                         };
                     })
-                    .sort((a, b) => b.pedidos - a.pedidos)
+                    .sort((a, b) => (b.pedidos - a.pedidos) || ((b.gasto || 0) - (a.gasto || 0)))
             };
         })
         // Por PEDIDOS, igual que el desglose por producto: es el número grande
         // de la tarjeta. A igualdad de pedidos desempatan las piezas.
-        .sort((a, b) => (b.pedidos - a.pedidos) || (b.piezas - a.piezas));
+        .sort((a, b) => (b.pedidos - a.pedidos) || (b.piezas - a.piezas) || ((b.gasto || 0) - (a.gasto || 0)));
 
     return {
         campanas,

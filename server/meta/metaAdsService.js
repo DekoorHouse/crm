@@ -492,7 +492,9 @@ async function getAdSpendForAccounts(accountIds, dateFrom, dateTo) {
             rows.forEach(r => ads.push({
                 accountId: String(accId).replace('act_', ''),
                 adId: r.ad_id,
+                adName: r.ad_name || null,
                 campaignId: r.campaign_id,
+                campaignName: r.campaign_name || null,
                 spend: Number(r.spend) || 0
             }));
         } catch (err) {
