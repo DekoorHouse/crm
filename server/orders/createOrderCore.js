@@ -3,7 +3,8 @@
  * para que el registro automático por IA (aiOrderRegistration.js) cree pedidos EXACTAMENTE
  * igual que el modal del CRM: mismo contador consecutivo (transaccional), atribución de
  * anuncio, corona plateada del contacto (y quitar la etiqueta pendientes_ia), métrica de
- * rescate de order_followup, evento Purchase a Meta (si el ajuste está en "registro") y
+ * rescate de order_followup, evento Purchase a Meta (si el ajuste está en "registro"; si no,
+ * InitiateCheckout) y
  * detección de cliente recurrente. Cualquier cambio al flujo de registro debe hacerse aquí.
  */
 const { db, admin, bucket } = require('../config');
@@ -324,9 +325,19 @@ async function createOrder({
     // Por defecto el ajuste es "fabricar", así que normalmente esto NO se envía aquí; el Purchase
     // se manda al pasar a "Fabricar" vía sendPurchaseEventOnFabricar(). El flag metaPurchaseSentAt
     // evita duplicados si después cambia el estatus.
+    // Con el ajuste en "fabricar" (el normal), el registro se reporta como InitiateCheckout: le
+    // dice a Meta qué conversaciones llegaron a pedido aunque todavía no paguen. Fire-and-forget
+    // para no frenar el registro (resolver la página del anuncio puede pegarle a la Graph API).
     try {
         if ((await getPurchaseEventTrigger()) === 'registration' && contactRef) {
             await require('./metaPurchase').sendOrderPurchase(newOrderRef.id, { source: 'registration' });
+        } else {
+            require('./metaPurchase').sendOrderInitiateCheckout(newOrderRef.id)
+                .then(r => {
+                    if (r.sent) console.log(`[META EVENT] InitiateCheckout enviado, pedido DH${newOrderNumber}, valor $${totalValue}`);
+                    else if (!r.already) console.log(`[META EVENT] InitiateCheckout no enviado, pedido DH${newOrderNumber}: ${r.reason}`);
+                })
+                .catch(e => console.warn(`[META EVENT] InitiateCheckout falló, pedido DH${newOrderNumber}:`, e.message));
         }
     } catch (metaError) {
         console.error('[META EVENT] Error al enviar Purchase por registro:', metaError.message);

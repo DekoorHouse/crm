@@ -925,8 +925,9 @@ router.post('/', async (req, res) => {
                     };
                     
                     // Meta requiere 'LeadSubmitted' (no 'Lead') cuando action_source = business_messaging
-                    await sendConversionEvent('LeadSubmitted', eventInfo, message.referral, {});
-                    console.log(`[META EVENT] Evento 'LeadSubmitted' enviado a Meta CAPI para ${from}.`);
+                    const leadResult = await sendConversionEvent('LeadSubmitted', eventInfo, message.referral, {});
+                    if (leadResult && leadResult.sent) console.log(`[META EVENT] Evento 'LeadSubmitted' enviado a Meta CAPI para ${from}.`);
+                    else console.warn(`[META EVENT] 'LeadSubmitted' NO enviado para ${from}: ${leadResult?.reason || 'sin confirmación'}.`);
 
                 } catch (eventError) {
                     console.error(`[META EVENT] Error al enviar evento 'LeadSubmitted' a Meta CAPI para ${from}:`, eventError.message);

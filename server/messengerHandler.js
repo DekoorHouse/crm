@@ -366,7 +366,9 @@ function reportAdLead(contactId, channel, senderId, contactName, adReferral, log
         profile: { name: contactName || null }
     };
     sendConversionEvent('LeadSubmitted', leadInfo, adReferral, {})
-        .then(() => console.log(`[${logPrefix} META EVENT] LeadSubmitted enviado para ${contactId} (ad ${adReferral.ad_id}).`))
+        .then(r => (r && r.sent)
+            ? console.log(`[${logPrefix} META EVENT] LeadSubmitted enviado para ${contactId} (ad ${adReferral.ad_id}).`)
+            : console.warn(`[${logPrefix} META EVENT] LeadSubmitted NO enviado para ${contactId}: ${r?.reason || 'sin confirmación'}.`))
         .catch(err => console.error(`[${logPrefix} META EVENT] Error al enviar LeadSubmitted para ${contactId}:`, err.message));
 }
 

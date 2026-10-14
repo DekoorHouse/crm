@@ -191,4 +191,31 @@ async function sendOrderPurchase(docId, { source = 'envios_manual', force = fals
     }
 }
 
-module.exports = { sendOrderPurchase, noAplicaMotivo, purchaseState, isPurchaseResolved, purchaseNeedsReview, isAutomaticPurchaseEligible };
+// Paso intermedio del embudo (chat → pedido registrado → pago): solo paga ~60-70% de lo que se
+// registra, así que el registro se reporta como InitiateCheckout y el pago sigue siendo Purchase.
+// Las campañas siguen optimizando por Purchase; esto es señal extra para Meta. Una sola vez por
+// pedido (metaCheckoutSentAt) y sin reintentos: si falla, solo se pierde la señal intermedia.
+async function sendOrderInitiateCheckout(docId) {
+    const ref = db.collection('pedidos').doc(docId);
+    const snap = await ref.get();
+    if (!snap.exists) return { sent: false, reason: 'el pedido no existe' };
+    const p = snap.data();
+    if (p.metaCheckoutSentAt) return { sent: false, already: true };
+    if (!p.contactId) return { sent: false, reason: 'el pedido no tiene contacto ligado' };
+    const contactSnap = await db.collection('contacts_whatsapp').doc(p.contactId).get();
+    if (!contactSnap.exists) return { sent: false, reason: 'el contacto ya no existe' };
+    const { messagingContactInfo, pickAdReferralForConversion, sendConversionEvent } = require('../services');
+    const contact = contactSnap.data();
+    const referral = pickAdReferralForConversion(contact, { attributedAdId: p.attributedAdId, before: p.createdAt });
+    if (!hasPurchaseAdSignal(p, contact, referral)) return { sent: false, reason: 'orgánico' };
+    const value = Number(p.precio);
+    const customData = Number.isFinite(value) && value > 0 ? { value, currency: 'MXN' } : {};
+    const result = await sendConversionEvent('InitiateCheckout', messagingContactInfo(contact), referral, customData,
+        { eventId: `InitiateCheckout_pedido_${ref.id}` });
+    if (result && result.sent) {
+        await ref.update({ metaCheckoutSentAt: admin.firestore.FieldValue.serverTimestamp() });
+    }
+    return result || { sent: false, reason: 'sin confirmación' };
+}
+
+module.exports = { sendOrderPurchase, sendOrderInitiateCheckout, noAplicaMotivo, purchaseState, isPurchaseResolved, purchaseNeedsReview, isAutomaticPurchaseEligible };
