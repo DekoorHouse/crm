@@ -3267,6 +3267,18 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
     }
 }
 
+/** ¿El cliente escribió su dirección en el chat después de que se le mandó el formulario? (C.P. de 5 dígitos + señas de domicilio) */
+async function direccionMandadaPorChat(contactRef, contactId, desdeTs) {
+    try {
+        const desde = desdeTs && typeof desdeTs.toMillis === 'function' ? desdeTs.toMillis() : 0;
+        const snap = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(25).get();
+        const txt = snap.docs.map(d => d.data())
+            .filter(m => m.from === contactId && (m.timestamp && m.timestamp.toMillis ? m.timestamp.toMillis() : 0) >= desde)
+            .map(m => m.text || '').join('\n');
+        return /\b\d{5}\b/.test(txt) && /\b(?:calle|col\.?|colonia|fracc\w*|interior|int\.?|entre|av\.?|avenida|prol\w*|privada|n[uú]mero)\b|#\s*\d/i.test(txt);
+    } catch (_) { return false; }
+}
+
 // Lógica principal movida a otra función
 async function processAutoReplyAIInner(contactId, message, contactRef, passedContactData) {
     console.log(`[AI] Iniciando proceso de IA para ${contactId} tras esperar que deje de escribir.`);
@@ -3952,6 +3964,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS y YA le confirmaste que los recibimos (/pagado ya se envió).** NO emitas /pagado ni repitas esa confirmación. Responde a lo que el cliente dice ahora (su guía, un reclamo, un pedido o pago NUEVO…); si no tienes el dato que pide, dile que lo revisas con el equipo.`;
                     } else if (de) {
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: YA ESTÁN CAPTURADOS en el sistema** (a nombre de ${de.nombreCompleto || 'el cliente'}). Si el cliente te confirma que llenó el formulario, respóndele ÚNICAMENTE con /pagado. NO le pidas que lo llene otra vez ni le mandes el enlace de nuevo.`;
+                    } else if (await direccionMandadaPorChat(contactRef, contactId, o.shippingFormSentAt)) {
+                        // DH18089 / DH17946 (oct-2026): el cliente mandó su dirección por el chat y la IA le
+                        // insistió 4 veces con el formulario ("por políticas de seguridad el sistema lo
+                        // necesita"). Si ya la escribió, se le acepta y el equipo la captura.
+                        shippingFormNote = `\n\n**Datos de envío del pedido ${num}: el cliente YA MANDÓ su dirección por el chat** (no por el formulario). NO le vuelvas a pedir el formulario ni le digas que "el sistema lo necesita" o que "es por seguridad". Agradécele, confírmale en una línea la dirección que mandó y pídele SOLO lo que falte de esto: nombre completo de quien recibe, teléfono, calle y número, colonia, C.P., municipio/ciudad y estado (las entre calles y una referencia son opcionales). Cuando la tengas completa, dile que el equipo la registra para generar su guía y escribe /equipo en su propio renglón. NO emitas /pagado.`;
                     } else {
                         shippingFormNote = `\n\n**Datos de envío del pedido ${num}: NO aparecen en el sistema** (el formulario NO se ha llenado, o quedó a medias). Si el cliente dice que YA lo llenó, NO lo des por hecho y NO emitas /pagado: agradécele, dile con amabilidad que sus datos todavía no nos llegaron (a veces el formulario no alcanza a guardarse) y pídele que por favor lo llene otra vez en este enlace, asegurándose de tocar el botón de enviar hasta el final: ${formUrl} — Este dato es del SISTEMA y manda sobre lo que diga el cliente.`;
                     }
