@@ -35,6 +35,9 @@ const DATE_OPTIONS: SelectOption[] = [
 
 // Fecha de hoy en México (YYYY-MM-DD) y el rango personalizado en milisegundos: inicio del día
 // "desde" y fin del día "hasta", hora de México, como lo espera rangoFechas.js del servidor.
+// Naranja desaturado para subrayar los anuncios/campañas que gastaron sin traer pedidos.
+const SIN_PEDIDOS_COLOR = "#d9a066";
+
 const hoyMx = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
 function rangoPersonalizado(dateFilter: string, desde: string, hasta: string) {
   if (dateFilter !== "personalizado" || !desde || !hasta) return {};
@@ -727,11 +730,17 @@ function TarjetaCampana({
                         {a.pedidos} {a.pedidos === 1 ? "pedido" : "pedidos"}
                       </span>
                     ) : a.gasto != null && a.gasto > 0 ? (
-                      <span className="shrink-0 font-bold text-error">0 pedidos</span>
+                      <span className="shrink-0 font-bold text-on-surface underline decoration-2 underline-offset-[3px]" style={{ textDecorationColor: SIN_PEDIDOS_COLOR }}>0 pedidos</span>
                     ) : null}
                   </div>
                   {a.pedidos === 0 && a.gasto != null && a.gasto > 0 && (
-                    <p className="mt-0.5 text-[11px] text-on-surface-variant">{pesos.format(a.gasto)} gastados sin pedidos</p>
+                    <p className="mt-0.5 flex items-center gap-1 flex-wrap text-[11px]">
+                      <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 12 }}>
+                        sell
+                      </span>
+                      <span className="font-bold text-on-surface">{pesos.format(a.gasto)}</span>
+                      <span className="text-on-surface-variant">gastados sin pedidos</span>
+                    </p>
                   )}
                   {a.costoPorPedido != null && a.gasto != null && a.gasto > 0 && (
                     <p className="mt-0.5 flex items-center gap-1 flex-wrap text-[11px]">
@@ -777,7 +786,15 @@ function TarjetaCampana({
       </p>
 
       {campana.pedidos === 0 && campana.gasto != null && campana.gasto > 0 && (
-        <p className="text-xs mt-1 text-error font-bold">{pesos.format(campana.gasto)} gastados sin pedidos</p>
+        <p className="text-xs mt-1 flex items-center gap-1">
+          <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 14 }}>
+            sell
+          </span>
+          <span className="font-bold text-on-surface underline decoration-2 underline-offset-[3px]" style={{ textDecorationColor: SIN_PEDIDOS_COLOR }}>
+            0 pedidos
+          </span>
+          <span className="text-on-surface-variant">· {pesos.format(campana.gasto)} gastados</span>
+        </p>
       )}
       {campana.costoPorPedido != null && (
         <p className="text-xs mt-1 flex items-center gap-1">
