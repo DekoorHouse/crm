@@ -404,6 +404,12 @@ export default function DesglosePage() {
                 {pesos.format(actual?.totalMonto ?? 0)}
               </p>
             </div>
+            {porCampana && dataCampanas?.gastoTotal != null && (
+              <div className="text-center" title="Lo gastado en publicidad de Meta en el rango (todas las campañas)">
+                <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Gasto ads</p>
+                <p className="text-lg sm:text-xl font-black text-on-surface">{pesos.format(dataCampanas.gastoTotal)}</p>
+              </div>
+            )}
             {porCampana && dataCampanas?.costoPorPedidoGlobal != null && (
               <div
                 className="text-center"
