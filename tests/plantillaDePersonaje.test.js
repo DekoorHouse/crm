@@ -18,3 +18,14 @@ describe('plantillaDePersonaje', () => {
         expect(plantillaDePersonaje('Spiderman')).toBe('spiderman');
     });
 });
+
+describe('plantillaDePersonaje mira también el producto (DH18052)', () => {
+    test('Dino premium con "Personaje: Dinosaurio T-Rex" no usa la plantilla del T-Rex normal', () => {
+        expect(plantillaDePersonaje('Dinosaurio T-Rex', 'Lámpara infantil Dino premium')).toBeNull();
+        expect(plantillaDePersonaje('T-Rex', 'Lámpara infantil T-Rex rompiendo pared')).toBeNull();
+    });
+    test('el T-Rex normal sigue cortándose', () => {
+        expect(plantillaDePersonaje('T-Rex', 'Lámpara infantil T-Rex')).toBe('rex');
+        expect(plantillaDePersonaje('dinosaurio', 'Lámpara infantil dinosaurio')).toBe('rex');
+    });
+});

@@ -296,11 +296,14 @@ function itemEspecialPersonaje(datos) {
     }
     return ESPECIAL_PERSONAJE_RE.test(sinEtiquetas);
 }
-function plantillaDePersonaje(pers) {
+// `producto` también cuenta para las trampas: DH18052 (14-oct-2026) era "Lámpara infantil Dino premium"
+// con "Personaje: Dinosaurio T-Rex" y se cortó con la plantilla del T-Rex normal.
+function plantillaDePersonaje(pers, producto = '') {
     const p = sinAcentos(String(pers || '')).toLowerCase().trim();
+    const prod = sinAcentos(String(producto || '')).toLowerCase();
     if (!p) return null;
     for (const a of PERSONAJE_ALIAS) {
-        if (a.no && a.no.test(p)) continue;
+        if (a.no && (a.no.test(p) || a.no.test(prod))) continue;
         if (a.re.test(p)) return a.tpl;
     }
     return null;
@@ -405,7 +408,7 @@ function personajeEligibility(o, previews) {
             else { manuales.push({ nombre: ls.map(x => x.nombre).join('/'), personaje: prod, motivo: `cantidad_${cant}_vs_${ls.length}` }); continue; }
         }
         for (const l of ls) {
-            const tpl = plantillaDePersonaje(l.personaje);
+            const tpl = plantillaDePersonaje(l.personaje, prod);
             if (!l.nombre) manuales.push({ ...l, motivo: 'sin_nombre' });
             else if (!tpl) manuales.push({ ...l, motivo: 'sin_plantilla' });
             else {
