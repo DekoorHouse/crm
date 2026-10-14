@@ -84,6 +84,19 @@ jest.mock('../server/config', () => {
         db: {
             collection: hacerColeccion,
             collectionGroup: hacerColeccion,
+            // Las lecturas y escrituras de la transacción pasan por `operar` igual que las sueltas,
+            // así una falla programada también revienta dentro de una transacción. Como en
+            // Firestore, las escrituras se aplican (y fallan) al confirmar, no al llamarlas.
+            runTransaction: async (callback) => {
+                const escrituras = [];
+                const escribir = (ref) => { escrituras.push(ref.path); };
+                const result = await callback({
+                    get: (ref) => ref.get(),
+                    set: escribir, update: escribir, create: escribir, delete: escribir
+                });
+                for (const path of escrituras) await operar('write', path);
+                return result;
+            },
             batch: () => ({ set: () => {}, update: () => {}, delete: () => {}, commit: () => Promise.resolve() })
         },
         admin: { firestore: Object.assign({}, { FieldValue, Timestamp }) },
