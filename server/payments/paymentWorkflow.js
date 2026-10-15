@@ -600,6 +600,11 @@ async function pendingPayments(suspiciousDocs) {
     for (const r of rs.docs) {
         const d = r.data();
         const order = orders.get(d.orderId) || {};
+        // Alerta materializada sin imagen ni lectura (DH18027) de un pedido que ya se validó: se cierra.
+        if (!d.fileUrl && !d.ocr && order.comprobanteValidadoAt && ms(order.comprobanteValidadoAt) >= ms(d.receivedAt)) {
+            await r.ref.update({ open: false, status: 'duplicate', reason: 'Alerta sin comprobante; el pago del pedido ya estaba validado.', updatedAt: stamp() }).catch(() => {});
+            continue;
+        }
         const row = { id: r.id, contactId: d.contactId, name: d.orderNumber || d.contactId, orderNumber: d.orderNumber, orderId: d.orderId, at: ms(d.receivedAt), reason: d.reason, imageUrl: d.fileUrl, imageHash: d.ocr?.imageHash || null, amount: d.ocr?.monto || null, status: d.status, formSent: !!order.shippingFormSentAt, shippingDataReceived: !!order.shippingDataReceivedAt };
         Object.assign(row, { receivedCents: Number(order.paymentReceivedCents) || 0, totalCents: cents(order.precio) || 0, reviewRisks: d.reviewRisks || [] });
         (/cancelad/i.test(d.reason || '') ? pago_cancelado : pago_revision).push(row);
@@ -610,6 +615,26 @@ async function pendingPayments(suspiciousDocs) {
         pago_formulario.push({ id: o.id, contactId: d.contactId, name: `DH${d.consecutiveOrderNumber}`, at: ms(d.shippingFormEligibleAt || d.comprobanteValidadoAt), reason: d.shippingFormReason, status: d.shippingFormStatus });
     }
     if (!suspiciousDocs) suspiciousDocs = (await db.collection('contacts_whatsapp').where('suspiciousReceiptPending', '==', true).limit(200).get()).docs;
+    // DH18027 (14-oct-2026): la IA marcó el ticket como "en revisión" segundos antes de que el comprobante
+    // se validara solo; la alerta quedó SIN imagen ni monto y no se podía validar ni sirve de nada. Si el
+    // pedido de la alerta ya se validó DESPUÉS de levantarla, se cierra sola.
+    const vigentes = [];
+    for (const doc of suspiciousDocs) {
+        const sr = doc.data().suspiciousReceipt || {};
+        const num = Number(String(sr.orderNumber || '').replace(/\D/g, ''));
+        let pagado = false;
+        if (num) {
+            const snap = await db.collection('pedidos').where('consecutiveOrderNumber', '==', num).limit(1).get().catch(() => null);
+            const o = snap && !snap.empty ? snap.docs[0].data() : null;
+            pagado = !!(o && o.comprobanteValidadoAt && ms(o.comprobanteValidadoAt) >= ms(sr.at));
+        }
+        if (pagado) {
+            await doc.ref.update({ ...resolution('approved'), suspiciousReceiptResolvedBy: 'automatic' }).catch(() => {});
+            continue;
+        }
+        vigentes.push(doc);
+    }
+    suspiciousDocs = vigentes;
     const reviews = await mergeReviewRows([...pago_revision, ...pago_cancelado], suspiciousDocs);
     return { pago_revision: reviews.filter(r => !/cancelad/i.test(r.reason || '')),
         pago_cancelado: reviews.filter(r => /cancelad/i.test(r.reason || '')), pago_formulario };
