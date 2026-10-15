@@ -93,12 +93,14 @@ async function getConfig() {
 // ciclo va este cliente y qué plantilla usar si la ventana de 24h está cerrada.
 function buildAttemptContext(cobroNum) {
     const ultima = cobroNum >= MAX_ATTEMPTS;
+    // La última llamada usa la plantilla de cancelación (cobro4: "solo podemos guardarlo hasta mañana").
+    const plantilla = ultima ? 'cobro4' : `cobro${cobroNum}`;
     return `\n\n[CONTEXTO DEL SISTEMA — NO se lo menciones al cliente]\n` +
-        `Este es el cobro número ${cobroNum} de ${MAX_ATTEMPTS} del ciclo de cobranza automática de este cliente.` +
+        `Este es el cobro número ${Math.min(cobroNum, MAX_ATTEMPTS)} de ${MAX_ATTEMPTS} del ciclo de cobranza automática de este cliente.` +
         (ultima
             ? ` Es la ÚLTIMA LLAMADA: avisa con calidez y claridad que si no se recibe su pago, su pedido se cancelará automáticamente mañana. No amenaces; transmite que no queremos que lo pierda.`
             : '') +
-        `\nSi la ventana de 24h está CERRADA y existe la plantilla "cobro${cobroNum}", usa EXACTAMENTE esa (responde [TEMPLATE:cobro${cobroNum}]). Si no existe, elige la plantilla aprobada más adecuada.`;
+        `\nSi la ventana de 24h está CERRADA y existe la plantilla "${plantilla}", usa EXACTAMENTE esa (responde [TEMPLATE:${plantilla}]). Si no existe, elige la plantilla aprobada más adecuada.`;
 }
 
 /**
@@ -324,7 +326,8 @@ async function runCobranzaSweep(pass = 'manana', { force = false } = {}) {
                         await o.ref.update({
                             'cobranzaAuto.attempts': admin.firestore.FieldValue.increment(1),
                             'cobranzaAuto.lastAt': admin.firestore.FieldValue.serverTimestamp(),
-                            'cobranzaAuto.lastDate': todayMx
+                            'cobranzaAuto.lastDate': todayMx,
+                            ...(cobroNum >= MAX_ATTEMPTS ? { 'cobranzaAuto.finalNoticeAt': admin.firestore.FieldValue.serverTimestamp() } : {})
                         });
                     }
                     report.enviados++;

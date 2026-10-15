@@ -13,12 +13,17 @@
 //   - El corte de MAX_DAYS (10) a revisión manual aplica solo al silencio SIN
 //     promesa de por medio (p. ej. conversaciones que fueron pausando cobros).
 
-const MAX_ATTEMPTS = 4;  // cobros máximos por pedido
+// 15-oct-2026: de 4 a 2 cobros. En septiembre, de 1,096 pagos: 802 sin cobro, 193 con 1, 58 con 2,
+// 24 con 3 y 19 con 4; el 4º cobro llegó a 450 personas y solo 18 pagaron, y Meta marcó el número por
+// spam. Ciclo nuevo: cobro 1 el día de la foto, cobro 2 (última llamada) en el día 3, cancela el día 4.
+const MAX_ATTEMPTS = 2;  // cobros máximos por pedido
 const MAX_DAYS = 10;     // días máximos en automatización (sin contar pausas por promesa)
 
 // Espaciado del ciclo: días de espera DESPUÉS del cobro N para mandar el N+1.
 // Con el cobro 1 en el día 0: +2 → día 2, +3 → día 5, +4 → día 9.
-const GAP_AFTER_ATTEMPT = { 1: 2, 2: 3, 3: 4 };
+// 2 y 3 solo los usan los pedidos que ya iban a medio ciclo de 4 cuando se cambió: reciben su
+// última llamada al día siguiente y se cancelan el día después (nunca sin aviso).
+const GAP_AFTER_ATTEMPT = { 1: 3, 2: 1, 3: 1 };
 
 // 'YYYY-MM-DD' → ms. México ya no tiene horario de verano: UTC-6 todo el año.
 function dateStrToMs(d) {
@@ -48,9 +53,11 @@ function decideCobranzaAction(orders, todayMx, nowMs) {
         return { action: 'skip_future', reason: `promesa de pago para ${future.sort()[0]}` };
     }
 
-    // Ya se hicieron los 4 cobros sin pago: al día siguiente del último, se cancela.
+    // Ya se hicieron los cobros Y se mandó la última llamada: al día siguiente se cancela. Sin la
+    // última llamada (pedidos que venían del ciclo de 4), primero se manda y luego se cancela.
     const attempts = Math.max(0, ...orders.map(o => (o.cobranzaAuto || {}).attempts || 0));
-    if (attempts >= MAX_ATTEMPTS) {
+    const ultimaLlamada = orders.some(o => (o.cobranzaAuto || {}).finalNoticeAt || ((o.cobranzaAuto || {}).attempts || 0) >= 4);
+    if (attempts >= MAX_ATTEMPTS && ultimaLlamada) {
         return { action: 'cancel', reason: `${attempts} cobros sin pago` };
     }
 
