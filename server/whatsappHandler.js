@@ -1178,7 +1178,22 @@ router.post('/', async (req, res) => {
                 // la bienvenida genérica, pero SIN /corazon y SIN pisar el botActive que dejó su regla.
                 const autoCorazon = !fromAd && !(generalSettingsDoc.exists && generalSettingsDoc.data().autoCorazonOnFirstMessage === false);
                 let corazonSent = false;
+                // Bienvenida configurable con un mensaje de bienvenida por anuncio
+                // (crm_settings/general.whatsappWelcomeAdResponseId; 15-oct-2026: "Nacional Dinosaurios V3"
+                // en vez de /corazon para los que llegan sin anuncio). Se sella riAdName para que la IA sepa
+                // qué modelo vio. Si no está configurado o ya no existe, sigue el /corazon de siempre.
                 if (autoCorazon) {
+                    try {
+                        const arId = generalSettingsDoc.exists ? generalSettingsDoc.data().whatsappWelcomeAdResponseId : null;
+                        const ar = arId ? await db.collection('ad_responses').doc(String(arId)).get() : null;
+                        if (ar && ar.exists && (ar.data().message || ar.data().fileUrl)) {
+                            const d = ar.data();
+                            corazonSent = (await sendAutoMessage(contactRef, { text: d.message || '', fileUrl: d.fileUrl || null, fileType: d.fileType || null })) === true;
+                            if (corazonSent && d.adName) await contactRef.set({ riAdName: String(d.adName) }, { merge: true }).catch(() => {});
+                        }
+                    } catch (e) { console.warn('[BIENVENIDA] No se pudo usar la bienvenida configurada:', e.message); }
+                }
+                if (autoCorazon && !corazonSent) {
                     const qrSnap = await db.collection('quick_replies').where('shortcut', '==', 'corazon').limit(1).get();
                     if (!qrSnap.empty) {
                         const qr = qrSnap.docs[0].data();
