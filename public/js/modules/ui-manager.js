@@ -1102,7 +1102,9 @@ function openDesignBeta(orderId) {
                     d = await _dlCall(dh, '/approve', { force: true });
                 }
                 close();
-                o.svgCorteUrl = d.driveUrl;
+                o.svgCorteUrl = d.driveUrl; o.svgCorteAt = Date.now();
+                // Ya en Drive: la tarjeta pasa sola a la columna «Diseño Beta» (la misma regla que aplica el servidor).
+                o.boardCol = 'diseno_beta';
                 _dlSetLocal(orderId, { ...a, status: 'approved', driveUrl: d.driveUrl, driveUrls: d.driveUrls || null });
                 if (d.driveUrl) window.open(d.driveUrl, '_blank', 'noopener');
             } else if (act === 'reject') {
