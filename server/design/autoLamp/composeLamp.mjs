@@ -1,6 +1,6 @@
 // Arma, sin intervención humana, una lámpara de personaje como PROYECTO DEL EDITOR V2 (el mismo formato
 // que se abre en /editor-v2): el marco de lámpara con su base blanca, la imagen de grabado dentro del
-// PowerClip llenándolo, y el nombre en Rows of Sunflowers blanco con su silueta negra detrás (como la
+// PowerClip llenándolo, y el nombre en Rows of Sunflowers con su silueta detrás. Todo en negro sobre blanco, que es lo que se graba (como la
 // armó a mano el equipo en DH17220). Reutiliza el código del editor tal cual (modelo, PowerClip,
 // silueta), así que lo que sale aquí se ve y se edita igual que si lo hubiera hecho una persona.
 //
@@ -130,12 +130,12 @@ export function composeLamp({ image, name, font, title }) {
     let layout = place(Math.min(frame.width * LAYOUT.nameWidth / inkWidth, frame.height * LAYOUT.nameHeight / inkHeight));
     for (let tries = 0; tries < 40 && !inside(layout.outline); tries++) layout = place(layout.size * .96);
     const label = { ...createObject('text', layout.x, layout.baseline - layout.size), name: 'Nombre', text, fontSize: layout.size, fontFamily: FONT_FAMILY,
-        fill: '#ffffff', stroke: 'none', strokeWidth: 0 };
+        fill: '#000000', stroke: 'none', strokeWidth: 0 };
 
-    // 3) Silueta negra detrás del nombre (enlazada a él, como la herramienta Silueta del editor). Los dos
+    // 3) Silueta blanca detrás del nombre (el nombre va en negro: se graba) (enlazada a él, como la herramienta Silueta del editor). Los dos
     // van dentro del PowerClip, encima del grabado, como los deja el equipo.
     const silhouette = { ...createObject('path', 0, 0), name: 'Silueta', ...normalizePath(layout.outline),
-        fill: '#000000', stroke: 'none', strokeWidth: 0, silhouetteOf: [label.id] };
+        fill: '#ffffff', stroke: 'none', strokeWidth: 0, silhouetteOf: [label.id] };
     document.objects.push(silhouette, label);
     placeInPowerClip(document, new Set([silhouette.id, label.id]), frame.id);
 
@@ -159,8 +159,9 @@ export function outlinedDocument(document, font) {
 // SVG de corte/grabado de la hoja completa (texto en curvas), como "Exportar → SVG" del editor.
 export const exportLampSvg = (document, font) => exportSvg(outlinedDocument(document, font));
 
-// PREVIO PARA EL CLIENTE: el círculo con fondo blanco y el diseño en negro (el grabado invertido, como se
-// ve impreso), la base también en blanco y el contorno del marco discreto, todo sobre blanco.
+// PREVIO PARA EL CLIENTE (Chris, 19-oct-2026): el diseño de grabado es negro sobre blanco (lo negro se graba);
+// el cliente ve los colores INVERTIDOS de esa hoja: todo negro y el diseño en blanco, como la lámpara prendida.
+// Primero se arma la hoja "en blanco" (círculo y base blancos, contorno discreto) y al final se invierte.
 export function renderClientPreview(document, font, { width = 1100 } = {}) {
     const frame = document.objects.find(item => item.powerClip);
     const pad = 4, box = { x: frame.x - pad, y: frame.y - pad, width: frame.width + 2 * pad, height: frame.height + 2 * pad };
@@ -179,21 +180,20 @@ export function renderClientPreview(document, font, { width = 1100 } = {}) {
     const shown = outlinedDocument(document, font);
     shown.objects = shown.objects.map(item => item.id === frame.id ? { ...item, stroke: 'none' } : item);
     // OJO: en resvg `.pixels` COPIA todo el buffer en cada lectura; se lee una sola vez por capa.
-    const rendered = draw(shown, '#000000');
+    const rendered = draw(shown, '#ffffff');
     const design = { width: rendered.width, height: rendered.height, pixels: rendered.pixels };
-    const area =draw(frameOnly({ fill: '#ffffff', stroke: 'none', overlayFill: '#ffffff' }), '#000000').pixels;
+    const area = draw(frameOnly({ fill: '#ffffff', stroke: 'none', overlayFill: '#ffffff' }), '#000000').pixels;
     const base = draw(frameOnly({ fill: '#000000', stroke: 'none', overlayFill: '#ffffff' }), '#000000').pixels;
-    const line = draw(frameOnly({ fill: 'none', stroke: '#9aa3ab', strokeWidth: .6 }), 'rgba(0,0,0,0)').pixels;
+    const line = draw(frameOnly({ fill: 'none', stroke: '#5f6b73', strokeWidth: .6 }), 'rgba(0,0,0,0)').pixels;
     const out = Buffer.alloc(design.width * design.height * 3);
     for (let i = 0, j = 0; j < out.length; i += 4, j += 3) {
         // Cualquier pixel que toque la base (aunque sea el borde suavizado) va blanco: si no, queda una costura gris.
         const inFrame = area[i] > 127, inBase = base[i] > 8;
         for (let c = 0; c < 3; c++) {
             let v = 255;
-            if (inBase) v = 255;   // la base también blanca (Chris, 19-oct-2026)
-            else if (inFrame) v = 255 - design.pixels[i + c];
+            if (!inBase && inFrame) v = design.pixels[i + c];
             const a = line[i + 3] / 255;   // contorno del marco encima
-            out[j + c] = Math.round(v * (1 - a) + line[i + c] * a);
+            out[j + c] = 255 - Math.round(v * (1 - a) + line[i + c] * a);   // invertido para el cliente
         }
     }
     return { raw: out, width: design.width, height: design.height };

@@ -26,7 +26,7 @@ const RASTER_MODEL = 'openai/gpt-image-2.5-sunburst';
 // en su horario (qwenPod); si está apagada se usa gpt-image para que el diseño no se quede sin hacer.
 const BETA_MODEL = 'dekoor/qwen-image-2.1';
 // Sube cuando cambia cómo se ve el previo para el cliente: los ya guardados se vuelven a armar.
-const CLIENT_PREVIEW_STYLE = 3;
+const CLIENT_PREVIEW_STYLE = 4;
 const RASTER_PROMPT = 'dame el diseño de la imagen con rellenos blancos y fondos negros. En raster engrave con degradado en trama';
 // Último paso del equipo: "Convertir a mapa de bits" en difuminado (1 bit, Floyd–Steinberg) a la
 // resolución de la láser, al tamaño real que la imagen tiene en el marco.
@@ -284,7 +284,9 @@ async function generate(dh, options = {}) {
         const { bitmapSize, toBitmap, pngWithDpi } = await bitmapTools();
         const mm = pictureSizeMm({ width: meta.width, height: meta.height });
         const size = bitmapSize(mm.width, mm.height, BITMAP.dpi);
-        const rgba = await sharp(buffer).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
+        // Para GRABAR va el diseño en negro sobre fondo blanco (lo negro es lo que graba la K40): el modelo lo
+        // entrega blanco sobre negro, así que se invierte aquí (Chris, 19-oct-2026). El previo del cliente es al revés.
+        const rgba = await sharp(buffer).negate({ alpha: false }).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
         const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, BITMAP);
         const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
 
