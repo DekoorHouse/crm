@@ -31,12 +31,18 @@ function receiptKeys(receipt) {
     return keys;
 }
 
-const receiptFolios = receipt => [...new Set([receipt.claveRastreo, receipt.referencia].map(normalize).filter(v => v.length >= 5))];
+// Número de autorización que imprimen los tickets de OXXO ("AUTORIZACION : 665972"). DH18191 (19-oct-2026):
+// tres fotos del MISMO ticket se leyeron con ese número en campos distintos (clave de rastreo en una,
+// referencia en otra) y se tomaron como pagos diferentes: el abono de $300 se sumó dos veces.
+const authorizationCode = receipt => normalize((/autori[sz]aci[oó]n\s*:?\s*(\d{5,})/i.exec([receipt?.evidenciaEstado, receipt?.concepto].filter(Boolean).join(' ')) || [])[1]);
+const receiptFolios = receipt => [...new Set([receipt.claveRastreo, receipt.referencia, authorizationCode(receipt)].map(normalize).filter(v => v.length >= 5))];
 const trackingCode = receipt => {
     const value = normalize(receipt?.claveRastreo);
     return value.length >= 5 ? value : null;
 };
-const differentTracking = (a, b) => !!trackingCode(a) && !!trackingCode(b) && trackingCode(a) !== trackingCode(b);
+// Si la clave de una lectura aparece entre los folios de la otra (otro campo del mismo ticket), es el mismo pago.
+const differentTracking = (a, b) => !!trackingCode(a) && !!trackingCode(b) && trackingCode(a) !== trackingCode(b)
+    && !receiptFolios(b).includes(trackingCode(a)) && !receiptFolios(a).includes(trackingCode(b));
 const sourceAccount = receipt => {
     const value = String(receipt?.cuentaOrigen || '').trim();
     // Sólo números visibles, con separadores o máscara; nunca nombres o etiquetas.

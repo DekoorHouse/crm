@@ -21,3 +21,19 @@ describe('DH17926: la misma referencia (la fecha) en pagos de dos clientes disti
         expect(possibleSamePayment({ ocr: lily }, { ocr: { ...lily } })).toBe(true);
     });
 });
+
+describe('DH18191: el mismo ticket OXXO leído con la autorización en campos distintos', () => {
+    const { possibleSamePayment, receiptFolios } = require('../server/payments/paymentPolicy');
+    const foto1 = { monto: 300, fecha: '2026-10-16', hora: '16:52', cuentaDestino: '************1983', evidenciaEstado: 'AUTORIZACION : 665972', referencia: '665972', claveRastreo: '2396077253' };
+    const foto2 = { monto: 300, fecha: '2026-10-16', hora: '16:52', cuentaDestino: '************1983', evidenciaEstado: '', referencia: '************1983', claveRastreo: '665972' };
+    test('la autorización cuenta como folio', () => {
+        expect(receiptFolios(foto1)).toContain('665972');
+    });
+    test('se reconoce como el mismo pago', () => {
+        expect(possibleSamePayment({ contactId: 'c', ocr: foto1 }, { contactId: 'c', ocr: foto2 })).toBe(true);
+    });
+    test('dos depósitos con autorizaciones distintas siguen siendo distintos', () => {
+        const otro = { ...foto2, claveRastreo: '771234', hora: '18:10' };
+        expect(possibleSamePayment({ contactId: 'c', ocr: foto1 }, { contactId: 'c', ocr: otro })).toBe(false);
+    });
+});
