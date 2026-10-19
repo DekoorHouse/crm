@@ -526,7 +526,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const buffer = plan.template ? downloaded : plan.fuente === 'mockup' ? await fitToLampCircle(engraved) : engraved;
     const meta = await sharp(buffer).metadata();
     const font = await loadFont();
-    const { composeLamp, renderPreview, pictureSizeMm } = await composerModule();
+    const { composeLamp, renderPreview, pictureSizeMm, rdworksPiece } = await composerModule();
 
     step('Convirtiendo a mapa de bits');
     const { bitmapSize, toBitmap, pngWithDpi } = await bitmapTools();
@@ -553,6 +553,8 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const folder = `${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}`;
     const imageHash = crypto.createHash('sha256').update(dataUrl).digest('hex');
     const imageUrl = await saveFile(`editor-v2/images/${ACTOR.uid}/${imageHash}`, png, 'image/png');
+    // Cuánto del marco se graba en el diseño original: sirve para notar después si se recortó en el editor.
+    const inkShare = (await rdworksPiece(document, font)).inkShare;
     const previewUrl = await saveFile(`${folder}/vista-previa-${Date.now().toString(36)}.png`, renderPreview(document, font), 'image/png');
     // Proyecto del editor: la imagen va por URL (como guarda el editor), no incrustada.
     const documentJson = JSON.stringify(document, (key, value) => key === 'src' && value === dataUrl ? imageUrl : value);
@@ -564,7 +566,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia, template: plan.template || null,
         brief: { tipo: plan.tipo || null, fuente: plan.fuente, nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
             advertencias: plan.advertencias || [], referenceUrl: plan.reference?.url || null },
-        projectId: project.id, projectRevision: 1, previewUrl, name: engraveName,
+        projectId: project.id, projectRevision: 1, previewUrl, name: engraveName, inkShare,
         rasterUrl: raster.url, rasterJobId: raster.jobId || null, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}),
         durationMs: Date.now() - started, changed: true,
     };
@@ -684,9 +686,31 @@ async function rdworksSheetsFor(dh, autoLamp) {
     if (!lamps.length) throw Object.assign(new Error('No hay lámparas diseñadas.'), { status: 409 });
     const { rdworksPiece, rdworksSheets } = await composerModule();
     const font = await loadFont();
-    const pieces = [];
-    for (const lamp of lamps) pieces.push({ piece: await rdworksPiece((await projectDocument(lamp.projectId)).document, font), copies: lamp.copies || 1 });
+    const pieces = [], problems = [];
+    for (const lamp of lamps) {
+        const { document } = await projectDocument(lamp.projectId);
+        const piece = await rdworksPiece(document, font);
+        problems.push(...designProblems(document, piece, lamp).map(p => `${lamps.length > 1 ? (lamp.label || `Lámpara ${lamp.index + 1}`) + ': ' : ''}${p}`));
+        pieces.push({ piece, copies: lamp.copies || 1 });
+    }
+    // REVISIÓN antes de subir (DH18191, 19-oct-2026: se movió en el editor y se subió recortada): si el diseño
+    // guardado quedó mal armado, no se sube; hay que corregirlo en el editor.
+    if (problems.length) throw Object.assign(new Error(`El diseño guardado no está listo para cortar: ${problems.join('; ')}. Corrígelo en el editor y vuelve a aprobar.`), { status: 422, code: 'DESIGN_BROKEN' });
     return rdworksSheets(pieces, `DH${dh}`);
+}
+
+// ¿El diseño de una lámpara quedó mal armado? (en el editor se puede arrastrar el marco o sacar cosas de él)
+function designProblems(document, piece, lamp) {
+    const problems = [];
+    const frame = document.objects.find(item => item.powerClip);
+    if (!frame) return ['no tiene el marco de la lámpara'];
+    // Lo que queda FUERA del marco no se graba: un nombre o una silueta sueltos quiere decir que se salieron.
+    const loose = document.objects.filter(item => item.id !== frame.id && !item.hidden);
+    if (loose.length) problems.push(`hay ${loose.length} objeto(s) fuera del marco (${loose.map(o => o.name || o.type).slice(0, 3).join(', ')})`);
+    if (piece.inkShare < .005) problems.push('el marco quedó casi vacío');
+    // Mucho menos grabado que cuando se diseñó: el contenido se recortó (el marco se movió sin su contenido).
+    else if (lamp.inkShare && piece.inkShare < lamp.inkShare * .6) problems.push(`el grabado quedó recortado (${Math.round(piece.inkShare * 1000) / 10} % del marco contra ${Math.round(lamp.inkShare * 1000) / 10} % del diseño original)`);
+    return problems;
 }
 
 // --- BETA: mandar el previo al CLIENTE y esperar su respuesta. ----------------------------------------
@@ -725,7 +749,10 @@ async function sendToClient(dh, { auth = {}, actor = null, only = null } = {}) {
     if (!toSend.length) throw Object.assign(new Error('No hay lámparas para mandar.'), { status: 409 });
     const ensureJpeg = require('../../mockups/mockupsService').ensureJpeg;   // WhatsApp no acepta todo formato
     const images = [];
-    for (const lamp of toSend) images.push({ lamp, url: await ensureJpeg((await clientPreview(dh, lamp.index)).url) });
+    for (const lamp of toSend) { const pv = await clientPreview(dh, lamp.index); images.push({ lamp, url: await ensureJpeg(pv.url), revision: pv.revision }); }
+    // Qué versión de cada lámpara vio el cliente: su "sí" solo sube ESA versión (ver handleBetaDecision).
+    const seen = { ...(autoLamp.client?.revisions || {}) };
+    for (const { lamp, revision } of images) seen[lamp.index] = revision;
     const rounds = Number(autoLamp.client?.rounds) || 0;
     const again = rounds > 0 && autoLamp.client?.status === 'changes';
     if (lamps.length === 1) {
@@ -742,7 +769,7 @@ async function sendToClient(dh, { auth = {}, actor = null, only = null } = {}) {
     await orderDoc.ref.update({
         designApproval: { status: 'pending', source: 'auto-lamp-beta', sentAt: now(), captureUrl: images[0].url, designText, unclearRounds: 0,
             sentBy: actor?.email || actor?.uid || null },
-        'autoLamp.client': { status: 'sent', sentAt: now(), previewUrls: images.map(i => i.url), lampsSent: toSend.map(l => l.index),
+        'autoLamp.client': { status: 'sent', sentAt: now(), previewUrls: images.map(i => i.url), lampsSent: toSend.map(l => l.index), revisions: seen,
             rounds: rounds + 1, auto: !actor || !!actor.auto },
         'autoLamp.autoSendHeld': admin.firestore.FieldValue.delete(),
     });
@@ -809,6 +836,15 @@ async function handleBetaDecision(orderId, decision, { clientText = '', changeSu
         // El "sí" del cliente sube las hojas de RDWorks a la carpeta SVG Corte de Drive (Chris, 19-oct-2026).
         // approve() tiene el candado contra doble subida; si algo falla, queda para subirlo a mano.
         if (!dh) return { uploaded: false, error: 'Pedido sin número.' };
+        // Lo que se sube debe ser LO QUE VIO el cliente: si alguna lámpara se modificó en el editor después de
+        // mandársela, no se sube sola (DH18191, 19-oct-2026: se movió en el editor y se subió recortada).
+        const seen = order.autoLamp?.client?.revisions || {};
+        const changed = [];
+        for (const lamp of lampsOf(order.autoLamp)) {
+            const rev = (await db.collection('editor_v2_projects').doc(lamp.projectId).get()).data()?.revision;
+            if (seen[lamp.index] != null && Number(rev) !== Number(seen[lamp.index])) changed.push(`${lamp.label || 'lámpara ' + (lamp.index + 1)} (versión ${seen[lamp.index]} → ${rev})`);
+        }
+        if (changed.length) return { uploaded: false, error: `el diseño se modificó en el editor DESPUÉS de mandárselo al cliente: ${changed.join(', ')}. Revisa que siga igual a lo que aprobó y súbelo a mano` };
         try { const r = await approve(dh, { actor: { email: 'cliente (aprobó por WhatsApp)' } }); return { uploaded: true, ...r, driveUrl: r.driveUrls.join(' ') }; }
         catch (error) { return { uploaded: false, error: error.message }; }
     }

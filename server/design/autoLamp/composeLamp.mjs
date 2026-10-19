@@ -203,10 +203,12 @@ export async function rdworksPiece(document, font) {
     // OJO: en resvg `.pixels` COPIA todo el buffer en cada lectura; se lee una sola vez.
     const artPx = art.pixels, maskPx = draw(maskDoc).pixels;
     const w = art.width, h = art.height, grey = Buffer.alloc(w * h);
+    let insideCount = 0, inkCount = 0;
     for (let i = 0, p = 0; i < grey.length; i++, p += 4) {
         const inside = maskPx[p] < 128;                       // el marco se pintó negro sobre blanco
         const lum = (artPx[p] * 299 + artPx[p + 1] * 587 + artPx[p + 2] * 114) / 1000;
         grey[i] = inside && lum < 128 ? 0 : 255;              // 1 bit: negro se graba, blanco no
+        if (inside) { insideCount++; if (lum < 128) inkCount++; }
     }
     // ACOMODO PARA LA LÁSER (Chris, 19-oct-2026): girar 90° a la derecha + espejear (= transponer, (x, y) ->
     // (y, x)) y luego girar 180° para que la pestaña de la base quede a la IZQUIERDA. Todo junto es
@@ -219,7 +221,8 @@ export async function rdworksPiece(document, font) {
     delete line.powerClip; delete line.overlay;
     const d = exportSvg({ ...blankDocument(), width: document.width, height: document.height, objects: [line] }).match(/<path\b[^>]*?\sd="([^"]*)"/)[1];
     if (/[a-y]/i.test(d.replace(/[MCLZ]/g, ''))) throw new Error('La línea de corte trae comandos que no se pueden girar.');
-    return { png, box, d, page: { width: document.width, height: document.height } };
+    // inkShare: qué parte del marco se graba (para notar un diseño que quedó recortado o vacío al moverlo).
+    return { png, box, d, page: { width: document.width, height: document.height }, inkShare: insideCount ? inkCount / insideCount : 0 };
 }
 
 // Centro horizontal (sin girar) de cada lámpara cuando van dos por hoja: 350 mm de ancho, 15 mm entre ellas.
@@ -227,35 +230,38 @@ export const RDWORKS_SLOTS_X = [87.5, 262.5];
 const NUMBER_PAIR = /(-?\d*\.?\d+(?:e-?\d+)?)[ ,]+(-?\d*\.?\d+(?:e-?\d+)?)/gi;
 
 /**
- * Una HOJA para RDWorks con 1 o 2 piezas. placements: [{ piece, dx }] (dx = cuánto se recorre la pieza en X
- * antes de girar). Toda la hoja (W × H sin girar) se acomoda: (x, y) -> (H - y, W - x), y queda de H × W.
+ * Una HOJA para RDWorks con 1 o 2 piezas. placements: [{ piece, dx, dy }] (cuánto se recorre la pieza antes de
+ * girar). La hoja es SIEMPRE la de 350 × 330 mm (sin girar) y se acomoda: (x, y) -> (H - y, W - x), queda de
+ * 330 × 350.
  */
 export function rdworksSheet(placements, title = '') {
-    const page = placements[0].piece.page;
-    const W = page.width, H = page.height;
-    const body = placements.map(({ piece, dx }) => {
+    const W = PAGE.width, H = PAGE.height;
+    const body = placements.map(({ piece, dx, dy = 0 }) => {
         const { box, png } = piece;
         // El trayecto es absoluto (M/C/L/Z con pares x y): se recorre y se acomoda cada par.
-        const d = piece.d.replace(NUMBER_PAIR, (_, x, y) => `${(H - +y).toFixed(4)} ${(W - (+x + dx)).toFixed(4)}`);
-        return `<image x="${H - box.y - box.height}" y="${W - (box.x + dx) - box.width}" width="${box.height}" height="${box.width}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
+        const d = piece.d.replace(NUMBER_PAIR, (_, x, y) => `${(H - (+y + dy)).toFixed(4)} ${(W - (+x + dx)).toFixed(4)}`);
+        return `<image x="${H - (box.y + dy) - box.height}" y="${W - (box.x + dx) - box.width}" width="${box.height}" height="${box.width}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
 <path d="${d}" fill="none" stroke="#ff0000" stroke-width="0.3"/>`;
     }).join('\n');
     return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${page.height}mm" height="${page.width}mm" viewBox="0 0 ${page.height} ${page.width}">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${H}mm" height="${W}mm" viewBox="0 0 ${H} ${W}">
 <title>${String(title).replace(/[<&>"]/g, '')}</title>
 ${body}
 </svg>`;
 }
 
-// Hojas de un pedido: cada lámpara tantas veces como su cantidad, de 2 en 2 por hoja (si queda sola, va
-// centrada donde la deja el marco). pieces: [{ piece, copies }]. Devuelve el SVG de cada hoja.
+// Hojas de un pedido: cada lámpara tantas veces como su cantidad, de 2 en 2 por hoja. pieces: [{ piece, copies }].
+// Cada pieza se acomoda en su LUGAR FIJO de la hoja (el del marco de siempre; si van dos, una a cada lado), sin
+// importar dónde haya quedado el marco en el proyecto: en el editor se puede mover y entonces la hoja salía
+// cortada (DH18191, 19-oct-2026, marco en (-50, 22) mm).
 export function rdworksSheets(pieces, title = '') {
+    const home = frameObject();   // lugar de siempre del marco en la hoja
     const flat = pieces.flatMap(({ piece, copies }) => Array.from({ length: Math.max(1, Number(copies) || 1) }, () => piece));
     const total = Math.ceil(flat.length / 2), sheets = [];
     for (let i = 0; i < flat.length; i += 2) {
         const pair = flat.slice(i, i + 2);
-        const placements = pair.length === 1 ? [{ piece: pair[0], dx: 0 }]
-            : pair.map((piece, k) => ({ piece, dx: RDWORKS_SLOTS_X[k] - (piece.box.x + piece.box.width / 2) }));
+        const placements = pair.length === 1 ? [{ piece: pair[0], dx: home.x - pair[0].box.x, dy: home.y - pair[0].box.y }]
+            : pair.map((piece, k) => ({ piece, dx: RDWORKS_SLOTS_X[k] - (piece.box.x + piece.box.width / 2), dy: home.y - piece.box.y }));
         sheets.push(rdworksSheet(placements, total > 1 ? `${title} · hoja ${sheets.length + 1} de ${total}` : title));
     }
     return sheets;
@@ -263,7 +269,7 @@ export function rdworksSheets(pieces, title = '') {
 
 // Una sola lámpara en su hoja.
 export async function exportRdworksSvg(document, font) {
-    return rdworksSheet([{ piece: await rdworksPiece(document, font), dx: 0 }], document.name || '');
+    return rdworksSheets([{ piece: await rdworksPiece(document, font), copies: 1 }], document.name || '')[0];
 }
 
 // PREVIO PARA EL CLIENTE (Chris, 19-oct-2026): el diseño de grabado es negro sobre blanco (lo negro se graba);
