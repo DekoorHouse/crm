@@ -933,7 +933,8 @@ function _dlWatch(o) {
             if (!cur) { _dlWatching.delete(o.id); return; }
             const prev = cur.autoLamp || {};
             const next = autoLamp ? { ...prev, status: autoLamp.status, step: autoLamp.step, error: autoLamp.error || null, previewUrl: autoLamp.previewUrl || null,
-                projectId: autoLamp.projectId || null, driveUrl: autoLamp.driveUrl || null, brief: autoLamp.brief || null } : null;
+                projectId: autoLamp.projectId || null, driveUrl: autoLamp.driveUrl || null, brief: autoLamp.brief || null,
+                rasterModel: autoLamp.rasterModel || null, rasterFallback: autoLamp.rasterFallback || null } : null;
             if (!next || !['working', 'uploading'].includes(next.status) || Date.now() - started > 15 * 60 * 1000) {
                 _dlWatching.delete(o.id); _dlSetLocal(o.id, next); return;
             }
@@ -980,6 +981,7 @@ function openDesignBeta(orderId) {
                 <div><b>Texto grabado:</b> ${b.nombre ? escapeHtml(b.nombre) : '<i>sin texto</i>'}</div>
                 ${b.referenceUrl ? `<div style="margin-top:6px"><b>Imagen del cliente usada:</b><br><img src="${escapeHtml(b.referenceUrl)}" onclick="openImageModal(this.src)" style="max-width:120px;max-height:120px;border-radius:6px;cursor:zoom-in;margin-top:3px"></div>` : (b.prompt ? `<div><b>Ilustración pedida:</b> ${escapeHtml(b.prompt)}</div>` : '')}
                 ${a.note ? `<div style="margin-top:4px"><b>Indicación:</b> ${escapeHtml(a.note)}</div>` : ''}
+                ${a.rasterModel ? `<div style="margin-top:4px;font-size:12px;color:#64748b"><b>Modelo:</b> ${/qwen/i.test(a.rasterModel) ? 'Qwen Image 2.1 · GPU propia' : escapeHtml(a.rasterModel)}${a.rasterFallback ? ` <span title="${escapeHtml(a.rasterFallback)}" style="color:#b45309">(Qwen no estaba disponible)</span>` : ''}</div>` : ''}
                 ${a.error && ready ? `<div style="color:#b91c1c;margin-top:6px">${escapeHtml(a.error)}</div>` : ''}
                 ${warn}
                 <div style="font-size:11.5px;color:#64748b;margin-top:8px">Nada se sube a Drive hasta que aprietes <b>Aprobar</b>. Si lo corriges en el editor, apruébalo desde ahí.</div>

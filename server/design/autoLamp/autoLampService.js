@@ -22,6 +22,9 @@ const { db, bucket, admin } = require('../../config');
 const imageStudio = require('../../imagenes/imageStudioService');
 
 const RASTER_MODEL = 'openai/gpt-image-2.5-sunburst';
+// BETA: el diseño IA usa Qwen Image 2.1 (GPU propia de /imagenes, mucho más barata). La GPU solo está prendida
+// en su horario (qwenPod); si está apagada se usa gpt-image para que el diseño no se quede sin hacer.
+const BETA_MODEL = 'dekoor/qwen-image-2.1';
 const RASTER_PROMPT = 'dame el diseño de la imagen con rellenos blancos y fondos negros. En raster engrave con degradado en trama';
 // Último paso del equipo: "Convertir a mapa de bits" en difuminado (1 bit, Floyd–Steinberg) a la
 // resolución de la láser, al tamaño real que la imagen tiene en el marco.
@@ -179,17 +182,20 @@ Responde SOLO este JSON: {"index": <número o -1 si ninguna sirve>, "motivo": "<
 // "Convertir a raster" del editor, desde el servidor. Cuadrada si el modelo lo permite.
 // Sin referencia (BETA, personaje sin imagen) el estudio de /imagenes ILUSTRA desde la descripción con el
 // mismo acabado de grabado. extra: lo que la IA pidió conservar o ajustar de la foto.
-async function rasterize(reference, { description = '', extra = '' } = {}) {
+async function rasterize(reference, { description = '', extra = '', model = RASTER_MODEL } = {}) {
     const files = [];
     if (reference) {
         const { buffer } = await download(reference.url);
-        const jpeg = await sharp(buffer).rotate().resize(2048, 2048, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 92 }).toBuffer();
+        // Qwen entrega la imagen con la forma de la referencia: se manda cuadrada (relleno blanco) para que el
+        // diseño salga cuadrado y quepa completo en el círculo.
+        const fit = model === BETA_MODEL ? { fit: 'contain', background: '#ffffff' } : { fit: 'inside', withoutEnlargement: true };
+        const jpeg = await sharp(buffer).rotate().resize(2048, 2048, fit).flatten({ background: '#ffffff' }).jpeg({ quality: 92 }).toBuffer();
         files.push({ buffer: jpeg, mimetype: 'image/jpeg', originalname: 'referencia.jpg' });
     }
     const prompt = reference
         ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT)
         : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada, completa dentro de un círculo, sin texto ni letras. Diseño con rellenos blancos y fondo negro. En raster engrave con degradado en trama.`;
-    const fields = { requestId: crypto.randomUUID(), model: RASTER_MODEL, prompt, aspect_ratio: '1:1' };
+    const fields = { requestId: crypto.randomUUID(), model, prompt, aspect_ratio: '1:1' };
     let job;
     try { job = await imageStudio.createGeneration(fields, files, ACTOR); }
     catch (error) {
@@ -204,7 +210,17 @@ async function rasterize(reference, { description = '', extra = '' } = {}) {
     }
     const url = job.images?.[0]?.fullUrl;
     if (job.status !== 'completed' || !url) throw new Error(job.error || 'La IA no devolvió el grabado.');
-    return { url, jobId: job.id };
+    return { url, jobId: job.id, model };
+}
+
+// Qwen si la GPU está lista; si no (fuera de horario o falla la GPU), el modelo de siempre.
+async function rasterizeBeta(reference, options) {
+    try { return await rasterize(reference, { ...options, model: BETA_MODEL }); }
+    catch (error) {
+        if (error.status !== 503 && !/Qwen|GPU/i.test(error.message || '')) throw error;
+        console.warn('[AUTO-LAMP] Qwen no disponible, uso gpt-image:', error.message);
+        return { ...(await rasterize(reference, { ...options, model: RASTER_MODEL })), fallback: error.message };
+    }
 }
 
 async function loadFont() {
@@ -255,7 +271,7 @@ async function generate(dh, options = {}) {
         } else reference = await pickReference(await customerImages(contactId), datos);
         if (!beta) await setStatus(ref, { status: 'working', step: 'Convirtiendo a grabado', referenceUrl: reference.url, referenceReason: reference.motivo });
         const raster = options.rasterUrl ? { url: options.rasterUrl, jobId: null }
-            : await rasterize(reference, brief ? { description: brief.prompt, extra: reference ? brief.prompt : '' } : {});
+            : brief ? await rasterizeBeta(reference, { description: brief.prompt, extra: reference ? brief.prompt : '' }) : await rasterize(reference);
 
         const { buffer } = await download(raster.url);
         const meta = await sharp(buffer).metadata();
@@ -288,7 +304,7 @@ async function generate(dh, options = {}) {
             createdAt: now(), createdBy: ACTOR.uid, updatedAt: now(), updatedBy: ACTOR.uid, orderNumber: Number(dh),
         });
         const result = { status: 'ready', step: 'Listo para revisar', name, projectId: project.id, projectRevision: 1, previewUrl, svgUrl, svgPath: `${folder}/corte.svg`,
-            rasterUrl: raster.url, rasterJobId: raster.jobId, finishedAt: now(), durationMs: Date.now() - started };
+            rasterUrl: raster.url, rasterJobId: raster.jobId, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}), finishedAt: now(), durationMs: Date.now() - started };
         await setStatus(ref, result);
         return { ...result, referenceUrl: reference.url };
     } catch (error) {
