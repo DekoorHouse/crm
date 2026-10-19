@@ -175,6 +175,11 @@ async function fetchRecentMessages(waId, limit) {
 
 // Envía el mensaje y lo refleja en el chat del CRM para que el operador lo vea
 async function sendFollowupMessage(waId, text) {
+    // Nunca mandar un texto con huecos sin llenar ("[Insertar Cuenta/CLABE]", "[nombre]"...).
+    if (/\[[^\]]{0,60}(?:insert|cuenta|clabe|nombre|dato|n[uú]mero|link|enlace)[^\]]{0,60}\]/i.test(String(text || ''))) {
+        console.warn(`[ORDER_FOLLOWUP] Mensaje con hueco sin llenar para ${waId}; no se envía.`);
+        return null;
+    }
     const guarded = await require('../mediaReplyGuard').protectMediaReply({ contactId: waId, text, source: 'order_followup' });
     if (guarded.blocked) return null;
     text = guarded.text;
@@ -256,6 +261,27 @@ async function runOrderFollowupSweep({ dryRun = false } = {}) {
                 summary.finished++;
                 continue;
             }
+            // DH10015 (17-19 oct 2026): con Leonel APAGADO, el seguimiento se re-armaba con cada mensaje del
+            // cliente y le "contestaba" cada 2 h: le prometió 5 veces los datos de la cuenta sin mandarlos y
+            // hasta escribió "[Insertar Cuenta/CLABE]". El seguimiento es para cuando el cliente se queda
+            // callado; si el ÚLTIMO mensaje del chat es del cliente, está esperando respuesta: no se le manda
+            // un recordatorio, se cancela y la conversación pasa a una persona.
+            try {
+                const ultimo = (await fetchRecentMessages(doc.id, 1))[0];
+                if (ultimo && ultimo.from === doc.id) {
+                    if (!dryRun) {
+                        await doc.ref.update({ status: 'cancelled', cancelReason: 'cliente_espera_respuesta', nextDueAt: null, updatedAt: new Date() }).catch(() => {});
+                        if (!contact?.botActive && !contact?.needsAttention) {
+                            await db.collection('contacts_whatsapp').doc(doc.id).update({
+                                needsAttention: true, needsAttentionReason: 'sin_respuesta',
+                                needsAttentionAt: admin.firestore.FieldValue.serverTimestamp()
+                            }).catch(() => {});
+                        }
+                    }
+                    summary.finished++;
+                    continue;
+                }
+            } catch (e) { console.warn('[ORDER_FOLLOWUP] No se pudo revisar el último mensaje:', e.message); }
             const verdict = evaluateOrderFollowup(followup, contact, cfg, nowMs);
 
             if (verdict.action === 'wait' || verdict.action === 'wait_hours' || verdict.action === 'none') {
