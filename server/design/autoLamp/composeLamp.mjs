@@ -178,8 +178,10 @@ export function renderClientPreview(document, font, { width = 1100 } = {}) {
     };
     const shown = outlinedDocument(document, font);
     shown.objects = shown.objects.map(item => item.id === frame.id ? { ...item, stroke: 'none' } : item);
-    const design = draw(shown, '#000000');
-    const area = draw(frameOnly({ fill: '#ffffff', stroke: 'none', overlayFill: '#ffffff' }), '#000000').pixels;
+    // OJO: en resvg `.pixels` COPIA todo el buffer en cada lectura; se lee una sola vez por capa.
+    const rendered = draw(shown, '#000000');
+    const design = { width: rendered.width, height: rendered.height, pixels: rendered.pixels };
+    const area =draw(frameOnly({ fill: '#ffffff', stroke: 'none', overlayFill: '#ffffff' }), '#000000').pixels;
     const base = draw(frameOnly({ fill: '#000000', stroke: 'none', overlayFill: '#ffffff' }), '#000000').pixels;
     const line = draw(frameOnly({ fill: 'none', stroke: '#9aa3ab', strokeWidth: .6 }), 'rgba(0,0,0,0)').pixels;
     const out = Buffer.alloc(design.width * design.height * 3);
