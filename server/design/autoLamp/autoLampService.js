@@ -34,6 +34,9 @@ const CLIENT_PREVIEW_STYLE = 4;
 const RASTER_PROMPT = 'dame el diseño de la imagen con rellenos blancos y fondos negros. En raster engrave con degradado en trama';
 // Mockup (foto/render de la lámpara prendida que ya vio el cliente) -> el grabado TAL CUAL, con su texto.
 const MOCKUP_PROMPT = 'Esta imagen es un mockup de una lámpara LED de acrílico redonda, encendida. Extrae SOLO el diseño grabado dentro del círculo de acrílico: el dibujo y el texto/nombre EXACTAMENTE como están (mismas letras, misma tipografía, misma pose y posición), centrado y ocupando el cuadro como ocupa el círculo. Quita la base, la mesa, el fondo, los reflejos y el color de la luz. Solo blanco y negro, sin colores: el diseño en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla, sin círculos, marcos ni bordes. En raster engrave con degradado en trama.';
+// Mockup cuyo TEXTO cambió después de que lo vio el cliente (DH18191: "el apellido es…"): solo el dibujo, sin
+// letras; el texto final lo pone composeLamp con la fuente de siempre.
+const MOCKUP_NO_TEXT_PROMPT = MOCKUP_PROMPT.replace('Extrae SOLO el diseño grabado dentro del círculo de acrílico: el dibujo y el texto/nombre EXACTAMENTE como están (mismas letras, misma tipografía, misma pose y posición)', 'Extrae SOLO el DIBUJO grabado dentro del círculo de acrílico, EXACTAMENTE como está (misma pose y posición), SIN NINGÚN TEXTO NI LETRAS: borra el nombre y rellena ese hueco con el fondo');
 // Último paso del equipo: "Convertir a mapa de bits" en difuminado (1 bit, Floyd–Steinberg) a la
 // resolución de la láser, al tamaño real que la imagen tiene en el marco.
 const BITMAP = { dpi: 254, method: 'diffusion', threshold: 128 };
@@ -169,12 +172,13 @@ Para CADA lámpara decide:
 - "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
 - "imagen": la imagen elegida ("N2", "C0"…), o "" si es ilustración. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
 - "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "".
-- "nombre": el texto EXACTO a grabar (nombre(s), fecha, frase) tal como lo pidió, respetando mayúsculas y acentos; "" si no lleva texto. Varias líneas sepáralas con " · ".
+- "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana").
+- "textoCambia": SOLO para fuente "mockup": true si el texto final es DISTINTO del que se ve en el mockup (el cliente pidió agregar o cambiar algo del texto después de verlo); false si el mockup ya trae exactamente el texto final.
 - "tipo": "foto", "personaje" o "especial".
 - "resumen": una línea para el equipo con lo que entendiste de ESA lámpara.
 - "advertencias": dudas que no puedes resolver de ESA lámpara (ej. "la foto es muy oscura", "no queda claro el nombre", "no encontré el mockup de esta lámpara"); [] si nada.
 - "cambia": ${prevList ? 'true si por la INDICACIÓN/CAMBIO hay que rehacer ESTA lámpara; false si se queda como está.' : 'true.'}
-Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "tipo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
+Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "textoCambia": false, "tipo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
     for (const [prefix, list] of [['C', client], ['N', sent]]) {
         for (const [i, image] of list.entries()) {
             try { parts.push({ text: `Imagen ${prefix}${i}${image.text ? ` (mensaje: "${image.text.slice(0, 200)}")` : ''}:` }, await imagePart(image.url)); }
@@ -198,6 +202,7 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
             resumen: String(row.resumen || '').trim().slice(0, 400),
             advertencias: (Array.isArray(row.advertencias) ? row.advertencias : []).map(String).slice(0, 6),
             cambia: row.cambia !== false,
+            textoCambia: fuente === 'mockup' && row.textoCambia === true,
         };
     });
 }
@@ -240,11 +245,24 @@ async function rasterize(reference, { description = '', extra = '', prompt: over
         ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT) + (model === BETA_MODEL ? '. Solo blanco y negro, sin colores; fondo negro uniforme de orilla a orilla, sin círculos, marcos ni bordes.' : '')
         : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa, sin texto ni letras. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`);
     const fields = { requestId: crypto.randomUUID(), model, prompt, aspect_ratio: '1:1' };
+    // VARIOS PEDIDOS A LA VEZ (Chris, 19-oct-2026): la GPU de Qwen hace una imagen a la vez; si está ocupada
+    // con otra lámpara, se espera su turno (cada 10 s, hasta 15 min) en vez de pasarse a gpt-image.
+    const create = async extra => {
+        const waitStarted = Date.now();
+        for (;;) {
+            try { return await imageStudio.createGeneration({ ...fields, requestId: crypto.randomUUID(), ...extra }, files, ACTOR); }
+            catch (error) {
+                const busy = error.status === 409 && /en proceso/i.test(error.message || '');
+                if (!busy || Date.now() - waitStarted > 15 * 60 * 1000) throw error;
+                await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+        }
+    };
     let job;
-    try { job = await imageStudio.createGeneration(fields, files, ACTOR); }
+    try { job = await create({}); }
     catch (error) {
         if (!/aspect_ratio/.test(error.message)) throw error;
-        job = await imageStudio.createGeneration({ ...fields, requestId: crypto.randomUUID(), aspect_ratio: undefined }, files, ACTOR);
+        job = await create({ aspect_ratio: undefined });
     }
     const started = Date.now();
     while (job.status === 'generating') {
@@ -439,7 +457,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     let raster;
     if (plan.fuente === 'mockup') {
         step('Convirtiendo el mockup a grabado');
-        raster = await rasterizeBeta(plan.reference, { prompt: MOCKUP_PROMPT });
+        raster = await rasterizeBeta(plan.reference, { prompt: plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT });
     } else if (beta) {
         step(plan.reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes');
         raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '' });
@@ -466,8 +484,9 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
 
     step('Armando el diseño');
-    // El mockup ya trae el nombre dentro de la imagen (tal cual lo vio el cliente): no se le agrega otro.
-    const engraveName = plan.fuente === 'mockup' ? '' : plan.nombre;
+    // El mockup ya trae el nombre dentro de la imagen (tal cual lo vio el cliente): no se le agrega otro. Si el
+    // texto cambió, el mockup se sacó SIN letras y aquí va el texto final.
+    const engraveName = plan.fuente === 'mockup' && !plan.textoCambia ? '' : plan.nombre;
     const title = [`DH${dh}`, lamp.label].filter(Boolean).join(' · ');
     const dataUrl = 'data:image/png;base64,' + png.toString('base64');
     const { document } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name: engraveName, font, title });
@@ -483,7 +502,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         createdAt: now(), createdBy: ACTOR.uid, updatedAt: now(), updatedBy: ACTOR.uid, orderNumber: Number(dh), lampIndex: lamp.index,
     });
     return {
-        index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente,
+        index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia,
         brief: { tipo: plan.tipo || null, fuente: plan.fuente, nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
             advertencias: plan.advertencias || [], referenceUrl: plan.reference?.url || null },
         projectId: project.id, projectRevision: 1, previewUrl, name: engraveName,
@@ -536,7 +555,8 @@ async function generate(dh, options = {}) {
             results.push(await buildLamp(dh, lamp, plan, { beta, onStep: text => setStatus(ref, { status: 'working', step: prefix + text }).catch(() => {}) }));
         }
         // Modo mockup: TODAS salen de un mockup que ya vio el cliente y el pedido está pagado -> directo a corte.
-        const mode = beta && results.every(l => l.source === 'mockup') ? 'mockup' : 'client';
+        // Un mockup al que el cliente le cambió el texto ya no es "tal cual": va a su aprobación.
+        const mode = beta && results.every(l => l.source === 'mockup' && !l.textChanged) ? 'mockup' : 'client';
         const first = results[0];
         const result = { status: 'ready', step: 'Listo para revisar', mode, lamps: results,
             // La raíz repite la primera lámpara (tarjeta y pedidos de antes).

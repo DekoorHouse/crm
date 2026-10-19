@@ -108,14 +108,21 @@ export function composeLamp({ image, name, font, title }) {
     // Sin nombre (diseños que solo llevan la imagen): solo el marco con su grabado.
     if (!text) return { document: validateDocument(document), textId: null, frameId: frame.id };
 
-    // 2) Nombre centrado, tocando la base, del tamaño que quepa en ancho y alto…
-    const unit = font.getPath(text, 0, 0, 1).getBoundingBox();
-    const inkWidth = unit.x2 - unit.x1, inkHeight = unit.y2 - unit.y1;
+    // 2) Nombre centrado, tocando la base, del tamaño que quepa en ancho y alto… En VARIOS renglones si el
+    // texto trae " · " o saltos de línea (p. ej. "Victor Emilio · Domínguez Quintana"), cada uno centrado.
+    const lines = text.split(/\s*·\s*|\n+/).map(l => l.trim()).filter(Boolean);
+    const units = lines.map(line => font.getPath(line, 0, 0, 1).getBoundingBox());
+    const inkWidth = Math.max(...units.map(u => u.x2 - u.x1)), inkHeight = Math.max(...units.map(u => u.y2 - u.y1));
+    const LINE_GAP = 1.05;   // distancia entre renglones, en tamaños de letra
     const place = size => {
-        const ink = { x1: unit.x1 * size, x2: unit.x2 * size, y2: unit.y2 * size };
-        const x = frame.x + frame.width / 2 - (ink.x1 + ink.x2) / 2;
-        const baseline = baseTop(frame) - LAYOUT.silhouette - ink.y2;
-        return { size, x, baseline, outline: outlineSilhouette(textSubpaths(font, text, x, baseline, size), LAYOUT.silhouette) };
+        const last = units[units.length - 1];
+        const lastBaseline = baseTop(frame) - LAYOUT.silhouette - last.y2 * size;
+        const rows = lines.map((line, k) => {
+            const u = units[k], baseline = lastBaseline - (lines.length - 1 - k) * LINE_GAP * size;
+            return { line, x: frame.x + frame.width / 2 - (u.x1 + u.x2) * size / 2, baseline };
+        });
+        const subpaths = rows.flatMap(r => textSubpaths(font, r.line, r.x, r.baseline, size));
+        return { size, rows, outline: outlineSilhouette(subpaths, LAYOUT.silhouette) };
     };
     // …y que su silueta quede entera dentro del marco (con un margen), porque va dentro del PowerClip:
     // abajo el círculo se angosta, así que un nombre largo se hace más chico hasta caber.
@@ -129,17 +136,17 @@ export function composeLamp({ image, name, font, title }) {
     });
     let layout = place(Math.min(frame.width * LAYOUT.nameWidth / inkWidth, frame.height * LAYOUT.nameHeight / inkHeight));
     for (let tries = 0; tries < 40 && !inside(layout.outline); tries++) layout = place(layout.size * .96);
-    const label = { ...createObject('text', layout.x, layout.baseline - layout.size), name: 'Nombre', text, fontSize: layout.size, fontFamily: FONT_FAMILY,
-        fill: '#000000', stroke: 'none', strokeWidth: 0 };
+    const labels = layout.rows.map((row, k) => ({ ...createObject('text', row.x, row.baseline - layout.size), name: lines.length > 1 ? `Nombre ${k + 1}` : 'Nombre',
+        text: row.line, fontSize: layout.size, fontFamily: FONT_FAMILY, fill: '#000000', stroke: 'none', strokeWidth: 0 }));
 
-    // 3) Silueta blanca detrás del nombre (el nombre va en negro: se graba) (enlazada a él, como la herramienta Silueta del editor). Los dos
-    // van dentro del PowerClip, encima del grabado, como los deja el equipo.
+    // 3) Silueta blanca detrás del nombre (el nombre va en negro: se graba), enlazada a él como la herramienta
+    // Silueta del editor. Todo va dentro del PowerClip, encima del grabado, como lo deja el equipo.
     const silhouette = { ...createObject('path', 0, 0), name: 'Silueta', ...normalizePath(layout.outline),
-        fill: '#ffffff', stroke: 'none', strokeWidth: 0, silhouetteOf: [label.id] };
-    document.objects.push(silhouette, label);
-    placeInPowerClip(document, new Set([silhouette.id, label.id]), frame.id);
+        fill: '#ffffff', stroke: 'none', strokeWidth: 0, silhouetteOf: labels.map(l => l.id) };
+    document.objects.push(silhouette, ...labels);
+    placeInPowerClip(document, new Set([silhouette.id, ...labels.map(l => l.id)]), frame.id);
 
-    return { document: validateDocument(document), textId: label.id, frameId: frame.id };
+    return { document: validateDocument(document), textId: labels[0].id, frameId: frame.id };
 }
 
 // El mismo documento con el texto convertido en curvas (lo que exporta el editor para la láser),
