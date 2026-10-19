@@ -170,6 +170,12 @@ async function handleReply(contactId, message, contactRef, contactData) {
             await svc.sendAdvancedWhatsAppMessage(contactId, {
                 text: `¡Perfecto! 🎉 Tu diseño quedó aprobado y ya lo pasamos a producción ✨ En cuanto tu lámpara esté lista te aviso por aquí 🙌`,
             });
+            if (isBeta(order)) {
+                // Diseño IA BETA: el "sí" del cliente NO sube nada; la tarjeta queda en verde y el equipo sube.
+                await require('./autoLamp/autoLampService').handleBetaDecision(orderId, 'approved', { clientText }).catch(e => console.warn('[design-approval] beta aprobado:', e.message));
+                await notifyAdmin(`✅ ${dh} — el cliente APROBÓ el diseño de la IA (BETA). Falta tu OK: Pendientes de Diseño → Revisar diseño → «Aprobar y subir a Drive».`);
+                return;
+            }
             await notifyAdmin(`✅ ${dh} — el cliente APROBÓ su diseño (${designText}). Se sube a Drive automáticamente y el pedido pasa a "Diseñado por IA".`);
             console.log(`[design-approval] ${dh} APROBADO. El worker local subirá el SVG a Drive.`);
             return;
@@ -187,6 +193,12 @@ async function handleReply(contactId, message, contactRef, contactData) {
             await svc.sendAdvancedWhatsAppMessage(contactId, {
                 text: `¡Gracias por avisar! 🙌 Le paso tu comentario al equipo de diseño y te reenvío la corrección lo antes posible ✨`,
             });
+            if (isBeta(order)) {
+                // Diseño IA BETA: la IA rehace con el cambio pedido y queda en "Revisar diseño"; se reenvía a mano.
+                await require('./autoLamp/autoLampService').handleBetaDecision(orderId, 'changes', { clientText, changeSummary }).catch(e => console.warn('[design-approval] beta cambios:', e.message));
+                await notifyAdmin(`✏️ ${dh} — el cliente pidió un CAMBIO al diseño de la IA (BETA): "${changeSummary || clientText}". La IA ya lo está rehaciendo; revísalo en Pendientes de Diseño y reenvíaselo. (IA de chat pausada.)`);
+                return;
+            }
             await notifyAdmin(`✏️ ${dh} — el cliente pidió un CAMBIO en su diseño: "${changeSummary || clientText}". Requiere rediseño y reenviar la captura. (IA pausada en ese chat.)`);
             console.log(`[design-approval] ${dh} pidió cambio: ${changeSummary}`);
             return;
@@ -213,6 +225,9 @@ async function handleReply(contactId, message, contactRef, contactData) {
         try { await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() }); } catch (_) {}
     }
 }
+
+// ¿Lo mandó el Diseño IA BETA (autoLamp)? Esos no se suben solos al aprobar.
+const isBeta = order => order && order.designApproval && order.designApproval.source === 'auto-lamp-beta';
 
 async function notifyAdmin(text) {
     try {

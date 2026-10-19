@@ -159,6 +159,51 @@ export function outlinedDocument(document, font) {
 // SVG de corte/grabado de la hoja completa (texto en curvas), como "Exportar → SVG" del editor.
 export const exportLampSvg = (document, font) => exportSvg(outlinedDocument(document, font));
 
+// ARCHIVO PARA RDWORKS (Chris, 19-oct-2026): se importa el SVG directo en RDWorks, que arma una capa por
+// color y no respeta recortes. Por eso lleva SOLO dos cosas: una imagen de 1 bit a 254 DPI (0.1 mm por
+// pixel) con todo lo que se graba ya fusionado y recortado al marco (grabado, nombre, silueta, base blanca;
+// negro = se graba), y la línea de corte del marco como vector rojo puro #FF0000. Nada de rellenos blancos,
+// texto ni clipPath que RDWorks pueda leer como otra capa.
+export const RDWORKS_DPI = 254;
+export async function exportRdworksSvg(document, font) {
+    const sharp = require('sharp');
+    const { pngWithDpi } = await import('../../../public/editor-v2/bitmap.mjs');
+    const frame = document.objects.find(item => item.powerClip);
+    const box = { x: frame.x, y: frame.y, width: frame.width, height: frame.height };
+    const pxPerMm = RDWORKS_DPI / 25.4, width = Math.round(box.width * pxPerMm), height = Math.round(box.height * pxPerMm);
+    const crop = svg => svg.replace(/<svg ([^>]*?)width="[^"]*" height="[^"]*" viewBox="[^"]*"/, `<svg $1width="${box.width}mm" height="${box.height}mm" viewBox="${box.x} ${box.y} ${box.width} ${box.height}"`);
+    const draw = doc => new Resvg(crop(exportSvg(doc)), { fitTo: { mode: 'width', value: width }, background: '#ffffff' }).render();
+    // Lo que se graba, sin la línea del marco (va aparte como vector).
+    const shown = outlinedDocument(document, font);
+    shown.objects = shown.objects.map(item => item.id === frame.id ? { ...item, stroke: 'none' } : item);
+    const art = draw(shown);
+    // Máscara del marco (blanco = dentro) para que nada se grabe fuera de la pieza.
+    const maskDoc = clone(document);
+    maskDoc.objects = maskDoc.objects.filter(item => item.id === frame.id).map(item => {
+        const plain = { ...item, fill: '#000000', stroke: 'none', powerClip: { ...item.powerClip, objects: [] } };
+        delete plain.overlay; return plain;
+    });
+    // OJO: en resvg `.pixels` COPIA todo el buffer en cada lectura; se lee una sola vez.
+    const artPx = art.pixels, maskPx = draw(maskDoc).pixels;
+    const w = art.width, h = art.height, grey = Buffer.alloc(w * h);
+    for (let i = 0, p = 0; i < grey.length; i++, p += 4) {
+        const inside = maskPx[p] < 128;                       // el marco se pintó negro sobre blanco
+        const lum = (artPx[p] * 299 + artPx[p + 1] * 587 + artPx[p + 2] * 114) / 1000;
+        grey[i] = inside && lum < 128 ? 0 : 255;              // 1 bit: negro se graba, blanco no
+    }
+    const png = Buffer.from(pngWithDpi(await sharp(grey, { raw: { width: w, height: h, channels: 1 } }).png({ palette: true, colours: 2 }).toBuffer(), RDWORKS_DPI));
+    const line = { ...frame, fill: 'none', stroke: '#ff0000', strokeWidth: .3 };
+    delete line.powerClip; delete line.overlay;
+    const cut = exportSvg({ ...blankDocument(), width: document.width, height: document.height, objects: [line] })
+        .match(/<path [^>]*\/>/)[0];
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${document.width}mm" height="${document.height}mm" viewBox="0 0 ${document.width} ${document.height}">
+<title>${String(document.name || '').replace(/[<&>"]/g, '')}</title>
+<image x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
+${cut}
+</svg>`;
+}
+
 // PREVIO PARA EL CLIENTE (Chris, 19-oct-2026): el diseño de grabado es negro sobre blanco (lo negro se graba);
 // el cliente ve los colores INVERTIDOS de esa hoja: todo negro y el diseño en blanco, como la lámpara prendida.
 // Primero se arma la hoja "en blanco" (círculo y base blancos, contorno discreto) y al final se invierte.

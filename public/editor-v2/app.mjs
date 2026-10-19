@@ -2448,14 +2448,13 @@ $('#order-approve').onclick = async () => {
     if (!window.confirm(`¿Aprobar el diseño de DH${orderLink.dh} y subirlo a la carpeta de corte en Drive? Esto lo manda a producción.`)) return;
     button.disabled = true; button.textContent = 'Subiendo…';
     try {
-        // Primero queda guardado en Firebase lo que se corrigió, luego sube el mismo SVG que da Exportar.
+        // Primero queda guardado en Firebase lo que se corrigió: el servidor arma el archivo para RDWorks
+        // (imagen 1 bit + línea roja) desde esa versión guardada.
         if (cloudPending() && !cloudConflict) await autosave();
-        const snapshot = clone(history.document);
-        await bakeAdjustedImages(snapshot);
-        await outlineLicensedText(snapshot);
+        if (cloudConflict || cloudPending()) throw new Error('No se pudo guardar el diseño en Firebase; guárdalo y vuelve a aprobar.');
         const response = await fetch(`/api/auto-lamp/${orderLink.dh}/approve`, {
             method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await cloudApi.token()}` },
-            body: JSON.stringify({ svg: exportSvg(snapshot) }),
+            body: JSON.stringify({ fromEditor: true }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.success === false) throw new Error(data.error || 'El servidor no pudo subirlo.');

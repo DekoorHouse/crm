@@ -306,7 +306,8 @@ async function generate(dh, options = {}) {
     const contactId = order.contactId || order.telefono;
     // Cada intento empieza limpio: nada del anterior (error, brief, rechazo, resultado) se arrastra.
     await ref.update({ autoLamp: { status: 'working', step: beta ? 'Leyendo el pedido y el chat' : 'Eligiendo la imagen del chat', beta,
-        ...(options.note ? { note: String(options.note).slice(0, 500) } : {}), startedAt: now(), updatedAt: now() } });
+        ...(options.note ? { note: String(options.note).slice(0, 500) } : {}), ...(options.keepClient && order.autoLamp?.client ? { client: order.autoLamp.client } : {}),
+        startedAt: now(), updatedAt: now() } });
     try {
         let reference, brief = null;
         if (options.referenceUrl) reference = { url: options.referenceUrl, motivo: 'indicada a mano' };
@@ -325,7 +326,7 @@ async function generate(dh, options = {}) {
         const { buffer } = await download(raster.url);
         const meta = await sharp(buffer).metadata();
         const font = await loadFont();
-        const { composeLamp, renderPreview, exportLampSvg, pictureSizeMm } = await composerModule();
+        const { composeLamp, renderPreview, exportRdworksSvg, pictureSizeMm } = await composerModule();
 
         await setStatus(ref, { status: 'working', step: 'Convirtiendo a mapa de bits' });
         const { bitmapSize, toBitmap, pngWithDpi } = await bitmapTools();
@@ -346,7 +347,7 @@ async function generate(dh, options = {}) {
         const imageHash = crypto.createHash('sha256').update(dataUrl).digest('hex');
         const imageUrl = await saveFile(`editor-v2/images/${ACTOR.uid}/${imageHash}`, png, 'image/png');
         const previewUrl = await saveFile(`${folder}/vista-previa.png`, renderPreview(document, font), 'image/png');
-        const svgUrl = await saveFile(`${folder}/corte.svg`, Buffer.from(exportLampSvg(document, font)), 'image/svg+xml');
+        const svgUrl = await saveFile(`${folder}/corte.svg`, Buffer.from(await exportRdworksSvg(document, font)), 'image/svg+xml');   // listo para RDWorks
 
         // Proyecto del editor: la imagen va por URL (como guarda el editor), no incrustada.
         const documentJson = JSON.stringify(document, (key, value) => key === 'src' && value === dataUrl ? imageUrl : value);
@@ -401,6 +402,72 @@ async function clientPreview(dh) {
     return { url, revision: project.revision };
 }
 
+// Archivo para RDWorks (imagen 1 bit + línea roja) desde la última versión guardada del proyecto.
+async function rdworksFromProject(lamp) {
+    const project = lamp?.projectId ? (await db.collection('editor_v2_projects').doc(lamp.projectId).get()).data() : null;
+    if (!project) throw Object.assign(new Error('No encontré el proyecto del diseño.'), { status: 404 });
+    const document = JSON.parse(project.documentJson);
+    await hydrateImages(document.objects);
+    const { exportRdworksSvg } = await composerModule();
+    return exportRdworksSvg(document, await loadFont());
+}
+
+// --- BETA: mandar el previo al CLIENTE y esperar su respuesta. ----------------------------------------
+// Reutiliza el flujo de aprobación de diseños especiales (designApproval): el contacto queda en modo
+// aprobación y el clasificador decide aprobado / cambios / no claro (ver handleBetaDecision). Aprobar del
+// cliente NO sube nada a Drive: solo marca la tarjeta; el equipo aprueba y sube (regla del Beta).
+// Saludo SIN nombre: el "name" de WhatsApp suele ser un alias raro (Chris, 2026-07-20).
+const CLIENT_MESSAGE = '¡Hola! 😊 Antes de fabricar tu lámpara, te comparto el diseño para que lo revises con calma ✨\n¿Lo aprobamos así o te gustaría que le ajustemos algo? 🙌';
+
+/** auth: encabezados de la sesión de quien aprieta el botón (el envío pasa por /api/contacts/:id/messages). */
+async function sendToClient(dh, { auth = {}, actor = null } = {}) {
+    const orderDoc = await findOrder(dh);
+    const order = orderDoc.data(), lamp = order.autoLamp;
+    if (!lamp || lamp.status !== 'ready') throw Object.assign(new Error('Solo se puede mandar un diseño listo para revisar.'), { status: 409 });
+    const contactId = String(order.contactId || order.telefono || '');
+    if (!contactId) throw Object.assign(new Error('El pedido no tiene contacto.'), { status: 422 });
+    const preview = await clientPreview(dh);
+    const jpgUrl = await require('../../mockups/mockupsService').ensureJpeg(preview.url);   // WhatsApp no acepta todo formato
+    const designText = [lamp.brief?.resumen, lamp.brief?.nombre ? `Texto: ${lamp.brief.nombre}` : ''].filter(Boolean).join(' · ') || lamp.name || '';
+    const response = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}/api/contacts/${encodeURIComponent(contactId)}/messages`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({ text: CLIENT_MESSAGE, fileUrl: jpgUrl, fileType: 'image/jpeg' }),
+    });
+    const sent = await response.json().catch(() => ({}));
+    if (!response.ok || sent.success === false) throw Object.assign(new Error(sent.message || sent.error || `No se pudo mandar el mensaje (${response.status}).`), { status: 502 });
+    await orderDoc.ref.update({
+        designApproval: { status: 'pending', source: 'auto-lamp-beta', sentAt: now(), captureUrl: jpgUrl, designText, unclearRounds: 0,
+            projectRevision: preview.revision, sentBy: actor?.email || actor?.uid || null },
+        'autoLamp.client': { status: 'sent', sentAt: now(), previewUrl: jpgUrl },
+    });
+    await db.collection('contacts_whatsapp').doc(contactId).update({
+        designApprovalPending: true, designApprovalOrderId: orderDoc.id,
+        botActive: true,   // el clasificador de aprobación corre dentro del flujo de IA
+    });
+    return { previewUrl: jpgUrl };
+}
+
+/**
+ * Lo que decidió el clasificador sobre la respuesta del cliente (lo llama designApproval.handleReply para
+ * los pedidos del Beta). Aprobado: tarjeta en verde, el equipo sube. Cambios: la IA rehace el diseño con lo
+ * que pidió el cliente y queda en "Revisar diseño" (no se le reenvía solo).
+ */
+async function handleBetaDecision(orderId, decision, { clientText = '', changeSummary = '' } = {}) {
+    const ref = db.collection('pedidos').doc(String(orderId));
+    const order = (await ref.get()).data() || {};
+    const dh = order.consecutiveOrderNumber;
+    if (decision === 'approved') {
+        await ref.update({ 'autoLamp.client': { ...(order.autoLamp?.client || {}), status: 'approved', answeredAt: now(), text: String(clientText).slice(0, 300) } });
+        return;
+    }
+    if (decision === 'changes') {
+        const note = `El cliente pidió este cambio: ${changeSummary || clientText}`.slice(0, 500);
+        await ref.update({ 'autoLamp.client': { ...(order.autoLamp?.client || {}), status: 'changes', answeredAt: now(), text: String(changeSummary || clientText).slice(0, 300) } });
+        // La IA rehace con el cambio; generate() deja el resultado en "Revisar diseño" para el equipo.
+        if (dh) generate(dh, { beta: true, note, keepClient: true }).catch(error => console.warn(`[AUTO-LAMP] rehacer DH${dh} por cambio del cliente:`, error.message));
+    }
+}
+
 // --- BETA: compuerta de aprobación. Es el ÚNICO camino por el que algo de aquí sube a Drive. ---------
 
 /**
@@ -427,25 +494,16 @@ async function approve(dh, { svg = null, actor = null } = {}) {
     });
     let sent = false;
     try {
-        let bytes;
-        if (svg) {
-            if (typeof svg !== 'string' || !/^\s*(<\?xml[^>]*>\s*)?<svg[\s>]/.test(svg)) throw Object.assign(new Error('El SVG del editor no es válido.'), { status: 400 });
-            bytes = Buffer.from(svg);
-        } else {
-            const project = lamp.projectId ? (await db.collection('editor_v2_projects').doc(lamp.projectId).get()).data() : null;
-            if (project && Number(project.revision) !== Number(lamp.projectRevision || 1))
-                throw Object.assign(new Error('El diseño se corrigió en el editor: apruébalo desde el editor («Aprobar y subir a Drive») para subir la versión corregida.'), { status: 409 });
-            [bytes] = await bucket.file(lamp.svgPath || `${STORAGE_DIR}/DH${dh}/corte.svg`).download();
-        }
+        // El archivo para RDWorks se arma SIEMPRE desde la última versión guardada del proyecto (incluye lo que
+        // se haya corregido en el editor; el editor guarda antes de aprobar). `svg` solo indica que vino del editor.
+        const bytes = Buffer.from(await rdworksFromProject(lamp));
         const folder = `${STORAGE_DIR}/DH${dh}`, stamp = Date.now().toString(36);
         const approvedSvgUrl = await saveFile(`${folder}/aprobado-${stamp}.svg`, bytes, 'image/svg+xml');
         let previewUrl = lamp.previewUrl || null;
-        if (svg) {
-            try {
-                const { Resvg } = require('@resvg/resvg-js');
-                previewUrl = await saveFile(`${folder}/aprobado-${stamp}.png`, new Resvg(bytes.toString(), { fitTo: { mode: 'width', value: 1400 }, background: '#ffffff' }).render().asPng(), 'image/png');
-            } catch (_) { /* sin vista previa nueva: se queda la del sistema */ }
-        }
+        try {
+            const { Resvg } = require('@resvg/resvg-js');
+            previewUrl = await saveFile(`${folder}/aprobado-${stamp}.png`, new Resvg(bytes.toString(), { fitTo: { mode: 'width', value: 1400 }, background: '#ffffff' }).render().asPng(), 'image/png');
+        } catch (_) { /* sin vista previa nueva: se queda la del sistema */ }
         sent = true;
         const upload = await uploadDrive(`DH${dh}-ia-beta-${stamp}.svg`, bytes);
         await ref.update({
@@ -478,4 +536,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, clientPreview, engravePolarity, orderName, pickReference, customerImages, designBrief, chatHistory };
+module.exports = { generate, status, approve, reject, clientPreview, engravePolarity, sendToClient, handleBetaDecision, orderName, pickReference, customerImages, designBrief, chatHistory };

@@ -37,8 +37,21 @@ router.post('/:dh/approve', async (req, res) => {
     const dh = dhOf(req.params.dh);
     if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
     if (running.has(dh)) return res.status(409).json({ success: false, error: 'Todavía se está generando este diseño.' });
-    try { res.json({ success: true, ...(await service.approve(dh, { svg: req.body?.svg || null, actor: req.apiAuth })) }); }
+    try { res.json({ success: true, ...(await service.approve(dh, { svg: req.body?.fromEditor ? 'editor' : null, actor: req.apiAuth })) }); }
     catch (error) { console.warn(`[AUTO-LAMP] aprobar DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo subir a Drive.' }); }
+});
+
+// Manda el previo al CLIENTE (solo cuando una persona aprieta el botón) y deja el chat esperando su
+// respuesta (designApproval). El envío reutiliza /api/contacts/:id/messages con la sesión de quien aprieta.
+router.post('/:dh/send-client', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    if (running.has(dh)) return res.status(409).json({ success: false, error: 'Todavía se está generando este diseño.' });
+    const auth = {};
+    if (req.headers.authorization) auth.Authorization = req.headers.authorization;
+    if (req.headers.cookie) auth.Cookie = req.headers.cookie;
+    try { res.json({ success: true, ...(await service.sendToClient(dh, { auth, actor: req.apiAuth })) }); }
+    catch (error) { console.warn(`[AUTO-LAMP] mandar previo DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo mandar al cliente.' }); }
 });
 
 // Previo para el cliente (círculo con fondo blanco), desde la versión actual del proyecto. No manda nada.
