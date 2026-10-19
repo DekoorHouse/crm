@@ -86,14 +86,23 @@ function paymentReply(context, { customerText = '', aiText = '', receiptPresent 
         if (context.totalPending) return [`Tu abono de $${context.partialCents / 100} está registrado. Falta confirmar los datos y el total del pedido para calcular el saldo.`];
         const asksBalance = /(?:cuanto|cu[aá]l).*(?:falta|resta|saldo|restante)|(?:saldo|restante)\s*\?/.test(question);
         const asksPhoto = /foto|fotografia|imagen|terminad/.test(question);
-        if (asksPhoto && !asksBalance && !receiptPresent) return ['El resto lo liquidas después de ver la foto de tus lámparas terminadas, como acordamos. Te compartiremos la foto cuando esté lista.'];
+        // DH18187 (19-oct-2026): ya tenía la foto del pedido terminado y preguntó "¿cuánto resta?"; el aviso
+        // fijo le contestó que lo liquidaba "al ver la foto del trabajo terminado", como si no la tuviera.
+        const fotoYa = /^(?:foto enviada|esperando pago|corregido)$/i.test(String(context.productionStatus || '').trim());
+        if (asksPhoto && !asksBalance && !receiptPresent) return [fotoYa
+            ? 'Ya te compartimos la foto de tu pedido terminado 📸 Cuando liquides el resto, mándanos tu comprobante y preparamos tu envío.'
+            : 'El resto lo liquidas después de ver la foto de tus lámparas terminadas, como acordamos. Te compartiremos la foto cuando esté lista.'];
         // El aviso de anticipo validado (notifyAnticipo) ya salió en este mismo turno: no repetirlo.
         if (receiptPresent && !asksBalance && context.anticipoNotifiedRecently) return [];
         const unsafe = fullPaymentClaim(aiText) || blocksProductionForBalance(aiText) || /\/anticipopagado\b|\/comprobante\b/i.test(aiText);
         if (!receiptPresent && !asksBalance && !unsafe) return null;
         const amount = (context.partialCents / 100).toLocaleString('es-MX');
-        const production = context.productionStatus === 'Fabricar' ? ' Tu pedido ya pasó a Fabricar.' : ' El equipo dará seguimiento a la fabricación de tu pedido.';
-        const balance = asksBalance ? ` El saldo es de $${(Math.max(0, context.totalCents - context.partialCents) / 100).toLocaleString('es-MX')}, y lo liquidas al ver la foto del trabajo terminado.` : ' El resto lo liquidas al ver la foto del trabajo terminado.';
+        const production = fotoYa ? ' Tu pedido ya está terminado y te compartimos su foto 📸'
+            : context.productionStatus === 'Fabricar' ? ' Tu pedido ya pasó a Fabricar.' : ' El equipo dará seguimiento a la fabricación de tu pedido.';
+        const saldo = (Math.max(0, context.totalCents - context.partialCents) / 100).toLocaleString('es-MX');
+        const balance = fotoYa
+            ? (asksBalance ? ` El saldo es de $${saldo}; puedes liquidarlo con los datos de pago que te compartimos y mandarnos tu comprobante para preparar tu envío.` : ' Cuando liquides el resto, mándanos tu comprobante y preparamos tu envío.')
+            : (asksBalance ? ` El saldo es de $${saldo}, y lo liquidas al ver la foto del trabajo terminado.` : ' El resto lo liquidas al ver la foto del trabajo terminado.');
         const reply = `Tu anticipo de $${amount} quedó registrado.${production}${balance}`;
         if (!asksBalance && !receiptPresent && recentReplies.includes(reply)) return ['El resto lo liquidas al ver la foto del trabajo terminado, como acordamos.'];
         return [reply];

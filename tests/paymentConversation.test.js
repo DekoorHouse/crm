@@ -152,3 +152,11 @@ test('DH17946: "Mi pago ya se la había enviado" con comprobante repetido recibe
     const reply = paymentReply({ hasPaid: true, formSent: true, orderNumber: 'DH17946' }, { customerText: 'Mi pago ya se la había enviado', aiText: '', receiptPresent: true });
     expect(reply[0]).toContain('ya está registrado');
 });
+
+test('DH18187: con la foto ya enviada, "¿cuánto resta?" no dice que lo liquide al ver la foto', () => {
+    const ctx = { partialCents: 30000, totalCents: 75000, productionStatus: 'Foto enviada' };
+    const r = paymentReply(ctx, { customerText: 'Buenos días! Cuánto resta ?', aiText: '' })[0];
+    expect(r).toContain('$450');
+    expect(r).not.toContain('al ver la foto');
+    expect(r).toContain('comprobante');
+});
