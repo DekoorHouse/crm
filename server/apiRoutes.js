@@ -8748,6 +8748,13 @@ router.get('/design-pending', async (req, res) => {
                     clientPreviewUrl: p.autoLamp.clientPreviewUrl || null,
                     client: p.autoLamp.client ? { status: p.autoLamp.client.status || null, text: p.autoLamp.client.text || '' } : null,
                     autoSendHeld: p.autoLamp.autoSendHeld || null,
+                    mode: p.autoLamp.mode || null, driveUrls: p.autoLamp.driveUrls || null,
+                    // Una entrada por lámpara del pedido (los de antes de oct-2026 traen una sola en la raíz).
+                    lamps: require('./design/autoLamp/autoLampService').lampsOf(p.autoLamp).map(l => ({
+                        index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null,
+                        previewUrl: l.previewUrl || null, clientPreviewUrl: l.clientPreviewUrl || null, projectId: l.projectId || null,
+                        brief: l.brief || null, rasterModel: l.rasterModel || null, rasterFallback: l.rasterFallback || null,
+                    })),
                     updatedAt: tsToMs(p.autoLamp.updatedAt),
                 } : null,
                 // ¿Se empujó a mano a la cola de Mockup ("A Mockup")? Pinta el estado del botón.

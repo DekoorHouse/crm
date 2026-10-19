@@ -938,6 +938,19 @@ function dpBetaControls(o) {
 
 // Sigue el avance de un diseño en curso (uno a la vez por pedido) y re-pinta al terminar.
 const _dlWatching = new Set();
+// Lo que devuelve GET /api/auto-lamp/:dh, con la misma forma que manda el tablero (una entrada por lámpara;
+// los pedidos de antes de oct-2026 traen una sola lámpara en la raíz).
+function _dlNormalize(al) {
+    if (!al) return null;
+    const lamps = Array.isArray(al.lamps) ? al.lamps : (al.projectId ? [{ index: 0, label: al.name || '', copies: 1, previewUrl: al.previewUrl, clientPreviewUrl: al.clientPreviewUrl,
+        projectId: al.projectId, brief: al.brief, rasterModel: al.rasterModel, rasterFallback: al.rasterFallback }] : []);
+    return { status: al.status || null, step: al.step || null, error: al.error || null, previewUrl: al.previewUrl || null, projectId: al.projectId || null,
+        driveUrl: al.driveUrl || null, driveUrls: al.driveUrls || null, brief: al.brief || null, note: al.note || null, mode: al.mode || null,
+        client: al.client ? { status: al.client.status || null, text: al.client.text || '' } : null, autoSendHeld: al.autoSendHeld || null,
+        lamps: lamps.map(l => ({ index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null, previewUrl: l.previewUrl || null,
+            clientPreviewUrl: l.clientPreviewUrl || null, projectId: l.projectId || null, brief: l.brief || null, rasterModel: l.rasterModel || null, rasterFallback: l.rasterFallback || null })) };
+}
+
 function _dlWatch(o) {
     if (_dlWatching.has(o.id)) return;
     _dlWatching.add(o.id);
@@ -947,13 +960,8 @@ function _dlWatch(o) {
             const { autoLamp } = await _dlCall(dh, '');
             const cur = (window._designPendingData || []).find(x => x.id === o.id);
             if (!cur) { _dlWatching.delete(o.id); return; }
-            const prev = cur.autoLamp || {};
-            const next = autoLamp ? { ...prev, status: autoLamp.status, step: autoLamp.step, error: autoLamp.error || null, previewUrl: autoLamp.previewUrl || null,
-                projectId: autoLamp.projectId || null, driveUrl: autoLamp.driveUrl || null, brief: autoLamp.brief || null,
-                rasterModel: autoLamp.rasterModel || null, rasterFallback: autoLamp.rasterFallback || null,
-                client: autoLamp.client ? { status: autoLamp.client.status || null, text: autoLamp.client.text || '' } : null,
-                autoSendHeld: autoLamp.autoSendHeld || null } : null;
-            if (!next || !['working', 'uploading'].includes(next.status) || Date.now() - started > 15 * 60 * 1000) {
+            const prev = cur.autoLamp || {}, next = _dlNormalize(autoLamp);
+            if (!next || !['working', 'uploading'].includes(next.status) || Date.now() - started > 20 * 60 * 1000) {
                 _dlWatching.delete(o.id); _dlSetLocal(o.id, next); return;
             }
             if (next.step !== prev.step) { cur.autoLamp = next; _dlSetLocal(o.id, next); _dlWatching.add(o.id); }
@@ -963,66 +971,88 @@ function _dlWatch(o) {
     setTimeout(tick, 4000);
 }
 
-async function startDesignBeta(orderId, el, note) {
+// lamps: índices a rehacer (los demás se conservan); sin ellos, se diseña todo el pedido.
+async function startDesignBeta(orderId, el, note, lamps) {
     const o = (window._designPendingData || []).find(x => x.id === orderId);
     if (!o) return;
     if (el) el.disabled = true;
     try {
-        await _dlCall(_dlDh(o), '?beta=1', { beta: true, note: note || '' });
-        _dlSetLocal(orderId, { status: 'working', step: 'Leyendo el pedido y el chat' });
+        await _dlCall(_dlDh(o), '?beta=1', { beta: true, note: note || '', ...(lamps && lamps.length ? { lamps } : {}) });
+        _dlSetLocal(orderId, { ...(o.autoLamp || {}), status: 'working', step: 'Leyendo el pedido y el chat' });
     } catch (e) { if (el) el.disabled = false; alert('No se pudo empezar el diseño IA: ' + (e.message || e)); }
 }
 window.startDesignBeta = startDesignBeta;
 
-// Ventana de revisión: vista previa grande + lo que entendió la IA + Aprobar / Editor / Rehacer / Descartar.
+const _DL_SOURCE = { mockup: 'Del mockup que ya vio el cliente', cliente: 'Foto/imagen del cliente', ilustracion: 'Ilustración nueva' };
+
+// Una tarjeta por lámpara: vista Grabado / Previo cliente, lo que entendió la IA y sus acciones.
+function _dlLampCard(l, dh, total) {
+    const b = l.brief || {};
+    const warn = (b.advertencias || []).length ? `<div style="background:#fef3c7;color:#92400e;border-radius:8px;padding:6px 9px;font-size:12px;margin-top:6px"><b><i class="fas fa-triangle-exclamation"></i> Revisa:</b><ul style="margin:3px 0 0 18px;padding:0">${b.advertencias.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : '';
+    const tab = (act, label, on) => `<button data-dl="${act}" data-lamp="${l.index}" style="flex:1;padding:5px;border-radius:7px;border:1px solid #7c3aed;background:${on ? '#7c3aed' : 'transparent'};color:${on ? '#fff' : '#7c3aed'};font-size:12px;font-weight:700;cursor:pointer">${label}</button>`;
+    const model = l.rasterModel ? `<div style="font-size:11.5px;color:#64748b;margin-top:3px"><b>Modelo:</b> ${/qwen/i.test(l.rasterModel) ? 'Qwen Image 2.1 · GPU propia' : escapeHtml(l.rasterModel)}${l.rasterFallback ? ` <span title="${escapeHtml(l.rasterFallback)}" style="color:#b45309">(Qwen no estaba disponible)</span>` : ''}</div>` : '';
+    return `<div data-lamp-card="${l.index}" style="border:1px solid var(--color-border,#e5e7eb);border-radius:12px;padding:10px;margin-top:10px">
+        <div style="font-weight:800;font-size:13px;margin-bottom:6px">${total > 1 ? `Lámpara ${l.index + 1} de ${total} · ` : ''}${escapeHtml(l.label || '')}${l.copies > 1 ? ` <span style="color:#7c3aed">×${l.copies}</span>` : ''}</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <div style="flex:1 1 260px;min-width:220px">
+                ${l.previewUrl ? `<div style="display:flex;gap:4px;margin-bottom:6px">${tab('view-grabado', 'Grabado', true)}${tab('view-cliente', 'Previo para el cliente', false)}</div>
+                <img data-dl-img="${l.index}" src="${escapeHtml(l.previewUrl)}" onclick="openImageModal(this.src)" style="width:100%;border-radius:10px;cursor:zoom-in;background:#000;border:1px solid var(--color-border,#e5e7eb)">` : '<div style="padding:30px;text-align:center;color:#94a3b8">Sin vista previa</div>'}
+            </div>
+            <div style="flex:1 1 220px;min-width:200px;font-size:13px;line-height:1.45">
+                ${l.source || b.fuente ? `<div><b>De dónde sale:</b> ${escapeHtml(_DL_SOURCE[l.source || b.fuente] || l.source || b.fuente)}</div>` : ''}
+                ${b.resumen ? `<div><b>Entendió:</b> ${escapeHtml(b.resumen)}</div>` : ''}
+                <div><b>Texto:</b> ${b.nombre ? escapeHtml(b.nombre) : '<i>sin texto</i>'}${(l.source || b.fuente) === 'mockup' ? ' <span style="color:#64748b">(como viene en el mockup)</span>' : ''}</div>
+                ${b.referenceUrl ? `<div style="margin-top:5px"><b>Imagen usada:</b><br><img src="${escapeHtml(b.referenceUrl)}" onclick="openImageModal(this.src)" style="max-width:110px;max-height:110px;border-radius:6px;cursor:zoom-in;margin-top:3px"></div>` : (b.prompt ? `<div><b>Ilustración pedida:</b> ${escapeHtml(b.prompt)}</div>` : '')}
+                ${model}${warn}
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+                    ${l.projectId ? `<a href="/editor-v2/?project=${encodeURIComponent(l.projectId)}&dh=${dh}" target="_blank" rel="noopener" style="padding:5px 9px;border-radius:7px;border:1px solid #0ea5e9;color:#0284c7;font-weight:700;font-size:12px;text-decoration:none"><i class="fas fa-pen-ruler"></i> Corregir en el editor</a>` : ''}
+                    ${total > 1 ? `<button data-dl="redo-one" data-lamp="${l.index}" title="Rehace solo esta lámpara (con la indicación de abajo, si escribiste una)" style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer esta</button>` : ''}
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+// Ventana de revisión: una tarjeta por lámpara + Mandar al cliente / Aprobar y subir / Rehacer / Descartar.
 function openDesignBeta(orderId) {
     const o = (window._designPendingData || []).find(x => x.id === orderId);
     if (!o || !o.autoLamp) return;
-    const a = o.autoLamp, b = a.brief || {}, dh = _dlDh(o);
+    const a = o.autoLamp, dh = _dlDh(o);
+    const lamps = (a.lamps && a.lamps.length) ? a.lamps : (a.projectId ? [{ index: 0, label: '', copies: 1, previewUrl: a.previewUrl, clientPreviewUrl: a.clientPreviewUrl, projectId: a.projectId, brief: a.brief, rasterModel: a.rasterModel, rasterFallback: a.rasterFallback }] : []);
     document.getElementById('dl-beta-modal')?.remove();
-    const tipo = { foto: 'Foto del cliente', personaje: 'Personaje', especial: 'Especial' }[b.tipo] || '';
-    const warn = (b.advertencias || []).length ? `<div style="background:#fef3c7;color:#92400e;border-radius:8px;padding:8px 10px;font-size:12px;margin-top:8px"><b><i class="fas fa-triangle-exclamation"></i> Revisa:</b><ul style="margin:4px 0 0 18px;padding:0">${b.advertencias.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : '';
     const ready = a.status === 'ready';
+    const modeBox = a.mode === 'mockup' ? `<div style="margin-top:8px;border:1px solid #16a34a66;background:#16a34a14;color:#15803d;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-image"></i> Todo sale de mockups que el cliente ya vio: con el pago validado se sube directo a Drive (SVG Corte), sin mandarle nada.</div>` : '';
     const wrap = document.createElement('div');
     wrap.id = 'dl-beta-modal';
     wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px';
-    wrap.innerHTML = `<div style="background:var(--color-container-bg,#fff);color:var(--color-text,#1e293b);border-radius:14px;max-width:820px;width:100%;max-height:92vh;overflow:auto;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <b style="font-size:1.05rem">${escapeHtml(o.orderNumber)} · Diseño IA ${_dlBetaBadge}</b>
+    wrap.innerHTML = `<div style="background:var(--color-container-bg,#fff);color:var(--color-text,#1e293b);border-radius:14px;max-width:860px;width:100%;max-height:92vh;overflow:auto;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+            <b style="font-size:1.05rem">${escapeHtml(o.orderNumber)} · Diseño IA ${_dlBetaBadge}${lamps.length > 1 ? ` <span style="font-size:12px;color:#64748b;font-weight:600">${lamps.length} lámparas</span>` : ''}</b>
             <button data-dl="close" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:inherit">&times;</button>
         </div>
-        <div style="display:flex;gap:16px;flex-wrap:wrap">
-            <div style="flex:1 1 300px;min-width:260px">${a.previewUrl ? `
-                ${a.projectId ? `<div style="display:flex;gap:4px;margin-bottom:6px">
-                    <button data-dl="view-grabado" style="flex:1;padding:5px;border-radius:7px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Grabado</button>
-                    <button data-dl="view-cliente" title="Así lo ve el cliente: la versión invertida del grabado" style="flex:1;padding:5px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-size:12px;font-weight:700;cursor:pointer">Previo para el cliente</button>
-                </div>` : ''}
-                <img data-dl-img src="${escapeHtml(a.previewUrl)}" onclick="openImageModal(this.src)" style="width:100%;border-radius:10px;cursor:zoom-in;background:#000;border:1px solid var(--color-border,#e5e7eb)">` : `<div style="padding:40px;text-align:center;color:#b91c1c">${escapeHtml(a.error || 'Sin vista previa')}</div>`}</div>
-            <div style="flex:1 1 260px;min-width:240px;font-size:13px;line-height:1.45">
-                ${tipo ? `<div><b>Tipo:</b> ${escapeHtml(tipo)}</div>` : ''}
-                ${b.resumen ? `<div><b>Entendió:</b> ${escapeHtml(b.resumen)}</div>` : ''}
-                <div><b>Texto grabado:</b> ${b.nombre ? escapeHtml(b.nombre) : '<i>sin texto</i>'}</div>
-                ${b.referenceUrl ? `<div style="margin-top:6px"><b>Imagen del cliente usada:</b><br><img src="${escapeHtml(b.referenceUrl)}" onclick="openImageModal(this.src)" style="max-width:120px;max-height:120px;border-radius:6px;cursor:zoom-in;margin-top:3px"></div>` : (b.prompt ? `<div><b>Ilustración pedida:</b> ${escapeHtml(b.prompt)}</div>` : '')}
-                ${a.note ? `<div style="margin-top:4px"><b>Indicación:</b> ${escapeHtml(a.note)}</div>` : ''}
-                ${a.rasterModel ? `<div style="margin-top:4px;font-size:12px;color:#64748b"><b>Modelo:</b> ${/qwen/i.test(a.rasterModel) ? 'Qwen Image 2.1 · GPU propia' : escapeHtml(a.rasterModel)}${a.rasterFallback ? ` <span title="${escapeHtml(a.rasterFallback)}" style="color:#b45309">(Qwen no estaba disponible)</span>` : ''}</div>` : ''}
-                ${a.error && ready ? `<div style="color:#b91c1c;margin-top:6px">${escapeHtml(a.error)}</div>` : ''}
-                ${warn}
-                ${_dlClientBox(a.client)}
-                ${a.autoSendHeld ? `<div style="margin-top:8px;border:1px solid #f59e0b66;background:#f59e0b14;color:#b45309;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-hand"></i> No se mandó solo al cliente: ${escapeHtml(a.autoSendHeld)}</div>` : ''}
-                <div style="font-size:11.5px;color:#64748b;margin-top:8px">Nada se sube a Drive hasta que aprietes <b>Aprobar</b>. Si lo corriges en el editor, apruébalo desde ahí.</div>
-            </div>
-        </div>
-        <textarea data-dl="note" placeholder="Indicación para rehacerlo (opcional): «usa la otra foto», «sin texto», «que se vea de cuerpo completo»…" style="width:100%;min-height:52px;margin-top:12px;padding:7px 9px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:var(--color-surface,#fff);color:inherit;font-size:12.5px"></textarea>
+        ${a.status === 'error' ? `<div style="color:#b91c1c;margin-top:8px;font-size:13px">${escapeHtml(a.error || 'Error')}</div>` : ''}
+        ${a.error && ready ? `<div style="color:#b91c1c;margin-top:6px;font-size:12px">${escapeHtml(a.error)}</div>` : ''}
+        ${a.note ? `<div style="margin-top:6px;font-size:12.5px"><b>Indicación:</b> ${escapeHtml(a.note)}</div>` : ''}
+        ${modeBox}${_dlClientBox(a.client)}
+        ${a.autoSendHeld ? `<div style="margin-top:8px;border:1px solid #f59e0b66;background:#f59e0b14;color:#b45309;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-hand"></i> No siguió solo: ${escapeHtml(a.autoSendHeld)}</div>` : ''}
+        ${lamps.map(l => _dlLampCard(l, dh, lamps.length)).join('')}
+        <div style="font-size:11.5px;color:#64748b;margin-top:8px">Lo que se sube a Drive es la hoja para RDWorks (2 lámparas por hoja, girada y espejeada), armada con la última versión guardada de cada lámpara.</div>
+        <textarea data-dl="note" placeholder="Indicación para rehacer (opcional): «usa la otra foto», «sin texto», «que se vea de cuerpo completo»…" style="width:100%;min-height:50px;margin-top:10px;padding:7px 9px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:var(--color-surface,#fff);color:inherit;font-size:12.5px"></textarea>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:10px">
             ${ready ? `<button data-dl="reject" style="padding:8px 12px;border-radius:8px;border:1px solid #dc2626;background:transparent;color:#dc2626;font-weight:700;cursor:pointer">Descartar</button>` : ''}
-            <button data-dl="redo" style="padding:8px 12px;border-radius:8px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer</button>
-            ${ready && a.projectId ? `<button data-dl="send-client" title="Le manda el previo al cliente por su chat y espera su respuesta. No sube nada a Drive." style="padding:8px 12px;border-radius:8px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;cursor:pointer"><i class="fas fa-paper-plane"></i> ${a.client?.status ? 'Reenviar al cliente' : 'Mandar al cliente'}</button>` : ''}
-            ${a.projectId ? `<a href="/editor-v2/?project=${encodeURIComponent(a.projectId)}&dh=${dh}" target="_blank" rel="noopener" style="padding:8px 12px;border-radius:8px;border:1px solid #0ea5e9;color:#0284c7;font-weight:700;text-decoration:none"><i class="fas fa-pen-ruler"></i> Corregir en el editor</a>` : ''}
+            <button data-dl="redo" style="padding:8px 12px;border-radius:8px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;cursor:pointer"><i class="fas fa-rotate"></i> ${lamps.length > 1 ? 'Rehacer todo' : 'Rehacer'}</button>
+            ${ready && lamps.length ? `<button data-dl="send-client" title="Le manda al cliente un previo por lámpara y espera su respuesta; si aprueba se sube solo a Drive." style="padding:8px 12px;border-radius:8px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;cursor:pointer"><i class="fas fa-paper-plane"></i> ${a.client?.status ? 'Reenviar al cliente' : 'Mandar al cliente'}</button>` : ''}
             ${ready ? `<button data-dl="approve" style="padding:8px 14px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;cursor:pointer"><i class="fas fa-cloud-arrow-up"></i> Aprobar y subir a Drive</button>` : ''}
         </div>
     </div>`;
     document.body.appendChild(wrap);
     const close = () => wrap.remove();
+    const lampOf = btn => lamps.find(l => l.index === Number(btn.dataset.lamp));
+    const clientUrl = async l => {
+        if (l.clientPreviewUrl) return l.clientPreviewUrl;
+        const d = await _dlCall(dh, '/client-preview', { lamp: l.index });
+        l.clientPreviewUrl = d.url; return d.url;
+    };
     wrap.addEventListener('click', async ev => {
         if (ev.target === wrap) return close();
         const btn = ev.target.closest('[data-dl]'); if (!btn) return;
@@ -1030,49 +1060,45 @@ function openDesignBeta(orderId) {
         if (act === 'close') return close();
         if (act === 'note') return;
         if (act === 'view-grabado' || act === 'view-cliente') {
-            // Pestañas de la vista: el grabado (lo que va a RDWorks) o el previo invertido para el cliente.
-            const img = wrap.querySelector('[data-dl-img]'), on = act === 'view-cliente';
-            wrap.querySelectorAll('[data-dl="view-grabado"],[data-dl="view-cliente"]').forEach(b => {
-                const active = b === btn; b.style.background = active ? '#7c3aed' : 'transparent'; b.style.color = active ? '#fff' : '#7c3aed';
+            // Pestañas de cada lámpara: el grabado (lo que va a RDWorks) o el previo invertido para el cliente.
+            const l = lampOf(btn), card = wrap.querySelector(`[data-lamp-card="${l.index}"]`), img = card.querySelector('[data-dl-img]');
+            card.querySelectorAll('[data-dl="view-grabado"],[data-dl="view-cliente"]').forEach(b => {
+                const on = b === btn; b.style.background = on ? '#7c3aed' : 'transparent'; b.style.color = on ? '#fff' : '#7c3aed';
             });
-            if (!on) { img.src = a.previewUrl; return; }
-            if (a.clientPreviewUrl) { img.src = a.clientPreviewUrl; return; }
+            if (act === 'view-grabado') { img.src = l.previewUrl; return; }
             btn.disabled = true; const label = btn.textContent; btn.textContent = 'Armando…';
-            try { const d = await _dlCall(dh, '/client-preview', {}); a.clientPreviewUrl = d.url; img.src = d.url; }
-            catch (e) { alert(e.message || e); }
+            try { img.src = await clientUrl(l); } catch (e) { alert(e.message || e); }
             finally { btn.disabled = false; btn.textContent = label; }
             return;
         }
         btn.disabled = true;
         try {
             if (act === 'send-client') {
-                const prev = a.clientPreviewUrl || (await _dlCall(dh, '/client-preview', {})).url;
-                a.clientPreviewUrl = prev;
-                if (!await showConfirmModal(`¿Mandarle este previo al cliente de ${o.orderNumber} por su chat? Se le pregunta si lo aprueba; si lo aprueba, se sube solo a Drive (SVG Corte); si pide un cambio, la IA lo rehace para que lo revisen.<br><img src="${escapeHtml(prev)}" style="max-width:220px;border-radius:8px;margin-top:8px">`, { icon: 'fa-paper-plane', confirmText: 'Mandar al cliente' })) { btn.disabled = false; return; }
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Armando previos…';
+                const urls = []; for (const l of lamps) urls.push(await clientUrl(l));
+                btn.innerHTML = `<i class="fas fa-paper-plane"></i> ${a.client?.status ? 'Reenviar al cliente' : 'Mandar al cliente'}`;
+                const thumbs = urls.map(u => `<img src="${escapeHtml(u)}" style="max-width:${urls.length > 1 ? 120 : 220}px;border-radius:8px;margin:6px 3px 0">`).join('');
+                if (!await showConfirmModal(`¿Mandarle ${urls.length > 1 ? `los ${urls.length} previos (uno por lámpara)` : 'este previo'} al cliente de ${o.orderNumber} por su chat? Si lo aprueba, se sube solo a Drive (SVG Corte); si pide un cambio, la IA lo rehace y se lo reenvía.<br>${thumbs}`, { icon: 'fa-paper-plane', confirmText: 'Mandar al cliente' })) { btn.disabled = false; return; }
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mandando…';
                 await _dlCall(dh, '/send-client', {});
                 close(); _dlSetLocal(orderId, { ...a, client: { status: 'sent' } });
             } else if (act === 'approve') {
-                if (!await showConfirmModal(`¿Aprobar el diseño de ${o.orderNumber} y subirlo a la carpeta de corte en Drive? Esto lo manda a producción.`, { icon: 'fa-cloud-arrow-up', confirmText: 'Aprobar y subir' })) { btn.disabled = false; return; }
+                if (!await showConfirmModal(`¿Aprobar el diseño de ${o.orderNumber} y subir ${lamps.reduce((n, l) => n + (l.copies || 1), 0) > 2 ? 'sus hojas' : 'su hoja'} para RDWorks a la carpeta SVG Corte de Drive? Esto lo manda a producción.`, { icon: 'fa-cloud-arrow-up', confirmText: 'Aprobar y subir' })) { btn.disabled = false; return; }
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo…';
                 const d = await _dlCall(dh, '/approve', {});
                 close();
                 o.svgCorteUrl = d.driveUrl;
-                _dlSetLocal(orderId, { ...a, status: 'approved', driveUrl: d.driveUrl });
+                _dlSetLocal(orderId, { ...a, status: 'approved', driveUrl: d.driveUrl, driveUrls: d.driveUrls || null });
                 if (d.driveUrl) window.open(d.driveUrl, '_blank', 'noopener');
-            } else if (act === 'client') {
-                const label = btn.innerHTML;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Armando previo…';
-                const d = await _dlCall(dh, '/client-preview', {});
-                a.clientPreviewUrl = d.url;
-                btn.innerHTML = label; btn.disabled = false;
-                openImageModal(d.url);
             } else if (act === 'reject') {
                 await _dlCall(dh, '/reject', { reason: note });
                 close(); _dlSetLocal(orderId, { ...a, status: 'rejected' });
             } else if (act === 'redo') {
                 if (ready) await _dlCall(dh, '/reject', { reason: note || 'rehacer' }).catch(() => {});
                 close(); await startDesignBeta(orderId, null, note);
+            } else if (act === 'redo-one') {
+                const l = lampOf(btn);
+                close(); await startDesignBeta(orderId, null, note, [l.index]);
             }
         } catch (e) { btn.disabled = false; alert(e.message || e); }
     });

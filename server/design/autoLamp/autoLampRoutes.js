@@ -23,7 +23,7 @@ router.post('/:dh', async (req, res) => {
     const auth = {};
     if (req.headers.authorization) auth.Authorization = req.headers.authorization;
     if (req.headers.cookie) auth.Cookie = req.headers.cookie;
-    service.generate(dh, { beta, auth, note: beta ? String(req.body?.note || '').trim() : '' }).catch(error => console.warn(`[AUTO-LAMP] DH${dh}:`, error.message)).finally(() => running.delete(dh));
+    service.generate(dh, { beta, auth, note: beta ? String(req.body?.note || '').trim() : '', lamps: Array.isArray(req.body?.lamps) ? req.body.lamps.map(Number).filter(Number.isInteger) : null }).catch(error => console.warn(`[AUTO-LAMP] DH${dh}:`, error.message)).finally(() => running.delete(dh));
     res.status(202).json({ success: true, status: 'working' });
 });
 
@@ -62,7 +62,7 @@ router.post('/:dh/send-client', async (req, res) => {
 router.post('/:dh/client-preview', async (req, res) => {
     const dh = dhOf(req.params.dh);
     if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
-    try { res.json({ success: true, ...(await service.clientPreview(dh)) }); }
+    try { res.json({ success: true, ...(await service.clientPreview(dh, Number(req.body?.lamp ?? req.query.lamp ?? 0) || 0)) }); }
     catch (error) { console.warn(`[AUTO-LAMP] previo DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo armar el previo.' }); }
 });
 

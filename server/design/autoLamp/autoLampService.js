@@ -6,16 +6,20 @@
 //   2. la convierte a grabado con "Convertir a raster" (mismo modelo y prompt que el editor), cuadrada
 //      para que el personaje quepa completo en el círculo;
 //   3. arma el proyecto del editor (composeLamp.mjs): marco con base blanca, grabado en el PowerClip,
-//      nombre en Rows of Sunflowers con su silueta negra;
+//      nombre en Rows of Sunflowers con su silueta;
 //   4. lo guarda en "Proyectos en Firebase" (se abre y corrige en /editor-v2), más la vista previa PNG y
 //      el SVG de corte en Storage, y deja el resultado en el pedido (campo autoLamp).
-// De inicio NO se manda nada al cliente: una persona lo revisa en el editor y decide.
 //
 // BETA "Diseño IA" (oct-2026): el mismo armado para CUALQUIER pedido que hoy se diseña a mano (foto del
-// cliente, personaje sin plantilla, especiales). Antes de todo, la IA lee el pedido y el chat (designBrief)
-// y decide qué grabar: una imagen que mandó el cliente o una ilustración nueva que se pide al estudio de
-// /imagenes. Candado: NADA sube a Drive (ni a corte) sin que una persona apruebe (approve); se dispara a
-// mano, pedido por pedido, desde Pendientes de Diseño.
+// cliente, personaje sin plantilla, especiales), con VARIAS lámparas por pedido (autoLamp.lamps[]). Una sola
+// lectura de la IA (designBriefOrder) decide, por lámpara, de dónde sale su diseño:
+//   - "mockup": un mockup que YA le mandamos al cliente (se graba tal cual, con el nombre como viene);
+//   - "cliente": una imagen que mandó el cliente;
+//   - "ilustracion": una ilustración nueva del estudio de /imagenes (Qwen; gpt-image si la GPU está apagada).
+// Después:
+//   - si TODAS salen de un mockup y el pedido ya está pagado -> directo a Drive (SVG Corte), sin cliente;
+//   - si no -> se le manda a el cliente un previo POR LÁMPARA y su "sí" sube a Drive (designApproval).
+// Se dispara a mano, pedido por pedido, desde Pendientes de Diseño (botón "IA BETA").
 const crypto = require('crypto');
 const sharp = require('sharp');
 const { db, bucket, admin } = require('../../config');
@@ -28,6 +32,8 @@ const BETA_MODEL = 'dekoor/qwen-image-2.1';
 // Sube cuando cambia cómo se ve el previo para el cliente: los ya guardados se vuelven a armar.
 const CLIENT_PREVIEW_STYLE = 4;
 const RASTER_PROMPT = 'dame el diseño de la imagen con rellenos blancos y fondos negros. En raster engrave con degradado en trama';
+// Mockup (foto/render de la lámpara prendida que ya vio el cliente) -> el grabado TAL CUAL, con su texto.
+const MOCKUP_PROMPT = 'Esta imagen es un mockup de una lámpara LED de acrílico redonda, encendida. Extrae SOLO el diseño grabado dentro del círculo de acrílico: el dibujo y el texto/nombre EXACTAMENTE como están (mismas letras, misma tipografía, misma pose y posición), centrado y ocupando el cuadro como ocupa el círculo. Quita la base, la mesa, el fondo, los reflejos y el color de la luz. Solo blanco y negro, sin colores: el diseño en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla, sin círculos, marcos ni bordes. En raster engrave con degradado en trama.';
 // Último paso del equipo: "Convertir a mapa de bits" en difuminado (1 bit, Floyd–Steinberg) a la
 // resolución de la láser, al tamaño real que la imagen tiene en el marco.
 const BITMAP = { dpi: 254, method: 'diffusion', threshold: 128 };
@@ -59,12 +65,47 @@ function orderName(order) {
     return { name, datos };
 }
 
+// Las lámparas del pedido: una por producto (items[]); la cantidad son copias del MISMO diseño.
+function orderLamps(order) {
+    const items = Array.isArray(order.items) && order.items.length ? order.items
+        : [{ producto: order.producto || '', datosProducto: order.datosProducto || '', cantidad: order.cantidad || 1 }];
+    return items.map((item, index) => {
+        const datos = String(item.datosProducto || '').trim();
+        const name = (datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1];
+        return { index, producto: String(item.producto || '').trim(), datos, copies: Math.max(1, parseInt(item.cantidad, 10) || 1),
+            label: [String(item.producto || '').trim(), name && name.trim()].filter(Boolean).join(' · ') || `Lámpara ${index + 1}` };
+    });
+}
+
+// Las lámparas ya diseñadas (los pedidos de antes de oct-2026 guardaban UNA sola en la raíz de autoLamp).
+function lampsOf(autoLamp) {
+    if (!autoLamp) return [];
+    if (Array.isArray(autoLamp.lamps)) return autoLamp.lamps;
+    if (!autoLamp.projectId) return [];
+    return [{ index: 0, label: autoLamp.name || '', copies: 1, status: 'ready', projectId: autoLamp.projectId, projectRevision: autoLamp.projectRevision || 1,
+        previewUrl: autoLamp.previewUrl || null, brief: autoLamp.brief || null, rasterUrl: autoLamp.rasterUrl || null,
+        rasterModel: autoLamp.rasterModel || null, clientPreviewUrl: autoLamp.clientPreviewUrl || null,
+        clientPreviewRevision: autoLamp.clientPreviewRevision || null, clientPreviewStyle: autoLamp.clientPreviewStyle || null }];
+}
+
+// ¿Pagado? (comprobante validado o estatus de pago/producción).
+const isPaid = order => !!order.comprobanteValidadoAt || /^(pagado|fabricar|diseñado|dise[ñn]ado por ia)$/i.test(String(order.estatus || '').trim());
+
 // Imágenes que mandó el CLIENTE (no las nuestras: anuncios, respuestas automáticas).
 async function customerImages(contactId) {
     const ours = process.env.PHONE_NUMBER_ID;
     const snapshot = await db.collection('contacts_whatsapp').doc(String(contactId)).collection('messages').orderBy('timestamp', 'asc').get();
     return snapshot.docs.map(doc => doc.data())
         .filter(m => m.fileUrl && /^image\//.test(m.fileType || '') && m.status !== 'sent' && (!ours || m.from !== ours))
+        .map(m => ({ url: m.fileUrl, text: m.text || '', at: m.timestamp?.toDate?.() || null }));
+}
+
+// Imágenes que mandamos NOSOTROS (aquí van los mockups que ya vio el cliente, y también datos de pago, etc.).
+async function ourImages(contactId) {
+    // Lo que manda el cliente trae from = su id (así lo consulta designApproval); lo demás es nuestro.
+    const snapshot = await db.collection('contacts_whatsapp').doc(String(contactId)).collection('messages').orderBy('timestamp', 'desc').limit(150).get();
+    return snapshot.docs.reverse().map(doc => doc.data())
+        .filter(m => m.fileUrl && /^image\//.test(m.fileType || '') && String(m.from || '') !== String(contactId))
         .map(m => ({ url: m.fileUrl, text: m.text || '', at: m.timestamp?.toDate?.() || null }));
 }
 
@@ -107,43 +148,58 @@ async function imagePart(url) {
 }
 
 /**
- * BETA: la IA lee el pedido + el chat + las imágenes del cliente y decide el diseño.
- * note: indicación del equipo al regenerar ("usa la segunda foto", "sin nombre", …); manda sobre todo.
+ * BETA: la IA lee el pedido COMPLETO (todas sus lámparas) + el chat + las imágenes del cliente y las nuestras,
+ * y decide el diseño de CADA lámpara. note: indicación del equipo o cambio que pidió el cliente; con
+ * `previous` (lo ya diseñado) también dice qué lámparas hay que rehacer ("cambia").
  */
-async function designBrief({ order, datos, history, images, note }) {
-    const candidates = images.slice(-6);
-    const parts = [{ text: `Eres el diseñador de DekoorHouse. Hacemos lámparas LED de acrílico grabado con láser: un marco redondo con base, y dentro se GRABA una imagen en blanco y negro (raster con trama) y, si el cliente lo pidió, un NOMBRE/TEXTO abajo.
-Tu trabajo: entender qué pidió el cliente para su lámpara y decidir el diseño.
+async function designBriefOrder({ order, lamps, history, clientImages, sentImages, note, previous = [] }) {
+    const client = clientImages.slice(-6), sent = sentImages.slice(-8);
+    const lampList = lamps.map(l => `L${l.index}: ${l.producto || 'Lámpara'} — datos: "${l.datos || '(sin datos)'}"${l.copies > 1 ? ` — cantidad ${l.copies} (iguales)` : ''}`).join('\n');
+    const prevList = previous.length ? previous.map(p => `L${p.index}: ya diseñada (${p.brief?.resumen || p.label || ''})`).join('\n') : '';
+    const parts = [{ text: `Eres el diseñador de DekoorHouse. Hacemos lámparas LED de acrílico grabado con láser: un marco redondo con base, y dentro se GRABA una imagen en blanco y negro (raster con trama) y, si el cliente lo pidió, un NOMBRE/TEXTO.
+Este pedido trae ${lamps.length} lámpara(s) DISTINTAS; decide el diseño de CADA una por separado:
+${lampList}
 
-Producto: "${order.producto || order.items?.[0]?.producto || ''}"
-Datos del pedido (lo que registró el equipo): "${datos}"
-${note ? `INDICACIÓN DEL EQUIPO (tiene prioridad sobre todo lo demás): "${note}"\n` : ''}
+${note ? `INDICACIÓN / CAMBIO PEDIDO (tiene prioridad sobre todo lo demás): "${note}"\n` : ''}${prevList ? `Lo que ya está diseñado:\n${prevList}\n` : ''}
 Conversación reciente (lo más nuevo al final):
 ${history || '(sin mensajes)'}
 
-Abajo van, numeradas desde 0, las imágenes que mandó el cliente.
-Decide:
-- "tipo": "foto" (grabar una foto/imagen que mandó el cliente), "personaje" (un personaje/caricatura/dibujo que hay que ilustrar) o "especial" (otra cosa: logo, frase, escena…).
-- "imageIndex": la imagen del cliente que hay que convertir a grabado, o -1 si ninguna sirve y hay que ILUSTRAR desde cero. NUNCA elijas comprobantes de pago, capturas de transferencias, tickets, capturas de chat, fotos de una lámpara nuestra ya hecha ni la imagen del anuncio.
-- "prompt": si imageIndex es -1, describe en español la ilustración a generar (personaje, pose, estilo, elementos), SIN texto ni letras en la imagen. Si hay imagen, indica qué conservar o ajustar de ella (ej. "solo las dos personas, sin el fondo"), o "" si va tal cual.
-- "nombre": el texto EXACTO a grabar abajo (nombre(s), fecha, frase) tal como lo pidió, respetando mayúsculas y acentos; "" si no pidió texto. Varias líneas sepáralas con " · ".
-- "resumen": una línea para el equipo con lo que entendiste que quiere.
-- "advertencias": dudas o cosas que no puedes resolver (ej. "pidió 2 lámparas distintas", "la foto es muy oscura", "no queda claro el nombre"); [] si nada.
-Responde SOLO este JSON: {"tipo": "...", "imageIndex": 0, "prompt": "...", "nombre": "...", "resumen": "...", "advertencias": []}` }];
-    for (const [i, image] of candidates.entries()) {
-        try { parts.push({ text: `Imagen ${i}${image.text ? ` (mensaje: "${image.text.slice(0, 200)}")` : ''}:` }, await imagePart(image.url)); }
-        catch (_) { parts.push({ text: `Imagen ${i}: (no se pudo descargar)` }); }
+Abajo van las imágenes. Las del CLIENTE se llaman C0, C1…; las que mandamos NOSOTROS se llaman N0, N1… (entre las nuestras puede haber MOCKUPS: imágenes de la lámpara terminada o prendida con el diseño y el nombre que ya le enseñamos al cliente; también hay datos de pago, catálogo, etc.).
+Para CADA lámpara decide:
+- "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
+- "imagen": la imagen elegida ("N2", "C0"…), o "" si es ilustración. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
+- "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "".
+- "nombre": el texto EXACTO a grabar (nombre(s), fecha, frase) tal como lo pidió, respetando mayúsculas y acentos; "" si no lleva texto. Varias líneas sepáralas con " · ".
+- "tipo": "foto", "personaje" o "especial".
+- "resumen": una línea para el equipo con lo que entendiste de ESA lámpara.
+- "advertencias": dudas que no puedes resolver de ESA lámpara (ej. "la foto es muy oscura", "no queda claro el nombre", "no encontré el mockup de esta lámpara"); [] si nada.
+- "cambia": ${prevList ? 'true si por la INDICACIÓN/CAMBIO hay que rehacer ESTA lámpara; false si se queda como está.' : 'true.'}
+Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "tipo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
+    for (const [prefix, list] of [['C', client], ['N', sent]]) {
+        for (const [i, image] of list.entries()) {
+            try { parts.push({ text: `Imagen ${prefix}${i}${image.text ? ` (mensaje: "${image.text.slice(0, 200)}")` : ''}:` }, await imagePart(image.url)); }
+            catch (_) { parts.push({ text: `Imagen ${prefix}${i}: (no se pudo descargar)` }); }
+        }
     }
-    const brief = await geminiJson(parts);
-    const index = Number.isInteger(Number(brief.imageIndex)) ? Number(brief.imageIndex) : -1;
-    return {
-        tipo: ['foto', 'personaje', 'especial'].includes(brief.tipo) ? brief.tipo : 'especial',
-        nombre: String(brief.nombre || '').trim().slice(0, 80),
-        reference: index >= 0 ? candidates[index] || null : null,
-        prompt: String(brief.prompt || '').trim().slice(0, 1500),
-        resumen: String(brief.resumen || '').trim().slice(0, 400),
-        advertencias: (Array.isArray(brief.advertencias) ? brief.advertencias : []).map(String).slice(0, 6),
-    };
+    const answer = await geminiJson(parts);
+    const rows = Array.isArray(answer.lamparas) ? answer.lamparas : [];
+    return lamps.map(lamp => {
+        const row = rows.find(r => Number(r.lampara) === lamp.index) || rows[lamp.index] || {};
+        const pick = String(row.imagen || '').trim().toUpperCase().match(/^([CN])(\d+)$/);
+        const reference = pick ? (pick[1] === 'C' ? client : sent)[Number(pick[2])] || null : null;
+        let fuente = ['mockup', 'cliente', 'ilustracion'].includes(row.fuente) ? row.fuente : (reference ? 'cliente' : 'ilustracion');
+        if (fuente !== 'ilustracion' && !reference) fuente = 'ilustracion';
+        if (fuente === 'mockup' && pick && pick[1] !== 'N') fuente = 'cliente';
+        return {
+            fuente, reference,
+            tipo: ['foto', 'personaje', 'especial'].includes(row.tipo) ? row.tipo : 'especial',
+            nombre: String(row.nombre || '').trim().slice(0, 80),
+            prompt: String(row.prompt || '').trim().slice(0, 1500),
+            resumen: String(row.resumen || '').trim().slice(0, 400),
+            advertencias: (Array.isArray(row.advertencias) ? row.advertencias : []).map(String).slice(0, 6),
+            cambia: row.cambia !== false,
+        };
+    });
 }
 
 async function download(url) {
@@ -152,39 +208,25 @@ async function download(url) {
     return { buffer: Buffer.from(await response.arrayBuffer()), type: response.headers.get('content-type') || '' };
 }
 
-// La IA elige cuál imagen del cliente es la del diseño a grabar.
+// La IA elige cuál imagen del cliente es la del diseño a grabar (lámpara automática del editor, sin Beta).
 async function pickReference(images, datos) {
     if (!images.length) throw Object.assign(new Error('El cliente no ha mandado ninguna imagen.'), { status: 422 });
     const candidates = images.slice(-6);
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_IMAGE_KEY;
-    if (!apiKey) throw new Error('Falta GEMINI_API_KEY para elegir la imagen.');
     const parts = [{ text: `Un cliente pidió una lámpara grabada con un personaje o imagen. Datos del pedido: "${datos}".
 Abajo van, numeradas desde 0, las imágenes que mandó por WhatsApp. Elige la que muestra el personaje/diseño que quiere grabar.
 NO elijas comprobantes de pago, capturas de transferencias, tickets, capturas de chat ni fotos de otra lámpara ya hecha.
 Responde SOLO este JSON: {"index": <número o -1 si ninguna sirve>, "motivo": "<breve>"}` }];
-    for (const [i, image] of candidates.entries()) {
-        const { buffer } = await download(image.url);
-        const small = await sharp(buffer).rotate().resize(768, 768, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer();
-        parts.push({ text: `Imagen ${i}${image.text ? ` (mensaje: "${image.text.slice(0, 200)}")` : ''}:` }, { inlineData: { mimeType: 'image/jpeg', data: small.toString('base64') } });
-    }
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${VISION_MODEL}:generateContent?key=${apiKey}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json' } }),
-    });
-    if (!response.ok) throw new Error(`La IA no pudo revisar las imágenes (${response.status}).`);
-    const data = await response.json();
-    const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').replace(/```json|```/g, '').trim();
-    let choice;
-    try { choice = JSON.parse(text); } catch (_) { throw new Error('La IA no respondió cuál imagen usar.'); }
+    for (const [i, image] of candidates.entries()) parts.push({ text: `Imagen ${i}${image.text ? ` (mensaje: "${image.text.slice(0, 200)}")` : ''}:` }, await imagePart(image.url));
+    const choice = await geminiJson(parts).catch(() => { throw new Error('La IA no respondió cuál imagen usar.'); });
     const picked = candidates[Number(choice.index)];
     if (!picked) throw Object.assign(new Error(`Ninguna imagen del chat sirve para grabar: ${choice.motivo || 'sin motivo'}.`), { status: 422 });
     return { ...picked, motivo: choice.motivo || '' };
 }
 
 // "Convertir a raster" del editor, desde el servidor. Cuadrada si el modelo lo permite.
-// Sin referencia (BETA, personaje sin imagen) el estudio de /imagenes ILUSTRA desde la descripción con el
-// mismo acabado de grabado. extra: lo que la IA pidió conservar o ajustar de la foto.
-async function rasterize(reference, { description = '', extra = '', model = RASTER_MODEL } = {}) {
+// Sin referencia (personaje sin imagen) el estudio de /imagenes ILUSTRA desde la descripción con el mismo
+// acabado de grabado. extra: lo que la IA pidió conservar o ajustar de la foto. prompt: reemplaza todo (mockup).
+async function rasterize(reference, { description = '', extra = '', prompt: override = '', model = RASTER_MODEL } = {}) {
     const files = [];
     if (reference) {
         const { buffer } = await download(reference.url);
@@ -194,9 +236,9 @@ async function rasterize(reference, { description = '', extra = '', model = RAST
         const jpeg = await sharp(buffer).rotate().resize(2048, 2048, fit).flatten({ background: '#ffffff' }).jpeg({ quality: 92 }).toBuffer();
         files.push({ buffer: jpeg, mimetype: 'image/jpeg', originalname: 'referencia.jpg' });
     }
-    const prompt = reference
+    const prompt = override || (reference
         ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT) + (model === BETA_MODEL ? '. Solo blanco y negro, sin colores; fondo negro uniforme de orilla a orilla, sin círculos, marcos ni bordes.' : '')
-        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa, sin texto ni letras. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`;
+        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa, sin texto ni letras. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`);
     const fields = { requestId: crypto.randomUUID(), model, prompt, aspect_ratio: '1:1' };
     let job;
     try { job = await imageStudio.createGeneration(fields, files, ACTOR); }
@@ -291,9 +333,80 @@ async function setStatus(orderRef, patch) {
     await orderRef.set({ autoLamp: { ...patch, updatedAt: now() } }, { merge: true });
 }
 
+// Cambia los datos de UNA lámpara (Firestore no actualiza un elemento de arreglo por ruta: se reescribe).
+async function updateLamp(orderRef, index, patch) {
+    await db.runTransaction(async tx => {
+        const autoLamp = (await tx.get(orderRef)).data()?.autoLamp;
+        const lamps = lampsOf(autoLamp).map(l => l.index === index ? { ...l, ...patch } : l);
+        tx.update(orderRef, { 'autoLamp.lamps': lamps, ...(index === 0 && patch.clientPreviewUrl ? { 'autoLamp.clientPreviewUrl': patch.clientPreviewUrl } : {}) });
+    });
+}
+
 /**
- * Genera la lámpara de un pedido. Devuelve { projectId, previewUrl, svgUrl, ... }.
- * options.rasterUrl: usar un grabado ya hecho (pruebas) en vez de generar uno nuevo.
+ * Arma UNA lámpara: grabado (mockup / foto / ilustración) -> mapa de bits -> proyecto del editor + vistas.
+ * plan: { fuente, reference, prompt, nombre, ... } (de designBriefOrder). Devuelve los datos de la lámpara.
+ */
+async function buildLamp(dh, lamp, plan, { beta, onStep }) {
+    const started = Date.now();
+    const step = text => onStep(text);
+    let raster;
+    if (plan.fuente === 'mockup') {
+        step('Convirtiendo el mockup a grabado');
+        raster = await rasterizeBeta(plan.reference, { prompt: MOCKUP_PROMPT });
+    } else if (beta) {
+        step(plan.reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes');
+        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '' });
+    } else {
+        step('Convirtiendo a grabado');
+        raster = await rasterize(plan.reference);
+    }
+    const { buffer } = await download(raster.url);
+    const meta = await sharp(buffer).metadata();
+    const font = await loadFont();
+    const { composeLamp, renderPreview, pictureSizeMm } = await composerModule();
+
+    step('Convirtiendo a mapa de bits');
+    const { bitmapSize, toBitmap, pngWithDpi } = await bitmapTools();
+    const mm = pictureSizeMm({ width: meta.width, height: meta.height });
+    const size = bitmapSize(mm.width, mm.height, BITMAP.dpi);
+    // Para GRABAR va el diseño en negro sobre fondo blanco (lo negro es lo que graba la láser); el modelo
+    // suele entregar blanco sobre negro: engravePolarity lo normaliza (Chris, 19-oct-2026). El previo del cliente es al revés.
+    const rgba = await sharp(await engravePolarity(buffer)).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
+    const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, BITMAP);
+    const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
+
+    step('Armando el diseño');
+    // El mockup ya trae el nombre dentro de la imagen (tal cual lo vio el cliente): no se le agrega otro.
+    const engraveName = plan.fuente === 'mockup' ? '' : plan.nombre;
+    const title = [`DH${dh}`, lamp.label].filter(Boolean).join(' · ');
+    const dataUrl = 'data:image/png;base64,' + png.toString('base64');
+    const { document } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name: engraveName, font, title });
+
+    const folder = `${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}`;
+    const imageHash = crypto.createHash('sha256').update(dataUrl).digest('hex');
+    const imageUrl = await saveFile(`editor-v2/images/${ACTOR.uid}/${imageHash}`, png, 'image/png');
+    const previewUrl = await saveFile(`${folder}/vista-previa-${Date.now().toString(36)}.png`, renderPreview(document, font), 'image/png');
+    // Proyecto del editor: la imagen va por URL (como guarda el editor), no incrustada.
+    const documentJson = JSON.stringify(document, (key, value) => key === 'src' && value === dataUrl ? imageUrl : value);
+    const project = await db.collection('editor_v2_projects').add({
+        name: title, documentJson, revision: 1, objectCount: document.objects.length,
+        createdAt: now(), createdBy: ACTOR.uid, updatedAt: now(), updatedBy: ACTOR.uid, orderNumber: Number(dh), lampIndex: lamp.index,
+    });
+    return {
+        index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente,
+        brief: { tipo: plan.tipo || null, fuente: plan.fuente, nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
+            advertencias: plan.advertencias || [], referenceUrl: plan.reference?.url || null },
+        projectId: project.id, projectRevision: 1, previewUrl, name: engraveName,
+        rasterUrl: raster.url, rasterJobId: raster.jobId || null, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}),
+        durationMs: Date.now() - started, changed: true,
+    };
+}
+
+/**
+ * Genera las lámparas de un pedido.
+ * options.beta: Diseño IA BETA (la IA decide todo; si no, la lámpara automática del editor: una sola, foto del cliente).
+ * options.note: indicación del equipo o cambio pedido por el cliente. options.keepClient: conserva autoLamp.client.
+ * options.lamps: índices a rehacer (los demás se conservan). options.auth: sesión de quien aprieta (envío al cliente).
  */
 async function generate(dh, options = {}) {
     const started = Date.now();
@@ -301,65 +414,44 @@ async function generate(dh, options = {}) {
     const order = orderDoc.data(), ref = orderDoc.ref;
     const beta = !!options.beta;
     if (['uploading', 'approved'].includes(order.autoLamp?.status)) throw Object.assign(new Error('Este diseño ya se aprobó o se está subiendo a Drive.'), { status: 409 });
-    const datos = (Array.isArray(order.items) ? order.items.map(item => item.datosProducto).filter(Boolean).join(' | ') : '') || order.datosProducto || '';
-    let name = beta ? '' : orderName(order).name;
     const contactId = order.contactId || order.telefono;
-    // Cada intento empieza limpio: nada del anterior (error, brief, rechazo, resultado) se arrastra.
+    const lamps = beta ? orderLamps(order) : orderLamps(order).slice(0, 1);
+    const previous = lampsOf(order.autoLamp).filter(l => l.status === 'ready' && l.projectId);
+    // Se rehace todo salvo que sea un cambio (del cliente o del equipo sobre lámparas concretas).
+    const partial = !!(options.keepClient || (Array.isArray(options.lamps) && options.lamps.length)) && previous.length > 0;
     await ref.update({ autoLamp: { status: 'working', step: beta ? 'Leyendo el pedido y el chat' : 'Eligiendo la imagen del chat', beta,
+        lamps: partial ? previous : [],
         ...(options.note ? { note: String(options.note).slice(0, 500) } : {}), ...(options.keepClient && order.autoLamp?.client ? { client: order.autoLamp.client } : {}),
         startedAt: now(), updatedAt: now() } });
     try {
-        let reference, brief = null;
-        if (options.referenceUrl) reference = { url: options.referenceUrl, motivo: 'indicada a mano' };
-        else if (beta) {
-            brief = await designBrief({ order, datos, history: await chatHistory(contactId), images: await customerImages(contactId), note: options.note });
-            reference = brief.reference ? { ...brief.reference, motivo: brief.resumen } : null;
-            name = brief.nombre;
-            await setStatus(ref, { status: 'working', step: reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes',
-                brief: { tipo: brief.tipo, nombre: brief.nombre, prompt: brief.prompt, resumen: brief.resumen, advertencias: brief.advertencias, referenceUrl: reference?.url || null } });
-            if (!reference && !brief.prompt) throw Object.assign(new Error('La IA no encontró imagen ni descripción para el diseño.'), { status: 422 });
-        } else reference = await pickReference(await customerImages(contactId), datos);
-        if (!beta) await setStatus(ref, { status: 'working', step: 'Convirtiendo a grabado', referenceUrl: reference.url, referenceReason: reference.motivo });
-        const raster = options.rasterUrl ? { url: options.rasterUrl, jobId: null }
-            : brief ? await rasterizeBeta(reference, { description: brief.prompt, extra: reference ? brief.prompt : '' }) : await rasterize(reference);
-
-        const { buffer } = await download(raster.url);
-        const meta = await sharp(buffer).metadata();
-        const font = await loadFont();
-        const { composeLamp, renderPreview, exportRdworksSvg, pictureSizeMm } = await composerModule();
-
-        await setStatus(ref, { status: 'working', step: 'Convirtiendo a mapa de bits' });
-        const { bitmapSize, toBitmap, pngWithDpi } = await bitmapTools();
-        const mm = pictureSizeMm({ width: meta.width, height: meta.height });
-        const size = bitmapSize(mm.width, mm.height, BITMAP.dpi);
-        // Para GRABAR va el diseño en negro sobre fondo blanco (lo negro es lo que graba la K40): el modelo lo
-        // suele entregar blanco sobre negro: engravePolarity lo normaliza (Chris, 19-oct-2026). El previo del cliente es al revés.
-        const rgba = await sharp(await engravePolarity(buffer)).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
-        const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, BITMAP);
-        const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
-
-        await setStatus(ref, { status: 'working', step: 'Armando el diseño' });
-        const title = name ? `DH${dh} · ${name}` : `DH${dh}`;
-        const dataUrl = 'data:image/png;base64,' + png.toString('base64');
-        const { document } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name, font, title });
-
-        const folder = `${STORAGE_DIR}/DH${dh}`;
-        const imageHash = crypto.createHash('sha256').update(dataUrl).digest('hex');
-        const imageUrl = await saveFile(`editor-v2/images/${ACTOR.uid}/${imageHash}`, png, 'image/png');
-        const previewUrl = await saveFile(`${folder}/vista-previa.png`, renderPreview(document, font), 'image/png');
-        const svgUrl = await saveFile(`${folder}/corte.svg`, Buffer.from(await exportRdworksSvg(document, font)), 'image/svg+xml');   // listo para RDWorks
-
-        // Proyecto del editor: la imagen va por URL (como guarda el editor), no incrustada.
-        const documentJson = JSON.stringify(document, (key, value) => key === 'src' && value === dataUrl ? imageUrl : value);
-        const project = await db.collection('editor_v2_projects').add({
-            name: title, documentJson, revision: 1, objectCount: document.objects.length,
-            createdAt: now(), createdBy: ACTOR.uid, updatedAt: now(), updatedBy: ACTOR.uid, orderNumber: Number(dh),
-        });
-        const result = { status: 'ready', step: 'Listo para revisar', name, projectId: project.id, projectRevision: 1, previewUrl, svgUrl, svgPath: `${folder}/corte.svg`,
-            rasterUrl: raster.url, rasterJobId: raster.jobId, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}), finishedAt: now(), durationMs: Date.now() - started };
+        let plans;
+        if (beta) {
+            plans = await designBriefOrder({ order, lamps, history: await chatHistory(contactId), clientImages: await customerImages(contactId),
+                sentImages: await ourImages(contactId), note: options.note, previous: partial ? previous : [] });
+        } else {
+            const { name, datos } = orderName(order);
+            plans = [{ fuente: 'cliente', reference: await pickReference(await customerImages(contactId), datos), nombre: name, prompt: '', advertencias: [] }];
+        }
+        const results = [];
+        for (const lamp of lamps) {
+            const plan = plans[lamp.index] || plans[0];
+            const before = previous.find(p => p.index === lamp.index);
+            const redo = !partial || !before || (Array.isArray(options.lamps) && options.lamps.length ? options.lamps.includes(lamp.index) : plan.cambia);
+            if (!redo) { results.push({ ...before, changed: false }); continue; }
+            if (plan.fuente === 'ilustracion' && !plan.prompt) throw Object.assign(new Error(`La IA no encontró imagen ni descripción para ${lamp.label}.`), { status: 422 });
+            const prefix = lamps.length > 1 ? `Lámpara ${lamp.index + 1} de ${lamps.length} · ` : '';
+            results.push(await buildLamp(dh, lamp, plan, { beta, onStep: text => setStatus(ref, { status: 'working', step: prefix + text }).catch(() => {}) }));
+        }
+        // Modo mockup: TODAS salen de un mockup que ya vio el cliente y el pedido está pagado -> directo a corte.
+        const mode = beta && results.every(l => l.source === 'mockup') ? 'mockup' : 'client';
+        const first = results[0];
+        const result = { status: 'ready', step: 'Listo para revisar', mode, lamps: results,
+            // La raíz repite la primera lámpara (tarjeta y pedidos de antes).
+            name: first.name || '', projectId: first.projectId, projectRevision: first.projectRevision, previewUrl: first.previewUrl, brief: first.brief,
+            rasterModel: first.rasterModel || null, finishedAt: now(), durationMs: Date.now() - started };
         await setStatus(ref, result);
-        if (beta) await autoSend(dh, brief, options.auth).catch(error => console.warn(`[AUTO-LAMP] envío automático DH${dh}:`, error.message));
-        return { ...result, referenceUrl: reference?.url || null };
+        if (beta) await afterReady(dh, results, mode, options.auth).catch(error => console.warn(`[AUTO-LAMP] después de diseñar DH${dh}:`, error.message));
+        return result;
     } catch (error) {
         await setStatus(ref, { status: 'error', error: error.message || String(error) }).catch(() => {});
         throw error;
@@ -382,98 +474,109 @@ async function hydrateImages(objects) {
     }
 }
 
-/**
- * PREVIO PARA EL CLIENTE: el círculo con fondo blanco y el diseño en negro. Se arma desde la versión ACTUAL
- * del proyecto del editor (incluye lo que alguien haya corregido) y queda en autoLamp.clientPreviewUrl.
- */
-async function clientPreview(dh) {
-    const orderDoc = await findOrder(dh);
-    const lamp = orderDoc.data().autoLamp;
-    if (!lamp?.projectId) throw Object.assign(new Error('Este pedido no tiene diseño de la IA.'), { status: 404 });
-    const project = (await db.collection('editor_v2_projects').doc(lamp.projectId).get()).data();
+async function projectDocument(projectId) {
+    const project = projectId ? (await db.collection('editor_v2_projects').doc(projectId).get()).data() : null;
     if (!project) throw Object.assign(new Error('No encontré el proyecto del diseño.'), { status: 404 });
-    if (lamp.clientPreviewUrl && Number(lamp.clientPreviewRevision) === Number(project.revision) && lamp.clientPreviewStyle === CLIENT_PREVIEW_STYLE) return { url: lamp.clientPreviewUrl, revision: project.revision };
     const document = JSON.parse(project.documentJson);
     await hydrateImages(document.objects);
+    return { document, revision: project.revision };
+}
+
+/**
+ * PREVIO PARA EL CLIENTE de una lámpara (la versión invertida del grabado). Se arma desde la versión ACTUAL del
+ * proyecto del editor (incluye lo que alguien haya corregido) y se guarda en la lámpara.
+ */
+async function clientPreview(dh, index = 0) {
+    const orderDoc = await findOrder(dh);
+    const lamp = lampsOf(orderDoc.data().autoLamp).find(l => l.index === Number(index));
+    if (!lamp?.projectId) throw Object.assign(new Error('Esta lámpara no tiene diseño de la IA.'), { status: 404 });
+    const project = (await db.collection('editor_v2_projects').doc(lamp.projectId).get()).data();
+    if (!project) throw Object.assign(new Error('No encontré el proyecto del diseño.'), { status: 404 });
+    if (lamp.clientPreviewUrl && Number(lamp.clientPreviewRevision) === Number(project.revision) && lamp.clientPreviewStyle === CLIENT_PREVIEW_STYLE)
+        return { url: lamp.clientPreviewUrl, revision: project.revision };
+    const { document } = await projectDocument(lamp.projectId);
     const { renderClientPreview } = await composerModule();
     const { raw, width, height } = renderClientPreview(document, await loadFont());
     const png = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
-    const url = await saveFile(`${STORAGE_DIR}/DH${dh}/previo-cliente-r${project.revision}-v${CLIENT_PREVIEW_STYLE}.png`, png, 'image/png');
-    await orderDoc.ref.update({ 'autoLamp.clientPreviewUrl': url, 'autoLamp.clientPreviewRevision': project.revision, 'autoLamp.clientPreviewStyle': CLIENT_PREVIEW_STYLE });
+    const url = await saveFile(`${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}/previo-cliente-r${project.revision}-v${CLIENT_PREVIEW_STYLE}-${Date.now().toString(36)}.png`, png, 'image/png');
+    await updateLamp(orderDoc.ref, lamp.index, { clientPreviewUrl: url, clientPreviewRevision: project.revision, clientPreviewStyle: CLIENT_PREVIEW_STYLE });
     return { url, revision: project.revision };
 }
 
-// Archivo para RDWorks (imagen 1 bit + línea roja) desde la última versión guardada del proyecto.
-async function rdworksFromProject(lamp) {
-    const project = lamp?.projectId ? (await db.collection('editor_v2_projects').doc(lamp.projectId).get()).data() : null;
-    if (!project) throw Object.assign(new Error('No encontré el proyecto del diseño.'), { status: 404 });
-    const document = JSON.parse(project.documentJson);
-    await hydrateImages(document.objects);
-    const { exportRdworksSvg } = await composerModule();
-    return exportRdworksSvg(document, await loadFont());
+// Hojas para RDWorks del pedido (2 lámparas por hoja, cada una tantas veces como su cantidad) desde la
+// última versión guardada de cada proyecto.
+async function rdworksSheetsFor(dh, autoLamp) {
+    const lamps = lampsOf(autoLamp);
+    if (!lamps.length) throw Object.assign(new Error('No hay lámparas diseñadas.'), { status: 409 });
+    const { rdworksPiece, rdworksSheets } = await composerModule();
+    const font = await loadFont();
+    const pieces = [];
+    for (const lamp of lamps) pieces.push({ piece: await rdworksPiece((await projectDocument(lamp.projectId)).document, font), copies: lamp.copies || 1 });
+    return rdworksSheets(pieces, `DH${dh}`);
 }
 
 // --- BETA: mandar el previo al CLIENTE y esperar su respuesta. ----------------------------------------
 // Reutiliza el flujo de aprobación de diseños especiales (designApproval): el contacto queda en modo
-// aprobación y el clasificador decide aprobado / cambios / no claro (ver handleBetaDecision). Aprobar del
-// cliente NO sube nada a Drive: solo marca la tarjeta; el equipo aprueba y sube (regla del Beta).
+// aprobación y el clasificador decide aprobado / cambios / no claro (ver handleBetaDecision).
 // Saludo SIN nombre: el "name" de WhatsApp suele ser un alias raro (Chris, 2026-07-20).
 const CLIENT_MESSAGE = '¡Hola! 😊 Antes de fabricar tu lámpara, te comparto el diseño para que lo revises con calma ✨\n¿Lo aprobamos así o te gustaría que le ajustemos algo? 🙌';
-// Reenvío después de que el cliente pidió un cambio.
 const CLIENT_MESSAGE_AGAIN = '¡Listo! 😊 Ya ajustamos tu diseño con lo que nos pediste ✨\n¿Lo aprobamos así o le cambiamos algo más? 🙌';
+// Varias lámparas: un previo POR LÁMPARA (Chris, 19-oct-2026), entre un saludo y la pregunta.
+const MULTI_INTRO = '¡Hola! 😊 Antes de fabricar tus lámparas, te comparto los diseños para que los revises con calma ✨';
+const MULTI_INTRO_AGAIN = '¡Listo! 😊 Ya ajustamos lo que nos pediste ✨';
+const MULTI_QUESTION = '¿Los aprobamos así o te gustaría que le ajustemos algo a alguno? 🙌';
 // Envíos automáticos por pedido (el primero + rehechos por cambio del cliente); después pasa a una persona.
 const MAX_CLIENT_SENDS = 3;
 
-/**
- * auth: encabezados de la sesión de quien aprieta el botón (el envío pasa por /api/contacts/:id/messages).
- * Sin sesión (envío automático) se usa la llave de servicio WORKER_API_KEY.
- */
-async function sendToClient(dh, { auth = {}, actor = null } = {}) {
-    if (!auth.Authorization && !auth.Cookie && process.env.WORKER_API_KEY) auth = { 'x-worker-key': process.env.WORKER_API_KEY };
-    const orderDoc = await findOrder(dh);
-    const order = orderDoc.data(), lamp = order.autoLamp;
-    if (!lamp || lamp.status !== 'ready') throw Object.assign(new Error('Solo se puede mandar un diseño listo para revisar.'), { status: 409 });
-    const contactId = String(order.contactId || order.telefono || '');
-    if (!contactId) throw Object.assign(new Error('El pedido no tiene contacto.'), { status: 422 });
-    const preview = await clientPreview(dh);
-    const jpgUrl = await require('../../mockups/mockupsService').ensureJpeg(preview.url);   // WhatsApp no acepta todo formato
-    const designText = [lamp.brief?.resumen, lamp.brief?.nombre ? `Texto: ${lamp.brief.nombre}` : ''].filter(Boolean).join(' · ') || lamp.name || '';
-    const rounds = Number(lamp.client?.rounds) || 0;
+async function postMessage(contactId, auth, payload) {
     const response = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}/api/contacts/${encodeURIComponent(contactId)}/messages`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...auth },
-        body: JSON.stringify({ text: rounds && lamp.client?.status === 'changes' ? CLIENT_MESSAGE_AGAIN : CLIENT_MESSAGE, fileUrl: jpgUrl, fileType: 'image/jpeg' }),
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...auth }, body: JSON.stringify(payload),
     });
     const sent = await response.json().catch(() => ({}));
     if (!response.ok || sent.success === false) throw Object.assign(new Error(sent.message || sent.error || `No se pudo mandar el mensaje (${response.status}).`), { status: 502 });
+}
+
+/**
+ * Manda al cliente el previo de cada lámpara (only: índices; sin ella, todas) y deja el chat esperando su
+ * respuesta. auth: sesión de quien aprieta el botón; sin ella (envío automático), la llave WORKER_API_KEY.
+ */
+async function sendToClient(dh, { auth = {}, actor = null, only = null } = {}) {
+    if (!auth.Authorization && !auth.Cookie && process.env.WORKER_API_KEY) auth = { 'x-worker-key': process.env.WORKER_API_KEY };
+    const orderDoc = await findOrder(dh);
+    const order = orderDoc.data(), autoLamp = order.autoLamp, lamps = lampsOf(autoLamp);
+    if (!autoLamp || autoLamp.status !== 'ready' || !lamps.length) throw Object.assign(new Error('Solo se puede mandar un diseño listo para revisar.'), { status: 409 });
+    const contactId = String(order.contactId || order.telefono || '');
+    if (!contactId) throw Object.assign(new Error('El pedido no tiene contacto.'), { status: 422 });
+    const toSend = lamps.filter(l => !only || only.includes(l.index));
+    if (!toSend.length) throw Object.assign(new Error('No hay lámparas para mandar.'), { status: 409 });
+    const ensureJpeg = require('../../mockups/mockupsService').ensureJpeg;   // WhatsApp no acepta todo formato
+    const images = [];
+    for (const lamp of toSend) images.push({ lamp, url: await ensureJpeg((await clientPreview(dh, lamp.index)).url) });
+    const rounds = Number(autoLamp.client?.rounds) || 0;
+    const again = rounds > 0 && autoLamp.client?.status === 'changes';
+    if (lamps.length === 1) {
+        await postMessage(contactId, auth, { text: again ? CLIENT_MESSAGE_AGAIN : CLIENT_MESSAGE, fileUrl: images[0].url, fileType: 'image/jpeg' });
+    } else {
+        await postMessage(contactId, auth, { text: again ? MULTI_INTRO_AGAIN : MULTI_INTRO });
+        for (const { lamp, url } of images) {
+            const caption = `${again ? 'Diseño corregido' : `Diseño ${lamp.index + 1} de ${lamps.length}`}: ${lamp.label}`;
+            await postMessage(contactId, auth, { text: caption, fileUrl: url, fileType: 'image/jpeg' });
+        }
+        await postMessage(contactId, auth, { text: MULTI_QUESTION });
+    }
+    const designText = lamps.map(l => `${l.label}${l.brief?.nombre ? ` (texto: ${l.brief.nombre})` : ''}`).join(' | ');
     await orderDoc.ref.update({
-        designApproval: { status: 'pending', source: 'auto-lamp-beta', sentAt: now(), captureUrl: jpgUrl, designText, unclearRounds: 0,
-            projectRevision: preview.revision, sentBy: actor?.email || actor?.uid || null },
-        'autoLamp.client': { status: 'sent', sentAt: now(), previewUrl: jpgUrl, rounds: rounds + 1, auto: !actor || !!actor.auto },
+        designApproval: { status: 'pending', source: 'auto-lamp-beta', sentAt: now(), captureUrl: images[0].url, designText, unclearRounds: 0,
+            sentBy: actor?.email || actor?.uid || null },
+        'autoLamp.client': { status: 'sent', sentAt: now(), previewUrls: images.map(i => i.url), lampsSent: toSend.map(l => l.index),
+            rounds: rounds + 1, auto: !actor || !!actor.auto },
+        'autoLamp.autoSendHeld': admin.firestore.FieldValue.delete(),
     });
     await db.collection('contacts_whatsapp').doc(contactId).update({
         designApprovalPending: true, designApprovalOrderId: orderDoc.id,
         botActive: true,   // el clasificador de aprobación corre dentro del flujo de IA
     });
-    return { previewUrl: jpgUrl };
-}
-
-// ENVÍO AUTOMÁTICO (Chris, 19-oct-2026): en cuanto el diseño queda listo se le manda al cliente, salvo que
-// la IA haya anotado dudas, que se haya llegado al tope de envíos o que el interruptor esté apagado
-// (crm_settings/general.designBetaAutoSendActive = false). Lo que no se manda queda en "Revisar diseño" y avisa.
-async function autoSend(dh, brief, auth) {
-    const settings = (await db.collection('crm_settings').doc('general').get()).data() || {};
-    if (settings.designBetaAutoSendActive === false) return;
-    const order = (await findOrder(dh)).data();
-    const rounds = Number(order.autoLamp?.client?.rounds) || 0;
-    const hold = async (why, step) => {
-        await db.collection('pedidos').where('consecutiveOrderNumber', '==', Number(dh)).limit(1).get()
-            .then(s => s.docs[0]?.ref.update({ 'autoLamp.step': step, 'autoLamp.autoSendHeld': why }));
-        await notifyAdmin(`🟡 DH${dh} — el diseño de la IA (BETA) NO se mandó solo al cliente: ${why}. Revísalo en Pendientes de Diseño → Revisar diseño.`);
-    };
-    if (brief?.advertencias?.length) return hold(`la IA anotó dudas (${brief.advertencias.join('; ')})`, 'Listo · revisar dudas antes de mandar');
-    if (rounds >= MAX_CLIENT_SENDS) return hold(`ya se le mandaron ${rounds} versiones; necesita una persona`, 'Listo · tope de envíos al cliente');
-    try { await sendToClient(dh, { auth: auth || {}, actor: { email: 'envío automático', auto: true } }); }
-    catch (error) { await hold(`falló el envío (${error.message})`, 'Listo · no se pudo mandar solo'); }
+    return { previewUrls: images.map(i => i.url) };
 }
 
 async function notifyAdmin(text) {
@@ -482,9 +585,43 @@ async function notifyAdmin(text) {
 }
 
 /**
+ * Lo que sigue en cuanto el diseño queda listo (Chris, 19-oct-2026):
+ *  - modo mockup + pagado -> directo a Drive (SVG Corte), sin cliente;
+ *  - si no -> previo al cliente en automático (solo las lámparas que cambiaron).
+ * Se detiene (queda en "Revisar diseño" y avisa) si la IA anotó dudas, si se llegó al tope de envíos o si el
+ * interruptor está apagado: crm_settings/general.designBetaAutoSendActive / designBetaMockupDirectActive = false.
+ */
+async function afterReady(dh, lamps, mode, auth) {
+    const settings = (await db.collection('crm_settings').doc('general').get()).data() || {};
+    const orderDoc = await findOrder(dh);
+    const order = orderDoc.data();
+    const hold = async (why, step) => {
+        await orderDoc.ref.update({ 'autoLamp.step': step, 'autoLamp.autoSendHeld': why });
+        await notifyAdmin(`🟡 DH${dh} — el diseño de la IA (BETA) no siguió solo: ${why}. Revísalo en Pendientes de Diseño → Revisar diseño.`);
+    };
+    const doubts = lamps.flatMap(l => (l.brief?.advertencias || []).map(a => lamps.length > 1 ? `${l.label}: ${a}` : a));
+    if (doubts.length) return hold(`la IA anotó dudas (${doubts.join('; ')})`, 'Listo · revisar dudas');
+    if (mode === 'mockup') {
+        if (settings.designBetaMockupDirectActive === false) return;
+        if (!isPaid(order)) return hold('sale del mockup que ya vio el cliente pero el pago no está validado', 'Listo · esperando pago');
+        try {
+            const r = await approve(dh, { actor: { email: 'mockup pagado (directo a corte)' } });
+            await notifyAdmin(`✅ DH${dh} — diseño de la IA (BETA) sacado del mockup que ya pagó el cliente: se subió directo a Drive (SVG Corte)${r.driveUrls.length > 1 ? ` en ${r.driveUrls.length} hojas` : ''}: ${r.driveUrls.join(' ')}`);
+        } catch (error) { await hold(`no se pudo subir a Drive (${error.message})`, 'Listo · no se pudo subir solo'); }
+        return;
+    }
+    if (settings.designBetaAutoSendActive === false) return;
+    const rounds = Number(order.autoLamp?.client?.rounds) || 0;
+    if (rounds >= MAX_CLIENT_SENDS) return hold(`ya se le mandaron ${rounds} versiones; necesita una persona`, 'Listo · tope de envíos al cliente');
+    const changed = lamps.filter(l => l.changed !== false).map(l => l.index);
+    try { await sendToClient(dh, { auth: auth || {}, actor: { email: 'envío automático', auto: true }, only: rounds ? changed : null }); }
+    catch (error) { await hold(`falló el envío al cliente (${error.message})`, 'Listo · no se pudo mandar solo'); }
+}
+
+/**
  * Lo que decidió el clasificador sobre la respuesta del cliente (lo llama designApproval.handleReply para
- * los pedidos del Beta). Aprobado: tarjeta en verde, el equipo sube. Cambios: la IA rehace el diseño con lo
- * que pidió el cliente y queda en "Revisar diseño" (no se le reenvía solo).
+ * los pedidos del Beta). Aprobado: sube a Drive (SVG Corte). Cambios: la IA rehace SOLO las lámparas a las
+ * que aplica el cambio y se las vuelve a mandar.
  */
 async function handleBetaDecision(orderId, decision, { clientText = '', changeSummary = '' } = {}) {
     const ref = db.collection('pedidos').doc(String(orderId));
@@ -492,27 +629,24 @@ async function handleBetaDecision(orderId, decision, { clientText = '', changeSu
     const dh = order.consecutiveOrderNumber;
     if (decision === 'approved') {
         await ref.update({ 'autoLamp.client': { ...(order.autoLamp?.client || {}), status: 'approved', answeredAt: now(), text: String(clientText).slice(0, 300) } });
-        // El "sí" del cliente sube el archivo de RDWorks a la carpeta SVG Corte de Drive (Chris, 19-oct-2026).
+        // El "sí" del cliente sube las hojas de RDWorks a la carpeta SVG Corte de Drive (Chris, 19-oct-2026).
         // approve() tiene el candado contra doble subida; si algo falla, queda para subirlo a mano.
         if (!dh) return { uploaded: false, error: 'Pedido sin número.' };
-        try { return { uploaded: true, ...(await approve(dh, { actor: { email: 'cliente (aprobó por WhatsApp)' } })) }; }
+        try { const r = await approve(dh, { actor: { email: 'cliente (aprobó por WhatsApp)' } }); return { uploaded: true, ...r, driveUrl: r.driveUrls.join(' ') }; }
         catch (error) { return { uploaded: false, error: error.message }; }
     }
     if (decision === 'changes') {
         const note = `El cliente pidió este cambio: ${changeSummary || clientText}`.slice(0, 500);
         await ref.update({ 'autoLamp.client': { ...(order.autoLamp?.client || {}), status: 'changes', answeredAt: now(), text: String(changeSummary || clientText).slice(0, 300) } });
-        // La IA rehace con el cambio; generate() deja el resultado en "Revisar diseño" para el equipo.
         if (dh) generate(dh, { beta: true, note, keepClient: true }).catch(error => console.warn(`[AUTO-LAMP] rehacer DH${dh} por cambio del cliente:`, error.message));
     }
 }
 
-// --- BETA: compuerta de aprobación. Es el ÚNICO camino por el que algo de aquí sube a Drive. ---------
+// --- BETA: subida a Drive. Es el ÚNICO camino por el que algo de aquí sube a la carpeta de corte. ------
 
 /**
- * Aprueba el diseño de un pedido y sube el SVG a la carpeta de corte de Drive.
- * svg: el que exporta el editor (si la persona lo corrigió ahí). Sin él se usa el SVG que armó el sistema,
- * solo si el proyecto no se tocó en el editor; si se tocó, hay que aprobar desde el editor para no subir
- * una versión vieja.
+ * Sube a Drive (SVG Corte) las hojas para RDWorks del pedido, armadas desde la última versión guardada de cada
+ * proyecto. svg: solo indica que se aprobó desde el editor.
  */
 async function approve(dh, { svg = null, actor = null } = {}) {
     const { uploadDrive } = require('../svgCutStorage');
@@ -520,7 +654,7 @@ async function approve(dh, { svg = null, actor = null } = {}) {
     const ref = orderDoc.ref;
     // Candado contra doble subida: solo un 'ready' pasa a 'uploading'. Un 'uploading' que quedó colgado
     // (reinicio a media subida) NO se reintenta solo: Drive pudo haberlo recibido.
-    const lamp = await db.runTransaction(async tx => {
+    const autoLamp = await db.runTransaction(async tx => {
         const current = (await tx.get(ref)).data()?.autoLamp;
         if (!current || current.status !== 'ready') {
             const why = current?.status === 'uploading' ? 'Ya se está subiendo (o se cortó a media subida: revisa Drive antes de reintentar).'
@@ -531,35 +665,41 @@ async function approve(dh, { svg = null, actor = null } = {}) {
         return current;
     });
     let sent = false;
+    const files = [];
     try {
-        // El archivo para RDWorks se arma SIEMPRE desde la última versión guardada del proyecto (incluye lo que
-        // se haya corregido en el editor; el editor guarda antes de aprobar). `svg` solo indica que vino del editor.
-        const bytes = Buffer.from(await rdworksFromProject(lamp));
+        const sheets = await rdworksSheetsFor(dh, autoLamp);
         const folder = `${STORAGE_DIR}/DH${dh}`, stamp = Date.now().toString(36);
-        const approvedSvgUrl = await saveFile(`${folder}/aprobado-${stamp}.svg`, bytes, 'image/svg+xml');
-        let previewUrl = lamp.previewUrl || null;
-        try {
-            const { Resvg } = require('@resvg/resvg-js');
-            previewUrl = await saveFile(`${folder}/aprobado-${stamp}.png`, new Resvg(bytes.toString(), { fitTo: { mode: 'width', value: 1400 }, background: '#ffffff' }).render().asPng(), 'image/png');
-        } catch (_) { /* sin vista previa nueva: se queda la del sistema */ }
-        sent = true;
-        const upload = await uploadDrive(`DH${dh}-ia-beta-${stamp}.svg`, bytes);
+        const { Resvg } = require('@resvg/resvg-js');
+        for (const [k, svgText] of sheets.entries()) {
+            const suffix = sheets.length > 1 ? `-h${k + 1}` : '';
+            const bytes = Buffer.from(svgText);
+            const storageUrl = await saveFile(`${folder}/aprobado-${stamp}${suffix}.svg`, bytes, 'image/svg+xml');
+            let preview = null;
+            try { preview = await saveFile(`${folder}/aprobado-${stamp}${suffix}.png`, new Resvg(svgText, { fitTo: { mode: 'width', value: 1400 }, background: '#ffffff' }).render().asPng(), 'image/png'); }
+            catch (_) { /* sin vista previa de la hoja */ }
+            sent = true;
+            const upload = await uploadDrive(`DH${dh}-ia-beta-${stamp}${suffix}.svg`, bytes);
+            files.push({ name: upload.name, url: upload.webViewLink, svg: storageUrl, preview });
+        }
         await ref.update({
-            svgCorteAt: admin.firestore.Timestamp.now(), svgCorteBy: 'auto-lamp-beta', svgCorteUrl: upload.webViewLink,
-            svgCorteFileName: upload.name, svgCortePreviewUrl: previewUrl, svgCorteStorageUrl: approvedSvgUrl,
-            svgCorteFiles: [{ name: upload.name, url: upload.webViewLink, svg: approvedSvgUrl, preview: previewUrl }],
-            'autoLamp.status': 'approved', 'autoLamp.step': 'Aprobado y en Drive', 'autoLamp.driveUrl': upload.webViewLink,
+            svgCorteAt: admin.firestore.Timestamp.now(), svgCorteBy: 'auto-lamp-beta', svgCorteUrl: files[0].url,
+            svgCorteUrls: files.length > 1 ? files.map(f => f.url).join(',') : null,
+            svgCorteFileName: files[0].name, svgCortePreviewUrl: files[0].preview || autoLamp.previewUrl || null, svgCorteStorageUrl: files[0].svg,
+            svgCorteFiles: files,
+            'autoLamp.status': 'approved', 'autoLamp.step': 'Aprobado y en Drive', 'autoLamp.driveUrl': files[0].url, 'autoLamp.driveUrls': files.map(f => f.url),
             'autoLamp.approvedAt': now(), 'autoLamp.approvedBy': actor?.email || actor?.uid || null,
             'autoLamp.approvedFromEditor': !!svg, 'autoLamp.error': admin.firestore.FieldValue.delete(), 'autoLamp.updatedAt': now(),
         });
         try { await require('../designPending').recomputeForContact(orderDoc.data().contactId || orderDoc.data().telefono); } catch (_) {}
-        return { driveUrl: upload.webViewLink, fileName: upload.name };
+        return { driveUrl: files[0].url, driveUrls: files.map(f => f.url), fileName: files[0].name };
     } catch (error) {
-        // Antes de mandar a Drive (o si Drive rechazó con error claro) vuelve a 'ready' para reintentar. Si
-        // ya se mandó y no hubo confirmación, es ambiguo: se queda en 'uploading' para revisar Drive a mano.
-        const ambiguous = sent && (error.name === 'TimeoutError' || /no confirmó/.test(error.message || ''));
+        // Antes de mandar a Drive (o si Drive rechazó con error claro) vuelve a 'ready' para reintentar. Si ya
+        // subió alguna hoja, o se mandó y no hubo confirmación, es ambiguo: se queda en 'uploading' para revisar
+        // Drive a mano (reintentar subiría hojas repetidas).
+        const ambiguous = files.length > 0 || (sent && (error.name === 'TimeoutError' || /no confirmó/.test(error.message || '')));
         await ref.update(ambiguous
-            ? { 'autoLamp.step': 'Revisar Drive: no se confirmó la subida', 'autoLamp.error': error.message, 'autoLamp.updatedAt': now() }
+            ? { 'autoLamp.step': `Revisar Drive: se subieron ${files.length} hoja(s) y falló la siguiente`, 'autoLamp.error': error.message,
+                'autoLamp.driveUrls': files.map(f => f.url), 'autoLamp.updatedAt': now() }
             : { 'autoLamp.status': 'ready', 'autoLamp.step': 'Listo para revisar', 'autoLamp.error': error.message, 'autoLamp.updatedAt': now() }).catch(() => {});
         throw error;
     }
@@ -574,4 +714,5 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, clientPreview, engravePolarity, sendToClient, handleBetaDecision, orderName, pickReference, customerImages, designBrief, chatHistory };
+module.exports = { generate, status, approve, reject, clientPreview, engravePolarity, sendToClient, handleBetaDecision, orderName, orderLamps, lampsOf,
+    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor };

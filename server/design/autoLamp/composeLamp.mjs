@@ -165,7 +165,9 @@ export const exportLampSvg = (document, font) => exportSvg(outlinedDocument(docu
 // negro = se graba), y la línea de corte del marco como vector rojo puro #FF0000. Nada de rellenos blancos,
 // texto ni clipPath que RDWorks pueda leer como otra capa.
 export const RDWORKS_DPI = 254;
-export async function exportRdworksSvg(document, font) {
+// Una PIEZA por lámpara: su imagen de grabado (1 bit, ya transpuesta = girada y espejeada) y el trayecto del
+// marco en coordenadas de la hoja SIN girar (el giro se aplica al acomodarla en la hoja, rdworksSheet).
+export async function rdworksPiece(document, font) {
     const sharp = require('sharp');
     const { pngWithDpi } = await import('../../../public/editor-v2/bitmap.mjs');
     const frame = document.objects.find(item => item.powerClip);
@@ -200,17 +202,52 @@ export async function exportRdworksSvg(document, font) {
     const png = Buffer.from(pngWithDpi(await sharp(turned, { raw: { width: h, height: w, channels: 1 } }).png({ palette: true, colours: 2 }).toBuffer(), RDWORKS_DPI));
     const line = { ...frame, fill: 'none', stroke: '#ff0000', strokeWidth: .3 };
     delete line.powerClip; delete line.overlay;
-    const cut = exportSvg({ ...blankDocument(), width: document.width, height: document.height, objects: [line] })
-        .match(/<path [^>]*\/>/)[0]
-        // El trayecto es absoluto (M/C/L/Z con pares x y): se intercambia cada par.
-        .replace(/ d="([^"]*)"/, (_, d) => ` d="${d.replace(/(-?\d*\.?\d+(?:e-?\d+)?)[ ,]+(-?\d*\.?\d+(?:e-?\d+)?)/gi, '$2 $1')}"`);
-    if (/[a-y]/i.test(cut.match(/ d="([^"]*)"/)[1].replace(/[MCLZ]/g, ''))) throw new Error('La línea de corte trae comandos que no se pueden girar.');
+    const d = exportSvg({ ...blankDocument(), width: document.width, height: document.height, objects: [line] }).match(/<path\b[^>]*?\sd="([^"]*)"/)[1];
+    if (/[a-y]/i.test(d.replace(/[MCLZ]/g, ''))) throw new Error('La línea de corte trae comandos que no se pueden girar.');
+    return { png, box, d, page: { width: document.width, height: document.height } };
+}
+
+// Centro horizontal (sin girar) de cada lámpara cuando van dos por hoja: 350 mm de ancho, 15 mm entre ellas.
+export const RDWORKS_SLOTS_X = [87.5, 262.5];
+const NUMBER_PAIR = /(-?\d*\.?\d+(?:e-?\d+)?)[ ,]+(-?\d*\.?\d+(?:e-?\d+)?)/gi;
+
+/**
+ * Una HOJA para RDWorks con 1 o 2 piezas. placements: [{ piece, dx }] (dx = cuánto se recorre la pieza en X
+ * antes de girar). Toda la hoja se transpone: (x, y) -> (y, x).
+ */
+export function rdworksSheet(placements, title = '') {
+    const page = placements[0].piece.page;
+    const body = placements.map(({ piece, dx }) => {
+        const { box, png } = piece;
+        // El trayecto es absoluto (M/C/L/Z con pares x y): se recorre y se intercambia cada par.
+        const d = piece.d.replace(NUMBER_PAIR, (_, x, y) => `${(+y).toFixed(4)} ${(+x + dx).toFixed(4)}`);
+        return `<image x="${box.y}" y="${box.x + dx}" width="${box.height}" height="${box.width}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
+<path d="${d}" fill="none" stroke="#ff0000" stroke-width="0.3"/>`;
+    }).join('\n');
     return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${document.height}mm" height="${document.width}mm" viewBox="0 0 ${document.height} ${document.width}">
-<title>${String(document.name || '').replace(/[<&>"]/g, '')}</title>
-<image x="${box.y}" y="${box.x}" width="${box.height}" height="${box.width}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
-${cut}
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${page.height}mm" height="${page.width}mm" viewBox="0 0 ${page.height} ${page.width}">
+<title>${String(title).replace(/[<&>"]/g, '')}</title>
+${body}
 </svg>`;
+}
+
+// Hojas de un pedido: cada lámpara tantas veces como su cantidad, de 2 en 2 por hoja (si queda sola, va
+// centrada donde la deja el marco). pieces: [{ piece, copies }]. Devuelve el SVG de cada hoja.
+export function rdworksSheets(pieces, title = '') {
+    const flat = pieces.flatMap(({ piece, copies }) => Array.from({ length: Math.max(1, Number(copies) || 1) }, () => piece));
+    const total = Math.ceil(flat.length / 2), sheets = [];
+    for (let i = 0; i < flat.length; i += 2) {
+        const pair = flat.slice(i, i + 2);
+        const placements = pair.length === 1 ? [{ piece: pair[0], dx: 0 }]
+            : pair.map((piece, k) => ({ piece, dx: RDWORKS_SLOTS_X[k] - (piece.box.x + piece.box.width / 2) }));
+        sheets.push(rdworksSheet(placements, total > 1 ? `${title} · hoja ${sheets.length + 1} de ${total}` : title));
+    }
+    return sheets;
+}
+
+// Una sola lámpara en su hoja.
+export async function exportRdworksSvg(document, font) {
+    return rdworksSheet([{ piece: await rdworksPiece(document, font), dx: 0 }], document.name || '');
 }
 
 // PREVIO PARA EL CLIENTE (Chris, 19-oct-2026): el diseño de grabado es negro sobre blanco (lo negro se graba);

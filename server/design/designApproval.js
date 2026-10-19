@@ -199,7 +199,7 @@ async function handleReply(contactId, message, contactRef, contactData) {
             if (isBeta(order)) {
                 // Diseño IA BETA: la IA rehace con el cambio pedido y queda en "Revisar diseño"; se reenvía a mano.
                 await require('./autoLamp/autoLampService').handleBetaDecision(orderId, 'changes', { clientText, changeSummary }).catch(e => console.warn('[design-approval] beta cambios:', e.message));
-                await notifyAdmin(`✏️ ${dh} — el cliente pidió un CAMBIO al diseño de la IA (BETA): "${changeSummary || clientText}". La IA ya lo está rehaciendo; revísalo en Pendientes de Diseño y reenvíaselo. (IA de chat pausada.)`);
+                await notifyAdmin(`✏️ ${dh} — el cliente pidió un CAMBIO al diseño de la IA (BETA): "${changeSummary || clientText}". La IA ya rehace la(s) lámpara(s) que aplican y se las reenvía sola (máx. 3 envíos). (IA de chat pausada.)`);
                 return;
             }
             await notifyAdmin(`✏️ ${dh} — el cliente pidió un CAMBIO en su diseño: "${changeSummary || clientText}". Requiere rediseño y reenviar la captura. (IA pausada en ese chat.)`);
