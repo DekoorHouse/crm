@@ -189,7 +189,8 @@ function boardTerminado(o) {
 // siga abierta no hay nada bueno que cortar, y de eso ya se encarga quejaDeDatosAbierta.
 // Ojo: una corrección ANTERIOR al corte no invalida nada — ese corte ya salió con el dato bueno.
 function invalidaMarcasAnteriores(o) {
-    return Math.max(tsMs(o.reenvioAt), tsMs(o.datoCorregidoAt));
+    // Un reenvío SOLO de accesorios (control, base, cable…) no invalida el corte: la pieza no se rehace.
+    return Math.max(o && o.reenvioSoloAccesorios ? 0 : tsMs(o.reenvioAt), tsMs(o.datoCorregidoAt));
 }
 
 function disenoYaHecho(o) {

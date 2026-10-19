@@ -2104,11 +2104,14 @@ async function markOrderEntregadoForContact(contactId, contactData = {}, clientM
  *     caiga en "Pendientes de guía" y se genere una guía NUEVA para la reposición.
  * Devuelve el payload para hacer UN solo update() (no escribe).
  */
-function reenvioResetFields(orderData) {
+function reenvioResetFields(orderData, { soloAccesorios = false } = {}) {
     const upd = {
         estatus: 'Reenvio',
         reenvioAt: admin.firestore.FieldValue.serverTimestamp(),
         ocultoDeEnvios: false,
+        // DH17957 (17-oct-2026): el reenvío era SOLO del control (no respondía) y el worker volvió a cortar
+        // los acrílicos. Con solo accesorios no se rehace la pieza: se conservan las marcas de corte/diseño.
+        reenvioSoloAccesorios: !!soloAccesorios,
     };
     if (orderData && orderData.guiaEnvio && orderData.guiaEnvio.guia) {
         // arrayUnion NO admite serverTimestamp dentro del elemento → sello con ISO string.
@@ -2124,6 +2127,7 @@ function reenvioResetFields(orderData) {
     // pasa a "Diseñado por IA"); si no (especial), reaparece en Pendientes de Diseño manual. Sin esto, un
     // Reenvío que la skill YA había cortado se quedaba bloqueado por su svgCorteAt/disenoListoAt viejos y
     // nunca se re-subía. Chris, 2026-08-06.
+    if (soloAccesorios) return upd;
     if (orderData && (orderData.svgCorteAt || orderData.svgCorteUrl)) {
         if (orderData.svgCorteUrl) upd.svgCorteUrlPrevia = admin.firestore.FieldValue.arrayUnion(orderData.svgCorteUrl);
         upd.svgCorteAt = admin.firestore.FieldValue.delete();
@@ -2170,7 +2174,13 @@ async function markOrderReenvioForContact(contactId, contactData, clientMessage)
             console.log(`[POSTVENTA] Pedido ${orderNumber} ya tiene una reposición abierta (hace ${horas}h); es el MISMO caso, no se abre otra.`);
             return null;
         }
-        await orderDoc.ref.update(reenvioResetFields(orderData));
+        // Falla SOLO de un accesorio (control, base, cable, adaptador, pilas…) sin mencionar el acrílico:
+        // se reenvía el accesorio, no se vuelve a diseñar ni cortar la lámpara.
+        const msgTxt = String(clientMessage || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const soloAccesorios = /\b(?:control(?:es)?|base|cable|cargador|adaptador|eliminador|pilas?|bateria|usb|enchufe|clavija)\b/.test(msgTxt)
+            && !/\b(?:acrilic\w*|roto|rota|quebr\w*|rayad\w*|estrell\w*|nombre|letra\w*|grabad\w*|diseno|equivocad\w*|mal escrit\w*)\b/.test(msgTxt);
+        await orderDoc.ref.update(reenvioResetFields(orderData, { soloAccesorios }));
+        if (soloAccesorios) console.log(`[POSTVENTA] Reenvío de ${orderNumber} es SOLO de accesorios: no se rehace la pieza.`);
         console.log(`[POSTVENTA] Pedido ${orderNumber} (${orderDoc.id}) → Reenvio (reposición) por reporte del cliente (${contactId}).`);
         // Recalcular "Pendiente de Diseño": 'Reenvio' NO es pendiente de diseño (solo logística), pero
         // el pedido venía de un estatus que sí podía serlo; refrescamos para limpiar la bandera.

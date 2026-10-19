@@ -29,3 +29,13 @@ describe('plantillaDePersonaje mira también el producto (DH18052)', () => {
         expect(plantillaDePersonaje('dinosaurio', 'Lámpara infantil dinosaurio')).toBe('rex');
     });
 });
+
+describe('reenvío solo de accesorios no invalida el corte (DH17957)', () => {
+    const { invalidaMarcasAnteriores } = require('../server/design/svgAuto');
+    const ts = ms => ({ toMillis: () => ms });
+    test('reenvío normal invalida, reenvío solo de accesorios no', () => {
+        expect(invalidaMarcasAnteriores({ reenvioAt: ts(1000) })).toBe(1000);
+        expect(invalidaMarcasAnteriores({ reenvioAt: ts(1000), reenvioSoloAccesorios: true })).toBe(0);
+        expect(invalidaMarcasAnteriores({ reenvioAt: ts(1000), reenvioSoloAccesorios: true, datoCorregidoAt: ts(500) })).toBe(500);
+    });
+});
