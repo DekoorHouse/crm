@@ -30,6 +30,7 @@ let bitmapModule = null;
 const bitmapTools = () => (bitmapModule ||= import('../../../public/editor-v2/bitmap.mjs'));
 const FONT_PATH = 'editor-v2/fonts/rows-of-sunflowers.ttf';
 const VISION_MODEL = 'gemini-3-flash-preview';
+const BRIEF_FALLBACK_MODELS = ['gemini-3.1-pro-preview'];
 const ACTOR = { uid: 'auto-lamp' };
 const STORAGE_DIR = 'auto-lamp';
 
@@ -76,11 +77,19 @@ async function chatHistory(contactId, limit = 200) {
 async function geminiJson(parts) {
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_IMAGE_KEY;
     if (!apiKey) throw new Error('Falta GEMINI_API_KEY para leer el pedido.');
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${VISION_MODEL}:generateContent?key=${apiKey}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json' } }),
-    });
-    if (!response.ok) throw new Error(`La IA no pudo leer el pedido (${response.status}).`);
+    // Gemini a veces responde 429/500/503 (saturado): reintenta y luego prueba un modelo de respaldo.
+    const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json' } });
+    let response, lastStatus = 0;
+    attempts: for (const model of [VISION_MODEL, VISION_MODEL, VISION_MODEL, ...BRIEF_FALLBACK_MODELS]) {
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(120000),
+        }).catch(() => null);
+        lastStatus = response?.status || 0;
+        if (response?.ok) break attempts;
+        if (response && ![429, 500, 502, 503, 504].includes(response.status)) break attempts;
+        await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    if (!response?.ok) throw new Error(`La IA no pudo leer el pedido (${lastStatus || 'sin respuesta'}). Intenta de nuevo en unos minutos.`);
     const data = await response.json();
     const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').replace(/```json|```/g, '').trim();
     try { return JSON.parse(text); } catch (_) { throw new Error('La IA no respondió en el formato esperado.'); }
