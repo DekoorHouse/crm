@@ -3952,7 +3952,13 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (lastOrderDoc) {
                 const o = lastOrderDoc.data();
                 const num = o.consecutiveOrderNumber != null ? `DH${o.consecutiveOrderNumber}` : null;
-                if (num && (o.comprobanteValidadoAt || o.shippingFormRequestedBeforeApproval)) {
+                // Con GUÍA ya generada no se le piden datos: DH17556 (16-oct-2026) tenía guía DHL hecha a mano con
+                // la dirección que dio por chat; al preguntar por su paquete la IA le dijo que "sus datos no
+                // aparecen en el sistema" y le volvió a pedir el formulario, en plena queja por la entrega.
+                const guiaYa = o.guiaEnvio && o.guiaEnvio.guia;
+                if (num && guiaYa) {
+                    shippingFormNote = `\n\n**Envío de ${num}: YA TIENE GUÍA (${o.guiaEnvio.mensajeria || 'paquetería'} ${o.guiaEnvio.guia}).** Sus datos de envío ya se usaron para generarla: NO le pidas el formulario ni sus datos otra vez, NO le digas que "no aparecen en el sistema" y NO emitas /pagado. Si pregunta por su paquete o hay un problema con la entrega, sigue las reglas de rastreo y reclamos de envío. Si la paquetería pide corregir o completar la dirección, pídele SOLO el dato que falte y escribe /equipo para que una persona lo gestione.`;
+                } else if (num && (o.comprobanteValidadoAt || o.shippingFormRequestedBeforeApproval)) {
                     const de = await getShippingDataForOrder(num);
                     const formUrl = `${APP_BASE_URL}/datos-envio/${num}`;
                     if (de && o.shippingDataConfirmationStatus) {
@@ -4746,7 +4752,12 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const lastOrderNum = lastOrder && lastOrder.data().consecutiveOrderNumber;
                 const orderNumber = lastOrderNum != null ? `DH${lastOrderNum}` : null;
                 const de = orderNumber ? await getShippingDataForOrder(orderNumber) : null;
-                if (de && lastOrder.data().shippingDataConfirmationStatus) {
+                const guiaYa = lastOrder && lastOrder.data().guiaEnvio && lastOrder.data().guiaEnvio.guia;
+                if (de && guiaYa) {
+                    // Ya tiene guía: no prometer "te comparto tu guía en cuanto salga" (DH17556).
+                    msgText = `¡Gracias! Ya tenemos tus datos ✅ Tu guía es la ${guiaYa}; ahí puedes seguir tu paquete 📦`;
+                    skipShortcutExpansion = true;
+                } else if (de && lastOrder.data().shippingDataConfirmationStatus) {
                     // Antes era solo "¡Gracias! 😊", y respondía así a preguntas reales ("¿qué pasó, sigue?", DH17413).
                     msgText = '¡Gracias! Ya tenemos tus datos de envío ✅ En cuanto salga tu paquete te comparto tu número de guía por aquí 📦';
                     const yaDicho = messagesSnapshot.docs.some(d => { const m = d.data(); const t = m.timestamp && m.timestamp.toMillis ? m.timestamp.toMillis() : 0;
