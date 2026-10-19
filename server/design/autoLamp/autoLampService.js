@@ -25,6 +25,8 @@ const RASTER_MODEL = 'openai/gpt-image-2.5-sunburst';
 // BETA: el diseño IA usa Qwen Image 2.1 (GPU propia de /imagenes, mucho más barata). La GPU solo está prendida
 // en su horario (qwenPod); si está apagada se usa gpt-image para que el diseño no se quede sin hacer.
 const BETA_MODEL = 'dekoor/qwen-image-2.1';
+// Sube cuando cambia cómo se ve el previo para el cliente: los ya guardados se vuelven a armar.
+const CLIENT_PREVIEW_STYLE = 2;
 const RASTER_PROMPT = 'dame el diseño de la imagen con rellenos blancos y fondos negros. En raster engrave con degradado en trama';
 // Último paso del equipo: "Convertir a mapa de bits" en difuminado (1 bit, Floyd–Steinberg) a la
 // resolución de la láser, al tamaño real que la imagen tiene en el marco.
@@ -339,14 +341,14 @@ async function clientPreview(dh) {
     if (!lamp?.projectId) throw Object.assign(new Error('Este pedido no tiene diseño de la IA.'), { status: 404 });
     const project = (await db.collection('editor_v2_projects').doc(lamp.projectId).get()).data();
     if (!project) throw Object.assign(new Error('No encontré el proyecto del diseño.'), { status: 404 });
-    if (lamp.clientPreviewUrl && Number(lamp.clientPreviewRevision) === Number(project.revision)) return { url: lamp.clientPreviewUrl, revision: project.revision };
+    if (lamp.clientPreviewUrl && Number(lamp.clientPreviewRevision) === Number(project.revision) && lamp.clientPreviewStyle === CLIENT_PREVIEW_STYLE) return { url: lamp.clientPreviewUrl, revision: project.revision };
     const document = JSON.parse(project.documentJson);
     await hydrateImages(document.objects);
     const { renderClientPreview } = await composerModule();
     const { raw, width, height } = renderClientPreview(document, await loadFont());
     const png = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
-    const url = await saveFile(`${STORAGE_DIR}/DH${dh}/previo-cliente-r${project.revision}.png`, png, 'image/png');
-    await orderDoc.ref.update({ 'autoLamp.clientPreviewUrl': url, 'autoLamp.clientPreviewRevision': project.revision });
+    const url = await saveFile(`${STORAGE_DIR}/DH${dh}/previo-cliente-r${project.revision}-v${CLIENT_PREVIEW_STYLE}.png`, png, 'image/png');
+    await orderDoc.ref.update({ 'autoLamp.clientPreviewUrl': url, 'autoLamp.clientPreviewRevision': project.revision, 'autoLamp.clientPreviewStyle': CLIENT_PREVIEW_STYLE });
     return { url, revision: project.revision };
 }
 

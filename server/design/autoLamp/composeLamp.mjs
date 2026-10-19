@@ -160,7 +160,7 @@ export function outlinedDocument(document, font) {
 export const exportLampSvg = (document, font) => exportSvg(outlinedDocument(document, font));
 
 // PREVIO PARA EL CLIENTE: el círculo con fondo blanco y el diseño en negro (el grabado invertido, como se
-// ve impreso), la base en gris claro y el contorno del marco discreto, todo sobre blanco.
+// ve impreso), la base también en blanco y el contorno del marco discreto, todo sobre blanco.
 export function renderClientPreview(document, font, { width = 1100 } = {}) {
     const frame = document.objects.find(item => item.powerClip);
     const pad = 4, box = { x: frame.x - pad, y: frame.y - pad, width: frame.width + 2 * pad, height: frame.height + 2 * pad };
@@ -189,7 +189,7 @@ export function renderClientPreview(document, font, { width = 1100 } = {}) {
         const inFrame = area[i] > 127, inBase = base[i] > 127;
         for (let c = 0; c < 3; c++) {
             let v = 255;
-            if (inBase) v = 236;
+            if (inBase) v = 255;   // la base también blanca (Chris, 19-oct-2026)
             else if (inFrame) v = 255 - design.pixels[i + c];
             const a = line[i + 3] / 255;   // contorno del marco encima
             out[j + c] = Math.round(v * (1 - a) + line[i + c] * a);
