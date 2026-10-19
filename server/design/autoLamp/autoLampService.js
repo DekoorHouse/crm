@@ -306,7 +306,7 @@ async function generate(dh, options = {}) {
         const result = { status: 'ready', step: 'Listo para revisar', name, projectId: project.id, projectRevision: 1, previewUrl, svgUrl, svgPath: `${folder}/corte.svg`,
             rasterUrl: raster.url, rasterJobId: raster.jobId, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}), finishedAt: now(), durationMs: Date.now() - started };
         await setStatus(ref, result);
-        return { ...result, referenceUrl: reference.url };
+        return { ...result, referenceUrl: reference?.url || null };
     } catch (error) {
         await setStatus(ref, { status: 'error', error: error.message || String(error) }).catch(() => {});
         throw error;
