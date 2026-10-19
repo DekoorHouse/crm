@@ -195,8 +195,8 @@ async function rasterize(reference, { description = '', extra = '', model = RAST
         files.push({ buffer: jpeg, mimetype: 'image/jpeg', originalname: 'referencia.jpg' });
     }
     const prompt = reference
-        ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT)
-        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada, completa dentro de un círculo, sin texto ni letras. Diseño con rellenos blancos y fondo negro. En raster engrave con degradado en trama.`;
+        ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT) + (model === BETA_MODEL ? '. Solo blanco y negro, sin colores; fondo negro uniforme de orilla a orilla, sin círculos, marcos ni bordes.' : '')
+        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa, sin texto ni letras. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`;
     const fields = { requestId: crypto.randomUUID(), model, prompt, aspect_ratio: '1:1' };
     let job;
     try { job = await imageStudio.createGeneration(fields, files, ACTOR); }
@@ -223,6 +223,53 @@ async function rasterizeBeta(reference, options) {
         console.warn('[AUTO-LAMP] Qwen no disponible, uso gpt-image:', error.message);
         return { ...(await rasterize(reference, { ...options, model: RASTER_MODEL })), fallback: error.message };
     }
+}
+
+// El modelo no siempre obedece "blanco sobre negro": a veces entrega negro sobre blanco o un círculo claro con
+// esquinas negras (DH18250, 19-oct-2026). Esto deja la imagen SIEMPRE lista para grabar: diseño en negro sobre
+// fondo blanco, sin colores, y sin manchas oscuras pegadas a la orilla (esquinas, círculos, marcos).
+async function engravePolarity(buffer) {
+    const { data, info } = await sharp(buffer).flatten({ background: '#ffffff' }).greyscale().raw().toBuffer({ resolveWithObject: true });
+    const w = info.width, h = info.height, px = Buffer.from(data);
+    // 1) Polaridad por el FONDO alrededor del diseño: un anillo entre 32 % y 44 % del lado, desde el centro.
+    let sum = 0, n = 0;
+    const cx = w / 2, cy = h / 2, side = Math.min(w, h);
+    for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+        const d = Math.hypot(x - cx, y - cy) / side;
+        if (d > .32 && d < .44) { sum += px[y * w + x]; n++; }
+    }
+    if (n && sum / n < 128) for (let i = 0; i < px.length; i++) px[i] = 255 - px[i];
+    // 2) Lo oscuro conectado con la orilla se vuelve blanco, salvo que llegue al centro (entonces es diseño).
+    const seen = new Uint8Array(w * h), stack = [], region = [];
+    const inCentre = i => { const x = i % w, y = (i / w) | 0; return x > w * .3 && x < w * .7 && y > h * .3 && y < h * .7; };
+    for (let x = 0; x < w; x++) stack.push(x, (h - 1) * w + x);
+    for (let y = 0; y < h; y++) stack.push(y * w, y * w + w - 1);
+    let reachesCentre = false;
+    while (stack.length) {
+        const i = stack.pop();
+        if (seen[i] || px[i] >= 128) continue;
+        seen[i] = 1; region.push(i);
+        if (inCentre(i)) { reachesCentre = true; break; }
+        const x = i % w;
+        if (x > 0) stack.push(i - 1); if (x < w - 1) stack.push(i + 1);
+        if (i >= w) stack.push(i - w); if (i < w * (h - 1)) stack.push(i + w);
+    }
+    if (!reachesCentre) {
+        // También el halo gris (orilla suavizada) de lo que se limpió: 3 px alrededor.
+        let edge = region;
+        for (let step = 0; step < 3; step++) {
+            const next = [];
+            for (const i of edge) {
+                const x = i % w;
+                for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) if (j >= 0 && j < px.length && !seen[j]) { seen[j] = 1; next.push(j); }
+            }
+            region.push(...next); edge = next;
+        }
+        for (const i of region) px[i] = 255;
+    }
+    // 3) Fondo blanco PURO y negros puros: un 252 se volvería puntitos sueltos grabados en todo el fondo al difuminar.
+    for (let i = 0; i < px.length; i++) { if (px[i] >= 235) px[i] = 255; else if (px[i] <= 20) px[i] = 0; }
+    return sharp(px, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
 }
 
 async function loadFont() {
@@ -285,8 +332,8 @@ async function generate(dh, options = {}) {
         const mm = pictureSizeMm({ width: meta.width, height: meta.height });
         const size = bitmapSize(mm.width, mm.height, BITMAP.dpi);
         // Para GRABAR va el diseño en negro sobre fondo blanco (lo negro es lo que graba la K40): el modelo lo
-        // entrega blanco sobre negro, así que se invierte aquí (Chris, 19-oct-2026). El previo del cliente es al revés.
-        const rgba = await sharp(buffer).negate({ alpha: false }).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
+        // suele entregar blanco sobre negro: engravePolarity lo normaliza (Chris, 19-oct-2026). El previo del cliente es al revés.
+        const rgba = await sharp(await engravePolarity(buffer)).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
         const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, BITMAP);
         const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
 
@@ -431,4 +478,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, clientPreview, orderName, pickReference, customerImages, designBrief, chatHistory };
+module.exports = { generate, status, approve, reject, clientPreview, engravePolarity, orderName, pickReference, customerImages, designBrief, chatHistory };
