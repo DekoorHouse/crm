@@ -8751,7 +8751,7 @@ router.get('/design-pending', async (req, res) => {
                     mode: p.autoLamp.mode || null, driveUrls: p.autoLamp.driveUrls || null,
                     // Una entrada por lámpara del pedido (los de antes de oct-2026 traen una sola en la raíz).
                     lamps: require('./design/autoLamp/autoLampService').lampsOf(p.autoLamp).map(l => ({
-                        index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null,
+                        index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null, template: l.template || null,
                         previewUrl: l.previewUrl || null, clientPreviewUrl: l.clientPreviewUrl || null, projectId: l.projectId || null,
                         brief: l.brief || null, rasterModel: l.rasterModel || null, rasterFallback: l.rasterFallback || null,
                     })),

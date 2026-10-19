@@ -951,7 +951,7 @@ function _dlNormalize(al) {
     return { status: al.status || null, step: al.step || null, error: al.error || null, previewUrl: al.previewUrl || null, projectId: al.projectId || null,
         driveUrl: al.driveUrl || null, driveUrls: al.driveUrls || null, brief: al.brief || null, note: al.note || null, mode: al.mode || null,
         client: al.client ? { status: al.client.status || null, text: al.client.text || '' } : null, autoSendHeld: al.autoSendHeld || null,
-        lamps: lamps.map(l => ({ index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null, previewUrl: l.previewUrl || null,
+        lamps: lamps.map(l => ({ index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null, template: l.template || null, previewUrl: l.previewUrl || null,
             clientPreviewUrl: l.clientPreviewUrl || null, projectId: l.projectId || null, brief: l.brief || null, rasterModel: l.rasterModel || null, rasterFallback: l.rasterFallback || null })) };
 }
 
@@ -1005,9 +1005,10 @@ function _dlLampCard(l, dh, total) {
                 <img data-dl-img="${l.index}" src="${escapeHtml(l.previewUrl)}" onclick="openImageModal(this.src)" style="width:100%;border-radius:10px;cursor:zoom-in;background:#000;border:1px solid var(--color-border,#e5e7eb)">` : '<div style="padding:30px;text-align:center;color:#94a3b8">Sin vista previa</div>'}
             </div>
             <div style="flex:1 1 220px;min-width:200px;font-size:13px;line-height:1.45">
-                ${l.source || b.fuente ? `<div><b>De dónde sale:</b> ${escapeHtml(_DL_SOURCE[l.source || b.fuente] || l.source || b.fuente)}</div>` : ''}
+                ${l.template ? `<div><b>De dónde sale:</b> Plantilla del taller (${escapeHtml(l.template)}), solo se le agrega el nombre</div>`
+                    : (l.source || b.fuente ? `<div><b>De dónde sale:</b> ${escapeHtml(_DL_SOURCE[l.source || b.fuente] || l.source || b.fuente)}</div>` : '')}
                 ${b.resumen ? `<div><b>Entendió:</b> ${escapeHtml(b.resumen)}</div>` : ''}
-                <div><b>Texto:</b> ${b.nombre ? escapeHtml(b.nombre) : '<i>sin texto</i>'}${(l.source || b.fuente) === 'mockup' ? ' <span style="color:#64748b">(como viene en el mockup)</span>' : ''}</div>
+                <div><b>Texto:</b> ${b.nombre ? escapeHtml(b.nombre) : '<i>sin texto</i>'}${(l.source || b.fuente) === 'mockup' && !l.template ? ' <span style="color:#64748b">(como viene en el mockup)</span>' : ''}</div>
                 ${b.referenceUrl ? `<div style="margin-top:5px"><b>Imagen usada:</b><br><img src="${escapeHtml(b.referenceUrl)}" onclick="openImageModal(this.src)" style="max-width:110px;max-height:110px;border-radius:6px;cursor:zoom-in;margin-top:3px"></div>` : (b.prompt ? `<div><b>Ilustración pedida:</b> ${escapeHtml(b.prompt)}</div>` : '')}
                 ${model}${warn}
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">

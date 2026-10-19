@@ -419,6 +419,57 @@ async function fitToLampCircle(buffer, side = 2000) {
         .composite([{ input, left: Math.max(0, L), top: Math.max(0, T) }]).png().toBuffer();
 }
 
+// PLANTILLAS DEL TALLER (Chris, 19-oct-2026): personajes que ya tienen su grabado hecho por el equipo. La
+// lámpara usa ESE grabado (sin IA) y solo se le agrega el nombre. El PNG está normalizado al marco: cuadro
+// donde el círculo tiene centro (50 %, 48.1 %) y radio 48.1 % del lado (ver LAMP_CIRCLE).
+const TEMPLATES = {
+    spiderman: { file: 'spiderman-grabado.png', match: /spider|hombre\s*ara[ñn]a/i, label: 'Spiderman (plantilla del taller)' },
+};
+const templateCache = {};
+const templateFor = lamp => Object.entries(TEMPLATES).find(([, t]) => t.match.test(`${lamp.producto} ${lamp.datos}`))?.[0] || null;
+const templateImage = key => (templateCache[key] ||= require('fs').promises.readFile(require('path').join(__dirname, 'assets', TEMPLATES[key].file)));
+
+// Dónde va el nombre en una plantilla: arriba a la IZQUIERDA (como en los mockups), lo más grande posible sin
+// salirse del círculo y pisando el dibujo cuando mucho un 5 % (la silueta blanca del nombre lo despega). Mide el grabado en una cuadrícula de 1 mm del marco (160 × 166.3 mm).
+async function freeNameSlot(imageBuffer, text, font) {
+    const FRAME = { w: 160, h: 166.3 }, side = FRAME.h;   // el cuadro cubre el marco por su alto
+    const { data, info } = await sharp(imageBuffer).greyscale().resize(Math.round(side), Math.round(side), { fit: 'fill' }).raw().toBuffer({ resolveWithObject: true });
+    const n = info.width, off = (side - FRAME.w) / 2;   // el cuadro se sale (side - 160) / 2 mm por cada lado
+    // Celdas con trazo, ensanchadas 2.5 mm (silueta del nombre + aire).
+    const W = Math.ceil(FRAME.w), H = Math.ceil(FRAME.h), dark = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const sx = Math.round(x + off); if (sx >= 0 && sx < n && y < n && data[y * n + sx] < 128) dark[y * W + x] = 1; }
+    const grown = new Uint8Array(W * H), G = 1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (dark[y * W + x])
+        for (let dy = -G; dy <= G; dy++) for (let dx = -G; dx <= G; dx++) { const yy = y + dy, xx = x + dx; if (yy >= 0 && yy < H && xx >= 0 && xx < W) grown[yy * W + xx] = 1; }
+    const sum = new Uint32Array((W + 1) * (H + 1));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) sum[(y + 1) * (W + 1) + x + 1] = grown[y * W + x] + sum[y * (W + 1) + x + 1] + sum[(y + 1) * (W + 1) + x] - sum[y * (W + 1) + x];
+    const darkShare = (x0, y0, x1, y1) => {
+        x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(W, Math.ceil(x1)); y1 = Math.min(H, Math.ceil(y1));
+        const area = Math.max(1, (x1 - x0) * (y1 - y0));
+        return (sum[y1 * (W + 1) + x1] - sum[y0 * (W + 1) + x1] - sum[y1 * (W + 1) + x0] + sum[y0 * (W + 1) + x0]) / area;
+    };
+    const R = 80 - 3, C = { x: 80, y: 80 };   // círculo del marco con 3 mm de aire
+    const lines = String(text).split(/\s*·\s*|\n+/).filter(Boolean);
+    const units = lines.map(l => font.getPath(l, 0, 0, 1).getBoundingBox());
+    const inkW = Math.max(...units.map(u => u.x2 - u.x1)), lineH = Math.max(...units.map(u => u.y2 - u.y1));
+    const boxOf = s => ({ w: inkW * s, h: lineH * s + (lines.length - 1) * 1.05 * s });
+    const fits = (cx, cy, s) => {
+        const { w, h } = boxOf(s), x0 = cx - w / 2, y0 = cy - h / 2, x1 = cx + w / 2, y1 = cy + h / 2;
+        if ([[x0, y0], [x1, y0], [x0, y1], [x1, y1]].some(([x, y]) => Math.hypot(x - C.x, y - C.y) > R)) return false;
+        return darkShare(x0, y0, x1, y1) <= .05;
+    };
+    let best = null;
+    for (let cy = 14; cy <= 90; cy += 2) for (let cx = 12; cx <= 80; cx += 2) {
+        let lo = 0, hi = Math.min(62 / inkW, 26 / lineH);   // tope: 62 mm de ancho, 26 mm de alto
+        if (!fits(cx, cy, 1)) continue;
+        for (let i = 0; i < 18; i++) { const mid = (lo + hi) / 2; if (fits(cx, cy, mid)) lo = mid; else hi = mid; }
+        if (!best || lo > best.s * 1.02) best = { cx, cy, s: lo };
+    }
+    if (!best) return null;
+    const { w, h } = boxOf(best.s * .97);
+    return { cx: best.cx, cy: best.cy, maxWidth: w, maxHeight: h };
+}
+
 async function loadFont() {
     if (!fontCache) {
         const [bytes] = await bucket.file(FONT_PATH).download();
@@ -455,7 +506,11 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const started = Date.now();
     const step = text => onStep(text);
     let raster;
-    if (plan.fuente === 'mockup') {
+    if (plan.template) {
+        // Plantilla del taller (p. ej. Spiderman): su grabado tal cual, sin IA; solo se le agrega el nombre.
+        step('Usando la plantilla del taller');
+        raster = { url: null, jobId: null, model: TEMPLATES[plan.template].label, buffer: await templateImage(plan.template) };
+    } else if (plan.fuente === 'mockup') {
         step('Convirtiendo el mockup a grabado');
         raster = await rasterizeBeta(plan.reference, { prompt: plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT });
     } else if (beta) {
@@ -465,10 +520,10 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         step('Convirtiendo a grabado');
         raster = await rasterize(plan.reference);
     }
-    const downloaded = (await download(raster.url)).buffer;
+    const downloaded = raster.buffer || (await download(raster.url)).buffer;
     // Grabado listo (negro sobre blanco); el del mockup además se reacomoda para llenar el círculo.
     const engraved = await engravePolarity(downloaded);
-    const buffer = plan.fuente === 'mockup' ? await fitToLampCircle(engraved) : engraved;
+    const buffer = plan.template ? downloaded : plan.fuente === 'mockup' ? await fitToLampCircle(engraved) : engraved;
     const meta = await sharp(buffer).metadata();
     const font = await loadFont();
     const { composeLamp, renderPreview, pictureSizeMm } = await composerModule();
@@ -480,16 +535,20 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     // Para GRABAR va el diseño en negro sobre fondo blanco (lo negro es lo que graba la láser); el modelo
     // suele entregar blanco sobre negro: engravePolarity lo normaliza (Chris, 19-oct-2026). El previo del cliente es al revés.
     const rgba = await sharp(buffer).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
-    const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, BITMAP);
+    // La plantilla ya es de trazos limpios: umbral (sin puntitos de difuminado en las orillas).
+    const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, plan.template ? { ...BITMAP, method: 'threshold' } : BITMAP);
     const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
 
     step('Armando el diseño');
     // El mockup ya trae el nombre dentro de la imagen (tal cual lo vio el cliente): no se le agrega otro. Si el
     // texto cambió, el mockup se sacó SIN letras y aquí va el texto final.
-    const engraveName = plan.fuente === 'mockup' && !plan.textoCambia ? '' : plan.nombre;
+    const engraveName = plan.template ? (plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '')
+        : plan.fuente === 'mockup' && !plan.textoCambia ? '' : plan.nombre;
     const title = [`DH${dh}`, lamp.label].filter(Boolean).join(' · ');
     const dataUrl = 'data:image/png;base64,' + png.toString('base64');
-    const { document } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name: engraveName, font, title });
+    // En la plantilla el nombre va en el hueco que deja el dibujo (arriba a la izquierda), no abajo.
+    const nameSlot = plan.template && engraveName ? await freeNameSlot(buffer, engraveName, font) : null;
+    const { document } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name: engraveName, font, title, nameSlot });
 
     const folder = `${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}`;
     const imageHash = crypto.createHash('sha256').update(dataUrl).digest('hex');
@@ -502,7 +561,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         createdAt: now(), createdBy: ACTOR.uid, updatedAt: now(), updatedBy: ACTOR.uid, orderNumber: Number(dh), lampIndex: lamp.index,
     });
     return {
-        index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia,
+        index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia, template: plan.template || null,
         brief: { tipo: plan.tipo || null, fuente: plan.fuente, nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
             advertencias: plan.advertencias || [], referenceUrl: plan.reference?.url || null },
         projectId: project.id, projectRevision: 1, previewUrl, name: engraveName,
@@ -546,11 +605,13 @@ async function generate(dh, options = {}) {
         }
         const results = [];
         for (const lamp of lamps) {
-            const plan = plans[lamp.index] || plans[0];
+            // Personaje con plantilla del taller (Spiderman…): se usa su grabado; la IA solo aporta el nombre.
+            const basePlan = plans[lamp.index] || plans[0], template = beta ? templateFor(lamp) : null;
+            const plan = template ? { ...basePlan, template } : basePlan;
             const before = previous.find(p => p.index === lamp.index);
             const redo = !partial || !before || (Array.isArray(options.lamps) && options.lamps.length ? options.lamps.includes(lamp.index) : plan.cambia);
             if (!redo) { results.push({ ...before, changed: false }); continue; }
-            if (plan.fuente === 'ilustracion' && !plan.prompt) throw Object.assign(new Error(`La IA no encontró imagen ni descripción para ${lamp.label}.`), { status: 422 });
+            if (!plan.template && plan.fuente === 'ilustracion' && !plan.prompt) throw Object.assign(new Error(`La IA no encontró imagen ni descripción para ${lamp.label}.`), { status: 422 });
             const prefix = lamps.length > 1 ? `Lámpara ${lamp.index + 1} de ${lamps.length} · ` : '';
             results.push(await buildLamp(dh, lamp, plan, { beta, onStep: text => setStatus(ref, { status: 'working', step: prefix + text }).catch(() => {}) }));
         }
@@ -876,5 +937,5 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, alreadyUploaded, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
+module.exports = { generate, status, approve, reject, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
     pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor };

@@ -93,7 +93,7 @@ export function pictureSizeMm(image) {
  * @param {{ image: { dataUrl: string, width: number, height: number, pixelated?: boolean }, name: string, font: object, title?: string }} input
  * @returns {{ document: object, textId: string, frameId: string }}
  */
-export function composeLamp({ image, name, font, title }) {
+export function composeLamp({ image, name, font, title, nameSlot = null }) {
     const text = String(name || '').trim();
     const document = { ...blankDocument(), name: title || `Lámpara ${text}`.trim(), ...PAGE };
 
@@ -116,10 +116,16 @@ export function composeLamp({ image, name, font, title }) {
     const LINE_GAP = 1.05;   // distancia entre renglones, en tamaños de letra
     const place = size => {
         const last = units[units.length - 1];
-        const lastBaseline = baseTop(frame) - LAYOUT.silhouette - last.y2 * size;
+        // nameSlot (plantillas del taller, p. ej. Spiderman): el bloque de texto centrado en un punto fijo del
+        // marco (mm desde su esquina superior izquierda). Sin él, abajo, tocando la base.
+        let lastBaseline = baseTop(frame) - LAYOUT.silhouette - last.y2 * size;
+        if (nameSlot) {
+            const top = units[0].y1 * size - (lines.length - 1) * LINE_GAP * size, bottom = last.y2 * size;
+            lastBaseline = frame.y + nameSlot.cy - (top + bottom) / 2;
+        }
         const rows = lines.map((line, k) => {
             const u = units[k], baseline = lastBaseline - (lines.length - 1 - k) * LINE_GAP * size;
-            return { line, x: frame.x + frame.width / 2 - (u.x1 + u.x2) * size / 2, baseline };
+            return { line, x: frame.x + (nameSlot ? nameSlot.cx : frame.width / 2) - (u.x1 + u.x2) * size / 2, baseline };
         });
         const subpaths = rows.flatMap(r => textSubpaths(font, r.line, r.x, r.baseline, size));
         return { size, rows, outline: outlineSilhouette(subpaths, LAYOUT.silhouette) };
@@ -134,7 +140,9 @@ export function composeLamp({ image, name, font, title }) {
         }
         return true;
     });
-    let layout = place(Math.min(frame.width * LAYOUT.nameWidth / inkWidth, frame.height * LAYOUT.nameHeight / inkHeight));
+    const maxW = nameSlot ? nameSlot.maxWidth : frame.width * LAYOUT.nameWidth;
+    const maxH = nameSlot ? nameSlot.maxHeight / lines.length : frame.height * LAYOUT.nameHeight;
+    let layout = place(Math.min(maxW / inkWidth, maxH / inkHeight));
     for (let tries = 0; tries < 40 && !inside(layout.outline); tries++) layout = place(layout.size * .96);
     const labels = layout.rows.map((row, k) => ({ ...createObject('text', row.x, row.baseline - layout.size), name: lines.length > 1 ? `Nombre ${k + 1}` : 'Nombre',
         text: row.line, fontSize: layout.size, fontFamily: FONT_FAMILY, fill: '#000000', stroke: 'none', strokeWidth: 0 }));
