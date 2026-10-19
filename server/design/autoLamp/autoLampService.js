@@ -732,6 +732,28 @@ async function handleBetaDecision(orderId, decision, { clientText = '', changeSu
     }
 }
 
+/**
+ * El cliente pidió un CAMBIO después de aprobar (y de que el archivo ya se subió a corte). Lo llama la IA del
+ * chat al escribir /corregir (services.js; esa parte regresa el pedido a Pendientes de Diseño y pausa la IA,
+ * y al cliente ya se le dijo que lo vamos a checar). Aquí: se marca y se avisa con lo que el sistema sabe,
+ * porque nada registra si la pieza ya pasó por la láser: eso se verifica en taller.
+ */
+async function changeAfterApproval(orderId, clientText = '') {
+    const ref = db.collection('pedidos').doc(String(orderId));
+    const order = (await ref.get()).data() || {};
+    const autoLamp = order.autoLamp || {};
+    await ref.update({ 'autoLamp.client': { ...(autoLamp.client || {}), status: 'change_after_approval', answeredAt: now(), text: String(clientText).slice(0, 300) } });
+    const dh = order.consecutiveOrderNumber ? `DH${order.consecutiveOrderNumber}` : orderId;
+    const subido = order.svgCorteAt?.toMillis ? Math.round((Date.now() - order.svgCorteAt.toMillis()) / 60000) : null;
+    const hace = subido == null ? '' : subido < 90 ? ` hace ${subido} min` : ` hace ${Math.round(subido / 60)} h`;
+    const guia = order.guiaEnvio && order.guiaEnvio.guia;
+    const links = (autoLamp.driveUrls && autoLamp.driveUrls.length ? autoLamp.driveUrls : [order.svgCorteUrl]).filter(Boolean).join(' ');
+    await notifyAdmin(`✏️ ${dh} — el cliente pidió un CAMBIO después de aprobar el diseño de la IA (BETA): "${String(clientText).slice(0, 200)}".\n`
+        + `• El archivo se subió a Drive (SVG Corte)${hace}: ${links || '(sin link)'}\n`
+        + `• Estatus: ${order.estatus || '—'}${guia ? ` · YA TIENE GUÍA ${guia}` : ' · sin guía'}\n`
+        + `👉 Revisa en taller si ya se cortó/grabó. Si no, sácalo de la fila de corte y corrígelo. Al cliente ya se le dijo que lo vamos a checar; el pedido regresó a Pendientes de Diseño y la IA quedó pausada en su chat.`);
+}
+
 // --- BETA: subida a Drive. Es el ÚNICO camino por el que algo de aquí sube a la carpeta de corte. ------
 
 /**
@@ -804,5 +826,5 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, orderName, orderLamps, lampsOf,
+module.exports = { generate, status, approve, reject, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
     pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor };

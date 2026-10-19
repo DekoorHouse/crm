@@ -4025,9 +4025,11 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 // no se haya movido a la columna Terminado del tablero.
                 const od = lastOrderDoc && lastOrderDoc.data();
                 const disenado = od && /^dise[ñn]ado$/i.test(String(od.estatus || '').trim()) && !(od.guiaEnvio && od.guiaEnvio.guia);
-                if (od && (require('./design/designPending').enTerminado(od) || disenado)) {
+                // Diseño IA BETA ya aprobado por el cliente y mandado a corte (Chris, 19-oct-2026): mismo trato.
+                const betaAprobado = od && od.autoLamp && od.autoLamp.beta && od.autoLamp.status === 'approved' && !(od.guiaEnvio && od.guiaEnvio.guia);
+                if (od && (require('./design/designPending').enTerminado(od) || disenado || betaAprobado)) {
                     const n = lastOrderDoc.data().consecutiveOrderNumber;
-                    disenoTerminado = { ref: lastOrderDoc.ref, id: lastOrderDoc.id, num: n != null ? `DH${n}` : lastOrderDoc.id };
+                    disenoTerminado = { ref: lastOrderDoc.ref, id: lastOrderDoc.id, num: n != null ? `DH${n}` : lastOrderDoc.id, beta: !!betaAprobado };
                 }
             } catch (_) {}
             // Agregar lámparas a un pedido ya registrado y todavía sin pagar/enviar (conciliación 1-oct-2026:
@@ -5127,7 +5129,14 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // estatus: se empuja a Pendientes con designForceAt y se protege del corte automático.
         if (needsCorrection && disenoTerminado) {
             try {
-                if (!isPostVenta) {
+                // Diseño IA BETA ya aprobado y mandado a corte: además de regresar a Pendientes (aunque sea
+                // post-venta), avisa con lo que el sistema sabe para que alguien verifique en taller si ya se
+                // cortó/grabó (nada registra el corte físico).
+                if (disenoTerminado.beta) {
+                    await require('./design/autoLamp/autoLampService').changeAfterApproval(disenoTerminado.id, messageText)
+                        .catch(e => console.warn('[DISEÑO BETA] cambio después de aprobar:', e.message));
+                }
+                if (!isPostVenta || disenoTerminado.beta) {
                     await disenoTerminado.ref.update({
                         designForce: true,
                         designForceAt: admin.firestore.FieldValue.serverTimestamp(),

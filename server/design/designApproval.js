@@ -167,8 +167,11 @@ async function handleReply(contactId, message, contactRef, contactData) {
             });
             // El contacto sale del modo aprobación; la IA de post-venta retoma normal.
             await contactRef.update({ designApprovalPending: false, aiStage: 'postventa', botActive: true });
-            await svc.sendAdvancedWhatsAppMessage(contactId, {
-                text: `¡Perfecto! 🎉 Tu diseño quedó aprobado y ya lo pasamos a producción ✨ En cuanto tu lámpara esté lista te aviso por aquí 🙌`,
+            await sendAndSave(contactId, contactRef, {
+                // Diseño IA BETA: el archivo sube a corte en este momento (Chris, 19-oct-2026).
+                text: isBeta(order)
+                    ? `¡Perfecto! 🎉 En seguida mandamos tu lámpara a corte ✨ En cuanto esté lista te aviso por aquí 🙌`
+                    : `¡Perfecto! 🎉 Tu diseño quedó aprobado y ya lo pasamos a producción ✨ En cuanto tu lámpara esté lista te aviso por aquí 🙌`,
             });
             if (isBeta(order)) {
                 // Diseño IA BETA: el "sí" del cliente sube el archivo para RDWorks a la carpeta SVG Corte.
@@ -193,7 +196,7 @@ async function handleReply(contactId, message, contactRef, contactData) {
             });
             // Un humano rediseña y reenvía: pausar la IA y sacar del modo aprobación.
             await contactRef.update({ designApprovalPending: false, botActive: false });
-            await svc.sendAdvancedWhatsAppMessage(contactId, {
+            await sendAndSave(contactId, contactRef, {
                 text: `¡Gracias por avisar! 🙌 Le paso tu comentario al equipo de diseño y te reenvío la corrección lo antes posible ✨`,
             });
             if (isBeta(order)) {
@@ -212,14 +215,14 @@ async function handleReply(contactId, message, contactRef, contactData) {
         await orderRef.update({ 'designApproval.unclearRounds': rounds });
         if (rounds >= 2) {
             await contactRef.update({ designApprovalPending: false, botActive: false });
-            await svc.sendAdvancedWhatsAppMessage(contactId, {
+            await sendAndSave(contactId, contactRef, {
                 text: `Para confirmar tu diseño, con gusto te atiende una persona del equipo 🙌`,
             });
             await notifyAdmin(`❓ ${dh} — no pude confirmar si el cliente aprobó (respondió: "${clientText || '(sin texto / nota de voz)'}"). Requiere revisión humana; IA pausada.`);
             console.log(`[design-approval] ${dh}: ambiguo x${rounds}, escalado a humano.`);
             return;
         }
-        await svc.sendAdvancedWhatsAppMessage(contactId, {
+        await sendAndSave(contactId, contactRef, {
             text: `Solo para confirmar 🙏 respóndeme con un mensaje: ¿el diseño está bien así o te gustaría que cambiemos algo?`,
         });
         console.log(`[design-approval] ${dh}: respuesta ambigua (ronda ${rounds}), re-pregunté.`);
@@ -229,7 +232,22 @@ async function handleReply(contactId, message, contactRef, contactData) {
     }
 }
 
-// ¿Lo mandó el Diseño IA BETA (autoLamp)? Esos no se suben solos al aprobar.
+// Manda el mensaje Y lo guarda en el chat (sendAdvancedWhatsAppMessage solo manda: sin esto el cliente lo
+// recibía pero en el CRM no aparecía, DH18250 19-oct-2026). Si no se puede guardar, el envío ya salió.
+async function sendAndSave(contactId, contactRef, payload) {
+    const svc = require('../services');
+    const sent = await svc.sendAdvancedWhatsAppMessage(contactId, payload);
+    try {
+        await contactRef.collection('messages').add({
+            from: process.env.PHONE_NUMBER_ID || 'bot', status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: sent && sent.id || null, text: (sent && sent.textForDb) || payload.text || '', isAutoReply: true,
+        });
+        await contactRef.update({ lastMessage: (sent && sent.textForDb) || payload.text || '', lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+    } catch (e) { console.warn('[design-approval] no se guardó el mensaje en el chat:', e.message); }
+    return sent;
+}
+
+// ¿Lo mandó el Diseño IA BETA (autoLamp)?
 const isBeta = order => order && order.designApproval && order.designApproval.source === 'auto-lamp-beta';
 
 async function notifyAdmin(text) {
