@@ -358,6 +358,7 @@ async function generate(dh, options = {}) {
         const result = { status: 'ready', step: 'Listo para revisar', name, projectId: project.id, projectRevision: 1, previewUrl, svgUrl, svgPath: `${folder}/corte.svg`,
             rasterUrl: raster.url, rasterJobId: raster.jobId, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}), finishedAt: now(), durationMs: Date.now() - started };
         await setStatus(ref, result);
+        if (beta) await autoSend(dh, brief, options.auth).catch(error => console.warn(`[AUTO-LAMP] envío automático DH${dh}:`, error.message));
         return { ...result, referenceUrl: reference?.url || null };
     } catch (error) {
         await setStatus(ref, { status: 'error', error: error.message || String(error) }).catch(() => {});
@@ -418,9 +419,17 @@ async function rdworksFromProject(lamp) {
 // cliente NO sube nada a Drive: solo marca la tarjeta; el equipo aprueba y sube (regla del Beta).
 // Saludo SIN nombre: el "name" de WhatsApp suele ser un alias raro (Chris, 2026-07-20).
 const CLIENT_MESSAGE = '¡Hola! 😊 Antes de fabricar tu lámpara, te comparto el diseño para que lo revises con calma ✨\n¿Lo aprobamos así o te gustaría que le ajustemos algo? 🙌';
+// Reenvío después de que el cliente pidió un cambio.
+const CLIENT_MESSAGE_AGAIN = '¡Listo! 😊 Ya ajustamos tu diseño con lo que nos pediste ✨\n¿Lo aprobamos así o le cambiamos algo más? 🙌';
+// Envíos automáticos por pedido (el primero + rehechos por cambio del cliente); después pasa a una persona.
+const MAX_CLIENT_SENDS = 3;
 
-/** auth: encabezados de la sesión de quien aprieta el botón (el envío pasa por /api/contacts/:id/messages). */
+/**
+ * auth: encabezados de la sesión de quien aprieta el botón (el envío pasa por /api/contacts/:id/messages).
+ * Sin sesión (envío automático) se usa la llave de servicio WORKER_API_KEY.
+ */
 async function sendToClient(dh, { auth = {}, actor = null } = {}) {
+    if (!auth.Authorization && !auth.Cookie && process.env.WORKER_API_KEY) auth = { 'x-worker-key': process.env.WORKER_API_KEY };
     const orderDoc = await findOrder(dh);
     const order = orderDoc.data(), lamp = order.autoLamp;
     if (!lamp || lamp.status !== 'ready') throw Object.assign(new Error('Solo se puede mandar un diseño listo para revisar.'), { status: 409 });
@@ -429,22 +438,47 @@ async function sendToClient(dh, { auth = {}, actor = null } = {}) {
     const preview = await clientPreview(dh);
     const jpgUrl = await require('../../mockups/mockupsService').ensureJpeg(preview.url);   // WhatsApp no acepta todo formato
     const designText = [lamp.brief?.resumen, lamp.brief?.nombre ? `Texto: ${lamp.brief.nombre}` : ''].filter(Boolean).join(' · ') || lamp.name || '';
+    const rounds = Number(lamp.client?.rounds) || 0;
     const response = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}/api/contacts/${encodeURIComponent(contactId)}/messages`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...auth },
-        body: JSON.stringify({ text: CLIENT_MESSAGE, fileUrl: jpgUrl, fileType: 'image/jpeg' }),
+        body: JSON.stringify({ text: rounds && lamp.client?.status === 'changes' ? CLIENT_MESSAGE_AGAIN : CLIENT_MESSAGE, fileUrl: jpgUrl, fileType: 'image/jpeg' }),
     });
     const sent = await response.json().catch(() => ({}));
     if (!response.ok || sent.success === false) throw Object.assign(new Error(sent.message || sent.error || `No se pudo mandar el mensaje (${response.status}).`), { status: 502 });
     await orderDoc.ref.update({
         designApproval: { status: 'pending', source: 'auto-lamp-beta', sentAt: now(), captureUrl: jpgUrl, designText, unclearRounds: 0,
             projectRevision: preview.revision, sentBy: actor?.email || actor?.uid || null },
-        'autoLamp.client': { status: 'sent', sentAt: now(), previewUrl: jpgUrl },
+        'autoLamp.client': { status: 'sent', sentAt: now(), previewUrl: jpgUrl, rounds: rounds + 1, auto: !actor || !!actor.auto },
     });
     await db.collection('contacts_whatsapp').doc(contactId).update({
         designApprovalPending: true, designApprovalOrderId: orderDoc.id,
         botActive: true,   // el clasificador de aprobación corre dentro del flujo de IA
     });
     return { previewUrl: jpgUrl };
+}
+
+// ENVÍO AUTOMÁTICO (Chris, 19-oct-2026): en cuanto el diseño queda listo se le manda al cliente, salvo que
+// la IA haya anotado dudas, que se haya llegado al tope de envíos o que el interruptor esté apagado
+// (crm_settings/general.designBetaAutoSendActive = false). Lo que no se manda queda en "Revisar diseño" y avisa.
+async function autoSend(dh, brief, auth) {
+    const settings = (await db.collection('crm_settings').doc('general').get()).data() || {};
+    if (settings.designBetaAutoSendActive === false) return;
+    const order = (await findOrder(dh)).data();
+    const rounds = Number(order.autoLamp?.client?.rounds) || 0;
+    const hold = async (why, step) => {
+        await db.collection('pedidos').where('consecutiveOrderNumber', '==', Number(dh)).limit(1).get()
+            .then(s => s.docs[0]?.ref.update({ 'autoLamp.step': step, 'autoLamp.autoSendHeld': why }));
+        await notifyAdmin(`🟡 DH${dh} — el diseño de la IA (BETA) NO se mandó solo al cliente: ${why}. Revísalo en Pendientes de Diseño → Revisar diseño.`);
+    };
+    if (brief?.advertencias?.length) return hold(`la IA anotó dudas (${brief.advertencias.join('; ')})`, 'Listo · revisar dudas antes de mandar');
+    if (rounds >= MAX_CLIENT_SENDS) return hold(`ya se le mandaron ${rounds} versiones; necesita una persona`, 'Listo · tope de envíos al cliente');
+    try { await sendToClient(dh, { auth: auth || {}, actor: { email: 'envío automático', auto: true } }); }
+    catch (error) { await hold(`falló el envío (${error.message})`, 'Listo · no se pudo mandar solo'); }
+}
+
+async function notifyAdmin(text) {
+    try { await require('../../services').sendAdvancedWhatsAppMessage(process.env.ADMIN_ALERT_PHONE || '5216182297167', { text }); }
+    catch (e) { console.warn('[AUTO-LAMP] no pude avisar al admin:', e.message); }
 }
 
 /**

@@ -19,7 +19,11 @@ router.post('/:dh', async (req, res) => {
     // BETA (?beta=1, desde Pendientes de Diseño): la IA lee el pedido y el chat y decide el diseño;
     // note = indicación del equipo al regenerar.
     const beta = req.query.beta === '1' || req.body?.beta === true;
-    service.generate(dh, { beta, note: beta ? String(req.body?.note || '').trim() : '' }).catch(error => console.warn(`[AUTO-LAMP] DH${dh}:`, error.message)).finally(() => running.delete(dh));
+    // La sesión de quien aprieta sirve también para el envío automático al cliente al terminar.
+    const auth = {};
+    if (req.headers.authorization) auth.Authorization = req.headers.authorization;
+    if (req.headers.cookie) auth.Cookie = req.headers.cookie;
+    service.generate(dh, { beta, auth, note: beta ? String(req.body?.note || '').trim() : '' }).catch(error => console.warn(`[AUTO-LAMP] DH${dh}:`, error.message)).finally(() => running.delete(dh));
     res.status(202).json({ success: true, status: 'working' });
 });
 

@@ -951,7 +951,8 @@ function _dlWatch(o) {
             const next = autoLamp ? { ...prev, status: autoLamp.status, step: autoLamp.step, error: autoLamp.error || null, previewUrl: autoLamp.previewUrl || null,
                 projectId: autoLamp.projectId || null, driveUrl: autoLamp.driveUrl || null, brief: autoLamp.brief || null,
                 rasterModel: autoLamp.rasterModel || null, rasterFallback: autoLamp.rasterFallback || null,
-                client: autoLamp.client ? { status: autoLamp.client.status || null, text: autoLamp.client.text || '' } : null } : null;
+                client: autoLamp.client ? { status: autoLamp.client.status || null, text: autoLamp.client.text || '' } : null,
+                autoSendHeld: autoLamp.autoSendHeld || null } : null;
             if (!next || !['working', 'uploading'].includes(next.status) || Date.now() - started > 15 * 60 * 1000) {
                 _dlWatching.delete(o.id); _dlSetLocal(o.id, next); return;
             }
@@ -1007,6 +1008,7 @@ function openDesignBeta(orderId) {
                 ${a.error && ready ? `<div style="color:#b91c1c;margin-top:6px">${escapeHtml(a.error)}</div>` : ''}
                 ${warn}
                 ${_dlClientBox(a.client)}
+                ${a.autoSendHeld ? `<div style="margin-top:8px;border:1px solid #f59e0b66;background:#f59e0b14;color:#b45309;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-hand"></i> No se mandó solo al cliente: ${escapeHtml(a.autoSendHeld)}</div>` : ''}
                 <div style="font-size:11.5px;color:#64748b;margin-top:8px">Nada se sube a Drive hasta que aprietes <b>Aprobar</b>. Si lo corriges en el editor, apruébalo desde ahí.</div>
             </div>
         </div>
