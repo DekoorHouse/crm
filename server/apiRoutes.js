@@ -8745,6 +8745,7 @@ router.get('/design-pending', async (req, res) => {
                     previewUrl: p.autoLamp.previewUrl || null, projectId: p.autoLamp.projectId || null,
                     driveUrl: p.autoLamp.driveUrl || null, brief: p.autoLamp.brief || null, note: p.autoLamp.note || null,
                     rasterModel: p.autoLamp.rasterModel || null, rasterFallback: p.autoLamp.rasterFallback || null,
+                    clientPreviewUrl: p.autoLamp.clientPreviewUrl || null,
                     updatedAt: tsToMs(p.autoLamp.updatedAt),
                 } : null,
                 // ¿Se empujó a mano a la cola de Mockup ("A Mockup")? Pinta el estado del botón.

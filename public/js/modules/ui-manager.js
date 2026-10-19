@@ -974,7 +974,12 @@ function openDesignBeta(orderId) {
             <button data-dl="close" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:inherit">&times;</button>
         </div>
         <div style="display:flex;gap:16px;flex-wrap:wrap">
-            <div style="flex:1 1 300px;min-width:260px">${a.previewUrl ? `<img src="${escapeHtml(a.previewUrl)}" onclick="openImageModal(this.src)" style="width:100%;border-radius:10px;cursor:zoom-in;background:#000">` : `<div style="padding:40px;text-align:center;color:#b91c1c">${escapeHtml(a.error || 'Sin vista previa')}</div>`}</div>
+            <div style="flex:1 1 300px;min-width:260px">${a.previewUrl ? `
+                ${a.projectId ? `<div style="display:flex;gap:4px;margin-bottom:6px">
+                    <button data-dl="view-grabado" style="flex:1;padding:5px;border-radius:7px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Grabado</button>
+                    <button data-dl="view-cliente" title="Así se le manda al cliente: círculo con fondo blanco" style="flex:1;padding:5px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-size:12px;font-weight:700;cursor:pointer">Previo para el cliente</button>
+                </div>` : ''}
+                <img data-dl-img src="${escapeHtml(a.previewUrl)}" onclick="openImageModal(this.src)" style="width:100%;border-radius:10px;cursor:zoom-in;background:#000;border:1px solid var(--color-border,#e5e7eb)">` : `<div style="padding:40px;text-align:center;color:#b91c1c">${escapeHtml(a.error || 'Sin vista previa')}</div>`}</div>
             <div style="flex:1 1 260px;min-width:240px;font-size:13px;line-height:1.45">
                 ${tipo ? `<div><b>Tipo:</b> ${escapeHtml(tipo)}</div>` : ''}
                 ${b.resumen ? `<div><b>Entendió:</b> ${escapeHtml(b.resumen)}</div>` : ''}
@@ -991,6 +996,7 @@ function openDesignBeta(orderId) {
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:10px">
             ${ready ? `<button data-dl="reject" style="padding:8px 12px;border-radius:8px;border:1px solid #dc2626;background:transparent;color:#dc2626;font-weight:700;cursor:pointer">Descartar</button>` : ''}
             <button data-dl="redo" style="padding:8px 12px;border-radius:8px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer</button>
+            ${a.projectId ? `<button data-dl="client" title="Arma el previo para el cliente (círculo con fondo blanco) desde la versión actual del diseño. No se manda nada." style="padding:8px 12px;border-radius:8px;border:1px solid #64748b;background:transparent;color:inherit;font-weight:700;cursor:pointer"><i class="fas fa-image"></i> Previo cliente</button>` : ''}
             ${a.projectId ? `<a href="/editor-v2/?project=${encodeURIComponent(a.projectId)}&dh=${dh}" target="_blank" rel="noopener" style="padding:8px 12px;border-radius:8px;border:1px solid #0ea5e9;color:#0284c7;font-weight:700;text-decoration:none"><i class="fas fa-pen-ruler"></i> Corregir en el editor</a>` : ''}
             ${ready ? `<button data-dl="approve" style="padding:8px 14px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;cursor:pointer"><i class="fas fa-cloud-arrow-up"></i> Aprobar y subir a Drive</button>` : ''}
         </div>
@@ -1013,6 +1019,13 @@ function openDesignBeta(orderId) {
                 o.svgCorteUrl = d.driveUrl;
                 _dlSetLocal(orderId, { ...a, status: 'approved', driveUrl: d.driveUrl });
                 if (d.driveUrl) window.open(d.driveUrl, '_blank', 'noopener');
+            } else if (act === 'client') {
+                const label = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Armando previo…';
+                const d = await _dlCall(dh, '/client-preview', {});
+                a.clientPreviewUrl = d.url;
+                btn.innerHTML = label; btn.disabled = false;
+                openImageModal(d.url);
             } else if (act === 'reject') {
                 await _dlCall(dh, '/reject', { reason: note });
                 close(); _dlSetLocal(orderId, { ...a, status: 'rejected' });

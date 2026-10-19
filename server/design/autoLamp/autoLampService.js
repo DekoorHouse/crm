@@ -318,6 +318,38 @@ async function status(dh) {
     return orderDoc.data().autoLamp || null;
 }
 
+// Las imágenes del proyecto se guardan por URL (como el editor); para pintarlas en el servidor se incrustan.
+async function hydrateImages(objects) {
+    for (const item of objects) {
+        if (item.powerClip?.objects) await hydrateImages(item.powerClip.objects);
+        if (item.type === 'image' && /^https?:/.test(item.src || '')) {
+            const { buffer, type } = await download(item.src);
+            item.src = `data:${/^image\//.test(type) ? type.split(';')[0] : 'image/png'};base64,${buffer.toString('base64')}`;
+        }
+    }
+}
+
+/**
+ * PREVIO PARA EL CLIENTE: el círculo con fondo blanco y el diseño en negro. Se arma desde la versión ACTUAL
+ * del proyecto del editor (incluye lo que alguien haya corregido) y queda en autoLamp.clientPreviewUrl.
+ */
+async function clientPreview(dh) {
+    const orderDoc = await findOrder(dh);
+    const lamp = orderDoc.data().autoLamp;
+    if (!lamp?.projectId) throw Object.assign(new Error('Este pedido no tiene diseño de la IA.'), { status: 404 });
+    const project = (await db.collection('editor_v2_projects').doc(lamp.projectId).get()).data();
+    if (!project) throw Object.assign(new Error('No encontré el proyecto del diseño.'), { status: 404 });
+    if (lamp.clientPreviewUrl && Number(lamp.clientPreviewRevision) === Number(project.revision)) return { url: lamp.clientPreviewUrl, revision: project.revision };
+    const document = JSON.parse(project.documentJson);
+    await hydrateImages(document.objects);
+    const { renderClientPreview } = await composerModule();
+    const { raw, width, height } = renderClientPreview(document, await loadFont());
+    const png = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
+    const url = await saveFile(`${STORAGE_DIR}/DH${dh}/previo-cliente-r${project.revision}.png`, png, 'image/png');
+    await orderDoc.ref.update({ 'autoLamp.clientPreviewUrl': url, 'autoLamp.clientPreviewRevision': project.revision });
+    return { url, revision: project.revision };
+}
+
 // --- BETA: compuerta de aprobación. Es el ÚNICO camino por el que algo de aquí sube a Drive. ---------
 
 /**
@@ -395,4 +427,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, orderName, pickReference, customerImages, designBrief, chatHistory };
+module.exports = { generate, status, approve, reject, clientPreview, orderName, pickReference, customerImages, designBrief, chatHistory };

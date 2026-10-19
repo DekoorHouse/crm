@@ -159,7 +159,44 @@ export function outlinedDocument(document, font) {
 // SVG de corte/grabado de la hoja completa (texto en curvas), como "Exportar → SVG" del editor.
 export const exportLampSvg = (document, font) => exportSvg(outlinedDocument(document, font));
 
-// Vista previa para el cliente: sólo el marco, sobre negro, con la línea de corte discreta.
+// PREVIO PARA EL CLIENTE: el círculo con fondo blanco y el diseño en negro (el grabado invertido, como se
+// ve impreso), la base en gris claro y el contorno del marco discreto, todo sobre blanco.
+export function renderClientPreview(document, font, { width = 1100 } = {}) {
+    const frame = document.objects.find(item => item.powerClip);
+    const pad = 4, box = { x: frame.x - pad, y: frame.y - pad, width: frame.width + 2 * pad, height: frame.height + 2 * pad };
+    const crop = svg => svg.replace(/<svg ([^>]*?)width="[^"]*" height="[^"]*" viewBox="[^"]*"/, `<svg $1width="${box.width}mm" height="${box.height}mm" viewBox="${box.x} ${box.y} ${box.width} ${box.height}"`);
+    const draw = (doc, background) => new Resvg(crop(exportSvg(doc)), { fitTo: { mode: 'width', value: width }, background }).render();
+    // Solo el marco (sin contenido), pintado como haga falta para sacar máscaras del mismo tamaño.
+    const frameOnly = ({ overlayFill, ...paint }) => {
+        const doc = clone(document);
+        doc.objects = doc.objects.filter(item => item.id === frame.id).map(item => {
+            const plain = { ...item, ...paint, powerClip: { ...item.powerClip, objects: [] } };
+            if (overlayFill) plain.overlay = { ...item.overlay, fill: overlayFill }; else delete plain.overlay;
+            return plain;
+        });
+        return doc;
+    };
+    const shown = outlinedDocument(document, font);
+    shown.objects = shown.objects.map(item => item.id === frame.id ? { ...item, stroke: 'none' } : item);
+    const design = draw(shown, '#000000');
+    const area = draw(frameOnly({ fill: '#ffffff', stroke: 'none', overlayFill: '#ffffff' }), '#000000').pixels;
+    const base = draw(frameOnly({ fill: '#000000', stroke: 'none', overlayFill: '#ffffff' }), '#000000').pixels;
+    const line = draw(frameOnly({ fill: 'none', stroke: '#9aa3ab', strokeWidth: .6 }), 'rgba(0,0,0,0)').pixels;
+    const out = Buffer.alloc(design.width * design.height * 3);
+    for (let i = 0, j = 0; j < out.length; i += 4, j += 3) {
+        const inFrame = area[i] > 127, inBase = base[i] > 127;
+        for (let c = 0; c < 3; c++) {
+            let v = 255;
+            if (inBase) v = 236;
+            else if (inFrame) v = 255 - design.pixels[i + c];
+            const a = line[i + 3] / 255;   // contorno del marco encima
+            out[j + c] = Math.round(v * (1 - a) + line[i + c] * a);
+        }
+    }
+    return { raw: out, width: design.width, height: design.height };
+}
+
+// Vista previa para el equipo: sólo el marco, sobre negro, con la línea de corte discreta.
 export function renderPreview(document, font, { width = 1100 } = {}) {
     const frame = document.objects.find(item => item.powerClip);
     const shown = outlinedDocument(document, font);

@@ -41,6 +41,14 @@ router.post('/:dh/approve', async (req, res) => {
     catch (error) { console.warn(`[AUTO-LAMP] aprobar DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo subir a Drive.' }); }
 });
 
+// Previo para el cliente (círculo con fondo blanco), desde la versión actual del proyecto. No manda nada.
+router.post('/:dh/client-preview', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    try { res.json({ success: true, ...(await service.clientPreview(dh)) }); }
+    catch (error) { console.warn(`[AUTO-LAMP] previo DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo armar el previo.' }); }
+});
+
 router.post('/:dh/reject', async (req, res) => {
     const dh = dhOf(req.params.dh);
     if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
