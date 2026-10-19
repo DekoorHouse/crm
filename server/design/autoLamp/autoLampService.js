@@ -318,54 +318,79 @@ async function engravePolarity(buffer) {
 // así que el diseño sale chico en un cuadro grande. Se recorta a lo que se graba (negro) y se reacomoda en un
 // cuadro que composeLamp encaja en el marco: ahí el círculo queda con centro en (50 %, 48.1 %) y radio 48.1 %
 // del lado, y la base empieza al 91 % (medidas del marco 160 × 166.3 mm, círculo de 80 mm de radio).
-//  - Si el diseño trae su propio círculo (el acrílico del mockup): ese círculo se ajusta al del marco, 6 % más
-//    grande para que su orilla quede fuera del corte y no se grabe un aro.
-//  - Si va suelto: lo más grande que quepa dentro del círculo, sin tocar la base, centrado.
+//  - Si el diseño trae su propio círculo (el acrílico del mockup, aunque sea un trazo tenue): ese círculo va justo
+//    en la línea de corte (su orilla, del lado de afuera).
+//  - Si va suelto: lo más grande posible midiendo sus pixeles, con ~2 mm de aire a la línea y a la base.
 const LAMP_CIRCLE = { cx: .5, cy: .481, r: .481, baseTop: .905 };
+// Aire entre el trazo y la línea de corte / la base (fracción del lado del cuadro ≈ 166 mm): ~2 mm.
+const FIT_GAP = .012;
 async function fitToLampCircle(buffer, side = 2000) {
     const { data, info } = await sharp(buffer).greyscale().raw().toBuffer({ resolveWithObject: true });
     const w = info.width, h = info.height;
-    // Caja del contenido: filas/columnas con algo de negro (ignora puntitos sueltos).
-    const rows = new Uint32Array(h), cols = new Uint32Array(w);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (data[y * w + x] < 128) { rows[y]++; cols[x]++; }
-    const minRun = Math.max(2, Math.round(Math.min(w, h) * .003));
-    const first = arr => arr.findIndex(v => v >= minRun), last = arr => arr.length - 1 - [...arr].reverse().findIndex(v => v >= minRun);
-    const box = { x0: first(cols), x1: last(cols), y0: first(rows), y1: last(rows) };
-    if (box.x0 < 0 || box.y0 < 0 || box.x1 <= box.x0 || box.y1 <= box.y0) return buffer;   // nada que acomodar
-    const bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1;
-    // ¿Es un círculo? Caja casi cuadrada y su orilla (elipse inscrita) mayormente negra.
-    let ringDark = 0;
+    // Caja de lo que tiene tinta (aunque sea un trazo tenue, como el círculo del acrílico) y de lo negro.
+    const boxOf = limit => {
+        const rows = new Uint32Array(h), cols = new Uint32Array(w);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (data[y * w + x] < limit) { rows[y]++; cols[x]++; }
+        const minRun = Math.max(2, Math.round(Math.min(w, h) * .002));
+        const first = arr => arr.findIndex(v => v >= minRun), last = arr => arr.length - 1 - [...arr].reverse().findIndex(v => v >= minRun);
+        const b = { x0: first(cols), x1: last(cols), y0: first(rows), y1: last(rows) };
+        return b.x0 < 0 || b.y0 < 0 || b.x1 <= b.x0 || b.y1 <= b.y0 ? null : { ...b, w: b.x1 - b.x0 + 1, h: b.y1 - b.y0 + 1 };
+    };
+    const ink = boxOf(250), dark = boxOf(128);
+    if (!ink || !dark) return buffer;   // nada que acomodar
+    // ¿El diseño trae su propio círculo (el acrílico del mockup)? Caja de tinta casi cuadrada y con trazo en su
+    // orilla (franja 93–100 % del radio) en casi toda la vuelta.
+    let ringHits = 0;
     for (let k = 0; k < 360; k++) {
-        // La orilla puede ser una línea delgada: se busca en una franja (93–100 % del radio).
         const t = k * Math.PI / 180;
         for (let f = .93; f <= 1.0001; f += .005) {
-            const x = Math.round(box.x0 + bw / 2 + Math.cos(t) * (bw / 2 - 1) * f), y = Math.round(box.y0 + bh / 2 + Math.sin(t) * (bh / 2 - 1) * f);
-            if (x >= 0 && x < w && y >= 0 && y < h && data[y * w + x] < 128) { ringDark++; break; }
+            const x = Math.round(ink.x0 + ink.w / 2 + Math.cos(t) * (ink.w / 2 - 1) * f), y = Math.round(ink.y0 + ink.h / 2 + Math.sin(t) * (ink.h / 2 - 1) * f);
+            if (x >= 0 && x < w && y >= 0 && y < h && data[y * w + x] < 250) { ringHits++; break; }
         }
     }
-    const isCircle = bw / bh > .88 && bw / bh < 1.12 && ringDark / 360 > .5;
+    const isCircle = ink.w / ink.h > .9 && ink.w / ink.h < 1.1 && ringHits / 360 > .75;
     const R = LAMP_CIRCLE.r * side, cx = LAMP_CIRCLE.cx * side, cy = LAMP_CIRCLE.cy * side;
-    let scale, top, left;
+    let box, scale, left, top;
     if (isCircle) {
-        scale = (2 * R * 1.06) / Math.max(bw, bh);
-        left = cx - bw * scale / 2; top = cy - bh * scale / 2;
+        // Su círculo justo en la línea de corte (4 % más grande: su orilla queda del lado de afuera aunque no sea redondo perfecto).
+        box = ink; scale = (2 * R * 1.04) / Math.max(ink.w, ink.h);
+        left = cx - box.w * scale / 2; top = cy - box.h * scale / 2;
     } else {
-        // Lo más grande que quepa: las 4 esquinas dentro del círculo (con 4 % de aire) y arriba de la base.
-        const fits = s => {
-            const W = bw * s, H = bh * s;
-            let t = cy - H / 2;
-            const maxBottom = LAMP_CIRCLE.baseTop * side - side * .015;
-            if (t + H > maxBottom) t = maxBottom - H;
-            const l = cx - W / 2;
-            const ok = [[l, t], [l + W, t], [l, t + H], [l + W, t + H]].every(([x, y]) => Math.hypot(x - cx, y - cy) <= R * .96);
-            return ok ? { t, l } : null;
+        // Diseño suelto: lo más grande posible midiendo los PIXELES del dibujo (no la caja), con ~2 mm de aire
+        // a la línea y a la base. Se prueba un poco recorrido a los lados por si así cabe más grande.
+        box = dark;
+        const step = Math.max(1, Math.ceil(Math.max(box.w, box.h) / 220)), pts = [];
+        for (let gy = box.y0; gy <= box.y1; gy += step) for (let gx = box.x0; gx <= box.x1; gx += step) {
+            let hit = false;
+            for (let y = gy; y < Math.min(gy + step, box.y1 + 1) && !hit; y++) for (let x = gx; x < Math.min(gx + step, box.x1 + 1); x++) if (data[y * w + x] < 128) { hit = true; break; }
+            if (hit) for (const [px, py] of [[gx, gy], [gx + step, gy], [gx, gy + step], [gx + step, gy + step]]) pts.push(px - box.x0, py - box.y0);
+        }
+        const Rm = R - FIT_GAP * side, maxBottom = (LAMP_CIRCLE.baseTop - FIT_GAP) * side;
+        // Con escala s y recorrido dx: ¿qué "top" deja todo dentro? Devuelve [mín, máx] o null.
+        const topRange = (s, dx) => {
+            let lo = -Infinity, hi = Infinity;
+            const l = cx - box.w * s / 2 + dx;
+            for (let i = 0; i < pts.length; i += 2) {
+                const ddx = l + pts[i] * s - cx;
+                if (Math.abs(ddx) > Rm) return null;
+                const hh = Math.sqrt(Rm * Rm - ddx * ddx), py = pts[i + 1] * s;
+                lo = Math.max(lo, cy - hh - py); hi = Math.min(hi, Math.min(cy + hh, maxBottom) - py);
+                if (lo > hi) return null;
+            }
+            return [lo, hi];
         };
-        let lo = .01, hi = (2 * R) / Math.max(bw, bh);
-        for (let i = 0; i < 30; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
-        scale = lo; ({ t: top, l: left } = fits(lo) || { t: cy - bh * lo / 2, l: cx - bw * lo / 2 });
+        let best = { s: 0, dx: 0, range: null };
+        for (const dx of [0, -.03, .03, -.06, .06].map(f => f * R)) {
+            let lo = 0, hi = (2 * R) / Math.min(box.w, box.h);
+            if (!topRange(lo + 1e-6, dx)) continue;
+            for (let i = 0; i < 26; i++) { const mid = (lo + hi) / 2; if (topRange(mid, dx)) lo = mid; else hi = mid; }
+            if (lo > best.s * 1.01) best = { s: lo, dx, range: topRange(lo, dx) };
+        }
+        if (!best.range) return buffer;
+        scale = best.s; left = cx - box.w * scale / 2 + best.dx; top = (best.range[0] + best.range[1]) / 2;
     }
-    const piece = await sharp(buffer).extract({ left: box.x0, top: box.y0, width: bw, height: bh })
-        .resize(Math.max(1, Math.round(bw * scale)), Math.max(1, Math.round(bh * scale)), { kernel: 'lanczos3' }).png().toBuffer();
+    const piece = await sharp(buffer).extract({ left: box.x0, top: box.y0, width: box.w, height: box.h })
+        .resize(Math.max(1, Math.round(box.w * scale)), Math.max(1, Math.round(box.h * scale)), { kernel: 'lanczos3' }).png().toBuffer();
     const pm = await sharp(piece).metadata();
     // Lo que se sale del cuadro se recorta (el círculo del mockup un poco más grande que el lienzo).
     const L = Math.round(left), T = Math.round(top);
