@@ -314,6 +314,68 @@ async function engravePolarity(buffer) {
     return sharp(px, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
 }
 
+// MOCKUP -> que llene el círculo como en el mockup (DH18202, 19-oct-2026). Qwen respeta el encuadre de la foto,
+// así que el diseño sale chico en un cuadro grande. Se recorta a lo que se graba (negro) y se reacomoda en un
+// cuadro que composeLamp encaja en el marco: ahí el círculo queda con centro en (50 %, 48.1 %) y radio 48.1 %
+// del lado, y la base empieza al 91 % (medidas del marco 160 × 166.3 mm, círculo de 80 mm de radio).
+//  - Si el diseño trae su propio círculo (el acrílico del mockup): ese círculo se ajusta al del marco, 6 % más
+//    grande para que su orilla quede fuera del corte y no se grabe un aro.
+//  - Si va suelto: lo más grande que quepa dentro del círculo, sin tocar la base, centrado.
+const LAMP_CIRCLE = { cx: .5, cy: .481, r: .481, baseTop: .905 };
+async function fitToLampCircle(buffer, side = 2000) {
+    const { data, info } = await sharp(buffer).greyscale().raw().toBuffer({ resolveWithObject: true });
+    const w = info.width, h = info.height;
+    // Caja del contenido: filas/columnas con algo de negro (ignora puntitos sueltos).
+    const rows = new Uint32Array(h), cols = new Uint32Array(w);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (data[y * w + x] < 128) { rows[y]++; cols[x]++; }
+    const minRun = Math.max(2, Math.round(Math.min(w, h) * .003));
+    const first = arr => arr.findIndex(v => v >= minRun), last = arr => arr.length - 1 - [...arr].reverse().findIndex(v => v >= minRun);
+    const box = { x0: first(cols), x1: last(cols), y0: first(rows), y1: last(rows) };
+    if (box.x0 < 0 || box.y0 < 0 || box.x1 <= box.x0 || box.y1 <= box.y0) return buffer;   // nada que acomodar
+    const bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1;
+    // ¿Es un círculo? Caja casi cuadrada y su orilla (elipse inscrita) mayormente negra.
+    let ringDark = 0;
+    for (let k = 0; k < 360; k++) {
+        // La orilla puede ser una línea delgada: se busca en una franja (93–100 % del radio).
+        const t = k * Math.PI / 180;
+        for (let f = .93; f <= 1.0001; f += .005) {
+            const x = Math.round(box.x0 + bw / 2 + Math.cos(t) * (bw / 2 - 1) * f), y = Math.round(box.y0 + bh / 2 + Math.sin(t) * (bh / 2 - 1) * f);
+            if (x >= 0 && x < w && y >= 0 && y < h && data[y * w + x] < 128) { ringDark++; break; }
+        }
+    }
+    const isCircle = bw / bh > .88 && bw / bh < 1.12 && ringDark / 360 > .5;
+    const R = LAMP_CIRCLE.r * side, cx = LAMP_CIRCLE.cx * side, cy = LAMP_CIRCLE.cy * side;
+    let scale, top, left;
+    if (isCircle) {
+        scale = (2 * R * 1.06) / Math.max(bw, bh);
+        left = cx - bw * scale / 2; top = cy - bh * scale / 2;
+    } else {
+        // Lo más grande que quepa: las 4 esquinas dentro del círculo (con 4 % de aire) y arriba de la base.
+        const fits = s => {
+            const W = bw * s, H = bh * s;
+            let t = cy - H / 2;
+            const maxBottom = LAMP_CIRCLE.baseTop * side - side * .015;
+            if (t + H > maxBottom) t = maxBottom - H;
+            const l = cx - W / 2;
+            const ok = [[l, t], [l + W, t], [l, t + H], [l + W, t + H]].every(([x, y]) => Math.hypot(x - cx, y - cy) <= R * .96);
+            return ok ? { t, l } : null;
+        };
+        let lo = .01, hi = (2 * R) / Math.max(bw, bh);
+        for (let i = 0; i < 30; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+        scale = lo; ({ t: top, l: left } = fits(lo) || { t: cy - bh * lo / 2, l: cx - bw * lo / 2 });
+    }
+    const piece = await sharp(buffer).extract({ left: box.x0, top: box.y0, width: bw, height: bh })
+        .resize(Math.max(1, Math.round(bw * scale)), Math.max(1, Math.round(bh * scale)), { kernel: 'lanczos3' }).png().toBuffer();
+    const pm = await sharp(piece).metadata();
+    // Lo que se sale del cuadro se recorta (el círculo del mockup un poco más grande que el lienzo).
+    const L = Math.round(left), T = Math.round(top);
+    const cut = { left: Math.max(0, -L), top: Math.max(0, -T) };
+    const cw = Math.min(pm.width - cut.left, side - Math.max(0, L)), ch = Math.min(pm.height - cut.top, side - Math.max(0, T));
+    const input = await sharp(piece).extract({ left: cut.left, top: cut.top, width: cw, height: ch }).png().toBuffer();
+    return sharp({ create: { width: side, height: side, channels: 3, background: '#ffffff' } })
+        .composite([{ input, left: Math.max(0, L), top: Math.max(0, T) }]).png().toBuffer();
+}
+
 async function loadFont() {
     if (!fontCache) {
         const [bytes] = await bucket.file(FONT_PATH).download();
@@ -360,7 +422,10 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         step('Convirtiendo a grabado');
         raster = await rasterize(plan.reference);
     }
-    const { buffer } = await download(raster.url);
+    const downloaded = (await download(raster.url)).buffer;
+    // Grabado listo (negro sobre blanco); el del mockup además se reacomoda para llenar el círculo.
+    const engraved = await engravePolarity(downloaded);
+    const buffer = plan.fuente === 'mockup' ? await fitToLampCircle(engraved) : engraved;
     const meta = await sharp(buffer).metadata();
     const font = await loadFont();
     const { composeLamp, renderPreview, pictureSizeMm } = await composerModule();
@@ -371,7 +436,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const size = bitmapSize(mm.width, mm.height, BITMAP.dpi);
     // Para GRABAR va el diseño en negro sobre fondo blanco (lo negro es lo que graba la láser); el modelo
     // suele entregar blanco sobre negro: engravePolarity lo normaliza (Chris, 19-oct-2026). El previo del cliente es al revés.
-    const rgba = await sharp(await engravePolarity(buffer)).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
+    const rgba = await sharp(buffer).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
     const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, BITMAP);
     const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
 
@@ -714,5 +779,5 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, clientPreview, engravePolarity, sendToClient, handleBetaDecision, orderName, orderLamps, lampsOf,
+module.exports = { generate, status, approve, reject, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, orderName, orderLamps, lampsOf,
     pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor };
