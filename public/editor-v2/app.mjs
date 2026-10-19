@@ -111,6 +111,7 @@ function persist() {
 // for the previous one does not touch it.
 function bindCloud(binding, savedKey) {
     cloudBinding = binding; cloudSavedKey = savedKey; cloudConflict = false; autosaveProblem = null; cloudEpoch++;
+    showOrderApprove();
 }
 const cloudPending = () => cloudBinding ? documentKey(history.document) !== cloudSavedKey : history.document.objects.length > 0;
 function scheduleAutosave(delay = AUTOSAVE_DELAY) {
@@ -2420,5 +2421,54 @@ $('#font-file').addEventListener('change', async event => {
         status(`${DEFAULT_TEXT_FONT} subida a Firebase y cargada`);
     } catch (error) { status(error.message || 'No se pudo subir la fuente.'); }
 });
-setTool('select'); render(); fit(); showWelcome(); loadFonts();
+// BETA "Diseño IA": Pendientes de Diseño abre aquí el diseño que armó el sistema para un pedido
+// (?project=<id>&dh=<n>). Lo que se corrija se aprueba desde «Aprobar y subir a Drive», que sube
+// exactamente lo que se ve (mismo SVG que Exportar) a la carpeta de corte.
+var orderLink = (() => {
+    const params = new URLSearchParams(location.search), project = params.get('project'), dh = (params.get('dh') || '').replace(/\D/g, '');
+    return project && dh ? { project, dh } : null;
+})();
+function showOrderApprove() { $('#order-approve').hidden = !(orderLink && cloudBinding?.id === orderLink.project); }
+async function openOrderProject() {
+    status(`Abriendo el diseño de DH${orderLink.dh}…`);
+    await ensureCloud();
+    if (!cloudApi.user) {
+        status('Inicia sesión (Abrir → iniciar sesión) para cargar el diseño del pedido.');
+        await new Promise(resolve => cloudApi.watch(() => { if (cloudApi.user) resolve(); }));
+    }
+    const loaded = await cloudApi.load(orderLink.project);
+    cancelGesture(); bindCloud(loaded.binding, documentKey(loaded.document));
+    storageBlocked = false; selectOnly(null); commit(loaded.document); persist(); fit();
+    showOrderApprove();
+    status(`Diseño IA de DH${orderLink.dh} · corrígelo si hace falta y apruébalo con «Aprobar y subir a Drive»`);
+}
+$('#order-approve').onclick = async () => {
+    const button = $('#order-approve');
+    if (!orderLink || cloudBinding?.id !== orderLink.project) return showOrderApprove();
+    if (!window.confirm(`¿Aprobar el diseño de DH${orderLink.dh} y subirlo a la carpeta de corte en Drive? Esto lo manda a producción.`)) return;
+    button.disabled = true; button.textContent = 'Subiendo…';
+    try {
+        // Primero queda guardado en Firebase lo que se corrigió, luego sube el mismo SVG que da Exportar.
+        if (cloudPending() && !cloudConflict) await autosave();
+        const snapshot = clone(history.document);
+        await bakeAdjustedImages(snapshot);
+        await outlineLicensedText(snapshot);
+        const response = await fetch(`/api/auto-lamp/${orderLink.dh}/approve`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await cloudApi.token()}` },
+            body: JSON.stringify({ svg: exportSvg(snapshot) }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.success === false) throw new Error(data.error || 'El servidor no pudo subirlo.');
+        button.textContent = 'En Drive ✓';
+        status(`DH${orderLink.dh} aprobado y subido a Drive: ${data.fileName || ''}`);
+        if (data.driveUrl) window.open(data.driveUrl, '_blank', 'noopener');
+    } catch (error) {
+        button.disabled = false; button.textContent = 'Aprobar y subir a Drive';
+        status(error.message || 'No se pudo aprobar.');
+    }
+};
+setTool('select'); render(); fit();
+if (orderLink) openOrderProject().catch(error => { status(error.message || 'No se pudo abrir el diseño del pedido.'); showWelcome(); });
+else showWelcome();
+loadFonts();
 ensureCloud().catch(() => showAutosave());

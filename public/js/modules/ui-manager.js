@@ -584,7 +584,7 @@ function dpBoardCard(o, checkedSet) {
     const respBubble = (o.clienteRespondio && o.contactId)
         ? `<button onclick="openDesignPendingChat('${o.id}')" title="El cliente te respondió${o.clienteRespondioAt ? ' ' + dpHaceTxt(o.clienteRespondioAt) : ''} — clic para ver el chat" class="dp-resp"><i class="fas fa-reply"></i>Te respondió</button>`
         : '';
-    const ia = dpIaControls(o);
+    const ia = dpIaControls(o) + dpBetaControls(o);
     const mockupBtn = dpMockupBtn(o);
     // "Esperando confirmación": el cliente ya contestó o reaccionó al diseño que le mandamos (el server
     // calcula `confirmacion`). La tarjeta se pinta de verde y sube al inicio de la columna.
@@ -879,6 +879,149 @@ async function rejectIADesign(orderId, el) {
     } catch (e) { if (el) el.disabled = false; alert('No se pudo rechazar: ' + (e.message || e)); }
 }
 window.rejectIADesign = rejectIADesign;
+
+// --- BETA "Diseño IA" (oct-2026): el sistema arma el diseño de CUALQUIER pedido (foto del cliente,
+// personaje sin plantilla, especial) con el estudio de /imagenes + el editor v2 (/api/auto-lamp). La IA
+// lee el pedido y el chat; el resultado queda como proyecto del editor y SOLO sube a Drive cuando
+// alguien aprueba en la ventana de revisión. Se dispara a mano, pedido por pedido. ---
+const _dlBetaBadge = '<span style="background:#f59e0b;color:#fff;font-size:9px;font-weight:800;padding:0 4px;border-radius:4px;margin-left:3px">BETA</span>';
+const _dlDh = o => String(o.orderNumber || '').replace(/\D/g, '');
+
+async function _dlCall(dh, path, body) {
+    const res = await fetch(`${API_BASE_URL}/api/auto-lamp/${dh}${path}`, body === undefined ? {} : {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.success === false) throw new Error(d.error || ('HTTP ' + res.status));
+    return d;
+}
+
+function _dlSetLocal(orderId, autoLamp) {
+    const o = (window._designPendingData || []).find(x => x.id === orderId);
+    if (o) o.autoLamp = autoLamp;
+    const sc = document.getElementById('design-pending-view');
+    const scrollTop = sc ? sc.scrollTop : 0;
+    _paintDesignPending();
+    if (sc) sc.scrollTop = scrollTop;
+}
+
+// Controles de la tarjeta según el estado del diseño Beta.
+function dpBetaControls(o) {
+    if (o.svgCorteUrl) return '';
+    const a = o.autoLamp, bb = 'padding:4px 8px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap;border:none';
+    if (a && (a.status === 'working' || a.status === 'uploading')) {
+        _dlWatch(o);
+        return `<span title="${escapeHtml(a.step || '')}" style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b22;color:#b45309;border:1px solid #f59e0b66;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;max-width:220px;overflow:hidden;text-overflow:ellipsis"><i class="fas fa-spinner fa-spin"></i>${escapeHtml(a.step || 'Diseñando…')}</span>`;
+    }
+    if (a && a.status === 'ready') {
+        const thumb = a.previewUrl ? `<img src="${escapeHtml(a.previewUrl)}" style="width:30px;height:30px;object-fit:cover;border-radius:5px;border:1px solid var(--color-border,#e5e7eb)">` : '';
+        return `<button onclick="openDesignBeta('${o.id}')" title="Revisar el diseño de la IA: aprobar (sube a Drive), corregir en el editor o descartar" style="background:#16a34a;color:#fff;${bb};display:inline-flex;align-items:center;gap:5px;padding:2px 8px 2px 2px">${thumb}Revisar diseño${_dlBetaBadge}</button>`;
+    }
+    if (a && a.status === 'error') return `<button onclick="openDesignBeta('${o.id}')" title="${escapeHtml(a.error || 'Error')} — clic para ver y reintentar" style="background:#dc262611;color:#b91c1c;border:1px solid #dc262666;${bb}"><i class="fas fa-triangle-exclamation" style="margin-right:3px"></i>Error IA${_dlBetaBadge}</button>`;
+    return `<button onclick="startDesignBeta('${o.id}', this)" title="BETA: la IA lee el pedido y el chat, arma el diseño con el estudio de imágenes y lo deja para que lo apruebes. No sube nada a Drive sin tu aprobación." style="background:transparent;color:#7c3aed;border:1px solid #7c3aed;${bb}"><i class="fas fa-wand-magic-sparkles" style="margin-right:3px"></i>${a && a.status === 'rejected' ? 'Rehacer IA' : 'IA'}${_dlBetaBadge}</button>`;
+}
+
+// Sigue el avance de un diseño en curso (uno a la vez por pedido) y re-pinta al terminar.
+const _dlWatching = new Set();
+function _dlWatch(o) {
+    if (_dlWatching.has(o.id)) return;
+    _dlWatching.add(o.id);
+    const dh = _dlDh(o), started = Date.now();
+    const tick = async () => {
+        try {
+            const { autoLamp } = await _dlCall(dh, '');
+            const cur = (window._designPendingData || []).find(x => x.id === o.id);
+            if (!cur) { _dlWatching.delete(o.id); return; }
+            const prev = cur.autoLamp || {};
+            const next = autoLamp ? { ...prev, status: autoLamp.status, step: autoLamp.step, error: autoLamp.error || null, previewUrl: autoLamp.previewUrl || null,
+                projectId: autoLamp.projectId || null, driveUrl: autoLamp.driveUrl || null, brief: autoLamp.brief || null } : null;
+            if (!next || !['working', 'uploading'].includes(next.status) || Date.now() - started > 15 * 60 * 1000) {
+                _dlWatching.delete(o.id); _dlSetLocal(o.id, next); return;
+            }
+            if (next.step !== prev.step) { cur.autoLamp = next; _dlSetLocal(o.id, next); _dlWatching.add(o.id); }
+        } catch (_) { /* reintenta en la siguiente vuelta */ }
+        setTimeout(tick, 4000);
+    };
+    setTimeout(tick, 4000);
+}
+
+async function startDesignBeta(orderId, el, note) {
+    const o = (window._designPendingData || []).find(x => x.id === orderId);
+    if (!o) return;
+    if (el) el.disabled = true;
+    try {
+        await _dlCall(_dlDh(o), '?beta=1', { beta: true, note: note || '' });
+        _dlSetLocal(orderId, { status: 'working', step: 'Leyendo el pedido y el chat' });
+    } catch (e) { if (el) el.disabled = false; alert('No se pudo empezar el diseño IA: ' + (e.message || e)); }
+}
+window.startDesignBeta = startDesignBeta;
+
+// Ventana de revisión: vista previa grande + lo que entendió la IA + Aprobar / Editor / Rehacer / Descartar.
+function openDesignBeta(orderId) {
+    const o = (window._designPendingData || []).find(x => x.id === orderId);
+    if (!o || !o.autoLamp) return;
+    const a = o.autoLamp, b = a.brief || {}, dh = _dlDh(o);
+    document.getElementById('dl-beta-modal')?.remove();
+    const tipo = { foto: 'Foto del cliente', personaje: 'Personaje', especial: 'Especial' }[b.tipo] || '';
+    const warn = (b.advertencias || []).length ? `<div style="background:#fef3c7;color:#92400e;border-radius:8px;padding:8px 10px;font-size:12px;margin-top:8px"><b><i class="fas fa-triangle-exclamation"></i> Revisa:</b><ul style="margin:4px 0 0 18px;padding:0">${b.advertencias.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : '';
+    const ready = a.status === 'ready';
+    const wrap = document.createElement('div');
+    wrap.id = 'dl-beta-modal';
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10050;display:flex;align-items:center;justify-content:center;padding:16px';
+    wrap.innerHTML = `<div style="background:var(--color-container-bg,#fff);color:var(--color-text,#1e293b);border-radius:14px;max-width:820px;width:100%;max-height:92vh;overflow:auto;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <b style="font-size:1.05rem">${escapeHtml(o.orderNumber)} · Diseño IA ${_dlBetaBadge}</b>
+            <button data-dl="close" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:inherit">&times;</button>
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <div style="flex:1 1 300px;min-width:260px">${a.previewUrl ? `<img src="${escapeHtml(a.previewUrl)}" onclick="openImageModal(this.src)" style="width:100%;border-radius:10px;cursor:zoom-in;background:#000">` : `<div style="padding:40px;text-align:center;color:#b91c1c">${escapeHtml(a.error || 'Sin vista previa')}</div>`}</div>
+            <div style="flex:1 1 260px;min-width:240px;font-size:13px;line-height:1.45">
+                ${tipo ? `<div><b>Tipo:</b> ${escapeHtml(tipo)}</div>` : ''}
+                ${b.resumen ? `<div><b>Entendió:</b> ${escapeHtml(b.resumen)}</div>` : ''}
+                <div><b>Texto grabado:</b> ${b.nombre ? escapeHtml(b.nombre) : '<i>sin texto</i>'}</div>
+                ${b.referenceUrl ? `<div style="margin-top:6px"><b>Imagen del cliente usada:</b><br><img src="${escapeHtml(b.referenceUrl)}" onclick="openImageModal(this.src)" style="max-width:120px;max-height:120px;border-radius:6px;cursor:zoom-in;margin-top:3px"></div>` : (b.prompt ? `<div><b>Ilustración pedida:</b> ${escapeHtml(b.prompt)}</div>` : '')}
+                ${a.note ? `<div style="margin-top:4px"><b>Indicación:</b> ${escapeHtml(a.note)}</div>` : ''}
+                ${a.error && ready ? `<div style="color:#b91c1c;margin-top:6px">${escapeHtml(a.error)}</div>` : ''}
+                ${warn}
+                <div style="font-size:11.5px;color:#64748b;margin-top:8px">Nada se sube a Drive hasta que aprietes <b>Aprobar</b>. Si lo corriges en el editor, apruébalo desde ahí.</div>
+            </div>
+        </div>
+        <textarea data-dl="note" placeholder="Indicación para rehacerlo (opcional): «usa la otra foto», «sin texto», «que se vea de cuerpo completo»…" style="width:100%;min-height:52px;margin-top:12px;padding:7px 9px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:var(--color-surface,#fff);color:inherit;font-size:12.5px"></textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:10px">
+            ${ready ? `<button data-dl="reject" style="padding:8px 12px;border-radius:8px;border:1px solid #dc2626;background:transparent;color:#dc2626;font-weight:700;cursor:pointer">Descartar</button>` : ''}
+            <button data-dl="redo" style="padding:8px 12px;border-radius:8px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer</button>
+            ${a.projectId ? `<a href="/editor-v2/?project=${encodeURIComponent(a.projectId)}&dh=${dh}" target="_blank" rel="noopener" style="padding:8px 12px;border-radius:8px;border:1px solid #0ea5e9;color:#0284c7;font-weight:700;text-decoration:none"><i class="fas fa-pen-ruler"></i> Corregir en el editor</a>` : ''}
+            ${ready ? `<button data-dl="approve" style="padding:8px 14px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;cursor:pointer"><i class="fas fa-cloud-arrow-up"></i> Aprobar y subir a Drive</button>` : ''}
+        </div>
+    </div>`;
+    document.body.appendChild(wrap);
+    const close = () => wrap.remove();
+    wrap.addEventListener('click', async ev => {
+        if (ev.target === wrap) return close();
+        const btn = ev.target.closest('[data-dl]'); if (!btn) return;
+        const act = btn.dataset.dl, note = wrap.querySelector('[data-dl="note"]').value.trim();
+        if (act === 'close') return close();
+        if (act === 'note') return;
+        btn.disabled = true;
+        try {
+            if (act === 'approve') {
+                if (!await showConfirmModal(`¿Aprobar el diseño de ${o.orderNumber} y subirlo a la carpeta de corte en Drive? Esto lo manda a producción.`, { icon: 'fa-cloud-arrow-up', confirmText: 'Aprobar y subir' })) { btn.disabled = false; return; }
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo…';
+                const d = await _dlCall(dh, '/approve', {});
+                close();
+                o.svgCorteUrl = d.driveUrl;
+                _dlSetLocal(orderId, { ...a, status: 'approved', driveUrl: d.driveUrl });
+                if (d.driveUrl) window.open(d.driveUrl, '_blank', 'noopener');
+            } else if (act === 'reject') {
+                await _dlCall(dh, '/reject', { reason: note });
+                close(); _dlSetLocal(orderId, { ...a, status: 'rejected' });
+            } else if (act === 'redo') {
+                if (ready) await _dlCall(dh, '/reject', { reason: note || 'rehacer' }).catch(() => {});
+                close(); await startDesignBeta(orderId, null, note);
+            }
+        } catch (e) { btn.disabled = false; alert(e.message || e); }
+    });
+}
+window.openDesignBeta = openDesignBeta;
 
 // --- "A Mockup": empuja (o quita) el pedido a la cola de la sección Mockup para generarle un preview,
 // SIN cambiar su estatus (sigue en Fabricar/Corregir y sigue aquí en Pendientes de Diseño). Actualiza el

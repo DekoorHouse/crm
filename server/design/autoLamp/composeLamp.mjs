@@ -95,8 +95,7 @@ export function pictureSizeMm(image) {
  */
 export function composeLamp({ image, name, font, title }) {
     const text = String(name || '').trim();
-    if (!text) throw new Error('Falta el nombre de la lámpara.');
-    const document = { ...blankDocument(), name: title || `Lámpara ${text}`, ...PAGE };
+    const document = { ...blankDocument(), name: title || `Lámpara ${text}`.trim(), ...PAGE };
 
     // 1) Marco (PowerClip vacío con base blanca) e imagen de grabado llenándolo.
     const frame = frameObject();
@@ -106,6 +105,8 @@ export function composeLamp({ image, name, font, title }) {
     placeInPowerClip(document, new Set([picture.id]), frame.id);
     const content = frame.powerClip.objects[0];
     fitPowerClip(frame, 'cover', { x: content.x, y: content.y, width: content.width, height: content.height });
+    // Sin nombre (diseños que solo llevan la imagen): solo el marco con su grabado.
+    if (!text) return { document: validateDocument(document), textId: null, frameId: frame.id };
 
     // 2) Nombre centrado, tocando la base, del tamaño que quepa en ancho y alto…
     const unit = font.getPath(text, 0, 0, 1).getBoundingBox();

@@ -8739,6 +8739,13 @@ router.get('/design-pending', async (req, res) => {
                 // foto/frase para grabar (MANUAL_SPECIAL_RE): esos requieren diseño manual o Modo 4. Un
                 // "Especial: recoger en tienda" o "…sin la 'y'" SÍ es elegible. Habilita "Diseñar con IA".
                 iaEligible: isCorazon(p) && !MANUAL_SPECIAL_RE.test(datosOf(p)),
+                // BETA "Diseño IA" (autoLamp): estado del diseño que arma el sistema y espera aprobación.
+                autoLamp: p.autoLamp && p.autoLamp.beta ? {
+                    status: p.autoLamp.status || null, step: p.autoLamp.step || null, error: p.autoLamp.error || null,
+                    previewUrl: p.autoLamp.previewUrl || null, projectId: p.autoLamp.projectId || null,
+                    driveUrl: p.autoLamp.driveUrl || null, brief: p.autoLamp.brief || null, note: p.autoLamp.note || null,
+                    updatedAt: tsToMs(p.autoLamp.updatedAt),
+                } : null,
                 // ¿Se empujó a mano a la cola de Mockup ("A Mockup")? Pinta el estado del botón.
                 mockupForce: !!p.mockupForce,
                 // ¿Se empujó a mano DESDE Mockup a esta cola ("A Diseño", designForce)? Pinta el badge "Desde Mockup".

@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dekoor · Editor V2</title>
   <meta name="theme-color" content="#191b22">
-  <link rel="stylesheet" href="/editor-v2/style.css?v=auto-lamp-3">
+  <link rel="stylesheet" href="/editor-v2/style.css?v=design-beta-1">
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">D</span><strong>dekoor<span> / editor</span></strong><small>V2 · BASE</small></div>
     <input id="document-name" aria-label="Nombre del documento" value="Sin título" maxlength="120">
     <div class="file-actions">
-      <button id="autosave-state" class="autosave-state" hidden></button><button data-action="new">Nuevo</button><button data-action="open">Abrir</button><button data-action="save" title="Guardar proyecto (Ctrl+S)">Guardar proyecto</button><button data-action="export" class="primary" title="Exportar (Ctrl+E)" aria-keyshortcuts="Control+E">Exportar ↗</button>
+      <button id="autosave-state" class="autosave-state" hidden></button><button data-action="new">Nuevo</button><button data-action="open">Abrir</button><button data-action="save" title="Guardar proyecto (Ctrl+S)">Guardar proyecto</button><button id="order-approve" class="primary" hidden title="Sube este diseño a la carpeta de corte en Drive (producción)">Aprobar y subir a Drive</button><button data-action="export" class="primary" title="Exportar (Ctrl+E)" aria-keyshortcuts="Control+E">Exportar ↗</button>
     </div>
   </header>
   <div class="commandbar">
@@ -214,6 +214,6 @@
       <button type="button" id="raster-apply" class="primary" hidden>Aplicar</button>
     </div>
   </dialog>
-  <script type="module" src="/editor-v2/app.mjs?v=auto-lamp-3"></script>
+  <script type="module" src="/editor-v2/app.mjs?v=design-beta-1"></script>
 </body>
 </html>
