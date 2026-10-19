@@ -191,15 +191,24 @@ export async function exportRdworksSvg(document, font) {
         const lum = (artPx[p] * 299 + artPx[p + 1] * 587 + artPx[p + 2] * 114) / 1000;
         grey[i] = inside && lum < 128 ? 0 : 255;              // 1 bit: negro se graba, blanco no
     }
-    const png = Buffer.from(pngWithDpi(await sharp(grey, { raw: { width: w, height: h, channels: 1 } }).png({ palette: true, colours: 2 }).toBuffer(), RDWORKS_DPI));
+    // GIRO 90° A LA DERECHA + ESPEJO (Chris, 19-oct-2026), como se acomoda en la láser. Girar a la derecha
+    // (x, y) -> (H - y, x) y luego espejear de izquierda a derecha da exactamente (x, y) -> (y, x): se
+    // TRANSPONE. Se aplica de verdad a los pixeles y a las coordenadas (sin transform="" que RDWorks pueda
+    // leer mal). Solo en este archivo: los previos del equipo y del cliente quedan derechos.
+    const turned = Buffer.alloc(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) turned[x * h + y] = grey[y * w + x];
+    const png = Buffer.from(pngWithDpi(await sharp(turned, { raw: { width: h, height: w, channels: 1 } }).png({ palette: true, colours: 2 }).toBuffer(), RDWORKS_DPI));
     const line = { ...frame, fill: 'none', stroke: '#ff0000', strokeWidth: .3 };
     delete line.powerClip; delete line.overlay;
     const cut = exportSvg({ ...blankDocument(), width: document.width, height: document.height, objects: [line] })
-        .match(/<path [^>]*\/>/)[0];
+        .match(/<path [^>]*\/>/)[0]
+        // El trayecto es absoluto (M/C/L/Z con pares x y): se intercambia cada par.
+        .replace(/ d="([^"]*)"/, (_, d) => ` d="${d.replace(/(-?\d*\.?\d+(?:e-?\d+)?)[ ,]+(-?\d*\.?\d+(?:e-?\d+)?)/gi, '$2 $1')}"`);
+    if (/[a-y]/i.test(cut.match(/ d="([^"]*)"/)[1].replace(/[MCLZ]/g, ''))) throw new Error('La línea de corte trae comandos que no se pueden girar.');
     return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${document.width}mm" height="${document.height}mm" viewBox="0 0 ${document.width} ${document.height}">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${document.height}mm" height="${document.width}mm" viewBox="0 0 ${document.height} ${document.width}">
 <title>${String(document.name || '').replace(/[<&>"]/g, '')}</title>
-<image x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
+<image x="${box.y}" y="${box.x}" width="${box.height}" height="${box.width}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
 ${cut}
 </svg>`;
 }
