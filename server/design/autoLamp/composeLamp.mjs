@@ -200,12 +200,12 @@ export async function rdworksPiece(document, font) {
         const lum = (artPx[p] * 299 + artPx[p + 1] * 587 + artPx[p + 2] * 114) / 1000;
         grey[i] = inside && lum < 128 ? 0 : 255;              // 1 bit: negro se graba, blanco no
     }
-    // GIRO 90° A LA DERECHA + ESPEJO (Chris, 19-oct-2026), como se acomoda en la láser. Girar a la derecha
-    // (x, y) -> (H - y, x) y luego espejear de izquierda a derecha da exactamente (x, y) -> (y, x): se
-    // TRANSPONE. Se aplica de verdad a los pixeles y a las coordenadas (sin transform="" que RDWorks pueda
-    // leer mal). Solo en este archivo: los previos del equipo y del cliente quedan derechos.
+    // ACOMODO PARA LA LÁSER (Chris, 19-oct-2026): girar 90° a la derecha + espejear (= transponer, (x, y) ->
+    // (y, x)) y luego girar 180° para que la pestaña de la base quede a la IZQUIERDA. Todo junto es
+    // (x, y) -> (H - y, W - x). Se aplica de verdad a los pixeles y a las coordenadas (sin transform="" que
+    // RDWorks pueda leer mal). Solo en este archivo: los previos del equipo y del cliente quedan derechos.
     const turned = Buffer.alloc(w * h);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) turned[x * h + y] = grey[y * w + x];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) turned[(w - 1 - x) * h + (h - 1 - y)] = grey[y * w + x];
     const png = Buffer.from(pngWithDpi(await sharp(turned, { raw: { width: h, height: w, channels: 1 } }).png({ palette: true, colours: 2 }).toBuffer(), RDWORKS_DPI));
     const line = { ...frame, fill: 'none', stroke: '#ff0000', strokeWidth: .3 };
     delete line.powerClip; delete line.overlay;
@@ -220,15 +220,16 @@ const NUMBER_PAIR = /(-?\d*\.?\d+(?:e-?\d+)?)[ ,]+(-?\d*\.?\d+(?:e-?\d+)?)/gi;
 
 /**
  * Una HOJA para RDWorks con 1 o 2 piezas. placements: [{ piece, dx }] (dx = cuánto se recorre la pieza en X
- * antes de girar). Toda la hoja se transpone: (x, y) -> (y, x).
+ * antes de girar). Toda la hoja (W × H sin girar) se acomoda: (x, y) -> (H - y, W - x), y queda de H × W.
  */
 export function rdworksSheet(placements, title = '') {
     const page = placements[0].piece.page;
+    const W = page.width, H = page.height;
     const body = placements.map(({ piece, dx }) => {
         const { box, png } = piece;
-        // El trayecto es absoluto (M/C/L/Z con pares x y): se recorre y se intercambia cada par.
-        const d = piece.d.replace(NUMBER_PAIR, (_, x, y) => `${(+y).toFixed(4)} ${(+x + dx).toFixed(4)}`);
-        return `<image x="${box.y}" y="${box.x + dx}" width="${box.height}" height="${box.width}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
+        // El trayecto es absoluto (M/C/L/Z con pares x y): se recorre y se acomoda cada par.
+        const d = piece.d.replace(NUMBER_PAIR, (_, x, y) => `${(H - +y).toFixed(4)} ${(W - (+x + dx)).toFixed(4)}`);
+        return `<image x="${H - box.y - box.height}" y="${W - (box.x + dx) - box.width}" width="${box.height}" height="${box.width}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
 <path d="${d}" fill="none" stroke="#ff0000" stroke-width="0.3"/>`;
     }).join('\n');
     return `<?xml version="1.0" encoding="UTF-8"?>
