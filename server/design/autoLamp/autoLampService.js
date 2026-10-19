@@ -458,7 +458,11 @@ async function handleBetaDecision(orderId, decision, { clientText = '', changeSu
     const dh = order.consecutiveOrderNumber;
     if (decision === 'approved') {
         await ref.update({ 'autoLamp.client': { ...(order.autoLamp?.client || {}), status: 'approved', answeredAt: now(), text: String(clientText).slice(0, 300) } });
-        return;
+        // El "sí" del cliente sube el archivo de RDWorks a la carpeta SVG Corte de Drive (Chris, 19-oct-2026).
+        // approve() tiene el candado contra doble subida; si algo falla, queda para subirlo a mano.
+        if (!dh) return { uploaded: false, error: 'Pedido sin número.' };
+        try { return { uploaded: true, ...(await approve(dh, { actor: { email: 'cliente (aprobó por WhatsApp)' } })) }; }
+        catch (error) { return { uploaded: false, error: error.message }; }
     }
     if (decision === 'changes') {
         const note = `El cliente pidió este cambio: ${changeSummary || clientText}`.slice(0, 500);

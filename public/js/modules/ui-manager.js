@@ -907,7 +907,7 @@ function _dlSetLocal(orderId, autoLamp) {
 // Qué pasó con el previo que se le mandó al cliente (autoLamp.client): enviado / aprobó / pidió cambio.
 const _DL_CLIENT = {
     sent: ['#0ea5e9', 'fa-paper-plane', 'Enviado al cliente — esperando su respuesta'],
-    approved: ['#16a34a', 'fa-circle-check', 'El cliente APROBÓ el diseño — falta su OK para subir a Drive'],
+    approved: ['#16a34a', 'fa-circle-check', 'El cliente APROBÓ el diseño — se sube solo a Drive (SVG Corte)'],
     changes: ['#d97706', 'fa-pen', 'El cliente pidió un cambio — la IA lo rehízo, revísalo y reenvíaselo'],
 };
 function _dlClientBox(c) {
@@ -1046,7 +1046,7 @@ function openDesignBeta(orderId) {
             if (act === 'send-client') {
                 const prev = a.clientPreviewUrl || (await _dlCall(dh, '/client-preview', {})).url;
                 a.clientPreviewUrl = prev;
-                if (!await showConfirmModal(`¿Mandarle este previo al cliente de ${o.orderNumber} por su chat? Se le pregunta si lo aprueba; su respuesta la clasifica la IA (aprobado / cambios). Nada se sube a Drive sin ustedes.<br><img src="${escapeHtml(prev)}" style="max-width:220px;border-radius:8px;margin-top:8px">`, { icon: 'fa-paper-plane', confirmText: 'Mandar al cliente' })) { btn.disabled = false; return; }
+                if (!await showConfirmModal(`¿Mandarle este previo al cliente de ${o.orderNumber} por su chat? Se le pregunta si lo aprueba; si lo aprueba, se sube solo a Drive (SVG Corte); si pide un cambio, la IA lo rehace para que lo revisen.<br><img src="${escapeHtml(prev)}" style="max-width:220px;border-radius:8px;margin-top:8px">`, { icon: 'fa-paper-plane', confirmText: 'Mandar al cliente' })) { btn.disabled = false; return; }
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mandando…';
                 await _dlCall(dh, '/send-client', {});
                 close(); _dlSetLocal(orderId, { ...a, client: { status: 'sent' } });

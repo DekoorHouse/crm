@@ -171,9 +171,12 @@ async function handleReply(contactId, message, contactRef, contactData) {
                 text: `¡Perfecto! 🎉 Tu diseño quedó aprobado y ya lo pasamos a producción ✨ En cuanto tu lámpara esté lista te aviso por aquí 🙌`,
             });
             if (isBeta(order)) {
-                // Diseño IA BETA: el "sí" del cliente NO sube nada; la tarjeta queda en verde y el equipo sube.
-                await require('./autoLamp/autoLampService').handleBetaDecision(orderId, 'approved', { clientText }).catch(e => console.warn('[design-approval] beta aprobado:', e.message));
-                await notifyAdmin(`✅ ${dh} — el cliente APROBÓ el diseño de la IA (BETA). Falta tu OK: Pendientes de Diseño → Revisar diseño → «Aprobar y subir a Drive».`);
+                // Diseño IA BETA: el "sí" del cliente sube el archivo para RDWorks a la carpeta SVG Corte.
+                const r = await require('./autoLamp/autoLampService').handleBetaDecision(orderId, 'approved', { clientText })
+                    .catch(e => ({ uploaded: false, error: e.message }));
+                await notifyAdmin(r && r.uploaded
+                    ? `✅ ${dh} — el cliente APROBÓ el diseño de la IA (BETA) y ya se subió a Drive (SVG Corte): ${r.driveUrl}`
+                    : `⚠️ ${dh} — el cliente APROBÓ el diseño de la IA (BETA) pero NO se pudo subir a Drive: ${(r && r.error) || 'error desconocido'}. Súbelo a mano: Pendientes de Diseño → Revisar diseño → «Aprobar y subir a Drive».`);
                 return;
             }
             await notifyAdmin(`✅ ${dh} — el cliente APROBÓ su diseño (${designText}). Se sube a Drive automáticamente y el pedido pasa a "Diseñado por IA".`);
