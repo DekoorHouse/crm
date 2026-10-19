@@ -75,8 +75,12 @@ function orderLamps(order) {
     return items.map((item, index) => {
         const datos = String(item.datosProducto || '').trim();
         const name = (datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1];
-        return { index, producto: String(item.producto || '').trim(), datos, copies: Math.max(1, parseInt(item.cantidad, 10) || 1),
-            label: [String(item.producto || '').trim(), name && name.trim()].filter(Boolean).join(' · ') || `Lámpara ${index + 1}` };
+        // El personaje va en el nombre de la lámpara cuando el producto no lo dice ("Lámpara infantil" ×2 con
+        // rana y Stitch se llamaban igual y la IA las confundía, DH18186).
+        const producto = String(item.producto || '').trim(), personaje = ((datos.match(/personaje\s*:\s*([^|\n]+)/i) || [])[1] || '').trim();
+        const conPersonaje = personaje && !producto.toLowerCase().includes(personaje.toLowerCase()) ? personaje : '';
+        return { index, producto, datos, personaje, copies: Math.max(1, parseInt(item.cantidad, 10) || 1),
+            label: [producto, conPersonaje, name && name.trim()].filter(Boolean).join(' · ') || `Lámpara ${index + 1}` };
     });
 }
 
@@ -168,6 +172,7 @@ Conversación reciente (lo más nuevo al final):
 ${history || '(sin mensajes)'}
 
 Abajo van las imágenes. Las del CLIENTE se llaman C0, C1…; las que mandamos NOSOTROS se llaman N0, N1… (entre las nuestras puede haber MOCKUPS: imágenes de la lámpara terminada o prendida con el diseño y el nombre que ya le enseñamos al cliente; también hay datos de pago, catálogo, etc.).
+OJO: el cliente puede cambiar de opinión varias veces (pedir otro personaje y luego regresar al primero). Las lámparas que hay que diseñar son SOLO las de la lista de arriba (lo que quedó registrado): un mockup de una opción que el cliente DESCARTÓ no se usa para nada. Busca el mockup que corresponda al PERSONAJE de cada lámpara aunque sea de antes.
 Para CADA lámpara decide:
 - "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
 - "imagen": la imagen elegida ("N2", "C0"…), o "" si es ilustración. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
@@ -599,8 +604,25 @@ async function generate(dh, options = {}) {
     try {
         let plans;
         if (beta) {
-            plans = await designBriefOrder({ order, lamps, history: await chatHistory(contactId), clientImages: await customerImages(contactId),
-                sentImages: await ourImages(contactId), note: options.note, previous: partial ? previous : [] });
+            const briefInput = { order, lamps, history: await chatHistory(contactId), clientImages: await customerImages(contactId),
+                sentImages: await ourImages(contactId), note: options.note, previous: partial ? previous : [] };
+            plans = await designBriefOrder(briefInput);
+            // Lámparas que se quedaron sin imagen NI descripción (la IA se confundió, DH18186): se le pregunta otra
+            // vez SOLO por ellas; si sigue sin encontrarla, se ilustra con su personaje y queda como duda (no se
+            // manda sola). Así un pedido de varias lámparas ya no falla completo por una.
+            const empty = lamps.filter(l => !templateFor(l) && !plans[l.index]?.reference && !plans[l.index]?.prompt);
+            if (empty.length) {
+                await setStatus(ref, { status: 'working', step: 'Revisando de nuevo las lámparas sin imagen' });
+                const retry = await designBriefOrder({ ...briefInput, note: [options.note, `Revisa otra vez SOLO estas lámparas, que se quedaron sin imagen ni descripción: ${empty.map(l => `L${l.index} (${l.label})`).join(', ')}. Busca entre las imágenes N el mockup de su personaje; si no hay, describe la ilustración.`].filter(Boolean).join(' · ') }).catch(() => null);
+                for (const l of empty) {
+                    const again = retry && retry[l.index];
+                    if (again && (again.reference || again.prompt)) { plans[l.index] = again; continue; }
+                    plans[l.index] = { cambia: true, tipo: 'personaje', ...(plans[l.index] || {}), fuente: 'ilustracion', reference: null,
+                        nombre: plans[l.index]?.nombre || ((l.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1] || '').trim(),
+                        prompt: `${l.personaje || l.producto || 'personaje'}, tierno, de cuerpo completo`,
+                        advertencias: [...(plans[l.index]?.advertencias || []), 'no encontré su mockup ni imagen en el chat; la ilustré con su personaje: revisa que sea lo que pidió'] };
+                }
+            }
         } else {
             const { name, datos } = orderName(order);
             plans = [{ fuente: 'cliente', reference: await pickReference(await customerImages(contactId), datos), nombre: name, prompt: '', advertencias: [] }];
