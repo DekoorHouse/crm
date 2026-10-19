@@ -8776,6 +8776,17 @@ router.get('/design-pending', async (req, res) => {
                     // hacía rebotar la tarjeta para siempre, DH13603): correccionAbierta mira la marca de la
                     // diseñadora, así que "✓ Diseñado" —o cambiar el estatus— la sigue cerrando.
                     if (correccionAbierta(p)) return 'pendientes';
+                    // DISEÑO BETA ya en Drive (Chris, 19-oct-2026): sale de Pendientes a su propia columna,
+                    // salvo que el cliente haya pedido algo DESPUÉS de la subida (entonces regresa) o que alguien
+                    // haya movido la tarjeta a mano después (manda la columna manual).
+                    if (p.svgCorteBy === 'auto-lamp-beta' && p.autoLamp && p.autoLamp.status === 'approved') {
+                        const subidoMs = tsToMs(p.svgCorteAt);
+                        const pidioDespues = Math.max(tsToMs(p.pendienteDisenoAt), tsToMs(p.corregirAt), tsToMs(p.designForceAt),
+                            tsToMs(p.reenvioAt), tsToMs(p.videoRequestedAt), tsToMs(p.productoAgregadoPostPagoAt)) > subidoMs;
+                        if (pidioDespues) return 'pendientes';
+                        if (p.disenoBoardCol && tsToMs(p.disenoBoardColAt) > subidoMs) return p.disenoBoardCol;
+                        return 'diseno_beta';
+                    }
                     // REACTIVACIÓN (única regla que puede regresar una tarjeta a Pendientes): la columna
                     // manual solo vale mientras el cliente no haya pedido algo DESPUÉS de moverla. Si pidió
                     // (otro video, otra corrección…), la marca queda vieja y la tarjeta vuelve sola.
@@ -9310,7 +9321,7 @@ router.post('/design-pending/:orderId/ia-edit', async (req, res) => {
 router.post('/design-pending/:orderId/board-col', async (req, res) => {
     const { orderId } = req.params;
     const col = String((req.body && req.body.col) || '').trim();
-    const VALID = ['pendientes', 'esperando_confirmacion', 'esperando_pago', 'terminado'];
+    const VALID = ['pendientes', 'esperando_confirmacion', 'esperando_pago', 'diseno_beta', 'terminado'];
     if (!VALID.includes(col)) return res.status(400).json({ success: false, message: 'Columna inválida.' });
     try {
         const ref = db.collection('pedidos').doc(orderId);

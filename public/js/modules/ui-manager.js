@@ -460,6 +460,8 @@ const DP_BOARD_COLS = [
     ['pendientes', 'Pendientes', '#6f42c1'],
     ['esperando_confirmacion', 'Esperando confirmación', '#0ea5e9'],
     ['esperando_pago', 'Esperando pago', '#f59e0b'],
+    // Lo que el Diseño IA BETA ya subió a Drive (sale de Pendientes; regresa solo si el cliente pide algo después).
+    ['diseno_beta', 'Diseño Beta', '#db2777'],
     ['terminado', 'Terminado', '#64748b'],
 ];
 
