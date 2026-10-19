@@ -186,7 +186,8 @@ export function renderClientPreview(document, font, { width = 1100 } = {}) {
     const line = draw(frameOnly({ fill: 'none', stroke: '#9aa3ab', strokeWidth: .6 }), 'rgba(0,0,0,0)').pixels;
     const out = Buffer.alloc(design.width * design.height * 3);
     for (let i = 0, j = 0; j < out.length; i += 4, j += 3) {
-        const inFrame = area[i] > 127, inBase = base[i] > 127;
+        // Cualquier pixel que toque la base (aunque sea el borde suavizado) va blanco: si no, queda una costura gris.
+        const inFrame = area[i] > 127, inBase = base[i] > 8;
         for (let c = 0; c < 3; c++) {
             let v = 255;
             if (inBase) v = 255;   // la base también blanca (Chris, 19-oct-2026)

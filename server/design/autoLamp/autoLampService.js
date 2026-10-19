@@ -26,7 +26,7 @@ const RASTER_MODEL = 'openai/gpt-image-2.5-sunburst';
 // en su horario (qwenPod); si está apagada se usa gpt-image para que el diseño no se quede sin hacer.
 const BETA_MODEL = 'dekoor/qwen-image-2.1';
 // Sube cuando cambia cómo se ve el previo para el cliente: los ya guardados se vuelven a armar.
-const CLIENT_PREVIEW_STYLE = 2;
+const CLIENT_PREVIEW_STYLE = 3;
 const RASTER_PROMPT = 'dame el diseño de la imagen con rellenos blancos y fondos negros. En raster engrave con degradado en trama';
 // Último paso del equipo: "Convertir a mapa de bits" en difuminado (1 bit, Floyd–Steinberg) a la
 // resolución de la láser, al tamaño real que la imagen tiene en el marco.
