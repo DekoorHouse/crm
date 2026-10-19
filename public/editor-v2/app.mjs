@@ -2452,12 +2452,23 @@ $('#order-approve').onclick = async () => {
         // (imagen 1 bit + línea roja) desde esa versión guardada.
         if (cloudPending() && !cloudConflict) await autosave();
         if (cloudConflict || cloudPending()) throw new Error('No se pudo guardar el diseño en Firebase; guárdalo y vuelve a aprobar.');
-        const response = await fetch(`/api/auto-lamp/${orderLink.dh}/approve`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await cloudApi.token()}` },
-            body: JSON.stringify({ fromEditor: true }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || data.success === false) throw new Error(data.error || 'El servidor no pudo subirlo.');
+        const send = async force => {
+            const response = await fetch(`/api/auto-lamp/${orderLink.dh}/approve`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await cloudApi.token()}` },
+                body: JSON.stringify({ fromEditor: true, ...(force ? { force: true } : {}) }),
+            });
+            return { ok: response.ok, data: await response.json().catch(() => ({})) };
+        };
+        let { ok, data } = await send(false);
+        // El pedido YA tiene archivo en Drive: avisar y subir otra vez solo si la persona lo confirma.
+        if (!ok && data.code === 'ALREADY_UPLOADED' && data.previous) {
+            const p = data.previous;
+            if (!window.confirm(`⚠️ DH${orderLink.dh} YA se subió a Drive el ${p.when}, por ${p.by}.\n\nSi lo subes otra vez, en la carpeta de corte quedan DOS archivos del mismo pedido. Hazlo solo si el anterior NO se va a cortar.\n\n¿Subirlo otra vez?`)) {
+                button.disabled = false; button.textContent = 'Aprobar y subir a Drive'; status('No se subió: el pedido ya estaba en Drive.'); return;
+            }
+            ({ ok, data } = await send(true));
+        }
+        if (!ok || data.success === false) throw new Error(data.error || 'El servidor no pudo subirlo.');
         button.textContent = 'En Drive ✓';
         status(`DH${orderLink.dh} aprobado y subido a Drive: ${data.fileName || ''}`);
         if (data.driveUrl) window.open(data.driveUrl, '_blank', 'noopener');

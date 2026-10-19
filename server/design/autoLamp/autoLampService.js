@@ -503,7 +503,10 @@ async function generate(dh, options = {}) {
     const orderDoc = await findOrder(dh);
     const order = orderDoc.data(), ref = orderDoc.ref;
     const beta = !!options.beta;
-    if (['uploading', 'approved'].includes(order.autoLamp?.status)) throw Object.assign(new Error('Este diseño ya se aprobó o se está subiendo a Drive.'), { status: 409 });
+    // Un diseño ya aprobado solo se rehace si el cliente pidió un cambio después de aprobar (se reabrió).
+    const reopened = order.autoLamp?.client?.status === 'change_after_approval';
+    if (order.autoLamp?.status === 'uploading' || (order.autoLamp?.status === 'approved' && !reopened))
+        throw Object.assign(new Error('Este diseño ya se aprobó o se está subiendo a Drive.'), { status: 409 });
     const contactId = order.contactId || order.telefono;
     const lamps = beta ? orderLamps(order) : orderLamps(order).slice(0, 1);
     const previous = lampsOf(order.autoLamp).filter(l => l.status === 'ready' && l.projectId);
@@ -689,6 +692,9 @@ async function afterReady(dh, lamps, mode, auth) {
         await orderDoc.ref.update({ 'autoLamp.step': step, 'autoLamp.autoSendHeld': why });
         await notifyAdmin(`🟡 DH${dh} — el diseño de la IA (BETA) no siguió solo: ${why}. Revísalo en Pendientes de Diseño → Revisar diseño.`);
     };
+    // Pedido que YA tiene archivo en Drive: no se le manda al cliente ni se sube solo (no cortar dos veces).
+    const before = alreadyUploaded(order);
+    if (before) return hold(`${before.text}. Para no repetir el pedido, el diseño nuevo se quedó sin mandar ni subir; si sí hay que reponerlo, apruébalo a mano`, 'Listo · el pedido ya estaba en Drive');
     const doubts = lamps.flatMap(l => (l.brief?.advertencias || []).map(a => lamps.length > 1 ? `${l.label}: ${a}` : a));
     if (doubts.length) return hold(`la IA anotó dudas (${doubts.join('; ')})`, 'Listo · revisar dudas');
     if (mode === 'mockup') {
@@ -760,19 +766,40 @@ async function changeAfterApproval(orderId, clientText = '') {
  * Sube a Drive (SVG Corte) las hojas para RDWorks del pedido, armadas desde la última versión guardada de cada
  * proyecto. svg: solo indica que se aprobó desde el editor.
  */
-async function approve(dh, { svg = null, actor = null } = {}) {
+// ¿El pedido YA tiene un archivo en la carpeta de corte (por el Beta, el corte automático, a mano…)? Para no
+// cortar dos veces el mismo pedido (Chris, 19-oct-2026). Devuelve la descripción o null.
+function alreadyUploaded(order) {
+    if (!order || !order.svgCorteAt) return null;
+    const at = order.svgCorteAt.toDate ? order.svgCorteAt.toDate() : null;
+    const when = at ? at.toLocaleString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'antes';
+    const by = { 'auto-lamp-beta': 'el Diseño IA (Beta)', 'server-svg-v1': 'el corte automático' }[order.svgCorteBy] || order.svgCorteBy || 'el equipo';
+    const links = (Array.isArray(order.svgCorteFiles) && order.svgCorteFiles.length ? order.svgCorteFiles.map(f => f.url) : [order.svgCorteUrl]).filter(Boolean);
+    return { when, by, links, text: `Este pedido YA se subió a Drive (SVG Corte) el ${when}, por ${by}${links.length ? `: ${links.join(' ')}` : ''}` };
+}
+
+/**
+ * Sube a Drive (SVG Corte) las hojas para RDWorks del pedido, armadas desde la última versión guardada de cada
+ * proyecto. svg: solo indica que se aprobó desde el editor. force: subir aunque el pedido YA tenga un archivo
+ * en Drive (solo una persona, después de ver el aviso; los caminos automáticos nunca lo mandan).
+ */
+async function approve(dh, { svg = null, actor = null, force = false } = {}) {
     const { uploadDrive } = require('../svgCutStorage');
     const orderDoc = await findOrder(dh);
     const ref = orderDoc.ref;
     // Candado contra doble subida: solo un 'ready' pasa a 'uploading'. Un 'uploading' que quedó colgado
-    // (reinicio a media subida) NO se reintenta solo: Drive pudo haberlo recibido.
+    // (reinicio a media subida) NO se reintenta solo: Drive pudo haberlo recibido. Y si el pedido ya tiene un
+    // archivo en Drive (por cualquier camino), no se vuelve a subir sin que una persona lo confirme.
+    let previous = null;
     const autoLamp = await db.runTransaction(async tx => {
-        const current = (await tx.get(ref)).data()?.autoLamp;
+        const data = (await tx.get(ref)).data() || {}, current = data.autoLamp;
         if (!current || current.status !== 'ready') {
             const why = current?.status === 'uploading' ? 'Ya se está subiendo (o se cortó a media subida: revisa Drive antes de reintentar).'
-                : current?.status === 'approved' ? 'Ya se aprobó y subió a Drive.' : 'No hay un diseño listo para aprobar.';
-            throw Object.assign(new Error(why), { status: 409 });
+                : current?.status === 'approved' ? (alreadyUploaded(data)?.text || 'Ya se aprobó y subió a Drive.') : 'No hay un diseño listo para aprobar.';
+            throw Object.assign(new Error(why), { status: 409, code: current?.status === 'approved' ? 'ALREADY_UPLOADED' : undefined });
         }
+        const before = alreadyUploaded(data);
+        if (before && !force) throw Object.assign(new Error(`${before.text}. Para no cortarlo dos veces NO se volvió a subir.`), { status: 409, code: 'ALREADY_UPLOADED', previous: before });
+        if (before) previous = { at: data.svgCorteAt, by: data.svgCorteBy || null, files: data.svgCorteFiles || (data.svgCorteUrl ? [{ url: data.svgCorteUrl }] : []) };
         tx.update(ref, { 'autoLamp.status': 'uploading', 'autoLamp.step': 'Subiendo a Drive', 'autoLamp.updatedAt': now() });
         return current;
     });
@@ -798,11 +825,14 @@ async function approve(dh, { svg = null, actor = null } = {}) {
             svgCorteUrls: files.length > 1 ? files.map(f => f.url).join(',') : null,
             svgCorteFileName: files[0].name, svgCortePreviewUrl: files[0].preview || autoLamp.previewUrl || null, svgCorteStorageUrl: files[0].svg,
             svgCorteFiles: files,
+            // Subida repetida confirmada por una persona: se guarda qué había antes.
+            ...(previous ? { svgCorteHistory: admin.firestore.FieldValue.arrayUnion({ ...previous, replacedBy: actor?.email || actor?.uid || null, replacedAt: admin.firestore.Timestamp.now() }) } : {}),
             'autoLamp.status': 'approved', 'autoLamp.step': 'Aprobado y en Drive', 'autoLamp.driveUrl': files[0].url, 'autoLamp.driveUrls': files.map(f => f.url),
             'autoLamp.approvedAt': now(), 'autoLamp.approvedBy': actor?.email || actor?.uid || null,
             'autoLamp.approvedFromEditor': !!svg, 'autoLamp.error': admin.firestore.FieldValue.delete(), 'autoLamp.updatedAt': now(),
         });
         try { await require('../designPending').recomputeForContact(orderDoc.data().contactId || orderDoc.data().telefono); } catch (_) {}
+        if (previous) await notifyAdmin(`⚠️ DH${dh} se subió OTRA VEZ a Drive (SVG Corte), confirmado por ${actor?.email || 'una persona'}. Ya tenía archivo de antes: revisa que no se corten los dos. Nuevo: ${files.map(f => f.url).join(' ')}`);
         return { driveUrl: files[0].url, driveUrls: files.map(f => f.url), fileName: files[0].name };
     } catch (error) {
         // Antes de mandar a Drive (o si Drive rechazó con error claro) vuelve a 'ready' para reintentar. Si ya
@@ -826,5 +856,5 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
+module.exports = { generate, status, approve, reject, alreadyUploaded, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
     pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor };

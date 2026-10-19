@@ -891,7 +891,7 @@ async function _dlCall(dh, path, body) {
     const res = await fetch(`${API_BASE_URL}/api/auto-lamp/${dh}${path}`, body === undefined ? {} : {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const d = await res.json().catch(() => ({}));
-    if (!res.ok || d.success === false) throw new Error(d.error || ('HTTP ' + res.status));
+    if (!res.ok || d.success === false) throw Object.assign(new Error(d.error || ('HTTP ' + res.status)), { code: d.code || null, previous: d.previous || null });
     return d;
 }
 
@@ -922,7 +922,9 @@ function _dlClientBadge(c) {
 
 // Controles de la tarjeta según el estado del diseño Beta.
 function dpBetaControls(o) {
-    if (o.svgCorteUrl) return '';
+    // Ya en Drive: si no lo hizo el Beta, igual se puede diseñar con IA (avisa antes); si lo hizo el Beta y el
+    // cliente pidió un cambio después de aprobar, se puede rehacer.
+    if (o.svgCorteUrl && o.autoLamp && o.autoLamp.status === 'approved' && o.autoLamp.client?.status !== 'change_after_approval') return '';
     const a = o.autoLamp, bb = 'padding:4px 8px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap;border:none';
     if (a && (a.status === 'working' || a.status === 'uploading')) {
         _dlWatch(o);
@@ -975,6 +977,8 @@ function _dlWatch(o) {
 async function startDesignBeta(orderId, el, note, lamps) {
     const o = (window._designPendingData || []).find(x => x.id === orderId);
     if (!o) return;
+    // Pedido que YA tiene archivo en la carpeta de corte: avisar antes de diseñarlo otra vez.
+    if (el && o.svgCorteUrl && !await showConfirmModal(`⚠️ <b>${escapeHtml(o.orderNumber)} ya se subió a Drive</b>${o.svgCorteAt ? ' el ' + new Date(o.svgCorteAt).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''} (<a href="${escapeHtml(o.svgCorteUrl)}" target="_blank" rel="noopener">ver archivo</a>).<br><br>¿Diseñarlo de nuevo con la IA? No se le manda al cliente ni se sube nada sin que lo confirmes.`, { icon: 'warning', confirmText: 'Diseñar de nuevo', cancelText: 'Cancelar' })) return;
     if (el) el.disabled = true;
     try {
         await _dlCall(_dlDh(o), '?beta=1', { beta: true, note: note || '', ...(lamps && lamps.length ? { lamps } : {}) });
@@ -1085,7 +1089,15 @@ function openDesignBeta(orderId) {
             } else if (act === 'approve') {
                 if (!await showConfirmModal(`¿Aprobar el diseño de ${o.orderNumber} y subir ${lamps.reduce((n, l) => n + (l.copies || 1), 0) > 2 ? 'sus hojas' : 'su hoja'} para RDWorks a la carpeta SVG Corte de Drive? Esto lo manda a producción.`, { icon: 'fa-cloud-arrow-up', confirmText: 'Aprobar y subir' })) { btn.disabled = false; return; }
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo…';
-                const d = await _dlCall(dh, '/approve', {});
+                let d;
+                try { d = await _dlCall(dh, '/approve', {}); }
+                catch (e) {
+                    // El pedido YA tiene archivo en Drive: avisar y subir otra vez solo si la persona lo confirma.
+                    if (e.code !== 'ALREADY_UPLOADED' || !e.previous) throw e;
+                    const p = e.previous, links = (p.links || []).map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">ver archivo</a>`).join(' · ');
+                    if (!await showConfirmModal(`⚠️ <b>${o.orderNumber} ya se subió a Drive</b> el ${escapeHtml(p.when)}, por ${escapeHtml(p.by)}${links ? ' (' + links + ')' : ''}.<br><br>Si lo subes otra vez, en la carpeta de corte quedan DOS archivos del mismo pedido. Hazlo solo si el anterior NO se va a cortar.`, { icon: 'warning', danger: true, confirmText: 'Subir otra vez', cancelText: 'No subir' })) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-arrow-up"></i> Aprobar y subir a Drive'; return; }
+                    d = await _dlCall(dh, '/approve', { force: true });
+                }
                 close();
                 o.svgCorteUrl = d.driveUrl;
                 _dlSetLocal(orderId, { ...a, status: 'approved', driveUrl: d.driveUrl, driveUrls: d.driveUrls || null });

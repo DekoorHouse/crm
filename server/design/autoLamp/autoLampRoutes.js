@@ -41,8 +41,8 @@ router.post('/:dh/approve', async (req, res) => {
     const dh = dhOf(req.params.dh);
     if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
     if (running.has(dh)) return res.status(409).json({ success: false, error: 'Todavía se está generando este diseño.' });
-    try { res.json({ success: true, ...(await service.approve(dh, { svg: req.body?.fromEditor ? 'editor' : null, actor: req.apiAuth })) }); }
-    catch (error) { console.warn(`[AUTO-LAMP] aprobar DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo subir a Drive.' }); }
+    try { res.json({ success: true, ...(await service.approve(dh, { svg: req.body?.fromEditor ? 'editor' : null, actor: req.apiAuth, force: req.body?.force === true })) }); }
+    catch (error) { console.warn(`[AUTO-LAMP] aprobar DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo subir a Drive.', code: error.code || null, previous: error.previous || null }); }
 });
 
 // Manda el previo al CLIENTE (solo cuando una persona aprieta el botón) y deja el chat esperando su
