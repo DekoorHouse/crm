@@ -239,7 +239,7 @@ Responde SOLO este JSON: {"index": <número o -1 si ninguna sirve>, "motivo": "<
 async function rasterize(reference, { description = '', extra = '', prompt: override = '', model = RASTER_MODEL } = {}) {
     const files = [];
     if (reference) {
-        const { buffer } = await download(reference.url);
+        const { buffer } = reference.buffer ? reference : await download(reference.url);
         // Qwen entrega la imagen con la forma de la referencia: se manda cuadrada (relleno blanco) para que el
         // diseño salga cuadrado y quepa completo en el círculo.
         const fit = model === BETA_MODEL ? { fit: 'contain', background: '#ffffff' } : { fit: 'inside', withoutEnlargement: true };
@@ -280,12 +280,37 @@ async function rasterize(reference, { description = '', extra = '', prompt: over
     return { url, jobId: job.id, model };
 }
 
-// Qwen si la GPU está lista; si no (fuera de horario o falla la GPU), el modelo de siempre.
+// SIEMPRE Qwen (Chris, 19-oct-2026): si la GPU está apagada (fuera de su horario) se PRENDE y se espera a que
+// esté lista; OpenAI rechaza fotos de personas reales (DH18253). Solo si la GPU no logra arrancar se usa el
+// modelo de siempre como último recurso. Fuera de horario la GPU se queda prendida mientras se use (qwenPod).
+const QWEN_BOOT_WAIT_MS = 20 * 60 * 1000;
+async function ensureQwenReady(onStep) {
+    const qwenPod = require('../../imagenes/qwenPod');
+    if (!qwenPod.enabled()) return false;
+    let status = await qwenPod.getStatus().catch(() => null);
+    if (status?.status === 'ready') return true;
+    if (!['starting'].includes(status?.status)) await qwenPod.startPod('Diseño IA (Beta)').catch(error => console.warn('[AUTO-LAMP] no pude prender Qwen:', error.message));
+    const started = Date.now();
+    while (Date.now() - started < QWEN_BOOT_WAIT_MS) {
+        onStep?.(`Prendiendo la GPU de Qwen (tarda unos 10 min · ${Math.round((Date.now() - started) / 60000)} min)`);
+        await new Promise(resolve => setTimeout(resolve, 20000));
+        status = await qwenPod.getStatus().catch(() => null);
+        if (status?.status === 'ready') return true;
+        if (status?.status === 'error' || (status?.status === 'off' && Date.now() - started > 60000)) return false;
+    }
+    return false;
+}
 async function rasterizeBeta(reference, options) {
+    const qwenDown = error => error.status === 503 || /Qwen|GPU/i.test(error.message || '');
     try { return await rasterize(reference, { ...options, model: BETA_MODEL }); }
     catch (error) {
-        if (error.status !== 503 && !/Qwen|GPU/i.test(error.message || '')) throw error;
-        console.warn('[AUTO-LAMP] Qwen no disponible, uso gpt-image:', error.message);
+        if (!qwenDown(error)) throw error;
+        if (await ensureQwenReady(options.onStep)) {
+            options.onStep?.('GPU de Qwen lista: generando');
+            try { return await rasterize(reference, { ...options, model: BETA_MODEL }); }
+            catch (again) { if (!qwenDown(again)) throw again; error = again; }
+        }
+        console.warn('[AUTO-LAMP] Qwen no arrancó, uso gpt-image:', error.message);
         return { ...(await rasterize(reference, { ...options, model: RASTER_MODEL })), fallback: error.message };
     }
 }
@@ -429,6 +454,9 @@ async function fitToLampCircle(buffer, side = 2000) {
 // donde el círculo tiene centro (50 %, 48.1 %) y radio 48.1 % del lado (ver LAMP_CIRCLE).
 const TEMPLATES = {
     spiderman: { file: 'spiderman-grabado.png', match: /spider|hombre\s*ara[ñn]a/i, label: 'Spiderman (plantilla del taller)' },
+    // El nombre viene DENTRO del dibujo con su propia letra: Qwen lo cambia ("Cambia el nombre por …", como lo hace
+    // el equipo en /imagenes) sobre la referencia, que trae "Matías".
+    dino_premium: { file: 'dino-premium-referencia.png', match: /dino\s*premium/i, label: 'Dino premium (plantilla del taller)', rename: true },
 };
 const templateCache = {};
 const templateFor = lamp => Object.entries(TEMPLATES).find(([, t]) => t.match.test(`${lamp.producto} ${lamp.datos}`))?.[0] || null;
@@ -514,13 +542,17 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     if (plan.template) {
         // Plantilla del taller (p. ej. Spiderman): su grabado tal cual, sin IA; solo se le agrega el nombre.
         step('Usando la plantilla del taller');
-        raster = { url: null, jobId: null, model: TEMPLATES[plan.template].label, buffer: await templateImage(plan.template) };
+        const tpl = TEMPLATES[plan.template], image = await templateImage(plan.template);
+        const nombre = plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '';
+        raster = tpl.rename && nombre
+            ? await rasterizeBeta({ buffer: image, url: null }, { prompt: `Cambia el nombre por ${nombre.replace(/\s*·\s*/g, ' ')}`, onStep: step })
+            : { url: null, jobId: null, model: tpl.label, buffer: image };
     } else if (plan.fuente === 'mockup') {
         step('Convirtiendo el mockup a grabado');
-        raster = await rasterizeBeta(plan.reference, { prompt: plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT });
+        raster = await rasterizeBeta(plan.reference, { prompt: plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT, onStep: step });
     } else if (beta) {
         step(plan.reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes');
-        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '' });
+        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '', onStep: step });
     } else {
         step('Convirtiendo a grabado');
         raster = await rasterize(plan.reference);
@@ -528,7 +560,8 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const downloaded = raster.buffer || (await download(raster.url)).buffer;
     // Grabado listo (negro sobre blanco); el del mockup además se reacomoda para llenar el círculo.
     const engraved = await engravePolarity(downloaded);
-    const buffer = plan.template ? downloaded : plan.fuente === 'mockup' ? await fitToLampCircle(engraved) : engraved;
+    const cleanTemplate = plan.template && !TEMPLATES[plan.template].rename;   // el grabado del taller tal cual (Spiderman)
+    const buffer = cleanTemplate ? downloaded : plan.template ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(engraved) : engraved;
     const meta = await sharp(buffer).metadata();
     const font = await loadFont();
     const { composeLamp, renderPreview, pictureSizeMm, rdworksPiece } = await composerModule();
@@ -541,13 +574,15 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     // suele entregar blanco sobre negro: engravePolarity lo normaliza (Chris, 19-oct-2026). El previo del cliente es al revés.
     const rgba = await sharp(buffer).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
     // La plantilla ya es de trazos limpios: umbral (sin puntitos de difuminado en las orillas).
-    const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, plan.template ? { ...BITMAP, method: 'threshold' } : BITMAP);
+    const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, cleanTemplate ? { ...BITMAP, method: 'threshold' } : BITMAP);
     const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
 
     step('Armando el diseño');
     // El mockup ya trae el nombre dentro de la imagen (tal cual lo vio el cliente): no se le agrega otro. Si el
     // texto cambió, el mockup se sacó SIN letras y aquí va el texto final.
-    const engraveName = plan.template ? (plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '')
+    // Plantilla a la que Qwen ya le escribió el nombre (Dino premium): no se le pone otro encima.
+    const engraveName = plan.template && TEMPLATES[plan.template].rename ? ''
+        : plan.template ? (plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '')
         : plan.fuente === 'mockup' && !plan.textoCambia ? '' : plan.nombre;
     const title = [`DH${dh}`, lamp.label].filter(Boolean).join(' · ');
     const dataUrl = 'data:image/png;base64,' + png.toString('base64');
