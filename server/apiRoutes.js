@@ -8749,6 +8749,10 @@ router.get('/design-pending', async (req, res) => {
                     client: p.autoLamp.client ? { status: p.autoLamp.client.status || null, text: p.autoLamp.client.text || '' } : null,
                     autoSendHeld: p.autoLamp.autoSendHeld || null,
                     mode: p.autoLamp.mode || null, driveUrls: p.autoLamp.driveUrls || null,
+                    // Hojas que se subieron a Drive (para «Ver diseño»).
+                    files: p.autoLamp.status === 'approved' && Array.isArray(p.svgCorteFiles)
+                        ? p.svgCorteFiles.map(f => ({ name: f.name || '', url: f.url || null, preview: f.preview || null })) : null,
+                    approvedAt: tsToMs(p.autoLamp.approvedAt), approvedBy: p.autoLamp.approvedBy || null,
                     // Una entrada por lámpara del pedido (los de antes de oct-2026 traen una sola en la raíz).
                     lamps: require('./design/autoLamp/autoLampService').lampsOf(p.autoLamp).map(l => ({
                         index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null, template: l.template || null,

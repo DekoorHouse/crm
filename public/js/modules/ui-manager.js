@@ -926,7 +926,11 @@ function _dlClientBadge(c) {
 function dpBetaControls(o) {
     // Ya en Drive: si no lo hizo el Beta, igual se puede diseñar con IA (avisa antes); si lo hizo el Beta y el
     // cliente pidió un cambio después de aprobar, se puede rehacer.
-    if (o.svgCorteUrl && o.autoLamp && o.autoLamp.status === 'approved' && o.autoLamp.client?.status !== 'change_after_approval') return '';
+    // Ya subido por el Beta: «Ver diseño» (solo lectura: cómo quedó cada lámpara y la hoja que se subió).
+    if (o.svgCorteUrl && o.autoLamp && o.autoLamp.status === 'approved' && o.autoLamp.client?.status !== 'change_after_approval') {
+        const t = o.autoLamp.previewUrl ? `<img src="${escapeHtml(o.autoLamp.previewUrl)}" style="width:30px;height:30px;object-fit:cover;border-radius:5px;border:1px solid var(--color-border,#e5e7eb)">` : '';
+        return `<button onclick="openDesignBeta('${o.id}')" title="Ver cómo quedó el diseño que se subió a Drive" style="background:transparent;color:#db2777;border:1px solid #db2777;padding:2px 8px 2px 2px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:5px">${t}<i class="fas fa-eye"></i> Ver diseño</button>`;
+    }
     const a = o.autoLamp, bb = 'padding:4px 8px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap;border:none';
     if (a && (a.status === 'working' || a.status === 'uploading')) {
         _dlWatch(o);
@@ -992,7 +996,15 @@ window.startDesignBeta = startDesignBeta;
 const _DL_SOURCE = { mockup: 'Del mockup que ya vio el cliente', cliente: 'Foto/imagen del cliente', ilustracion: 'Ilustración nueva' };
 
 // Una tarjeta por lámpara: vista Grabado / Previo cliente, lo que entendió la IA y sus acciones.
-function _dlLampCard(l, dh, total) {
+// «Ver diseño»: lo que se subió a Drive (hojas para RDWorks con su vista previa y su link).
+function _dlDoneBox(a, o) {
+    const files = (a.files && a.files.length) ? a.files : (a.driveUrls || [o.svgCorteUrl]).filter(Boolean).map((url, i) => ({ url, name: `Hoja ${i + 1}` }));
+    const when = a.approvedAt ? new Date(a.approvedAt).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    const sheets = files.map((f, i) => `<div style="display:inline-block;margin:6px 8px 0 0;text-align:center">${f.preview ? `<img src="${escapeHtml(f.preview)}" onclick="openImageModal(this.src)" style="height:120px;border-radius:6px;border:1px solid var(--color-border,#e5e7eb);cursor:zoom-in;background:#fff"><br>` : ''}<a href="${escapeHtml(f.url || '#')}" target="_blank" rel="noopener" style="font-size:12px;font-weight:700"><i class="fab fa-google-drive"></i> ${files.length > 1 ? 'Hoja ' + (i + 1) : 'Abrir en Drive'}</a></div>`).join('');
+    return `<div style="margin-top:8px;border:1px solid #db277766;background:#db277710;border-radius:8px;padding:8px 10px;font-size:12.5px"><b style="color:#be185d"><i class="fas fa-circle-check"></i> En Drive (SVG Corte)${when ? ' desde el ' + escapeHtml(when) : ''}${a.approvedBy ? ' · ' + escapeHtml(a.approvedBy) : ''}</b><div>${sheets}</div></div>`;
+}
+
+function _dlLampCard(l, dh, total, done = false) {
     const b = l.brief || {};
     const warn = (b.advertencias || []).length ? `<div style="background:#fef3c7;color:#92400e;border-radius:8px;padding:6px 9px;font-size:12px;margin-top:6px"><b><i class="fas fa-triangle-exclamation"></i> Revisa:</b><ul style="margin:3px 0 0 18px;padding:0">${b.advertencias.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : '';
     const tab = (act, label, on) => `<button data-dl="${act}" data-lamp="${l.index}" style="flex:1;padding:5px;border-radius:7px;border:1px solid #7c3aed;background:${on ? '#7c3aed' : 'transparent'};color:${on ? '#fff' : '#7c3aed'};font-size:12px;font-weight:700;cursor:pointer">${label}</button>`;
@@ -1013,7 +1025,7 @@ function _dlLampCard(l, dh, total) {
                 ${model}${warn}
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
                     ${l.projectId ? `<a href="/editor-v2/?project=${encodeURIComponent(l.projectId)}&dh=${dh}" target="_blank" rel="noopener" style="padding:5px 9px;border-radius:7px;border:1px solid #0ea5e9;color:#0284c7;font-weight:700;font-size:12px;text-decoration:none"><i class="fas fa-pen-ruler"></i> Corregir en el editor</a>` : ''}
-                    ${total > 1 ? `<button data-dl="redo-one" data-lamp="${l.index}" title="Rehace solo esta lámpara (con la indicación de abajo, si escribiste una)" style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer esta</button>` : ''}
+                    ${total > 1 && !done ? `<button data-dl="redo-one" data-lamp="${l.index}" title="Rehace solo esta lámpara (con la indicación de abajo, si escribiste una)" style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer esta</button>` : ''}
                 </div>
             </div>
         </div>
@@ -1027,7 +1039,7 @@ function openDesignBeta(orderId) {
     const a = o.autoLamp, dh = _dlDh(o);
     const lamps = (a.lamps && a.lamps.length) ? a.lamps : (a.projectId ? [{ index: 0, label: '', copies: 1, previewUrl: a.previewUrl, clientPreviewUrl: a.clientPreviewUrl, projectId: a.projectId, brief: a.brief, rasterModel: a.rasterModel, rasterFallback: a.rasterFallback }] : []);
     document.getElementById('dl-beta-modal')?.remove();
-    const ready = a.status === 'ready';
+    const ready = a.status === 'ready', done = a.status === 'approved';
     const modeBox = a.mode === 'mockup' ? `<div style="margin-top:8px;border:1px solid #16a34a66;background:#16a34a14;color:#15803d;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-image"></i> Todo sale de mockups que el cliente ya vio: con el pago validado se sube directo a Drive (SVG Corte), sin mandarle nada.</div>` : '';
     const wrap = document.createElement('div');
     wrap.id = 'dl-beta-modal';
@@ -1040,14 +1052,14 @@ function openDesignBeta(orderId) {
         ${a.status === 'error' ? `<div style="color:#b91c1c;margin-top:8px;font-size:13px">${escapeHtml(a.error || 'Error')}</div>` : ''}
         ${a.error && ready ? `<div style="color:#b91c1c;margin-top:6px;font-size:12px">${escapeHtml(a.error)}</div>` : ''}
         ${a.note ? `<div style="margin-top:6px;font-size:12.5px"><b>Indicación:</b> ${escapeHtml(a.note)}</div>` : ''}
-        ${modeBox}${_dlClientBox(a.client)}
+        ${done ? _dlDoneBox(a, o) : ''}${done ? '' : modeBox}${_dlClientBox(a.client)}
         ${a.autoSendHeld ? `<div style="margin-top:8px;border:1px solid #f59e0b66;background:#f59e0b14;color:#b45309;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-hand"></i> No siguió solo: ${escapeHtml(a.autoSendHeld)}</div>` : ''}
-        ${lamps.map(l => _dlLampCard(l, dh, lamps.length)).join('')}
+        ${lamps.map(l => _dlLampCard(l, dh, lamps.length, done)).join('')}
         <div style="font-size:11.5px;color:#64748b;margin-top:8px">Lo que se sube a Drive es la hoja para RDWorks (2 lámparas por hoja, girada y espejeada), armada con la última versión guardada de cada lámpara.</div>
-        <textarea data-dl="note" placeholder="Indicación para rehacer (opcional): «usa la otra foto», «sin texto», «que se vea de cuerpo completo»…" style="width:100%;min-height:50px;margin-top:10px;padding:7px 9px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:var(--color-surface,#fff);color:inherit;font-size:12.5px"></textarea>
+        <textarea data-dl="note" ${done ? 'hidden' : ''} placeholder="Indicación para rehacer (opcional): «usa la otra foto», «sin texto», «que se vea de cuerpo completo»…" style="width:100%;min-height:50px;margin-top:10px;padding:7px 9px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:var(--color-surface,#fff);color:inherit;font-size:12.5px"></textarea>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:10px">
             ${ready ? `<button data-dl="reject" style="padding:8px 12px;border-radius:8px;border:1px solid #dc2626;background:transparent;color:#dc2626;font-weight:700;cursor:pointer">Descartar</button>` : ''}
-            <button data-dl="redo" style="padding:8px 12px;border-radius:8px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;cursor:pointer"><i class="fas fa-rotate"></i> ${lamps.length > 1 ? 'Rehacer todo' : 'Rehacer'}</button>
+            <button data-dl="redo" ${done ? 'hidden' : ''} style="padding:8px 12px;border-radius:8px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;cursor:pointer"><i class="fas fa-rotate"></i> ${lamps.length > 1 ? 'Rehacer todo' : 'Rehacer'}</button>
             ${ready && lamps.length ? `<button data-dl="send-client" title="Le manda al cliente un previo por lámpara y espera su respuesta; si aprueba se sube solo a Drive." style="padding:8px 12px;border-radius:8px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;cursor:pointer"><i class="fas fa-paper-plane"></i> ${a.client?.status ? 'Reenviar al cliente' : 'Mandar al cliente'}</button>` : ''}
             ${ready ? `<button data-dl="approve" style="padding:8px 14px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;cursor:pointer"><i class="fas fa-cloud-arrow-up"></i> Aprobar y subir a Drive</button>` : ''}
         </div>
