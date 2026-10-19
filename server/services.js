@@ -3941,6 +3941,22 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
             if (lastOrderDoc) {
                 const paymentOrder = lastOrderDoc.data();
                 orderInfoNote += '\n\nUn abono APROBADO libera Fabricar sin esperar a liquidar. No exijas el saldo para registrar o empezar la fabricación: el resto se paga al ver la foto del trabajo terminado. Si el cliente solo agradece, responde brevemente y no repitas el aviso de abono/saldo. Los pagos pertenecen a su pedido exacto; el de una compra anterior no acredita un pedido nuevo.';
+                // DH18107 (oct-2026): su ticket decía "TRANSACCIÓN NO REALIZADA" y el sistema lo rechazó, pero la IA
+                // le repitió 4 veces que "el equipo sigue validando tu comprobante". Si el último comprobante del
+                // cliente fue un intento FALLIDO (y no hay pago validado después), se le dice a la IA.
+                try {
+                    if (!paymentOrder.comprobanteValidadoAt) {
+                        const rsnap = await db.collection('payment_receipts').where('contactId', '==', contactId).get();
+                        const recibos = rsnap.docs.map(d => d.data()).filter(r => r.receivedAt && r.receivedAt.toMillis)
+                            .sort((a, b) => b.receivedAt.toMillis() - a.receivedAt.toMillis());
+                        const ultimo = recibos.find(r => r.ocr && r.ocr.esComprobante !== false);
+                        if (ultimo && ultimo.status === 'rejected' && /fallido/i.test(ultimo.reason || '')
+                            && Date.now() - ultimo.receivedAt.toMillis() < 15 * 24 * 3600000) {
+                            const motivo = String((ultimo.ocr && ultimo.ocr.evidenciaEstado) || ultimo.reason || '').slice(0, 160);
+                            orderInfoNote += `\n\n**COMPROBANTE RECHAZADO — EL PAGO NO SE REALIZÓ:** el último comprobante que mandó el cliente es un intento de pago FALLIDO (el ticket dice: "${motivo}"). NO le digas que el equipo lo está validando ni que hay que esperar. Explícale con amabilidad y claridad que ese pago no se completó (su propio ticket lo indica), que si le cobraron pida la aclaración o el reembolso donde pagó, y ofrécele pagar por otra vía (transferencia o depósito en OXXO). Si insiste en que sí pagó, pídele el comprobante del pago que sí se realizó.`;
+                        }
+                    }
+                } catch (e) { console.warn('[AI] No se pudo revisar comprobantes rechazados:', e.message); }
                 orderInfoNote += `\n\n**Estado de pago comprobado por el sistema:** pago completo validado: ${paymentOrder.comprobanteValidadoAt ? 'sí' : 'no'}; abonos aprobados: $${(Number(paymentOrder.paymentReceivedCents || 0) / 100).toFixed(2)}; los comprobantes presentados cubren el total: ${paymentOrder.paymentReportedComplete ? 'sí' : 'no'}; formulario enviado: ${paymentOrder.shippingFormSentAt ? 'sí' : 'sin confirmación'}. En cuanto los comprobantes cubren el total, el sistema pide los datos de envío aunque el pago siga por aprobar. No vuelvas a cobrar el saldo si los comprobantes ya cubren el total. Recibir los datos no aprueba el pago ni libera la producción. No confundas un agradecimiento, el estatus Pagado/Fabricar ni una foto con la validación. /comprobante solicita revisión; no autoriza aprobar el pago. El sistema revisa los comprobantes pendientes aunque hayan llegado hace días. No afirmes que el formulario ya se envió sin confirmación.`;
             }
             // --- ¿YA LLENÓ el formulario de datos de envío? ---
