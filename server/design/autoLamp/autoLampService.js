@@ -143,20 +143,35 @@ async function geminiJson(parts) {
     if (!apiKey) throw new Error('Falta GEMINI_API_KEY para leer el pedido.');
     // Gemini a veces responde 429/500/503 (saturado): reintenta y luego prueba un modelo de respaldo.
     const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json' } });
-    let response, lastStatus = 0;
-    attempts: for (const model of [VISION_MODEL, VISION_MODEL, VISION_MODEL, ...BRIEF_FALLBACK_MODELS]) {
-        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+    // Una respuesta que no se puede leer (cortada, con texto alrededor, vacía porque se bloqueó) ya no tumba el
+    // pedido a la primera (DH18289, 20-oct-2026): se rescata el JSON si se puede y si no se reintenta.
+    const parse = data => {
+        const candidate = data.candidates?.[0] || {};
+        const text = (candidate.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('').replace(/```json|```/g, '').trim();
+        try { return { json: JSON.parse(text) }; } catch (_) { /* se intenta rescatar */ }
+        const start = text.indexOf('{'), end = text.lastIndexOf('}');
+        if (start >= 0 && end > start) { try { return { json: JSON.parse(text.slice(start, end + 1)) }; } catch (_) { /* nada */ } }
+        const why = data.promptFeedback?.blockReason ? `bloqueada (${data.promptFeedback.blockReason})`
+            : candidate.finishReason && candidate.finishReason !== 'STOP' ? `cortada (${candidate.finishReason})` : text ? 'no era JSON' : 'vacía';
+        return { why };
+    };
+    let lastProblem = '';
+    for (const model of [VISION_MODEL, VISION_MODEL, VISION_MODEL, ...BRIEF_FALLBACK_MODELS]) {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(120000),
         }).catch(() => null);
-        lastStatus = response?.status || 0;
-        if (response?.ok) break attempts;
-        if (response && ![429, 500, 502, 503, 504].includes(response.status)) break attempts;
+        if (response?.ok) {
+            const { json, why } = parse(await response.json().catch(() => ({})));
+            if (json) return json;
+            lastProblem = `respuesta ${why}`;
+            console.warn(`[AUTO-LAMP] ${model}: ${lastProblem}; reintento.`);
+            continue;
+        }
+        lastProblem = `error ${response?.status || 'sin respuesta'}`;
+        if (response && ![429, 500, 502, 503, 504].includes(response.status)) break;
         await new Promise(resolve => setTimeout(resolve, 3000));
     }
-    if (!response?.ok) throw new Error(`La IA no pudo leer el pedido (${lastStatus || 'sin respuesta'}). Intenta de nuevo en unos minutos.`);
-    const data = await response.json();
-    const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').replace(/```json|```/g, '').trim();
-    try { return JSON.parse(text); } catch (_) { throw new Error('La IA no respondió en el formato esperado.'); }
+    throw new Error(`La IA no pudo leer el pedido (${lastProblem}). Intenta de nuevo en unos minutos.`);
 }
 
 async function imagePart(url) {
