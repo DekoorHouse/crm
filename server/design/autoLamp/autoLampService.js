@@ -113,10 +113,19 @@ const isPaid = order => !!order.comprobanteValidadoAt || /^(pagado|fabricar|dise
 async function customerImages(contactId) {
     const ours = process.env.PHONE_NUMBER_ID;
     const snapshot = await db.collection('contacts_whatsapp').doc(String(contactId)).collection('messages').orderBy('timestamp', 'asc').get();
+    // Además de las fotos, el modelo que eligió del CATÁLOGO del sitio ("quiero personalizar este modelo…" trae el
+    // link de la imagen, no una foto; DH18289 «Amigo de la Creación»): esa imagen cuenta como suya.
     return snapshot.docs.map(doc => doc.data())
-        .filter(m => m.fileUrl && /^image\//.test(m.fileType || '') && m.status !== 'sent' && (!ours || m.from !== ours))
-        .map(m => ({ url: m.fileUrl, text: m.text || '', at: m.timestamp?.toDate?.() || null }));
+        .filter(m => m.status !== 'sent' && (!ours || m.from !== ours))
+        .flatMap(m => {
+            const at = m.timestamp?.toDate?.() || null;
+            if (m.fileUrl && /^image\//.test(m.fileType || '')) return [{ url: m.fileUrl, text: m.text || '', at }];
+            const links = String(m.text || '').match(CATALOG_IMAGE) || [];
+            const model = (String(m.text || '').match(/"([^"]{2,80})"/) || [])[1];
+            return links.map(url => ({ url, text: `modelo del CATÁLOGO que eligió el cliente${model ? `: «${model}»` : ''}`, at, catalog: true }));
+        });
 }
+const CATALOG_IMAGE = /https:\/\/app\.dekoormx\.com\/sitio\/img\/[^\s"'<>]+\.(?:webp|jpe?g|png)/gi;
 
 // Imágenes que mandamos NOSOTROS (aquí van los mockups que ya vio el cliente, y también datos de pago, etc.).
 async function ourImages(contactId) {
@@ -161,8 +170,12 @@ async function geminiJson(parts) {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(120000),
         }).catch(() => null);
         if (response?.ok) {
-            const { json, why } = parse(await response.json().catch(() => ({})));
+            const data = await response.json().catch(() => ({}));
+            const { json, why } = parse(data);
             if (json) return json;
+            // Bloqueo del filtro de Gemini (PROHIBITED_CONTENT, DH18289): reintentar igual no sirve; quien llama
+            // puede quitar la imagen que lo provoca.
+            if (data.promptFeedback?.blockReason) throw Object.assign(new Error(`La IA no pudo leer el pedido (respuesta ${why}).`), { blocked: true });
             lastProblem = `respuesta ${why}`;
             console.warn(`[AUTO-LAMP] ${model}: ${lastProblem}; reintento.`);
             continue;
@@ -172,6 +185,17 @@ async function geminiJson(parts) {
         await new Promise(resolve => setTimeout(resolve, 3000));
     }
     throw new Error(`La IA no pudo leer el pedido (${lastProblem}). Intenta de nuevo en unos minutos.`);
+}
+
+// ¿Gemini bloquea esta imagen sola? (para quitarla de la lectura del pedido).
+async function imageBlocked(part) {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_IMAGE_KEY;
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${VISION_MODEL}:generateContent?key=${apiKey}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60000),
+        body: JSON.stringify({ contents: [{ parts: [{ text: 'Describe esta imagen en 3 palabras.' }, part] }] }),
+    }).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => ({})) : {};
+    return !!data.promptFeedback?.blockReason || /PROHIBITED|SAFETY|BLOCKLIST|SPII/.test(data.candidates?.[0]?.finishReason || '');
 }
 
 async function imagePart(url) {
@@ -200,7 +224,7 @@ ${history || '(sin mensajes)'}
 Abajo van las imágenes. Las del CLIENTE se llaman C0, C1…; las que mandamos NOSOTROS se llaman N0, N1… (entre las nuestras puede haber MOCKUPS: imágenes de la lámpara terminada o prendida con el diseño y el nombre que ya le enseñamos al cliente; también hay datos de pago, catálogo, etc.).
 OJO: el cliente puede cambiar de opinión varias veces (pedir otro personaje y luego regresar al primero). Las lámparas que hay que diseñar son SOLO las de la lista de arriba (lo que quedó registrado): un mockup de una opción que el cliente DESCARTÓ no se usa para nada. Busca el mockup que corresponda al PERSONAJE de cada lámpara aunque sea de antes.
 Para CADA lámpara decide:
-- "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
+- "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre), o si la imagen es una C marcada «modelo del CATÁLOGO» de ese personaje (es la foto de muestra de la lámpara, con un nombre de ejemplo que NO es el del cliente); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
 - "imagen": la imagen elegida ("N2", "C0"…), o VARIAS separadas por coma si hay que JUNTAR fotos en una sola escena (ej. "C1,C2" para unir a dos personas que vienen en fotos distintas; máximo 4), o "" si es ilustración desde cero. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
 - "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "". NUNCA pidas escribir el nombre ni ningún texto en la imagen: el nombre lo agrega el sistema aparte (si la imagen trae letras, pide quitarlas). ÚNICA excepción: "textoEnImagen" true.
 - "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana").
@@ -218,7 +242,20 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
             catch (_) { parts.push({ text: `Imagen ${prefix}${i}: (no se pudo descargar)` }); }
         }
     }
-    const answer = await geminiJson(parts);
+    let answer;
+    try { answer = await geminiJson(parts); }
+    catch (error) {
+        if (!error.blocked) throw error;
+        // Una imagen del chat hizo que Gemini bloqueara todo (DH18289: un anuncio con un niño dormido junto a la
+        // lámpara). Se revisa cada imagen sola y se quitan las que bloquea; luego se lee el pedido otra vez.
+        let removed = 0;
+        for (let k = 0; k < parts.length; k++) {
+            if (parts[k].inlineData && await imageBlocked(parts[k])) { parts[k] = { text: '(imagen omitida: el filtro de la IA no la deja ver)' }; removed++; }
+        }
+        if (!removed) throw error;
+        console.warn(`[AUTO-LAMP] ${removed} imagen(es) bloqueadas por Gemini; se omiten.`);
+        answer = await geminiJson(parts);
+    }
     const rows = Array.isArray(answer.lamparas) ? answer.lamparas : [];
     return lamps.map(lamp => {
         const row = rows.find(r => Number(r.lampara) === lamp.index) || rows[lamp.index] || {};
@@ -228,7 +265,7 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
         const reference = references[0] || null, pick = picks[0] ? [picks[0], picks[0][0]] : null;
         let fuente = ['mockup', 'cliente', 'ilustracion'].includes(row.fuente) ? row.fuente : (reference ? 'cliente' : 'ilustracion');
         if (fuente !== 'ilustracion' && !reference) fuente = 'ilustracion';
-        if (fuente === 'mockup' && pick && pick[1] !== 'N') fuente = 'cliente';
+        if (fuente === 'mockup' && pick && pick[1] !== 'N' && !reference?.catalog) fuente = 'cliente';
         // Fotos del cliente para juntar: aunque la IA lo llame "ilustración", va con sus fotos de referencia.
         if (fuente === 'ilustracion' && references.length) fuente = 'cliente';
         return {
@@ -240,7 +277,8 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
             resumen: String(row.resumen || '').trim().slice(0, 400),
             advertencias: (Array.isArray(row.advertencias) ? row.advertencias : []).map(String).slice(0, 6),
             cambia: row.cambia !== false,
-            textoCambia: fuente === 'mockup' && row.textoCambia === true,
+            // La foto del catálogo trae un nombre de muestra («Miguel»): siempre se saca sin letras y va el del cliente.
+            textoCambia: fuente === 'mockup' && (row.textoCambia === true || !!reference?.catalog),
             // La frase dibujada por el modelo como parte de la imagen (Chris, DH18288): sin texto aparte del armado.
             textoEnImagen: fuente !== 'mockup' && !!String(row.nombre || '').trim() && (row.textoEnImagen === true || TEXT_IN_IMAGE.test(note || '')),
             estilo: row.estilo === 'plano' ? 'plano' : 'trama',
