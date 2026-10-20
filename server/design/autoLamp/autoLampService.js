@@ -1183,7 +1183,12 @@ async function handleBetaDecision(orderId, decision, { clientText = '', changeSu
             if (seen[lamp.index] != null && Number(rev) !== Number(seen[lamp.index])) changed.push(`${lamp.label || 'lámpara ' + (lamp.index + 1)} (versión ${seen[lamp.index]} → ${rev})`);
         }
         if (changed.length) return { uploaded: false, error: `el diseño se modificó en el editor DESPUÉS de mandárselo al cliente: ${changed.join(', ')}. Revisa que siga igual a lo que aprobó y súbelo a mano` };
-        try { const r = await approve(dh, { actor: { email: 'cliente (aprobó por WhatsApp)' } }); return { uploaded: true, ...r, driveUrl: r.driveUrls.join(' '), summary: uploadSummary(r) }; }
+        // VERSIÓN CORREGIDA (DH18264, 20-oct-2026): si lo que había en Drive lo subió este mismo Beta y el cliente vio
+        // un previo NUEVO después (pidió un cambio tras aprobar), su «sí» es para reemplazarlo: se sube aunque ya
+        // hubiera archivo (approve avisa al equipo que el anterior NO se corte). Antes se quedaba frenado.
+        const sentMs = order.autoLamp?.client?.sentAt?.toMillis?.() || 0, uploadedMs = order.svgCorteAt?.toMillis?.() || 0;
+        const replacing = order.svgCorteBy === 'auto-lamp-beta' && uploadedMs > 0 && sentMs > uploadedMs;
+        try { const r = await approve(dh, { force: replacing, actor: { email: replacing ? 'cliente (aprobó la versión corregida)' : 'cliente (aprobó por WhatsApp)' } }); return { uploaded: true, ...r, driveUrl: r.driveUrls.join(' '), summary: uploadSummary(r) + (replacing ? ' — REEMPLAZA al archivo anterior: que ese NO se corte' : '') }; }
         catch (error) { return { uploaded: false, error: error.message }; }
     }
     if (decision === 'changes') {
