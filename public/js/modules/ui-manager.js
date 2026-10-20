@@ -1065,7 +1065,14 @@ function openDesignBeta(orderId) {
         </div>
     </div>`;
     document.body.appendChild(wrap);
-    const close = () => wrap.remove();
+    // Esc cierra la ventana; si hay una imagen ampliada o una confirmación encima, Esc es para esa primero.
+    const onKey = ev => {
+        if (ev.key !== 'Escape' || !document.body.contains(wrap)) return;
+        if (document.querySelector('#image-modal.visible') || document.getElementById('_cm_ok')) return;
+        ev.preventDefault(); close();
+    };
+    document.addEventListener('keydown', onKey);
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); };
     const lampOf = btn => lamps.find(l => l.index === Number(btn.dataset.lamp));
     // El previo del cliente siempre se pide al servidor: lo rearma solo si la versión del proyecto cambió (si alguien
     // lo corrigió en el editor), si no devuelve el mismo al instante.
