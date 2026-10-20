@@ -78,7 +78,8 @@ async function startPod(reason) {
     } catch (err) {
         const message = err.runpodStatus ? 'RunPod no tiene una GPU disponible ahora o rechazó la solicitud. Intenta en unos minutos.' : 'No se pudo encender la GPU.';
         console.warn('[QWEN] No se pudo crear el pod:', err.message);
-        await stateRef().set({ status: 'off', lastError: message, updatedAt: new Date().toISOString() }, { merge: true });
+        // El detalle real de RunPod (sin GPU, sin saldo, petición rechazada…) para poder diagnosticar.
+        await stateRef().set({ status: 'off', lastError: message, lastErrorDetail: `${err.runpodStatus || ''} ${String(err.message || '')}`.trim().slice(0, 400), updatedAt: new Date().toISOString() }, { merge: true });
         throw failure(message, 502);
     }
     healthCache = { at: 0 };

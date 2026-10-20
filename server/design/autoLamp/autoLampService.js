@@ -317,18 +317,25 @@ async function ensureQwenReady(onStep) {
     }
     return false;
 }
+// Con la GPU apagada NO se espera (prender tarda 10+ min, y a veces RunPod no tiene GPU): el diseño sale con
+// gpt-image y la GPU se pide en segundo plano para los que siguen. SOLO si OpenAI rechaza la imagen (fotos de
+// personas reales, DH18253) se espera a que Qwen esté lista. (Chris, 20-oct-2026: «me preocupa este tiempo».)
 async function rasterizeBeta(reference, options) {
     const qwenDown = error => error.status === 503 || /Qwen|GPU/i.test(error.message || '');
+    const rejected = error => /safety|pol[ií]ticas|rechaz/i.test(error.message || '');
+    let qwenError;
     try { return await rasterize(reference, { ...options, model: BETA_MODEL }); }
+    catch (error) { if (!qwenDown(error)) throw error; qwenError = error; }
+    const qwenPod = require('../../imagenes/qwenPod');
+    if (qwenPod.enabled()) qwenPod.startPod('Diseño IA (Beta), para los siguientes').catch(() => {});
+    try { return { ...(await rasterize(reference, { ...options, model: RASTER_MODEL })), fallback: qwenError.message }; }
     catch (error) {
-        if (!qwenDown(error)) throw error;
-        if (await ensureQwenReady(options.onStep)) {
-            options.onStep?.('GPU de Qwen lista: generando');
-            try { return await rasterize(reference, { ...options, model: BETA_MODEL }); }
-            catch (again) { if (!qwenDown(again)) throw again; error = again; }
-        }
-        console.warn('[AUTO-LAMP] Qwen no arrancó, uso gpt-image:', error.message);
-        return { ...(await rasterize(reference, { ...options, model: RASTER_MODEL })), fallback: error.message };
+        if (!rejected(error)) throw error;
+        // OpenAI no la acepta: aquí sí se espera a Qwen (la GPU propia no tiene esas restricciones).
+        options.onStep?.('OpenAI rechazó la imagen: esperando la GPU de Qwen');
+        if (!await ensureQwenReady(options.onStep)) throw Object.assign(new Error(`${error.message} — y la GPU de Qwen no pudo prender: intenta más tarde o prende la GPU en /imagenes.`), { status: error.status || 502 });
+        options.onStep?.('GPU de Qwen lista: generando');
+        return await rasterize(reference, { ...options, model: BETA_MODEL });
     }
 }
 
