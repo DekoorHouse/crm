@@ -911,6 +911,8 @@ const _DL_CLIENT = {
     sent: ['#0ea5e9', 'fa-paper-plane', 'Enviado al cliente — esperando su respuesta'],
     approved: ['#16a34a', 'fa-circle-check', 'El cliente APROBÓ el diseño — se sube solo a Drive (SVG Corte)'],
     changes: ['#d97706', 'fa-pen', 'El cliente pidió un cambio — la IA lo rehízo, revísalo y reenvíaselo'],
+    // Pidió un cambio DESPUÉS de aprobar: el archivo ya estaba en Drive (DH18264).
+    change_after_approval: ['#dc2626', 'fa-triangle-exclamation', 'El cliente pidió un cambio DESPUÉS de aprobar — ya estaba en Drive: revisa en taller si ya se cortó, y rehazlo con su cambio'],
 };
 function _dlClientBox(c) {
     const s = c && _DL_CLIENT[c.status]; if (!s) return '';
@@ -918,7 +920,7 @@ function _dlClientBox(c) {
 }
 function _dlClientBadge(c) {
     const s = c && _DL_CLIENT[c.status]; if (!s) return '';
-    const label = { sent: 'Enviado', approved: 'Cliente aprobó', changes: 'Pidió cambio' }[c.status];
+    const label = { sent: 'Enviado', approved: 'Cliente aprobó', changes: 'Pidió cambio', change_after_approval: 'Cambio tras aprobar' }[c.status];
     return `<span title="${escapeHtml(s[2])}" style="display:inline-flex;align-items:center;gap:3px;background:${s[0]}22;color:${s[0]};border:1px solid ${s[0]}66;padding:2px 6px;border-radius:6px;font-size:10.5px;font-weight:800;white-space:nowrap"><i class="fas ${s[1]}"></i>${label}</span>`;
 }
 
@@ -927,6 +929,9 @@ function dpBetaControls(o) {
     // Ya en Drive: si no lo hizo el Beta, igual se puede diseñar con IA (avisa antes); si lo hizo el Beta y el
     // cliente pidió un cambio después de aprobar, se puede rehacer.
     // Ya subido por el Beta: «Ver diseño» (solo lectura: cómo quedó cada lámpara y la hoja que se subió).
+    // Cambio pedido después de aprobar: se rehace desde la ventana, con lo que pidió el cliente ya escrito.
+    if (o.autoLamp && o.autoLamp.status === 'approved' && o.autoLamp.client?.status === 'change_after_approval')
+        return `<button onclick="openDesignBeta('${o.id}')" title="El cliente pidió un cambio después de aprobar: «${escapeHtml(o.autoLamp.client.text || '')}». Ábrelo para rehacerlo con su cambio." style="background:#dc2626;color:#fff;border:none;padding:4px 8px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap"><i class="fas fa-pen" style="margin-right:3px"></i>Cambio pedido · Rehacer${_dlBetaBadge}</button>`;
     if (o.svgCorteUrl && o.autoLamp && o.autoLamp.status === 'approved' && o.autoLamp.client?.status !== 'change_after_approval') {
         const t = o.autoLamp.previewUrl ? `<img src="${escapeHtml(o.autoLamp.previewUrl)}" style="width:30px;height:30px;object-fit:cover;border-radius:5px;border:1px solid var(--color-border,#e5e7eb)">` : '';
         return `<button onclick="openDesignBeta('${o.id}')" title="Ver cómo quedó el diseño que se subió a Drive" style="background:transparent;color:#db2777;border:1px solid #db2777;padding:2px 8px 2px 2px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:5px">${t}<i class="fas fa-eye"></i> Ver diseño</button>`;
@@ -1039,7 +1044,9 @@ function openDesignBeta(orderId) {
     const a = o.autoLamp, dh = _dlDh(o);
     const lamps = (a.lamps && a.lamps.length) ? a.lamps : (a.projectId ? [{ index: 0, label: '', copies: 1, previewUrl: a.previewUrl, clientPreviewUrl: a.clientPreviewUrl, projectId: a.projectId, brief: a.brief, rasterModel: a.rasterModel, rasterFallback: a.rasterFallback }] : []);
     document.getElementById('dl-beta-modal')?.remove();
-    const ready = a.status === 'ready', done = a.status === 'approved';
+    // Aprobado y en Drive = solo lectura, salvo que el cliente haya pedido un cambio después (se puede rehacer).
+    const reopened = a.status === 'approved' && a.client?.status === 'change_after_approval';
+    const ready = a.status === 'ready', done = a.status === 'approved' && !reopened;
     const modeBox = a.mode === 'mockup' ? `<div style="margin-top:8px;border:1px solid #16a34a66;background:#16a34a14;color:#15803d;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-image"></i> Todo sale de mockups que el cliente ya vio: con el pago validado se sube directo a Drive (SVG Corte), sin mandarle nada.</div>` : '';
     const wrap = document.createElement('div');
     wrap.id = 'dl-beta-modal';
@@ -1056,7 +1063,7 @@ function openDesignBeta(orderId) {
         ${a.autoSendHeld ? `<div style="margin-top:8px;border:1px solid #f59e0b66;background:#f59e0b14;color:#b45309;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-hand"></i> No siguió solo: ${escapeHtml(a.autoSendHeld)}</div>` : ''}
         ${lamps.map(l => _dlLampCard(l, dh, lamps.length, done)).join('')}
         <div style="font-size:11.5px;color:#64748b;margin-top:8px">Lo que se sube a Drive es la hoja para RDWorks (2 lámparas por hoja, girada y espejeada), armada con la última versión guardada de cada lámpara.</div>
-        <textarea data-dl="note" ${done ? 'hidden' : ''} placeholder="Indicación para rehacer (opcional): «usa la otra foto», «sin texto», «que se vea de cuerpo completo»…" style="width:100%;min-height:50px;margin-top:10px;padding:7px 9px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:var(--color-surface,#fff);color:inherit;font-size:12.5px"></textarea>
+        <textarea data-dl="note" ${done ? 'hidden' : ''} placeholder="Indicación para rehacer (opcional): «usa la otra foto», «sin texto», «que se vea de cuerpo completo»…" style="width:100%;min-height:50px;margin-top:10px;padding:7px 9px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:var(--color-surface,#fff);color:inherit;font-size:12.5px">${reopened && a.client?.text ? escapeHtml(`El cliente pidió: ${a.client.text}`) : ''}</textarea>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:10px">
             ${ready ? `<button data-dl="reject" style="padding:8px 12px;border-radius:8px;border:1px solid #dc2626;background:transparent;color:#dc2626;font-weight:700;cursor:pointer">Descartar</button>` : ''}
             <button data-dl="redo" ${done ? 'hidden' : ''} style="padding:8px 12px;border-radius:8px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;cursor:pointer"><i class="fas fa-rotate"></i> ${lamps.length > 1 ? 'Rehacer todo' : 'Rehacer'}</button>
