@@ -202,15 +202,16 @@ OJO: el cliente puede cambiar de opinión varias veces (pedir otro personaje y l
 Para CADA lámpara decide:
 - "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
 - "imagen": la imagen elegida ("N2", "C0"…), o VARIAS separadas por coma si hay que JUNTAR fotos en una sola escena (ej. "C1,C2" para unir a dos personas que vienen en fotos distintas; máximo 4), o "" si es ilustración desde cero. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
-- "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "". NUNCA pidas escribir el nombre ni ningún texto en la imagen: el nombre lo agrega el sistema aparte (si la imagen trae letras, pide quitarlas).
+- "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "". NUNCA pidas escribir el nombre ni ningún texto en la imagen: el nombre lo agrega el sistema aparte (si la imagen trae letras, pide quitarlas). ÚNICA excepción: "textoEnImagen" true.
 - "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana").
+- "textoEnImagen": true SOLO si la INDICACIÓN (o el cliente) pide que la IA integre/escriba el texto DENTRO de la imagen, todo junto como un solo diseño; entonces el texto de "nombre" lo dibuja el modelo de imágenes y el sistema no agrega otro. false en cualquier otro caso.
 - "textoCambia": SOLO para fuente "mockup": true si el texto final es DISTINTO del que se ve en el mockup (el cliente pidió agregar o cambiar algo del texto después de verlo); false si el mockup ya trae exactamente el texto final.
 - "tipo": "foto", "personaje" o "especial".
 - "estilo": "plano" si el diseño es de siluetas y rellenos SÓLIDOS (tipo vector o calcomanía, sin sombreado: p. ej. un unicornio con estrellas y nubes en negro sólido); "trama" si es un dibujo con sombreado, textura o mucho detalle, o una foto (p. ej. un T-Rex grabado con puntitos, un luchador, una familia). En un mockup prendido IGNORA el brillo/resplandor de la luz: juzga el dibujo.
 - "resumen": una línea para el equipo con lo que entendiste de ESA lámpara.
 - "advertencias": dudas que no puedes resolver de ESA lámpara (ej. "la foto es muy oscura", "no queda claro el nombre", "no encontré el mockup de esta lámpara"); [] si nada.
 - "cambia": ${prevList ? 'true si por la INDICACIÓN/CAMBIO hay que rehacer ESTA lámpara; false si se queda como está.' : 'true.'}
-Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "textoCambia": false, "tipo": "...", "estilo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
+Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "textoEnImagen": false, "textoCambia": false, "tipo": "...", "estilo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
     for (const [prefix, list] of [['C', client], ['N', sent]]) {
         for (const [i, image] of list.entries()) {
             try { parts.push({ text: `Imagen ${prefix}${i}${image.text ? ` (mensaje: "${image.text.slice(0, 200)}")` : ''}:` }, await imagePart(image.url)); }
@@ -240,6 +241,8 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
             advertencias: (Array.isArray(row.advertencias) ? row.advertencias : []).map(String).slice(0, 6),
             cambia: row.cambia !== false,
             textoCambia: fuente === 'mockup' && row.textoCambia === true,
+            // La frase dibujada por el modelo como parte de la imagen (Chris, DH18288): sin texto aparte del armado.
+            textoEnImagen: fuente !== 'mockup' && !!String(row.nombre || '').trim() && (row.textoEnImagen === true || TEXT_IN_IMAGE.test(note || '')),
             estilo: row.estilo === 'plano' ? 'plano' : 'trama',
         };
     });
@@ -271,8 +274,11 @@ Responde SOLO este JSON: {"index": <número o -1 si ninguna sirve>, "motivo": "<
 // acabado de grabado. extra: lo que la IA pidió conservar o ajustar de la foto. prompt: reemplaza todo (mockup).
 // Cuando el nombre lo pone el armado (composeLamp), la imagen NO debe traer letras: DH18282 salió con «Patricia» dos
 // veces porque la indicación de la IA pedía «integrar el nombre» y el modelo lo escribió.
+// Indicación del equipo para que el texto vaya integrado en la imagen generada (no puesto aparte).
+const textInImageRule = text => `Integra en el diseño, como parte de la misma composición, este texto en letras BLANCAS grandes, claras y legibles, escrito EXACTAMENTE así (mismas palabras, mayúsculas y acentos, sin agregar ni quitar nada), en renglones donde se lean bien: «${text.replace(/\s*·\s*/g, ' / ')}». Las letras no deben tapar las caras.`;
+const TEXT_IN_IMAGE = /(frase|texto|nombre|letras?)[^.]{0,40}\b(integr|dibuj|incluy)|\b(integr|dibuj|incluy)\w*\s+(la\s+|el\s+)?(frase|texto|nombre|letras?)\b|todo\s+junto/i;
 const NO_TEXT = 'IMPORTANTE: la imagen NO lleva ningún texto, letra, palabra ni nombre (el nombre se agrega después, aparte); si la imagen original trae letras, quítalas.';
-async function rasterize(reference, { description = '', extra = '', prompt: override = '', model = RASTER_MODEL, estilo = 'trama', noText = false, extraReferences = [] } = {}) {
+async function rasterize(reference, { description = '', extra = '', prompt: override = '', model = RASTER_MODEL, estilo = 'trama', noText = false, textInImage = '', extraReferences = [] } = {}) {
     const files = [];
     // La principal y, si hay que juntar varias fotos (DH18288), las demás (hasta 4 en total).
     for (const [i, ref] of [reference, ...extraReferences].filter(Boolean).slice(0, 4).entries()) {
@@ -285,7 +291,7 @@ async function rasterize(reference, { description = '', extra = '', prompt: over
     }
     const prompt = styled(override || (reference
         ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT) + (/qwen/i.test(model) ? '. Solo blanco y negro, sin colores; fondo negro uniforme de orilla a orilla, sin círculos, marcos ni bordes.' : '')
-        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa, sin texto ni letras. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`), estilo) + (noText ? ` ${NO_TEXT}` : '');
+        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa${textInImage ? '' : ', sin texto ni letras'}. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`), estilo) + (textInImage ? ` ${textInImageRule(textInImage)}` : noText ? ` ${NO_TEXT}` : '');
     const fields = { requestId: crypto.randomUUID(), model, prompt, aspect_ratio: '1:1' };
     // VARIOS PEDIDOS A LA VEZ (Chris, 19-oct-2026): la GPU de Qwen hace una imagen a la vez; si está ocupada
     // con otra lámpara, se espera su turno (cada 10 s, hasta 15 min) en vez de pasarse a gpt-image.
@@ -619,7 +625,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     } else if (beta) {
         step(plan.reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes');
         // Foto del cliente o ilustración: el nombre lo pone el armado, así que la imagen va SIN letras.
-        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '', estilo: plan.estilo, noText: !!plan.nombre, extraReferences: (plan.references || []).slice(1), onStep: step });
+        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '', estilo: plan.estilo, noText: !!plan.nombre, textInImage: plan.textoEnImagen ? plan.nombre : '', extraReferences: (plan.references || []).slice(1), onStep: step });
     } else {
         step('Convirtiendo a grabado');
         raster = await rasterize(plan.reference);
@@ -650,7 +656,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     // Plantilla a la que Qwen ya le escribió el nombre (Dino premium): no se le pone otro encima.
     const engraveName = plan.template && TEMPLATES[plan.template].rename ? ''
         : plan.template ? (plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '')
-        : plan.fuente === 'mockup' && !plan.textoCambia ? '' : plan.nombre;
+        : plan.fuente === 'mockup' && !plan.textoCambia ? '' : plan.textoEnImagen ? '' : plan.nombre;
     const title = [`DH${dh}`, lamp.label].filter(Boolean).join(' · ');
     const dataUrl = 'data:image/png;base64,' + png.toString('base64');
     // En la plantilla el nombre va en el hueco que deja el dibujo (arriba a la izquierda), no abajo.
@@ -672,7 +678,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     return {
         index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia, template: plan.template || null, estilo: plan.estilo || 'trama',
         brief: { tipo: plan.tipo || null, fuente: plan.fuente, estilo: plan.estilo || 'trama', nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
-            advertencias: plan.advertencias || [], referenceUrl: plan.reference?.url || null, referenceUrls: (plan.references || []).map(r => r.url).filter(Boolean) },
+            advertencias: plan.advertencias || [], textoEnImagen: !!plan.textoEnImagen, referenceUrl: plan.reference?.url || null, referenceUrls: (plan.references || []).map(r => r.url).filter(Boolean) },
         projectId: project.id, projectRevision: 1, previewUrl, name: engraveName, inkShare,
         rasterUrl: raster.url, rasterJobId: raster.jobId || null, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}),
         durationMs: Date.now() - started, changed: true,

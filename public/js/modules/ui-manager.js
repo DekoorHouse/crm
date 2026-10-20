@@ -1027,7 +1027,7 @@ function _dlLampCard(l, dh, total, done = false) {
                 ${l.template ? `<div><b>De dónde sale:</b> Plantilla del taller (${escapeHtml(l.template)}), solo se le agrega el nombre</div>`
                     : (l.source || b.fuente ? `<div><b>De dónde sale:</b> ${escapeHtml(_DL_SOURCE[l.source || b.fuente] || l.source || b.fuente)}</div>` : '')}
                 ${b.resumen ? `<div><b>Entendió:</b> ${escapeHtml(b.resumen)}</div>` : ''}
-                <div><b>Texto:</b> ${b.nombre ? escapeHtml(b.nombre) : '<i>sin texto</i>'}${(l.source || b.fuente) === 'mockup' && !l.template ? ' <span style="color:#64748b">(como viene en el mockup)</span>' : ''}</div>
+                <div><b>Texto:</b> ${b.nombre ? escapeHtml(b.nombre) : '<i>sin texto</i>'}${(l.source || b.fuente) === 'mockup' && !l.template ? ' <span style="color:#64748b">(como viene en el mockup)</span>' : ''}${b.textoEnImagen ? ' <span style="color:#7c3aed">(dibujado por la IA dentro de la imagen)</span>' : ''}</div>
                 ${b.referenceUrl ? `<div style="margin-top:5px"><b>${(b.referenceUrls || []).length > 1 ? 'Imágenes usadas' : 'Imagen usada'}:</b><br>${((b.referenceUrls || []).length ? b.referenceUrls : [b.referenceUrl]).map(u => `<img src="${escapeHtml(u)}" onclick="openImageModal(this.src)" style="max-width:110px;max-height:110px;border-radius:6px;cursor:zoom-in;margin:3px 4px 0 0">`).join('')}</div>` : (b.prompt ? `<div><b>Ilustración pedida:</b> ${escapeHtml(b.prompt)}</div>` : '')}
                 ${model}${warn}
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
