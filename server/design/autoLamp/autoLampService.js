@@ -29,6 +29,9 @@ const RASTER_MODEL = 'openai/gpt-image-2.5-sunburst';
 // BETA: el diseño IA usa Qwen Image 2.1 (GPU propia de /imagenes, mucho más barata). La GPU solo está prendida
 // en su horario (qwenPod); si está apagada se usa gpt-image para que el diseño no se quede sin hacer.
 const BETA_MODEL = 'dekoor/qwen-image-2.1';
+// Qwen alojado en OpenRouter (no necesita prender GPU): el respaldo cuando la GPU propia está apagada, ANTES que
+// gpt-image, que tiene problemas con personajes con derechos de autor (Chris, 20-oct-2026).
+const QWEN_CLOUD_MODELS = ['qwen/qwen-image-3-pro', 'qwen/qwen-image-3'];
 // Sube cuando cambia cómo se ve el previo para el cliente: los ya guardados se vuelven a armar.
 const CLIENT_PREVIEW_STYLE = 4;
 const RASTER_PROMPT = 'dame el diseño de la imagen con rellenos blancos y fondos negros. En raster engrave con degradado en trama';
@@ -255,12 +258,12 @@ async function rasterize(reference, { description = '', extra = '', prompt: over
         const { buffer } = reference.buffer ? reference : await download(reference.url);
         // Qwen entrega la imagen con la forma de la referencia: se manda cuadrada (relleno blanco) para que el
         // diseño salga cuadrado y quepa completo en el círculo.
-        const fit = model === BETA_MODEL ? { fit: 'contain', background: '#ffffff' } : { fit: 'inside', withoutEnlargement: true };
+        const fit = /qwen/i.test(model) ? { fit: 'contain', background: '#ffffff' } : { fit: 'inside', withoutEnlargement: true };
         const jpeg = await sharp(buffer).rotate().resize(2048, 2048, fit).flatten({ background: '#ffffff' }).jpeg({ quality: 92 }).toBuffer();
         files.push({ buffer: jpeg, mimetype: 'image/jpeg', originalname: 'referencia.jpg' });
     }
     const prompt = styled(override || (reference
-        ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT) + (model === BETA_MODEL ? '. Solo blanco y negro, sin colores; fondo negro uniforme de orilla a orilla, sin círculos, marcos ni bordes.' : '')
+        ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT) + (/qwen/i.test(model) ? '. Solo blanco y negro, sin colores; fondo negro uniforme de orilla a orilla, sin círculos, marcos ni bordes.' : '')
         : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa, sin texto ni letras. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`), estilo) + (noText ? ` ${NO_TEXT}` : '');
     const fields = { requestId: crypto.randomUUID(), model, prompt, aspect_ratio: '1:1' };
     // VARIOS PEDIDOS A LA VEZ (Chris, 19-oct-2026): la GPU de Qwen hace una imagen a la vez; si está ocupada
@@ -331,6 +334,13 @@ async function rasterizeBeta(reference, options) {
     catch (error) { if (!qwenDown(error)) throw error; qwenError = error; }
     const qwenPod = require('../../imagenes/qwenPod');
     if (qwenPod.enabled()) qwenPod.startPod('Diseño IA (Beta), para los siguientes').catch(() => {});
+    // Primero Qwen alojado en OpenRouter (sin GPU que prender; sin los problemas de derechos de autor de gpt-image).
+    for (const model of QWEN_CLOUD_MODELS) {
+        try {
+            options.onStep?.(`GPU apagada: generando con ${model.replace('qwen/', 'Qwen ').replace(/-/g, ' ')}`);
+            return { ...(await rasterize(reference, { ...options, model })), fallback: qwenError.message };
+        } catch (error) { console.warn(`[AUTO-LAMP] ${model} falló:`, error.message); qwenError = error; }
+    }
     try { return { ...(await rasterize(reference, { ...options, model: RASTER_MODEL })), fallback: qwenError.message }; }
     catch (error) {
         if (!rejected(error)) throw error;

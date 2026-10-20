@@ -1013,7 +1013,9 @@ function _dlLampCard(l, dh, total, done = false) {
     const b = l.brief || {};
     const warn = (b.advertencias || []).length ? `<div style="background:#fef3c7;color:#92400e;border-radius:8px;padding:6px 9px;font-size:12px;margin-top:6px"><b><i class="fas fa-triangle-exclamation"></i> Revisa:</b><ul style="margin:3px 0 0 18px;padding:0">${b.advertencias.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : '';
     const tab = (act, label, on) => `<button data-dl="${act}" data-lamp="${l.index}" style="flex:1;padding:5px;border-radius:7px;border:1px solid #7c3aed;background:${on ? '#7c3aed' : 'transparent'};color:${on ? '#fff' : '#7c3aed'};font-size:12px;font-weight:700;cursor:pointer">${label}</button>`;
-    const model = l.rasterModel ? `<div style="font-size:11.5px;color:#64748b;margin-top:3px"><b>Modelo:</b> ${/qwen/i.test(l.rasterModel) ? 'Qwen Image 2.1 · GPU propia' : escapeHtml(l.rasterModel)}${l.rasterFallback ? ` <span title="${escapeHtml(l.rasterFallback)}" style="color:#b45309">(Qwen no estaba disponible)</span>` : ''}</div>` : '';
+    const modelName = m => /^dekoor\/qwen/i.test(m) ? 'Qwen Image 2.1 · GPU propia' : /qwen-image-3-pro/i.test(m) ? 'Qwen Image 3 Pro · OpenRouter' : /qwen-image-3/i.test(m) ? 'Qwen Image 3 · OpenRouter' : m;
+    const fallbackNote = !l.rasterFallback ? '' : /qwen/i.test(l.rasterModel || '') ? '(la GPU propia estaba apagada)' : '(Qwen no estaba disponible)';
+    const model = l.rasterModel ? `<div style="font-size:11.5px;color:#64748b;margin-top:3px"><b>Modelo:</b> ${escapeHtml(modelName(l.rasterModel))}${fallbackNote ? ` <span title="${escapeHtml(l.rasterFallback)}" style="color:#b45309">${fallbackNote}</span>` : ''}</div>` : '';
     return `<div data-lamp-card="${l.index}" style="border:1px solid var(--color-border,#e5e7eb);border-radius:12px;padding:10px;margin-top:10px">
         <div style="font-weight:800;font-size:13px;margin-bottom:6px">${total > 1 ? `Lámpara ${l.index + 1} de ${total} · ` : ''}${escapeHtml(l.label || '')}${l.copies > 1 ? ` <span style="color:#7c3aed">×${l.copies}</span>` : ''}</div>
         <div style="display:flex;gap:14px;flex-wrap:wrap">
