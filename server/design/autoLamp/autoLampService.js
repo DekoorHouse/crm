@@ -496,6 +496,56 @@ async function engravePolarity(buffer) {
 const LAMP_CIRCLE = { cx: .5, cy: .481, r: .481, baseTop: .905 };
 // Aire entre el trazo y la línea de corte / la base (fracción del lado del cuadro ≈ 166 mm): ~2 mm.
 const FIT_GAP = .012;
+/**
+ * Borra el ARO del acrílico que el modelo copia del mockup (una línea delgada casi completa alrededor del dibujo,
+ * a veces con la base abajo) aunque el prompt diga que no (Chris, 20-oct-2026, DH18239 «Mía Carolina»). Entra el
+ * grabado (negro = tinta) y sale igual, sin el aro ni lo que quede afuera de él; si no hay aro, sale tal cual.
+ */
+async function removeRing(buffer) {
+    const { data, info } = await sharp(buffer).greyscale().raw().toBuffer({ resolveWithObject: true });
+    const w = info.width, h = info.height, inkAt = (x, y) => x >= 0 && x < w && y >= 0 && y < h && data[y * w + x] < 128;
+    // Caja de la tinta: el aro marca su ancho; su centro está a medio ancho desde arriba (la base cuelga abajo).
+    let x0 = w, x1 = -1, y0 = h;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (data[y * w + x] < 128) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; }
+    if (x1 - x0 < w * .2) return buffer;
+    const R = (x1 - x0) / 2, cx = (x0 + x1) / 2, cy = y0 + R;
+    // Un aro deja vacías las esquinas de su caja; una foto que llena el cuadro no (DH18264 se recortaba en círculo).
+    const corner = R * .25;
+    for (const [qx, qy] of [[x0, y0], [x1 - corner, y0]]) {
+        let ink = 0, n = 0;
+        for (let y = Math.round(qy); y < qy + corner; y++) for (let x = Math.round(qx); x < qx + corner; x++) { n++; if (inkAt(x, y)) ink++; }
+        if (!n || ink / n > .02) return buffer;
+    }
+    // Por cada ángulo (sin el sector de abajo, donde puede ir la base): ¿hay un trazo DELGADO en la orilla y luego
+    // aire hacia adentro? Se mide su grosor.
+    let hits = 0, total = 0;
+    const thick = [];
+    for (let k = 0; k < 360; k += 2) {
+        const t = k * Math.PI / 180;
+        if (Math.sin(t) > .7) continue;   // abajo (y crece hacia abajo): base
+        total++;
+        let r = R + 2, outer = null;
+        for (; r > R * .9; r -= .5) if (inkAt(Math.round(cx + Math.cos(t) * r), Math.round(cy + Math.sin(t) * r))) { outer = r; break; }
+        if (outer == null) continue;
+        let inner = outer;
+        while (inner > R * .85 && inkAt(Math.round(cx + Math.cos(t) * inner), Math.round(cy + Math.sin(t) * inner))) inner -= .5;
+        const width = outer - inner;
+        // Trazo delgado (menos del 3 % del radio) seguido de aire: es el aro, no un relleno del dibujo.
+        let gap = 0;
+        for (let r2 = inner; r2 > inner - R * .02; r2 -= .5) if (!inkAt(Math.round(cx + Math.cos(t) * r2), Math.round(cy + Math.sin(t) * r2))) gap++;
+        if (width > 0 && width < R * .03 && gap >= R * .02) { hits++; thick.push(width); }
+    }
+    if (!total || hits / total < .7) return buffer;   // no hay aro
+    thick.sort((a, b) => a - b);
+    const ringWidth = thick[Math.floor(thick.length / 2)];
+    // Todo lo que esté del aro hacia afuera (con un margen) se vuelve blanco.
+    const cut = R - ringWidth - Math.max(2, R * .012);
+    const out = Buffer.from(data);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (Math.hypot(x - cx, y - cy) > cut) out[y * w + x] = 255;
+    console.log(`[AUTO-LAMP] Aro del acrílico borrado (radio ${Math.round(R)} px, grosor ${ringWidth.toFixed(1)} px, ${hits}/${total} ángulos).`);
+    return sharp(out, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
+}
+
 async function fitToLampCircle(buffer, side = 2000) {
     const { data, info } = await sharp(buffer).greyscale().raw().toBuffer({ resolveWithObject: true });
     const w = info.width, h = info.height;
@@ -694,7 +744,8 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     // Grabado listo (negro sobre blanco); el del mockup además se reacomoda para llenar el círculo.
     const engraved = await engravePolarity(downloaded);
     const cleanTemplate = plan.template && !TEMPLATES[plan.template].rename;   // el grabado del taller tal cual (Spiderman)
-    const buffer = cleanTemplate ? downloaded : plan.template ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(engraved) : engraved;
+    // Del mockup: sin el aro del acrílico que el modelo copia (removeRing) y acomodado para llenar el círculo.
+    const buffer = cleanTemplate ? downloaded : plan.template ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved)) : engraved;
     const meta = await sharp(buffer).metadata();
     const font = await loadFont();
     const { composeLamp, renderPreview, pictureSizeMm, rdworksPiece } = await composerModule();
@@ -1395,4 +1446,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
 }
 
 module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
-    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen };
+    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing };
