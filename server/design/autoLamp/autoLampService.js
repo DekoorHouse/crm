@@ -37,6 +37,9 @@ const CLIENT_PREVIEW_STYLE = 4;
 const RASTER_PROMPT = 'dame el diseño de la imagen con rellenos blancos y fondos negros. En raster engrave con degradado en trama';
 // Mockup (foto/render de la lámpara prendida que ya vio el cliente) -> el grabado TAL CUAL, con su texto.
 const MOCKUP_PROMPT = 'Esta imagen es un mockup de una lámpara LED de acrílico redonda, encendida. Extrae SOLO el diseño grabado dentro del círculo de acrílico: el dibujo y el texto/nombre EXACTAMENTE como están (mismas letras, misma tipografía, misma pose y posición), centrado y ocupando el cuadro como ocupa el círculo. Quita la base, la mesa, el fondo, los reflejos y el color de la luz. Solo blanco y negro, sin colores: el diseño en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla, sin círculos, marcos ni bordes. En raster engrave con degradado en trama.';
+// SIN EL ARO (Chris, 20-oct-2026, unicornio «Mia Valentina»): el modelo copiaba la orilla circular del acrílico que
+// brilla en el mockup como una línea alrededor del dibujo; el contorno de la lámpara lo pone el marco, no el grabado.
+const NO_RING = 'MUY IMPORTANTE: NO dibujes la línea circular del contorno ni la orilla del acrílico (el aro que brilla alrededor de la lámpara), ni ningún círculo, aro, marco o borde alrededor del diseño: SOLO la imagen del centro (el dibujo y su texto), con el fondo negro liso hasta las orillas.';
 // ESTILO (Chris, 20-oct-2026): hay diseños PLANOS (siluetas y rellenos sólidos, tipo vector: el unicornio de
 // DH18198) y diseños con TRAMA (dibujos con sombreado, fotos: el T-Rex). A los planos NO se les pide "degradado en
 // trama" (el modelo les inventaba sombreado y el brillo de la luz salía como degradado) y se pasan a 1 bit por
@@ -346,7 +349,9 @@ async function rasterize(reference, { description = '', extra = '', prompt: over
     }
     const prompt = styled(override || (reference
         ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT) + (/qwen/i.test(model) ? '. Solo blanco y negro, sin colores; fondo negro uniforme de orilla a orilla, sin círculos, marcos ni bordes.' : '')
-        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa${textInImage ? '' : ', sin texto ni letras'}. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`), estilo) + (textInImage ? ` ${textInImageRule(textInImage)}` : noText ? ` ${NO_TEXT}` : '');
+        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa${textInImage ? '' : ', sin texto ni letras'}. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`), estilo) + (textInImage ? ` ${textInImageRule(textInImage)}` : noText ? ` ${NO_TEXT}` : '')
+        // Sin el aro del contorno, salvo en las plantillas del taller («Cambia el nombre por…»: se edita tal cual).
+        + (/^Cambia el nombre/i.test(override) ? '' : ` ${NO_RING}`);
     const fields = { requestId: crypto.randomUUID(), model, prompt, aspect_ratio: '1:1' };
     // VARIOS PEDIDOS A LA VEZ (Chris, 19-oct-2026): la GPU de Qwen hace una imagen a la vez; si está ocupada
     // con otra lámpara, se espera su turno (cada 10 s, hasta 15 min) en vez de pasarse a gpt-image.
