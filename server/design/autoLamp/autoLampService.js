@@ -236,26 +236,35 @@ Para CADA lámpara decide:
 - "advertencias": dudas que no puedes resolver de ESA lámpara (ej. "la foto es muy oscura", "no queda claro el nombre", "no encontré el mockup de esta lámpara"); [] si nada.
 - "cambia": ${prevList ? 'true si por la INDICACIÓN/CAMBIO hay que rehacer ESTA lámpara; false si se queda como está.' : 'true.'}
 Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "textoEnImagen": false, "textoCambia": false, "tipo": "...", "estilo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
+    const kinds = new Map();   // parte de imagen -> { prefix C|N, catalog } (Gemini no acepta campos extra en las partes)
     for (const [prefix, list] of [['C', client], ['N', sent]]) {
         for (const [i, image] of list.entries()) {
-            try { parts.push({ text: `Imagen ${prefix}${i}${image.text ? ` (mensaje: "${image.text.slice(0, 200)}")` : ''}:` }, await imagePart(image.url)); }
+            try { const part = await imagePart(image.url); kinds.set(part, { prefix, catalog: !!image.catalog }); parts.push({ text: `Imagen ${prefix}${i}${image.text ? ` (mensaje: "${image.text.slice(0, 200)}")` : ''}:` }, part); }
             catch (_) { parts.push({ text: `Imagen ${prefix}${i}: (no se pudo descargar)` }); }
         }
     }
+    // El filtro de Gemini puede bloquear TODA la lectura (PROHIBITED_CONTENT, DH18289) por una imagen o por la
+    // mezcla de chat + imágenes. Se reintenta quitando cosas por pasos y se avisa al equipo qué se omitió.
+    const omit = (k, why) => { parts[k] = { text: `(imagen omitida: ${why})` }; };
+    const fallbacks = [
+        ['imágenes que el filtro bloquea solas', async () => { for (let k = 0; k < parts.length; k++) if (parts[k].inlineData && await imageBlocked(parts[k])) omit(k, 'el filtro de la IA no la deja ver'); }],
+        ['imágenes que mandamos nosotros', () => parts.forEach((p, k) => { if (kinds.get(p)?.prefix === 'N') omit(k, 'se quitó por el filtro de la IA'); })],
+        ['la conversación', () => { parts[0] = { text: parts[0].text.replace(history || '(sin mensajes)', '(conversación omitida por el filtro de la IA: decide con los datos del pedido y las imágenes)') }; }],
+        ['fotos del cliente (solo quedó el modelo del catálogo)', () => parts.forEach((p, k) => { if (p.inlineData && !kinds.get(p)?.catalog) omit(k, 'se quitó por el filtro de la IA'); })],
+    ];
     let answer;
-    try { answer = await geminiJson(parts); }
-    catch (error) {
-        if (!error.blocked) throw error;
-        // Una imagen del chat hizo que Gemini bloqueara todo (DH18289: un anuncio con un niño dormido junto a la
-        // lámpara). Se revisa cada imagen sola y se quitan las que bloquea; luego se lee el pedido otra vez.
-        let removed = 0;
-        for (let k = 0; k < parts.length; k++) {
-            if (parts[k].inlineData && await imageBlocked(parts[k])) { parts[k] = { text: '(imagen omitida: el filtro de la IA no la deja ver)' }; removed++; }
+    const omitted = [];
+    for (let step = 0; !answer; step++) {
+        try { answer = await geminiJson(parts); }
+        catch (error) {
+            if (!error.blocked || step >= fallbacks.length) throw error;
+            const [label, apply] = fallbacks[step];
+            console.warn(`[AUTO-LAMP] Gemini bloqueó la lectura del pedido; se omiten: ${label}.`);
+            omitted.push(label);
+            await apply();
         }
-        if (!removed) throw error;
-        console.warn(`[AUTO-LAMP] ${removed} imagen(es) bloqueadas por Gemini; se omiten.`);
-        answer = await geminiJson(parts);
     }
+    const filterNote = omitted.length ? [`El filtro de la IA bloqueó la lectura; se omitieron: ${omitted.join(', ')}. Revisa que el diseño corresponda.`] : [];
     const rows = Array.isArray(answer.lamparas) ? answer.lamparas : [];
     return lamps.map(lamp => {
         const row = rows.find(r => Number(r.lampara) === lamp.index) || rows[lamp.index] || {};
@@ -275,7 +284,7 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
             nombre: String(row.nombre || '').trim().slice(0, 400),
             prompt: String(row.prompt || '').trim().slice(0, 1500),
             resumen: String(row.resumen || '').trim().slice(0, 400),
-            advertencias: (Array.isArray(row.advertencias) ? row.advertencias : []).map(String).slice(0, 6),
+            advertencias: (Array.isArray(row.advertencias) ? row.advertencias : []).map(String).slice(0, 6).concat(filterNote),
             cambia: row.cambia !== false,
             // La foto del catálogo trae un nombre de muestra («Miguel»): siempre se saca sin letras y va el del cliente.
             textoCambia: fuente === 'mockup' && (row.textoCambia === true || !!reference?.catalog),
