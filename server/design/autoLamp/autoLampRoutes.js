@@ -73,4 +73,8 @@ router.post('/:dh/reject', async (req, res) => {
     catch (error) { res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo descartar.' }); }
 });
 
+// Al arrancar el servidor (cada deploy de Render), lo que estaba «diseñando» murió con el proceso anterior: se marca
+// como interrumpido para que la tarjeta ofrezca «Rehacer» en vez de quedarse con el contador corriendo (DH18198).
+setTimeout(() => service.markInterrupted().catch(error => console.warn('[AUTO-LAMP] no pude revisar los interrumpidos:', error.message)), 15000);
+
 module.exports = router;

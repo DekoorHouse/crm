@@ -1053,6 +1053,21 @@ async function approve(dh, { svg = null, actor = null, force = false } = {}) {
     }
 }
 
+// Diseños que quedaron «working» de un proceso anterior del servidor (se reinició a media generación).
+async function markInterrupted() {
+    const snap = await db.collection('pedidos').where('autoLamp.status', 'in', ['working', 'uploading']).limit(50).get();
+    for (const doc of snap.docs) {
+        const a = doc.data().autoLamp || {};
+        if (a.status === 'uploading') {
+            // A media subida: Drive pudo haber recibido algo; NO se reintenta solo (approve lo explica).
+            await doc.ref.update({ 'autoLamp.step': 'Revisar Drive: el servidor se reinició a media subida', 'autoLamp.updatedAt': now() });
+            continue;
+        }
+        await doc.ref.update({ 'autoLamp.status': 'error', 'autoLamp.error': 'Se interrumpió porque el servidor se reinició (actualización). Dale «Rehacer».', 'autoLamp.updatedAt': now() });
+        console.log(`[AUTO-LAMP] DH${doc.data().consecutiveOrderNumber}: diseño interrumpido por reinicio, marcado para rehacer.`);
+    }
+}
+
 // Descarta el diseño (no sube nada). Después se puede regenerar con una indicación.
 async function reject(dh, { reason = '', actor = null } = {}) {
     const orderDoc = await findOrder(dh);
@@ -1062,5 +1077,5 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
+module.exports = { generate, status, approve, reject, markInterrupted, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
     pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor };
