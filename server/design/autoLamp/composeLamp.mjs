@@ -244,7 +244,8 @@ export async function rdworksPiece(document, font) {
 // ARRIBA de la otra, pegadas al borde izquierdo con la pestaña a la izquierda. Esquina superior izquierda de
 // cada lámpara (ya girada) en la hoja, en mm.
 export const RDWORKS_SHEET = { width: 350, height: 330 };
-export const RDWORKS_SLOTS = [{ x: 0, y: 0.349 }, { x: 0, y: 161.549 }];
+// Entre las dos lámparas van 5 mm (Chris, 20-oct-2026; en la plantilla eran 1.2 mm): 0.349 + 160 + 5.
+export const RDWORKS_SLOTS = [{ x: 0, y: 0.349 }, { x: 0, y: 165.349 }];
 const RDWORKS_MARK = '<rect x="0" y="0" width="20" height="20" fill="none" stroke="#0000ff" stroke-width="0.2"/>';
 const NUMBER_PAIR = /(-?\d*\.?\d+(?:e-?\d+)?)[ ,]+(-?\d*\.?\d+(?:e-?\d+)?)/gi;
 
