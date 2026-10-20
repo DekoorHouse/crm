@@ -1303,6 +1303,48 @@ async function uploadQueuedAlone(dh, { actor = null } = {}) {
     }
 }
 
+/**
+ * «Reabrir para corregir» (Chris, 20-oct-2026, DH18256): un diseño ya subido cuyo archivo la persona BORRÓ de
+ * Drive vuelve a «Revisar diseño» (rehacer, editor, aprobar). Si su hoja era compartida, el otro pedido también
+ * se quedó sin archivo: regresa a «listo para aprobar» con su mismo diseño (no se rehace). Lo que había en Drive
+ * queda en svgCorteHistory.
+ */
+async function reopen(dh, { actor = null } = {}) {
+    const orderDoc = await findOrder(dh);
+    const order = orderDoc.data(), autoLamp = order.autoLamp || {};
+    if (autoLamp.status !== 'approved' || autoLamp.queued) throw Object.assign(new Error(autoLamp.queued ? 'Está en cola esperando pareja: todavía no se sube, se puede rehacer con «Subir sola» o esperar.' : 'Este diseño no está subido a Drive.'), { status: 409 });
+    const files = order.svgCorteFiles || (order.svgCorteUrl ? [{ url: order.svgCorteUrl, name: order.svgCorteFileName || '' }] : []);
+    const who = actor?.email || actor?.uid || null;
+    const cleared = (step, data) => ({
+        svgCorteAt: admin.firestore.FieldValue.delete(), svgCorteBy: admin.firestore.FieldValue.delete(), svgCorteUrl: admin.firestore.FieldValue.delete(),
+        svgCorteUrls: admin.firestore.FieldValue.delete(), svgCorteFileName: admin.firestore.FieldValue.delete(), svgCortePreviewUrl: admin.firestore.FieldValue.delete(),
+        svgCorteStorageUrl: admin.firestore.FieldValue.delete(), svgCorteFiles: admin.firestore.FieldValue.delete(),
+        svgCorteHistory: admin.firestore.FieldValue.arrayUnion({ at: data.svgCorteAt || null, by: data.svgCorteBy || null, files: data.svgCorteFiles || [], removedBy: who, removedAt: admin.firestore.Timestamp.now(), reason: 'borrado de Drive para corregir' }),
+        'autoLamp.status': 'ready', 'autoLamp.step': step, 'autoLamp.driveUrl': admin.firestore.FieldValue.delete(), 'autoLamp.driveUrls': admin.firestore.FieldValue.delete(),
+        'autoLamp.pairedWith': admin.firestore.FieldValue.delete(), 'autoLamp.error': admin.firestore.FieldValue.delete(), 'autoLamp.updatedAt': now(),
+    });
+    // El otro pedido de una hoja compartida: solo si esa hoja era todo lo suyo (si tenía más hojas, se avisa).
+    const partners = [];
+    for (const file of files) {
+        const other = (String(file.name || '').match(/DH(\d+)-DH(\d+)-ia-beta/) || []).slice(1).map(Number).find(n => n && n !== Number(dh));
+        if (!other) continue;
+        const partnerDoc = await findOrder(other).catch(() => null);
+        const p = partnerDoc?.data();
+        if (!p) continue;
+        const theirs = p.svgCorteFiles || [];
+        if (p.autoLamp?.status === 'approved' && theirs.length === 1 && theirs[0].name === file.name) {
+            await partnerDoc.ref.update(cleared(`Su hoja (compartida con DH${dh}) se borró de Drive: vuelve a aprobarla para subirla`, p));
+            partners.push({ dh: other, reset: true });
+        } else partners.push({ dh: other, reset: false });
+        try { await require('../designPending').recomputeForContact(p.contactId || p.telefono); } catch (_) {}
+    }
+    await orderDoc.ref.update(cleared('Reabierto para corregir (se borró de Drive)', order));
+    try { await require('../designPending').recomputeForContact(order.contactId || order.telefono); } catch (_) {}
+    const manual = partners.filter(p => !p.reset).map(p => `DH${p.dh}`);
+    await notifyAdmin(`↩️ DH${dh} se reabrió para corregir (su archivo se borró de Drive)${partners.some(p => p.reset) ? `. Su hoja era compartida: ${partners.filter(p => p.reset).map(p => `DH${p.dh}`).join(', ')} también regresó a «Revisar diseño» para volver a subirlo` : ''}${manual.length ? `. OJO: ${manual.join(', ')} compartía la hoja pero tiene más archivos; revisa a mano que su lámpara se vuelva a subir` : ''}.`);
+    return { partners };
+}
+
 // Saca un pedido de la cola sin subirlo (el cliente pidió un cambio después de aprobar).
 async function leaveQueue(ref) {
     await db.runTransaction(async tx => {
@@ -1348,4 +1390,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
 }
 
 module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
-    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue };
+    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen };

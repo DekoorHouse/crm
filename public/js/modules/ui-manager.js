@@ -1022,7 +1022,9 @@ function _dlDoneBox(a, o) {
             <button data-dl="upload-alone" ${a.queued.claimedBy ? 'disabled' : ''} style="margin-top:7px;padding:6px 11px;border-radius:8px;border:1px solid #0369a1;background:transparent;color:#0369a1;font-weight:700;cursor:pointer"><i class="fas fa-cloud-arrow-up"></i> ${a.queued.claimedBy ? 'Subiendo…' : 'Subir sola ya'}</button></div>`;
     }
     const sheets = files.map((f, i) => `<div style="display:inline-block;margin:6px 8px 0 0;text-align:center">${f.preview ? `<img src="${escapeHtml(f.preview)}" onclick="openImageModal(this.src)" style="height:120px;border-radius:6px;border:1px solid var(--color-border,#e5e7eb);cursor:zoom-in;background:#fff"><br>` : ''}<a href="${escapeHtml(f.url || '#')}" target="_blank" rel="noopener" style="font-size:12px;font-weight:700"><i class="fab fa-google-drive"></i> ${files.length > 1 ? 'Hoja ' + (i + 1) : 'Abrir en Drive'}</a></div>`).join('');
-    return `<div style="margin-top:8px;border:1px solid #db277766;background:#db277710;border-radius:8px;padding:8px 10px;font-size:12.5px"><b style="color:#be185d"><i class="fas fa-circle-check"></i> En Drive (SVG Corte)${when ? ' desde el ' + escapeHtml(when) : ''}${a.approvedBy ? ' · ' + escapeHtml(a.approvedBy) : ''}</b><div>${sheets}</div></div>`;
+    // Reabrir: si hay que corregirlo después de subirlo (se borra el archivo de Drive y vuelve a «Revisar diseño»).
+    return `<div style="margin-top:8px;border:1px solid #db277766;background:#db277710;border-radius:8px;padding:8px 10px;font-size:12.5px"><b style="color:#be185d"><i class="fas fa-circle-check"></i> En Drive (SVG Corte)${when ? ' desde el ' + escapeHtml(when) : ''}${a.approvedBy ? ' · ' + escapeHtml(a.approvedBy) : ''}${a.pairedWith ? ` · en la hoja con DH${escapeHtml(String(a.pairedWith))}` : ''}</b><div>${sheets}</div>
+        <button data-dl="reopen" style="margin-top:8px;padding:6px 11px;border-radius:8px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;cursor:pointer"><i class="fas fa-rotate-left"></i> Reabrir para corregir</button></div>`;
 }
 
 function _dlLampCard(l, dh, total, done = false) {
@@ -1188,6 +1190,16 @@ function openDesignBeta(orderId) {
                 _dlSetLocal(orderId, { ...a, status: 'approved', driveUrl: d.driveUrl, driveUrls: d.driveUrls || null });
                 if (d.pairedWith && typeof showToast === 'function') showToast(`${o.orderNumber} se subió en la hoja junto con DH${d.pairedWith}`, 'success');
                 if (d.driveUrl) window.open(d.driveUrl, '_blank', 'noopener');
+            } else if (act === 'reopen') {
+                const shared = a.pairedWith ? `<br><br>⚠️ Su hoja era <b>compartida con DH${escapeHtml(String(a.pairedWith))}</b>: al borrarla también se fue esa lámpara. DH${escapeHtml(String(a.pairedWith))} regresa a «Revisar diseño» para volver a aprobarla (con su mismo diseño).` : '';
+                if (!await showConfirmModal(`¿Reabrir ${o.orderNumber} para corregirlo?<br><br>Primero <b>borra su archivo de la carpeta SVG Corte de Drive</b> (si no, se cortaría dos veces). El diseño regresa a «Revisar diseño»: puedes rehacerlo, corregirlo en el editor y volver a aprobarlo.${shared}`, { icon: 'warning', confirmText: 'Ya lo borré, reabrir' })) { btn.disabled = false; return; }
+                await _dlCall(dh, '/reopen', {});
+                close();
+                o.svgCorteUrl = null; o.svgCorteAt = null; o.boardCol = 'pendientes';
+                const partner = a.pairedWith && (window._designPendingData || []).find(x => _dlDh(x) === String(a.pairedWith));
+                if (partner && partner.autoLamp) { partner.svgCorteUrl = null; partner.svgCorteAt = null; partner.boardCol = 'pendientes'; partner.autoLamp = { ...partner.autoLamp, status: 'ready', pairedWith: null, files: null }; }
+                _dlSetLocal(orderId, { ...a, status: 'ready', step: 'Reabierto para corregir', pairedWith: null, files: null, driveUrl: null, driveUrls: null });
+                openDesignBeta(orderId);
             } else if (act === 'upload-alone') {
                 close(); await dpBetaUploadAlone(orderId, null);
             } else if (act === 'reject') {

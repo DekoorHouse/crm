@@ -53,6 +53,14 @@ router.post('/:dh/upload-alone', async (req, res) => {
     catch (error) { console.warn(`[AUTO-LAMP] subir sola DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo subir a Drive.' }); }
 });
 
+// «Reabrir para corregir»: el archivo se borró de Drive y el diseño vuelve a «Revisar diseño».
+router.post('/:dh/reopen', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    try { res.json({ success: true, ...(await service.reopen(dh, { actor: req.apiAuth })) }); }
+    catch (error) { console.warn(`[AUTO-LAMP] reabrir DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo reabrir.' }); }
+});
+
 // La que espera pareja más de 12 h sale sola (revisa cada 15 min).
 setInterval(() => service.flushStaleQueue().catch(error => console.warn('[AUTO-LAMP] cola de hojas:', error.message)), 15 * 60 * 1000);
 
