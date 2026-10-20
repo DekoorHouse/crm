@@ -61,6 +61,14 @@ router.post('/:dh/reopen', async (req, res) => {
     catch (error) { console.warn(`[AUTO-LAMP] reabrir DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo reabrir.' }); }
 });
 
+// «Quitar aro»: limpia el aro del acrílico de un diseño ya hecho, sin regenerarlo (body.lamp = índice).
+router.post('/:dh/remove-ring', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    try { res.json({ success: true, ...(await service.removeRingFromLamp(dh, Number(req.body?.lamp ?? 0) || 0, { actor: req.apiAuth })) }); }
+    catch (error) { console.warn(`[AUTO-LAMP] quitar aro DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo quitar el aro.' }); }
+});
+
 // La que espera pareja más de 12 h sale sola (revisa cada 15 min).
 setInterval(() => service.flushStaleQueue().catch(error => console.warn('[AUTO-LAMP] cola de hojas:', error.message)), 15 * 60 * 1000);
 

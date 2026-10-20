@@ -1050,6 +1050,7 @@ function _dlLampCard(l, dh, total, done = false) {
                 ${model}${warn}
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
                     ${l.projectId ? `<a href="/editor-v2/?project=${encodeURIComponent(l.projectId)}&dh=${dh}" target="_blank" rel="noopener" style="padding:5px 9px;border-radius:7px;border:1px solid #0ea5e9;color:#0284c7;font-weight:700;font-size:12px;text-decoration:none"><i class="fas fa-pen-ruler"></i> Corregir en el editor</a>` : ''}
+                    ${l.projectId && !done ? `<button data-dl="remove-ring" data-lamp="${l.index}" title="Borra la línea circular del contorno (el aro del acrílico) de ESTE diseño, sin regenerarlo; respeta lo corregido en el editor" style="padding:5px 9px;border-radius:7px;border:1px solid #64748b;background:transparent;color:#475569;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-circle-notch"></i> Quitar aro</button>` : ''}
                     ${total > 1 && !done ? `<button data-dl="redo-one" data-lamp="${l.index}" title="Rehace solo esta lámpara (con la indicación de abajo, si escribiste una)" style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer esta</button>` : ''}
                 </div>
             </div>
@@ -1208,6 +1209,17 @@ function openDesignBeta(orderId) {
             } else if (act === 'redo') {
                 if (ready) await _dlCall(dh, '/reject', { reason: note || 'rehacer' }).catch(() => {});
                 close(); await startDesignBeta(orderId, null, note);
+            } else if (act === 'remove-ring') {
+                const l = lampOf(btn);
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Quitando…';
+                const d = await _dlCall(dh, '/remove-ring', { lamp: l.index });
+                if (!d.changed) { btn.innerHTML = '<i class="fas fa-circle-notch"></i> Sin aro'; alert('No encontré un aro en este diseño: no se cambió nada.'); return; }
+                l.previewUrl = d.previewUrl; l.clientPreviewUrl = null;
+                if (l.index === 0 && o.autoLamp) o.autoLamp.previewUrl = d.previewUrl;
+                const card = wrap.querySelector(`[data-lamp-card="${l.index}"]`), img = card && card.querySelector('[data-dl-img]');
+                if (img) img.src = d.previewUrl;
+                card?.querySelectorAll('[data-dl="view-grabado"],[data-dl="view-cliente"]').forEach(b => { const on = b.dataset.dl === 'view-grabado'; b.style.background = on ? '#7c3aed' : 'transparent'; b.style.color = on ? '#fff' : '#7c3aed'; });
+                btn.innerHTML = '<i class="fas fa-check"></i> Aro quitado';
             } else if (act === 'redo-one') {
                 const l = lampOf(btn);
                 close(); await startDesignBeta(orderId, null, note, [l.index]);

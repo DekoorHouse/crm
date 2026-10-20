@@ -542,6 +542,21 @@ async function removeRing(buffer) {
     const cut = R - ringWidth - Math.max(2, R * .012);
     const out = Buffer.from(data);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (Math.hypot(x - cx, y - cy) > cut) out[y * w + x] = 255;
+    // La orilla de arriba de la base (una raya recta larga y delgada abajo del dibujo, DH18276) también se va.
+    const thin = Math.max(3, Math.ceil(ringWidth * 2 + 2)), dark = (x, y) => x >= 0 && x < w && y >= 0 && y < h && out[y * w + x] < 128;
+    for (let y = Math.round(cy + R * .6); y < Math.min(h, Math.round(cy + R)); y++) {
+        for (let x = 0; x < w;) {
+            if (!dark(x, y)) { x++; continue; }
+            let end = x; while (end < w && dark(end, y)) end++;
+            if (end - x > R * .35) {
+                // Raya y no relleno: arriba y abajo de ella (a más de su grosor) casi no hay tinta.
+                let near = 0;
+                for (let xx = x; xx < end; xx += 3) if (dark(xx, y - thin) || dark(xx, y + thin)) near++;
+                if (near / ((end - x) / 3) < .2) for (let yy = y - thin + 1; yy < y + thin; yy++) for (let xx = x; xx < end; xx++) if (yy >= 0 && yy < h) out[yy * w + xx] = 255;
+            }
+            x = end;
+        }
+    }
     console.log(`[AUTO-LAMP] Aro del acrílico borrado (radio ${Math.round(R)} px, grosor ${ringWidth.toFixed(1)} px, ${hits}/${total} ángulos).`);
     return sharp(out, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
 }
@@ -947,6 +962,36 @@ async function teamPreview(dh, index = 0) {
     await updateLamp(orderDoc.ref, lamp.index, { previewUrl: url, previewRevision: current });
     if (lamp.index === 0) await orderDoc.ref.update({ 'autoLamp.previewUrl': url }).catch(() => {});
     return { url, revision: current };
+}
+
+/**
+ * «Quitar aro» a un diseño YA hecho (Chris, 20-oct-2026): limpia la imagen de grabado guardada en el proyecto
+ * (con lo que se haya corregido en el editor) con removeRing, sin regenerar el dibujo. Guarda una versión nueva
+ * del proyecto y rehace la vista. Solo diseños sin subir (para uno ya en Drive: «Reabrir para corregir» primero).
+ */
+async function removeRingFromLamp(dh, index = 0, { actor = null } = {}) {
+    const orderDoc = await findOrder(dh);
+    const autoLamp = orderDoc.data().autoLamp || {};
+    if (autoLamp.status !== 'ready') throw Object.assign(new Error(autoLamp.status === 'approved' ? 'Ya está aprobado/subido: primero «Reabrir para corregir».' : 'El diseño no está listo para revisar.'), { status: 409 });
+    const lamp = lampsOf(autoLamp).find(l => l.index === Number(index));
+    if (!lamp?.projectId) throw Object.assign(new Error('Esta lámpara no tiene diseño de la IA.'), { status: 404 });
+    const ref = db.collection('editor_v2_projects').doc(lamp.projectId);
+    const project = (await ref.get()).data();
+    if (!project) throw Object.assign(new Error('No encontré el proyecto del diseño.'), { status: 404 });
+    const document = JSON.parse(project.documentJson);
+    const frame = document.objects.find(item => item.powerClip);
+    const picture = frame?.powerClip.objects.find(item => item.type === 'image');
+    if (!picture) throw Object.assign(new Error('No encontré la imagen de grabado dentro del marco.'), { status: 422 });
+    const original = /^data:/.test(picture.src) ? Buffer.from(picture.src.split(',')[1], 'base64') : (await download(picture.src)).buffer;
+    const cleaned = await removeRing(original);
+    if (cleaned === original) return { changed: false };
+    const { pngWithDpi } = await bitmapTools();
+    const png = Buffer.from(pngWithDpi(await sharp(cleaned).greyscale().threshold(128).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
+    picture.src = await saveFile(`editor-v2/images/${ACTOR.uid}/${crypto.createHash('sha256').update(png).digest('hex')}`, png, 'image/png');
+    const revision = (Number(project.revision) || 1) + 1;
+    await ref.update({ documentJson: JSON.stringify(document), revision, updatedAt: now(), updatedBy: actor?.uid || ACTOR.uid });
+    const preview = await teamPreview(dh, lamp.index);
+    return { changed: true, revision, previewUrl: preview.url };
 }
 
 // Hojas para RDWorks del pedido (2 lámparas por hoja, cada una tantas veces como su cantidad) desde la
@@ -1446,4 +1491,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
 }
 
 module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
-    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing };
+    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp };
