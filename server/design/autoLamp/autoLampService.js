@@ -476,7 +476,15 @@ const TEMPLATES = {
     dino_premium: { file: 'dino-premium-referencia.png', match: /dino\s*premium/i, label: 'Dino premium (plantilla del taller)', rename: true },
 };
 const templateCache = {};
-const templateFor = lamp => Object.entries(TEMPLATES).find(([, t]) => t.match.test(`${lamp.producto} ${lamp.datos}`))?.[0] || null;
+// La plantilla se usa solo si el PERSONAJE cuadra: un producto «Dino premium» con «Personaje: flores» (DH18179,
+// la clienta pidió flores para Regina) no lleva el T-Rex; va por el camino normal de la IA.
+TEMPLATES.spiderman.character = /spider|ara[ñn]a/i;
+TEMPLATES.dino_premium.character = /dino|rex|saurio/i;
+const templateFor = lamp => Object.entries(TEMPLATES).find(([, t]) => {
+    if (!t.match.test(`${lamp.producto} ${lamp.datos}`)) return false;
+    const personaje = lamp.personaje || ((String(lamp.datos || '').match(/personaje\s*:\s*([^|\n]+)/i) || [])[1] || '').trim();
+    return !personaje || t.character.test(personaje) || t.match.test(personaje);
+})?.[0] || null;
 const templateImage = key => (templateCache[key] ||= require('fs').promises.readFile(require('path').join(__dirname, 'assets', TEMPLATES[key].file)));
 
 // Dónde va el nombre en una plantilla: arriba a la IZQUIERDA (como en los mockups), lo más grande posible sin
