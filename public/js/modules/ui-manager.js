@@ -1067,11 +1067,23 @@ function openDesignBeta(orderId) {
     document.body.appendChild(wrap);
     const close = () => wrap.remove();
     const lampOf = btn => lamps.find(l => l.index === Number(btn.dataset.lamp));
+    // El previo del cliente siempre se pide al servidor: lo rearma solo si la versión del proyecto cambió (si alguien
+    // lo corrigió en el editor), si no devuelve el mismo al instante.
     const clientUrl = async l => {
-        if (l.clientPreviewUrl) return l.clientPreviewUrl;
         const d = await _dlCall(dh, '/client-preview', { lamp: l.index });
         l.clientPreviewUrl = d.url; return d.url;
     };
+    // La vista «Grabado» se pone al día con la última versión guardada (lo corregido en el editor; DH18267).
+    lamps.filter(l => l.projectId).forEach(l => {
+        _dlCall(dh, '/team-preview', { lamp: l.index }).then(d => {
+            if (!d.url || d.url === l.previewUrl) return;
+            l.previewUrl = d.url;
+            const card = wrap.querySelector(`[data-lamp-card="${l.index}"]`), img = card && card.querySelector('[data-dl-img]');
+            const onGrabado = card && card.querySelector('[data-dl="view-grabado"]')?.style.background.includes('124');   // pestaña activa (#7c3aed)
+            if (img && (onGrabado || !card.querySelector('[data-dl="view-grabado"]'))) img.src = d.url;
+            if (l.index === 0 && o.autoLamp) o.autoLamp.previewUrl = d.url;
+        }).catch(() => {});
+    });
     wrap.addEventListener('click', async ev => {
         if (ev.target === wrap) return close();
         const btn = ev.target.closest('[data-dl]'); if (!btn) return;

@@ -58,6 +58,14 @@ router.post('/:dh/send-client', async (req, res) => {
     catch (error) { console.warn(`[AUTO-LAMP] mandar previo DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo mandar al cliente.' }); }
 });
 
+// Vista «Grabado» de una lámpara desde la versión actual del proyecto (lo corregido en el editor). No manda nada.
+router.post('/:dh/team-preview', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    try { res.json({ success: true, ...(await service.teamPreview(dh, Number(req.body?.lamp ?? 0) || 0)) }); }
+    catch (error) { res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo armar la vista.' }); }
+});
+
 // Previo para el cliente (círculo con fondo blanco), desde la versión actual del proyecto. No manda nada.
 router.post('/:dh/client-preview', async (req, res) => {
     const dh = dhOf(req.params.dh);

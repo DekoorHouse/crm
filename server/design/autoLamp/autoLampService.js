@@ -768,6 +768,27 @@ async function clientPreview(dh, index = 0) {
     return { url, revision: project.revision };
 }
 
+/**
+ * Vista «Grabado» (la del equipo) de una lámpara desde la versión ACTUAL del proyecto: si alguien la corrigió en el
+ * editor, la ventana de revisión muestra lo corregido y no lo que armó la IA (DH18267, 20-oct-2026).
+ */
+async function teamPreview(dh, index = 0) {
+    const orderDoc = await findOrder(dh);
+    const lamp = lampsOf(orderDoc.data().autoLamp).find(l => l.index === Number(index));
+    if (!lamp?.projectId) throw Object.assign(new Error('Esta lámpara no tiene diseño de la IA.'), { status: 404 });
+    const project = (await db.collection('editor_v2_projects').doc(lamp.projectId).get()).data();
+    if (!project) throw Object.assign(new Error('No encontré el proyecto del diseño.'), { status: 404 });
+    const current = Number(project.revision) || 1;
+    // Sin cambios desde que se armó (o desde la última vez): la misma imagen.
+    if (lamp.previewUrl && Number(lamp.previewRevision || lamp.projectRevision || 1) === current) return { url: lamp.previewUrl, revision: current };
+    const { document } = await projectDocument(lamp.projectId);
+    const { renderPreview } = await composerModule();
+    const url = await saveFile(`${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}/vista-previa-r${current}-${Date.now().toString(36)}.png`, renderPreview(document, await loadFont()), 'image/png');
+    await updateLamp(orderDoc.ref, lamp.index, { previewUrl: url, previewRevision: current });
+    if (lamp.index === 0) await orderDoc.ref.update({ 'autoLamp.previewUrl': url }).catch(() => {});
+    return { url, revision: current };
+}
+
 // Hojas para RDWorks del pedido (2 lámparas por hoja, cada una tantas veces como su cantidad) desde la
 // última versión guardada de cada proyecto.
 async function rdworksSheetsFor(dh, autoLamp) {
@@ -1077,5 +1098,5 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, markInterrupted, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
+module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
     pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor };
