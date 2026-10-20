@@ -1006,7 +1006,7 @@ async function startDesignBeta(orderId, el, note, lamps) {
 }
 window.startDesignBeta = startDesignBeta;
 
-const _DL_SOURCE = { mockup: 'Del mockup que ya vio el cliente', cliente: 'Foto/imagen del cliente', ilustracion: 'Ilustración nueva' };
+const _DL_SOURCE = { mockup: 'Del mockup que ya vio el cliente', cliente: 'Foto/imagen del cliente', ilustracion: 'Ilustración nueva', propia: 'Imagen del equipo (sin IA)' };
 
 // Una tarjeta por lámpara: vista Grabado / Previo cliente, lo que entendió la IA y sus acciones.
 // «Ver diseño»: lo que se subió a Drive (hojas para RDWorks con su vista previa y su link).
@@ -1050,6 +1050,7 @@ function _dlLampCard(l, dh, total, done = false) {
                 ${model}${warn}
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
                     ${l.projectId ? `<a href="/editor-v2/?project=${encodeURIComponent(l.projectId)}&dh=${dh}" target="_blank" rel="noopener" style="padding:5px 9px;border-radius:7px;border:1px solid #0ea5e9;color:#0284c7;font-weight:700;font-size:12px;text-decoration:none"><i class="fas fa-pen-ruler"></i> Corregir en el editor</a>` : ''}
+                    ${!done ? `<button data-dl="own-image" data-lamp="${l.index}" title="Arma esta lámpara con una imagen tuya (sin IA): se pasa a grabado y se acomoda en el círculo" style="padding:5px 9px;border-radius:7px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-upload"></i> Usar mi imagen</button>` : ''}
                     ${l.projectId && !done ? `<button data-dl="remove-ring" data-lamp="${l.index}" title="Borra la línea circular del contorno (el aro del acrílico) de ESTE diseño, sin regenerarlo; respeta lo corregido en el editor" style="padding:5px 9px;border-radius:7px;border:1px solid #64748b;background:transparent;color:#475569;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-circle-notch"></i> Quitar aro</button>` : ''}
                     ${total > 1 && !done ? `<button data-dl="redo-one" data-lamp="${l.index}" title="Rehace solo esta lámpara (con la indicación de abajo, si escribiste una)" style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer esta</button>` : ''}
                 </div>
@@ -1085,6 +1086,7 @@ function openDesignBeta(orderId) {
         ${done ? _dlDoneBox(a, o) : ''}${done ? '' : modeBox}${_dlClientBox(a.client)}
         ${a.autoSendHeld ? `<div style="margin-top:8px;border:1px solid #f59e0b66;background:#f59e0b14;color:#b45309;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-hand"></i> No siguió solo: ${escapeHtml(a.autoSendHeld)}</div>` : ''}
         ${lamps.map(l => _dlLampCard(l, dh, lamps.length, done)).join('')}
+        ${!lamps.length && !done ? `<div style="margin-top:10px"><button data-dl="own-image" data-lamp="0" title="Arma la lámpara con una imagen tuya (sin IA)" style="padding:7px 11px;border-radius:8px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;cursor:pointer"><i class="fas fa-upload"></i> Usar mi imagen</button></div>` : ''}
         <div style="font-size:11.5px;color:#64748b;margin-top:8px">Lo que se sube a Drive es la hoja para RDWorks (2 lámparas por hoja, girada y espejeada), armada con la última versión guardada de cada lámpara.</div>
         <textarea data-dl="note" ${done ? 'hidden' : ''} placeholder="Indicación para rehacer (opcional): «usa la otra foto», «sin texto», «que se vea de cuerpo completo»…" style="width:100%;min-height:50px;margin-top:10px;padding:7px 9px;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:var(--color-surface,#fff);color:inherit;font-size:12.5px">${reopened && a.client?.text ? escapeHtml(`El cliente pidió: ${a.client.text}`) : ''}</textarea>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:10px">
@@ -1209,6 +1211,27 @@ function openDesignBeta(orderId) {
             } else if (act === 'redo') {
                 if (ready) await _dlCall(dh, '/reject', { reason: note || 'rehacer' }).catch(() => {});
                 close(); await startDesignBeta(orderId, null, note);
+            } else if (act === 'own-image') {
+                // Imagen propia (sin IA): elegir archivo, decir si lleva texto aparte, y se arma en el servidor.
+                const index = Number(btn.dataset.lamp) || 0, l = lamps.find(x => x.index === index);
+                const file = await new Promise(resolve => {
+                    const input = document.createElement('input');
+                    input.type = 'file'; input.accept = 'image/png,image/jpeg,image/webp';
+                    input.onchange = () => resolve(input.files && input.files[0]);
+                    window.addEventListener('focus', () => setTimeout(() => resolve(input.files && input.files[0]), 600), { once: true });
+                    input.click();
+                });
+                if (!file) { btn.disabled = false; return; }
+                const nombre = window.prompt('Texto que el sistema pone APARTE, con nuestra fuente, abajo.\nDéjalo VACÍO si tu imagen ya trae el nombre:', (l && l.brief && l.brief.nombre) || '');
+                if (nombre === null) { btn.disabled = false; return; }
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Armando…';
+                const form = new FormData();
+                form.append('image', file); form.append('lamp', String(index)); form.append('nombre', nombre.trim());
+                const res = await fetch(`${API_BASE_URL}/api/auto-lamp/${dh}/own-image`, { method: 'POST', body: form });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok || d.success === false) throw new Error(d.error || ('HTTP ' + res.status));
+                const { autoLamp } = await _dlCall(dh, '');
+                close(); _dlSetLocal(orderId, _dlNormalize(autoLamp)); openDesignBeta(orderId);
             } else if (act === 'remove-ring') {
                 const l = lampOf(btn);
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Quitando…';

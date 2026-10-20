@@ -69,6 +69,23 @@ router.post('/:dh/remove-ring', async (req, res) => {
     catch (error) { console.warn(`[AUTO-LAMP] quitar aro DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo quitar el aro.' }); }
 });
 
+// «Usar mi imagen»: arma la lámpara con una imagen del equipo (sin IA). multipart: image, lamp, nombre, estilo.
+const multer = require('multer');
+const ownImage = multer({ storage: multer.memoryStorage(), limits: { files: 1, fileSize: 15 * 1024 * 1024, fields: 6, fieldSize: 2000 } }).single('image');
+router.post('/:dh/own-image', (req, res, next) => ownImage(req, res, err => err ? res.status(400).json({ success: false, error: err.code === 'LIMIT_FILE_SIZE' ? 'La imagen pesa más de 15 MB.' : err.message }) : next()), async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    if (!req.file || !/^image\//.test(req.file.mimetype || '')) return res.status(400).json({ success: false, error: 'Falta la imagen (PNG, JPG o WEBP).' });
+    if (running.has(dh)) return res.status(409).json({ success: false, error: 'Todavía se está generando este diseño.' });
+    running.add(dh);
+    try {
+        const estilo = ['plano', 'trama'].includes(req.body?.estilo) ? req.body.estilo : undefined;
+        const lamp = await service.buildFromImage(dh, req.file.buffer, { lampIndex: Number(req.body?.lamp ?? 0) || 0, nombre: String(req.body?.nombre || '').trim().slice(0, 400), estilo, actor: req.apiAuth });
+        res.json({ success: true, lamp });
+    } catch (error) { console.warn(`[AUTO-LAMP] imagen propia DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo armar con la imagen.' }); }
+    finally { running.delete(dh); }
+});
+
 // La que espera pareja más de 12 h sale sola (revisa cada 15 min).
 setInterval(() => service.flushStaleQueue().catch(error => console.warn('[AUTO-LAMP] cola de hojas:', error.message)), 15 * 60 * 1000);
 

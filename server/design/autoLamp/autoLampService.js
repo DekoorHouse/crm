@@ -917,7 +917,13 @@ async function generate(dh, options = {}) {
  * (negro sobre blanco) y se arma igual que el Beta: grabado 1 bit, acomodado para llenar el círculo, nombre aparte
  * solo si se da. Queda en «Revisar diseño» (no se manda ni se sube solo). Chris, 20-oct-2026, DH18183.
  */
-async function buildFromImage(dh, buffer, { lampIndex = 0, nombre = '', estilo = 'plano', actor = null } = {}) {
+async function buildFromImage(dh, buffer, { lampIndex = 0, nombre = '', estilo, actor = null } = {}) {
+    // Sin estilo: un logo/silueta en blanco y negro va «plano» (umbral); con muchos grises (foto, sombreado), «trama».
+    if (!estilo) {
+        const { data } = await sharp(buffer).flatten({ background: '#ffffff' }).greyscale().resize(300, 300, { fit: 'inside' }).raw().toBuffer({ resolveWithObject: true });
+        let mid = 0; for (const v of data) if (v > 40 && v < 215) mid++;
+        estilo = mid / data.length > .08 ? 'trama' : 'plano';
+    }
     const orderDoc = await findOrder(dh);
     const order = orderDoc.data(), ref = orderDoc.ref;
     if (['uploading', 'working'].includes(order.autoLamp?.status) || (order.autoLamp?.status === 'approved' && !order.autoLamp?.queued && order.autoLamp?.client?.status !== 'change_after_approval'))
