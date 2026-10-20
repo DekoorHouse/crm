@@ -473,8 +473,45 @@ function _dpTabsBar(tab) {
         <input name="num" placeholder="DH17330" autocomplete="off" title="Número del pedido que quieres añadir a Pendientes" style="width:110px;padding:5px 8px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;font-size:.85rem;background:var(--color-bg,#fff);color:inherit">
         <button type="submit" class="btn btn-sm" style="background:#6f42c1;color:#fff;border:none;white-space:nowrap"><i class="fas fa-plus"></i> Añadir a Pendientes</button>
     </form>`;
-    return `<div style="display:flex;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--color-border);margin-bottom:14px">${b('tablero', 'Tablero')}${b('pendientes', 'Pendientes')}${b('svgia', 'SVG IA')}${b('disenados', 'Diseñados ✓')}${add}</div>`;
+    // Buscador del tablero: filtra las tarjetas de todas las columnas mientras escribes.
+    const search = tab === 'tablero' ? `<div style="position:relative;margin-left:auto;padding-bottom:4px">
+        <i class="fas fa-search" style="position:absolute;left:9px;top:9px;font-size:.8rem;color:var(--color-text-light,#94a3b8)"></i>
+        <input id="dp-search" type="search" value="${escapeHtml(window._dpSearch || '')}" oninput="window._dpSearch=this.value;_dpApplySearch()" placeholder="Buscar pedido: DH, nombre, personaje…" autocomplete="off" title="Busca por número, cliente, nombres, personaje o nota" style="width:260px;padding:5px 8px 5px 27px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;font-size:.85rem;background:var(--color-bg,#fff);color:inherit">
+    </div>` : '';
+    return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;border-bottom:1px solid var(--color-border);margin-bottom:14px">${b('tablero', 'Tablero')}${b('pendientes', 'Pendientes')}${b('svgia', 'SVG IA')}${b('disenados', 'Diseñados ✓')}${search}${add.replace('margin-left:auto;', search ? '' : 'margin-left:auto;')}</div>
+        ${tab === 'tablero' ? '<div id="dp-search-hint" style="display:none;margin:-6px 0 10px;font-size:.85rem"></div>' : ''}`;
 }
+
+// Sin acentos ni mayúsculas, para buscar «andres» y encontrar «Andrés».
+const _dpNorm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+// Aplica el buscador al tablero: esconde las tarjetas que no coinciden y actualiza los conteos de cada columna.
+function _dpApplySearch() {
+    const q = _dpNorm(window._dpSearch).trim(), terms = q.split(/\s+/).filter(Boolean);
+    let shown = 0;
+    document.querySelectorAll('#design-pending-container .dp-col').forEach(col => {
+        let n = 0;
+        col.querySelectorAll('.dp-card').forEach(card => {
+            const hay = card.dataset.search || '';
+            // «18183» encuentra «DH18183»; cada palabra debe aparecer.
+            const ok = !terms.length || terms.every(t => hay.includes(t.replace(/^dh(?=\d)/, '')));
+            card.style.display = ok ? '' : 'none';
+            if (ok) n++;
+        });
+        const count = col.querySelector('.dp-col-count');
+        if (count) count.textContent = terms.length ? `${n} / ${col.querySelectorAll('.dp-card').length}` : col.querySelectorAll('.dp-card').length;
+        shown += n;
+    });
+    const hint = document.getElementById('dp-search-hint');
+    if (!hint) return;
+    const num = (q.match(/^(?:dh)?\s*(\d{4,6})$/) || [])[1];
+    if (terms.length && !shown) {
+        hint.style.display = '';
+        hint.innerHTML = `<span style="color:#b45309"><i class="fas fa-circle-info"></i> Ningún pedido del tablero coincide con «${escapeHtml(window._dpSearch.trim())}».</span>`
+            + (num ? ` <button onclick="(()=>{const f=document.querySelector('#design-pending-container form input[name=num]');if(f){f.value='DH${num}';addDesignPendingByNumber(f.form);}})()" style="margin-left:6px;padding:3px 9px;border-radius:6px;border:none;background:#6f42c1;color:#fff;font-weight:700;cursor:pointer"><i class="fas fa-plus"></i> Traer DH${num} a Pendientes</button>` : '');
+    } else { hint.style.display = 'none'; hint.innerHTML = ''; }
+}
+window._dpApplySearch = _dpApplySearch;
 
 // Añade un pedido a Pendientes por su número (POST /api/design-pending/add) y refresca la vista.
 async function addDesignPendingByNumber(form) {
@@ -595,7 +632,9 @@ function dpBoardCard(o, checkedSet) {
             <b>${conf.texto ? '💬 Respondió' : 'Reaccionó'}${conf.reaccion ? ' ' + escapeHtml(conf.reaccion) : ''}</b>${conf.at ? ' · ' + escapeHtml(dpHaceTxt(conf.at)) : ''}
             ${conf.texto ? `<div class="dp-conf-txt">“${escapeHtml(conf.texto)}”</div>` : ''}
         </div>` : '';
-    return `<div class="dp-card${conf ? ' dp-card-conf' : ''}" data-order="${escapeHtml(o.id)}">
+    // Texto en el que busca el buscador del tablero (número, cliente, datos, producto, nota, teléfono).
+    const searchText = _dpNorm([o.orderNumber, o.clienteName, o.datos, o.producto, o.comentarioDiseno, o.telefono, o.contactId].filter(Boolean).join(' '));
+    return `<div class="dp-card${conf ? ' dp-card-conf' : ''}" data-order="${escapeHtml(o.id)}" data-search="${escapeHtml(searchText)}">
         <div class="dp-card-top">
             <span class="dp-card-num" onclick="copyDesignOrderNumber(this,'${escapeHtml(o.orderNumber)}')" title="Clic para copiar el número">${escapeHtml(o.orderNumber)}</span>
             <span class="dp-card-actions">${respBubble}${chk}${chatBtn}</span>
@@ -642,7 +681,12 @@ function _paintDesignBoard() {
             <div class="dp-col-list" data-col="${key}" id="dp-col-${key}">${cards}</div>
         </div>`;
     }).join('');
+    // El tablero se repinta en vivo: el buscador conserva lo escrito y el foco (para no cortar a quien escribe).
+    const searching = document.activeElement && document.activeElement.id === 'dp-search';
+    const caret = searching ? document.activeElement.selectionStart : null;
     container.innerHTML = DP_BOARD_CSS + _dpTabsBar('tablero') + `<div class="dp-board">${cols}</div>`;
+    _dpApplySearch();
+    if (searching) { const s = document.getElementById('dp-search'); if (s) { s.focus(); try { s.setSelectionRange(caret, caret); } catch (_) {} } }
     _dpInitSortable();
     _dpFitBoardHeight();
     // Restaura el scroll de cada columna (capturado arriba antes de reconstruir el DOM).
