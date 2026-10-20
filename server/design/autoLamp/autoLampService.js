@@ -888,9 +888,15 @@ async function teamPreview(dh, index = 0) {
 // Hojas para RDWorks del pedido (2 lámparas por hoja, cada una tantas veces como su cantidad) desde la
 // última versión guardada de cada proyecto.
 async function rdworksSheetsFor(dh, autoLamp) {
+    const { rdworksSheets } = await composerModule();
+    return rdworksSheets((await piecesFor(autoLamp)).map(piece => ({ piece, copies: 1 })), `DH${dh}`);
+}
+
+// Las piezas de corte del pedido, una por lámpara Y por cada copia (en el orden de las hojas), ya revisadas.
+async function piecesFor(autoLamp) {
     const lamps = lampsOf(autoLamp);
     if (!lamps.length) throw Object.assign(new Error('No hay lámparas diseñadas.'), { status: 409 });
-    const { rdworksPiece, rdworksSheets } = await composerModule();
+    const { rdworksPiece } = await composerModule();
     const font = await loadFont();
     const pieces = [], problems = [];
     for (const lamp of lamps) {
@@ -903,7 +909,7 @@ async function rdworksSheetsFor(dh, autoLamp) {
     // REVISIÓN antes de subir (DH18191, 19-oct-2026: se movió en el editor y se subió recortada): si el diseño
     // guardado quedó mal armado, no se sube; hay que corregirlo en el editor.
     if (problems.length) throw Object.assign(new Error(`El diseño guardado no está listo para cortar: ${problems.join('; ')}. Corrígelo en el editor y vuelve a aprobar.`), { status: 422, code: 'DESIGN_BROKEN' });
-    return rdworksSheets(pieces, `DH${dh}`);
+    return pieces.flatMap(({ piece, copies }) => Array.from({ length: Math.max(1, Number(copies) || 1) }, () => piece));
 }
 
 // ¿El diseño de una lámpara quedó mal armado? (en el editor se puede arrastrar el marco o sacar cosas de él)
@@ -1029,7 +1035,7 @@ async function afterReady(dh, lamps, mode, auth) {
         if (!isPaid(order)) return hold('sale del mockup que ya vio el cliente pero el pago no está validado', 'Listo · esperando pago');
         try {
             const r = await approve(dh, { actor: { email: 'mockup pagado (directo a corte)' } });
-            await notifyAdmin(`✅ DH${dh} — diseño de la IA (BETA) sacado del mockup que ya pagó el cliente: se subió directo a Drive (SVG Corte)${r.driveUrls.length > 1 ? ` en ${r.driveUrls.length} hojas` : ''}: ${r.driveUrls.join(' ')}`);
+            await notifyAdmin(`✅ DH${dh} — diseño de la IA (BETA) sacado del mockup que ya pagó el cliente: ${uploadSummary(r)}`);
         } catch (error) { await hold(`no se pudo subir a Drive (${error.message})`, 'Listo · no se pudo subir solo'); }
         return;
     }
@@ -1064,7 +1070,7 @@ async function handleBetaDecision(orderId, decision, { clientText = '', changeSu
             if (seen[lamp.index] != null && Number(rev) !== Number(seen[lamp.index])) changed.push(`${lamp.label || 'lámpara ' + (lamp.index + 1)} (versión ${seen[lamp.index]} → ${rev})`);
         }
         if (changed.length) return { uploaded: false, error: `el diseño se modificó en el editor DESPUÉS de mandárselo al cliente: ${changed.join(', ')}. Revisa que siga igual a lo que aprobó y súbelo a mano` };
-        try { const r = await approve(dh, { actor: { email: 'cliente (aprobó por WhatsApp)' } }); return { uploaded: true, ...r, driveUrl: r.driveUrls.join(' ') }; }
+        try { const r = await approve(dh, { actor: { email: 'cliente (aprobó por WhatsApp)' } }); return { uploaded: true, ...r, driveUrl: r.driveUrls.join(' '), summary: uploadSummary(r) }; }
         catch (error) { return { uploaded: false, error: error.message }; }
     }
     if (decision === 'changes') {
@@ -1085,13 +1091,17 @@ async function changeAfterApproval(orderId, clientText = '') {
     const order = (await ref.get()).data() || {};
     const autoLamp = order.autoLamp || {};
     await ref.update({ 'autoLamp.client': { ...(autoLamp.client || {}), status: 'change_after_approval', answeredAt: now(), text: String(clientText).slice(0, 300) } });
+    // Si su lámpara esperaba pareja para la hoja, sale de la cola (todavía no se sube nada).
+    const wasQueued = !!autoLamp.queued && !autoLamp.queued.claimedBy;
+    if (wasQueued) await leaveQueue(ref).catch(() => {});
     const dh = order.consecutiveOrderNumber ? `DH${order.consecutiveOrderNumber}` : orderId;
     const subido = order.svgCorteAt?.toMillis ? Math.round((Date.now() - order.svgCorteAt.toMillis()) / 60000) : null;
     const hace = subido == null ? '' : subido < 90 ? ` hace ${subido} min` : ` hace ${Math.round(subido / 60)} h`;
     const guia = order.guiaEnvio && order.guiaEnvio.guia;
     const links = (autoLamp.driveUrls && autoLamp.driveUrls.length ? autoLamp.driveUrls : [order.svgCorteUrl]).filter(Boolean).join(' ');
     await notifyAdmin(`✏️ ${dh} — el cliente pidió un CAMBIO después de aprobar el diseño de la IA (BETA): "${String(clientText).slice(0, 200)}".\n`
-        + `• El archivo se subió a Drive (SVG Corte)${hace}: ${links || '(sin link)'}\n`
+        + (wasQueued ? `• Su lámpara estaba EN COLA esperando pareja: se sacó de la cola y NO se subió${links ? ` (lo que ya estaba en Drive: ${links})` : ''}\n`
+            : `• El archivo se subió a Drive (SVG Corte)${hace}: ${links || '(sin link)'}\n`)
         + `• Estatus: ${order.estatus || '—'}${guia ? ` · YA TIENE GUÍA ${guia}` : ' · sin guía'}\n`
         + `👉 Revisa en taller si ya se cortó/grabó. Si no, sácalo de la fila de corte y corrígelo. Al cliente ya se le dijo que lo vamos a checar; el pedido regresó a Pendientes de Diseño y la IA quedó pausada en su chat.`);
 }
@@ -1113,13 +1123,52 @@ function alreadyUploaded(order) {
     return { when, by, links, text: `Este pedido YA se subió a Drive (SVG Corte) el ${when}, por ${by}${links.length ? `: ${links.join(' ')}` : ''}` };
 }
 
+// --- COLA DE LÁMPARAS SUELTAS (Chris, 20-oct-2026) -----------------------------------------------------------
+// La hoja de las máquinas lleva DOS lámparas. Un pedido con un número impar de lámparas sube sus parejas y la que
+// sobra espera en cola; cuando otro pedido deja una suelta, se juntan en una hoja «DHa-DHb» y quedan subidos los
+// dos. «Subir sola» la sube sin esperar, y si en QUEUE_MAX_HOURS no llegó pareja sale sola (como los corazones del
+// corte automático). La cola es UN lugar (si hay alguien esperando, el siguiente se junta con él).
+const QUEUE_REF = () => db.collection('crm_settings').doc('design_beta_sheet_queue');
+const QUEUE_MAX_HOURS = 12;
+
+async function uploadSheet(folder, stamp, suffix, svgText, driveName) {
+    const { uploadDrive } = require('../svgCutStorage');
+    const { Resvg } = require('@resvg/resvg-js');
+    const bytes = Buffer.from(svgText);
+    const storageUrl = await saveFile(`${folder}/aprobado-${stamp}${suffix}.svg`, bytes, 'image/svg+xml');
+    let preview = null;
+    try { preview = await saveFile(`${folder}/aprobado-${stamp}${suffix}.png`, new Resvg(svgText, { fitTo: { mode: 'width', value: 1400 }, background: '#ffffff' }).render().asPng(), 'image/png'); }
+    catch (_) { /* sin vista previa de la hoja */ }
+    const upload = await uploadDrive(driveName, bytes);
+    return { name: upload.name, url: upload.webViewLink, svg: storageUrl, preview };
+}
+
+// Deja el pedido como subido a Drive con sus hojas (los campos que leen el tablero, el candado y el chat).
+function uploadedFields(files, { actor = null, svg = null, previous = null, pairedWith = null, previewUrl = null } = {}) {
+    return {
+        svgCorteAt: admin.firestore.Timestamp.now(), svgCorteBy: 'auto-lamp-beta', svgCorteUrl: files[0].url,
+        svgCorteUrls: files.length > 1 ? files.map(f => f.url).join(',') : null,
+        svgCorteFileName: files[0].name, svgCortePreviewUrl: files[0].preview || previewUrl || null, svgCorteStorageUrl: files[0].svg,
+        svgCorteFiles: files,
+        // Subida repetida confirmada por una persona: se guarda qué había antes.
+        ...(previous ? { svgCorteHistory: admin.firestore.FieldValue.arrayUnion({ ...previous, replacedBy: actor?.email || actor?.uid || null, replacedAt: admin.firestore.Timestamp.now() }) } : {}),
+        'autoLamp.status': 'approved', 'autoLamp.step': pairedWith ? `Aprobado y en Drive (en la hoja con DH${pairedWith})` : 'Aprobado y en Drive',
+        'autoLamp.driveUrl': files[0].url, 'autoLamp.driveUrls': files.map(f => f.url),
+        'autoLamp.queued': admin.firestore.FieldValue.delete(), 'autoLamp.queuedFiles': admin.firestore.FieldValue.delete(),
+        ...(pairedWith ? { 'autoLamp.pairedWith': pairedWith } : {}),
+        'autoLamp.approvedAt': now(), 'autoLamp.approvedBy': actor?.email || actor?.uid || null,
+        'autoLamp.approvedFromEditor': !!svg, 'autoLamp.error': admin.firestore.FieldValue.delete(), 'autoLamp.updatedAt': now(),
+    };
+}
+
 /**
  * Sube a Drive (SVG Corte) las hojas para RDWorks del pedido, armadas desde la última versión guardada de cada
  * proyecto. svg: solo indica que se aprobó desde el editor. force: subir aunque el pedido YA tenga un archivo
- * en Drive (solo una persona, después de ver el aviso; los caminos automáticos nunca lo mandan).
+ * en Drive (solo una persona, después de ver el aviso; los caminos automáticos nunca lo mandan). alone: la
+ * lámpara que sobra se sube sola en su hoja en vez de esperar pareja.
+ * Devuelve { driveUrls, queued } (queued = una lámpara se quedó esperando pareja).
  */
-async function approve(dh, { svg = null, actor = null, force = false } = {}) {
-    const { uploadDrive } = require('../svgCutStorage');
+async function approve(dh, { svg = null, actor = null, force = false, alone = false } = {}) {
     const orderDoc = await findOrder(dh);
     const ref = orderDoc.ref;
     // Candado contra doble subida: solo un 'ready' pasa a 'uploading'. Un 'uploading' que quedó colgado
@@ -1130,8 +1179,9 @@ async function approve(dh, { svg = null, actor = null, force = false } = {}) {
         const data = (await tx.get(ref)).data() || {}, current = data.autoLamp;
         if (!current || current.status !== 'ready') {
             const why = current?.status === 'uploading' ? 'Ya se está subiendo (o se cortó a media subida: revisa Drive antes de reintentar).'
+                : current?.queued ? 'Ya se aprobó y está en cola esperando otra lámpara para la hoja (usa «Subir sola» si no quieres esperar).'
                 : current?.status === 'approved' ? (alreadyUploaded(data)?.text || 'Ya se aprobó y subió a Drive.') : 'No hay un diseño listo para aprobar.';
-            throw Object.assign(new Error(why), { status: 409, code: current?.status === 'approved' ? 'ALREADY_UPLOADED' : undefined });
+            throw Object.assign(new Error(why), { status: 409, code: current?.status === 'approved' && !current?.queued ? 'ALREADY_UPLOADED' : undefined });
         }
         const before = alreadyUploaded(data);
         if (before && !force) throw Object.assign(new Error(`${before.text}. Para no cortarlo dos veces NO se volvió a subir.`), { status: 409, code: 'ALREADY_UPLOADED', previous: before });
@@ -1139,38 +1189,62 @@ async function approve(dh, { svg = null, actor = null, force = false } = {}) {
         tx.update(ref, { 'autoLamp.status': 'uploading', 'autoLamp.step': 'Subiendo a Drive', 'autoLamp.updatedAt': now() });
         return current;
     });
-    let sent = false;
+    let sent = false, partner = null;
     const files = [];
     try {
-        const sheets = await rdworksSheetsFor(dh, autoLamp);
+        const { rdworksSheets, rdworksSheet } = await composerModule();
+        const pieces = await piecesFor(autoLamp);
+        const leftover = !alone && pieces.length % 2 === 1 ? pieces.pop() : null;
         const folder = `${STORAGE_DIR}/DH${dh}`, stamp = Date.now().toString(36);
-        const { Resvg } = require('@resvg/resvg-js');
-        for (const [k, svgText] of sheets.entries()) {
-            const suffix = sheets.length > 1 ? `-h${k + 1}` : '';
-            const bytes = Buffer.from(svgText);
-            const storageUrl = await saveFile(`${folder}/aprobado-${stamp}${suffix}.svg`, bytes, 'image/svg+xml');
-            let preview = null;
-            try { preview = await saveFile(`${folder}/aprobado-${stamp}${suffix}.png`, new Resvg(svgText, { fitTo: { mode: 'width', value: 1400 }, background: '#ffffff' }).render().asPng(), 'image/png'); }
-            catch (_) { /* sin vista previa de la hoja */ }
+        // 1) Las parejas del propio pedido (y, con «subir sola», la que sobra en su hoja).
+        const own = pieces.length ? rdworksSheets(pieces.map(piece => ({ piece, copies: 1 })), `DH${dh}`) : [];
+        for (const [k, svgText] of own.entries()) {
+            const suffix = own.length > 1 ? `-h${k + 1}` : '';
             sent = true;
-            const upload = await uploadDrive(`DH${dh}-ia-beta-${stamp}${suffix}.svg`, bytes);
-            files.push({ name: upload.name, url: upload.webViewLink, svg: storageUrl, preview });
+            files.push(await uploadSheet(folder, stamp, suffix, svgText, `DH${dh}-ia-beta-${stamp}${suffix}.svg`));
         }
-        await ref.update({
-            svgCorteAt: admin.firestore.Timestamp.now(), svgCorteBy: 'auto-lamp-beta', svgCorteUrl: files[0].url,
-            svgCorteUrls: files.length > 1 ? files.map(f => f.url).join(',') : null,
-            svgCorteFileName: files[0].name, svgCortePreviewUrl: files[0].preview || autoLamp.previewUrl || null, svgCorteStorageUrl: files[0].svg,
-            svgCorteFiles: files,
-            // Subida repetida confirmada por una persona: se guarda qué había antes.
-            ...(previous ? { svgCorteHistory: admin.firestore.FieldValue.arrayUnion({ ...previous, replacedBy: actor?.email || actor?.uid || null, replacedAt: admin.firestore.Timestamp.now() }) } : {}),
-            'autoLamp.status': 'approved', 'autoLamp.step': 'Aprobado y en Drive', 'autoLamp.driveUrl': files[0].url, 'autoLamp.driveUrls': files.map(f => f.url),
-            'autoLamp.approvedAt': now(), 'autoLamp.approvedBy': actor?.email || actor?.uid || null,
-            'autoLamp.approvedFromEditor': !!svg, 'autoLamp.error': admin.firestore.FieldValue.delete(), 'autoLamp.updatedAt': now(),
-        });
+        if (leftover) {
+            // 2) La que sobra: ¿hay otra esperando? Si no, este pedido se queda en la cola (en la misma transacción).
+            partner = await db.runTransaction(async tx => {
+                const queue = (await tx.get(QUEUE_REF())).data();
+                const waitingRef = queue?.orderId && queue.orderId !== orderDoc.id ? db.collection('pedidos').doc(queue.orderId) : null;
+                const waiting = waitingRef ? (await tx.get(waitingRef)).data() : null;
+                if (waiting?.autoLamp?.queued && !waiting.autoLamp.queued.claimedBy) {
+                    tx.delete(QUEUE_REF());
+                    tx.update(waitingRef, { 'autoLamp.queued.claimedBy': dh });
+                    return { ref: waitingRef, dh: waiting.consecutiveOrderNumber, data: waiting };
+                }
+                tx.set(QUEUE_REF(), { orderId: orderDoc.id, dh, at: now() });
+                tx.update(ref, { 'autoLamp.status': 'approved', 'autoLamp.queued': { at: now() }, 'autoLamp.queuedFiles': files,
+                    'autoLamp.step': files.length ? `${files.length} hoja(s) en Drive; 1 lámpara en cola esperando otra para la hoja` : 'En cola: esperando otra lámpara para juntarla en la hoja',
+                    'autoLamp.driveUrls': files.map(f => f.url), 'autoLamp.approvedAt': now(), 'autoLamp.approvedBy': actor?.email || actor?.uid || null,
+                    'autoLamp.approvedFromEditor': !!svg, 'autoLamp.error': admin.firestore.FieldValue.delete(), 'autoLamp.updatedAt': now() });
+                return null;
+            });
+            if (!partner) {
+                try { await require('../designPending').recomputeForContact(orderDoc.data().contactId || orderDoc.data().telefono); } catch (_) {}
+                return { queued: true, driveUrls: files.map(f => f.url), driveUrl: files[0]?.url || null };
+            }
+            // 3) Hoja compartida: la que esperaba arriba, esta abajo.
+            const partnerPiece = (await piecesFor(partner.data.autoLamp)).pop();
+            const pairSvg = rdworksSheet([{ piece: partnerPiece, slot: 0 }, { piece: leftover, slot: 1 }], `DH${partner.dh} + DH${dh}`);
+            sent = true;
+            const shared = await uploadSheet(folder, stamp, '-par', pairSvg, `DH${partner.dh}-DH${dh}-ia-beta-${stamp}.svg`);
+            files.push(shared);
+            await partner.ref.update(uploadedFields([...(partner.data.autoLamp.queuedFiles || []), shared], { pairedWith: dh, actor: { email: `junto con DH${dh}` }, previewUrl: partner.data.autoLamp.previewUrl }));
+            try { await require('../designPending').recomputeForContact(partner.data.contactId || partner.data.telefono); } catch (_) {}
+        }
+        await ref.update(uploadedFields(files, { actor, svg, previous, pairedWith: partner?.dh || null, previewUrl: autoLamp.previewUrl }));
         try { await require('../designPending').recomputeForContact(orderDoc.data().contactId || orderDoc.data().telefono); } catch (_) {}
         if (previous) await notifyAdmin(`⚠️ DH${dh} se subió OTRA VEZ a Drive (SVG Corte), confirmado por ${actor?.email || 'una persona'}. Ya tenía archivo de antes: revisa que no se corten los dos. Nuevo: ${files.map(f => f.url).join(' ')}`);
-        return { driveUrl: files[0].url, driveUrls: files.map(f => f.url), fileName: files[0].name };
+        return { driveUrl: files[0].url, driveUrls: files.map(f => f.url), fileName: files[0].name, pairedWith: partner?.dh || null };
     } catch (error) {
+        // La que esperaba pareja y no se pudo juntar regresa a la cola (si nadie más la ocupó).
+        if (partner) await db.runTransaction(async tx => {
+            const queue = (await tx.get(QUEUE_REF())).data();
+            tx.update(partner.ref, { 'autoLamp.queued.claimedBy': admin.firestore.FieldValue.delete() });
+            if (!queue) tx.set(QUEUE_REF(), { orderId: partner.ref.id, dh: partner.dh, at: partner.data.autoLamp.queued.at || now() });
+        }).catch(() => {});
         // Antes de mandar a Drive (o si Drive rechazó con error claro) vuelve a 'ready' para reintentar. Si ya
         // subió alguna hoja, o se mandó y no hubo confirmación, es ambiguo: se queda en 'uploading' para revisar
         // Drive a mano (reintentar subiría hojas repetidas).
@@ -1181,6 +1255,64 @@ async function approve(dh, { svg = null, actor = null, force = false } = {}) {
             : { 'autoLamp.status': 'ready', 'autoLamp.step': 'Listo para revisar', 'autoLamp.error': error.message, 'autoLamp.updatedAt': now() }).catch(() => {});
         throw error;
     }
+}
+
+// Cómo quedó una aprobación, para los avisos al equipo.
+function uploadSummary(r) {
+    const links = (r.driveUrls || []).join(' ');
+    if (r.queued) return links ? `se subieron ${r.driveUrls.length} hoja(s) a Drive (SVG Corte): ${links} — y 1 lámpara quedó en cola esperando otra para juntarla en la hoja`
+        : 'quedó en cola esperando otra lámpara para juntarla en la hoja (o «Subir sola» en Pendientes de Diseño)';
+    return `se subió a Drive (SVG Corte)${r.pairedWith ? ` en la hoja junto con DH${r.pairedWith}` : ''}: ${links}`;
+}
+
+// «Subir sola»: la lámpara de un pedido que espera pareja se sube en su hoja sin esperar (una persona, o sola
+// tras QUEUE_MAX_HOURS).
+async function uploadQueuedAlone(dh, { actor = null } = {}) {
+    const orderDoc = await findOrder(dh);
+    const ref = orderDoc.ref;
+    const data = await db.runTransaction(async tx => {
+        const order = (await tx.get(ref)).data() || {};
+        if (!order.autoLamp?.queued) throw Object.assign(new Error('Este pedido no está en cola esperando pareja.'), { status: 409 });
+        if (order.autoLamp.queued.claimedBy) throw Object.assign(new Error(`Ya se está juntando con DH${order.autoLamp.queued.claimedBy}.`), { status: 409 });
+        const queue = (await tx.get(QUEUE_REF())).data();
+        if (queue?.orderId === ref.id) tx.delete(QUEUE_REF());
+        tx.update(ref, { 'autoLamp.queued.claimedBy': 'sola', 'autoLamp.step': 'Subiendo sola a Drive', 'autoLamp.updatedAt': now() });
+        return order;
+    });
+    try {
+        const { rdworksSheet } = await composerModule();
+        const piece = (await piecesFor(data.autoLamp)).pop();
+        const stamp = Date.now().toString(36);
+        const file = await uploadSheet(`${STORAGE_DIR}/DH${dh}`, stamp, '-sola', rdworksSheet([{ piece, slot: 0 }], `DH${dh}`), `DH${dh}-ia-beta-${stamp}.svg`);
+        const files = [...(data.autoLamp.queuedFiles || []), file];
+        await ref.update(uploadedFields(files, { actor, previewUrl: data.autoLamp.previewUrl }));
+        try { await require('../designPending').recomputeForContact(data.contactId || data.telefono); } catch (_) {}
+        return { driveUrl: files[0].url, driveUrls: files.map(f => f.url) };
+    } catch (error) {
+        await ref.update({ 'autoLamp.queued.claimedBy': admin.firestore.FieldValue.delete(), 'autoLamp.error': error.message, 'autoLamp.updatedAt': now() }).catch(() => {});
+        await QUEUE_REF().set({ orderId: ref.id, dh, at: data.autoLamp.queued.at || now() }).catch(() => {});
+        throw error;
+    }
+}
+
+// Saca un pedido de la cola sin subirlo (el cliente pidió un cambio después de aprobar).
+async function leaveQueue(ref) {
+    await db.runTransaction(async tx => {
+        const order = (await tx.get(ref)).data() || {};
+        if (!order.autoLamp?.queued || order.autoLamp.queued.claimedBy) return;
+        const queue = (await tx.get(QUEUE_REF())).data();
+        if (queue?.orderId === ref.id) tx.delete(QUEUE_REF());
+        tx.update(ref, { 'autoLamp.queued': admin.firestore.FieldValue.delete() });
+    });
+}
+
+// La que lleva más de QUEUE_MAX_HOURS esperando pareja sale sola (lo llama un reloj en las rutas).
+async function flushStaleQueue() {
+    const queue = (await QUEUE_REF().get()).data();
+    if (!queue?.at?.toMillis || Date.now() - queue.at.toMillis() < QUEUE_MAX_HOURS * 3600000) return null;
+    const r = await uploadQueuedAlone(queue.dh, { actor: { email: `sin pareja en ${QUEUE_MAX_HOURS} h` } });
+    await notifyAdmin(`🕒 DH${queue.dh} — su lámpara esperó ${QUEUE_MAX_HOURS} h otra para juntarla en la hoja y no llegó: se subió SOLA a Drive (SVG Corte): ${r.driveUrls.join(' ')}`);
+    return r;
 }
 
 // Diseños que quedaron «working» de un proceso anterior del servidor (se reinició a media generación).
@@ -1208,4 +1340,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
 }
 
 module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
-    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor };
+    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue };

@@ -179,7 +179,7 @@ async function handleReply(contactId, message, contactRef, contactData) {
                 const r = await require('./autoLamp/autoLampService').handleBetaDecision(orderId, 'approved', { clientText })
                     .catch(e => ({ uploaded: false, error: e.message }));
                 await notifyAdmin(r && r.uploaded
-                    ? `✅ ${dh} — el cliente APROBÓ el diseño de la IA (BETA) y ya se subió a Drive (SVG Corte): ${r.driveUrl}`
+                    ? `✅ ${dh} — el cliente APROBÓ el diseño de la IA (BETA): ${r.summary || `se subió a Drive (SVG Corte): ${r.driveUrl}`}`
                     : `⚠️ ${dh} — el cliente APROBÓ el diseño de la IA (BETA) pero NO se pudo subir a Drive: ${(r && r.error) || 'error desconocido'}. Súbelo a mano: Pendientes de Diseño → Revisar diseño → «Aprobar y subir a Drive».`);
                 return;
             }

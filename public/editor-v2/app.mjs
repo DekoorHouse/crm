@@ -2469,8 +2469,14 @@ $('#order-approve').onclick = async () => {
             ({ ok, data } = await send(true));
         }
         if (!ok || data.success === false) throw new Error(data.error || 'El servidor no pudo subirlo.');
+        // La hoja lleva 2 lámparas: la que sobra se queda en cola hasta juntarla con otra (o «Subir sola» en el CRM).
+        if (data.queued) {
+            button.textContent = 'Aprobado · en cola';
+            status(`DH${orderLink.dh} aprobado: su lámpara quedó en cola esperando otra para la hoja (en el CRM se puede «Subir sola»).`);
+            return;
+        }
         button.textContent = 'En Drive ✓';
-        status(`DH${orderLink.dh} aprobado y subido a Drive: ${data.fileName || ''}`);
+        status(`DH${orderLink.dh} aprobado y subido a Drive${data.pairedWith ? ` (en la hoja con DH${data.pairedWith})` : ''}: ${data.fileName || ''}`);
         if (data.driveUrl) window.open(data.driveUrl, '_blank', 'noopener');
     } catch (error) {
         button.disabled = false; button.textContent = 'Aprobar y subir a Drive';

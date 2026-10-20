@@ -8749,6 +8749,9 @@ router.get('/design-pending', async (req, res) => {
                     client: p.autoLamp.client ? { status: p.autoLamp.client.status || null, text: p.autoLamp.client.text || '' } : null,
                     autoSendHeld: p.autoLamp.autoSendHeld || null,
                     mode: p.autoLamp.mode || null, driveUrls: p.autoLamp.driveUrls || null,
+                    // Lámpara que espera otra para juntarlas en la hoja de las máquinas (2 por hoja).
+                    queued: p.autoLamp.queued ? { at: tsToMs(p.autoLamp.queued.at), claimedBy: p.autoLamp.queued.claimedBy || null } : null,
+                    pairedWith: p.autoLamp.pairedWith || null,
                     // Hojas que se subieron a Drive (para «Ver diseño»).
                     files: p.autoLamp.status === 'approved' && Array.isArray(p.svgCorteFiles)
                         ? p.svgCorteFiles.map(f => ({ name: f.name || '', url: f.url || null, preview: f.preview || null })) : null,
@@ -8783,8 +8786,9 @@ router.get('/design-pending', async (req, res) => {
                     // DISEÑO BETA ya en Drive (Chris, 19-oct-2026): sale de Pendientes a su propia columna,
                     // salvo que el cliente haya pedido algo DESPUÉS de la subida (entonces regresa) o que alguien
                     // haya movido la tarjeta a mano después (manda la columna manual).
-                    if (p.svgCorteBy === 'auto-lamp-beta' && p.autoLamp && p.autoLamp.status === 'approved') {
-                        const subidoMs = tsToMs(p.svgCorteAt);
+                    // También la que ya se aprobó y espera pareja para la hoja (queued): el diseño ya está hecho.
+                    if (p.autoLamp && p.autoLamp.status === 'approved' && (p.svgCorteBy === 'auto-lamp-beta' || p.autoLamp.queued)) {
+                        const subidoMs = p.autoLamp.queued ? tsToMs(p.autoLamp.queued.at) : tsToMs(p.svgCorteAt);
                         const pidioDespues = Math.max(tsToMs(p.pendienteDisenoAt), tsToMs(p.corregirAt), tsToMs(p.designForceAt),
                             tsToMs(p.reenvioAt), tsToMs(p.videoRequestedAt), tsToMs(p.productoAgregadoPostPagoAt)) > subidoMs;
                         if (pidioDespues) return 'pendientes';

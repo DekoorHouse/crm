@@ -932,6 +932,12 @@ function dpBetaControls(o) {
     // Cambio pedido después de aprobar: se rehace desde la ventana, con lo que pidió el cliente ya escrito.
     if (o.autoLamp && o.autoLamp.status === 'approved' && o.autoLamp.client?.status === 'change_after_approval')
         return `<button onclick="openDesignBeta('${o.id}')" title="El cliente pidió un cambio después de aprobar: «${escapeHtml(o.autoLamp.client.text || '')}». Ábrelo para rehacerlo con su cambio." style="background:#dc2626;color:#fff;border:none;padding:4px 8px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap"><i class="fas fa-pen" style="margin-right:3px"></i>Cambio pedido · Rehacer${_dlBetaBadge}</button>`;
+    // Aprobado y esperando otra lámpara para juntarlas en la hoja: se ve en cola y se puede subir sola.
+    if (o.autoLamp && o.autoLamp.status === 'approved' && o.autoLamp.queued) {
+        const h = o.autoLamp.queued.at ? (Date.now() - o.autoLamp.queued.at) / 3600000 : 0;
+        return `<button onclick="openDesignBeta('${o.id}')" title="Aprobado. Espera otra lámpara para juntarlas en la hoja de las máquinas; si en 12 h no llega, se sube sola." style="background:#0ea5e922;color:#0369a1;border:1px solid #0ea5e966;padding:4px 8px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap"><i class="fas fa-clock" style="margin-right:3px"></i>En cola · esperando pareja ${h.toFixed(1)}h/12h</button>`
+            + `<button onclick="dpBetaUploadAlone('${o.id}', this)" ${o.autoLamp.queued.claimedBy ? 'disabled' : ''} title="Subirla a Drive en su propia hoja, sin esperar pareja" style="background:transparent;color:#0369a1;border:1px solid #0369a1;padding:4px 8px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap"><i class="fas fa-cloud-arrow-up" style="margin-right:3px"></i>Subir sola</button>`;
+    }
     if (o.svgCorteUrl && o.autoLamp && o.autoLamp.status === 'approved' && o.autoLamp.client?.status !== 'change_after_approval') {
         const t = o.autoLamp.previewUrl ? `<img src="${escapeHtml(o.autoLamp.previewUrl)}" style="width:30px;height:30px;object-fit:cover;border-radius:5px;border:1px solid var(--color-border,#e5e7eb)">` : '';
         return `<button onclick="openDesignBeta('${o.id}')" title="Ver cómo quedó el diseño que se subió a Drive" style="background:transparent;color:#db2777;border:1px solid #db2777;padding:2px 8px 2px 2px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:5px">${t}<i class="fas fa-eye"></i> Ver diseño</button>`;
@@ -960,6 +966,8 @@ function _dlNormalize(al) {
     return { status: al.status || null, step: al.step || null, error: al.error || null, previewUrl: al.previewUrl || null, projectId: al.projectId || null,
         driveUrl: al.driveUrl || null, driveUrls: al.driveUrls || null, brief: al.brief || null, note: al.note || null, mode: al.mode || null,
         client: al.client ? { status: al.client.status || null, text: al.client.text || '' } : null, autoSendHeld: al.autoSendHeld || null,
+        queued: al.queued ? { at: al.queued.at?._seconds ? al.queued.at._seconds * 1000 : (typeof al.queued.at === 'number' ? al.queued.at : Date.parse(al.queued.at) || null), claimedBy: al.queued.claimedBy || null } : null,
+        pairedWith: al.pairedWith || null,
         lamps: lamps.map(l => ({ index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null, template: l.template || null, previewUrl: l.previewUrl || null,
             clientPreviewUrl: l.clientPreviewUrl || null, projectId: l.projectId || null, brief: l.brief || null, rasterModel: l.rasterModel || null, rasterFallback: l.rasterFallback || null })) };
 }
@@ -1005,6 +1013,14 @@ const _DL_SOURCE = { mockup: 'Del mockup que ya vio el cliente', cliente: 'Foto/
 function _dlDoneBox(a, o) {
     const files = (a.files && a.files.length) ? a.files : (a.driveUrls || [o.svgCorteUrl]).filter(Boolean).map((url, i) => ({ url, name: `Hoja ${i + 1}` }));
     const when = a.approvedAt ? new Date(a.approvedAt).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    // Aprobado pero su lámpara espera otra para la hoja de las máquinas (2 por hoja).
+    if (a.queued) {
+        const h = a.queued.at ? (Date.now() - a.queued.at) / 3600000 : 0;
+        const upl = files.length ? `<div style="margin-top:4px;font-weight:500">Ya en Drive: ${files.map((f, i) => `<a href="${escapeHtml(f.url || '#')}" target="_blank" rel="noopener">hoja ${i + 1}</a>`).join(' · ')}</div>` : '';
+        return `<div style="margin-top:8px;border:1px solid #0ea5e966;background:#0ea5e910;border-radius:8px;padding:8px 10px;font-size:12.5px;color:#0369a1"><b><i class="fas fa-clock"></i> Aprobado · en cola esperando otra lámpara para la hoja (${h.toFixed(1)} h de 12 h)</b>
+            <div style="font-weight:500;margin-top:3px">En cuanto se apruebe otra lámpara suelta se juntan en una hoja y se suben las dos. Si en 12 h no llega, se sube sola.</div>${upl}
+            <button data-dl="upload-alone" ${a.queued.claimedBy ? 'disabled' : ''} style="margin-top:7px;padding:6px 11px;border-radius:8px;border:1px solid #0369a1;background:transparent;color:#0369a1;font-weight:700;cursor:pointer"><i class="fas fa-cloud-arrow-up"></i> ${a.queued.claimedBy ? 'Subiendo…' : 'Subir sola ya'}</button></div>`;
+    }
     const sheets = files.map((f, i) => `<div style="display:inline-block;margin:6px 8px 0 0;text-align:center">${f.preview ? `<img src="${escapeHtml(f.preview)}" onclick="openImageModal(this.src)" style="height:120px;border-radius:6px;border:1px solid var(--color-border,#e5e7eb);cursor:zoom-in;background:#fff"><br>` : ''}<a href="${escapeHtml(f.url || '#')}" target="_blank" rel="noopener" style="font-size:12px;font-weight:700"><i class="fab fa-google-drive"></i> ${files.length > 1 ? 'Hoja ' + (i + 1) : 'Abrir en Drive'}</a></div>`).join('');
     return `<div style="margin-top:8px;border:1px solid #db277766;background:#db277710;border-radius:8px;padding:8px 10px;font-size:12.5px"><b style="color:#be185d"><i class="fas fa-circle-check"></i> En Drive (SVG Corte)${when ? ' desde el ' + escapeHtml(when) : ''}${a.approvedBy ? ' · ' + escapeHtml(a.approvedBy) : ''}</b><div>${sheets}</div></div>`;
 }
@@ -1049,6 +1065,8 @@ function openDesignBeta(orderId) {
     // Aprobado y en Drive = solo lectura, salvo que el cliente haya pedido un cambio después (se puede rehacer).
     const reopened = a.status === 'approved' && a.client?.status === 'change_after_approval';
     const ready = a.status === 'ready', done = a.status === 'approved' && !reopened;
+    // Hoja de 2 lámparas: con un número impar, la que sobra espera pareja (o se sube sola).
+    const odd = lamps.reduce((n, l) => n + (l.copies || 1), 0) % 2 === 1;
     const modeBox = a.mode === 'mockup' ? `<div style="margin-top:8px;border:1px solid #16a34a66;background:#16a34a14;color:#15803d;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-image"></i> Todo sale de mockups que el cliente ya vio: con el pago validado se sube directo a Drive (SVG Corte), sin mandarle nada.</div>` : '';
     const wrap = document.createElement('div');
     wrap.id = 'dl-beta-modal';
@@ -1070,7 +1088,8 @@ function openDesignBeta(orderId) {
             ${ready ? `<button data-dl="reject" style="padding:8px 12px;border-radius:8px;border:1px solid #dc2626;background:transparent;color:#dc2626;font-weight:700;cursor:pointer">Descartar</button>` : ''}
             <button data-dl="redo" ${done ? 'hidden' : ''} style="padding:8px 12px;border-radius:8px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;cursor:pointer"><i class="fas fa-rotate"></i> ${lamps.length > 1 ? 'Rehacer todo' : 'Rehacer'}</button>
             ${ready && lamps.length ? `<button data-dl="send-client" title="Le manda al cliente un previo por lámpara y espera su respuesta; si aprueba se sube solo a Drive." style="padding:8px 12px;border-radius:8px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;cursor:pointer"><i class="fas fa-paper-plane"></i> ${a.client?.status ? 'Reenviar al cliente' : 'Mandar al cliente'}</button>` : ''}
-            ${ready ? `<button data-dl="approve" style="padding:8px 14px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;cursor:pointer"><i class="fas fa-cloud-arrow-up"></i> Aprobar y subir a Drive</button>` : ''}
+            ${ready && odd ? `<button data-dl="approve-alone" title="Sube la lámpara que sobra en su propia hoja, sin esperar a juntarla con otra" style="padding:8px 12px;border-radius:8px;border:1px solid #16a34a;background:transparent;color:#15803d;font-weight:700;cursor:pointer"><i class="fas fa-cloud-arrow-up"></i> Aprobar y subir sola</button>` : ''}
+            ${ready ? `<button data-dl="approve" title="${odd ? 'La hoja lleva 2 lámparas: la que sobra espera otra (de cualquier pedido) y se suben juntas; si en 12 h no llega, sale sola.' : ''}" style="padding:8px 14px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;cursor:pointer"><i class="fas fa-cloud-arrow-up"></i> ${odd ? 'Aprobar · juntar con otra' : 'Aprobar y subir a Drive'}</button>` : ''}
         </div>
     </div>`;
     document.body.appendChild(wrap);
@@ -1139,24 +1158,38 @@ function openDesignBeta(orderId) {
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mandando…';
                 await _dlCall(dh, '/send-client', {});
                 close(); _dlSetLocal(orderId, { ...a, client: { status: 'sent' } });
-            } else if (act === 'approve') {
-                if (!await showConfirmModal(`¿Aprobar el diseño de ${o.orderNumber} y subir ${lamps.reduce((n, l) => n + (l.copies || 1), 0) > 2 ? 'sus hojas' : 'su hoja'} para RDWorks a la carpeta SVG Corte de Drive? Esto lo manda a producción.`, { icon: 'fa-cloud-arrow-up', confirmText: 'Aprobar y subir' })) { btn.disabled = false; return; }
+            } else if (act === 'approve' || act === 'approve-alone') {
+                const alone = act === 'approve-alone', total = lamps.reduce((n, l) => n + (l.copies || 1), 0);
+                const what = odd && !alone
+                    ? (total > 1 ? `subir sus parejas a Drive y dejar la lámpara que sobra en cola: se junta en la hoja con la siguiente lámpara suelta que se apruebe (de cualquier pedido), o sale sola en 12 h` : `dejar su lámpara en cola: se junta en la hoja con la siguiente lámpara suelta que se apruebe (de cualquier pedido) y se suben las dos; si en 12 h no llega, sale sola`)
+                    : `subir ${total > 2 ? 'sus hojas' : 'su hoja'} para RDWorks a la carpeta SVG Corte de Drive${alone ? ' (la que sobra, sola en su hoja)' : ''}`;
+                if (!await showConfirmModal(`¿Aprobar el diseño de ${o.orderNumber} y ${what}? Esto lo manda a producción.`, { icon: 'fa-cloud-arrow-up', confirmText: odd && !alone ? 'Aprobar' : 'Aprobar y subir' })) { btn.disabled = false; return; }
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo…';
                 let d;
-                try { d = await _dlCall(dh, '/approve', {}); }
+                try { d = await _dlCall(dh, '/approve', { alone }); }
                 catch (e) {
                     // El pedido YA tiene archivo en Drive: avisar y subir otra vez solo si la persona lo confirma.
                     if (e.code !== 'ALREADY_UPLOADED' || !e.previous) throw e;
                     const p = e.previous, links = (p.links || []).map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">ver archivo</a>`).join(' · ');
                     if (!await showConfirmModal(`⚠️ <b>${o.orderNumber} ya se subió a Drive</b> el ${escapeHtml(p.when)}, por ${escapeHtml(p.by)}${links ? ' (' + links + ')' : ''}.<br><br>Si lo subes otra vez, en la carpeta de corte quedan DOS archivos del mismo pedido. Hazlo solo si el anterior NO se va a cortar.`, { icon: 'warning', danger: true, confirmText: 'Subir otra vez', cancelText: 'No subir' })) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-arrow-up"></i> Aprobar y subir a Drive'; return; }
-                    d = await _dlCall(dh, '/approve', { force: true });
+                    d = await _dlCall(dh, '/approve', { force: true, alone });
                 }
                 close();
+                o.boardCol = 'diseno_beta';
+                if (d.queued) {
+                    // Se quedó esperando pareja para la hoja: la tarjeta lo muestra («En cola») con «Subir sola».
+                    _dlSetLocal(orderId, { ...a, status: 'approved', queued: { at: Date.now(), claimedBy: null }, driveUrls: d.driveUrls || null });
+                    if (typeof showToast === 'function') showToast(`${o.orderNumber} aprobado: en cola esperando otra lámpara para la hoja`, 'success');
+                    return;
+                }
                 o.svgCorteUrl = d.driveUrl; o.svgCorteAt = Date.now();
                 // Ya en Drive: la tarjeta pasa sola a la columna «Diseño Beta» (la misma regla que aplica el servidor).
                 o.boardCol = 'diseno_beta';
                 _dlSetLocal(orderId, { ...a, status: 'approved', driveUrl: d.driveUrl, driveUrls: d.driveUrls || null });
+                if (d.pairedWith && typeof showToast === 'function') showToast(`${o.orderNumber} se subió en la hoja junto con DH${d.pairedWith}`, 'success');
                 if (d.driveUrl) window.open(d.driveUrl, '_blank', 'noopener');
+            } else if (act === 'upload-alone') {
+                close(); await dpBetaUploadAlone(orderId, null);
             } else if (act === 'reject') {
                 await _dlCall(dh, '/reject', { reason: note });
                 close(); _dlSetLocal(orderId, { ...a, status: 'rejected' });
@@ -1171,6 +1204,24 @@ function openDesignBeta(orderId) {
     });
 }
 window.openDesignBeta = openDesignBeta;
+
+// «Subir sola»: la lámpara que espera pareja para la hoja se sube en su propia hoja, sin esperar.
+async function dpBetaUploadAlone(orderId, btn) {
+    const o = (window._designPendingData || []).find(x => x.id === orderId);
+    if (!o || !o.autoLamp) return;
+    if (!await showConfirmModal(`¿Subir ya la lámpara de ${o.orderNumber} SOLA en su hoja, sin esperar a juntarla con otra?`, { icon: 'fa-cloud-arrow-up', confirmText: 'Subir sola' })) return;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo…'; }
+    try {
+        const d = await _dlCall(_dlDh(o), '/upload-alone', {});
+        o.svgCorteUrl = d.driveUrl; o.svgCorteAt = Date.now();
+        _dlSetLocal(orderId, { ...o.autoLamp, queued: null, status: 'approved', driveUrl: d.driveUrl, driveUrls: d.driveUrls || null });
+        if (d.driveUrl) window.open(d.driveUrl, '_blank', 'noopener');
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-arrow-up" style="margin-right:3px"></i>Subir sola'; }
+        alert(e.message || e);
+    }
+}
+window.dpBetaUploadAlone = dpBetaUploadAlone;
 
 // --- "A Mockup": empuja (o quita) el pedido a la cola de la sección Mockup para generarle un preview,
 // SIN cambiar su estatus (sigue en Fabricar/Corregir y sigue aquí en Pendientes de Diseño). Actualiza el
