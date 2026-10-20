@@ -138,11 +138,15 @@ const CATALOG_IMAGE = /https:\/\/app\.dekoormx\.com\/sitio\/img\/[^\s"'<>]+\.(?:
 // Imágenes que mandamos NOSOTROS (aquí van los mockups que ya vio el cliente, y también datos de pago, etc.).
 async function ourImages(contactId) {
     // Lo que manda el cliente trae from = su id (así lo consulta designApproval); lo demás es nuestro.
-    const snapshot = await db.collection('contacts_whatsapp').doc(String(contactId)).collection('messages').orderBy('timestamp', 'desc').limit(150).get();
-    return snapshot.docs.reverse().map(doc => doc.data())
-        .filter(m => m.fileUrl && /^image\//.test(m.fileType || '') && String(m.from || '') !== String(contactId))
+    // TODO el chat, no los últimos mensajes: en un reenvío o una conversación larga el mockup quedaba fuera
+    // (DH17854: 206 mensajes, los mockups eran el 47 y 48 y solo se veían los últimos 150). Los anuncios y los
+    // datos de pago (respuestas rápidas con imagen) nunca son el diseño: se quitan para no gastar lugar.
+    const snapshot = await db.collection('contacts_whatsapp').doc(String(contactId)).collection('messages').orderBy('timestamp', 'asc').get();
+    return snapshot.docs.map(doc => doc.data())
+        .filter(m => m.fileUrl && /^image\//.test(m.fileType || '') && String(m.from || '') !== String(contactId) && !NOT_A_DESIGN.test(String(m.text || '')))
         .map(m => ({ url: m.fileUrl, text: m.text || '', at: m.timestamp?.toDate?.() || null }));
 }
+const NOT_A_DESIGN = /últimas lámparas disponibles|información del pago|info(rmaci[oó]n)? para (el )?pago|datos (bancarios|de pago)|recuerda enviar tu comprobante|tu pago sea por|clabe/i;
 
 // Conversación reciente (texto de los dos lados) para que la IA entienda qué pidió el cliente.
 async function chatHistory(contactId, limit = 200) {
@@ -218,7 +222,7 @@ async function imagePart(url) {
  * `previous` (lo ya diseñado) también dice qué lámparas hay que rehacer ("cambia").
  */
 async function designBriefOrder({ order, lamps, history, clientImages, sentImages, note, previous = [] }) {
-    const client = clientImages.slice(-6), sent = sentImages.slice(-8);
+    const client = clientImages.slice(-6), sent = sentImages.slice(-10);
     const lampList = lamps.map(l => `L${l.index}: ${l.producto || 'Lámpara'} — datos: "${l.datos || '(sin datos)'}"${l.copies > 1 ? ` — cantidad ${l.copies} (iguales)` : ''}`).join('\n');
     const prevList = previous.length ? previous.map(p => `L${p.index}: ya diseñada (${p.brief?.resumen || p.label || ''})`).join('\n') : '';
     const parts = [{ text: `Eres el diseñador de DekoorHouse. Hacemos lámparas LED de acrílico grabado con láser: un marco redondo con base, y dentro se GRABA una imagen en blanco y negro (raster con trama) y, si el cliente lo pidió, un NOMBRE/TEXTO.
