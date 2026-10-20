@@ -239,43 +239,46 @@ export async function rdworksPiece(document, font) {
     return { png, box, d, page: { width: document.width, height: document.height }, inkShare: insideCount ? inkCount / insideCount : 0 };
 }
 
-// Centro horizontal (sin girar) de cada lámpara cuando van dos por hoja: 350 mm de ancho, 15 mm entre ellas.
-export const RDWORKS_SLOTS_X = [87.5, 262.5];
+// PLANTILLA DE LAS MÁQUINAS (Chris, 20-oct-2026, «especiales1910.8.svg» de CorelDRAW): hoja de 350 × 330 mm,
+// cuadro AZUL de 20 × 20 mm en la esquina superior izquierda (referencia de la láser) y las dos lámparas una
+// ARRIBA de la otra, pegadas al borde izquierdo con la pestaña a la izquierda. Esquina superior izquierda de
+// cada lámpara (ya girada) en la hoja, en mm.
+export const RDWORKS_SHEET = { width: 350, height: 330 };
+export const RDWORKS_SLOTS = [{ x: 0, y: 0.349 }, { x: 0, y: 161.549 }];
+const RDWORKS_MARK = '<rect x="0" y="0" width="20" height="20" fill="none" stroke="#0000ff" stroke-width="0.2"/>';
 const NUMBER_PAIR = /(-?\d*\.?\d+(?:e-?\d+)?)[ ,]+(-?\d*\.?\d+(?:e-?\d+)?)/gi;
 
 /**
- * Una HOJA para RDWorks con 1 o 2 piezas. placements: [{ piece, dx, dy }] (cuánto se recorre la pieza antes de
- * girar). La hoja es SIEMPRE la de 350 × 330 mm (sin girar) y se acomoda: (x, y) -> (H - y, W - x), queda de
- * 330 × 350.
+ * Una HOJA para RDWorks con 1 o 2 piezas. placements: [{ piece, slot }] (0 = arriba, 1 = abajo). Cada pieza se
+ * gira (x, y) -> (-y, -x) (90° der + espejo + 180°: pestaña a la izquierda) y se recorre a su lugar de la plantilla.
  */
 export function rdworksSheet(placements, title = '') {
-    const W = PAGE.width, H = PAGE.height;
-    const body = placements.map(({ piece, dx, dy = 0 }) => {
-        const { box, png } = piece;
-        // El trayecto es absoluto (M/C/L/Z con pares x y): se recorre y se acomoda cada par.
-        const d = piece.d.replace(NUMBER_PAIR, (_, x, y) => `${(H - (+y + dy)).toFixed(4)} ${(W - (+x + dx)).toFixed(4)}`);
-        return `<image x="${H - (box.y + dy) - box.height}" y="${W - (box.x + dx) - box.width}" width="${box.height}" height="${box.width}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
+    const body = placements.map(({ piece, slot }) => {
+        const { box, png } = piece, at = RDWORKS_SLOTS[slot];
+        // Girada, la pieza ocupa x' en [-(box.y + box.height), -box.y] e y' en [-(box.x + box.width), -box.x].
+        const ox = at.x + box.y + box.height, oy = at.y + box.x + box.width;
+        // El trayecto es absoluto (M/C/L/Z con pares x y): se gira y se recorre cada par.
+        const d = piece.d.replace(NUMBER_PAIR, (_, x, y) => `${(ox - +y).toFixed(4)} ${(oy - +x).toFixed(4)}`);
+        return `<image x="${at.x}" y="${at.y}" width="${box.height}" height="${box.width}" preserveAspectRatio="none" style="image-rendering:pixelated" xlink:href="data:image/png;base64,${png.toString('base64')}"/>
 <path d="${d}" fill="none" stroke="#ff0000" stroke-width="0.3"/>`;
     }).join('\n');
+    const { width: W, height: H } = RDWORKS_SHEET;
     return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${H}mm" height="${W}mm" viewBox="0 0 ${H} ${W}">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}">
 <title>${String(title).replace(/[<&>"]/g, '')}</title>
+${RDWORKS_MARK}
 ${body}
 </svg>`;
 }
 
 // Hojas de un pedido: cada lámpara tantas veces como su cantidad, de 2 en 2 por hoja. pieces: [{ piece, copies }].
-// Cada pieza se acomoda en su LUGAR FIJO de la hoja (el del marco de siempre; si van dos, una a cada lado), sin
-// importar dónde haya quedado el marco en el proyecto: en el editor se puede mover y entonces la hoja salía
-// cortada (DH18191, 19-oct-2026, marco en (-50, 22) mm).
+// Cada pieza va en su LUGAR FIJO de la plantilla sin importar dónde haya quedado el marco en el proyecto (en el
+// editor se puede mover y la hoja salía cortada: DH18191, 19-oct-2026).
 export function rdworksSheets(pieces, title = '') {
-    const home = frameObject();   // lugar de siempre del marco en la hoja
     const flat = pieces.flatMap(({ piece, copies }) => Array.from({ length: Math.max(1, Number(copies) || 1) }, () => piece));
     const total = Math.ceil(flat.length / 2), sheets = [];
     for (let i = 0; i < flat.length; i += 2) {
-        const pair = flat.slice(i, i + 2);
-        const placements = pair.length === 1 ? [{ piece: pair[0], dx: home.x - pair[0].box.x, dy: home.y - pair[0].box.y }]
-            : pair.map((piece, k) => ({ piece, dx: RDWORKS_SLOTS_X[k] - (piece.box.x + piece.box.width / 2), dy: home.y - piece.box.y }));
+        const placements = flat.slice(i, i + 2).map((piece, slot) => ({ piece, slot }));
         sheets.push(rdworksSheet(placements, total > 1 ? `${title} · hoja ${sheets.length + 1} de ${total}` : title));
     }
     return sheets;
