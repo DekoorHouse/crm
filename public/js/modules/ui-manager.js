@@ -1094,7 +1094,8 @@ function _dlLampCard(l, dh, total, done = false) {
                 ${model}${warn}
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
                     ${l.projectId ? `<a href="/editor-v2/?project=${encodeURIComponent(l.projectId)}&dh=${dh}" target="_blank" rel="noopener" style="padding:5px 9px;border-radius:7px;border:1px solid #0ea5e9;color:#0284c7;font-weight:700;font-size:12px;text-decoration:none"><i class="fas fa-pen-ruler"></i> Corregir en el editor</a>` : ''}
-                    ${!done ? `<button data-dl="own-image" data-lamp="${l.index}" title="Arma esta lámpara con una imagen tuya (sin IA): se pasa a grabado y se acomoda en el círculo" style="padding:5px 9px;border-radius:7px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-upload"></i> Usar mi imagen</button>` : ''}
+                    ${!done ? `<button data-dl="own-image" data-lamp="${l.index}" title="Sube una imagen (mockup, foto o dibujo) y la IA la convierte a grabado igual que si viniera del chat" style="padding:5px 9px;border-radius:7px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-upload"></i> Usar mi imagen</button>
+                    <button data-dl="own-image" data-as-is="1" data-lamp="${l.index}" title="Sube una imagen YA LISTA para grabar (negro sobre blanco) y se usa tal cual, sin IA" style="padding:5px 9px;border-radius:7px;border:1px dashed #0d9488;background:transparent;color:#0f766e;font-weight:600;font-size:12px;cursor:pointer">Tal cual</button>` : ''}
                     ${l.projectId && !done ? `<button data-dl="remove-ring" data-lamp="${l.index}" title="Borra la línea circular del contorno (el aro del acrílico) de ESTE diseño, sin regenerarlo; respeta lo corregido en el editor" style="padding:5px 9px;border-radius:7px;border:1px solid #64748b;background:transparent;color:#475569;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-circle-notch"></i> Quitar aro</button>` : ''}
                     ${total > 1 && !done ? `<button data-dl="redo-one" data-lamp="${l.index}" title="Rehace solo esta lámpara (con la indicación de abajo, si escribiste una)" style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer esta</button>` : ''}
                 </div>
@@ -1256,8 +1257,9 @@ function openDesignBeta(orderId) {
                 if (ready) await _dlCall(dh, '/reject', { reason: note || 'rehacer' }).catch(() => {});
                 close(); await startDesignBeta(orderId, null, note);
             } else if (act === 'own-image') {
-                // Imagen propia (sin IA): elegir archivo, decir si lleva texto aparte, y se arma en el servidor.
-                const index = Number(btn.dataset.lamp) || 0, l = lamps.find(x => x.index === index);
+                // Imagen propia: con IA (como si viniera del chat) o «Tal cual» (ya lista). Se elige el archivo, se dice
+                // si lleva texto aparte, y el servidor la arma en segundo plano (la tarjeta muestra el avance).
+                const index = Number(btn.dataset.lamp) || 0, l = lamps.find(x => x.index === index), asIs = btn.dataset.asIs === '1';
                 const file = await new Promise(resolve => {
                     const input = document.createElement('input');
                     input.type = 'file'; input.accept = 'image/png,image/jpeg,image/webp';
@@ -1266,16 +1268,16 @@ function openDesignBeta(orderId) {
                     input.click();
                 });
                 if (!file) { btn.disabled = false; return; }
-                const nombre = window.prompt('Texto que el sistema pone APARTE, con nuestra fuente, abajo.\nDéjalo VACÍO si tu imagen ya trae el nombre:', (l && l.brief && l.brief.nombre) || '');
+                const nombre = window.prompt('Texto que el sistema pone APARTE, con nuestra fuente, abajo.\nDéjalo VACÍO si tu imagen ya trae el nombre (p. ej. un mockup con el nombre):', (l && l.brief && l.brief.nombre) || '');
                 if (nombre === null) { btn.disabled = false; return; }
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Armando…';
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo…';
                 const form = new FormData();
                 form.append('image', file); form.append('lamp', String(index)); form.append('nombre', nombre.trim());
+                if (asIs) form.append('asIs', '1');
                 const res = await fetch(`${API_BASE_URL}/api/auto-lamp/${dh}/own-image`, { method: 'POST', body: form });
                 const d = await res.json().catch(() => ({}));
                 if (!res.ok || d.success === false) throw new Error(d.error || ('HTTP ' + res.status));
-                const { autoLamp } = await _dlCall(dh, '');
-                close(); _dlSetLocal(orderId, _dlNormalize(autoLamp)); openDesignBeta(orderId);
+                close(); _dlSetLocal(orderId, { ...a, status: 'working', step: asIs ? 'Armando con la imagen del equipo' : 'Revisando la imagen del equipo' });
             } else if (act === 'remove-ring') {
                 const l = lampOf(btn);
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Quitando…';

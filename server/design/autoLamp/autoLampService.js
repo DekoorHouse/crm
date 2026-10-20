@@ -917,7 +917,10 @@ async function generate(dh, options = {}) {
  * (negro sobre blanco) y se arma igual que el Beta: grabado 1 bit, acomodado para llenar el círculo, nombre aparte
  * solo si se da. Queda en «Revisar diseño» (no se manda ni se sube solo). Chris, 20-oct-2026, DH18183.
  */
-async function buildFromImage(dh, buffer, { lampIndex = 0, nombre = '', estilo, actor = null } = {}) {
+async function buildFromImage(dh, buffer, { lampIndex = 0, nombre = '', estilo, actor = null, asIs = false } = {}) {
+    // CON IA (lo normal, Chris 20-oct-2026): la imagen se trata IGUAL que si viniera del chat: mockup de lámpara
+    // encendida -> Qwen saca el dibujo (sin aro, acomodado); foto o dibujo -> grabado. asIs: tal cual (ya lista).
+    if (!asIs) return buildFromImageAi(dh, buffer, { lampIndex, nombre, estilo, actor });
     // Sin estilo: un logo/silueta en blanco y negro va «plano» (umbral); con muchos grises (foto, sombreado), «trama».
     if (!estilo) {
         const { data } = await sharp(buffer).flatten({ background: '#ffffff' }).greyscale().resize(300, 300, { fit: 'inside' }).raw().toBuffer({ resolveWithObject: true });
@@ -937,6 +940,43 @@ async function buildFromImage(dh, buffer, { lampIndex = 0, nombre = '', estilo, 
         const referenceUrl = await saveFile(`${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}/imagen-equipo-${Date.now().toString(36)}.png`, png, 'image/png');
         const plan = { fuente: 'propia', imageBuffer: png, reference: { url: referenceUrl }, nombre, estilo, tipo: 'especial', prompt: '', advertencias: [],
             resumen: `Diseño con la imagen del equipo, sin IA${actor?.email ? ` (${actor.email})` : ''}.` };
+        const built = await buildLamp(dh, lamp, plan, { beta: true, onStep: text => setStatus(ref, { status: 'working', step: text }).catch(() => {}) });
+        const lamps = [...others, built].sort((a, b) => a.index - b.index), first = lamps[0];
+        await setStatus(ref, { status: 'ready', step: 'Listo para revisar', mode: 'client', lamps, error: admin.firestore.FieldValue.delete(),
+            name: first.name || '', projectId: first.projectId, projectRevision: first.projectRevision, previewUrl: first.previewUrl, brief: first.brief, rasterModel: first.rasterModel || null, finishedAt: now() });
+        return built;
+    } catch (error) {
+        await setStatus(ref, { status: 'error', error: error.message || String(error) }).catch(() => {});
+        throw error;
+    }
+}
+
+// «Usar mi imagen» con IA: Gemini dice si es un mockup (lámpara encendida) o una foto/dibujo, y se arma con el mismo
+// camino que las imágenes del chat (rasterizeBeta con Qwen, removeRing y acomodo en el círculo para los mockups).
+async function buildFromImageAi(dh, buffer, { lampIndex = 0, nombre = '', estilo, actor = null } = {}) {
+    const orderDoc = await findOrder(dh);
+    const order = orderDoc.data(), ref = orderDoc.ref;
+    if (['uploading', 'working'].includes(order.autoLamp?.status) || (order.autoLamp?.status === 'approved' && !order.autoLamp?.queued && order.autoLamp?.client?.status !== 'change_after_approval'))
+        throw Object.assign(new Error('Este diseño ya se aprobó, se está subiendo o se está generando.'), { status: 409 });
+    const lamp = orderLamps(order).find(l => l.index === Number(lampIndex));
+    if (!lamp) throw Object.assign(new Error(`El pedido no tiene la lámpara ${Number(lampIndex) + 1}.`), { status: 404 });
+    const others = lampsOf(order.autoLamp).filter(l => l.index !== lamp.index && l.status === 'ready' && l.projectId);
+    await setStatus(ref, { status: 'working', step: 'Revisando la imagen del equipo', beta: true, lamps: others, startedAt: now() });
+    try {
+        const png = await sharp(buffer).rotate().png().toBuffer();
+        const referenceUrl = await saveFile(`${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}/imagen-equipo-${Date.now().toString(36)}.png`, png, 'image/png');
+        const small = await sharp(png).resize(768, 768, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer();
+        const kind = await geminiJson([{ text: `Esta imagen la subió el equipo de DekoorHouse para diseñar una lámpara LED de acrílico grabada con láser ("${lamp.label}").
+Responde SOLO este JSON: {"tipo": "mockup" si es una foto o render de una lámpara de acrílico (encendida o no) con el diseño ya grabado; "foto" si es una foto de personas/mascotas/lugares; "dibujo" si es un dibujo, logo o ilustración, "estilo": "plano" si el diseño es de siluetas y rellenos sólidos, "trama" si tiene sombreado, textura o es foto}` },
+            { inlineData: { mimeType: 'image/jpeg', data: small.toString('base64') } }]).catch(() => ({}));
+        const tipo = ['mockup', 'foto', 'dibujo'].includes(kind.tipo) ? kind.tipo : 'foto';
+        const style = estilo || (FLAT_MODELS.test(`${lamp.producto || ''} ${lamp.datos || ''} ${lamp.label || ''}`) ? 'plano' : kind.estilo === 'plano' ? 'plano' : 'trama');
+        const plan = {
+            fuente: tipo === 'mockup' ? 'mockup' : 'cliente', reference: { buffer: png, url: referenceUrl }, references: [], nombre, estilo: style, tipo: 'especial', prompt: '', advertencias: [],
+            // Del mockup: si se dio un texto, se quita el del mockup y va el nuestro aparte (si no, el del mockup tal cual).
+            textoCambia: tipo === 'mockup' && !!nombre,
+            resumen: `Imagen subida por el equipo${actor?.email ? ` (${actor.email})` : ''}: ${tipo === 'mockup' ? 'mockup de lámpara, se sacó el dibujo' : tipo === 'foto' ? 'foto convertida a grabado' : 'dibujo convertido a grabado'} con IA.`,
+        };
         const built = await buildLamp(dh, lamp, plan, { beta: true, onStep: text => setStatus(ref, { status: 'working', step: text }).catch(() => {}) });
         const lamps = [...others, built].sort((a, b) => a.index - b.index), first = lamps[0];
         await setStatus(ref, { status: 'ready', step: 'Listo para revisar', mode: 'client', lamps, error: admin.firestore.FieldValue.delete(),

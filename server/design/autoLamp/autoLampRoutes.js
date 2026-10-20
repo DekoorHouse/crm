@@ -77,13 +77,13 @@ router.post('/:dh/own-image', (req, res, next) => ownImage(req, res, err => err 
     if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
     if (!req.file || !/^image\//.test(req.file.mimetype || '')) return res.status(400).json({ success: false, error: 'Falta la imagen (PNG, JPG o WEBP).' });
     if (running.has(dh)) return res.status(409).json({ success: false, error: 'Todavía se está generando este diseño.' });
+    // Con IA tarda como una generación (Qwen): responde de inmediato y el avance queda en el pedido (autoLamp).
+    // asIs=1: la imagen tal cual (ya lista para grabar), sin IA.
     running.add(dh);
-    try {
-        const estilo = ['plano', 'trama'].includes(req.body?.estilo) ? req.body.estilo : undefined;
-        const lamp = await service.buildFromImage(dh, req.file.buffer, { lampIndex: Number(req.body?.lamp ?? 0) || 0, nombre: String(req.body?.nombre || '').trim().slice(0, 400), estilo, actor: req.apiAuth });
-        res.json({ success: true, lamp });
-    } catch (error) { console.warn(`[AUTO-LAMP] imagen propia DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo armar con la imagen.' }); }
-    finally { running.delete(dh); }
+    const estilo = ['plano', 'trama'].includes(req.body?.estilo) ? req.body.estilo : undefined;
+    service.buildFromImage(dh, req.file.buffer, { lampIndex: Number(req.body?.lamp ?? 0) || 0, nombre: String(req.body?.nombre || '').trim().slice(0, 400), estilo, actor: req.apiAuth, asIs: req.body?.asIs === '1' })
+        .catch(error => console.warn(`[AUTO-LAMP] imagen propia DH${dh}:`, error.message)).finally(() => running.delete(dh));
+    res.status(202).json({ success: true, status: 'working' });
 });
 
 // La que espera pareja más de 12 h sale sola (revisa cada 15 min).
