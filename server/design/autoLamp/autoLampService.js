@@ -238,7 +238,7 @@ OJO: el cliente puede cambiar de opinión varias veces (pedir otro personaje y l
 Para CADA lámpara decide:
 - "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre), o si la imagen es una C marcada «modelo del CATÁLOGO» de ese personaje (es la foto de muestra de la lámpara, con un nombre de ejemplo que NO es el del cliente); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
 - "imagen": la imagen elegida ("N2", "C0"…), o VARIAS separadas por coma si hay que JUNTAR fotos en una sola escena (ej. "C1,C2" para unir a dos personas que vienen en fotos distintas; máximo 4), o "" si es ilustración desde cero. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
-- "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "". NUNCA pidas escribir el nombre ni ningún texto en la imagen: el nombre lo agrega el sistema aparte (si la imagen trae letras, pide quitarlas). ÚNICA excepción: "textoEnImagen" true.
+- "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "" SALVO que haya que CAMBIAR algo del dibujo (por la INDICACIÓN o porque el cliente lo pidió: «que tenga solo dos pies», «sin la corona», «con los ojos abiertos»): entonces escribe SOLO ese cambio, claro y concreto. NUNCA pidas escribir el nombre ni ningún texto en la imagen: el nombre lo agrega el sistema aparte (si la imagen trae letras, pide quitarlas). ÚNICA excepción: "textoEnImagen" true.
 - "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana").
 - "textoEnImagen": true SOLO si la INDICACIÓN (o el cliente) pide que la IA integre/escriba el texto DENTRO de la imagen, todo junto como un solo diseño; entonces el texto de "nombre" lo dibuja el modelo de imágenes y el sistema no agrega otro. false en cualquier otro caso.
 - "textoCambia": SOLO para fuente "mockup": true si el texto final es DISTINTO del que se ve en el mockup (el cliente pidió agregar o cambiar algo del texto después de verlo); false si el mockup ya trae exactamente el texto final.
@@ -750,7 +750,11 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
             : { url: null, jobId: null, model: tpl.label, buffer: image };
     } else if (plan.fuente === 'mockup') {
         step('Convirtiendo el mockup a grabado');
-        raster = await rasterizeBeta(plan.reference, { prompt: plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT, estilo: plan.estilo, onStep: step });
+        // Un CAMBIO al dibujo del mockup («solo dos pies», DH18249) va junto: antes se pedía copiarlo tal cual y el
+        // cambio nunca le llegaba al modelo.
+        const base = plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT;
+        const prompt = plan.prompt ? `${base} ÚNICO CAMBIO que SÍ debes hacer al dibujo (todo lo demás igual que en el mockup): ${plan.prompt}.` : base;
+        raster = await rasterizeBeta(plan.reference, { prompt, estilo: plan.estilo, onStep: step });
     } else if (beta) {
         step(plan.reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes');
         // Foto del cliente o ilustración: el nombre lo pone el armado, así que la imagen va SIN letras.
@@ -872,7 +876,11 @@ async function generate(dh, options = {}) {
         for (const lamp of lamps) {
             // Personaje con plantilla del taller (Spiderman…): se usa su grabado; la IA solo aporta el nombre.
             const basePlan = plans[lamp.index] || plans[0], template = beta ? templateFor(lamp) : null;
-            const plan = template ? { ...basePlan, template } : basePlan;
+            const plan = template ? { ...basePlan, template } : { ...basePlan };
+            // Rehacer un diseño de mockup con indicación: si la IA no escribió el cambio, va la indicación tal cual.
+            // Solo si la indicación es de ESTA lámpara (pedido de una, o «Rehacer esta»): con «Rehacer todo» decide la IA.
+            const noteIsForThis = lamps.length === 1 || (Array.isArray(options.lamps) && options.lamps.includes(lamp.index));
+            if (!template && plan.fuente === 'mockup' && !plan.prompt && options.note && noteIsForThis && !TEXT_IN_IMAGE.test(options.note)) plan.prompt = String(options.note).slice(0, 500);
             const before = previous.find(p => p.index === lamp.index);
             const redo = !partial || !before || (Array.isArray(options.lamps) && options.lamps.length ? options.lamps.includes(lamp.index) : plan.cambia);
             if (!redo) { results.push({ ...before, changed: false }); continue; }
