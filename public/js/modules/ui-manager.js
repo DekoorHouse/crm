@@ -1089,7 +1089,17 @@ function openDesignBeta(orderId) {
             const onGrabado = card && card.querySelector('[data-dl="view-grabado"]')?.style.background.includes('124');   // pestaña activa (#7c3aed)
             if (img && (onGrabado || !card.querySelector('[data-dl="view-grabado"]'))) img.src = d.url;
             if (l.index === 0 && o.autoLamp) o.autoLamp.previewUrl = d.url;
-        }).catch(() => {});
+        }).catch(e => {
+            // La versión guardada está mal armada (p. ej. se borró el marco en el editor): decirlo, no quedarse callado
+            // mostrando la imagen vieja (DH18179).
+            const card = wrap.querySelector(`[data-lamp-card="${l.index}"]`);
+            if (!card || card.querySelector('[data-dl-broken]')) return;
+            const note = document.createElement('div');
+            note.dataset.dlBroken = '1';
+            note.style.cssText = 'margin-top:8px;border:1px solid #dc262666;background:#dc262612;color:#b91c1c;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700';
+            note.innerHTML = `<i class="fas fa-triangle-exclamation"></i> ${escapeHtml(e.message || 'No se pudo armar la vista de la versión guardada.')}<div style="font-weight:500;margin-top:2px">La imagen de arriba es la de antes de editarla.</div>`;
+            card.appendChild(note);
+        });
     });
     wrap.addEventListener('click', async ev => {
         if (ev.target === wrap) return close();

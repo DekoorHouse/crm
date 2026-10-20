@@ -760,6 +760,7 @@ async function clientPreview(dh, index = 0) {
     if (lamp.clientPreviewUrl && Number(lamp.clientPreviewRevision) === Number(project.revision) && lamp.clientPreviewStyle === CLIENT_PREVIEW_STYLE)
         return { url: lamp.clientPreviewUrl, revision: project.revision };
     const { document } = await projectDocument(lamp.projectId);
+    if (!document.objects.some(item => item.powerClip)) throw Object.assign(new Error(NO_FRAME), { status: 422, code: 'DESIGN_BROKEN' });
     const { renderClientPreview } = await composerModule();
     const { raw, width, height } = renderClientPreview(document, await loadFont());
     const png = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
@@ -767,6 +768,9 @@ async function clientPreview(dh, index = 0) {
     await updateLamp(orderDoc.ref, lamp.index, { clientPreviewUrl: url, clientPreviewRevision: project.revision, clientPreviewStyle: CLIENT_PREVIEW_STYLE });
     return { url, revision: project.revision };
 }
+
+// En el editor se puede borrar o extraer el marco por accidente (DH18179, Regina): sin él no hay lámpara que cortar.
+const NO_FRAME = 'La versión guardada en el editor ya no tiene el marco de la lámpara (se borró o se sacó el contenido del PowerClip). Corrígela en el editor o dale «Rehacer esta».';
 
 /**
  * Vista «Grabado» (la del equipo) de una lámpara desde la versión ACTUAL del proyecto: si alguien la corrigió en el
@@ -782,6 +786,7 @@ async function teamPreview(dh, index = 0) {
     // Sin cambios desde que se armó (o desde la última vez): la misma imagen.
     if (lamp.previewUrl && Number(lamp.previewRevision || lamp.projectRevision || 1) === current) return { url: lamp.previewUrl, revision: current };
     const { document } = await projectDocument(lamp.projectId);
+    if (!document.objects.some(item => item.powerClip)) throw Object.assign(new Error(NO_FRAME), { status: 422, code: 'DESIGN_BROKEN' });
     const { renderPreview } = await composerModule();
     const url = await saveFile(`${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}/vista-previa-r${current}-${Date.now().toString(36)}.png`, renderPreview(document, await loadFont()), 'image/png');
     await updateLamp(orderDoc.ref, lamp.index, { previewUrl: url, previewRevision: current });
@@ -799,6 +804,7 @@ async function rdworksSheetsFor(dh, autoLamp) {
     const pieces = [], problems = [];
     for (const lamp of lamps) {
         const { document } = await projectDocument(lamp.projectId);
+        if (!document.objects.some(item => item.powerClip)) { problems.push(`${lamps.length > 1 ? (lamp.label || `Lámpara ${lamp.index + 1}`) + ': ' : ''}no tiene el marco de la lámpara (se borró en el editor)`); continue; }
         const piece = await rdworksPiece(document, font);
         problems.push(...designProblems(document, piece, lamp).map(p => `${lamps.length > 1 ? (lamp.label || `Lámpara ${lamp.index + 1}`) + ': ' : ''}${p}`));
         pieces.push({ piece, copies: lamp.copies || 1 });
