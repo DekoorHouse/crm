@@ -42,6 +42,11 @@ const MOCKUP_PROMPT = 'Esta imagen es un mockup de una lámpara LED de acrílico
 // trama" (el modelo les inventaba sombreado y el brillo de la luz salía como degradado) y se pasan a 1 bit por
 // umbral, sin difuminado.
 const FLAT_STYLE = 'Diseño PLANO: rellenos SÓLIDOS en blanco y negro puro (tipo silueta / vector), SIN degradados, SIN trama, SIN sombreado y SIN el brillo ni el resplandor de la luz.';
+// Pedirlo en la indicación de Rehacer: «solo blanco y negro», «sin degradado»… (o al revés, «con degradado»).
+const FLAT_HINT = /sin\s+(degradad|trama|sombread)|solo\s+blanco\s+y\s+negro|blanco\s+y\s+negro\s+puro|\bplan[oa]\b|s[oó]lid[oa]s?/i;
+const TRAMA_HINT = /con\s+(degradad|trama|sombread)/i;
+// Modelos del catálogo que son de rellenos sólidos (siempre «plano»).
+const FLAT_MODELS = /unicornio/i;
 const styled = (prompt, estilo) => estilo === 'plano'
     ? (/raster engrave con degradado en trama/i.test(prompt) ? prompt.replace(/en raster engrave con degradado en trama\.?/i, FLAT_STYLE) : `${prompt}. ${FLAT_STYLE}`)
     : prompt;
@@ -290,7 +295,10 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
             textoCambia: fuente === 'mockup' && (row.textoCambia === true || !!reference?.catalog),
             // La frase dibujada por el modelo como parte de la imagen (Chris, DH18288): sin texto aparte del armado.
             textoEnImagen: fuente !== 'mockup' && !!String(row.nombre || '').trim() && (row.textoEnImagen === true || TEXT_IN_IMAGE.test(note || '')),
-            estilo: row.estilo === 'plano' ? 'plano' : 'trama',
+            // Solo blanco y negro (sin degradado ni trama) si la IA lo ve así, si la indicación lo pide o si es un modelo
+            // del catálogo que es de rellenos sólidos (Chris, 20-oct-2026: el unicornio de DH18256 salió con degradado).
+            estilo: TRAMA_HINT.test(note || '') ? 'trama'
+                : row.estilo === 'plano' || FLAT_HINT.test(note || '') || FLAT_MODELS.test(`${lamp.producto || ''} ${lamp.datos || ''} ${lamp.label || ''}`) ? 'plano' : 'trama',
         };
     });
 }
