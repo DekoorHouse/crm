@@ -30,12 +30,13 @@ async function classifyReply(clientText, orderContext) {
 Contexto del pedido (lo que dice el diseño actual): ${orderContext || '(no disponible)'}
 
 Responde SOLO un JSON válido, sin markdown:
-{"decision":"approved"|"changes"|"unclear","changeSummary":"..."}
+{"decision":"approved"|"changes"|"question"|"unclear","changeSummary":"..."}
 
 Reglas ESTRICTAS:
 - "approved" SOLO si el cliente aprueba de forma clara e incondicional (ej: "sí", "está bien así", "me encanta", "aprobado", "así déjalo", "perfecto", "sí adelante"). Un simple "sí" a la pregunta cuenta como approved.
 - "changes" si pide CUALQUIER modificación o señala un error (nombre, fecha, ortografía, posición, tamaño, "cámbiale", "está mal", "no es así", "le falta"). En changeSummary resume en pocas palabras QUÉ quiere cambiar.
-- "unclear" si es ambiguo, hace una pregunta, o no se entiende si aprueba o pide cambio.
+- "question" si el cliente PREGUNTA algo (sobre la lámpara, los colores, la luz, el control, el precio, el envío, los tiempos…) sin aprobar ni pedir un cambio concreto. Ej: "¿puede ser a color?", "¿trae control?", "¿cuándo llega?". Una pregunta se contesta; no es un rechazo.
+- "unclear" si es ambiguo o no se entiende si aprueba o pide cambio (y no es una pregunta).
 - Ante la duda entre approved y changes/unclear, NUNCA elijas approved. Solo aprueba si es inequívoco.
 - changeSummary vacío salvo en "changes".`;
 
@@ -50,7 +51,7 @@ Reglas ESTRICTAS:
     const clean = raw.replace(/```json|```/g, '').trim();
     try {
         const j = JSON.parse(clean);
-        const decision = ['approved', 'changes', 'unclear'].includes(j.decision) ? j.decision : 'unclear';
+        const decision = ['approved', 'changes', 'question', 'unclear'].includes(j.decision) ? j.decision : 'unclear';
         return { decision, changeSummary: String(j.changeSummary || '').slice(0, 300) };
     } catch (_) {
         // Si el modelo no devolvió JSON limpio, ser conservador.
@@ -210,6 +211,18 @@ async function handleReply(contactId, message, contactRef, contactData) {
             return;
         }
 
+        // PREGUNTA (DH18282, 20-oct-2026: «¿puede ser a color?», «¿trae control?»): la contesta la IA de siempre, que
+        // sabe del producto, y al final le recuerda confirmar el diseño. La aprobación sigue pendiente; no cuenta
+        // como ronda ambigua ni pasa a una persona.
+        if (decision === 'question') {
+            await orderRef.update({ 'designApproval.lastQuestionAt': admin.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+            console.log(`[design-approval] ${dh}: el cliente preguntó algo; lo contesta la IA y sigue pendiente la aprobación.`);
+            return {
+                continue: true,
+                note: `\n\n**DISEÑO POR APROBAR de ${dh}:** ya le mandamos al cliente la imagen del diseño de su lámpara (${designText || 'su pedido'}) y estamos esperando que lo apruebe. Su último mensaje es una PREGUNTA: contéstala con lo que sabes del producto (no inventes datos). Al final, en una sola línea corta y natural, recuérdale que nos confirme si el diseño le gusta así o si quiere ajustar algo. NO escribas comandos (/corregir, /registrar, etc.).`,
+            };
+        }
+
         // unclear: re-preguntar; tras 2 rondas sin claridad, escalar a un humano (no loop infinito).
         const rounds = ((order.designApproval && order.designApproval.unclearRounds) || 0) + 1;
         await orderRef.update({ 'designApproval.unclearRounds': rounds });
@@ -234,17 +247,31 @@ async function handleReply(contactId, message, contactRef, contactData) {
 
 // Manda el mensaje Y lo guarda en el chat (sendAdvancedWhatsAppMessage solo manda: sin esto el cliente lo
 // recibía pero en el CRM no aparecía, DH18250 19-oct-2026). Si no se puede guardar, el envío ya salió.
+// POR EL CANAL DEL CONTACTO (DH18282, 20-oct-2026): antes iba siempre por WhatsApp y a un cliente de Messenger le
+// llegaba «Message undeliverable» (131026): nunca recibía estos mensajes.
 async function sendAndSave(contactId, contactRef, payload) {
     const svc = require('../services');
-    const sent = await svc.sendAdvancedWhatsAppMessage(contactId, payload);
+    const contact = (await contactRef.get()).data() || {};
+    const channel = contact.channel || 'whatsapp';
+    let id = null, text = payload.text || '';
+    if (channel === 'messenger' || channel === 'instagram') {
+        const recipientId = contact.psid || contact.igsid || String(contactId).replace(/^(fb_|ig_)/, '');
+        const sent = await svc.sendMessengerMessage(recipientId, { ...payload, channel });
+        id = sent && sent.messages && sent.messages[0] && sent.messages[0].id || null;
+        text = (sent && sent.lastTextForDb) || text;
+    } else {
+        const sent = await svc.sendAdvancedWhatsAppMessage(contactId, payload);
+        id = sent && sent.id || null;
+        text = (sent && sent.textForDb) || text;
+    }
     try {
         await contactRef.collection('messages').add({
             from: process.env.PHONE_NUMBER_ID || 'bot', status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            id: sent && sent.id || null, text: (sent && sent.textForDb) || payload.text || '', isAutoReply: true,
+            id, text, isAutoReply: true,
         });
-        await contactRef.update({ lastMessage: (sent && sent.textForDb) || payload.text || '', lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+        await contactRef.update({ lastMessage: text, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
     } catch (e) { console.warn('[design-approval] no se guardó el mensaje en el chat:', e.message); }
-    return sent;
+    return { id, textForDb: text };
 }
 
 // ¿Lo mandó el Diseño IA BETA (autoLamp)?

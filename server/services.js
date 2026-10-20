@@ -3327,9 +3327,13 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // designApprovalPoller también la atiende; esto es el camino rápido.) handleReply respeta su
         // propio kill-switch (designApprovalAutoActive).
         const designApproval = require('./design/designApproval');
+        let designApprovalNote = '';
         if (designApproval.isPending(contactData)) {
-            await designApproval.handleReply(contactId, message, contactRef, contactData);
-            return;
+            const handled = await designApproval.handleReply(contactId, message, contactRef, contactData);
+            // Si el cliente solo preguntó algo, la contesta la IA de siempre (con la nota de que el diseño
+            // sigue por aprobar); en cualquier otro caso el flujo de aprobación ya respondió.
+            if (!handled || !handled.continue) return;
+            designApprovalNote = handled.note || '';
         }
 
         if (!shouldRun) {
@@ -4271,7 +4275,7 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         } catch (e) { console.warn('[AI] aviso de pedido de otro número falló (se continúa):', e.message); }
         // Reintento de registro vigente (server/orders/registrationRetry.js): pedir SOLO lo que falta.
         const registroPendienteNote = require('./orders/registrationRetry').retryNote(contactData);
-        const finalUserText = `${pedidoAjenoNote}${equipoNote}${registroPendienteNote}${disenoTerminadoNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${agregarNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
+        const finalUserText = `${designApprovalNote}${pedidoAjenoNote}${equipoNote}${registroPendienteNote}${disenoTerminadoNote}${pagoSinComprobanteNote}${ladaNote}${fechaActualNote}${departmentNote}${riNote}${catalogoNote}${conversationNote}${orderInfoNote}${agregarNote}${multiOrderNote}${shippingFormNote}${trackingNote}${repeatBuyerNote}${shippingInfo}${coberturaNote}${deptImagesNote}${attachmentsOrderNote}${skippedMediaNote}${quotedMediaNote}${pilotoPreviewNote}${priceTestNote}${anticipoTestNote}\n\n**Tarea:**\nSiguiendo tus instrucciones, responde al ÚLTIMO mensaje del cliente. No repitas información que ya se haya dado en la conversación (ni parafraseada), a menos que el cliente la pida de nuevo. NO vuelvas a SALUDAR (¡Hola!, buen día, qué gusto saludarte) si ya venías conversando: el saludo va UNA sola vez al retomar la charla, NUNCA en dos mensajes seguidos. Si el cliente solo confirma algo breve ("ok", "va", "gracias", "sale", "👍") sin preguntar nada, responde MUY corto (un agradecimiento o un emoji cálido) y NO repitas el estatus ni lo que ya le dijiste. Así se ve una buena respuesta a esos casos: «¡De nada! 🥰✨» · «¡Con gusto! ✨» · «¡Descansa! 🌙». Una sola línea: NO agregues "quedo al pendiente", ni recuerdes lo que falta, ni ofrezcas nada más — el cliente solo estaba cerrando la conversación.${shippingTaskNote}${mediaTaskNote} Si no tienes un dato, no lo inventes.`.trim();
 
         // La conversación se manda como turnos reales user/model + un turno final con las
         // notas y la tarea (la multimedia se anexa a ese turno final dentro de buildGeminiContents).
