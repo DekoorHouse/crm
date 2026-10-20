@@ -4676,7 +4676,26 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 // cierto (lo registra el sistema en cuanto estén los datos), el candado de pagos apaga la IA
                 // al verlo. Se conserva la respuesta de la IA (ver retrySigue más abajo).
                 const reintentoSinRegistro = registroEnReintento && !paymentRegisteredOrderNumber && p.registrationPending;
-                if (reply !== null && !reintentoSinRegistro) aiMessages = reply;
+                // DH17984 (19-oct-2026): llegó el anticipo de su compra nueva (diseño especial) pero el pedido no
+                // se había registrado; el sistema contestó "el equipo dará seguimiento al registro", apagó la IA
+                // y nadie lo registró. Si es un comprobante de una compra nueva sin pedido, en vez de mandarlo al
+                // equipo se abre el REINTENTO y se vuelve a llamar a la IA en unos segundos: con la nota del
+                // reintento le manda el resumen completo para confirmarlo y, con su "sí", el pedido se registra.
+                // Si aun así no se puede (algo que no sea falta de datos), cae al flujo manual de siempre.
+                const anticipoDeCompraNueva = !reintentoSinRegistro && receiptPresent && p.registrationPending
+                    && !paymentRegisteredOrderNumber && !p.registrationFailed && !(message && message._retryRegistro);
+                if (anticipoDeCompraNueva) {
+                    const retryData = { since: admin.firestore.Timestamp.now(), attempts: 0, conComprobante: true,
+                        faltante: 'confirmar con el cliente el resumen completo del pedido (producto, nombre, total y anticipo)' };
+                    await contactRef.set({ registrationRetry: retryData }, { merge: true });
+                    contactData.registrationRetry = retryData;
+                    aiMessages = ['¡Gracias por tu comprobante! 🙌 Dame un momento para confirmar los datos de tu pedido ✨'];
+                    console.warn(`[AI] ${contactId}: anticipo de compra nueva sin pedido; se abre el reintento y se vuelve a llamar a la IA para confirmar el resumen.`);
+                    setTimeout(() => {
+                        triggerAutoReplyAI({ ...(message || {}), _retryRegistro: true }, contactRef, {}, 1000)
+                            .catch(e => console.warn('[AI] No se pudo relanzar la IA para el registro:', e.message));
+                    }, 4000);
+                } else if (reply !== null && !reintentoSinRegistro) aiMessages = reply;
             } catch (error) {
                 // Nunca enviar la confirmación original si la comprobación del sistema falló.
                 aiMessages = ['El equipo revisará el estado de tu pago y te ayudará a continuar por aquí.'];
