@@ -34,6 +34,14 @@ const CLIENT_PREVIEW_STYLE = 4;
 const RASTER_PROMPT = 'dame el diseño de la imagen con rellenos blancos y fondos negros. En raster engrave con degradado en trama';
 // Mockup (foto/render de la lámpara prendida que ya vio el cliente) -> el grabado TAL CUAL, con su texto.
 const MOCKUP_PROMPT = 'Esta imagen es un mockup de una lámpara LED de acrílico redonda, encendida. Extrae SOLO el diseño grabado dentro del círculo de acrílico: el dibujo y el texto/nombre EXACTAMENTE como están (mismas letras, misma tipografía, misma pose y posición), centrado y ocupando el cuadro como ocupa el círculo. Quita la base, la mesa, el fondo, los reflejos y el color de la luz. Solo blanco y negro, sin colores: el diseño en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla, sin círculos, marcos ni bordes. En raster engrave con degradado en trama.';
+// ESTILO (Chris, 20-oct-2026): hay diseños PLANOS (siluetas y rellenos sólidos, tipo vector: el unicornio de
+// DH18198) y diseños con TRAMA (dibujos con sombreado, fotos: el T-Rex). A los planos NO se les pide "degradado en
+// trama" (el modelo les inventaba sombreado y el brillo de la luz salía como degradado) y se pasan a 1 bit por
+// umbral, sin difuminado.
+const FLAT_STYLE = 'Diseño PLANO: rellenos SÓLIDOS en blanco y negro puro (tipo silueta / vector), SIN degradados, SIN trama, SIN sombreado y SIN el brillo ni el resplandor de la luz.';
+const styled = (prompt, estilo) => estilo === 'plano'
+    ? (/raster engrave con degradado en trama/i.test(prompt) ? prompt.replace(/en raster engrave con degradado en trama\.?/i, FLAT_STYLE) : `${prompt}. ${FLAT_STYLE}`)
+    : prompt;
 // Mockup cuyo TEXTO cambió después de que lo vio el cliente (DH18191: "el apellido es…"): solo el dibujo, sin
 // letras; el texto final lo pone composeLamp con la fuente de siempre.
 const MOCKUP_NO_TEXT_PROMPT = MOCKUP_PROMPT.replace('Extrae SOLO el diseño grabado dentro del círculo de acrílico: el dibujo y el texto/nombre EXACTAMENTE como están (mismas letras, misma tipografía, misma pose y posición)', 'Extrae SOLO el DIBUJO grabado dentro del círculo de acrílico, EXACTAMENTE como está (misma pose y posición), SIN NINGÚN TEXTO NI LETRAS: borra el nombre y rellena ese hueco con el fondo');
@@ -180,10 +188,11 @@ Para CADA lámpara decide:
 - "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana").
 - "textoCambia": SOLO para fuente "mockup": true si el texto final es DISTINTO del que se ve en el mockup (el cliente pidió agregar o cambiar algo del texto después de verlo); false si el mockup ya trae exactamente el texto final.
 - "tipo": "foto", "personaje" o "especial".
+- "estilo": "plano" si el diseño es de siluetas y rellenos SÓLIDOS (tipo vector o calcomanía, sin sombreado: p. ej. un unicornio con estrellas y nubes en negro sólido); "trama" si es un dibujo con sombreado, textura o mucho detalle, o una foto (p. ej. un T-Rex grabado con puntitos, un luchador, una familia). En un mockup prendido IGNORA el brillo/resplandor de la luz: juzga el dibujo.
 - "resumen": una línea para el equipo con lo que entendiste de ESA lámpara.
 - "advertencias": dudas que no puedes resolver de ESA lámpara (ej. "la foto es muy oscura", "no queda claro el nombre", "no encontré el mockup de esta lámpara"); [] si nada.
 - "cambia": ${prevList ? 'true si por la INDICACIÓN/CAMBIO hay que rehacer ESTA lámpara; false si se queda como está.' : 'true.'}
-Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "textoCambia": false, "tipo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
+Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "textoCambia": false, "tipo": "...", "estilo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
     for (const [prefix, list] of [['C', client], ['N', sent]]) {
         for (const [i, image] of list.entries()) {
             try { parts.push({ text: `Imagen ${prefix}${i}${image.text ? ` (mensaje: "${image.text.slice(0, 200)}")` : ''}:` }, await imagePart(image.url)); }
@@ -208,6 +217,7 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
             advertencias: (Array.isArray(row.advertencias) ? row.advertencias : []).map(String).slice(0, 6),
             cambia: row.cambia !== false,
             textoCambia: fuente === 'mockup' && row.textoCambia === true,
+            estilo: row.estilo === 'plano' ? 'plano' : 'trama',
         };
     });
 }
@@ -236,7 +246,7 @@ Responde SOLO este JSON: {"index": <número o -1 si ninguna sirve>, "motivo": "<
 // "Convertir a raster" del editor, desde el servidor. Cuadrada si el modelo lo permite.
 // Sin referencia (personaje sin imagen) el estudio de /imagenes ILUSTRA desde la descripción con el mismo
 // acabado de grabado. extra: lo que la IA pidió conservar o ajustar de la foto. prompt: reemplaza todo (mockup).
-async function rasterize(reference, { description = '', extra = '', prompt: override = '', model = RASTER_MODEL } = {}) {
+async function rasterize(reference, { description = '', extra = '', prompt: override = '', model = RASTER_MODEL, estilo = 'trama' } = {}) {
     const files = [];
     if (reference) {
         const { buffer } = reference.buffer ? reference : await download(reference.url);
@@ -246,9 +256,9 @@ async function rasterize(reference, { description = '', extra = '', prompt: over
         const jpeg = await sharp(buffer).rotate().resize(2048, 2048, fit).flatten({ background: '#ffffff' }).jpeg({ quality: 92 }).toBuffer();
         files.push({ buffer: jpeg, mimetype: 'image/jpeg', originalname: 'referencia.jpg' });
     }
-    const prompt = override || (reference
+    const prompt = styled(override || (reference
         ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT) + (model === BETA_MODEL ? '. Solo blanco y negro, sin colores; fondo negro uniforme de orilla a orilla, sin círculos, marcos ni bordes.' : '')
-        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa, sin texto ni letras. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`);
+        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa, sin texto ni letras. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`), estilo);
     const fields = { requestId: crypto.randomUUID(), model, prompt, aspect_ratio: '1:1' };
     // VARIOS PEDIDOS A LA VEZ (Chris, 19-oct-2026): la GPU de Qwen hace una imagen a la vez; si está ocupada
     // con otra lámpara, se espera su turno (cada 10 s, hasta 15 min) en vez de pasarse a gpt-image.
@@ -291,12 +301,19 @@ async function ensureQwenReady(onStep) {
     if (status?.status === 'ready') return true;
     if (!['starting'].includes(status?.status)) await qwenPod.startPod('Diseño IA (Beta)').catch(error => console.warn('[AUTO-LAMP] no pude prender Qwen:', error.message));
     const started = Date.now();
+    let lastTry = Date.now();
     while (Date.now() - started < QWEN_BOOT_WAIT_MS) {
         onStep?.(`Prendiendo la GPU de Qwen (tarda unos 10 min · ${Math.round((Date.now() - started) / 60000)} min)`);
         await new Promise(resolve => setTimeout(resolve, 20000));
         status = await qwenPod.getStatus().catch(() => null);
         if (status?.status === 'ready') return true;
-        if (status?.status === 'error' || (status?.status === 'off' && Date.now() - started > 60000)) return false;
+        // RunPod a veces no tiene GPU libre ("no tiene una GPU disponible ahora", DH18198): se vuelve a pedir cada
+        // minuto mientras dura la espera, en vez de rendirse a la primera.
+        if (['off', 'error'].includes(status?.status) && Date.now() - lastTry > 60000) {
+            lastTry = Date.now();
+            if (status.status === 'error') await qwenPod.stopPod('reintento del Diseño IA').catch(() => {});
+            await qwenPod.startPod('Diseño IA (Beta), reintento').catch(error => console.warn('[AUTO-LAMP] Qwen sigue sin arrancar:', error.message));
+        }
     }
     return false;
 }
@@ -549,10 +566,10 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
             : { url: null, jobId: null, model: tpl.label, buffer: image };
     } else if (plan.fuente === 'mockup') {
         step('Convirtiendo el mockup a grabado');
-        raster = await rasterizeBeta(plan.reference, { prompt: plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT, onStep: step });
+        raster = await rasterizeBeta(plan.reference, { prompt: plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT, estilo: plan.estilo, onStep: step });
     } else if (beta) {
         step(plan.reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes');
-        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '', onStep: step });
+        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '', estilo: plan.estilo, onStep: step });
     } else {
         step('Convirtiendo a grabado');
         raster = await rasterize(plan.reference);
@@ -574,7 +591,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     // suele entregar blanco sobre negro: engravePolarity lo normaliza (Chris, 19-oct-2026). El previo del cliente es al revés.
     const rgba = await sharp(buffer).flatten({ background: '#ffffff' }).resize(size.width, size.height, { fit: 'fill', kernel: 'lanczos3' }).ensureAlpha().raw().toBuffer();
     // La plantilla ya es de trazos limpios: umbral (sin puntitos de difuminado en las orillas).
-    const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, cleanTemplate ? { ...BITMAP, method: 'threshold' } : BITMAP);
+    const bits = toBitmap(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), size.width, size.height, cleanTemplate || plan.estilo === 'plano' ? { ...BITMAP, method: 'threshold' } : BITMAP);
     const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
 
     step('Armando el diseño');
@@ -603,8 +620,8 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         createdAt: now(), createdBy: ACTOR.uid, updatedAt: now(), updatedBy: ACTOR.uid, orderNumber: Number(dh), lampIndex: lamp.index,
     });
     return {
-        index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia, template: plan.template || null,
-        brief: { tipo: plan.tipo || null, fuente: plan.fuente, nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
+        index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia, template: plan.template || null, estilo: plan.estilo || 'trama',
+        brief: { tipo: plan.tipo || null, fuente: plan.fuente, estilo: plan.estilo || 'trama', nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
             advertencias: plan.advertencias || [], referenceUrl: plan.reference?.url || null },
         projectId: project.id, projectRevision: 1, previewUrl, name: engraveName, inkShare,
         rasterUrl: raster.url, rasterJobId: raster.jobId || null, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}),
