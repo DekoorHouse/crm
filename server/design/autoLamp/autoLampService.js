@@ -897,7 +897,7 @@ async function teamPreview(dh, index = 0) {
 // última versión guardada de cada proyecto.
 async function rdworksSheetsFor(dh, autoLamp) {
     const { rdworksSheets } = await composerModule();
-    return rdworksSheets((await piecesFor(autoLamp)).map(piece => ({ piece, copies: 1 })), `DH${dh}`);
+    return await rdworksSheets((await piecesFor(autoLamp)).map(piece => ({ piece, copies: 1 })), `DH${dh}`);
 }
 
 // Las piezas de corte del pedido, una por lámpara Y por cada copia (en el orden de las hojas), ya revisadas.
@@ -1205,7 +1205,7 @@ async function approve(dh, { svg = null, actor = null, force = false, alone = fa
         const leftover = !alone && pieces.length % 2 === 1 ? pieces.pop() : null;
         const folder = `${STORAGE_DIR}/DH${dh}`, stamp = Date.now().toString(36);
         // 1) Las parejas del propio pedido (y, con «subir sola», la que sobra en su hoja).
-        const own = pieces.length ? rdworksSheets(pieces.map(piece => ({ piece, copies: 1 })), `DH${dh}`) : [];
+        const own = pieces.length ? await rdworksSheets(pieces.map(piece => ({ piece, copies: 1 })), `DH${dh}`) : [];
         for (const [k, svgText] of own.entries()) {
             const suffix = own.length > 1 ? `-h${k + 1}` : '';
             sent = true;
@@ -1235,7 +1235,7 @@ async function approve(dh, { svg = null, actor = null, force = false, alone = fa
             }
             // 3) Hoja compartida: la que esperaba arriba, esta abajo.
             const partnerPiece = (await piecesFor(partner.data.autoLamp)).pop();
-            const pairSvg = rdworksSheet([{ piece: partnerPiece, slot: 0 }, { piece: leftover, slot: 1 }], `DH${partner.dh} + DH${dh}`);
+            const pairSvg = await rdworksSheet([{ piece: partnerPiece, slot: 0 }, { piece: leftover, slot: 1 }], `DH${partner.dh} + DH${dh}`);
             sent = true;
             const shared = await uploadSheet(folder, stamp, '-par', pairSvg, `DH${partner.dh}-DH${dh}-ia-beta-${stamp}.svg`);
             files.push(shared);
@@ -1291,7 +1291,7 @@ async function uploadQueuedAlone(dh, { actor = null } = {}) {
         const { rdworksSheet } = await composerModule();
         const piece = (await piecesFor(data.autoLamp)).pop();
         const stamp = Date.now().toString(36);
-        const file = await uploadSheet(`${STORAGE_DIR}/DH${dh}`, stamp, '-sola', rdworksSheet([{ piece, slot: 0 }], `DH${dh}`), `DH${dh}-ia-beta-${stamp}.svg`);
+        const file = await uploadSheet(`${STORAGE_DIR}/DH${dh}`, stamp, '-sola', await rdworksSheet([{ piece, slot: 0 }], `DH${dh}`), `DH${dh}-ia-beta-${stamp}.svg`);
         const files = [...(data.autoLamp.queuedFiles || []), file];
         await ref.update(uploadedFields(files, { actor, previewUrl: data.autoLamp.previewUrl }));
         try { await require('../designPending').recomputeForContact(data.contactId || data.telefono); } catch (_) {}
