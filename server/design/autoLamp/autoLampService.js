@@ -745,7 +745,10 @@ async function generate(dh, options = {}) {
     const partial = !!(options.keepClient || (Array.isArray(options.lamps) && options.lamps.length)) && previous.length > 0;
     await ref.update({ autoLamp: { status: 'working', step: beta ? 'Leyendo el pedido y el chat' : 'Eligiendo la imagen del chat', beta,
         lamps: partial ? previous : [],
-        ...(options.note ? { note: String(options.note).slice(0, 500) } : {}), ...(options.keepClient && order.autoLamp?.client ? { client: order.autoLamp.client } : {}),
+        ...(options.note ? { note: String(options.note).slice(0, 500) } : {}),
+        // Rehacer a mano también recuerda cuántas versiones ya vio el cliente (el saludo va solo la primera vez).
+        ...(options.keepClient && order.autoLamp?.client ? { client: order.autoLamp.client }
+            : order.autoLamp?.client?.rounds ? { client: { rounds: order.autoLamp.client.rounds } } : {}),
         startedAt: now(), updatedAt: now() } });
     try {
         let plans;
@@ -913,10 +916,21 @@ function designProblems(document, piece, lamp) {
 // aprobación y el clasificador decide aprobado / cambios / no claro (ver handleBetaDecision).
 // Saludo SIN nombre: el "name" de WhatsApp suele ser un alias raro (Chris, 2026-07-20).
 const CLIENT_MESSAGE = '¡Hola! 😊 Antes de fabricar tu lámpara, te comparto el diseño para que lo revises con calma ✨\n¿Lo aprobamos así o te gustaría que le ajustemos algo? 🙌';
-const CLIENT_MESSAGE_AGAIN = '¡Listo! 😊 Ya ajustamos tu diseño con lo que nos pediste ✨\n¿Lo aprobamos así o le cambiamos algo más? 🙌';
+// El saludo va SOLO la primera vez; los reenvíos dicen que ya van los cambios, con otras palabras cada vez
+// (Chris, 20-oct-2026: DH18288 recibió el mismo saludo en cada versión).
+const CLIENT_MESSAGE_AGAIN = [
+    'Te dejo los cambios que nos solicitaste 😊✨\n¿Lo aprobamos así o le ajustamos algo más? 🙌',
+    'Listo, aquí está tu diseño con el nuevo ajuste ✨\n¿Cómo lo ves? ¿Así lo mandamos a fabricar? 😊',
+    'Ya quedó el cambio que nos pediste 🙌 Te comparto cómo se ve ahora ✨\n¿Te gusta así o le movemos algo más?',
+];
 // Varias lámparas: un previo POR LÁMPARA (Chris, 19-oct-2026), entre un saludo y la pregunta.
 const MULTI_INTRO = '¡Hola! 😊 Antes de fabricar tus lámparas, te comparto los diseños para que los revises con calma ✨';
-const MULTI_INTRO_AGAIN = '¡Listo! 😊 Ya ajustamos lo que nos pediste ✨';
+const MULTI_INTRO_AGAIN = [
+    'Te dejo los cambios que nos solicitaste 😊✨',
+    'Listo, aquí están tus diseños con el nuevo ajuste ✨',
+    'Ya quedaron los cambios que nos pediste 🙌 Te comparto cómo se ven ahora ✨',
+];
+const againText = (list, rounds) => list[(rounds - 1) % list.length];
 const MULTI_QUESTION = '¿Los aprobamos así o te gustaría que le ajustemos algo a alguno? 🙌';
 // Envíos automáticos por pedido (el primero + rehechos por cambio del cliente); después pasa a una persona.
 const MAX_CLIENT_SENDS = 3;
@@ -949,11 +963,12 @@ async function sendToClient(dh, { auth = {}, actor = null, only = null } = {}) {
     const seen = { ...(autoLamp.client?.revisions || {}) };
     for (const { lamp, revision } of images) seen[lamp.index] = revision;
     const rounds = Number(autoLamp.client?.rounds) || 0;
-    const again = rounds > 0 && autoLamp.client?.status === 'changes';
+    // Ya vio una versión antes (pidió cambios, también después de aprobar): no se repite el saludo.
+    const again = rounds > 0;
     if (lamps.length === 1) {
-        await postMessage(contactId, auth, { text: again ? CLIENT_MESSAGE_AGAIN : CLIENT_MESSAGE, fileUrl: images[0].url, fileType: 'image/jpeg' });
+        await postMessage(contactId, auth, { text: again ? againText(CLIENT_MESSAGE_AGAIN, rounds) : CLIENT_MESSAGE, fileUrl: images[0].url, fileType: 'image/jpeg' });
     } else {
-        await postMessage(contactId, auth, { text: again ? MULTI_INTRO_AGAIN : MULTI_INTRO });
+        await postMessage(contactId, auth, { text: again ? againText(MULTI_INTRO_AGAIN, rounds) : MULTI_INTRO });
         for (const { lamp, url } of images) {
             const caption = `${again ? 'Diseño corregido' : `Diseño ${lamp.index + 1} de ${lamps.length}`}: ${lamp.label}`;
             await postMessage(contactId, auth, { text: caption, fileUrl: url, fileType: 'image/jpeg' });
