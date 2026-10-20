@@ -201,7 +201,7 @@ Abajo van las imágenes. Las del CLIENTE se llaman C0, C1…; las que mandamos N
 OJO: el cliente puede cambiar de opinión varias veces (pedir otro personaje y luego regresar al primero). Las lámparas que hay que diseñar son SOLO las de la lista de arriba (lo que quedó registrado): un mockup de una opción que el cliente DESCARTÓ no se usa para nada. Busca el mockup que corresponda al PERSONAJE de cada lámpara aunque sea de antes.
 Para CADA lámpara decide:
 - "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
-- "imagen": la imagen elegida ("N2", "C0"…), o "" si es ilustración. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
+- "imagen": la imagen elegida ("N2", "C0"…), o VARIAS separadas por coma si hay que JUNTAR fotos en una sola escena (ej. "C1,C2" para unir a dos personas que vienen en fotos distintas; máximo 4), o "" si es ilustración desde cero. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
 - "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "". NUNCA pidas escribir el nombre ni ningún texto en la imagen: el nombre lo agrega el sistema aparte (si la imagen trae letras, pide quitarlas).
 - "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana").
 - "textoCambia": SOLO para fuente "mockup": true si el texto final es DISTINTO del que se ve en el mockup (el cliente pidió agregar o cambiar algo del texto después de verlo); false si el mockup ya trae exactamente el texto final.
@@ -221,15 +221,20 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
     const rows = Array.isArray(answer.lamparas) ? answer.lamparas : [];
     return lamps.map(lamp => {
         const row = rows.find(r => Number(r.lampara) === lamp.index) || rows[lamp.index] || {};
-        const pick = String(row.imagen || '').trim().toUpperCase().match(/^([CN])(\d+)$/);
-        const reference = pick ? (pick[1] === 'C' ? client : sent)[Number(pick[2])] || null : null;
+        // Una o VARIAS imágenes ("C1,C2" para juntar a dos personas en una escena, DH18288; máximo 4).
+        const picks = (String(Array.isArray(row.imagen) ? row.imagen.join(',') : row.imagen || '').toUpperCase().match(/[CN]\d+/g) || []).slice(0, 4);
+        const references = picks.map(p => (p[0] === 'C' ? client : sent)[Number(p.slice(1))]).filter(Boolean);
+        const reference = references[0] || null, pick = picks[0] ? [picks[0], picks[0][0]] : null;
         let fuente = ['mockup', 'cliente', 'ilustracion'].includes(row.fuente) ? row.fuente : (reference ? 'cliente' : 'ilustracion');
         if (fuente !== 'ilustracion' && !reference) fuente = 'ilustracion';
         if (fuente === 'mockup' && pick && pick[1] !== 'N') fuente = 'cliente';
+        // Fotos del cliente para juntar: aunque la IA lo llame "ilustración", va con sus fotos de referencia.
+        if (fuente === 'ilustracion' && references.length) fuente = 'cliente';
         return {
-            fuente, reference,
+            fuente, reference, references,
             tipo: ['foto', 'personaje', 'especial'].includes(row.tipo) ? row.tipo : 'especial',
-            nombre: String(row.nombre || '').trim().slice(0, 80),
+            // Frases largas también (DH18288 se cortó a 80 letras): renglones con " · ".
+            nombre: String(row.nombre || '').trim().slice(0, 400),
             prompt: String(row.prompt || '').trim().slice(0, 1500),
             resumen: String(row.resumen || '').trim().slice(0, 400),
             advertencias: (Array.isArray(row.advertencias) ? row.advertencias : []).map(String).slice(0, 6),
@@ -267,15 +272,16 @@ Responde SOLO este JSON: {"index": <número o -1 si ninguna sirve>, "motivo": "<
 // Cuando el nombre lo pone el armado (composeLamp), la imagen NO debe traer letras: DH18282 salió con «Patricia» dos
 // veces porque la indicación de la IA pedía «integrar el nombre» y el modelo lo escribió.
 const NO_TEXT = 'IMPORTANTE: la imagen NO lleva ningún texto, letra, palabra ni nombre (el nombre se agrega después, aparte); si la imagen original trae letras, quítalas.';
-async function rasterize(reference, { description = '', extra = '', prompt: override = '', model = RASTER_MODEL, estilo = 'trama', noText = false } = {}) {
+async function rasterize(reference, { description = '', extra = '', prompt: override = '', model = RASTER_MODEL, estilo = 'trama', noText = false, extraReferences = [] } = {}) {
     const files = [];
-    if (reference) {
-        const { buffer } = reference.buffer ? reference : await download(reference.url);
+    // La principal y, si hay que juntar varias fotos (DH18288), las demás (hasta 4 en total).
+    for (const [i, ref] of [reference, ...extraReferences].filter(Boolean).slice(0, 4).entries()) {
+        const { buffer } = ref.buffer ? ref : await download(ref.url);
         // Qwen entrega la imagen con la forma de la referencia: se manda cuadrada (relleno blanco) para que el
         // diseño salga cuadrado y quepa completo en el círculo.
         const fit = /qwen/i.test(model) ? { fit: 'contain', background: '#ffffff' } : { fit: 'inside', withoutEnlargement: true };
         const jpeg = await sharp(buffer).rotate().resize(2048, 2048, fit).flatten({ background: '#ffffff' }).jpeg({ quality: 92 }).toBuffer();
-        files.push({ buffer: jpeg, mimetype: 'image/jpeg', originalname: 'referencia.jpg' });
+        files.push({ buffer: jpeg, mimetype: 'image/jpeg', originalname: `referencia-${i + 1}.jpg` });
     }
     const prompt = styled(override || (reference
         ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT) + (/qwen/i.test(model) ? '. Solo blanco y negro, sin colores; fondo negro uniforme de orilla a orilla, sin círculos, marcos ni bordes.' : '')
@@ -613,7 +619,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     } else if (beta) {
         step(plan.reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes');
         // Foto del cliente o ilustración: el nombre lo pone el armado, así que la imagen va SIN letras.
-        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '', estilo: plan.estilo, noText: !!plan.nombre, onStep: step });
+        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '', estilo: plan.estilo, noText: !!plan.nombre, extraReferences: (plan.references || []).slice(1), onStep: step });
     } else {
         step('Convirtiendo a grabado');
         raster = await rasterize(plan.reference);
@@ -666,7 +672,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     return {
         index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia, template: plan.template || null, estilo: plan.estilo || 'trama',
         brief: { tipo: plan.tipo || null, fuente: plan.fuente, estilo: plan.estilo || 'trama', nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
-            advertencias: plan.advertencias || [], referenceUrl: plan.reference?.url || null },
+            advertencias: plan.advertencias || [], referenceUrl: plan.reference?.url || null, referenceUrls: (plan.references || []).map(r => r.url).filter(Boolean) },
         projectId: project.id, projectRevision: 1, previewUrl, name: engraveName, inkShare,
         rasterUrl: raster.url, rasterJobId: raster.jobId || null, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}),
         durationMs: Date.now() - started, changed: true,

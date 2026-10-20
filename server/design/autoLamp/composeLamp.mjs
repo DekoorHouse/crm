@@ -110,15 +110,24 @@ export function composeLamp({ image, name, font, title, nameSlot = null }) {
 
     // 2) Nombre centrado, tocando la base, del tamaño que quepa en ancho y alto… En VARIOS renglones si el
     // texto trae " · " o saltos de línea (p. ej. "Victor Emilio · Domínguez Quintana"), cada uno centrado.
-    const lines = text.split(/\s*·\s*|\n+/).map(l => l.trim()).filter(Boolean);
+    // Un renglón muy largo (frases dedicadas) se parte por palabras en renglones parejos de ~22 letras.
+    const lines = text.split(/\s*·\s*|\n+/).map(l => l.trim()).filter(Boolean).flatMap(line => {
+        if (line.length <= 26) return [line];
+        const words = line.split(/\s+/), target = line.length / Math.ceil(line.length / 22), out = [''];
+        for (const w of words) {
+            const cur = out[out.length - 1];
+            if (cur && cur.length + 1 + w.length > target + 4) out.push(w); else out[out.length - 1] = cur ? `${cur} ${w}` : w;
+        }
+        return out;
+    });
     const units = lines.map(line => font.getPath(line, 0, 0, 1).getBoundingBox());
     const inkWidth = Math.max(...units.map(u => u.x2 - u.x1)), inkHeight = Math.max(...units.map(u => u.y2 - u.y1));
     const LINE_GAP = 1.05;   // distancia entre renglones, en tamaños de letra
-    const place = size => {
+    const place = (size, lift = 0) => {
         const last = units[units.length - 1];
         // nameSlot (plantillas del taller, p. ej. Spiderman): el bloque de texto centrado en un punto fijo del
         // marco (mm desde su esquina superior izquierda). Sin él, abajo, tocando la base.
-        let lastBaseline = baseTop(frame) - LAYOUT.silhouette - last.y2 * size;
+        let lastBaseline = baseTop(frame) - LAYOUT.silhouette - last.y2 * size - lift;
         if (nameSlot) {
             const top = units[0].y1 * size - (lines.length - 1) * LINE_GAP * size, bottom = last.y2 * size;
             lastBaseline = frame.y + nameSlot.cy - (top + bottom) / 2;
@@ -142,8 +151,13 @@ export function composeLamp({ image, name, font, title, nameSlot = null }) {
     });
     const maxW = nameSlot ? nameSlot.maxWidth : frame.width * LAYOUT.nameWidth;
     const maxH = nameSlot ? nameSlot.maxHeight / lines.length : frame.height * LAYOUT.nameHeight;
-    let layout = place(Math.min(maxW / inkWidth, maxH / inkHeight));
-    for (let tries = 0; tries < 40 && !inside(layout.outline); tries++) layout = place(layout.size * .96);
+    // Frases de 3+ renglones: antes de achicar, el bloque sube hacia la parte ancha del círculo (hasta ~30% del
+    // marco); un nombre de 1-2 renglones se queda tocando la base como siempre.
+    const lifts = !nameSlot && lines.length > 2 ? Array.from({ length: 16 }, (_, k) => k * frame.height * .02) : [0];
+    const fit = size => { for (const lift of lifts) { const l = place(size, lift); if (inside(l.outline)) return l; } return null; };
+    let size = Math.min(maxW / inkWidth, maxH / inkHeight), layout = fit(size);
+    for (let tries = 0; tries < 40 && !layout; tries++) layout = fit(size *= .96);
+    layout = layout || place(size);
     const labels = layout.rows.map((row, k) => ({ ...createObject('text', row.x, row.baseline - layout.size), name: lines.length > 1 ? `Nombre ${k + 1}` : 'Nombre',
         text: row.line, fontSize: layout.size, fontFamily: FONT_FAMILY, fill: '#000000', stroke: 'none', strokeWidth: 0 }));
 
