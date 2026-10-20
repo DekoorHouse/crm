@@ -184,7 +184,7 @@ OJO: el cliente puede cambiar de opinión varias veces (pedir otro personaje y l
 Para CADA lámpara decide:
 - "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
 - "imagen": la imagen elegida ("N2", "C0"…), o "" si es ilustración. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
-- "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "".
+- "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "". NUNCA pidas escribir el nombre ni ningún texto en la imagen: el nombre lo agrega el sistema aparte (si la imagen trae letras, pide quitarlas).
 - "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana").
 - "textoCambia": SOLO para fuente "mockup": true si el texto final es DISTINTO del que se ve en el mockup (el cliente pidió agregar o cambiar algo del texto después de verlo); false si el mockup ya trae exactamente el texto final.
 - "tipo": "foto", "personaje" o "especial".
@@ -246,7 +246,10 @@ Responde SOLO este JSON: {"index": <número o -1 si ninguna sirve>, "motivo": "<
 // "Convertir a raster" del editor, desde el servidor. Cuadrada si el modelo lo permite.
 // Sin referencia (personaje sin imagen) el estudio de /imagenes ILUSTRA desde la descripción con el mismo
 // acabado de grabado. extra: lo que la IA pidió conservar o ajustar de la foto. prompt: reemplaza todo (mockup).
-async function rasterize(reference, { description = '', extra = '', prompt: override = '', model = RASTER_MODEL, estilo = 'trama' } = {}) {
+// Cuando el nombre lo pone el armado (composeLamp), la imagen NO debe traer letras: DH18282 salió con «Patricia» dos
+// veces porque la indicación de la IA pedía «integrar el nombre» y el modelo lo escribió.
+const NO_TEXT = 'IMPORTANTE: la imagen NO lleva ningún texto, letra, palabra ni nombre (el nombre se agrega después, aparte); si la imagen original trae letras, quítalas.';
+async function rasterize(reference, { description = '', extra = '', prompt: override = '', model = RASTER_MODEL, estilo = 'trama', noText = false } = {}) {
     const files = [];
     if (reference) {
         const { buffer } = reference.buffer ? reference : await download(reference.url);
@@ -258,7 +261,7 @@ async function rasterize(reference, { description = '', extra = '', prompt: over
     }
     const prompt = styled(override || (reference
         ? (extra ? `${RASTER_PROMPT}. ${extra}` : RASTER_PROMPT) + (model === BETA_MODEL ? '. Solo blanco y negro, sin colores; fondo negro uniforme de orilla a orilla, sin círculos, marcos ni bordes.' : '')
-        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa, sin texto ni letras. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`), estilo);
+        : `Ilustración para grabar con láser en una lámpara redonda: ${description}. Centrada y completa, sin texto ni letras. Solo blanco y negro, sin colores. Rellenos y detalles en BLANCO sobre un fondo NEGRO uniforme de orilla a orilla: sin círculos, marcos, bordes ni viñetas. En raster engrave con degradado en trama.`), estilo) + (noText ? ` ${NO_TEXT}` : '');
     const fields = { requestId: crypto.randomUUID(), model, prompt, aspect_ratio: '1:1' };
     // VARIOS PEDIDOS A LA VEZ (Chris, 19-oct-2026): la GPU de Qwen hace una imagen a la vez; si está ocupada
     // con otra lámpara, se espera su turno (cada 10 s, hasta 15 min) en vez de pasarse a gpt-image.
@@ -584,7 +587,8 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         raster = await rasterizeBeta(plan.reference, { prompt: plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT, estilo: plan.estilo, onStep: step });
     } else if (beta) {
         step(plan.reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes');
-        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '', estilo: plan.estilo, onStep: step });
+        // Foto del cliente o ilustración: el nombre lo pone el armado, así que la imagen va SIN letras.
+        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '', estilo: plan.estilo, noText: !!plan.nombre, onStep: step });
     } else {
         step('Convirtiendo a grabado');
         raster = await rasterize(plan.reference);
