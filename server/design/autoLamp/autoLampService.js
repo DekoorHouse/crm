@@ -565,7 +565,7 @@ async function removeRing(buffer) {
     return sharp(out, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
 }
 
-async function fitToLampCircle(buffer, side = 2000) {
+async function fitToLampCircle(buffer, side = 2000, { loose = false } = {}) {
     const { data, info } = await sharp(buffer).greyscale().raw().toBuffer({ resolveWithObject: true });
     const w = info.width, h = info.height;
     // Caja de lo que tiene tinta (aunque sea un trazo tenue, como el círculo del acrílico) y de lo negro.
@@ -589,7 +589,7 @@ async function fitToLampCircle(buffer, side = 2000) {
             if (x >= 0 && x < w && y >= 0 && y < h && data[y * w + x] < 250) { ringHits++; break; }
         }
     }
-    const isCircle = ink.w / ink.h > .9 && ink.w / ink.h < 1.1 && ringHits / 360 > .75;
+    const isCircle = !loose && ink.w / ink.h > .9 && ink.w / ink.h < 1.1 && ringHits / 360 > .75;
     const R = LAMP_CIRCLE.r * side, cx = LAMP_CIRCLE.cx * side, cy = LAMP_CIRCLE.cy * side;
     let box, scale, left, top;
     if (isCircle) {
@@ -740,7 +740,11 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const started = Date.now();
     const step = text => onStep(text);
     let raster;
-    if (plan.template) {
+    if (plan.fuente === 'propia') {
+        // IMAGEN DEL EQUIPO (Chris, 20-oct-2026, DH18183 KATSEYE): ya viene lista en negro sobre blanco; sin IA.
+        step('Usando la imagen del equipo');
+        raster = { url: null, jobId: null, model: 'Imagen del equipo (sin IA)', buffer: plan.imageBuffer };
+    } else if (plan.template) {
         // Plantilla del taller (p. ej. Spiderman): su grabado tal cual, sin IA; solo se le agrega el nombre.
         step('Usando la plantilla del taller');
         const tpl = TEMPLATES[plan.template], image = await templateImage(plan.template);
@@ -765,10 +769,13 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     }
     const downloaded = raster.buffer || (await download(raster.url)).buffer;
     // Grabado listo (negro sobre blanco); el del mockup además se reacomoda para llenar el círculo.
-    const engraved = await engravePolarity(downloaded);
+    // La imagen del equipo ya es negro sobre blanco (no se adivina la polaridad: un logo con aro la confunde).
+    const engraved = plan.fuente === 'propia' ? await sharp(downloaded).flatten({ background: '#ffffff' }).greyscale().png().toBuffer() : await engravePolarity(downloaded);
     const cleanTemplate = plan.template && !TEMPLATES[plan.template].rename;   // el grabado del taller tal cual (Spiderman)
     // Del mockup: sin el aro del acrílico que el modelo copia (removeRing) y acomodado para llenar el círculo.
-    const buffer = cleanTemplate ? downloaded : plan.template ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved)) : engraved;
+    // La del equipo: acomodada como diseño suelto (su aro es parte del logo, no el del acrílico).
+    const buffer = cleanTemplate ? downloaded : plan.template ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved))
+        : plan.fuente === 'propia' ? await fitToLampCircle(engraved, 2000, { loose: true }) : engraved;
     const meta = await sharp(buffer).metadata();
     const font = await loadFont();
     const { composeLamp, renderPreview, pictureSizeMm, rdworksPiece } = await composerModule();
@@ -899,6 +906,36 @@ async function generate(dh, options = {}) {
         await setStatus(ref, result);
         if (beta) await afterReady(dh, results, mode, options.auth).catch(error => console.warn(`[AUTO-LAMP] después de diseñar DH${dh}:`, error.message));
         return result;
+    } catch (error) {
+        await setStatus(ref, { status: 'error', error: error.message || String(error) }).catch(() => {});
+        throw error;
+    }
+}
+
+/**
+ * Diseño con una IMAGEN DEL EQUIPO (sin IA): cuando la IA no logra el diseño, una persona da la imagen ya lista
+ * (negro sobre blanco) y se arma igual que el Beta: grabado 1 bit, acomodado para llenar el círculo, nombre aparte
+ * solo si se da. Queda en «Revisar diseño» (no se manda ni se sube solo). Chris, 20-oct-2026, DH18183.
+ */
+async function buildFromImage(dh, buffer, { lampIndex = 0, nombre = '', estilo = 'plano', actor = null } = {}) {
+    const orderDoc = await findOrder(dh);
+    const order = orderDoc.data(), ref = orderDoc.ref;
+    if (['uploading', 'working'].includes(order.autoLamp?.status) || (order.autoLamp?.status === 'approved' && !order.autoLamp?.queued && order.autoLamp?.client?.status !== 'change_after_approval'))
+        throw Object.assign(new Error('Este diseño ya se aprobó, se está subiendo o se está generando.'), { status: 409 });
+    const lamp = orderLamps(order).find(l => l.index === Number(lampIndex));
+    if (!lamp) throw Object.assign(new Error(`El pedido no tiene la lámpara ${Number(lampIndex) + 1}.`), { status: 404 });
+    const others = lampsOf(order.autoLamp).filter(l => l.index !== lamp.index && l.status === 'ready' && l.projectId);
+    await setStatus(ref, { status: 'working', step: 'Armando con la imagen del equipo', beta: true, lamps: others, startedAt: now() });
+    try {
+        const png = await sharp(buffer).png().toBuffer();
+        const referenceUrl = await saveFile(`${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}/imagen-equipo-${Date.now().toString(36)}.png`, png, 'image/png');
+        const plan = { fuente: 'propia', imageBuffer: png, reference: { url: referenceUrl }, nombre, estilo, tipo: 'especial', prompt: '', advertencias: [],
+            resumen: `Diseño con la imagen del equipo, sin IA${actor?.email ? ` (${actor.email})` : ''}.` };
+        const built = await buildLamp(dh, lamp, plan, { beta: true, onStep: text => setStatus(ref, { status: 'working', step: text }).catch(() => {}) });
+        const lamps = [...others, built].sort((a, b) => a.index - b.index), first = lamps[0];
+        await setStatus(ref, { status: 'ready', step: 'Listo para revisar', mode: 'client', lamps, error: admin.firestore.FieldValue.delete(),
+            name: first.name || '', projectId: first.projectId, projectRevision: first.projectRevision, previewUrl: first.previewUrl, brief: first.brief, rasterModel: first.rasterModel || null, finishedAt: now() });
+        return built;
     } catch (error) {
         await setStatus(ref, { status: 'error', error: error.message || String(error) }).catch(() => {});
         throw error;
@@ -1508,4 +1545,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
 }
 
 module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
-    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp };
+    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage };
