@@ -19,6 +19,7 @@ import type {
 } from "@/lib/api/types";
 import { STATUS_OPTIONS, getStatusConfig } from "@/lib/utils/statusConfig";
 import Select from "@/components/ui/Select";
+import DateRangePicker from "@/components/ui/DateRangePicker";
 import type { SelectOption } from "@/components/ui/Select";
 import ThemeMenu from "@/components/layout/ThemeMenu";
 import LoadingOverlay from "@/components/layout/LoadingOverlay";
@@ -294,25 +295,13 @@ export default function DesglosePage() {
                 className="w-full sm:w-48"
               />
               {dateFilter === "personalizado" && (
-                <div className="flex items-center gap-1.5 pt-1">
-                  <input
-                    type="date"
-                    value={desde}
-                    max={hoyMx()}
-                    onChange={(e) => e.target.value && setDesde(e.target.value)}
-                    aria-label="Desde"
-                    className="min-w-0 flex-1 sm:w-[8.5rem] rounded-xl bg-surface-container-low px-2 py-1.5 text-sm text-on-surface border border-outline-variant/20"
-                  />
-                  <span className="text-xs text-on-surface-variant">a</span>
-                  <input
-                    type="date"
-                    value={hasta}
-                    max={hoyMx()}
-                    onChange={(e) => e.target.value && setHasta(e.target.value)}
-                    aria-label="Hasta"
-                    className="min-w-0 flex-1 sm:w-[8.5rem] rounded-xl bg-surface-container-low px-2 py-1.5 text-sm text-on-surface border border-outline-variant/20"
-                  />
-                </div>
+                <DateRangePicker
+                  desde={desde}
+                  hasta={hasta}
+                  max={hoyMx()}
+                  onChange={(d1, d2) => { setDesde(d1); setHasta(d2); }}
+                  className="pt-1 w-full sm:w-auto sm:min-w-[15rem]"
+                />
               )}
             </div>
 
