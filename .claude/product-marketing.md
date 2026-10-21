@@ -60,6 +60,17 @@
 - **"¿Cómo funciona?":** en anuncios de foto la gente no lo entiende. Por eso esos anuncios llevan un mensaje de bienvenida con video.
 - **Tiempo de entrega:** *(por confirmar)*.
 
+## Niveles de conciencia (Schwartz) para ordenar ganchos
+Cada gancho le habla a una persona en un nivel distinto. Hay que repartir los anuncios entre niveles, no hacer todos para el mismo:
+1. **No sabe que tiene el problema:** escena o emoción, sin producto al inicio. Ej.: "Ser papá de niño es llegar tarde y encontrarlo dormido…", "Yo a su edad le tenía miedo a la oscuridad…".
+2. **Sabe del problema:** nombra el dolor. Ej.: "Antes peleábamos todas las noches para que se durmiera", "Ya tiene mil juguetes".
+3. **Busca solución:** presenta la lámpara como la respuesta. Ej.: "Amiga, deja de comprarle juguetes, cómprale esto".
+4. **Conoce el producto pero duda:** responde objeciones. Ej.: la serie "Respondiendo a tu comentario" (estafa, tamaño, cualquier nombre, precio).
+5. **Listo para comprar:** oferta directa. Ej.: 2 por $1,200, envío gratis, pagas al ver la foto.
+
+## Rompe-objeciones
+Cada objeción de la sección de arriba puede ser su propio anuncio en formato "Respondiendo a tu comentario": la burbuja con la duda arriba y una mamá respondiendo a cámara con la lámpara. Es una estructura clonable a cualquier modelo. Primero va "¿Le pueden poner cualquier nombre?" (en producción); siguen "¿Y si es estafa?", "¿De qué tamaño es?" y "¿Por qué tan cara?". Ojo: Flow bloquea frases sobre pagos ("la pagas cuando…"), así que esas voces se redactan sin "pagar" o se hacen con ElevenLabs.
+
 ## Competencia
 - **México:** Regala_mx, Acrilicsa (conmemorativas con foto), BUY TECH SLP, Tania Salinas, Creative Box. Hay poca competencia directa en lámparas de niño con nombre.
 - **EE. UU. (referencias de formato):** Callie, Getnamenecklace (lámpara de tractor con nombre, 9+ meses activa), Photowatch (mochila de dino con nombre).
@@ -116,3 +127,4 @@
 
 ## Changelog
 - 2026-10-14: versión inicial, armada con lo trabajado en las campañas Dino v3.
+- 2026-10-21: niveles de conciencia de Schwartz para repartir ganchos, y rompe-objeciones con la serie "Respondiendo a tu comentario".
