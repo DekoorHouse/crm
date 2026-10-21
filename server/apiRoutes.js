@@ -8803,6 +8803,15 @@ router.get('/design-pending', async (req, res) => {
                     // NO es el candado por estatus que se quitó el 2026-08-01 (ese ignoraba el ✓ Diseñado y
                     // hacía rebotar la tarjeta para siempre, DH13603): correccionAbierta mira la marca de la
                     // diseñadora, así que "✓ Diseñado" —o cambiar el estatus— la sigue cerrando.
+                    // DISEÑO BETA con previo mandado al cliente (Chris, 21-oct-2026): mientras no conteste, «Esperando
+                    // confirmación» (aunque el pedido siga en 'Corregir': el diseño corregido ya se le mandó). Si pidió
+                    // un cambio, regresa a Pendientes para rehacerlo y revisarlo.
+                    const betaClient = p.autoLamp && p.autoLamp.beta && p.autoLamp.status === 'ready' && p.autoLamp.client;
+                    // (Lo que pide el cliente después del envío; el pago validado después NO lo regresa.)
+                    const pidioTrasEnvio = Math.max(tsToMs(p.pendienteDisenoAt), tsToMs(p.corregirAt), tsToMs(p.videoRequestedAt),
+                        tsToMs(p.productoAgregadoPostPagoAt), tsToMs(p.reenvioAt), tsToMs(p.designForceAt)) || 0;
+                    if (betaClient && betaClient.status === 'sent' && tsToMs(betaClient.sentAt) >= pidioTrasEnvio) return 'esperando_confirmacion';
+                    if (betaClient && betaClient.status === 'changes') return 'pendientes';
                     if (correccionAbierta(p)) return 'pendientes';
                     // DISEÑO BETA ya en Drive (Chris, 19-oct-2026): sale de Pendientes a su propia columna,
                     // salvo que el cliente haya pedido algo DESPUÉS de la subida (entonces regresa) o que alguien

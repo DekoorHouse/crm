@@ -1231,7 +1231,7 @@ function openDesignBeta(orderId) {
                 if (!await showConfirmModal(`¿Mandarle ${urls.length > 1 ? `los ${urls.length} previos (uno por lámpara)` : one && lamps.length > 1 ? `SOLO el previo de «${escapeHtml(one.label || '')}»` : 'este previo'} al cliente de ${o.orderNumber} por su chat? Si lo aprueba, se sube solo a Drive (SVG Corte); si pide un cambio, la IA lo rehace y se lo reenvía.<br>${thumbs}`, { icon: 'fa-paper-plane', confirmText: 'Mandar al cliente' })) { btn.disabled = false; return; }
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mandando…';
                 await _dlCall(dh, '/send-client', one ? { lamps: [one.index] } : {});
-                close(); _dlSetLocal(orderId, { ...a, client: { status: 'sent' } });
+                close(); o.boardCol = 'esperando_confirmacion'; _dlSetLocal(orderId, { ...a, client: { status: 'sent' } });
             } else if (act === 'approve' || act === 'approve-alone') {
                 const alone = act === 'approve-alone', total = lamps.reduce((n, l) => n + (l.copies || 1), 0);
                 const what = odd && !alone

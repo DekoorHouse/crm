@@ -1321,6 +1321,9 @@ async function sendToClient(dh, { auth = {}, actor = null, only = null } = {}) {
         'autoLamp.client': { status: 'sent', sentAt: now(), previewUrls: images.map(i => i.url), lampsSent: toSend.map(l => l.index), revisions: seen,
             rounds: rounds + 1, auto: !actor || !!actor.auto },
         'autoLamp.autoSendHeld': admin.firestore.FieldValue.delete(),
+        // Previo mandado: la tarjeta del tablero pasa a «Esperando confirmación» (Chris, 21-oct-2026). Si el cliente
+        // pide algo después, la regla del tablero la regresa sola a Pendientes.
+        disenoBoardCol: 'esperando_confirmacion', disenoBoardColAt: admin.firestore.Timestamp.now(),
     });
     await db.collection('contacts_whatsapp').doc(contactId).update({
         designApprovalPending: true, designApprovalOrderId: orderDoc.id,
