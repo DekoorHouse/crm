@@ -884,7 +884,7 @@ async function generate(dh, options = {}) {
     const previous = lampsOf(order.autoLamp).filter(l => l.status === 'ready' && l.projectId);
     // Se rehace todo salvo que sea un cambio (del cliente o del equipo sobre lámparas concretas).
     const partial = !!(options.keepClient || (Array.isArray(options.lamps) && options.lamps.length)) && previous.length > 0;
-    await ref.update({ autoLamp: { status: 'working', step: beta ? 'Leyendo el pedido y el chat' : 'Eligiendo la imagen del chat', beta,
+    await ref.update({ autoLamp: { status: 'working', step: beta ? 'Leyendo el pedido y el chat' : 'Eligiendo la imagen del chat', beta, ...(options.autoStarted ? { autoStarted: true } : {}),
         lamps: partial ? previous : [],
         ...(options.note ? { note: String(options.note).slice(0, 500) } : {}),
         // Rehacer a mano también recuerda cuántas versiones ya vio el cliente (el saludo va solo la primera vez).
@@ -1412,6 +1412,36 @@ async function handleBetaDecision(orderId, decision, { clientText = '', changeSu
     }
 }
 
+/**
+ * ARRANQUE SOLO (Chris, 21-oct-2026: «cuando llegue un nuevo pedido que empiece a trabajar solo, y ya yo reviso»):
+ * los pedidos NUEVOS que caen en la columna «Pendientes» del tablero de Diseño y no tienen Diseño IA arrancan el
+ * Beta solos. Queda en «Revisar diseño» (el envío al cliente es otro interruptor). Uno por vuelta y máximo
+ * AUTO_START_MAX trabajando a la vez (Qwen). «Nuevos» = creados después de encenderlo (designBetaAutoStartSince),
+ * para no disparar todo lo acumulado. Interruptor: crm_settings/general.designBetaAutoStartActive (false = apagado).
+ */
+const AUTO_START_MAX = 2;
+async function autoStartBeta() {
+    const settingsRef = db.collection('crm_settings').doc('general');
+    const settings = (await settingsRef.get()).data() || {};
+    if (settings.designBetaAutoStartActive === false) return null;
+    if (!settings.designBetaAutoStartSince) { await settingsRef.set({ designBetaAutoStartSince: Date.now() }, { merge: true }); return null; }
+    const working = await db.collection('pedidos').where('autoLamp.status', '==', 'working').limit(AUTO_START_MAX + 1).get();
+    if (working.size >= AUTO_START_MAX) return null;
+    // La misma lista que ve el tablero (no se duplica su lógica).
+    const headers = process.env.WORKER_API_KEY ? { 'x-worker-key': process.env.WORKER_API_KEY } : {};
+    const response = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}/api/design-pending?board=1`, { headers, signal: AbortSignal.timeout(60000) });
+    const data = await response.json().catch(() => ({}));
+    const list = Array.isArray(data.orders) ? data.orders : Array.isArray(data.pedidos) ? data.pedidos : Array.isArray(data) ? data : [];
+    const candidates = list.filter(o => o.boardCol === 'pendientes' && !o.autoLamp && (o.createdAt || 0) >= settings.designBetaAutoStartSince && o.orderNumber)
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    const next = candidates[0];
+    if (!next) return null;
+    const dh = Number(String(next.orderNumber).replace(/\D/g, ''));
+    console.log(`[AUTO-LAMP] Arranque solo: DH${dh} (${candidates.length} pedido(s) nuevo(s) en Pendientes sin Diseño IA).`);
+    generate(dh, { beta: true, autoStarted: true }).catch(error => console.warn(`[AUTO-LAMP] arranque solo DH${dh}:`, error.message));
+    return dh;
+}
+
 const REDO_QUIET_MS = 3 * 60 * 1000, REDO_MAX_WAIT_MS = 20 * 60 * 1000;
 // Rehace los cambios pendientes cuyo cliente ya dejó de escribir (lo llama un reloj en las rutas cada minuto).
 async function runPendingRedos() {
@@ -1830,4 +1860,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
 }
 
 module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
-    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage, runPendingRedos, sideTextLayout, editLamp, lampVersions, restoreVersion };
+    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage, runPendingRedos, sideTextLayout, editLamp, lampVersions, restoreVersion, autoStartBeta };

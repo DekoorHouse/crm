@@ -114,6 +114,10 @@ router.post('/:dh/restore', async (req, res) => {
     catch (error) { res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo regresar a esa versión.' }); }
 });
 
+// Pedidos nuevos en Pendientes de Diseño: el Diseño IA arranca solo (revisa cada 3 min; espera 2 min tras arrancar
+// el servidor para no chocar con un deploy).
+setTimeout(() => setInterval(() => service.autoStartBeta().catch(error => console.warn('[AUTO-LAMP] arranque solo:', error.message)), 3 * 60 * 1000), 2 * 60 * 1000);
+
 // Cambios del cliente: se rehacen cuando deja de escribir (revisa cada minuto).
 setInterval(() => service.runPendingRedos().catch(error => console.warn('[AUTO-LAMP] cambios pendientes:', error.message)), 60 * 1000);
 
