@@ -1491,8 +1491,12 @@ async function uploadSheet(folder, stamp, suffix, svgText, driveName) {
 }
 
 // Deja el pedido como subido a Drive con sus hojas (los campos que leen el tablero, el candado y el chat).
-function uploadedFields(files, { actor = null, svg = null, previous = null, pairedWith = null, previewUrl = null } = {}) {
+function uploadedFields(files, { actor = null, svg = null, previous = null, pairedWith = null, previewUrl = null, order = null } = {}) {
+    // Sin operador (Chris, 21-oct-2026, DH18335): si el pedido estaba en «Corregir», la subida del diseño corregido
+    // la cierra y pasa a «Diseñado por IA», igual que hace el corte automático del servidor al terminar un pedido.
+    const closesCorregir = String(order?.estatus || '').trim().toLowerCase() === 'corregir';
     return {
+        ...(closesCorregir ? { estatus: 'Diseñado por IA', corregirCerradoAt: admin.firestore.Timestamp.now(), corregirCerradoPor: 'auto-lamp-beta' } : {}),
         svgCorteAt: admin.firestore.Timestamp.now(), svgCorteBy: 'auto-lamp-beta', svgCorteUrl: files[0].url,
         svgCorteUrls: files.length > 1 ? files.map(f => f.url).join(',') : null,
         svgCorteFileName: files[0].name, svgCortePreviewUrl: files[0].preview || previewUrl || null, svgCorteStorageUrl: files[0].svg,
@@ -1578,10 +1582,10 @@ async function approve(dh, { svg = null, actor = null, force = false, alone = fa
             sent = true;
             const shared = await uploadSheet(folder, stamp, '-par', pairSvg, `DH${partner.dh}-DH${dh}-ia-beta-${stamp}.svg`);
             files.push(shared);
-            await partner.ref.update(uploadedFields([...(partner.data.autoLamp.queuedFiles || []), shared], { pairedWith: dh, actor: { email: `junto con DH${dh}` }, previewUrl: partner.data.autoLamp.previewUrl }));
+            await partner.ref.update(uploadedFields([...(partner.data.autoLamp.queuedFiles || []), shared], { pairedWith: dh, actor: { email: `junto con DH${dh}` }, previewUrl: partner.data.autoLamp.previewUrl, order: partner.data }));
             try { await require('../designPending').recomputeForContact(partner.data.contactId || partner.data.telefono); } catch (_) {}
         }
-        await ref.update(uploadedFields(files, { actor, svg, previous, pairedWith: partner?.dh || null, previewUrl: autoLamp.previewUrl }));
+        await ref.update(uploadedFields(files, { actor, svg, previous, pairedWith: partner?.dh || null, previewUrl: autoLamp.previewUrl, order: (await ref.get()).data() }));
         try { await require('../designPending').recomputeForContact(orderDoc.data().contactId || orderDoc.data().telefono); } catch (_) {}
         // Lo que había antes quedó REEMPLAZADO: a la papelera de Drive (las hojas compartidas no; se avisa).
         if (previous) {
@@ -1715,7 +1719,7 @@ async function uploadQueuedAlone(dh, { actor = null } = {}) {
         const stamp = Date.now().toString(36);
         const file = await uploadSheet(`${STORAGE_DIR}/DH${dh}`, stamp, '-sola', await rdworksSheet([{ piece, slot: 0 }], `DH${dh}`), `DH${dh}-ia-beta-${stamp}.svg`);
         const files = [...(data.autoLamp.queuedFiles || []), file];
-        await ref.update(uploadedFields(files, { actor, previewUrl: data.autoLamp.previewUrl }));
+        await ref.update(uploadedFields(files, { actor, previewUrl: data.autoLamp.previewUrl, order: (await ref.get()).data() }));
         try { await require('../designPending').recomputeForContact(data.contactId || data.telefono); } catch (_) {}
         return { driveUrl: files[0].url, driveUrls: files.map(f => f.url) };
     } catch (error) {
