@@ -39,7 +39,11 @@ const powerClipLevels = () => { let levels = 0; for (let session = powerClipEdit
 // Clicking a selected object again swaps its size handles for rotation handles, as in CorelDRAW.
 let rotateMode = false;
 function setSelection(ids) {
-    const next = new Set(ids);
+    // Un objeto de un grupo (Ctrl+G) trae a todo su grupo.
+    const list = (() => { try { return current().objects; } catch (_) { return []; } })();
+    ids = [...ids];
+    const groups = new Set(list.filter(o => ids.includes(o.id) && o.groupId).map(o => o.groupId));
+    const next = new Set([...ids, ...list.filter(o => o.groupId && groups.has(o.groupId)).map(o => o.id)]);
     if (next.size !== selectedIds.size || [...next].some(id => !selectedIds.has(id))) rotateMode = false;
     selectedIds = next; selectedId = [...selectedIds].at(-1) || null;
 }
@@ -766,6 +770,14 @@ canvas.addEventListener('pointerdown', event => {
         gesture.anchor = handlePoint(gesture.box, gesture.handle); gesture.snapTargets = snapTargets();
         render(); return;
     }
+    // Ctrl+clic (o Shift+clic) agrega el objeto a la selección o lo quita (con todo su grupo).
+    if (!handle && targetId && (event.ctrlKey || event.metaKey || event.shiftKey)) {
+        const list = current().objects, clicked = list.find(item => item.id === targetId);
+        const members = clicked?.groupId ? list.filter(item => item.groupId === clicked.groupId).map(item => item.id) : [targetId];
+        if (selectedIds.has(targetId)) setSelection([...selectedIds].filter(id => !members.includes(id)));
+        else setSelection([...selectedIds, ...members]);
+        render(); return;
+    }
     // A plain click on an object that was already selected switches between size and rotation handles.
     const reselect = !handle && selectedIds.has(targetId);
     if (!handle && !selectedIds.has(targetId)) selectOnly(targetId);
@@ -1445,8 +1457,29 @@ const actions = {
             for (const copy of d.objects.slice(-ids.length)) if (copy.silhouetteOf) {
                 if (copy.silhouetteOf.every(id => renamed.has(id))) copy.silhouetteOf = copy.silhouetteOf.map(id => renamed.get(id)); else delete copy.silhouetteOf;
             }
+            // Las copias de un grupo forman un grupo NUEVO (no se unen al original).
+            const newGroups = new Map();
+            for (const copy of d.objects.slice(-ids.length)) if (copy.groupId) {
+                if (!newGroups.has(copy.groupId)) newGroups.set(copy.groupId, crypto.randomUUID());
+                copy.groupId = newGroups.get(copy.groupId);
+            }
             setSelection(ids);
         });
+    },
+    // Ctrl+G agrupa lo seleccionado (se selecciona y se transforma junto); Ctrl+Shift+G / Ctrl+U desagrupa.
+    group() {
+        const items = selectedObjects().filter(item => !item.locked);
+        if (items.length < 2) { status('Selecciona dos o más objetos para agruparlos (Ctrl+clic o arrastra un recuadro).'); return; }
+        const groupId = crypto.randomUUID(), ids = new Set(items.map(item => item.id));
+        edit(d => { for (const item of d.objects) if (ids.has(item.id)) item.groupId = groupId; });
+        status(`${items.length} objetos agrupados`);
+    },
+    ungroup() {
+        const items = selectedObjects().filter(item => item.groupId && !item.locked);
+        if (!items.length) { status('La selección no tiene grupos.'); return; }
+        const ids = new Set(items.map(item => item.id));
+        edit(d => { for (const item of d.objects) if (ids.has(item.id)) delete item.groupId; });
+        status('Grupo deshecho');
     },
     forward() { reorder(1); }, backward() { reorder(-1); },
     'rotate-left'() { rotateSelection(90); }, 'rotate-right'() { rotateSelection(-90); },
@@ -2080,6 +2113,10 @@ document.addEventListener('keydown', event => {
     }
     if (mod && ['home', 'end'].includes(key)) {
         event.preventDefault(); if (!gesture) actions[key === 'home' ? 'front' : 'back'](); return;
+    }
+    if (mod && (key === 'g' || key === 'u')) {
+        event.preventDefault(); if (gesture) return;
+        actions[key === 'u' || event.shiftKey ? 'ungroup' : 'group'](); return;
     }
     if (mod && ['z', 'y', 'd', 's', 'o', 'i', 'e'].includes(key)) {
         event.preventDefault(); if (gesture) return;

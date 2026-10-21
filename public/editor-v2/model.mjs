@@ -154,6 +154,11 @@ export function validateDocument(input, depth = 0) {
             if (!numberIn(o.rotation, -360, 360)) throw new Error('El proyecto contiene objetos inválidos o no compatibles.');
             if (normalizeAngle(o.rotation)) valid.rotation = normalizeAngle(o.rotation);
         }
+        // Grupo (Ctrl+G): los objetos con el mismo groupId se seleccionan y se transforman juntos.
+        if (o.groupId !== undefined) {
+            if (typeof o.groupId !== 'string' || !o.groupId || o.groupId.length > 100) throw new Error('El proyecto contiene un grupo inválido.');
+            valid.groupId = o.groupId;
+        }
         if (o.type === 'text' && o.fontFamily !== undefined) {
             if (!FONT_FAMILIES.includes(o.fontFamily)) throw new Error('El texto usa una fuente no disponible.');
             if (o.fontFamily !== 'Arial') valid.fontFamily = o.fontFamily;
