@@ -86,6 +86,34 @@ router.post('/:dh/own-image', (req, res, next) => ownImage(req, res, err => err 
     res.status(202).json({ success: true, status: 'working' });
 });
 
+// «Modificar con IA»: aplica body.note a la lámpara body.lamp editando su imagen actual (segundo plano).
+router.post('/:dh/edit', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    const note = String(req.body?.note || '').trim();
+    if (!note) return res.status(400).json({ success: false, error: 'Escribe en la indicación qué cambio quieres.' });
+    if (running.has(dh)) return res.status(409).json({ success: false, error: 'Todavía se está generando este diseño.' });
+    running.add(dh);
+    service.editLamp(dh, Number(req.body?.lamp ?? 0) || 0, note, { actor: req.apiAuth })
+        .catch(error => console.warn(`[AUTO-LAMP] modificar DH${dh}:`, error.message)).finally(() => running.delete(dh));
+    res.status(202).json({ success: true, status: 'working' });
+});
+
+// Versiones anteriores de una lámpara (?lamp=) y regresar a una (body.lamp, body.projectId).
+router.get('/:dh/versions', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    try { res.json({ success: true, versions: await service.lampVersions(dh, Number(req.query.lamp ?? 0) || 0) }); }
+    catch (error) { res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudieron leer las versiones.' }); }
+});
+router.post('/:dh/restore', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    if (running.has(dh)) return res.status(409).json({ success: false, error: 'Todavía se está generando este diseño.' });
+    try { res.json({ success: true, ...(await service.restoreVersion(dh, Number(req.body?.lamp ?? 0) || 0, req.body?.projectId)) }); }
+    catch (error) { res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo regresar a esa versión.' }); }
+});
+
 // Cambios del cliente: se rehacen cuando deja de escribir (revisa cada minuto).
 setInterval(() => service.runPendingRedos().catch(error => console.warn('[AUTO-LAMP] cambios pendientes:', error.message)), 60 * 1000);
 

@@ -1097,6 +1097,8 @@ function _dlLampCard(l, dh, total, done = false) {
                     ${l.projectId ? `<a href="/editor-v2/?project=${encodeURIComponent(l.projectId)}&dh=${dh}" target="_blank" rel="noopener" style="padding:5px 9px;border-radius:7px;border:1px solid #0ea5e9;color:#0284c7;font-weight:700;font-size:12px;text-decoration:none"><i class="fas fa-pen-ruler"></i> Corregir en el editor</a>` : ''}
                     ${!done ? `<button data-dl="own-image" data-lamp="${l.index}" title="Sube una imagen (mockup, foto o dibujo) y la IA la convierte a grabado igual que si viniera del chat" style="padding:5px 9px;border-radius:7px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-upload"></i> Usar mi imagen</button>
                     <button data-dl="own-image" data-as-is="1" data-lamp="${l.index}" title="Sube una imagen YA LISTA para grabar (negro sobre blanco) y se usa tal cual, sin IA" style="padding:5px 9px;border-radius:7px;border:1px dashed #0d9488;background:transparent;color:#0f766e;font-weight:600;font-size:12px;cursor:pointer">Tal cual</button>` : ''}
+                    ${l.projectId && !done ? `<button data-dl="edit-ai" data-lamp="${l.index}" title="Aplica la indicación de abajo a ESTE diseño (p. ej. «agrega estrellitas de fondo»): la IA edita la imagen actual en vez de rehacerla desde cero" style="padding:5px 9px;border-radius:7px;border:1px solid #db2777;background:transparent;color:#be185d;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-wand-magic-sparkles"></i> Modificar con IA</button>
+                    <button data-dl="versions" data-lamp="${l.index}" title="Ver los diseños anteriores de esta lámpara y regresar a uno" style="padding:5px 9px;border-radius:7px;border:1px solid #64748b;background:transparent;color:#475569;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-clock-rotate-left"></i> Versiones</button>` : ''}
                     ${l.projectId && !done ? `<button data-dl="remove-ring" data-lamp="${l.index}" title="Borra la línea circular del contorno (el aro del acrílico) de ESTE diseño, sin regenerarlo; respeta lo corregido en el editor" style="padding:5px 9px;border-radius:7px;border:1px solid #64748b;background:transparent;color:#475569;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-circle-notch"></i> Quitar aro</button>` : ''}
                     ${total > 1 && !done ? `<button data-dl="redo-one" data-lamp="${l.index}" title="Rehace solo esta lámpara (con la indicación de abajo, si escribiste una)" style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer esta</button>` : ''}
                 </div>
@@ -1280,6 +1282,40 @@ function openDesignBeta(orderId) {
                 const d = await res.json().catch(() => ({}));
                 if (!res.ok || d.success === false) throw new Error(d.error || ('HTTP ' + res.status));
                 close(); _dlSetLocal(orderId, { ...a, status: 'working', step: asIs ? 'Armando con la imagen del equipo' : 'Revisando la imagen del equipo' });
+            } else if (act === 'edit-ai') {
+                // Modificar el diseño actual con la indicación (no rehacer): la IA edita su propia imagen.
+                const l = lampOf(btn);
+                if (!note) { btn.disabled = false; alert('Escribe abajo, en la indicación, qué cambio quieres (p. ej. «agrega estrellitas y corazones pequeños de fondo»).'); wrap.querySelector('[data-dl="note"]').focus(); return; }
+                if (!await showConfirmModal(`¿Modificar la lámpara «${escapeHtml(l.label || '')}» con este cambio?<br><b>${escapeHtml(note)}</b><br><br>La IA edita el diseño actual (no lo rehace desde cero). Si no te gusta, regresa con «Versiones».`, { icon: 'fa-wand-magic-sparkles', confirmText: 'Modificar' })) { btn.disabled = false; return; }
+                await _dlCall(dh, '/edit', { lamp: l.index, note });
+                close(); _dlSetLocal(orderId, { ...a, status: 'working', step: 'Modificando el diseño con la IA' });
+            } else if (act === 'versions') {
+                const l = lampOf(btn);
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cargando…';
+                const res = await fetch(`${API_BASE_URL}/api/auto-lamp/${dh}/versions?lamp=${l.index}`);
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok || d.success === false) throw new Error(d.error || ('HTTP ' + res.status));
+                btn.innerHTML = '<i class="fas fa-clock-rotate-left"></i> Versiones'; btn.disabled = false;
+                const card = wrap.querySelector(`[data-lamp-card="${l.index}"]`);
+                card.querySelector('[data-dl-versions]')?.remove();
+                const box = document.createElement('div');
+                box.dataset.dlVersions = '1';
+                box.style.cssText = 'margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px dashed var(--color-border,#e5e7eb);padding-top:8px';
+                box.innerHTML = (d.versions || []).map(v => `<div style="text-align:center;font-size:11px;width:118px">
+                    ${v.previewUrl ? `<img src="${escapeHtml(v.previewUrl)}" onclick="openImageModal(this.src)" style="width:110px;height:110px;object-fit:contain;border-radius:6px;border:2px solid ${v.current ? '#16a34a' : 'var(--color-border,#e5e7eb)'};cursor:zoom-in;background:#000">` : '<div style="width:110px;height:110px;border-radius:6px;background:#eee"></div>'}
+                    <div style="color:#64748b">${v.createdAt ? escapeHtml(new Date(v.createdAt).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })) : ''}${v.revision > 1 ? ' · editada' : ''}</div>
+                    ${v.current ? '<b style="color:#16a34a">Actual</b>' : `<button data-dl="restore" data-lamp="${l.index}" data-project="${escapeHtml(v.projectId)}" style="margin-top:2px;padding:3px 8px;border-radius:6px;border:1px solid #16a34a;background:transparent;color:#15803d;font-weight:700;font-size:11px;cursor:pointer">Usar esta</button>`}
+                </div>`).join('') || '<i style="font-size:12px;color:#64748b">No hay versiones anteriores.</i>';
+                card.appendChild(box);
+                return;
+            } else if (act === 'restore') {
+                const l = lampOf(btn);
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                const d = await _dlCall(dh, '/restore', { lamp: l.index, projectId: btn.dataset.project });
+                const { autoLamp } = await _dlCall(dh, '');
+                close(); _dlSetLocal(orderId, _dlNormalize(autoLamp)); openDesignBeta(orderId);
+                if (typeof showToast === 'function') showToast('Versión restaurada ✅', 'success');
+                void d;
             } else if (act === 'remove-ring') {
                 const l = lampOf(btn);
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Quitando…';

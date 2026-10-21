@@ -747,7 +747,13 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const started = Date.now();
     const step = text => onStep(text);
     let raster;
-    if (plan.fuente === 'propia') {
+    if (plan.editFrom) {
+        // MODIFICAR el diseño que ya estaba bien (Chris, 21-oct-2026, DH18302 Minnie «fondo de estrellas»): Qwen
+        // EDITA su propia imagen anterior con el cambio pedido; no se regenera desde la imagen original (eso
+        // rehacía todo y metía la escena en un rectángulo con pedazos de la foto).
+        step('Modificando el diseño con la IA');
+        raster = await rasterizeBeta({ url: plan.editFrom }, { prompt: `Edita esta imagen de grabado: ${plan.editNote}. Mantén EXACTAMENTE el mismo dibujo, pose, tamaño y posición; cambia SOLO eso. Solo blanco y negro: el diseño en BLANCO sobre fondo NEGRO, sin colores, sin rectángulos, cuadros ni marcos.${plan.nombre && !(plan.fuente === 'mockup' && !plan.textoCambia) ? ` ${NO_TEXT}` : ''}`, estilo: plan.estilo, onStep: step });
+    } else if (plan.fuente === 'propia') {
         // IMAGEN DEL EQUIPO (Chris, 20-oct-2026, DH18183 KATSEYE): ya viene lista en negro sobre blanco; sin IA.
         step('Usando la imagen del equipo');
         raster = { url: null, jobId: null, model: 'Imagen del equipo (sin IA)', buffer: plan.imageBuffer };
@@ -845,7 +851,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     // Proyecto del editor: la imagen va por URL (como guarda el editor), no incrustada.
     const documentJson = JSON.stringify(document, (key, value) => key === 'src' && value === dataUrl ? imageUrl : value);
     const project = await db.collection('editor_v2_projects').add({
-        name: title, documentJson, revision: 1, objectCount: document.objects.length,
+        name: title, documentJson, revision: 1, objectCount: document.objects.length, rasterUrl: raster.url || null, previewUrl,
         createdAt: now(), createdBy: ACTOR.uid, updatedAt: now(), updatedBy: ACTOR.uid, orderNumber: Number(dh), lampIndex: lamp.index,
     });
     return {
@@ -981,6 +987,84 @@ async function buildFromImage(dh, buffer, { lampIndex = 0, nombre = '', estilo, 
         await setStatus(ref, { status: 'error', error: error.message || String(error) }).catch(() => {});
         throw error;
     }
+}
+
+/**
+ * «Modificar con IA»: aplica un cambio (note) a una lámpara YA diseñada editando su imagen con Qwen, en vez de
+ * rehacerla desde cero. Conserva lo que la IA entendió del pedido (texto, estilo, de dónde sale). Segundo plano.
+ */
+async function editLamp(dh, lampIndex, note, { actor = null } = {}) {
+    if (!String(note || '').trim()) throw Object.assign(new Error('Escribe qué cambio quieres en la indicación.'), { status: 400 });
+    const orderDoc = await findOrder(dh);
+    const order = orderDoc.data(), ref = orderDoc.ref;
+    if (order.autoLamp?.status !== 'ready') throw Object.assign(new Error('Solo se puede modificar un diseño listo para revisar.'), { status: 409 });
+    const current = lampsOf(order.autoLamp).find(l => l.index === Number(lampIndex));
+    const lamp = orderLamps(order).find(l => l.index === Number(lampIndex));
+    if (!current || !lamp) throw Object.assign(new Error(`El pedido no tiene la lámpara ${Number(lampIndex) + 1}.`), { status: 404 });
+    // De qué imagen se parte: la que entregó la IA para ESTA versión; si se corrigió en el editor (revisión > 1), o
+    // es una versión recuperada sin ella, la imagen de grabado guardada en el proyecto (respeta lo corregido).
+    const project = current.projectId ? (await db.collection('editor_v2_projects').doc(current.projectId).get()).data() : null;
+    const projectImage = () => { try { const d = JSON.parse(project.documentJson), f = d.objects.find(o => o.powerClip); return f?.powerClip.objects.find(o => o.type === 'image')?.src || null; } catch (_) { return null; } };
+    const source = project && Number(project.revision) > 1 ? projectImage() : (project?.rasterUrl || (current.rasterUrl && !current.restored ? current.rasterUrl : null) || (project ? projectImage() : null));
+    if (!source || !/^https?:/.test(source)) throw Object.assign(new Error('No encontré la imagen de esta lámpara para modificarla: usa Rehacer o el editor.'), { status: 422 });
+    const others = lampsOf(order.autoLamp).filter(l => l.index !== current.index && l.status === 'ready' && l.projectId);
+    await setStatus(ref, { status: 'working', step: 'Modificando el diseño con la IA', beta: true, lamps: others, startedAt: now(), note: String(note).slice(0, 500) });
+    try {
+        const b = current.brief || {};
+        const plan = { fuente: b.fuente || current.source || 'cliente', nombre: b.nombre || '', estilo: current.estilo || b.estilo || 'trama', tipo: b.tipo || 'especial',
+            textoCambia: !!current.textChanged, textoEnImagen: !!b.textoEnImagen, prompt: '', advertencias: [], reference: b.referenceUrl ? { url: b.referenceUrl } : null,
+            editFrom: source, editNote: String(note).trim(),
+            resumen: `${b.resumen || ''} Modificado con la IA: «${String(note).trim()}»${actor?.email ? ` (${actor.email})` : ''}.`.trim() };
+        const built = await buildLamp(dh, lamp, plan, { beta: true, onStep: text => setStatus(ref, { status: 'working', step: text }).catch(() => {}) });
+        const lamps = [...others, built].sort((a, c) => a.index - c.index), first = lamps[0];
+        await setStatus(ref, { status: 'ready', step: 'Listo para revisar', lamps, error: admin.firestore.FieldValue.delete(),
+            name: first.name || '', projectId: first.projectId, projectRevision: first.projectRevision, previewUrl: first.previewUrl, brief: first.brief, rasterModel: first.rasterModel || null, finishedAt: now() });
+        return built;
+    } catch (error) {
+        // Si falla, la lámpara anterior se queda como estaba.
+        await setStatus(ref, { status: 'ready', step: 'Listo para revisar', lamps: [...others, current].sort((a, c) => a.index - c.index), error: `No se pudo modificar: ${error.message || error}` }).catch(() => {});
+        throw error;
+    }
+}
+
+// VERSIONES de una lámpara: cada vez que se rehace queda un proyecto nuevo y los anteriores se guardan. Lista los
+// proyectos de esa lámpara (más nuevo primero) con su vista (se arma y se guarda la primera vez que se pide).
+async function lampVersions(dh, lampIndex) {
+    const orderDoc = await findOrder(dh);
+    const current = lampsOf(orderDoc.data().autoLamp).find(l => l.index === Number(lampIndex));
+    const snap = await db.collection('editor_v2_projects').where('orderNumber', '==', Number(dh)).get();
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => Number(p.lampIndex) === Number(lampIndex))
+        .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)).slice(0, 12);
+    const { renderPreview } = await composerModule();
+    const out = [];
+    for (const p of list) {
+        let previewUrl = Number(p.revision) === 1 ? p.previewUrl : p[`previewR${p.revision}`];
+        if (!previewUrl) {
+            try {
+                const { document } = await projectDocument(p.id);
+                previewUrl = await saveFile(`${STORAGE_DIR}/DH${dh}/L${Number(lampIndex) + 1}/version-${p.id}-r${p.revision}.png`, renderPreview(document, await loadFont(), { width: 500 }), 'image/png');
+                await db.collection('editor_v2_projects').doc(p.id).update({ [Number(p.revision) === 1 ? 'previewUrl' : `previewR${p.revision}`]: previewUrl }).catch(() => {});
+            } catch (_) { previewUrl = null; }
+        }
+        out.push({ projectId: p.id, createdAt: p.createdAt?.toMillis?.() || null, revision: Number(p.revision) || 1, previewUrl, current: p.id === current?.projectId });
+    }
+    return out;
+}
+
+// Regresa una lámpara a una versión anterior (su proyecto). No toca las demás lámparas ni sube nada.
+async function restoreVersion(dh, lampIndex, projectId) {
+    const orderDoc = await findOrder(dh);
+    const autoLamp = orderDoc.data().autoLamp || {};
+    if (autoLamp.status !== 'ready') throw Object.assign(new Error('Solo se puede cambiar de versión un diseño listo para revisar.'), { status: 409 });
+    const project = (await db.collection('editor_v2_projects').doc(String(projectId)).get()).data();
+    if (!project || Number(project.orderNumber) !== Number(dh) || Number(project.lampIndex) !== Number(lampIndex)) throw Object.assign(new Error('Esa versión no es de esta lámpara.'), { status: 404 });
+    const current = lampsOf(autoLamp).find(l => l.index === Number(lampIndex));
+    if (!current) throw Object.assign(new Error('No encontré la lámpara.'), { status: 404 });
+    // previewUrl null: teamPreview la vuelve a armar de esta versión; inkShare null: la revisión de «recortado» no compara con otra versión.
+    await updateLamp(orderDoc.ref, current.index, { projectId: String(projectId), projectRevision: Number(project.revision) || 1, previewRevision: null, previewUrl: null, inkShare: null,
+        rasterUrl: project.rasterUrl || null, restored: !project.rasterUrl, clientPreviewUrl: null, clientPreviewRevision: null });
+    const preview = await teamPreview(dh, current.index);
+    return { previewUrl: preview.url };
 }
 
 // «Usar mi imagen» con IA: Gemini dice si es un mockup (lámpara encendida) o una foto/dibujo, y se arma con el mismo
@@ -1703,4 +1787,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
 }
 
 module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
-    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage, runPendingRedos, sideTextLayout };
+    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage, runPendingRedos, sideTextLayout, editLamp, lampVersions, restoreVersion };
