@@ -597,8 +597,22 @@ async function fitToLampCircle(buffer, side = 2000, { loose = false } = {}) {
             if (x >= 0 && x < w && y >= 0 && y < h && data[y * w + x] < 250) { ringHits++; break; }
         }
     }
-    const isCircle = !loose && ink.w / ink.h > .9 && ink.w / ink.h < 1.1 && ringHits / 360 > .75;
+    let isCircle = !loose && ink.w / ink.h > .9 && ink.w / ink.h < 1.1 && ringHits / 360 > .75;
     const R = LAMP_CIRCLE.r * side, cx = LAMP_CIRCLE.cx * side, cy = LAMP_CIRCLE.cy * side;
+    // Un DIBUJO redondo (un balón, DH18309) también parece «el aro del acrílico»: si al ponerlo en la línea de corte
+    // se saldría parte del trazo (el nombre de abajo lo tapaba la base), se acomoda como diseño suelto (cabe todo).
+    if (isCircle) {
+        const s = (2 * R * 1.04) / Math.max(ink.w, ink.h), l = cx - ink.w * s / 2, t = cy - ink.h * s / 2, baseY = LAMP_CIRCLE.baseTop * side;
+        let total = 0, out = 0;
+        const step = Math.max(1, Math.round(Math.min(w, h) / 300));
+        for (let y = ink.y0; y <= ink.y1; y += step) for (let x = ink.x0; x <= ink.x1; x += step) {
+            if (data[y * w + x] >= 128) continue;
+            total++;
+            const px = l + (x - ink.x0) * s, py = t + (y - ink.y0) * s;
+            if (Math.hypot(px - cx, py - cy) > R * .99 || py > baseY) out++;
+        }
+        if (total && out / total > .02) isCircle = false;
+    }
     let box, scale, left, top;
     if (isCircle) {
         // Su círculo justo en la línea de corte (4 % más grande: su orilla queda del lado de afuera aunque no sea redondo perfecto).
