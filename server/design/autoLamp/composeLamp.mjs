@@ -210,7 +210,7 @@ export function composeLamp({ image, name, font, title, nameSlot = null, avoid =
     document.objects.push(silhouette, ...labels);
     placeInPowerClip(document, new Set([silhouette.id, ...labels.map(l => l.id)]), frame.id);
 
-    return { document: validateDocument(document), textId: labels[0].id, frameId: frame.id, faceOverlap };
+    return { document: validateDocument(document), textId: labels[0].id, frameId: frame.id, faceOverlap, textSize: layout.size };
 }
 
 // El mismo documento con el texto convertido en curvas (lo que exporta el editor para la láser),

@@ -670,7 +670,7 @@ const templateImage = key => (templateCache[key] ||= require('fs').promises.read
 
 // Dónde va el nombre en una plantilla: arriba a la IZQUIERDA (como en los mockups), lo más grande posible sin
 // salirse del círculo y pisando el dibujo cuando mucho un 5 % (la silueta blanca del nombre lo despega). Mide el grabado en una cuadrícula de 1 mm del marco (160 × 166.3 mm).
-async function freeNameSlot(imageBuffer, text, font) {
+async function freeNameSlot(imageBuffer, text, font, { anywhere = false } = {}) {
     const FRAME = { w: 160, h: 166.3 }, side = FRAME.h;   // el cuadro cubre el marco por su alto
     const { data, info } = await sharp(imageBuffer).greyscale().resize(Math.round(side), Math.round(side), { fit: 'fill' }).raw().toBuffer({ resolveWithObject: true });
     const n = info.width, off = (side - FRAME.w) / 2;   // el cuadro se sale (side - 160) / 2 mm por cada lado
@@ -698,15 +698,17 @@ async function freeNameSlot(imageBuffer, text, font) {
         return darkShare(x0, y0, x1, y1) <= .05;
     };
     let best = null;
-    for (let cy = 14; cy <= 90; cy += 2) for (let cx = 12; cx <= 80; cx += 2) {
-        let lo = 0, hi = Math.min(62 / inkW, 26 / lineH);   // tope: 62 mm de ancho, 26 mm de alto
+    // Plantillas: arriba a la izquierda. anywhere: en todo el círculo (el hueco blanco que deje el dibujo).
+    const [cyMax, cxMax] = anywhere ? [150, 148] : [90, 80];
+    for (let cy = 14; cy <= cyMax; cy += 2) for (let cx = 12; cx <= cxMax; cx += 2) {
+        let lo = 0, hi = anywhere ? Math.min(80 / inkW, 30 / lineH) : Math.min(62 / inkW, 26 / lineH);   // tope: 62 × 26 mm (plantilla) u 80 × 30 mm (hueco libre)
         if (!fits(cx, cy, 1)) continue;
         for (let i = 0; i < 18; i++) { const mid = (lo + hi) / 2; if (fits(cx, cy, mid)) lo = mid; else hi = mid; }
         if (!best || lo > best.s * 1.02) best = { cx, cy, s: lo };
     }
     if (!best) return null;
     const { w, h } = boxOf(best.s * .97);
-    return { cx: best.cx, cy: best.cy, maxWidth: w, maxHeight: h };
+    return { cx: best.cx, cy: best.cy, maxWidth: w, maxHeight: h, size: best.s * .97 };
 }
 
 async function loadFont() {
@@ -794,11 +796,28 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const cleanTemplate = plan.template && !TEMPLATES[plan.template].rename;   // el grabado del taller tal cual (Spiderman)
     // Del mockup: sin el aro del acrílico que el modelo copia (removeRing) y acomodado para llenar el círculo.
     // La del equipo: acomodada como diseño suelto (su aro es parte del logo, no el del acrílico).
-    const buffer = cleanTemplate ? downloaded : plan.template ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved))
+    let buffer = cleanTemplate ? downloaded : plan.template ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved))
         : plan.fuente === 'propia' ? await fitToLampCircle(engraved, 2000, { loose: true }) : engraved;
-    const meta = await sharp(buffer).metadata();
     const font = await loadFont();
     const { composeLamp, renderPreview, pictureSizeMm, rdworksPiece } = await composerModule();
+
+    // El mockup ya trae el nombre dentro de la imagen (tal cual lo vio el cliente): no se le agrega otro. Si el
+    // texto cambió, el mockup se sacó SIN letras y aquí va el texto final.
+    // Plantilla a la que Qwen ya le escribió el nombre (Dino premium): no se le pone otro encima.
+    const engraveName = plan.template && TEMPLATES[plan.template].rename ? ''
+        : plan.template ? (plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '')
+        : plan.fuente === 'mockup' && !plan.textoCambia ? '' : plan.textoEnImagen ? '' : plan.nombre;
+    // En la plantilla el nombre va en el hueco que deja el dibujo (arriba a la izquierda), no abajo.
+    let nameSlot = plan.template && engraveName ? await freeNameSlot(buffer, engraveName, font) : null;
+    // El texto nunca encima de un rostro (Chris, 21-oct-2026): se ubican las caras y el armado las esquiva.
+    let avoid = engraveName && !plan.template ? await detectFaces(buffer) : [];
+    // …y si el dibujo deja espacio blanco (o se puede recorrer a un lado), el texto va ahí, más grande (DH18310).
+    if (engraveName && !plan.template) {
+        step('Buscando el mejor lugar para el texto');
+        const side = await sideTextLayout(buffer, engraveName, font, composeLamp, avoid).catch(error => { console.warn('[AUTO-LAMP] acomodo del texto:', error.message); return null; });
+        if (side) { buffer = side.buffer; nameSlot = side.slot; avoid = []; }
+    }
+    const meta = await sharp(buffer).metadata();
 
     step('Convirtiendo a mapa de bits');
     const { bitmapSize, toBitmap, pngWithDpi } = await bitmapTools();
@@ -812,18 +831,8 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const png = Buffer.from(pngWithDpi(await sharp(Buffer.from(bits.buffer), { raw: { width: size.width, height: size.height, channels: 4 } }).png({ palette: true, colours: 2 }).toBuffer(), BITMAP.dpi));
 
     step('Armando el diseño');
-    // El mockup ya trae el nombre dentro de la imagen (tal cual lo vio el cliente): no se le agrega otro. Si el
-    // texto cambió, el mockup se sacó SIN letras y aquí va el texto final.
-    // Plantilla a la que Qwen ya le escribió el nombre (Dino premium): no se le pone otro encima.
-    const engraveName = plan.template && TEMPLATES[plan.template].rename ? ''
-        : plan.template ? (plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '')
-        : plan.fuente === 'mockup' && !plan.textoCambia ? '' : plan.textoEnImagen ? '' : plan.nombre;
     const title = [`DH${dh}`, lamp.label].filter(Boolean).join(' · ');
     const dataUrl = 'data:image/png;base64,' + png.toString('base64');
-    // En la plantilla el nombre va en el hueco que deja el dibujo (arriba a la izquierda), no abajo.
-    const nameSlot = plan.template && engraveName ? await freeNameSlot(buffer, engraveName, font) : null;
-    // El texto nunca encima de un rostro (Chris, 21-oct-2026): se ubican las caras y el armado las esquiva.
-    const avoid = engraveName && !plan.template ? await detectFaces(buffer) : [];
     const { document, faceOverlap } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name: engraveName, font, title, nameSlot, avoid });
     if (faceOverlap) plan.advertencias = [...(plan.advertencias || []), 'el texto no cupo sin tocar un rostro: acomódalo en el editor'];
 
@@ -1511,6 +1520,51 @@ async function approve(dh, { svg = null, actor = null, force = false, alone = fa
     }
 }
 
+/**
+ * TEXTO EN EL ESPACIO BLANCO (Chris, 21-oct-2026, DH18310 «Alejandra»): si el dibujo deja hueco (o se puede
+ * recorrer a un lado), el texto va ahí, más grande, en vez de abajo. Prueba el dibujo donde está, recorrido a la
+ * derecha y a la izquierda; en cada uno busca el hueco más grande (freeNameSlot en todo el círculo). Se usa solo si
+ * el texto queda al menos 15 % más grande que abajo. Devuelve { buffer, slot } o null.
+ */
+async function sideTextLayout(buffer, text, font, composeLamp, avoid) {
+    const meta = await sharp(buffer).metadata();
+    const stub = { dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', width: meta.width, height: meta.height };
+    const bottom = composeLamp({ image: stub, name: text, font, title: 'medida', avoid }).textSize || 0;
+    const outside = await inkOutside(buffer);
+    if (!outside) return null;
+    // Recorridos de 10 en 10 mm a cada lado; se descarta el que corte más del 8 % del dibujo con el círculo (como lo
+    // arma el equipo, la orilla puede cortarse un poco). Gana el texto más grande, castigando cuánto se movió (para
+    // no mandar la figura a la orilla y dejar medio círculo vacío, DH18296).
+    let best = null;
+    for (const dx of [0, 10, -10, 20, -20, 30, -30, 40, -40]) {
+        if (outside(dx) - outside(0) > .08) continue;
+        const candidate = dx ? await shiftBy(buffer, dx) : buffer;
+        const slot = await freeNameSlot(candidate, text, font, { anywhere: true });
+        if (!slot) continue;
+        const score = slot.size - .06 * Math.abs(dx);
+        if (!best || score > best.score) best = { buffer: candidate, slot, dx, score };
+    }
+    return best && best.slot.size > bottom * 1.15 ? best : null;
+}
+
+// Qué parte del trazo del dibujo queda fuera del círculo si se recorre dx mm. Cuadro de imagen = marco por su alto
+// (166.3 mm); círculo de 80 mm con centro en (80, 80) del marco.
+async function inkOutside(buffer) {
+    const G = 200, side = 166.3, off = (side - 160) / 2, mmPerCell = side / G;
+    const { data } = await sharp(buffer).flatten({ background: '#ffffff' }).greyscale().resize(G, G, { fit: 'fill' }).raw().toBuffer({ resolveWithObject: true });
+    const ink = [];
+    for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) if (data[y * G + x] < 128) ink.push((x + .5) * mmPerCell - off, (y + .5) * mmPerCell);
+    if (ink.length < 40) return null;
+    return dx => { let out = 0; for (let i = 0; i < ink.length; i += 2) if (Math.hypot(ink[i] + dx - 80, ink[i + 1] - 80) > 79) out++; return out / (ink.length / 2); };
+}
+
+// El dibujo recorrido dx mm a la derecha (negativo: a la izquierda), con blanco donde queda vacío.
+async function shiftBy(buffer, dx) {
+    const meta = await sharp(buffer).metadata(), n = meta.width, px = Math.round(dx / 166.3 * n);
+    const piece = await sharp(buffer).flatten({ background: '#ffffff' }).extract({ left: Math.max(0, -px), top: 0, width: n - Math.abs(px), height: meta.height }).png().toBuffer();
+    return sharp({ create: { width: n, height: meta.height, channels: 3, background: '#ffffff' } }).composite([{ input: piece, left: Math.max(0, px), top: 0 }]).png().toBuffer();
+}
+
 // Rostros (personas o animales) del grabado: cajas en fracciones de la imagen [x0, y0, x1, y1]. Gemini da
 // [ymin, xmin, ymax, xmax] de 0 a 1000. Si falla, sin rostros (el texto va donde siempre).
 async function detectFaces(buffer) {
@@ -1649,4 +1703,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
 }
 
 module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
-    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage, runPendingRedos };
+    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage, runPendingRedos, sideTextLayout };
