@@ -27,6 +27,8 @@ input:disabled { color: #858b9b; }
 input[type=number] { width: 100%; font-variant-numeric: tabular-nums; }
 input[type=color] { padding: 3px; width: 40px; height: 28px; }
 input[type=checkbox] { accent-color: var(--accent); }
+#properties textarea { font: inherit; width: 100%; min-height: 54px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; background: #15181e; color: #f0f1f6; line-height: 1.4; }
+#properties textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
 .topbar { height: 64px; flex-shrink: 0; display: flex; align-items: center; padding: 0 20px; gap: 24px; border-bottom: 1px solid var(--line); background: #191b22; }
 .brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }

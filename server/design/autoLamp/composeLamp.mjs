@@ -37,8 +37,11 @@ export function loadFont(bytes) {
 }
 
 // Contorno del texto en mm de la hoja, con la línea base en (x, baseline).
+// Un texto puede traer saltos de línea (Enter en el editor): cada renglón LINE_ADVANCE tamaños más abajo, alineado
+// a la izquierda en x (igual que lo dibuja el editor).
+export const LINE_ADVANCE = 1.05;
 function textSubpaths(font, text, x, baseline, size) {
-    return parsePathData(font.getPath(text, x, baseline, size).toPathData(4));
+    return String(text).split('\n').flatMap((line, k) => parsePathData(font.getPath(line, x, baseline + k * LINE_ADVANCE * size, size).toPathData(4)));
 }
 
 // La hoja con su marco en el lugar original de coso.svg.
@@ -200,15 +203,22 @@ export function composeLamp({ image, name, font, title, nameSlot = null, avoid =
         const better = pick();
         if (better) layout = better; else faceOverlap = true;
     }
-    const labels = layout.rows.map((row, k) => ({ ...createObject('text', row.x, row.baseline - layout.size), name: lines.length > 1 ? `Nombre ${k + 1}` : 'Nombre',
-        text: row.line, fontSize: layout.size, fontFamily: FONT_FAMILY, fill: '#000000', stroke: 'none', strokeWidth: 0 }));
-
-    // 3) Silueta blanca detrás del nombre (el nombre va en negro: se graba), enlazada a él como la herramienta
-    // Silueta del editor. Todo va dentro del PowerClip, encima del grabado, como lo deja el equipo.
-    const silhouette = { ...createObject('path', 0, 0), name: 'Silueta', ...normalizePath(layout.outline),
-        fill: '#ffffff', stroke: 'none', strokeWidth: 0, silhouetteOf: labels.map(l => l.id) };
-    document.objects.push(silhouette, ...labels);
-    placeInPowerClip(document, new Set([silhouette.id, ...labels.map(l => l.id)]), frame.id);
+    // UNA PALABRA = un texto con SU silueta (Chris, 21-oct-2026): en el editor cada palabra se mueve sola y su silueta
+    // va con ella. Cada palabra queda donde caía dentro de su renglón (avance de la fuente hasta ella).
+    const wordSize = layout.size, labels = [], silhouettes = [];
+    layout.rows.forEach(row => {
+        for (const match of row.line.matchAll(/\S+/g)) {
+            const word = match[0], x = row.x + font.getAdvanceWidth(row.line.slice(0, match.index), wordSize);
+            const label = { ...createObject('text', x, row.baseline - wordSize), name: word, text: word, fontSize: wordSize, fontFamily: FONT_FAMILY, fill: '#000000', stroke: 'none', strokeWidth: 0 };
+            // 3) Silueta blanca detrás de la palabra (el texto va en negro: se graba), enlazada a ella como la herramienta
+            // Silueta del editor. Todo va dentro del PowerClip, encima del grabado, como lo deja el equipo.
+            silhouettes.push({ ...createObject('path', 0, 0), name: `Silueta ${word}`, ...normalizePath(outlineSilhouette(textSubpaths(font, word, x, row.baseline, wordSize), LAYOUT.silhouette)),
+                fill: '#ffffff', stroke: 'none', strokeWidth: 0, silhouetteOf: [label.id] });
+            labels.push(label);
+        }
+    });
+    document.objects.push(...silhouettes, ...labels);
+    placeInPowerClip(document, new Set([...silhouettes.map(s => s.id), ...labels.map(l => l.id)]), frame.id);
 
     return { document: validateDocument(document), textId: labels[0].id, frameId: frame.id, faceOverlap, textSize: layout.size };
 }

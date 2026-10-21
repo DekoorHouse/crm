@@ -5,6 +5,8 @@ import { normalizeAdjust } from './imageAdjust.mjs';
 import { normalizeAngle, pivot, placeAtPivot, rotatePoint, turns } from './transform.mjs';
 export const TYPES = ['rect', 'ellipse', 'text', 'spline', 'image', 'path'];
 export const HAIRLINE_WIDTH = 0.0762;
+// Distancia entre renglones de un texto de varias líneas, en tamaños de letra (la misma del Diseño IA del servidor).
+export const LINE_ADVANCE = 1.05;
 // New objects, and outlines added to objects without one, start at this width (mm).
 export const DEFAULT_STROKE_WIDTH = 0.3;
 // Text fonts: Arial is built in; the others are loaded by the editor (fonts.mjs) and turned into curves on export.
@@ -305,6 +307,9 @@ function shapeMarkup(o, style, resolve) {
     // data-adjusted lets the editor swap in the processed pixels; exports bake the adjustments first.
     if (o.type === 'image') return `<image x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" preserveAspectRatio="none"${o.pixelated ? ` image-rendering="optimizeSpeed" style="image-rendering:pixelated" data-bitmap="${escapeXml(o.id)}"` : ''}${o.adjust ? ` data-adjusted="${escapeXml(o.id)}"` : ''} href="${escapeXml(resolve(o.src, o))}"/><rect x="${o.x}" y="${o.y}" width="${o.width}" height="${o.height}" fill="none" stroke="${escapeXml(o.stroke)}" stroke-width="${o.strokeWidth}"/>`;
     const family = o.fontFamily && o.fontFamily !== 'Arial' ? `'${o.fontFamily}', Arial, sans-serif` : 'Arial, sans-serif';
+    // Varios renglones (Enter): cada uno LINE_ADVANCE tamaños más abajo, alineado a la izquierda.
+    const lines = String(o.text).split('\n');
+    if (lines.length > 1) return `<text x="${o.x}" y="${o.y + o.fontSize}" font-family="${escapeXml(family)}" font-size="${o.fontSize}" ${style} xml:space="preserve">${lines.map((line, k) => `<tspan x="${o.x}" y="${o.y + o.fontSize + k * LINE_ADVANCE * o.fontSize}">${escapeXml(line) || ' '}</tspan>`).join('')}</text>`;
     return `<text x="${o.x}" y="${o.y + o.fontSize}" font-family="${escapeXml(family)}" font-size="${o.fontSize}" ${style} xml:space="preserve">${escapeXml(o.text)}</text>`;
 }
 export function exportSvg(document) {

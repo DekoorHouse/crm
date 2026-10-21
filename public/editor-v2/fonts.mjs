@@ -1,7 +1,7 @@
 // Licensed text fonts. The font files are not in the repository: they are kept in Firebase Storage
 // (editor-v2/fonts/), downloaded with the CRM session and cached in this browser. On export, text in these
 // fonts becomes curves (opentype.js), so the laser software needs no font and the file is not shipped.
-import { createObject, objectsWithContents } from './model.mjs';
+import { createObject, objectsWithContents, LINE_ADVANCE } from './model.mjs';
 import { normalizePath } from './path.mjs';
 import { parsePathData } from './svgImport.mjs';
 import { rotatePoint, pivot } from './transform.mjs';
@@ -86,8 +86,8 @@ async function glyphFont(family) {
 }
 export async function textToCurve(text) {
     const font = await glyphFont(text.fontFamily);
-    const d = font.getPath(text.text, text.x, text.y + text.fontSize, text.fontSize).toPathData(4);
-    let subpaths = parsePathData(d);
+    // Varios renglones (Enter): cada uno LINE_ADVANCE tamaños más abajo, como lo dibuja el editor.
+    let subpaths = String(text.text).split('\n').flatMap((line, k) => parsePathData(font.getPath(line, text.x, text.y + text.fontSize + k * LINE_ADVANCE * text.fontSize, text.fontSize).toPathData(4)));
     if (!subpaths.length) return null;
     // Mirrored text turns over around its anchor before it turns (as the markup draws it).
     if (text.flipX || text.flipY) subpaths = subpaths.map(({ closed, points }) => ({ closed, points: points.map((value, i) => i % 2 ? (text.flipY ? 2 * text.y - value : value) : (text.flipX ? 2 * text.x - value : value)) }));
