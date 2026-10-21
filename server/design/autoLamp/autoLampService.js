@@ -887,7 +887,7 @@ async function generate(dh, options = {}) {
     const previous = lampsOf(order.autoLamp).filter(l => l.status === 'ready' && l.projectId);
     // Se rehace todo salvo que sea un cambio (del cliente o del equipo sobre lámparas concretas).
     const partial = !!(options.keepClient || (Array.isArray(options.lamps) && options.lamps.length)) && previous.length > 0;
-    await ref.update({ autoLamp: { status: 'working', step: beta ? 'Leyendo el pedido y el chat' : 'Eligiendo la imagen del chat', beta, ...(options.autoStarted ? { autoStarted: true } : {}),
+    await ref.update({ autoLamp: { status: 'working', step: beta ? 'Leyendo el pedido y el chat' : 'Eligiendo la imagen del chat', beta, ...(options.autoStarted ? { autoStarted: true } : {}), ...(options.retries ? { retries: options.retries } : {}),
         lamps: partial ? previous : [],
         ...(options.note ? { note: String(options.note).slice(0, 500) } : {}),
         // Rehacer a mano también recuerda cuántas versiones ya vio el cliente (el saludo va solo la primera vez).
@@ -1434,12 +1434,24 @@ async function autoStartBeta() {
     if (!settings.designBetaAutoStartSince) { await settingsRef.set({ designBetaAutoStartSince: Date.now() }, { merge: true }); return null; }
     const working = await db.collection('pedidos').where('autoLamp.status', '==', 'working').limit(AUTO_START_MAX + 1).get();
     if (working.size >= AUTO_START_MAX) return null;
+    // REINTENTO cuando falló por falta de GPU (DH18344, 21-oct-2026: Minions bloqueado por derechos de autor en Qwen de
+    // OpenRouter y en OpenAI; solo nuestra GPU lo hace y RunPod no tenía ninguna): cada 30 min, hasta 6 veces.
+    const failed = await db.collection('pedidos').where('autoLamp.status', '==', 'error').limit(50).get();
+    for (const doc of failed.docs) {
+        const a = doc.data().autoLamp || {}, dh = doc.data().consecutiveOrderNumber;
+        const gpu = /GPU de Qwen no pudo prender|no tiene una GPU disponible|GPU propia/i.test(a.error || '');
+        const waited = Date.now() - (a.updatedAt?.toMillis?.() || 0) >= 30 * 60 * 1000;
+        if (!a.beta || !gpu || !waited || (a.retries || 0) >= 6 || !dh) continue;
+        console.log(`[AUTO-LAMP] Reintento ${(a.retries || 0) + 1}/6 de DH${dh} (falló por falta de GPU).`);
+        generate(dh, { beta: true, autoStarted: !!a.autoStarted, retries: (a.retries || 0) + 1, note: a.note || '' }).catch(error => console.warn(`[AUTO-LAMP] reintento DH${dh}:`, error.message));
+        return dh;
+    }
     // La misma lista que ve el tablero (no se duplica su lógica).
     const headers = process.env.WORKER_API_KEY ? { 'x-worker-key': process.env.WORKER_API_KEY } : {};
     const response = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}/api/design-pending?board=1`, { headers, signal: AbortSignal.timeout(60000) });
     const data = await response.json().catch(() => ({}));
     const list = Array.isArray(data.orders) ? data.orders : Array.isArray(data.pedidos) ? data.pedidos : Array.isArray(data) ? data : [];
-    const candidates = list.filter(o => o.boardCol === 'pendientes' && !o.autoLamp && (o.createdAt || 0) >= settings.designBetaAutoStartSince && o.orderNumber)
+    const candidates = list.filter(o => o.boardCol === 'pendientes' && !o.autoLamp && Math.max(o.createdAt || 0, o.comprobanteValidadoAt || 0, o.corregirAt || 0) >= settings.designBetaAutoStartSince && o.orderNumber)
         .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     const next = candidates[0];
     if (!next) return null;
