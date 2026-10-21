@@ -1420,27 +1420,46 @@ router.get('/orders/desglose-mensajes', async (req, res) => {
         let kpi = [];
         try { kpi = await metaAds.getKpiAccountIds(); } catch (_) {}
         const cuentas = [...new Set([...Object.values(map).map(c => c.accountId), ...(kpi || [])].filter(Boolean).map(a => String(a).replace('act_', '')))];
-        const { campaigns: metaRows, errors: metaErrors } = cuentas.length
-            ? await metaAds.getCampaignMessagingForAccounts(cuentas, meta.dateFrom, meta.dateTo)
-            : { campaigns: [], errors: [] };
+        // Por ANUNCIO (nombre, mensajes y costo de cada uno); si Meta falla a ese nivel, por campaña.
+        let { ads: metaAdsRows, errors: metaErrors } = cuentas.length
+            ? await metaAds.getAdMessagingForAccounts(cuentas, meta.dateFrom, meta.dateTo)
+            : { ads: [], errors: [] };
+        let metaRows = [];
+        if (cuentas.length && metaErrors.length === cuentas.length) {
+            const porCamp = await metaAds.getCampaignMessagingForAccounts(cuentas, meta.dateFrom, meta.dateTo);
+            metaRows = porCamp.campaigns; metaErrors = porCamp.errors; metaAdsRows = [];
+        }
 
         const porCampana = new Map();
         const fila = (id, nombre) => {
-            if (!porCampana.has(id)) porCampana.set(id, { campaignId: id, nombre: nombre || 'Campaña no identificada', meta: 0, crm: 0, gasto: 0, canales: {}, anuncios: new Set() });
+            if (!porCampana.has(id)) porCampana.set(id, { campaignId: id, nombre: nombre || 'Campaña no identificada', meta: 0, crm: 0, gasto: 0, canales: {}, anuncios: new Map() });
             return porCampana.get(id);
+        };
+        const anuncio = (f, adId, nombre) => {
+            if (!f.anuncios.has(adId)) f.anuncios.set(adId, { adId, nombre: nombre || null, meta: 0, crm: 0, gasto: 0 });
+            const a = f.anuncios.get(adId); if (!a.nombre && nombre) a.nombre = nombre; return a;
         };
         for (const r of metaRows) {
             const f = fila(String(r.campaignId), r.campaignName);
             f.meta += r.conversations; f.gasto += r.spend;
         }
+        for (const r of metaAdsRows) {
+            const f = fila(String(r.campaignId), r.campaignName);
+            f.meta += r.conversations; f.gasto += r.spend;
+            if (r.conversations > 0 || r.spend > 0) { const a = anuncio(f, String(r.adId), r.adName); a.meta += r.conversations; a.gasto += r.spend; }
+        }
         for (const e of eventos) {
             const c = map[e.adId];
             const f = fila(c ? String(c.campaignId) : 'sin_campana', c ? c.campaignName : null);
-            f.crm += 1; f.canales[e.channel || 'whatsapp'] = (f.canales[e.channel || 'whatsapp'] || 0) + 1; f.anuncios.add(e.adId);
+            f.crm += 1; f.canales[e.channel || 'whatsapp'] = (f.canales[e.channel || 'whatsapp'] || 0) + 1;
+            anuncio(f, String(e.adId), c && c.adName).crm += 1;
         }
         const campanas = [...porCampana.values()]
             .filter(f => f.meta > 0 || f.crm > 0)
-            .map(f => ({ ...f, anuncios: [...f.anuncios],
+            .map(f => ({ ...f,
+                anuncios: [...f.anuncios.values()]
+                    .map(a => ({ ...a, costoCrm: a.crm > 0 && a.gasto > 0 ? a.gasto / a.crm : null, costoMeta: a.meta > 0 && a.gasto > 0 ? a.gasto / a.meta : null }))
+                    .sort((a, b) => (b.crm - a.crm) || (b.meta - a.meta) || (b.gasto - a.gasto)),
                 costoMeta: f.meta > 0 ? f.gasto / f.meta : null, costoCrm: f.crm > 0 && f.gasto > 0 ? f.gasto / f.crm : null }))
             .sort((a, b) => Math.max(b.meta, b.crm) - Math.max(a.meta, a.crm));
         const totalMeta = campanas.reduce((s, c) => s + c.meta, 0);

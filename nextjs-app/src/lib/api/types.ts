@@ -122,7 +122,16 @@ export interface CampanaMensajes {
   costoMeta: number | null;
   costoCrm: number | null;
   canales: Record<string, number>;
-  anuncios: string[];
+  /** Por anuncio: nombre de Ads Manager, mensajes (Meta y CRM), gasto y costo por mensaje. */
+  anuncios: {
+    adId: string;
+    nombre: string | null;
+    meta: number;
+    crm: number;
+    gasto: number;
+    costoCrm: number | null;
+    costoMeta: number | null;
+  }[];
 }
 
 export interface DesgloseMensajesResponse {

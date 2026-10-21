@@ -509,6 +509,35 @@ async function getAdSpendForAccounts(accountIds, dateFrom, dateTo) {
  * /desglose). Meta las reporta como la acción "onsite_conversion.messaging_conversation_started_7d"
  * (WhatsApp, Messenger e Instagram juntos); también devuelve el gasto para el costo por mensaje.
  */
+/** Igual que getCampaignMessagingForAccounts pero por ANUNCIO (trae nombre, campaña, gasto y conversaciones). */
+async function getAdMessagingForAccounts(accountIds, dateFrom, dateTo) {
+    const ads = [];
+    const errors = [];
+    const STARTED = 'onsite_conversion.messaging_conversation_started_7d';
+    for (const accId of accountIds) {
+        try {
+            const actId = normalizeAccountId(accId);
+            let after = null, safety = 20;
+            do {
+                const params = { fields: 'ad_id,ad_name,campaign_id,campaign_name,spend,actions', level: 'ad',
+                    time_range: JSON.stringify({ since: dateFrom, until: dateTo }), limit: 500 };
+                if (after) params.after = after;
+                const data = await metaGet(`${actId}/insights`, params, accId);
+                for (const r of (data.data || [])) {
+                    const act = (r.actions || []).find(a => a.action_type === STARTED);
+                    ads.push({ accountId: String(accId).replace('act_', ''), adId: r.ad_id, adName: r.ad_name, campaignId: r.campaign_id,
+                        campaignName: r.campaign_name, spend: Number(r.spend) || 0, conversations: act ? Number(act.value) || 0 : 0 });
+                }
+                after = (data.paging && data.paging.next && data.paging.cursors && data.paging.cursors.after) || null;
+                safety--;
+            } while (after && safety > 0);
+        } catch (err) {
+            errors.push({ accountId: accId, error: err.response?.data?.error?.message || err.message });
+        }
+    }
+    return { ads, errors };
+}
+
 async function getCampaignMessagingForAccounts(accountIds, dateFrom, dateTo) {
     const campaigns = [];
     const errors = [];
@@ -867,7 +896,7 @@ module.exports = {
     // Insights
     getInsights, getInsightsByLevel, getDailySpend,
     // Reporte por region
-    getCampaignSpendForAccounts, getAdSpendForAccounts, getCampaignMessagingForAccounts, resolveAdsToCampaigns,
+    getCampaignSpendForAccounts, getAdSpendForAccounts, getCampaignMessagingForAccounts, getAdMessagingForAccounts, resolveAdsToCampaigns,
     // Audiences
     searchTargeting, listCustomAudiences,
     // Pages

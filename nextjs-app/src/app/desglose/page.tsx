@@ -866,13 +866,40 @@ function TarjetaMensajes({
               <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
                 Anuncios · {campana.anuncios.length}
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {campana.anuncios.map((adId) => (
-                  <span key={adId} className="rounded-lg bg-surface-container-high px-2 py-0.5 text-[11px] font-mono text-on-surface-variant">
-                    {adId}
-                  </span>
-                ))}
-              </div>
+              {campana.anuncios.map((a) => (
+                <div key={a.adId} className="text-xs min-w-0">
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <span
+                      className={`truncate ${a.nombre ? "text-on-surface-variant" : "font-mono text-[11px] text-on-surface-variant"}`}
+                      title={a.nombre ? `${a.nombre} · ID ${a.adId}` : a.adId}
+                    >
+                      {a.nombre || a.adId}
+                    </span>
+                    {a.crm > 0 ? (
+                      <span className="shrink-0 font-bold text-on-surface">
+                        {a.crm} {a.crm === 1 ? "mensaje" : "mensajes"}
+                      </span>
+                    ) : a.gasto > 0 ? (
+                      <span className="shrink-0 font-bold text-on-surface underline decoration-2 underline-offset-[3px]" style={{ textDecorationColor: SIN_PEDIDOS_COLOR }}>
+                        0 mensajes
+                      </span>
+                    ) : null}
+                  </div>
+                  {(a.gasto > 0 || a.meta > 0) && (
+                    <p className="mt-0.5 flex items-center gap-1 flex-wrap text-[11px]">
+                      <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 12 }}>
+                        sell
+                      </span>
+                      {a.costoCrm != null && <span className="font-bold text-on-surface">{pesosExactos.format(a.costoCrm)}</span>}
+                      <span className="text-on-surface-variant">
+                        {a.costoCrm != null ? "por mensaje · " : ""}
+                        {a.meta > 0 ? `Meta ${a.meta} · ` : ""}
+                        {pesos.format(a.gasto)} gastados
+                      </span>
+                    </p>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </>
