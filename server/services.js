@@ -4366,9 +4366,22 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
         // generación solapada, un agente humano o un auto-sender). Si el último mensaje
         // real de la conversación ya no es del cliente, no mandar OTRA respuesta encima:
         // era la causa de las respuestas dobles ("$750... ¿así lo grabamos? ✅" dos veces).
-        const lastMsgsSnap = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(3).get();
-        const lastRealMsg = lastMsgsSnap.docs.map(x => x.data()).find(m => m.status !== 'scheduled');
-        if (lastRealMsg && lastRealMsg.from !== contactId) {
+        const lastMsgsSnap = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(5).get();
+        const realMsgs = lastMsgsSnap.docs.map(x => x.data()).filter(m => m.status !== 'scheduled');
+        const lastRealMsg = realMsgs[0];
+        // 5215540540831 (21-oct-2026): mandó su C.P. en el MISMO segundo en que salía la respuesta a su
+        // mensaje anterior. WhatsApp sella el mensaje del cliente en segundos enteros (19:47:44.000) y el
+        // nuestro con milisegundos (19:47:44.5), así que el nuestro quedaba "después" y el C.P. se dio por
+        // contestado: nadie le respondió. Nuestra respuesta solo cuenta como contestación si salió más de
+        // 3 s después del último mensaje del cliente (nadie contesta tan rápido a algo que acaba de llegar).
+        const msOf = m => (m && m.timestamp && m.timestamp.toMillis) ? m.timestamp.toMillis() : 0;
+        const lastClientMsg = realMsgs.find(m => m.from === contactId);
+        const contestadoDeVerdad = lastRealMsg && lastRealMsg.from !== contactId
+            && (!lastClientMsg || msOf(lastRealMsg) - msOf(lastClientMsg) > 3000);
+        if (lastRealMsg && lastRealMsg.from !== contactId && !contestadoDeVerdad) {
+            console.log(`[AI] ${contactId}: el último mensaje del cliente llegó junto con nuestra respuesta anterior; se contesta.`);
+        }
+        if (contestadoDeVerdad) {
             console.log(`[AI] El último mensaje de ${contactId} ya fue respondido (${lastRealMsg.isAutoReply ? 'por la IA' : 'por un humano/auto-sender'}). Omitiendo envío duplicado.`);
             await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() });
             return;
