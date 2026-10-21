@@ -141,6 +141,8 @@ export function createProjectRepository(dbSdk, db, getUser, media = { prepare: a
                 transaction.set(reference, data, { merge: true });
                 return revision;
             });
+            // Aviso a las otras pestañas (la ventana del Diseño IA del CRM rehace su vista al momento).
+            try { const channel = new BroadcastChannel('dekoor-editor'); channel.postMessage({ type: 'saved', projectId: reference.id, revision }); channel.close(); } catch (_) { /* navegador sin BroadcastChannel */ }
             return { id: reference.id, revision };
         },
     };

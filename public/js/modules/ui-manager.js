@@ -1154,7 +1154,7 @@ function openDesignBeta(orderId) {
         ev.preventDefault(); close();
     };
     document.addEventListener('keydown', onKey);
-    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); };
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); window.removeEventListener('focus', onFocus); try { editorChannel && editorChannel.close(); } catch (_) {} };
     const lampOf = btn => lamps.find(l => l.index === Number(btn.dataset.lamp));
     // El previo del cliente siempre se pide al servidor: lo rearma solo si la versión del proyecto cambió (si alguien
     // lo corrigió en el editor), si no devuelve el mismo al instante.
@@ -1163,13 +1163,18 @@ function openDesignBeta(orderId) {
         l.clientPreviewUrl = d.url; return d.url;
     };
     // La vista «Grabado» se pone al día con la última versión guardada (lo corregido en el editor; DH18267).
-    lamps.filter(l => l.projectId).forEach(l => {
-        _dlCall(dh, '/team-preview', { lamp: l.index }).then(d => {
+    // También en cuanto el editor termina de guardar (aviso entre pestañas, Chris 21-oct-2026) y al volver a esta pestaña.
+    const refreshLamp = l => {
+        _dlCall(dh, '/team-preview', { lamp: l.index }).then(async d => {
+            const card = wrap.querySelector(`[data-lamp-card="${l.index}"]`);
+            card?.querySelector('[data-dl-broken]')?.remove();
             if (!d.url || d.url === l.previewUrl) return;
             l.previewUrl = d.url;
-            const card = wrap.querySelector(`[data-lamp-card="${l.index}"]`), img = card && card.querySelector('[data-dl-img]');
+            const img = card && card.querySelector('[data-dl-img]');
             const onGrabado = card && card.querySelector('[data-dl="view-grabado"]')?.style.background.includes('124');   // pestaña activa (#7c3aed)
             if (img && (onGrabado || !card.querySelector('[data-dl="view-grabado"]'))) img.src = d.url;
+            // Si está viendo el previo del cliente, ese también se rehace con la versión nueva.
+            else if (img && card.querySelector('[data-dl="view-cliente"]')?.style.background.includes('124')) img.src = await clientUrl(l).catch(() => img.src);
             if (l.index === 0 && o.autoLamp) o.autoLamp.previewUrl = d.url;
         }).catch(e => {
             // La versión guardada está mal armada (p. ej. se borró el marco en el editor): decirlo, no quedarse callado
@@ -1182,7 +1187,19 @@ function openDesignBeta(orderId) {
             note.innerHTML = `<i class="fas fa-triangle-exclamation"></i> ${escapeHtml(e.message || 'No se pudo armar la vista de la versión guardada.')}<div style="font-weight:500;margin-top:2px">La imagen de arriba es la de antes de editarla.</div>`;
             card.appendChild(note);
         });
-    });
+    };
+    lamps.filter(l => l.projectId).forEach(refreshLamp);
+    let editorChannel = null;
+    try {
+        editorChannel = new BroadcastChannel('dekoor-editor');
+        editorChannel.onmessage = ev => {
+            const m = ev.data || {};
+            const l = m.type === 'saved' && lamps.find(x => x.projectId === m.projectId);
+            if (l && document.body.contains(wrap)) refreshLamp(l);
+        };
+    } catch (_) { /* sin BroadcastChannel: queda el refresco al volver a la pestaña */ }
+    const onFocus = () => { if (document.body.contains(wrap)) lamps.filter(l => l.projectId).forEach(refreshLamp); };
+    window.addEventListener('focus', onFocus);
     wrap.addEventListener('click', async ev => {
         if (ev.target === wrap) return close();
         const btn = ev.target.closest('[data-dl]'); if (!btn) return;

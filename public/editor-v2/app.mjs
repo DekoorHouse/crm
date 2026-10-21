@@ -14,7 +14,7 @@ import { pathNodes, movePathNodes, movePathHandle, closestOnPath, insertPathNode
 import { importSvg, parseColor, dropImages } from './svgImport.mjs';
 import { loadDraft, saveDraft } from './draftStore.mjs';
 import { powerClipEditDocument, mergePowerClipEdits } from './model.mjs';
-import { connect, cloudError } from './cloud.mjs';
+import { connect, cloudError } from './cloud.mjs?v=aviso-guardado-1';
 import { normalizeSpline, pointsPath, splinePath, splinePoints, closestOnSpline, moveSplineNodes, insertSplineNode, removeSplineNodes, controlPath, closestOnControlLine, legPoint } from './spline.mjs';
 import { renderAdjusted, canvasBlob, bakeAdjustedSource, sourceKey } from './imageAdjust.mjs';
 
