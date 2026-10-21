@@ -1010,6 +1010,7 @@ function _dlNormalize(al) {
     return { status: al.status || null, step: al.step || null, error: al.error || null, previewUrl: al.previewUrl || null, projectId: al.projectId || null,
         driveUrl: al.driveUrl || null, driveUrls: al.driveUrls || null, brief: al.brief || null, note: al.note || null, mode: al.mode || null,
         client: al.client ? { status: al.client.status || null, text: al.client.text || '' } : null, autoSendHeld: al.autoSendHeld || null,
+        pendingRedo: al.pendingRedo ? { at: al.pendingRedo.at || null } : null,
         queued: al.queued ? { at: al.queued.at?._seconds ? al.queued.at._seconds * 1000 : (typeof al.queued.at === 'number' ? al.queued.at : Date.parse(al.queued.at) || null), claimedBy: al.queued.claimedBy || null } : null,
         pairedWith: al.pairedWith || null,
         lamps: lamps.map(l => ({ index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null, template: l.template || null, previewUrl: l.previewUrl || null,
@@ -1129,6 +1130,7 @@ function openDesignBeta(orderId) {
         ${a.error && ready ? `<div style="color:#b91c1c;margin-top:6px;font-size:12px">${escapeHtml(a.error)}</div>` : ''}
         ${a.note ? `<div style="margin-top:6px;font-size:12.5px"><b>Indicación:</b> ${escapeHtml(a.note)}</div>` : ''}
         ${done ? _dlDoneBox(a, o) : ''}${done ? '' : modeBox}${_dlClientBox(a.client)}
+        ${a.pendingRedo ? `<div style="margin-top:8px;border:1px solid #0ea5e966;background:#0ea5e910;color:#0369a1;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-hourglass-half"></i> El cliente pidió un cambio: se rehace SOLO en cuanto deje de escribir unos 3 minutos (para incluir el dato o la foto que mande después). No hace falta darle Rehacer.</div>` : ''}
         ${a.autoSendHeld ? `<div style="margin-top:8px;border:1px solid #f59e0b66;background:#f59e0b14;color:#b45309;border-radius:8px;padding:7px 9px;font-size:12px;font-weight:700"><i class="fas fa-hand"></i> No siguió solo: ${escapeHtml(a.autoSendHeld)}</div>` : ''}
         ${lamps.map(l => _dlLampCard(l, dh, lamps.length, done)).join('')}
         ${!lamps.length && !done ? `<div style="margin-top:10px"><button data-dl="own-image" data-lamp="0" title="Arma la lámpara con una imagen tuya (sin IA)" style="padding:7px 11px;border-radius:8px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;cursor:pointer"><i class="fas fa-upload"></i> Usar mi imagen</button></div>` : ''}

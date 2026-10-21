@@ -8752,6 +8752,8 @@ router.get('/design-pending', async (req, res) => {
                     // Lámpara que espera otra para juntarlas en la hoja de las máquinas (2 por hoja).
                     queued: p.autoLamp.queued ? { at: tsToMs(p.autoLamp.queued.at), claimedBy: p.autoLamp.queued.claimedBy || null } : null,
                     pairedWith: p.autoLamp.pairedWith || null,
+                    // Cambio del cliente esperando a que termine de escribir para rehacerse (runPendingRedos).
+                    pendingRedo: p.autoLamp.pendingRedo ? { at: p.autoLamp.pendingRedo.at || null } : null,
                     // Hojas que se subieron a Drive (para «Ver diseño»).
                     files: p.autoLamp.status === 'approved' && Array.isArray(p.svgCorteFiles)
                         ? p.svgCorteFiles.map(f => ({ name: f.name || '', url: f.url || null, preview: f.preview || null })) : null,

@@ -239,7 +239,7 @@ Para CADA lámpara decide:
 - "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre), o si la imagen es una C marcada «modelo del CATÁLOGO» de ese personaje (es la foto de muestra de la lámpara, con un nombre de ejemplo que NO es el del cliente); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
 - "imagen": la imagen elegida ("N2", "C0"…), o VARIAS separadas por coma si hay que JUNTAR fotos en una sola escena (ej. "C1,C2" para unir a dos personas que vienen en fotos distintas; máximo 4), o "" si es ilustración desde cero. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
 - "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "" SALVO que haya que CAMBIAR algo del dibujo (por la INDICACIÓN o porque el cliente lo pidió: «que tenga solo dos pies», «sin la corona», «con los ojos abiertos»): entonces escribe SOLO ese cambio, claro y concreto. NUNCA pidas escribir el nombre ni ningún texto en la imagen: el nombre lo agrega el sistema aparte (si la imagen trae letras, pide quitarlas). ÚNICA excepción: "textoEnImagen" true.
-- "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana").
+- "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. NUNCA pongas marcadores o huecos como "(Fecha de fallecimiento)", "XX/XX" o "[nombre]": si el cliente pidió un dato que todavía no da, déjalo FUERA del texto y anótalo en "advertencias". Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana").
 - "textoEnImagen": true SOLO si la INDICACIÓN (o el cliente) pide que la IA integre/escriba el texto DENTRO de la imagen, todo junto como un solo diseño; entonces el texto de "nombre" lo dibuja el modelo de imágenes y el sistema no agrega otro. false en cualquier otro caso.
 - "textoCambia": SOLO para fuente "mockup": true si el texto final es DISTINTO del que se ve en el mockup (el cliente pidió agregar o cambiar algo del texto después de verlo); false si el mockup ya trae exactamente el texto final.
 - "tipo": "foto", "personaje" o "especial".
@@ -289,6 +289,11 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
         if (fuente === 'mockup' && pick && pick[1] !== 'N' && !reference?.catalog) fuente = 'cliente';
         // Fotos del cliente para juntar: aunque la IA lo llame "ilustración", va con sus fotos de referencia.
         if (fuente === 'ilustracion' && references.length) fuente = 'cliente';
+        // Huecos que no deben grabarse nunca («(Fecha de fallecimiento)», «[nombre]», «XX/XX/XX», DH18305): fuera y a dudas.
+        const holes = [];
+        row.nombre = String(row.nombre || '').replace(/\s*(?:\((?:[^)]*\b(?:fecha|nombre|aqu[ií]|pendiente|falta)\b[^)]*)\)|\[[^\]]*\]|\bX{2,}(?:[\/-]X{2,})+)\s*/gi, m => { holes.push(m.trim()); return ' '; })
+            .replace(/(?:\s*·\s*)+$|^(?:\s*·\s*)+/g, '').replace(/\s*·\s*·\s*/g, ' · ').replace(/\s{2,}/g, ' ').trim();
+        if (holes.length) row.advertencias = [...(Array.isArray(row.advertencias) ? row.advertencias : []), `Faltaba un dato y no se grabó: ${holes.join(', ')}`];
         return {
             fuente, reference, references,
             tipo: ['foto', 'personaje', 'especial'].includes(row.tipo) ? row.tipo : 'especial',
@@ -759,6 +764,21 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         const base = plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT;
         const prompt = plan.prompt ? `${base} ÚNICO CAMBIO que SÍ debes hacer al dibujo (todo lo demás igual que en el mockup): ${plan.prompt}.` : base;
         raster = await rasterizeBeta(plan.reference, { prompt, estilo: plan.estilo, onStep: step });
+        // Texto cambiado: el del mockup se debe ir (va el nuevo aparte). Qwen a veces lo deja y salía DOS veces
+        // (DH18305): se revisa y, si sigue, se pide otra vez con más insistencia; si aún así queda, se avisa.
+        if (plan.textoCambia) {
+            const hasText = async r => {
+                const img = await sharp(r.buffer || (await download(r.url)).buffer).resize(768, 768, { fit: 'inside' }).jpeg({ quality: 80 }).toBuffer();
+                const a = await geminiJson([{ text: 'Mira esta imagen. ¿Tiene letras, palabras, nombres, frases o números escritos (texto legible, aunque sea parcial)? Responde SOLO este JSON: {"texto": true|false}' },
+                    { inlineData: { mimeType: 'image/jpeg', data: img.toString('base64') } }]).catch(() => ({}));
+                return a.texto === true;
+            };
+            if (await hasText(raster)) {
+                step('Quitando el texto que dejó el modelo');
+                raster = await rasterizeBeta(plan.reference, { prompt: `${prompt} MUY IMPORTANTE: la imagen final NO debe tener NINGUNA letra, palabra, nombre, frase ni número: borra TODO el texto del mockup y rellena esos huecos con el fondo o con el dibujo, sin dejar rastro.`, estilo: plan.estilo, onStep: step });
+                if (await hasText(raster)) plan.advertencias = [...(plan.advertencias || []), 'el grabado todavía trae texto del mockup y el texto nuevo va aparte: puede salir DOBLE; bórralo en el editor o rehazlo'];
+            }
+        }
     } else if (beta) {
         step(plan.reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes');
         // Foto del cliente o ilustración: el nombre lo pone el armado, así que la imagen va SIN letras.
@@ -1284,8 +1304,30 @@ async function handleBetaDecision(orderId, decision, { clientText = '', changeSu
     }
     if (decision === 'changes') {
         const note = `El cliente pidió este cambio: ${changeSummary || clientText}`.slice(0, 500);
-        await ref.update({ 'autoLamp.client': { ...(order.autoLamp?.client || {}), status: 'changes', answeredAt: now(), text: String(changeSummary || clientText).slice(0, 300) } });
-        if (dh) generate(dh, { beta: true, note, keepClient: true }).catch(error => console.warn(`[AUTO-LAMP] rehacer DH${dh} por cambio del cliente:`, error.message));
+        // NO se rehace al instante (DH18305 y DH18289, 20-oct-2026): el cliente suele mandar el dato o la foto en los
+        // mensajes siguientes («la fecha en que falleció» … «11/10/26»). Queda pendiente y runPendingRedos lo
+        // rehace cuando el cliente lleva REDO_QUIET_MS sin escribir, leyendo ya todos sus mensajes.
+        await ref.update({ 'autoLamp.client': { ...(order.autoLamp?.client || {}), status: 'changes', answeredAt: now(), text: String(changeSummary || clientText).slice(0, 300) },
+            'autoLamp.pendingRedo': { note, at: Date.now() }, 'autoLamp.step': 'Esperando a que el cliente termine de escribir para rehacer' });
+    }
+}
+
+const REDO_QUIET_MS = 3 * 60 * 1000, REDO_MAX_WAIT_MS = 20 * 60 * 1000;
+// Rehace los cambios pendientes cuyo cliente ya dejó de escribir (lo llama un reloj en las rutas cada minuto).
+async function runPendingRedos() {
+    const snap = await db.collection('pedidos').where('autoLamp.pendingRedo.at', '>', 0).limit(20).get();
+    for (const doc of snap.docs) {
+        const order = doc.data(), pending = order.autoLamp.pendingRedo, dh = order.consecutiveOrderNumber;
+        const contactId = String(order.contactId || order.telefono || '');
+        // Último mensaje del CLIENTE (lo suyo trae from = su id).
+        const recent = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'desc').limit(15).get().catch(() => null);
+        const last = recent?.docs.map(d => d.data()).find(m => String(m.from || '') === contactId);
+        const lastMs = Math.max(pending.at, last?.timestamp?.toMillis?.() || 0);
+        if (Date.now() - lastMs < REDO_QUIET_MS && Date.now() - pending.at < REDO_MAX_WAIT_MS) continue;
+        await doc.ref.update({ 'autoLamp.pendingRedo': admin.firestore.FieldValue.delete() });
+        if (!dh || order.autoLamp.status !== 'ready') continue;   // alguien ya lo rehízo o lo aprobó a mano
+        const note = `${pending.note}. Lee TODOS los mensajes del cliente después de su cambio: ahí pueden venir el dato (fecha, nombre) o la foto que pidió, y otros ajustes.`;
+        generate(dh, { beta: true, note, keepClient: true }).catch(error => console.warn(`[AUTO-LAMP] rehacer DH${dh} por cambio del cliente:`, error.message));
     }
 }
 
@@ -1591,4 +1633,4 @@ async function reject(dh, { reason = '', actor = null } = {}) {
 }
 
 module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
-    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage };
+    pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage, runPendingRedos };

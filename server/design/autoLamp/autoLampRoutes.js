@@ -86,6 +86,9 @@ router.post('/:dh/own-image', (req, res, next) => ownImage(req, res, err => err 
     res.status(202).json({ success: true, status: 'working' });
 });
 
+// Cambios del cliente: se rehacen cuando deja de escribir (revisa cada minuto).
+setInterval(() => service.runPendingRedos().catch(error => console.warn('[AUTO-LAMP] cambios pendientes:', error.message)), 60 * 1000);
+
 // La que espera pareja más de 12 h sale sola (revisa cada 15 min).
 setInterval(() => service.flushStaleQueue().catch(error => console.warn('[AUTO-LAMP] cola de hojas:', error.message)), 15 * 60 * 1000);
 
