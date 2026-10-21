@@ -309,7 +309,10 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
             textoEnImagen: fuente !== 'mockup' && !!String(row.nombre || '').trim() && (row.textoEnImagen === true || TEXT_IN_IMAGE.test(note || '')),
             // Solo blanco y negro (sin degradado ni trama) si la IA lo ve así, si la indicación lo pide o si es un modelo
             // del catálogo que es de rellenos sólidos (Chris, 20-oct-2026: el unicornio de DH18256 salió con degradado).
+            // Una FOTO real (fuente cliente, tipo foto) siempre lleva degradado en trama, aunque el producto se llame
+            // «unicornio» (DH18197, Renata: salía negro liso); solo la indicación «solo blanco y negro» la cambia.
             estilo: TRAMA_HINT.test(note || '') ? 'trama'
+                : fuente === 'cliente' && row.tipo === 'foto' ? (FLAT_HINT.test(note || '') ? 'plano' : 'trama')
                 : row.estilo === 'plano' || FLAT_HINT.test(note || '') || FLAT_MODELS.test(`${lamp.producto || ''} ${lamp.datos || ''} ${lamp.label || ''}`) ? 'plano' : 'trama',
         };
     });
@@ -1086,7 +1089,8 @@ async function buildFromImageAi(dh, buffer, { lampIndex = 0, nombre = '', estilo
 Responde SOLO este JSON: {"tipo": "mockup" si es una foto o render de una lámpara de acrílico (encendida o no) con el diseño ya grabado; "foto" si es una foto de personas/mascotas/lugares; "dibujo" si es un dibujo, logo o ilustración, "estilo": "plano" si el diseño es de siluetas y rellenos sólidos, "trama" si tiene sombreado, textura o es foto}` },
             { inlineData: { mimeType: 'image/jpeg', data: small.toString('base64') } }]).catch(() => ({}));
         const tipo = ['mockup', 'foto', 'dibujo'].includes(kind.tipo) ? kind.tipo : 'foto';
-        const style = estilo || (FLAT_MODELS.test(`${lamp.producto || ''} ${lamp.datos || ''} ${lamp.label || ''}`) ? 'plano' : kind.estilo === 'plano' ? 'plano' : 'trama');
+        // Foto real: siempre con degradado en trama (no la vuelve sólida el nombre del modelo, DH18197).
+        const style = estilo || (tipo === 'foto' ? 'trama' : FLAT_MODELS.test(`${lamp.producto || ''} ${lamp.datos || ''} ${lamp.label || ''}`) ? 'plano' : kind.estilo === 'plano' ? 'plano' : 'trama');
         const plan = {
             fuente: tipo === 'mockup' ? 'mockup' : 'cliente', reference: { buffer: png, url: referenceUrl }, references: [], nombre, estilo: style, tipo: 'especial', prompt: '', advertencias: [],
             // Del mockup: si se dio un texto, se quita el del mockup y va el nuestro aparte (si no, el del mockup tal cual).
