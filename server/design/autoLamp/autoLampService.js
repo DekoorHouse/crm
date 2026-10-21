@@ -1556,11 +1556,18 @@ async function uploadSheet(folder, stamp, suffix, svgText, driveName) {
 
 // Deja el pedido como subido a Drive con sus hojas (los campos que leen el tablero, el candado y el chat).
 function uploadedFields(files, { actor = null, svg = null, previous = null, pairedWith = null, previewUrl = null, order = null } = {}) {
-    // Sin operador (Chris, 21-oct-2026, DH18335): si el pedido estaba en «Corregir», la subida del diseño corregido
-    // la cierra y pasa a «Diseñado por IA», igual que hace el corte automático del servidor al terminar un pedido.
-    const closesCorregir = String(order?.estatus || '').trim().toLowerCase() === 'corregir';
+    // Sin operador (Chris, 21-oct-2026): al subir a Drive el pedido queda «Diseñado» si ya está en producción
+    // (Fabricar, o «Corregir»/«Diseñado por IA» con pago). Si el pago todavía no se valida (Esperando anticipo,
+    // Pagado sin producción…) NO se toca: al validarse, paymentProduction lo manda a producción (inventario, evento
+    // de compra) y lo deja «Diseñado».
+    const estatus = String(order?.estatus || '').trim().toLowerCase();
+    // Nunca hacia atrás: «Foto enviada», «Pagado», «Reenvio»… van DESPUÉS de «Diseñado» en el flujo y no se tocan.
+    const enProduccion = estatus === 'fabricar'
+        || (['corregir', 'diseñado por ia', 'disenado por ia'].includes(estatus) && !!(order?.comprobanteValidadoAt || order?.confirmedAt || order?.paymentProductionStartedAt || order?.paymentProductionStatus === 'review'));
+    const closesCorregir = estatus === 'corregir';
     return {
-        ...(closesCorregir ? { estatus: 'Diseñado por IA', corregirCerradoAt: admin.firestore.Timestamp.now(), corregirCerradoPor: 'auto-lamp-beta' } : {}),
+        ...(enProduccion ? { estatus: 'Diseñado' } : {}),
+        ...(closesCorregir ? { corregirCerradoAt: admin.firestore.Timestamp.now(), corregirCerradoPor: 'auto-lamp-beta' } : {}),
         svgCorteAt: admin.firestore.Timestamp.now(), svgCorteBy: 'auto-lamp-beta', svgCorteUrl: files[0].url,
         svgCorteUrls: files.length > 1 ? files.map(f => f.url).join(',') : null,
         svgCorteFileName: files[0].name, svgCortePreviewUrl: files[0].preview || previewUrl || null, svgCorteStorageUrl: files[0].svg,

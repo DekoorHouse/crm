@@ -34,7 +34,12 @@ async function reconcilePaymentProduction(orderId) {
             else if (order.paymentProductionPending) tx.update(ref, { paymentProductionPending: false });
             return null;
         }
-        const advance = initialStatus(order) && !order.svgCorteAt && !order.disenoListoAt && !order.guiaEnvio?.guia;
+        // Un diseño que el Diseño IA Beta ya subió ANTES de validarse el pago no frena la producción (antes se quedaba
+        // en 'Esperando anticipo' para siempre); al terminar pasa a 'Diseñado' (abajo).
+        // (Solo si sigue en un estatus de ANTES de producir; un «Pagado» de fin de flujo no se regresa.)
+        const betaUploaded = order.svgCorteBy === 'auto-lamp-beta' && !!order.svgCorteAt
+            && ['sin estatus', 'esperando anticipo', 'esperando pago'].includes(String(order.estatus || 'Sin estatus').trim().toLowerCase());
+        const advance = initialStatus(order) && (!order.svgCorteAt || betaUploaded) && !order.disenoListoAt && !order.guiaEnvio?.guia;
         const resume = order.estatus === 'Fabricar' && (order.paymentProductionPending || order.fabricarSinVenta);
         if (!advance && !resume) {
             if (order.paymentProductionPending) tx.update(ref, { paymentProductionPending: false });
@@ -47,7 +52,7 @@ async function reconcilePaymentProduction(orderId) {
             paymentProductionPending: true, paymentProductionStatus: 'processing', paymentProductionReason: '',
             paymentProductionLeaseUntil: admin.firestore.Timestamp.fromMillis(Date.now() + 180000),
         });
-        return { ...order, estatus: 'Fabricar', advance };
+        return { ...order, estatus: 'Fabricar', advance, betaUploaded };
     });
     if (!claimed) {
         // El comprobante del anticipo pudo dejar el pedido en 'Esperando anticipo' (revisión): refrescar la
@@ -75,7 +80,9 @@ async function reconcilePaymentProduction(orderId) {
         if (departmentId !== 'r6VSzBKpxDxygazz1qdr') {
             await require('../services').sendPurchaseEventOnFabricar(orderId, claimed, claimed.paymentProductionPreviousStatus || '');
         }
-        await ref.update({ fabricarSinVenta: false, paymentProductionPending: false, paymentProductionStatus: 'done', paymentProductionReason: '', paymentProductionLeaseUntil: null, paymentProductionNextAttemptAt: null });
+        await ref.update({ fabricarSinVenta: false, paymentProductionPending: false, paymentProductionStatus: 'done', paymentProductionReason: '', paymentProductionLeaseUntil: null, paymentProductionNextAttemptAt: null,
+            // El diseño ya estaba en Drive (Diseño IA Beta): ya pagado, queda 'Diseñado' (Chris, 21-oct-2026).
+            ...(claimed.advance && claimed.betaUploaded ? { estatus: 'Diseñado' } : {}) });
         // Un ABONO acaba de mandar el pedido a Fabricar: avisarle al cliente (DH17441). El pago completo
         // ya tiene su aviso con el formulario de envío. Un fallo aquí no deshace la fabricación.
         if (claimed.advance && !claimed.comprobanteValidadoAt) {
