@@ -20,7 +20,27 @@ const BOOT_LIMIT_MS = 40 * 60 * 1000;
 // Versiones con las que se probó Qwen Image 2.1 el 24-sep-2026.
 const COMFY_COMMIT = '93810483a4739a1588236919a3128d3070244146';
 const TORCH_VERSION = '2.11.0';
-const GPU_TYPES = ['NVIDIA GeForce RTX 4090', 'NVIDIA GeForce RTX 5090', 'NVIDIA RTX PRO 4500 Blackwell', 'NVIDIA L40S', 'NVIDIA RTX 6000 Ada Generation', 'NVIDIA RTX A6000'];
+// GPUs de 24 GB o más, en orden de preferencia: primero las económicas y AL FINAL las caras (A100/H100/RTX PRO 6000),
+// para que casi siempre haya una (Chris, 21-oct-2026: RunPod respondía «no instances available» con solo 6 tipos).
+// IDs tal cual los da la API de RunPod (gpuTypes). El host debe tener CUDA ≥ 12.8 (torch cu128): allowedCudaVersions.
+const GPU_TYPES = [
+    'NVIDIA GeForce RTX 4090', 'NVIDIA GeForce RTX 5090', 'NVIDIA GeForce RTX 3090', 'NVIDIA GeForce RTX 3090 Ti', 'NVIDIA RTX A5000',
+    'NVIDIA RTX PRO 4000 Blackwell', 'NVIDIA RTX PRO 4500 Blackwell', 'NVIDIA RTX 5000 Ada Generation', 'NVIDIA L40S', 'NVIDIA L40',
+    'NVIDIA RTX 6000 Ada Generation', 'NVIDIA RTX A6000', 'NVIDIA A40', 'NVIDIA RTX PRO 5000 Blackwell', 'NVIDIA L4',
+    // Caras: solo si no hay ninguna de las anteriores.
+    'NVIDIA A100 80GB PCIe', 'NVIDIA A100-SXM4-80GB', 'NVIDIA A100-SXM4-40GB', 'NVIDIA H100 PCIe', 'NVIDIA H100 80GB HBM3', 'NVIDIA H100 NVL',
+    'NVIDIA RTX PRO 6000 Blackwell Server Edition', 'NVIDIA RTX PRO 6000 Blackwell Workstation Edition',
+];
+// Primero la nube segura; si ahí no hay GPU, la comunitaria (hosts de terceros, más disponibilidad). Cada nube solo
+// con las GPUs que tiene (API gpuTypes, 21-oct-2026).
+const ONLY_COMMUNITY = new Set(['NVIDIA GeForce RTX 3090 Ti', 'NVIDIA RTX 5000 Ada Generation', 'NVIDIA A100-SXM4-40GB']);
+const ONLY_SECURE = new Set(['NVIDIA L4', 'NVIDIA RTX PRO 4000 Blackwell', 'NVIDIA RTX PRO 4500 Blackwell', 'NVIDIA A40']);
+const CLOUD_TYPES = [
+    { cloudType: 'SECURE', gpus: GPU_TYPES.filter(g => !ONLY_COMMUNITY.has(g)) },
+    { cloudType: 'COMMUNITY', gpus: GPU_TYPES.filter(g => !ONLY_SECURE.has(g)) },
+];
+// La lista con la que se probó la GPU (24-sep-2026): si RunPod rechaza la ampliada, se vuelve a ella.
+const GPU_TYPES_TESTED = ['NVIDIA GeForce RTX 4090', 'NVIDIA GeForce RTX 5090', 'NVIDIA RTX PRO 4500 Blackwell', 'NVIDIA L40S', 'NVIDIA RTX 6000 Ada Generation', 'NVIDIA RTX A6000'];
 const stateRef = () => db.collection('crm_settings').doc('qwen_pod');
 let bootstrapScript;
 let healthCache = { at: 0 };
@@ -65,13 +85,26 @@ async function startPod(reason) {
     bootstrapScript ||= fs.readFileSync(path.join(__dirname, 'qwenPodBootstrap.sh'), 'utf8').replace(/\r\n/g, '\n');
     const nonce = crypto.randomUUID();
     try {
-        const pod = await runpod('POST', '/pods', {
-            name: 'dekoor-qwen-image', imageName: 'runpod/stable-diffusion:comfy-ui-6.0.0',
-            gpuTypeIds: GPU_TYPES, gpuTypePriority: 'custom', allowedCudaVersions: ['13.0', '12.9', '12.8'],
+        let pod = null, lastError = null;
+        const create = (cloudType, gpuTypeIds) => runpod('POST', '/pods', {
+            name: 'dekoor-qwen-image', imageName: 'runpod/stable-diffusion:comfy-ui-6.0.0', cloudType,
+            gpuTypeIds, gpuTypePriority: 'custom', allowedCudaVersions: ['13.0', '12.9', '12.8'],
             containerDiskInGb: 80, volumeInGb: 0, ports: ['3000/http'],
             dockerEntrypoint: ['bash', '-c'], dockerStartCmd: [bootstrapScript],
             env: { COMFY_COMMIT, TORCH_VERSION, DEKOOR_TOKEN: podToken(nonce) },
         });
+        for (const { cloudType, gpus } of CLOUD_TYPES) {
+            try {
+                pod = await create(cloudType, gpus).catch(err => {
+                    // Petición rechazada (400/422: algún tipo o la combinación no la acepta): con la lista probada.
+                    if (err.runpodStatus === 400 || err.runpodStatus === 422) { console.warn(`[QWEN] ${cloudType} rechazó la lista ampliada (${err.message}); con la probada.`); return create(cloudType, GPU_TYPES_TESTED.filter(g => cloudType === 'SECURE' ? !ONLY_COMMUNITY.has(g) : !ONLY_SECURE.has(g))); }
+                    throw err;
+                });
+                if (cloudType !== 'SECURE') console.log(`[QWEN] Sin GPU en la nube segura: se usó la ${cloudType.toLowerCase()}.`);
+                break;
+            } catch (err) { lastError = err; console.warn(`[QWEN] ${cloudType}: ${err.message}`); }
+        }
+        if (!pod) throw lastError;
         const now = new Date().toISOString();
         await stateRef().set({ podId: pod.id, nonce, status: 'starting', costPerHr: pod.costPerHr ?? null, gpu: pod.gpu?.displayName || null, createdAt: now, lastUsedAt: now, updatedAt: now }, { merge: true });
         console.log(`[QWEN] Pod ${pod.id} creado (${reason}).`);
