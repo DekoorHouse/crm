@@ -304,7 +304,9 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
             advertencias: (Array.isArray(row.advertencias) ? row.advertencias : []).map(String).slice(0, 6).concat(filterNote),
             cambia: row.cambia !== false,
             // La foto del catálogo trae un nombre de muestra («Miguel»): siempre se saca sin letras y va el del cliente.
-            textoCambia: fuente === 'mockup' && (row.textoCambia === true || !!reference?.catalog),
+            // Pedido en la indicación («sin texto», «nombre aparte»…, DH18309 balón): la IA hace SOLO el dibujo y el
+            // nombre lo pone el sistema con nuestra fuente (editable en el editor).
+            textoCambia: fuente === 'mockup' && (row.textoCambia === true || !!reference?.catalog || TEXT_APART.test(note || '')),
             // La frase dibujada por el modelo como parte de la imagen (Chris, DH18288): sin texto aparte del armado.
             textoEnImagen: fuente !== 'mockup' && !!String(row.nombre || '').trim() && (row.textoEnImagen === true || TEXT_IN_IMAGE.test(note || '')),
             // Solo blanco y negro (sin degradado ni trama) si la IA lo ve así, si la indicación lo pide o si es un modelo
@@ -344,6 +346,8 @@ Responde SOLO este JSON: {"index": <número o -1 si ninguna sirve>, "motivo": "<
 // acabado de grabado. extra: lo que la IA pidió conservar o ajustar de la foto. prompt: reemplaza todo (mockup).
 // Cuando el nombre lo pone el armado (composeLamp), la imagen NO debe traer letras: DH18282 salió con «Patricia» dos
 // veces porque la indicación de la IA pedía «integrar el nombre» y el modelo lo escribió.
+// Indicación del equipo para que la IA haga el dibujo SIN el texto del mockup y el nombre vaya aparte (editor).
+const TEXT_APART = /sin\s+(texto|nombre|letras)|(texto|nombre|letras)\s+aparte|quit(a|ar|ale|arle)\s+(el\s+|los?\s+)?(texto|nombre|letras)|solo\s+(el\s+)?(dibujo|bal[oó]n|personaje|imagen)/i;
 // Indicación del equipo para que el texto vaya integrado en la imagen generada (no puesto aparte).
 const textInImageRule = text => `Integra en el diseño, como parte de la misma composición, este texto en letras BLANCAS grandes, claras y legibles, escrito EXACTAMENTE así (mismas palabras, mayúsculas y acentos, sin agregar ni quitar nada), en renglones donde se lean bien: «${text.replace(/\s*·\s*/g, ' / ')}». Las letras no deben tapar las caras.`;
 const TEXT_IN_IMAGE = /(frase|texto|nombre|letras?)[^.]{0,40}\b(integr|dibuj|incluy)|\b(integr|dibuj|incluy)\w*\s+(la\s+|el\s+)?(frase|texto|nombre|letras?)\b|todo\s+junto/i;
