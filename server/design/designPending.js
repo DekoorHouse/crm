@@ -116,7 +116,12 @@ function pendienteRenovadoMs(d) {
 // no mostrar es el barato. Aquí la lista la mira un humano, así que peca de mostrar de más.
 function disenoMarcadoHechoMs(d) {
     if (!d) return 0;
-    return _ms(d.disenoListoAt);
+    // El Diseño IA Beta aprobado y subido a Drive (o en cola esperando pareja) también cierra lo que se pidió
+    // ANTES (Chris, 21-oct-2026: DH18335 Cosmo se rehízo y subió tras un «Corregir» y seguía en Pendientes).
+    const a = d.autoLamp;
+    const beta = a && a.beta && a.status === 'approved'
+        ? Math.max(d.svgCorteBy === 'auto-lamp-beta' ? _ms(d.svgCorteAt) : 0, a.queued ? _ms(a.approvedAt) : 0) : 0;
+    return Math.max(_ms(d.disenoListoAt), beta);
 }
 
 // ¿La tarjeta del pedido está en la columna "Terminado" del tablero? Misma regla que usa el tablero
