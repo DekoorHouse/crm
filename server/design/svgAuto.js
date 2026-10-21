@@ -264,7 +264,9 @@ const PLANTILLAS_PERSONAJE = [...new Set(PERSONAJE_ALIAS.map(a => a.tpl))];
 
 // "Algo especial" para una lámpara infantil. NO se puede usar SPECIAL_RE tal cual: incluye la palabra
 // "personaje", y estos datos SIEMPRE traen la etiqueta "Personaje:", así que TODO pedido daría especial.
-const ESPECIAL_PERSONAJE_RE = SPECIAL_DISENO_RE;   // misma lista; se deja el nombre por claridad de uso
+// DH18284 (21-oct-2026): "Especial: Diferentes dinosaurios" (cada lámpara con un dino DISTINTO) se cortó
+// con la misma plantilla para las 4. Pedir modelos diferentes/variados también es diseño manual.
+const ESPECIAL_PERSONAJE_RE = new RegExp(SPECIAL_DISENO_RE.source + '|diferente|distint|variad|no iguales|cada (?:uno|una) (?:con|de) (?:un|una|su)', 'i');
 
 // ¿Este item lleva algo que la plantilla no puede? Mira el texto COMPLETO, no solo el valor de la
 // etiqueta "Especial:": hay pedidos que lo piden en texto libre, y además todo lo que va ANTES del

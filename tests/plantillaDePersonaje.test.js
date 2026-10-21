@@ -39,3 +39,12 @@ describe('reenvío solo de accesorios no invalida el corte (DH17957)', () => {
         expect(invalidaMarcasAnteriores({ reenvioAt: ts(1000), reenvioSoloAccesorios: true, datoCorregidoAt: ts(500) })).toBe(500);
     });
 });
+
+describe('"Diferentes dinosaurios" va a diseño manual (DH18284)', () => {
+    const { personajeEligibility } = require('../server/design/svgAuto');
+    test('Especial con modelos diferentes no se corta con la plantilla', () => {
+        const r = personajeEligibility({ items: [{ producto: 'Lámpara infantil dinosaurio', cantidad: 1, datosProducto: 'Nombre: DOMINICK | Personaje: Dinosaurio | Especial: Diferentes dinosaurios' }] }, []);
+        expect(r.eligible).toBe(false);
+        expect(r.manuales[0].motivo).toBe('especial');
+    });
+});

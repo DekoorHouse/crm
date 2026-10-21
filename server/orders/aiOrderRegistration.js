@@ -209,7 +209,8 @@ function buildExtractorSystemInstruction(catalogText, existingOrderNote = '', ad
     // personaje por defecto de la lámpara infantil, NO la nube. Evita que un lead de T-Rex se
     // registre como nube solo porque el cliente no repitió el personaje en el chat.
     const adPersonajeNote = adPersonaje ? `
-IMPORTANTE — origen del cliente: llegó por el anuncio del personaje "${adPersonaje}". Si el pedido es una "Lámpara infantil" y el cliente NO pidió explícitamente OTRO personaje, el personaje es "${adPersonaje}" (NO uses "nube" por defecto en este caso). El producto va como "Lámpara infantil ${adPersonaje}" y en datosProducto pon "Personaje: ${adPersonaje}".
+IMPORTANTE — origen del cliente: llegó por el anuncio del personaje "${adPersonaje}". Si el pedido es una "Lámpara infantil" y el cliente NO pidió explícitamente OTRO personaje, el personaje es "${adPersonaje}" (NO uses "nube" por defecto en este caso). El producto va como "Lámpara infantil ${adPersonaje}" y en datosProducto pon "Personaje: ${adPersonaje}".${/dino|rex/i.test(adPersonaje) && !/^t-?rex$/i.test(adPersonaje) ? `
+Ojo: "${adPersonaje}" ES un dinosaurio. Si el cliente solo dice "dinosaurio", "dino" o "T-Rex" de forma genérica, NO es otro personaje: usa "${adPersonaje}" (DH18284: llegó por el anuncio del Dino premium, dijo "dinosaurio" y se registró como dinosaurio normal).` : ''}
 ` : '';
     return `Eres un extractor de pedidos para DekoorHouse, una tienda mexicana de lámparas personalizadas.
 Analizas una conversación de WhatsApp entre el "Cliente" y el "Asistente" (la tienda). El Asistente ya
