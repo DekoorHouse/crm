@@ -93,7 +93,7 @@ export function pictureSizeMm(image) {
  * @param {{ image: { dataUrl: string, width: number, height: number, pixelated?: boolean }, name: string, font: object, title?: string }} input
  * @returns {{ document: object, textId: string, frameId: string }}
  */
-export function composeLamp({ image, name, font, title, nameSlot = null }) {
+export function composeLamp({ image, name, font, title, nameSlot = null, avoid = [] }) {
     const text = String(name || '').trim();
     const document = { ...blankDocument(), name: title || `Lámpara ${text}`.trim(), ...PAGE };
 
@@ -123,11 +123,13 @@ export function composeLamp({ image, name, font, title, nameSlot = null }) {
     const units = lines.map(line => font.getPath(line, 0, 0, 1).getBoundingBox());
     const inkWidth = Math.max(...units.map(u => u.x2 - u.x1)), inkHeight = Math.max(...units.map(u => u.y2 - u.y1));
     const LINE_GAP = 1.05;   // distancia entre renglones, en tamaños de letra
-    const place = (size, lift = 0) => {
+    const place = (size, lift = 0, fromTop = null) => {
         const last = units[units.length - 1];
         // nameSlot (plantillas del taller, p. ej. Spiderman): el bloque de texto centrado en un punto fijo del
-        // marco (mm desde su esquina superior izquierda). Sin él, abajo, tocando la base.
+        // marco (mm desde su esquina superior izquierda). Sin él, abajo, tocando la base. fromTop: el bloque ARRIBA,
+        // su orilla de arriba a esa distancia del tope del marco (para no tapar rostros).
         let lastBaseline = baseTop(frame) - LAYOUT.silhouette - last.y2 * size - lift;
+        if (fromTop != null) lastBaseline = frame.y + fromTop - units[0].y1 * size + (lines.length - 1) * LINE_GAP * size;
         if (nameSlot) {
             const top = units[0].y1 * size - (lines.length - 1) * LINE_GAP * size, bottom = last.y2 * size;
             lastBaseline = frame.y + nameSlot.cy - (top + bottom) / 2;
@@ -155,9 +157,49 @@ export function composeLamp({ image, name, font, title, nameSlot = null }) {
     // marco); un nombre de 1-2 renglones se queda tocando la base como siempre.
     const lifts = !nameSlot && lines.length > 2 ? Array.from({ length: 16 }, (_, k) => k * frame.height * .02) : [0];
     const fit = size => { for (const lift of lifts) { const l = place(size, lift); if (inside(l.outline)) return l; } return null; };
-    let size = Math.min(maxW / inkWidth, maxH / inkHeight), layout = fit(size);
+    const start = Math.min(maxW / inkWidth, maxH / inkHeight);
+    let size = start, layout = fit(size);
     for (let tries = 0; tries < 40 && !layout; tries++) layout = fit(size *= .96);
     layout = layout || place(size);
+
+    // ROSTROS (Chris, 21-oct-2026): el texto nunca encima de una cara. avoid = cajas de los rostros en fracciones de
+    // la imagen [x0, y0, x1, y1]; se pasan a mm según dónde quedó la imagen en el marco (con 2 mm de aire).
+    let faceOverlap = false;
+    // La imagen vive en coordenadas del PowerClip: a la hoja = marco + (p · escala + desplazamiento) / (clip / marco).
+    const pic = frame.powerClip.objects.find(item => item.type === 'image') || content;
+    const t = frame.powerClip.transform || { x: 0, y: 0, scale: 1 }, sx = frame.powerClip.width / frame.width, sy = frame.powerClip.height / frame.height;
+    const toPage = (x, y) => ({ x: frame.x + (x * t.scale + t.x) / sx, y: frame.y + (y * t.scale + t.y) / sy });
+    const p0 = toPage(pic.x, pic.y), p1 = toPage(pic.x + pic.width, pic.y + pic.height), pw = p1.x - p0.x, ph = p1.y - p0.y;
+    const faces = (nameSlot ? [] : avoid).map(([x0, y0, x1, y1]) => ({ x0: p0.x + x0 * pw - 2, y0: p0.y + y0 * ph - 2, x1: p0.x + x1 * pw + 2, y1: p0.y + y1 * ph + 2 }));
+    const hitsFace = outline => outline.some(({ points }) => {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (let i = 0; i < points.length; i += 2) { x0 = Math.min(x0, points[i]); x1 = Math.max(x1, points[i]); y0 = Math.min(y0, points[i + 1]); y1 = Math.max(y1, points[i + 1]); }
+        return faces.some(f => x0 < f.x1 && x1 > f.x0 && y0 < f.y1 && y1 > f.y0);
+    });
+    if (faces.length && hitsFace(layout.outline)) {
+        // 1) Abajo, subiéndolo un poco o achicándolo (hasta 55 %); 2) arriba; 3) si no se puede, donde iba y se avisa.
+        // Revisión rápida con la caja de cada renglón (sin armar la silueta, que es lo caro); solo las que pasan se
+        // arman completas.
+        const roughHit = (s, lift, fromTop) => {
+            const last = units[units.length - 1], m = LAYOUT.silhouette;
+            let lastBaseline = baseTop(frame) - m - last.y2 * s - lift;
+            if (fromTop != null) lastBaseline = frame.y + fromTop - units[0].y1 * s + (lines.length - 1) * LINE_GAP * s;
+            return units.some((u, k) => {
+                const baseline = lastBaseline - (lines.length - 1 - k) * LINE_GAP * s, x = frame.x + frame.width / 2 - (u.x1 + u.x2) * s / 2;
+                const b = { x0: x + u.x1 * s - m, x1: x + u.x2 * s + m, y0: baseline + u.y1 * s - m, y1: baseline + u.y2 * s + m };
+                return faces.some(f => b.x0 < f.x1 && b.x1 > f.x0 && b.y0 < f.y1 && b.y1 > f.y0);
+            });
+        };
+        const ok = l => inside(l.outline) && !hitsFace(l.outline);
+        const sizes = []; for (let s = start; s >= start * .55; s *= .94) sizes.push(s);
+        const pick = () => {
+            for (const s of sizes) for (let k = 0; k <= 12; k++) { const lift = k * frame.height * .02; if (roughHit(s, lift)) continue; const l = place(s, lift); if (ok(l)) return l; }
+            for (const s of sizes) for (let k = 2; k <= 18; k++) { const top = k * frame.height * .02; if (roughHit(s, 0, top)) continue; const l = place(s, 0, top); if (ok(l)) return l; }
+            return null;
+        };
+        const better = pick();
+        if (better) layout = better; else faceOverlap = true;
+    }
     const labels = layout.rows.map((row, k) => ({ ...createObject('text', row.x, row.baseline - layout.size), name: lines.length > 1 ? `Nombre ${k + 1}` : 'Nombre',
         text: row.line, fontSize: layout.size, fontFamily: FONT_FAMILY, fill: '#000000', stroke: 'none', strokeWidth: 0 }));
 
@@ -168,7 +210,7 @@ export function composeLamp({ image, name, font, title, nameSlot = null }) {
     document.objects.push(silhouette, ...labels);
     placeInPowerClip(document, new Set([silhouette.id, ...labels.map(l => l.id)]), frame.id);
 
-    return { document: validateDocument(document), textId: labels[0].id, frameId: frame.id };
+    return { document: validateDocument(document), textId: labels[0].id, frameId: frame.id, faceOverlap };
 }
 
 // El mismo documento con el texto convertido en curvas (lo que exporta el editor para la láser),

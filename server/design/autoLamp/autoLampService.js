@@ -822,7 +822,10 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const dataUrl = 'data:image/png;base64,' + png.toString('base64');
     // En la plantilla el nombre va en el hueco que deja el dibujo (arriba a la izquierda), no abajo.
     const nameSlot = plan.template && engraveName ? await freeNameSlot(buffer, engraveName, font) : null;
-    const { document } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name: engraveName, font, title, nameSlot });
+    // El texto nunca encima de un rostro (Chris, 21-oct-2026): se ubican las caras y el armado las esquiva.
+    const avoid = engraveName && !plan.template ? await detectFaces(buffer) : [];
+    const { document, faceOverlap } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name: engraveName, font, title, nameSlot, avoid });
+    if (faceOverlap) plan.advertencias = [...(plan.advertencias || []), 'el texto no cupo sin tocar un rostro: acomódalo en el editor'];
 
     const folder = `${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}`;
     const imageHash = crypto.createHash('sha256').update(dataUrl).digest('hex');
@@ -1506,6 +1509,19 @@ async function approve(dh, { svg = null, actor = null, force = false, alone = fa
             : { 'autoLamp.status': 'ready', 'autoLamp.step': 'Listo para revisar', 'autoLamp.error': error.message, 'autoLamp.updatedAt': now() }).catch(() => {});
         throw error;
     }
+}
+
+// Rostros (personas o animales) del grabado: cajas en fracciones de la imagen [x0, y0, x1, y1]. Gemini da
+// [ymin, xmin, ymax, xmax] de 0 a 1000. Si falla, sin rostros (el texto va donde siempre).
+async function detectFaces(buffer) {
+    try {
+        const img = await sharp(buffer).flatten({ background: '#ffffff' }).resize(1024, 1024, { fit: 'inside' }).jpeg({ quality: 85 }).toBuffer();
+        const answer = await geminiJson([{ text: 'Ubica TODOS los rostros (caras de personas, y también de animales o personajes) en esta imagen de grabado. Responde SOLO este JSON: {"rostros": [[ymin, xmin, ymax, xmax], ...]} con coordenadas de 0 a 1000 que cubran la cara completa (frente a barbilla, oreja a oreja). [] si no hay.' },
+            { inlineData: { mimeType: 'image/jpeg', data: img.toString('base64') } }]);
+        return (Array.isArray(answer.rostros) ? answer.rostros : [])
+            .filter(b => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite))
+            .map(([y0, x0, y1, x1]) => [x0 / 1000, y0 / 1000, x1 / 1000, y1 / 1000]).filter(([x0, y0, x1, y1]) => x1 > x0 && y1 > y0).slice(0, 12);
+    } catch (error) { console.warn('[AUTO-LAMP] no se pudieron ubicar los rostros:', error.message); return []; }
 }
 
 // Cómo quedó una aprobación, para los avisos al equipo.
