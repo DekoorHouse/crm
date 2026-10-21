@@ -1767,7 +1767,7 @@ async function reopen(dh, { actor = null } = {}) {
     for (const file of files) {
         const others = (String(file.name || '').match(/DH(\d+)/g) || []).map(s => Number(s.slice(2))).filter(n => n !== Number(dh));
         const r = await trashReplaced(dh, [file], { allowShared: others.every(n => resetSet.has(n)) });
-        trashed.push(...r.trashed); kept.push(...r.kept.filter(k => !/not found|no se encontr|Requested entity|No item|could not be found|no existe/i.test(k)));
+        trashed.push(...r.trashed); kept.push(...r.kept.filter(k => !/not found|no se encontr|Requested entity|No item|could not be found|no existe|no v[aá]lido/i.test(k)));
     }
     try { await require('../designPending').recomputeForContact(order.contactId || order.telefono); } catch (_) {}
     const manual = partners.filter(p => !p.reset).map(p => `DH${p.dh}`);
