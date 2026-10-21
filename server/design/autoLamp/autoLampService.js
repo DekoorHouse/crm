@@ -1427,19 +1427,30 @@ async function handleBetaDecision(orderId, decision, { clientText = '', changeSu
  * para no disparar todo lo acumulado. Interruptor: crm_settings/general.designBetaAutoStartActive (false = apagado).
  */
 const AUTO_START_MAX = 2;
+const STUCK_MS = 25 * 60 * 1000, STUCK_ERROR = 'Se quedó trabajando sin avanzar (el servidor se reinició a media generación): se reintenta solo';
 async function autoStartBeta() {
     const settingsRef = db.collection('crm_settings').doc('general');
     const settings = (await settingsRef.get()).data() || {};
     if (settings.designBetaAutoStartActive === false) return null;
     if (!settings.designBetaAutoStartSince) { await settingsRef.set({ designBetaAutoStartSince: Date.now() }, { merge: true }); return null; }
-    const working = await db.collection('pedidos').where('autoLamp.status', '==', 'working').limit(AUTO_START_MAX + 1).get();
-    if (working.size >= AUTO_START_MAX) return null;
+    // VIGILANTE (DH18344, 21-oct-2026): un diseño «trabajando» que lleva 25 min sin avanzar se murió (un deploy
+    // reinició el servidor a media espera de la GPU) y se quedaba así para siempre: se marca para reintentarse solo.
+    const working = await db.collection('pedidos').where('autoLamp.status', '==', 'working').limit(20).get();
+    let alive = 0;
+    for (const doc of working.docs) {
+        const a = doc.data().autoLamp || {};
+        if (Date.now() - (a.updatedAt?.toMillis?.() || 0) < STUCK_MS) { alive++; continue; }
+        console.warn(`[AUTO-LAMP] DH${doc.data().consecutiveOrderNumber} se quedó «${a.step || 'trabajando'}» sin avanzar: se marca para reintentar.`);
+        await doc.ref.update({ 'autoLamp.status': 'error', 'autoLamp.error': `${STUCK_ERROR} (se quedó en «${a.step || 'trabajando'}»).`,
+            'autoLamp.updatedAt': admin.firestore.Timestamp.fromMillis(Date.now() - 31 * 60 * 1000) });
+    }
+    if (alive >= AUTO_START_MAX) return null;
     // REINTENTO cuando falló por falta de GPU (DH18344, 21-oct-2026: Minions bloqueado por derechos de autor en Qwen de
     // OpenRouter y en OpenAI; solo nuestra GPU lo hace y RunPod no tenía ninguna): cada 30 min, hasta 6 veces.
     const failed = await db.collection('pedidos').where('autoLamp.status', '==', 'error').limit(50).get();
     for (const doc of failed.docs) {
         const a = doc.data().autoLamp || {}, dh = doc.data().consecutiveOrderNumber;
-        const gpu = /GPU de Qwen no pudo prender|no tiene una GPU disponible|GPU propia/i.test(a.error || '');
+        const gpu = /GPU de Qwen no pudo prender|no tiene una GPU disponible|GPU propia|se quedó trabajando sin avanzar|servidor se reinició/i.test(a.error || '');
         const waited = Date.now() - (a.updatedAt?.toMillis?.() || 0) >= 30 * 60 * 1000;
         if (!a.beta || !gpu || !waited || (a.retries || 0) >= 6 || !dh) continue;
         console.log(`[AUTO-LAMP] Reintento ${(a.retries || 0) + 1}/6 de DH${dh} (falló por falta de GPU).`);
