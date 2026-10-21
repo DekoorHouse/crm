@@ -155,6 +155,11 @@ function reasonsForOrderData(d) {
     const shipped = (d.guiaEnvio && d.guiaEnvio.guia) || d.ocultoDeEnvios;
     const reasons = [];
 
+    // SIN COMPROBANTE NO ENTRA (Chris, 21-oct-2026, DH18293): una corrección de un pedido que todavía no paga
+    // (ni anticipo validado ni comprobante en revisión) no es trabajo de Diseño; se ve cuando pague. Salvo que alguien
+    // lo haya metido a mano («A Diseño» / «+ Añadir»).
+    const tienePago = !!(d.comprobanteValidadoAt || d.paymentProductionStatus === 'review' || d.confirmedAt || d.paymentProductionStartedAt || shipped);
+    if (estatus === 'corregir' && !tienePago) return d.designForce ? ['manual'] : [];
     if (estatus === 'corregir') {
         // Corrección pedida por el cliente y AÚN no resuelta (las ya marcadas se filtran arriba). Aparece
         // aunque ya se hubiera enviado. El motivo lo persiste markOrderCorregirForContact.
