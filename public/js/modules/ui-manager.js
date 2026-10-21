@@ -1100,6 +1100,7 @@ function _dlLampCard(l, dh, total, done = false) {
                     ${l.projectId && !done ? `<button data-dl="edit-ai" data-lamp="${l.index}" title="Aplica la indicación de abajo a ESTE diseño (p. ej. «agrega estrellitas de fondo»): la IA edita la imagen actual en vez de rehacerla desde cero" style="padding:5px 9px;border-radius:7px;border:1px solid #db2777;background:transparent;color:#be185d;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-wand-magic-sparkles"></i> Modificar con IA</button>
                     <button data-dl="versions" data-lamp="${l.index}" title="Ver los diseños anteriores de esta lámpara y regresar a uno" style="padding:5px 9px;border-radius:7px;border:1px solid #64748b;background:transparent;color:#475569;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-clock-rotate-left"></i> Versiones</button>` : ''}
                     ${l.projectId && !done ? `<button data-dl="remove-ring" data-lamp="${l.index}" title="Borra la línea circular del contorno (el aro del acrílico) de ESTE diseño, sin regenerarlo; respeta lo corregido en el editor" style="padding:5px 9px;border-radius:7px;border:1px solid #64748b;background:transparent;color:#475569;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-circle-notch"></i> Quitar aro</button>` : ''}
+                    ${total > 1 && !done && l.projectId ? `<button data-dl="send-client" data-lamp="${l.index}" title="Le manda al cliente SOLO el previo de esta lámpara (p. ej. la única que pidió cambiar)" style="padding:5px 9px;border-radius:7px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-paper-plane"></i> Mandar esta</button>` : ''}
                     ${total > 1 && !done ? `<button data-dl="redo-one" data-lamp="${l.index}" title="Rehace solo esta lámpara (con la indicación de abajo, si escribiste una)" style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer esta</button>` : ''}
                 </div>
             </div>
@@ -1221,13 +1222,15 @@ function openDesignBeta(orderId) {
         btn.disabled = true;
         try {
             if (act === 'send-client') {
+                // «Mandar esta» (data-lamp): solo esa lámpara, p. ej. la única que el cliente pidió cambiar.
+                const one = btn.dataset.lamp != null ? lampOf(btn) : null, targets = one ? [one] : lamps, label = btn.innerHTML;
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Armando previos…';
-                const urls = []; for (const l of lamps) urls.push(await clientUrl(l));
-                btn.innerHTML = `<i class="fas fa-paper-plane"></i> ${a.client?.status ? 'Reenviar al cliente' : 'Mandar al cliente'}`;
+                const urls = []; for (const l of targets) urls.push(await clientUrl(l));
+                btn.innerHTML = label;
                 const thumbs = urls.map(u => `<img src="${escapeHtml(u)}" style="max-width:${urls.length > 1 ? 120 : 220}px;border-radius:8px;margin:6px 3px 0">`).join('');
-                if (!await showConfirmModal(`¿Mandarle ${urls.length > 1 ? `los ${urls.length} previos (uno por lámpara)` : 'este previo'} al cliente de ${o.orderNumber} por su chat? Si lo aprueba, se sube solo a Drive (SVG Corte); si pide un cambio, la IA lo rehace y se lo reenvía.<br>${thumbs}`, { icon: 'fa-paper-plane', confirmText: 'Mandar al cliente' })) { btn.disabled = false; return; }
+                if (!await showConfirmModal(`¿Mandarle ${urls.length > 1 ? `los ${urls.length} previos (uno por lámpara)` : one && lamps.length > 1 ? `SOLO el previo de «${escapeHtml(one.label || '')}»` : 'este previo'} al cliente de ${o.orderNumber} por su chat? Si lo aprueba, se sube solo a Drive (SVG Corte); si pide un cambio, la IA lo rehace y se lo reenvía.<br>${thumbs}`, { icon: 'fa-paper-plane', confirmText: 'Mandar al cliente' })) { btn.disabled = false; return; }
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mandando…';
-                await _dlCall(dh, '/send-client', {});
+                await _dlCall(dh, '/send-client', one ? { lamps: [one.index] } : {});
                 close(); _dlSetLocal(orderId, { ...a, client: { status: 'sent' } });
             } else if (act === 'approve' || act === 'approve-alone') {
                 const alone = act === 'approve-alone', total = lamps.reduce((n, l) => n + (l.copies || 1), 0);

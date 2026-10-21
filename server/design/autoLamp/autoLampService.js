@@ -1302,6 +1302,10 @@ async function sendToClient(dh, { auth = {}, actor = null, only = null } = {}) {
     const again = rounds > 0;
     if (lamps.length === 1) {
         await postMessage(contactId, auth, { text: again ? againText(CLIENT_MESSAGE_AGAIN, rounds) : CLIENT_MESSAGE, fileUrl: images[0].url, fileType: 'image/jpeg' });
+    } else if (toSend.length === 1) {
+        // De un pedido de varias, solo UNA (la que pidió cambiar, Chris 21-oct-2026): un mensaje que dice cuál es.
+        const who = String(toSend[0].label || '').split(' · ').pop() || `lámpara ${toSend[0].index + 1}`;
+        await postMessage(contactId, auth, { text: `*Lámpara de ${who}*\n${again ? againText(CLIENT_MESSAGE_AGAIN, rounds) : CLIENT_MESSAGE}`, fileUrl: images[0].url, fileType: 'image/jpeg' });
     } else {
         await postMessage(contactId, auth, { text: again ? againText(MULTI_INTRO_AGAIN, rounds) : MULTI_INTRO });
         for (const { lamp, url } of images) {

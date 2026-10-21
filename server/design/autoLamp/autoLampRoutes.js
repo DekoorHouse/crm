@@ -129,7 +129,9 @@ router.post('/:dh/send-client', async (req, res) => {
     const auth = {};
     if (req.headers.authorization) auth.Authorization = req.headers.authorization;
     if (req.headers.cookie) auth.Cookie = req.headers.cookie;
-    try { res.json({ success: true, ...(await service.sendToClient(dh, { auth, actor: req.apiAuth })) }); }
+    // body.lamps: solo esas lámparas (p. ej. la única que el cliente pidió cambiar); sin él, todas.
+    const only = Array.isArray(req.body?.lamps) && req.body.lamps.length ? req.body.lamps.map(Number).filter(Number.isInteger) : null;
+    try { res.json({ success: true, ...(await service.sendToClient(dh, { auth, actor: req.apiAuth, only })) }); }
     catch (error) { console.warn(`[AUTO-LAMP] mandar previo DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo mandar al cliente.' }); }
 });
 
