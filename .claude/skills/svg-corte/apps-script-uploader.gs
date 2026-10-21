@@ -15,6 +15,18 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents);
     if (body.secret !== SECRET) {
       out = { ok: false, error: 'secreto invalido' };
+    } else if (body.action === 'trash') {
+      // Manda a la PAPELERA (no borra para siempre) un archivo que ya no se usa. Solo archivos que esten
+      // dentro de la carpeta SVG Corte (u otra carpeta indicada): nunca otra cosa del Drive.
+      var target = DriveApp.getFileById(body.id);
+      var allowed = body.folderId || FOLDER_ID, parents = target.getParents(), inFolder = false;
+      while (parents.hasNext()) { if (parents.next().getId() === allowed) { inFolder = true; break; } }
+      if (!inFolder) {
+        out = { ok: false, error: 'el archivo no esta en la carpeta SVG Corte' };
+      } else {
+        target.setTrashed(true);
+        out = { ok: true, id: target.getId(), name: target.getName(), trashed: true };
+      }
     } else {
       var bytes = Utilities.base64Decode(body.b64);
       var blob = Utilities.newBlob(bytes, body.mimeType || 'application/octet-stream', body.name || 'archivo');

@@ -37,4 +37,23 @@ async function uploadDrive(name, bytes) {
     if (!response.ok || !data.ok || !data.id || !data.webViewLink) throw new Error('Drive no confirmó la subida del archivo.');
     return { id: data.id, name: data.name || name, webViewLink: data.webViewLink };
 }
-module.exports = { storageService, uploadDrive };
+// ID de Drive de un link «…/file/d/<id>/view» (o el id tal cual).
+const driveIdOf = value => (String(value || '').match(/\/d\/([\w-]{20,})/) || String(value || '').match(/^([\w-]{20,})$/) || [])[1] || null;
+
+// Manda a la PAPELERA de Drive un archivo de la carpeta SVG Corte que ya no se usa (reemplazado). El Apps Script
+// solo acepta archivos de esa carpeta. Necesita la versión del script con la acción «trash» (con la vieja falla y
+// no borra nada).
+async function trashDrive(fileOrUrl) {
+    const id = driveIdOf(fileOrUrl);
+    if (!id) throw new Error('No reconozco el archivo de Drive.');
+    const fallback = JSON.parse(fs.readFileSync(path.join(__dirname, '../../.claude/skills/svg-corte/drive-webapp.json'), 'utf8'));
+    const response = await fetch(process.env.SVG_CUT_DRIVE_URL || fallback.url, {
+        method: 'POST', redirect: 'follow', signal: AbortSignal.timeout(60000),
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: process.env.SVG_CUT_DRIVE_SECRET || fallback.secret, action: 'trash', id }),
+    });
+    let data;
+    try { data = JSON.parse(await response.text()); } catch (_) { throw new Error('Drive no confirmó (respuesta no JSON).'); }
+    if (!data.ok) throw new Error(/base64|undefined/i.test(data.error || '') ? 'el script de Drive todavía no tiene la acción para borrar (hay que actualizarlo)' : (data.error || 'Drive no lo mandó a la papelera.'));
+    return { id, name: data.name || '' };
+}
+module.exports = { storageService, uploadDrive, trashDrive, driveIdOf };

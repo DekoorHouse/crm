@@ -1583,7 +1583,13 @@ async function approve(dh, { svg = null, actor = null, force = false, alone = fa
         }
         await ref.update(uploadedFields(files, { actor, svg, previous, pairedWith: partner?.dh || null, previewUrl: autoLamp.previewUrl }));
         try { await require('../designPending').recomputeForContact(orderDoc.data().contactId || orderDoc.data().telefono); } catch (_) {}
-        if (previous) await notifyAdmin(`⚠️ DH${dh} se subió OTRA VEZ a Drive (SVG Corte), confirmado por ${actor?.email || 'una persona'}. Ya tenía archivo de antes: revisa que no se corten los dos. Nuevo: ${files.map(f => f.url).join(' ')}`);
+        // Lo que había antes quedó REEMPLAZADO: a la papelera de Drive (las hojas compartidas no; se avisa).
+        if (previous) {
+            const { trashed, kept } = await trashReplaced(dh, previous.files);
+            await notifyAdmin(`♻️ DH${dh} se subió OTRA VEZ a Drive (SVG Corte), confirmado por ${actor?.email || 'una persona'}. Nuevo: ${files.map(f => f.url).join(' ')}`
+                + (trashed.length ? `\n🗑️ El archivo anterior se mandó a la papelera: ${trashed.join(', ')}` : '')
+                + (kept.length ? `\n⚠️ NO se pudo quitar de Drive, bórralo a mano para no cortarlo dos veces: ${kept.join(' ; ')}` : ''));
+        }
         return { driveUrl: files[0].url, driveUrls: files.map(f => f.url), fileName: files[0].name, pairedWith: partner?.dh || null };
     } catch (error) {
         // La que esperaba pareja y no se pudo juntar regresa a la cola (si nadie más la ocupó).
@@ -1662,6 +1668,25 @@ async function detectFaces(buffer) {
     } catch (error) { console.warn('[AUTO-LAMP] no se pudieron ubicar los rostros:', error.message); return []; }
 }
 
+/**
+ * Manda a la PAPELERA de Drive los archivos de un pedido que quedaron REEMPLAZADOS (Chris, 21-oct-2026: se
+ * acumulaban archivos viejos en SVG Corte y se podían cortar dos veces, p. ej. DH18335 Cosmo). Una hoja
+ * compartida con otro pedido (DHa-DHb) NO se borra salvo allowShared (el otro pedido se quedaría sin su lámpara).
+ * Devuelve { trashed: [nombres], kept: [motivos] }; nunca lanza.
+ */
+async function trashReplaced(dh, files, { allowShared = false } = {}) {
+    const { trashDrive } = require('../svgCutStorage');
+    const trashed = [], kept = [];
+    for (const file of files || []) {
+        const name = file.name || '', url = file.url || '';
+        const others = (name.match(/DH(\d+)/g) || []).map(s => Number(s.slice(2))).filter(n => n !== Number(dh));
+        if (others.length && !allowShared) { kept.push(`${name || url} (hoja compartida con DH${others.join(', DH')}: revísala a mano)`); continue; }
+        try { await trashDrive(url || file.id); trashed.push(name || url); }
+        catch (error) { kept.push(`${name || url} (${error.message})`); }
+    }
+    return { trashed, kept };
+}
+
 // Cómo quedó una aprobación, para los avisos al equipo.
 function uploadSummary(r) {
     const links = (r.driveUrls || []).join(' ');
@@ -1735,10 +1760,20 @@ async function reopen(dh, { actor = null } = {}) {
         } else partners.push({ dh: other, reset: false });
         try { await require('../designPending').recomputeForContact(p.contactId || p.telefono); } catch (_) {}
     }
-    await orderDoc.ref.update(cleared('Reabierto para corregir (se borró de Drive)', order));
+    await orderDoc.ref.update(cleared('Reabierto para corregir', order));
+    // Sus archivos van a la papelera de Drive (si ya los borraron a mano, no pasa nada). Una hoja compartida solo si el
+    // otro pedido también regresó a revisión (si no, se quedaría sin su lámpara).
+    const resetSet = new Set(partners.filter(p => p.reset).map(p => p.dh)), trashed = [], kept = [];
+    for (const file of files) {
+        const others = (String(file.name || '').match(/DH(\d+)/g) || []).map(s => Number(s.slice(2))).filter(n => n !== Number(dh));
+        const r = await trashReplaced(dh, [file], { allowShared: others.every(n => resetSet.has(n)) });
+        trashed.push(...r.trashed); kept.push(...r.kept.filter(k => !/not found|no se encontr|Requested entity|No item|could not be found|no existe/i.test(k)));
+    }
     try { await require('../designPending').recomputeForContact(order.contactId || order.telefono); } catch (_) {}
     const manual = partners.filter(p => !p.reset).map(p => `DH${p.dh}`);
-    await notifyAdmin(`↩️ DH${dh} se reabrió para corregir (su archivo se borró de Drive)${partners.some(p => p.reset) ? `. Su hoja era compartida: ${partners.filter(p => p.reset).map(p => `DH${p.dh}`).join(', ')} también regresó a «Revisar diseño» para volver a subirlo` : ''}${manual.length ? `. OJO: ${manual.join(', ')} compartía la hoja pero tiene más archivos; revisa a mano que su lámpara se vuelva a subir` : ''}.`);
+    await notifyAdmin(`↩️ DH${dh} se reabrió para corregir ${partners.some(p => p.reset) ? `. Su hoja era compartida: ${partners.filter(p => p.reset).map(p => `DH${p.dh}`).join(', ')} también regresó a «Revisar diseño» para volver a subirlo` : ''}${manual.length ? `. OJO: ${manual.join(', ')} compartía la hoja pero tiene más archivos; revisa a mano que su lámpara se vuelva a subir` : ''}${trashed.length ? `
+🗑️ A la papelera de Drive: ${trashed.join(', ')}` : ''}${kept.length ? `
+⚠️ NO se pudo quitar de Drive, bórralo a mano: ${kept.join(' ; ')}` : ''}`);
     return { partners };
 }
 

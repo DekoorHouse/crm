@@ -1261,7 +1261,7 @@ function openDesignBeta(orderId) {
                 if (d.driveUrl) window.open(d.driveUrl, '_blank', 'noopener');
             } else if (act === 'reopen') {
                 const shared = a.pairedWith ? `<br><br>⚠️ Su hoja era <b>compartida con DH${escapeHtml(String(a.pairedWith))}</b>: al borrarla también se fue esa lámpara. DH${escapeHtml(String(a.pairedWith))} regresa a «Revisar diseño» para volver a aprobarla (con su mismo diseño).` : '';
-                if (!await showConfirmModal(`¿Reabrir ${o.orderNumber} para corregirlo?<br><br>Primero <b>borra su archivo de la carpeta SVG Corte de Drive</b> (si no, se cortaría dos veces). El diseño regresa a «Revisar diseño»: puedes rehacerlo, corregirlo en el editor y volver a aprobarlo.${shared}`, { icon: 'warning', confirmText: 'Ya lo borré, reabrir' })) { btn.disabled = false; return; }
+                if (!await showConfirmModal(`¿Reabrir ${o.orderNumber} para corregirlo?<br><br>Su archivo se manda <b>solo a la papelera de Drive</b> (SVG Corte) para que no se corte dos veces; si algo no se puede quitar, te llega un aviso. El diseño regresa a «Revisar diseño»: puedes rehacerlo, corregirlo en el editor y volver a aprobarlo.${shared}`, { icon: 'warning', confirmText: 'Reabrir' })) { btn.disabled = false; return; }
                 await _dlCall(dh, '/reopen', {});
                 close();
                 o.svgCorteUrl = null; o.svgCorteAt = null; o.boardCol = 'pendientes';
