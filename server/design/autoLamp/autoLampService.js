@@ -983,7 +983,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     // …y si el dibujo deja espacio blanco (o se puede recorrer a un lado), el texto va ahí, más grande (DH18310).
     if (engraveName && !plan.template) {
         step('Buscando el mejor lugar para el texto');
-        const side = await sideTextLayout(buffer, engraveName, font, composeLamp, avoid).catch(error => { console.warn('[AUTO-LAMP] acomodo del texto:', error.message); return null; });
+        const side = await sideTextLayout(buffer, engraveName, font, composeLamp, avoid, { noShift: !!plan.bank }).catch(error => { console.warn('[AUTO-LAMP] acomodo del texto:', error.message); return null; });
         if (side) { buffer = side.buffer; nameSlot = side.slot; avoid = []; }
     }
     const meta = await sharp(buffer).metadata();
@@ -1910,7 +1910,7 @@ async function approve(dh, { svg = null, actor = null, force = false, alone = fa
  * derecha y a la izquierda; en cada uno busca el hueco más grande (freeNameSlot en todo el círculo). Se usa solo si
  * el texto queda al menos 15 % más grande que abajo. Devuelve { buffer, slot } o null.
  */
-async function sideTextLayout(buffer, text, font, composeLamp, avoid) {
+async function sideTextLayout(buffer, text, font, composeLamp, avoid, { noShift = false } = {}) {
     const meta = await sharp(buffer).metadata();
     const stub = { dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', width: meta.width, height: meta.height };
     const bottom = composeLamp({ image: stub, name: text, font, title: 'medida', avoid }).textSize || 0;
@@ -1920,7 +1920,8 @@ async function sideTextLayout(buffer, text, font, composeLamp, avoid) {
     // arma el equipo, la orilla puede cortarse un poco). Gana el texto más grande, castigando cuánto se movió (para
     // no mandar la figura a la orilla y dejar medio círculo vacío, DH18296).
     let best = null;
-    for (const dx of [0, 10, -10, 20, -20, 30, -30, 40, -40]) {
+    // noShift: el dibujo ya viene acomodado (banco de diseños): solo se busca el hueco, sin moverlo.
+    for (const dx of noShift ? [0] : [0, 10, -10, 20, -20, 30, -30, 40, -40]) {
         if (outside(dx) - outside(0) > .08) continue;
         const candidate = dx ? await shiftBy(buffer, dx) : buffer;
         const slot = await freeNameSlot(candidate, text, font, { anywhere: true });
@@ -2131,7 +2132,7 @@ async function bankEntries({ all = false } = {}) {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 // Los personajes que ya tienen dibujo (la IA los nombra igual al leer un pedido nuevo).
-async function bankCharacters() { return [...new Set((await bankEntries()).map(e => e.personaje).filter(Boolean))].slice(0, 100); }
+async function bankCharacters() { return [...new Set((await bankEntries()).map(e => e.personaje).filter(Boolean))].slice(0, 400); }
 // Los modelos de un personaje: primero `prefer` (el que ya traía la lámpara), luego los más usados y los más nuevos.
 async function bankFor(personaje, prefer = null) {
     const key = bankKey(personaje);
