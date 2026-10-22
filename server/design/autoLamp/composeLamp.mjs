@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 import { blankDocument, createObject, validateDocument, exportSvg, placeInPowerClip, fitPowerClip, clone } from '../../../public/editor-v2/model.mjs';
 import { pathContains } from '../../../public/editor-v2/path.mjs';
 import { presetObject, PRESETS } from '../../../public/editor-v2/presets.mjs';
-import { silhouetteField, traceSilhouettes } from '../../../public/editor-v2/silhouette.mjs';
+import { silhouetteField, traceSilhouettes, distanceField, fillHoles } from '../../../public/editor-v2/silhouette.mjs';
 import { normalizePath } from '../../../public/editor-v2/path.mjs';
 import { parsePathData } from '../../../public/editor-v2/svgImport.mjs';
 import { withoutLayoutTables } from '../../../public/editor-v2/fonts.mjs';
@@ -84,6 +84,72 @@ export function outlineSilhouette(subpaths, distance, scale = LAYOUT.rasterScale
     return loops.map(({ closed, points }) => ({ closed, points: points.map((v, i) => i % 2 ? box.y + v / scale : box.x + v / scale) }));
 }
 
+// SILUETA DE LA FOTO (Chris, 22-oct-2026, DH18366 «Herme y Adiel»): en una foto real a la que se le quitó el fondo, el
+// pelo, la gorra y la ropa oscuros se pierden en el negro de la lámpara. Una línea que SE GRABA (blanca al prender)
+// alrededor de las personas las despega del fondo, como el contorno de una calcomanía. Medidas en mm.
+export const PHOTO_OUTLINE = { gap: 1, width: 2, close: 3 };
+
+/**
+ * Contorno de las personas de una foto ya convertida a grabado. grey: pixeles en gris (negro = se graba), width ×
+ * height, mmPerPx: tamaño de un pixel en la lámpara. Devuelve los subtrayectos de la línea (el de afuera y el de
+ * adentro, para rellenar con evenodd) en FRACCIONES de la imagen, o null si la foto conserva su fondo (hay grabado
+ * pegado a la orilla de arriba o de los lados) o no hay nada que contornear.
+ */
+export function photoOutline(grey, width, height, mmPerPx, { gap = PHOTO_OUTLINE.gap, line = PHOTO_OUTLINE.width, close = PHOTO_OUTLINE.close } = {}) {
+    const band = Math.max(2, Math.round(Math.min(width, height) * .03));
+    let total = 0, edge = 0, edgeInk = 0;
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const on = grey[y * width + x] < 200;
+        if (on) total++;
+        // Arriba y a los lados; abajo la foto suele cortar a las personas (piernas, sillas) aunque no tenga fondo.
+        if (y < band || x < band || x >= width - band) { edge++; if (on) edgeInk++; }
+    }
+    if (!total || edgeInk / edge > .04 || total / (width * height) > .7) return null;
+    // Con margen alrededor para que la línea también rodee lo que toca la orilla (queda fuera del marco y se recorta).
+    const pad = Math.ceil((gap + line + close) / mmPerPx) + 2, W = width + 2 * pad, H = height + 2 * pad;
+    const ink = new Uint8Array(W * H);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) ink[(y + pad) * W + x + pad] = grey[y * width + x] < 200 ? 1 : 0;
+    // La trama son puntitos sueltos: se engordan `close` mm, se rellenan los huecos y se adelgazan otra vez.
+    const r = close / mmPerPx, grownField = distanceField(ink, W, H), grown = new Uint8Array(W * H);
+    for (let i = 0; i < grown.length; i++) grown[i] = grownField[i] <= r ? 1 : 0;
+    const filled = fillHoles(grown, W, H), outside = new Uint8Array(W * H);
+    for (let i = 0; i < outside.length; i++) outside[i] = filled[i] ? 0 : 1;
+    const inField = distanceField(outside, W, H), figure = new Uint8Array(W * H);
+    for (let i = 0; i < figure.length; i++) figure[i] = inField[i] > r ? 1 : 0;
+    // Puntitos sueltos lejos de las personas no llevan su propio contorno: solo las manchas de al menos 5 % de la mayor.
+    const label = new Int32Array(W * H), areas = [0];
+    for (let start = 0; start < figure.length; start++) {
+        if (!figure[start] || label[start]) continue;
+        const id = areas.length, stack = [start];
+        let area = 0;
+        label[start] = id;
+        while (stack.length) {
+            const i = stack.pop(), x = i % W;
+            area++;
+            for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < figure.length && figure[j] && !label[j]) { label[j] = id; stack.push(j); }
+        }
+        areas.push(area);
+    }
+    const largest = Math.max(0, ...areas);
+    if (!largest) return null;
+    for (let i = 0; i < figure.length; i++) if (figure[i] && areas[label[i]] < largest * .05) figure[i] = 0;
+    const field = silhouetteField(figure, W, H, 'outside');
+    const at = distance => traceSilhouettes(field, W, H, { distance: distance / mmPerPx, direction: 'outside' })[0] || [];
+    const inner = at(gap), outer = at(gap + line);
+    if (!inner.length || !outer.length) return null;
+    return [...outer, ...inner].map(({ closed, points }) => ({ closed, points: points.map((v, i) => i % 2 ? (v - pad) / height : (v - pad) / width) }));
+}
+
+// Dónde quedó la imagen de grabado en la hoja (mm): esquina y tamaño. Vive en coordenadas del PowerClip: a la hoja =
+// marco + (p · escala + desplazamiento) / (clip / marco).
+function picturePlacement(frame) {
+    const pic = frame.powerClip.objects.find(item => item.type === 'image');
+    const t = frame.powerClip.transform || { x: 0, y: 0, scale: 1 }, sx = frame.powerClip.width / frame.width, sy = frame.powerClip.height / frame.height;
+    const toPage = (x, y) => ({ x: frame.x + (x * t.scale + t.x) / sx, y: frame.y + (y * t.scale + t.y) / sy });
+    const p0 = toPage(pic.x, pic.y), p1 = toPage(pic.x + pic.width, pic.y + pic.height);
+    return { pic, p0, pw: p1.x - p0.x, ph: p1.y - p0.y };
+}
+
 // Tamaño en mm con que la imagen queda en la hoja al llenar el marco ("cover"): el mapa de bits se
 // calcula a esta medida, como "Convertir a mapa de bits" del editor sobre la imagen ya colocada.
 export function pictureSizeMm(image) {
@@ -96,7 +162,7 @@ export function pictureSizeMm(image) {
  * @param {{ image: { dataUrl: string, width: number, height: number, pixelated?: boolean }, name: string, font: object, title?: string }} input
  * @returns {{ document: object, textId: string, frameId: string }}
  */
-export function composeLamp({ image, name, font, title, nameSlot = null, avoid = [] }) {
+export function composeLamp({ image, name, font, title, nameSlot = null, avoid = [], outline = null }) {
     const text = String(name || '').trim();
     const document = { ...blankDocument(), name: title || `Lámpara ${text}`.trim(), ...PAGE };
 
@@ -108,6 +174,16 @@ export function composeLamp({ image, name, font, title, nameSlot = null, avoid =
     placeInPowerClip(document, new Set([picture.id]), frame.id);
     const content = frame.powerClip.objects[0];
     fitPowerClip(frame, 'cover', { x: content.x, y: content.y, width: content.width, height: content.height });
+    // 1b) Silueta de la foto (photoOutline, en fracciones de la imagen): curva que se graba, encima del grabado y
+    // enlazada a él como la herramienta Silueta del editor (se mueve con la imagen y se puede borrar).
+    if (outline?.length) {
+        const { pic, p0, pw, ph } = picturePlacement(frame);
+        const subpaths = outline.map(({ closed, points }) => ({ closed, points: points.map((v, i) => i % 2 ? p0.y + v * ph : p0.x + v * pw) }));
+        const ring = { ...createObject('path', 0, 0), name: 'Silueta de la foto', ...normalizePath(subpaths), fillRule: 'evenodd',
+            fill: '#000000', stroke: 'none', strokeWidth: 0, silhouetteOf: [pic.id] };
+        document.objects.push(ring);
+        placeInPowerClip(document, new Set([ring.id]), frame.id);
+    }
     // Sin nombre (diseños que solo llevan la imagen): solo el marco con su grabado.
     if (!text) return { document: validateDocument(document), textId: null, frameId: frame.id };
 
@@ -168,11 +244,7 @@ export function composeLamp({ image, name, font, title, nameSlot = null, avoid =
     // ROSTROS (Chris, 21-oct-2026): el texto nunca encima de una cara. avoid = cajas de los rostros en fracciones de
     // la imagen [x0, y0, x1, y1]; se pasan a mm según dónde quedó la imagen en el marco (con 2 mm de aire).
     let faceOverlap = false;
-    // La imagen vive en coordenadas del PowerClip: a la hoja = marco + (p · escala + desplazamiento) / (clip / marco).
-    const pic = frame.powerClip.objects.find(item => item.type === 'image') || content;
-    const t = frame.powerClip.transform || { x: 0, y: 0, scale: 1 }, sx = frame.powerClip.width / frame.width, sy = frame.powerClip.height / frame.height;
-    const toPage = (x, y) => ({ x: frame.x + (x * t.scale + t.x) / sx, y: frame.y + (y * t.scale + t.y) / sy });
-    const p0 = toPage(pic.x, pic.y), p1 = toPage(pic.x + pic.width, pic.y + pic.height), pw = p1.x - p0.x, ph = p1.y - p0.y;
+    const { p0, pw, ph } = picturePlacement(frame);
     const faces = (nameSlot ? [] : avoid).map(([x0, y0, x1, y1]) => ({ x0: p0.x + x0 * pw - 2, y0: p0.y + y0 * ph - 2, x1: p0.x + x1 * pw + 2, y1: p0.y + y1 * ph + 2 }));
     const hitsFace = outline => outline.some(({ points }) => {
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;

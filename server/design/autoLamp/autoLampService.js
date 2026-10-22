@@ -48,6 +48,9 @@ const FLAT_STYLE = 'Diseño PLANO: rellenos SÓLIDOS en blanco y negro puro (tip
 // Pedirlo en la indicación de Rehacer: «solo blanco y negro», «sin degradado»… (o al revés, «con degradado»).
 const FLAT_HINT = /sin\s+(degradad|trama|sombread)|solo\s+blanco\s+y\s+negro|blanco\s+y\s+negro\s+puro|\bplan[oa]\b|s[oó]lid[oa]s?/i;
 const TRAMA_HINT = /con\s+(degradad|trama|sombread)/i;
+// Una foto real sin fondo lleva una línea grabada alrededor de las personas (composeLamp.photoOutline); se quita
+// pidiéndolo en la indicación: «sin silueta», «sin contorno».
+const NO_OUTLINE_HINT = /sin\s+(la\s+)?(silueta|contorno|orilla)/i;
 // Modelos del catálogo que son de rellenos sólidos (siempre «plano»).
 const FLAT_MODELS = /unicornio/i;
 const styled = (prompt, estilo) => estilo === 'plano'
@@ -826,7 +829,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     let buffer = cleanTemplate ? downloaded : plan.template ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved))
         : plan.fuente === 'propia' ? await fitToLampCircle(engraved, 2000, { loose: true }) : engraved;
     const font = await loadFont();
-    const { composeLamp, renderPreview, pictureSizeMm, rdworksPiece } = await composerModule();
+    const { composeLamp, renderPreview, pictureSizeMm, rdworksPiece, photoOutline } = await composerModule();
 
     // El mockup ya trae el nombre dentro de la imagen (tal cual lo vio el cliente): no se le agrega otro. Si el
     // texto cambió, el mockup se sacó SIN letras y aquí va el texto final.
@@ -849,6 +852,15 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     step('Convirtiendo a mapa de bits');
     const { bitmapSize, toBitmap, pngWithDpi } = await bitmapTools();
     const mm = pictureSizeMm({ width: meta.width, height: meta.height });
+    // FOTO REAL SIN FONDO (DH18366): línea grabada alrededor de las personas para despegarlas del negro de la lámpara.
+    // Se mide en chico (600 px de ancho); si la foto conserva su fondo, photoOutline no hace nada.
+    let outline = null;
+    if (plan.tipo === 'foto' && plan.fuente === 'cliente' && !plan.noOutline) {
+        try {
+            const small = await sharp(buffer).flatten({ background: '#ffffff' }).greyscale().resize({ width: 600 }).raw().toBuffer({ resolveWithObject: true });
+            outline = photoOutline(small.data, small.info.width, small.info.height, mm.width / small.info.width);
+        } catch (error) { console.warn(`[AUTO-LAMP] DH${dh}: no se pudo trazar la silueta de la foto:`, error.message); }
+    }
     const size = bitmapSize(mm.width, mm.height, BITMAP.dpi);
     // Para GRABAR va el diseño en negro sobre fondo blanco (lo negro es lo que graba la láser); el modelo
     // suele entregar blanco sobre negro: engravePolarity lo normaliza (Chris, 19-oct-2026). El previo del cliente es al revés.
@@ -860,7 +872,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     step('Armando el diseño');
     const title = [`DH${dh}`, lamp.label].filter(Boolean).join(' · ');
     const dataUrl = 'data:image/png;base64,' + png.toString('base64');
-    const { document, faceOverlap } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name: engraveName, font, title, nameSlot, avoid });
+    const { document, faceOverlap } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name: engraveName, font, title, nameSlot, avoid, outline });
     if (faceOverlap) plan.advertencias = [...(plan.advertencias || []), 'el texto no cupo sin tocar un rostro: acomódalo en el editor'];
 
     const folder = `${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}`;
@@ -879,7 +891,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia, template: plan.template || null, estilo: plan.estilo || 'trama',
         brief: { tipo: plan.tipo || null, fuente: plan.fuente, estilo: plan.estilo || 'trama', nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
             advertencias: plan.advertencias || [], textoEnImagen: !!plan.textoEnImagen, referenceUrl: plan.reference?.url || null, referenceUrls: (plan.references || []).map(r => r.url).filter(Boolean) },
-        projectId: project.id, projectRevision: 1, previewUrl, name: engraveName, inkShare,
+        projectId: project.id, projectRevision: 1, previewUrl, name: engraveName, inkShare, photoOutline: !!outline,
         rasterUrl: raster.url, rasterJobId: raster.jobId || null, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}),
         durationMs: Date.now() - started, changed: true,
     };
@@ -943,6 +955,7 @@ async function generate(dh, options = {}) {
             // Personaje con plantilla del taller (Spiderman…): se usa su grabado; la IA solo aporta el nombre.
             const basePlan = plans[lamp.index] || plans[0], template = beta ? templateFor(lamp) : null;
             const plan = template ? { ...basePlan, template } : { ...basePlan };
+            if (NO_OUTLINE_HINT.test(options.note || '')) plan.noOutline = true;
             // Rehacer un diseño de mockup con indicación: si la IA no escribió el cambio, va la indicación tal cual.
             // Solo si la indicación es de ESTA lámpara (pedido de una, o «Rehacer esta»): con «Rehacer todo» decide la IA.
             const noteIsForThis = lamps.length === 1 || (Array.isArray(options.lamps) && options.lamps.includes(lamp.index));
@@ -1034,7 +1047,7 @@ async function editLamp(dh, lampIndex, note, { actor = null } = {}) {
         const b = current.brief || {};
         const plan = { fuente: b.fuente || current.source || 'cliente', nombre: b.nombre || '', estilo: current.estilo || b.estilo || 'trama', tipo: b.tipo || 'especial',
             textoCambia: !!current.textChanged, textoEnImagen: !!b.textoEnImagen, prompt: '', advertencias: [], reference: b.referenceUrl ? { url: b.referenceUrl } : null,
-            editFrom: source, editNote: String(note).trim(),
+            editFrom: source, editNote: String(note).trim(), noOutline: NO_OUTLINE_HINT.test(note),
             resumen: `${b.resumen || ''} Modificado con la IA: «${String(note).trim()}»${actor?.email ? ` (${actor.email})` : ''}.`.trim() };
         const built = await buildLamp(dh, lamp, plan, { beta: true, onStep: text => setStatus(ref, { status: 'working', step: text }).catch(() => {}) });
         const lamps = [...others, built].sort((a, c) => a.index - c.index), first = lamps[0];
@@ -1110,7 +1123,7 @@ Responde SOLO este JSON: {"tipo": "mockup" si es una foto o render de una lámpa
         // Foto real: siempre con degradado en trama (no la vuelve sólida el nombre del modelo, DH18197).
         const style = estilo || (tipo === 'foto' ? 'trama' : FLAT_MODELS.test(`${lamp.producto || ''} ${lamp.datos || ''} ${lamp.label || ''}`) ? 'plano' : kind.estilo === 'plano' ? 'plano' : 'trama');
         const plan = {
-            fuente: tipo === 'mockup' ? 'mockup' : 'cliente', reference: { buffer: png, url: referenceUrl }, references: [], nombre, estilo: style, tipo: 'especial', prompt: '', advertencias: [],
+            fuente: tipo === 'mockup' ? 'mockup' : 'cliente', reference: { buffer: png, url: referenceUrl }, references: [], nombre, estilo: style, tipo: tipo === 'foto' ? 'foto' : 'especial', prompt: '', advertencias: [],
             // Del mockup: si se dio un texto, se quita el del mockup y va el nuestro aparte (si no, el del mockup tal cual).
             textoCambia: tipo === 'mockup' && !!nombre,
             resumen: `Imagen subida por el equipo${actor?.email ? ` (${actor.email})` : ''}: ${tipo === 'mockup' ? 'mockup de lámpara, se sacó el dibujo' : tipo === 'foto' ? 'foto convertida a grabado' : 'dibujo convertido a grabado'} con IA.`,
