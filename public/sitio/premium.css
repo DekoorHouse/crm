@@ -317,11 +317,11 @@ body.premium ::selection { background: var(--accent); color: #fff; }
     max-width: 460px;
     padding: 12px;
     border: 1px solid rgba(23, 60, 81, 0.18);
-    border-radius: 260px 260px 22px 22px;
+    border-radius: 22px;
 }
 .premium .pm-arch .carousel {
     max-width: none;
-    border-radius: 250px 250px 14px 14px;
+    border-radius: 14px;
     box-shadow: 0 40px 80px -30px rgba(14, 39, 53, 0.45);
 }
 .premium .carousel-dot { width: 8px; height: 8px; border-width: 1px; }
