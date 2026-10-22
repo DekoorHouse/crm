@@ -86,8 +86,11 @@ async function startPod(reason) {
     const nonce = crypto.randomUUID();
     try {
         let pod = null, lastError = null;
+        // Nube comunitaria: solo máquinas rápidas. Una de $0.22/hr (22-oct-2026) no terminó de descargar e instalar
+        // Qwen en 40 min y se apagó; se piden buena descarga, disco y memoria (los de la segura ya los cumplen).
+        const fast = cloudType => cloudType === 'COMMUNITY' ? { minDownloadMbps: 800, minDiskBandwidthMBps: 500, minRAMPerGPU: 24, minVCPUPerGPU: 4 } : {};
         const create = (cloudType, gpuTypeIds) => runpod('POST', '/pods', {
-            name: 'dekoor-qwen-image', imageName: 'runpod/stable-diffusion:comfy-ui-6.0.0', cloudType,
+            name: 'dekoor-qwen-image', imageName: 'runpod/stable-diffusion:comfy-ui-6.0.0', cloudType, ...fast(cloudType),
             gpuTypeIds, gpuTypePriority: 'custom', allowedCudaVersions: ['13.0', '12.9', '12.8'],
             containerDiskInGb: 80, volumeInGb: 0, ports: ['3000/http'],
             dockerEntrypoint: ['bash', '-c'], dockerStartCmd: [bootstrapScript],
