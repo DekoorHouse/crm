@@ -798,11 +798,19 @@ async function setStatus(orderRef, patch) {
 }
 
 // Cambia los datos de UNA lámpara (Firestore no actualiza un elemento de arreglo por ruta: se reescribe).
-async function updateLamp(orderRef, index, patch) {
-    await db.runTransaction(async tx => {
+// onlyProject: la vista se armó desde ESE proyecto; si mientras tanto la lámpara se rehízo (otro proyecto), no se toca y
+// devuelve false. Sin esto la vista del diseño viejo quedaba pegada al nuevo (DH18366, 22-oct-2026: el modal mostraba
+// las sillas y los nombres al centro, y «Corregir en el editor» abría el diseño nuevo).
+async function updateLamp(orderRef, index, patch, { onlyProject = null } = {}) {
+    return db.runTransaction(async tx => {
         const autoLamp = (await tx.get(orderRef)).data()?.autoLamp;
+        const target = lampsOf(autoLamp).find(l => l.index === index);
+        if (onlyProject && target?.projectId !== onlyProject) return false;
         const lamps = lampsOf(autoLamp).map(l => l.index === index ? { ...l, ...patch } : l);
-        tx.update(orderRef, { 'autoLamp.lamps': lamps, ...(index === 0 && patch.clientPreviewUrl ? { 'autoLamp.clientPreviewUrl': patch.clientPreviewUrl } : {}) });
+        tx.update(orderRef, { 'autoLamp.lamps': lamps,
+            ...(index === 0 && patch.clientPreviewUrl ? { 'autoLamp.clientPreviewUrl': patch.clientPreviewUrl } : {}),
+            ...(index === 0 && patch.previewUrl ? { 'autoLamp.previewUrl': patch.previewUrl } : {}) });
+        return true;
     });
 }
 
@@ -935,7 +943,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia, template: plan.template || null, estilo: plan.estilo || 'trama',
         brief: { tipo: plan.tipo || null, fuente: plan.fuente, estilo: plan.estilo || 'trama', nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
             advertencias: plan.advertencias || [], textoEnImagen: !!plan.textoEnImagen, referenceUrl: plan.reference?.url || null, referenceUrls: (plan.references || []).map(r => r.url).filter(Boolean) },
-        projectId: project.id, projectRevision: 1, previewUrl, name: engraveName, inkShare, photoOutline: !!outline,
+        projectId: project.id, projectRevision: 1, previewUrl, previewProjectId: project.id, name: engraveName, inkShare, photoOutline: !!outline,
         rasterUrl: raster.url, rasterJobId: raster.jobId || null, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}),
         durationMs: Date.now() - started, changed: true,
     };
@@ -961,7 +969,15 @@ async function generate(dh, options = {}) {
     const previous = lampsOf(order.autoLamp).filter(l => l.status === 'ready' && l.projectId);
     // Se rehace todo salvo que sea un cambio (del cliente o del equipo sobre lámparas concretas).
     const partial = !!(options.keepClient || (Array.isArray(options.lamps) && options.lamps.length)) && previous.length > 0;
-    await ref.update({ autoLamp: { status: 'working', step: beta ? 'Leyendo el pedido y el chat' : 'Eligiendo la imagen del chat', beta, ...(options.autoStarted ? { autoStarted: true } : {}), ...(options.retries ? { retries: options.retries } : {}),
+    // UNA generación a la vez por pedido (DH18366, 22-oct-2026): el reintento automático y un «Rehacer» a mano podían correr
+    // juntos y dejar mezcladas sus lámparas. Uno que lleva STUCK_MS sin avanzar se dio por muerto (vigilante de autoStartBeta).
+    const startWorking = patch => db.runTransaction(async tx => {
+        const live = (await tx.get(ref)).data()?.autoLamp;
+        if (live?.status === 'working' && Date.now() - (live.updatedAt?.toMillis?.() || 0) < STUCK_MS)
+            throw Object.assign(new Error('Ya se está generando este diseño; espera a que termine.'), { status: 409 });
+        tx.update(ref, patch);
+    });
+    await startWorking({ autoLamp: { status: 'working', step: beta ? 'Leyendo el pedido y el chat' : 'Eligiendo la imagen del chat', beta, ...(options.autoStarted ? { autoStarted: true } : {}), ...(options.retries ? { retries: options.retries } : {}),
         lamps: partial ? previous : [],
         ...(options.note ? { note: String(options.note).slice(0, 500) } : {}),
         // Rehacer a mano también recuerda cuántas versiones ya vio el cliente (el saludo va solo la primera vez).
@@ -1219,13 +1235,15 @@ async function projectDocument(projectId) {
  * PREVIO PARA EL CLIENTE de una lámpara (la versión invertida del grabado). Se arma desde la versión ACTUAL del
  * proyecto del editor (incluye lo que alguien haya corregido) y se guarda en la lámpara.
  */
-async function clientPreview(dh, index = 0) {
+async function clientPreview(dh, index = 0, retried = false) {
     const orderDoc = await findOrder(dh);
     const lamp = lampsOf(orderDoc.data().autoLamp).find(l => l.index === Number(index));
     if (!lamp?.projectId) throw Object.assign(new Error('Esta lámpara no tiene diseño de la IA.'), { status: 404 });
     const project = (await db.collection('editor_v2_projects').doc(lamp.projectId).get()).data();
     if (!project) throw Object.assign(new Error('No encontré el proyecto del diseño.'), { status: 404 });
-    if (lamp.clientPreviewUrl && Number(lamp.clientPreviewRevision) === Number(project.revision) && lamp.clientPreviewStyle === CLIENT_PREVIEW_STYLE)
+    // También tiene que ser del MISMO proyecto: todo proyecto nuevo empieza en la versión 1, así que la versión sola no
+    // distingue el diseño viejo del rehecho, y «Mandar al cliente» podía mandarle el previo de otro diseño (DH18366).
+    if (lamp.clientPreviewUrl && lamp.clientPreviewProjectId === lamp.projectId && Number(lamp.clientPreviewRevision) === Number(project.revision) && lamp.clientPreviewStyle === CLIENT_PREVIEW_STYLE)
         return { url: lamp.clientPreviewUrl, revision: project.revision };
     const { document } = await projectDocument(lamp.projectId);
     if (!document.objects.some(item => item.powerClip)) throw Object.assign(new Error(NO_FRAME), { status: 422, code: 'DESIGN_BROKEN' });
@@ -1233,7 +1251,10 @@ async function clientPreview(dh, index = 0) {
     const { raw, width, height } = renderClientPreview(document, await loadFont());
     const png = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
     const url = await saveFile(`${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}/previo-cliente-r${project.revision}-v${CLIENT_PREVIEW_STYLE}-${Date.now().toString(36)}.png`, png, 'image/png');
-    await updateLamp(orderDoc.ref, lamp.index, { clientPreviewUrl: url, clientPreviewRevision: project.revision, clientPreviewStyle: CLIENT_PREVIEW_STYLE });
+    if (!await updateLamp(orderDoc.ref, lamp.index, { clientPreviewUrl: url, clientPreviewRevision: project.revision, clientPreviewStyle: CLIENT_PREVIEW_STYLE, clientPreviewProjectId: lamp.projectId }, { onlyProject: lamp.projectId })) {
+        if (retried) throw Object.assign(new Error('El diseño se está rehaciendo; espera a que termine.'), { status: 409 });
+        return clientPreview(dh, index, true);
+    }
     return { url, revision: project.revision };
 }
 
@@ -1244,7 +1265,11 @@ const NO_FRAME = 'La versión guardada en el editor ya no tiene el marco de la l
  * Vista «Grabado» (la del equipo) de una lámpara desde la versión ACTUAL del proyecto: si alguien la corrigió en el
  * editor, la ventana de revisión muestra lo corregido y no lo que armó la IA (DH18267, 20-oct-2026).
  */
-async function teamPreview(dh, index = 0) {
+// ¿La vista guardada es de ESTE proyecto? Las nuevas lo dicen (previewProjectId). Las de antes: solo la que dejó el armado
+// (sin previewRevision); una que escribió teamPreview sin decir de qué proyecto era pudo quedar cruzada (DH18366).
+const previewIsOf = lamp => lamp.previewProjectId ? lamp.previewProjectId === lamp.projectId : !lamp.previewRevision;
+
+async function teamPreview(dh, index = 0, retried = false) {
     const orderDoc = await findOrder(dh);
     const lamp = lampsOf(orderDoc.data().autoLamp).find(l => l.index === Number(index));
     if (!lamp?.projectId) throw Object.assign(new Error('Esta lámpara no tiene diseño de la IA.'), { status: 404 });
@@ -1252,13 +1277,14 @@ async function teamPreview(dh, index = 0) {
     if (!project) throw Object.assign(new Error('No encontré el proyecto del diseño.'), { status: 404 });
     const current = Number(project.revision) || 1;
     // Sin cambios desde que se armó (o desde la última vez): la misma imagen.
-    if (lamp.previewUrl && Number(lamp.previewRevision || lamp.projectRevision || 1) === current) return { url: lamp.previewUrl, revision: current };
+    if (lamp.previewUrl && previewIsOf(lamp) && Number(lamp.previewRevision || lamp.projectRevision || 1) === current) return { url: lamp.previewUrl, revision: current };
     const { document } = await projectDocument(lamp.projectId);
     if (!document.objects.some(item => item.powerClip)) throw Object.assign(new Error(NO_FRAME), { status: 422, code: 'DESIGN_BROKEN' });
     const { renderPreview } = await composerModule();
     const url = await saveFile(`${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}/vista-previa-r${current}-${Date.now().toString(36)}.png`, renderPreview(document, await loadFont()), 'image/png');
-    await updateLamp(orderDoc.ref, lamp.index, { previewUrl: url, previewRevision: current });
-    if (lamp.index === 0) await orderDoc.ref.update({ 'autoLamp.previewUrl': url }).catch(() => {});
+    // La lámpara se rehízo mientras se armaba esta vista: se arma la del proyecto nuevo.
+    if (!await updateLamp(orderDoc.ref, lamp.index, { previewUrl: url, previewRevision: current, previewProjectId: lamp.projectId }, { onlyProject: lamp.projectId }))
+        return retried ? { url: null, revision: null } : teamPreview(dh, index, true);
     return { url, revision: current };
 }
 
