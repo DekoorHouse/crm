@@ -16,7 +16,7 @@ router.get('/bank/list', async (req, res) => {
     catch (error) { res.status(500).json({ success: false, error: error.message || 'No se pudo leer el banco.' }); }
 });
 router.post('/bank/:id', async (req, res) => {
-    try { res.json({ success: true, ...(await service.updateBankEntry(req.params.id, { personaje: req.body?.personaje, active: req.body?.active })) }); }
+    try { res.json({ success: true, ...(await service.updateBankEntry(req.params.id, { personaje: req.body?.personaje, active: req.body?.active, adMatch: req.body?.adMatch })) }); }
     catch (error) { res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo cambiar.' }); }
 });
 

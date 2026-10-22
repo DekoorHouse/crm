@@ -1118,7 +1118,7 @@ async function generate(dh, options = {}) {
             // «Generar nuevo con IA» (noBank). Un cambio de solo texto conserva el modelo que ya traía (sale primero).
             const useBank = beta && !template && !options.noBank && plan.tipo === 'personaje' && plan.personaje && !plan.personalizado
                 && !plan.textoEnImagen && plan.fuente !== 'cliente';
-            const entries = useBank ? await bankFor(plan.personaje, before?.bankId || null).catch(() => []) : [];
+            const entries = useBank ? await bankFor(plan.personaje, before?.bankId || null, { adText: await contactAdText(contactId) }).catch(() => []) : [];
             if (entries.length) {
                 const built = [];
                 for (const [k, entry] of entries.entries()) {
@@ -2134,10 +2134,17 @@ async function bankEntries({ all = false } = {}) {
 // Los personajes que ya tienen dibujo (la IA los nombra igual al leer un pedido nuevo).
 async function bankCharacters() { return [...new Set((await bankEntries()).map(e => e.personaje).filter(Boolean))].slice(0, 400); }
 // Los modelos de un personaje: primero `prefer` (el que ya traía la lámpara), luego los más usados y los más nuevos.
-async function bankFor(personaje, prefer = null) {
+// MODELO DEL ANUNCIO (Chris, 22-oct-2026): un dibujo del banco puede estar ligado a un anuncio (adMatch = palabra que
+// trae el nombre del anuncio, p. ej. «unicornio» de «Scale//Unicornio//A»). Si el cliente llegó de ese anuncio, su
+// lámpara de ese personaje es ESE modelo (el que vio), sin opciones. adText: nombre/título del anuncio del contacto.
+async function bankFor(personaje, prefer = null, { adText = '' } = {}) {
     const key = bankKey(personaje);
     if (!key) return [];
-    return (await bankEntries()).filter(e => e.key === key)
+    const all = (await bankEntries()).filter(e => e.key === key);
+    const ad = bankKey(adText);
+    const fromAd = ad ? all.filter(e => e.adMatch && ` ${ad} `.includes(` ${bankKey(e.adMatch)} `)) : [];
+    if (fromAd.length) return fromAd.slice(0, 1);
+    return all
         .sort((a, b) => (b.id === prefer) - (a.id === prefer) || (b.uses || 0) - (a.uses || 0) || millis(b.createdAt) - millis(a.createdAt))
         .slice(0, BANK_MAX_OPTIONS);
 }
@@ -2268,11 +2275,24 @@ Responde SOLO este JSON: {"opcion": el número de la opción que eligió (1 a ${
 // Lista del banco (para la ventana «Banco de diseños»).
 async function listBank() {
     return (await bankEntries({ all: true })).map(e => ({ id: e.id, personaje: e.personaje, thumbUrl: e.thumbUrl || e.artUrl, artUrl: e.artUrl || null, estilo: e.estilo || 'trama', active: e.active !== false,
-        uses: e.uses || 0, sourceDh: e.sourceDh || null, createdAt: millis(e.createdAt) || null, createdBy: e.createdBy || null }))
+        uses: e.uses || 0, sourceDh: e.sourceDh || null, adMatch: e.adMatch || null, createdAt: millis(e.createdAt) || null, createdBy: e.createdBy || null }))
         .sort((a, b) => a.personaje.localeCompare(b.personaje, 'es') || (b.createdAt || 0) - (a.createdAt || 0));
 }
 // Renombrar el personaje de un dibujo o sacarlo/regresarlo al banco.
-async function updateBankEntry(id, { personaje, active } = {}) {
+// De qué anuncio llegó el contacto (nombre, título y nombre interno de los anuncios con los que escribió).
+const adTextCache = new Map();
+async function contactAdText(contactId) {
+    if (!contactId) return '';
+    if (adTextCache.has(contactId)) return adTextCache.get(contactId);
+    const c = (await db.collection('contacts_whatsapp').doc(String(contactId)).get().catch(() => null))?.data() || {};
+    const refs = [c.adReferral, ...(Array.isArray(c.adReferralHistory) ? c.adReferralHistory : [])].filter(Boolean);
+    const text = [...refs.flatMap(r => [r.ad_name, r.headline]), c.riAdName].filter(Boolean).join(' · ');
+    adTextCache.set(contactId, text);
+    setTimeout(() => adTextCache.delete(contactId), 10 * 60 * 1000);
+    return text;
+}
+
+async function updateBankEntry(id, { personaje, active, adMatch } = {}) {
     const ref = BANK().doc(String(id));
     if (!(await ref.get()).exists) throw Object.assign(new Error('Ese dibujo no está en el banco.'), { status: 404 });
     const patch = {};
@@ -2282,6 +2302,7 @@ async function updateBankEntry(id, { personaje, active } = {}) {
         Object.assign(patch, { personaje: name, key: bankKey(name) });
     }
     if (active !== undefined) patch.active = !!active;
+    if (adMatch !== undefined) patch.adMatch = String(adMatch || '').trim().slice(0, 60) || null;
     await ref.update({ ...patch, updatedAt: now() });
     return { id, ...patch };
 }

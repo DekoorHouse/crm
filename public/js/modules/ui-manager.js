@@ -1467,6 +1467,7 @@ async function openDesignBank() {
         <img src="${escapeHtml(e.thumbUrl || '')}" draggable="false" style="width:120px;height:120px;object-fit:contain;border-radius:8px;border:${selected.has(e.id) ? '3px solid #7c3aed' : '1px solid var(--color-border,#e5e7eb)'};background:#fff;box-sizing:border-box;${e.active ? '' : 'opacity:.6'}">
         ${e.active ? `<button data-bk="trash-one" data-id="${escapeHtml(e.id)}" title="Mandar a la papelera" style="position:absolute;top:4px;right:6px;border:none;background:#fff;border-radius:6px;padding:2px 5px;color:#dc2626;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)"><i class="fas fa-trash-can"></i></button>`
             : `<button data-bk="restore" data-id="${escapeHtml(e.id)}" style="margin-top:3px;padding:2px 8px;border-radius:6px;border:1px solid #16a34a;background:transparent;color:#15803d;font-weight:700;font-size:11px;cursor:pointer"><i class="fas fa-rotate-left"></i> Restaurar</button>`}
+        ${e.adMatch ? `<div title="Modelo del anuncio: quien llega de un anuncio «${escapeHtml(e.adMatch)}» recibe ESTE dibujo" style="position:absolute;top:4px;left:6px;background:#f97316;color:#fff;border-radius:6px;padding:1px 5px;font-size:10px;font-weight:800"><i class="fas fa-bullhorn"></i> ${escapeHtml(e.adMatch)}</div>` : ''}
         <div style="color:#64748b">${e.active ? (e.sourceDh ? 'DH' + e.sourceDh + ' · ' : '') + e.uses + ' uso(s)' : escapeHtml(e.personaje)}</div>
     </div>`;
     const render = () => {
@@ -1527,6 +1528,8 @@ async function openDesignBank() {
         viewer.querySelector('[data-bv="name"]').textContent = e.personaje;
         viewer.querySelector('[data-bv="info"]').textContent = `${viewIndex + 1} de ${shown.length}${e.sourceDh ? ' · DH' + e.sourceDh : ''} · ${e.uses} uso(s)`;
         viewer.querySelector('[data-bv="invert"]').style.background = invert ? '#7c3aed' : 'transparent';
+        viewer.querySelector('[data-bv="adlabel"]').textContent = e.adMatch ? `Anuncio: ${e.adMatch}` : 'Ligar a anuncio';
+        viewer.querySelector('[data-bv="ad"]').style.background = e.adMatch ? '#f97316' : 'transparent';
     };
     const openViewer = id => {
         viewIndex = Math.max(0, shown.findIndex(e => e.id === id));
@@ -1537,6 +1540,7 @@ async function openDesignBank() {
         viewer.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;justify-content:center">
                 <b data-bv="name" style="font-size:1.1rem"></b><span data-bv="info" style="font-size:12.5px;opacity:.75"></span>
                 <button data-bv="invert" title="Invertir colores (tecla I): como se ve la lámpara prendida" style="padding:5px 11px;border-radius:8px;border:1px solid #a78bfa;color:#fff;font-weight:700;font-size:12.5px;cursor:pointer"><i class="fas fa-circle-half-stroke"></i> Invertir colores</button>
+                <button data-bv="ad" title="Ligar este dibujo a un anuncio: quien llegue de un anuncio cuyo nombre lleve esa palabra recibe ESTE modelo" style="padding:5px 11px;border-radius:8px;border:1px solid #fb923c;background:transparent;color:#fff;font-weight:700;font-size:12.5px;cursor:pointer"><i class="fas fa-bullhorn"></i> <span data-bv="adlabel"></span></button>
                 <button data-bv="close" title="Cerrar (Esc)" style="border:none;background:transparent;color:#fff;font-size:24px;cursor:pointer">&times;</button></div>
             <div style="display:flex;align-items:center;gap:12px;max-width:100%">
                 <button data-bv="prev" title="Anterior (←)" style="${nav}">&#8249;</button>
@@ -1548,11 +1552,20 @@ async function openDesignBank() {
             else if (act === 'prev') { viewIndex--; paintViewer(); }
             else if (act === 'next') { viewIndex++; paintViewer(); }
             else if (act === 'invert') toggleInvert();
+            else if (act === 'ad') setAd(shown[viewIndex]);
         });
         document.body.appendChild(viewer);
         paintViewer();
     };
     const closeViewer = () => { viewer?.remove(); viewer = null; };
+    // Modelo del anuncio: la palabra que trae el nombre del anuncio en Meta (p. ej. «Unicornio» de «Scale//Unicornio//A»).
+    const setAd = async e => {
+        if (!e) return;
+        const v = window.prompt(`Palabra del NOMBRE del anuncio en Meta (p. ej. «Unicornio» para «Scale//Unicornio//A»). Quien llegue de ese anuncio y pida ${e.personaje} recibe ESTE dibujo, sin opciones.\nDéjalo vacío para quitarlo.`, e.adMatch || '');
+        if (v === null) return;
+        try { await post(e.id, { adMatch: v.trim() }); e.adMatch = v.trim() || null; paintViewer(); render(); }
+        catch (err) { alert(err.message || err); }
+    };
     const toggleInvert = () => { invert = !invert; try { localStorage.setItem('dkBankInvert', invert ? '1' : '0'); } catch (_) {} paintViewer(); };
     wrap.querySelector('[data-bk="search"]').addEventListener('input', ev => { query = ev.target.value; selected.clear(); render(); });
     const onKey = ev => {
