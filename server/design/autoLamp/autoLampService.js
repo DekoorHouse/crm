@@ -180,7 +180,9 @@ async function geminiJson(parts) {
         return { why };
     };
     let lastProblem = '';
-    for (const model of [VISION_MODEL, VISION_MODEL, VISION_MODEL, ...BRIEF_FALLBACK_MODELS]) {
+    // Saturado: cada vez se espera más (DH18366: con 3 s fijos los 4 intentos cayeron en el mismo bache de Google).
+    const waits = [5000, 15000, 30000], models = [VISION_MODEL, VISION_MODEL, VISION_MODEL, ...BRIEF_FALLBACK_MODELS];
+    for (const [attempt, model] of models.entries()) {
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(120000),
         }).catch(() => null);
@@ -197,7 +199,7 @@ async function geminiJson(parts) {
         }
         lastProblem = `error ${response?.status || 'sin respuesta'}`;
         if (response && ![429, 500, 502, 503, 504].includes(response.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        if (attempt < models.length - 1) await new Promise(resolve => setTimeout(resolve, waits[Math.min(attempt, waits.length - 1)]));
     }
     throw new Error(`La IA no pudo leer el pedido (${lastProblem}). Intenta de nuevo en unos minutos.`);
 }
@@ -980,7 +982,15 @@ async function generate(dh, options = {}) {
         if (beta) await afterReady(dh, results, mode, options.auth).catch(error => console.warn(`[AUTO-LAMP] después de diseñar DH${dh}:`, error.message));
         return result;
     } catch (error) {
-        await setStatus(ref, { status: 'error', error: error.message || String(error) }).catch(() => {});
+        // REHACER QUE FALLA (DH18366, 22-oct-2026: Gemini saturado, error 503): el diseño que ya estaba se queda como
+        // estaba, con el aviso; antes la tarjeta se quedaba vacía y solo se recuperaba desde «Versiones». Un cambio
+        // pedido por el CLIENTE sí queda en error, para que se note que no se aplicó.
+        if (previous.length && !options.keepClient) {
+            const first = previous[0];
+            await setStatus(ref, { status: 'ready', step: 'Listo para revisar', lamps: previous, error: `No se pudo rehacer: ${error.message || error}`,
+                ...(order.autoLamp?.mode ? { mode: order.autoLamp.mode } : {}),
+                name: first.name || '', projectId: first.projectId, projectRevision: first.projectRevision, previewUrl: first.previewUrl || null, brief: first.brief || null }).catch(() => {});
+        } else await setStatus(ref, { status: 'error', error: error.message || String(error) }).catch(() => {});
         throw error;
     }
 }
@@ -1482,10 +1492,11 @@ async function autoStartBeta() {
     const failed = await db.collection('pedidos').where('autoLamp.status', '==', 'error').limit(50).get();
     for (const doc of failed.docs) {
         const a = doc.data().autoLamp || {}, dh = doc.data().consecutiveOrderNumber;
-        const gpu = /GPU de Qwen no pudo prender|no tiene una GPU disponible|GPU propia|se quedó trabajando sin avanzar|servidor se reinició/i.test(a.error || '');
+        // También cuando Gemini estaba saturado y no pudo leer el pedido (DH18366, 22-oct-2026: error 503).
+        const gpu = /GPU de Qwen no pudo prender|no tiene una GPU disponible|GPU propia|se quedó trabajando sin avanzar|servidor se reinició|no pudo leer el pedido \((error (429|5\d\d)|error sin respuesta)\)/i.test(a.error || '');
         const waited = Date.now() - (a.updatedAt?.toMillis?.() || 0) >= 30 * 60 * 1000;
         if (!a.beta || !gpu || !waited || (a.retries || 0) >= 6 || !dh) continue;
-        console.log(`[AUTO-LAMP] Reintento ${(a.retries || 0) + 1}/6 de DH${dh} (falló por falta de GPU).`);
+        console.log(`[AUTO-LAMP] Reintento ${(a.retries || 0) + 1}/6 de DH${dh} (falló por falta de GPU o con Gemini saturado).`);
         generate(dh, { beta: true, autoStarted: !!a.autoStarted, retries: (a.retries || 0) + 1, note: a.note || '' }).catch(error => console.warn(`[AUTO-LAMP] reintento DH${dh}:`, error.message));
         return dh;
     }
