@@ -1405,66 +1405,108 @@ function openDesignBeta(orderId) {
 }
 window.openDesignBeta = openDesignBeta;
 
-// BANCO DE DISEÑOS: los dibujos de personaje ya aprobados (sin texto), agrupados por personaje. Un pedido nuevo del
-// mismo personaje los usa sin IA; aquí se renombra el personaje o se saca un dibujo del banco.
+// BANCO DE DISEÑOS: los dibujos de personaje ya aprobados (sin texto), agrupados por personaje. TODO lo que se ve aquí se
+// usa: un pedido nuevo del mismo personaje lo toma sin IA. Para quitar uno se selecciona (clic; Ctrl+clic para varios)
+// y Supr (o el botecito): va a la PAPELERA de la misma ventana, de donde se puede restaurar (Chris, 22-oct-2026).
 async function openDesignBank() {
     document.getElementById('dl-bank-modal')?.remove();
     const wrap = document.createElement('div');
     wrap.id = 'dl-bank-modal';
     wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px';
-    wrap.innerHTML = `<div style="background:var(--color-container-bg,#fff);color:var(--color-text,#1e293b);border-radius:14px;max-width:900px;width:100%;max-height:92vh;overflow:auto;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+    wrap.innerHTML = `<div style="background:var(--color-container-bg,#fff);color:var(--color-text,#1e293b);border-radius:14px;max-width:960px;width:100%;max-height:92vh;overflow:auto;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
         <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:1.05rem"><i class="fas fa-book-open" style="color:#7c3aed"></i> Banco de diseños</b>
             <button data-bk="close" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:inherit">&times;</button></div>
-        <div style="font-size:12.5px;color:#64748b;margin-top:4px">Cuando un pedido es de un personaje que ya está aquí, el Diseño IA usa este dibujo SIN IA y solo le cambia el nombre. Si hay varios modelos, en la revisión puedes mandarle las opciones al cliente para que elija. Los dibujos de personaje entran solos cuando su lámpara se sube a Drive.</div>
+        <div style="font-size:12.5px;color:#64748b;margin-top:4px">Todo lo que está aquí se usa: cuando un pedido es de uno de estos personajes, el Diseño IA toma el dibujo SIN IA y solo le cambia el nombre (con varios modelos, el cliente puede elegir). Para quitar uno: <b>clic</b> para seleccionarlo (<b>Ctrl+clic</b> para varios) y <b>Supr</b>, o su botecito; se va a la papelera de abajo. Doble clic en un dibujo para verlo grande.</div>
         <div data-bk="list" style="margin-top:12px"><i class="fas fa-spinner fa-spin"></i> Cargando…</div>
+        <div data-bk="trash" style="margin-top:16px"></div>
     </div>`;
     document.body.appendChild(wrap);
-    const close = () => wrap.remove();
-    const render = entries => {
+    let entries = [], selected = new Set(), trashOpen = false;
+    const tile = e => `<div data-bk="tile" data-id="${escapeHtml(e.id)}" title="${escapeHtml(e.personaje)} · ${e.sourceDh ? 'DH' + e.sourceDh : ''} · ${e.uses} uso(s)" style="position:relative;width:124px;text-align:center;font-size:11px;cursor:pointer">
+        <img src="${escapeHtml(e.thumbUrl || '')}" draggable="false" style="width:120px;height:120px;object-fit:contain;border-radius:8px;border:${selected.has(e.id) ? '3px solid #7c3aed' : '1px solid var(--color-border,#e5e7eb)'};background:#fff;box-sizing:border-box;${e.active ? '' : 'opacity:.6'}">
+        ${e.active ? `<button data-bk="trash-one" data-id="${escapeHtml(e.id)}" title="Mandar a la papelera" style="position:absolute;top:4px;right:6px;border:none;background:#fff;border-radius:6px;padding:2px 5px;color:#dc2626;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)"><i class="fas fa-trash-can"></i></button>`
+            : `<button data-bk="restore" data-id="${escapeHtml(e.id)}" style="margin-top:3px;padding:2px 8px;border-radius:6px;border:1px solid #16a34a;background:transparent;color:#15803d;font-weight:700;font-size:11px;cursor:pointer"><i class="fas fa-rotate-left"></i> Restaurar</button>`}
+        <div style="color:#64748b">${e.active ? (e.sourceDh ? 'DH' + e.sourceDh + ' · ' : '') + e.uses + ' uso(s)' : escapeHtml(e.personaje)}</div>
+    </div>`;
+    const render = () => {
+        const active = entries.filter(e => e.active), trashed = entries.filter(e => !e.active);
         const groups = {};
-        for (const e of entries) (groups[e.personaje] ||= []).push(e);
+        for (const e of active) (groups[e.personaje] ||= []).push(e);
         const names = Object.keys(groups);
-        // Una cajita por personaje (sus modelos lado a lado) y las cajitas acomodadas en renglones, no en una columna.
+        // Una cajita por personaje (sus modelos lado a lado), acomodadas en renglones.
         const list = wrap.querySelector('[data-bk="list"]');
         list.style.cssText = 'margin-top:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start';
-        list.innerHTML = names.length ? names.map(name => {
-            const on = groups[name].filter(e => e.active).length, n = groups[name].length;
-            return `<div style="border:1px solid var(--color-border,#e5e7eb);border-radius:10px;padding:8px">
-            <div style="font-weight:800;font-size:13px;margin-bottom:6px">${escapeHtml(name)} <span style="color:${on ? '#15803d' : '#94a3b8'};font-weight:600;font-size:11.5px">${on ? `${on} activo${on > 1 ? 's' : ''}` : 'inactivo'}${n > 1 ? ` · ${n} modelos` : ''}</span></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">${groups[name].map(e => `<div style="width:130px;text-align:center;font-size:11px;opacity:${e.active ? 1 : .45}">
-                <img src="${escapeHtml(e.thumbUrl || '')}" onclick="openImageModal(this.src)" style="width:124px;height:124px;object-fit:contain;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:#fff;cursor:zoom-in">
-                <div style="color:#64748b">${e.sourceDh ? 'DH' + e.sourceDh : ''} · ${e.uses} uso(s)${e.active ? '' : ' · fuera'}</div>
-                <button data-bk="rename" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.personaje)}" style="margin-top:2px;padding:2px 7px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#475569;font-size:11px;cursor:pointer">Renombrar</button>
-                <button data-bk="toggle" data-id="${escapeHtml(e.id)}" data-active="${e.active ? '1' : '0'}" style="margin-top:2px;padding:2px 7px;border-radius:6px;border:1px solid ${e.active ? '#dc2626' : '#16a34a'};background:transparent;color:${e.active ? '#dc2626' : '#15803d'};font-size:11px;cursor:pointer">${e.active ? 'Sacar' : 'Regresar'}</button>
-            </div>`).join('')}</div></div>`;
-        }).join('')
+        list.innerHTML = names.length ? names.map(name => `<div style="border:1px solid var(--color-border,#e5e7eb);border-radius:10px;padding:8px">
+            <div style="font-weight:800;font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px">${escapeHtml(name)}${groups[name].length > 1 ? ` <span style="color:#7c3aed;font-weight:600;font-size:11.5px">${groups[name].length} modelos</span>` : ''}
+                <button data-bk="rename" data-name="${escapeHtml(name)}" title="Cambiar el nombre con el que se busca este personaje" style="margin-left:auto;border:none;background:transparent;color:#64748b;cursor:pointer;font-size:12px"><i class="fas fa-pen"></i></button></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">${groups[name].map(tile).join('')}</div></div>`).join('')
             : '<i style="color:#64748b;font-size:13px">Todavía no hay dibujos. Se llena solo al subir a Drive lámparas de personaje, o con «Guardar en banco» en la revisión de un diseño.</i>';
+        wrap.querySelector('[data-bk="trash"]').innerHTML = trashed.length ? `<div style="border-top:1px dashed var(--color-border,#e5e7eb);padding-top:10px">
+            <button data-bk="toggle-trash" style="border:none;background:transparent;color:#475569;font-weight:800;font-size:13px;cursor:pointer;padding:0"><i class="fas fa-trash-can"></i> Papelera (${trashed.length}) <i class="fas fa-chevron-${trashOpen ? 'up' : 'down'}" style="font-size:11px"></i></button>
+            <div style="font-size:11.5px;color:#64748b;margin-top:2px">Lo que está aquí NO se usa en los pedidos.</div>
+            ${trashOpen ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${trashed.map(tile).join('')}</div>` : ''}</div>` : '';
     };
     const load = async () => {
         const res = await fetch(`${API_BASE_URL}/api/auto-lamp/bank/list`);
         const d = await res.json().catch(() => ({}));
         if (!res.ok || d.success === false) throw new Error(d.error || ('HTTP ' + res.status));
-        render(d.entries || []);
+        entries = d.entries || [];
+        selected = new Set([...selected].filter(id => entries.some(e => e.id === id && e.active)));
+        render();
     };
     const post = async (id, body) => {
         const res = await fetch(`${API_BASE_URL}/api/auto-lamp/bank/${encodeURIComponent(id)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const d = await res.json().catch(() => ({}));
         if (!res.ok || d.success === false) throw new Error(d.error || ('HTTP ' + res.status));
     };
+    const toTrash = async ids => {
+        if (!ids.length) return;
+        for (const id of ids) { const e = entries.find(x => x.id === id); if (e) e.active = false; }
+        selected.clear(); render();
+        try { for (const id of ids) await post(id, { active: false }); }
+        catch (e) { alert('No se pudo mandar a la papelera: ' + (e.message || e)); }
+        await load().catch(() => {});
+        if (typeof showToast === 'function') showToast(`${ids.length > 1 ? ids.length + ' dibujos' : 'Dibujo'} en la papelera`, 'success');
+    };
+    const onKey = ev => {
+        if (!document.body.contains(wrap)) return;
+        if (document.querySelector('#image-modal.visible') || document.getElementById('_cm_ok')) return;
+        if (ev.key === 'Escape') { ev.preventDefault(); close(); }
+        else if (ev.key === 'Delete' && selected.size && !/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) { ev.preventDefault(); toTrash([...selected]); }
+    };
+    document.addEventListener('keydown', onKey);
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); };
     load().catch(e => { wrap.querySelector('[data-bk="list"]').textContent = 'No se pudo cargar el banco: ' + (e.message || e); });
+    wrap.addEventListener('dblclick', ev => {
+        const t = ev.target.closest('[data-bk="tile"]'), e = t && entries.find(x => x.id === t.dataset.id);
+        if (e) openImageModal(e.thumbUrl);
+    });
     wrap.addEventListener('click', async ev => {
         if (ev.target === wrap) return close();
-        const btn = ev.target.closest('[data-bk]'); if (!btn) return;
+        const btn = ev.target.closest('[data-bk]');
+        if (!btn) { if (selected.size) { selected.clear(); render(); } return; }
+        const act = btn.dataset.bk;
         try {
-            if (btn.dataset.bk === 'close') return close();
-            if (btn.dataset.bk === 'rename') {
-                const name = window.prompt('Nombre del personaje (los pedidos nuevos lo buscan con este nombre):', btn.dataset.name || '');
-                if (!name || !name.trim()) return;
-                await post(btn.dataset.id, { personaje: name.trim() }); await load();
-            } else if (btn.dataset.bk === 'toggle') {
-                const active = btn.dataset.active !== '1';
-                if (!active && !await showConfirmModal('¿Sacar este dibujo del banco? Los pedidos nuevos ya no lo usan (puedes regresarlo después).', { icon: 'warning', confirmText: 'Sacar' })) return;
-                await post(btn.dataset.id, { active }); await load();
+            if (act === 'close') return close();
+            if (act === 'tile') {
+                // Clic: selecciona ese; Ctrl/Shift+clic: suma o quita de la selección. Los de la papelera no se seleccionan.
+                const e = entries.find(x => x.id === btn.dataset.id); if (!e || !e.active) return;
+                if (ev.ctrlKey || ev.metaKey || ev.shiftKey) { if (selected.has(e.id)) selected.delete(e.id); else selected.add(e.id); }
+                else selected = selected.size === 1 && selected.has(e.id) ? new Set() : new Set([e.id]);
+                render();
+            } else if (act === 'trash-one') {
+                await toTrash([btn.dataset.id]);
+            } else if (act === 'restore') {
+                await post(btn.dataset.id, { active: true }); await load();
+            } else if (act === 'toggle-trash') {
+                trashOpen = !trashOpen; render();
+            } else if (act === 'rename') {
+                // Renombra el personaje (todos sus modelos): los pedidos nuevos lo buscan con ese nombre.
+                const old = btn.dataset.name || '';
+                const name = window.prompt('Nombre del personaje (los pedidos nuevos lo buscan con este nombre):', old);
+                if (!name || !name.trim() || name.trim() === old) return;
+                for (const e of entries.filter(x => x.active && x.personaje === old)) await post(e.id, { personaje: name.trim() });
+                await load();
             }
         } catch (e) { alert(e.message || e); }
     });
