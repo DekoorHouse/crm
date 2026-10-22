@@ -87,8 +87,8 @@ export function outlineSilhouette(subpaths, distance, scale = LAYOUT.rasterScale
 // SILUETA DE LA FOTO (Chris, 22-oct-2026, DH18366 «Herme y Adiel»): en una foto real a la que se le quitó el fondo, el
 // pelo, la gorra y la ropa oscuros se pierden en el negro de la lámpara. Una línea que SE GRABA (blanca al prender)
 // alrededor de las personas las despega del fondo, como el contorno de una calcomanía. Medidas en mm.
-// La línea era de 2 mm y se veía muy ancha (DH18366): ahora 1 mm.
-export const PHOTO_OUTLINE = { gap: 1, width: 1, close: 3 };
+// La línea era de 2 mm y se veía muy ancha (DH18366): ahora 1 mm. El aire blanco entre la persona y la línea, 0.2 mm.
+export const PHOTO_OUTLINE = { gap: .2, width: 1, close: 3 };
 
 /**
  * Contorno de las personas de una foto ya convertida a grabado. grey: pixeles en gris (negro = se graba), width ×

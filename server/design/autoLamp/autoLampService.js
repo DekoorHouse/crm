@@ -853,11 +853,12 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const { bitmapSize, toBitmap, pngWithDpi } = await bitmapTools();
     const mm = pictureSizeMm({ width: meta.width, height: meta.height });
     // FOTO REAL SIN FONDO (DH18366): línea grabada (PHOTO_OUTLINE) alrededor de las personas para despegarlas del negro de la lámpara.
-    // Se mide en chico (600 px de ancho); si la foto conserva su fondo, photoOutline no hace nada.
+    // Se mide a 8 px por mm (el aire blanco es de 0.2 mm: a 600 px cada pixel medía 0.28 mm); si la foto conserva su
+    // fondo, photoOutline no hace nada.
     let outline = null;
     if (plan.tipo === 'foto' && plan.fuente === 'cliente' && !plan.noOutline) {
         try {
-            const small = await sharp(buffer).flatten({ background: '#ffffff' }).greyscale().resize({ width: 600 }).raw().toBuffer({ resolveWithObject: true });
+            const small = await sharp(buffer).flatten({ background: '#ffffff' }).greyscale().resize({ width: Math.round(mm.width * 8) }).raw().toBuffer({ resolveWithObject: true });
             outline = photoOutline(small.data, small.info.width, small.info.height, mm.width / small.info.width);
         } catch (error) { console.warn(`[AUTO-LAMP] DH${dh}: no se pudo trazar la silueta de la foto:`, error.message); }
     }
