@@ -385,6 +385,14 @@ async function refreshReportedPayment(orderId) {
         const reported = reportedPaymentCents(order, jobs, credited);
         const complete = cents(order.precio) > 0 && reported >= cents(order.precio);
         const fields = { paymentReportedCents: reported, paymentReportedComplete: complete, paymentFormNeedsAssessment: false };
+        // DH18292 (20-oct-2026): el anticipo de $300 estaba en un pedido cancelado y se pasó a este DESPUÉS de
+        // que el abono de $450 entró como parcial. Los abonos YA APROBADOS sumaban el total, pero nadie marcó
+        // el pago como validado: el pedido se quedó en "Foto enviada" con los datos de envío capturados.
+        // paymentReceivedCents solo crece con comprobantes aprobados, así que cubrir el total ya es el pago validado.
+        if (!order.comprobanteValidadoAt && !cancelled(order) && !terminal(order)
+            && cents(order.precio) > 0 && Number(order.paymentReceivedCents || 0) >= cents(order.precio)) {
+            Object.assign(fields, { comprobanteValidadoAt: stamp(), paymentValidatedBy: 'abonos', paymentProductionPending: true });
+        }
         if (complete && !terminal(order)) {
             if (!order.comprobanteValidadoAt) fields.shippingFormRequestedBeforeApproval = true;
             if (!order.shippingFormStatus && !order.shippingFormSentAt) Object.assign(fields, {

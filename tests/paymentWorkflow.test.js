@@ -1172,3 +1172,18 @@ test('a receipt with no order and no applied twin still goes to review', async (
     expect(job(id).status).toBe('review');
     expect(job(id).reason).toContain('sin pedido asignado');
 });
+
+test('DH18292: abonos aprobados que ya cubren el total (anticipo movido después) dejan el pago validado', async () => {
+    mockDb.seed('pedidos/order', { ...order(), precio: 750, paymentReceivedCents: 75000, paymentFormNeedsAssessment: true,
+        shippingFormStatus: 'sent', shippingFormSentAt: new Date(), shippingDataReceivedAt: new Date() });
+    await flow.refreshReportedPayment('order');
+    expect(order().comprobanteValidadoAt).toBeTruthy();
+    expect(order().paymentValidatedBy).toBe('abonos');
+    noShippingForm();
+});
+
+test('DH18292: un abono parcial aprobado no valida el pago', async () => {
+    mockDb.seed('pedidos/order', { ...order(), precio: 750, paymentReceivedCents: 45000, paymentFormNeedsAssessment: true });
+    await flow.refreshReportedPayment('order');
+    expect(order().comprobanteValidadoAt).toBeFalsy();
+});
