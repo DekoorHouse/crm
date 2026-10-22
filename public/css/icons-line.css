@@ -1,0 +1,356 @@
+/* === Íconos de línea (Lucide) para el tema Tradicional Dekoor ===
+   Generado: cambia los íconos de relleno de Font Awesome por su equivalente de línea delgada, sin tocar el
+   HTML (mismas clases fa-*). Las marcas (WhatsApp, Messenger, Instagram…) se quedan en Font Awesome.
+   Fuente: lucide-static@0.460.0 (ISC), servida local desde /fonts/lucide.woff2. */
+@font-face { font-family: 'lucide'; src: url('../fonts/lucide.woff2') format('woff2'); font-display: block; }
+
+body.theme-dekoor .fa-times::before,
+body.theme-dekoor .fa-xmark::before,
+body.theme-dekoor .fa-times-circle::before,
+body.theme-dekoor .fa-circle-xmark::before,
+body.theme-dekoor .fa-wand-magic-sparkles::before,
+body.theme-dekoor .fa-magic::before,
+body.theme-dekoor .fa-plus::before,
+body.theme-dekoor .fa-plus-circle::before,
+body.theme-dekoor .fa-paper-plane::before,
+body.theme-dekoor .fa-check::before,
+body.theme-dekoor .fa-check-circle::before,
+body.theme-dekoor .fa-circle-check::before,
+body.theme-dekoor .fa-check-double::before,
+body.theme-dekoor .fa-save::before,
+body.theme-dekoor .fa-triangle-exclamation::before,
+body.theme-dekoor .fa-exclamation-triangle::before,
+body.theme-dekoor .fa-circle-exclamation::before,
+body.theme-dekoor .fa-exclamation-circle::before,
+body.theme-dekoor .fa-trash-alt::before,
+body.theme-dekoor .fa-trash::before,
+body.theme-dekoor .fa-trash-can::before,
+body.theme-dekoor .fa-cloud-arrow-up::before,
+body.theme-dekoor .fa-cloud-upload-alt::before,
+body.theme-dekoor .fa-clock::before,
+body.theme-dekoor .fa-clock-rotate-left::before,
+body.theme-dekoor .fa-history::before,
+body.theme-dekoor .fa-stopwatch::before,
+body.theme-dekoor .fa-hourglass-half::before,
+body.theme-dekoor .fa-robot::before,
+body.theme-dekoor .fa-brain::before,
+body.theme-dekoor .fa-image::before,
+body.theme-dekoor .fa-images::before,
+body.theme-dekoor .fa-photo-film::before,
+body.theme-dekoor .fa-file-image::before,
+body.theme-dekoor .fa-camera::before,
+body.theme-dekoor .fa-camera-retro::before,
+body.theme-dekoor .fa-video::before,
+body.theme-dekoor .fa-comments::before,
+body.theme-dekoor .fa-reply::before,
+body.theme-dekoor .fa-share::before,
+body.theme-dekoor .fa-share-square::before,
+body.theme-dekoor .fa-pencil-alt::before,
+body.theme-dekoor .fa-pen::before,
+body.theme-dekoor .fa-edit::before,
+body.theme-dekoor .fa-pen-ruler::before,
+body.theme-dekoor .fa-eraser::before,
+body.theme-dekoor .fa-upload::before,
+body.theme-dekoor .fa-download::before,
+body.theme-dekoor .fa-file-import::before,
+body.theme-dekoor .fa-rotate::before,
+body.theme-dekoor .fa-sync-alt::before,
+body.theme-dekoor .fa-rotate-left::before,
+body.theme-dekoor .fa-rotate-right::before,
+body.theme-dekoor .fa-redo::before,
+body.theme-dekoor .fa-random::before,
+body.theme-dekoor .fa-bullhorn::before,
+body.theme-dekoor .fa-ad::before,
+body.theme-dekoor .fa-circle-info::before,
+body.theme-dekoor .fa-info-circle::before,
+body.theme-dekoor .fa-circle-question::before,
+body.theme-dekoor .fa-paperclip::before,
+body.theme-dekoor .fa-palette::before,
+body.theme-dekoor .fa-paint-brush::before,
+body.theme-dekoor .fa-chevron-down::before,
+body.theme-dekoor .fa-chevron-up::before,
+body.theme-dekoor .fa-chevron-right::before,
+body.theme-dekoor .fa-caret-down::before,
+body.theme-dekoor .fa-arrow-down::before,
+body.theme-dekoor .fa-arrow-up::before,
+body.theme-dekoor .fa-arrow-left::before,
+body.theme-dekoor .fa-exchange-alt::before,
+body.theme-dekoor .fa-search::before,
+body.theme-dekoor .fa-magnifying-glass::before,
+body.theme-dekoor .fa-box::before,
+body.theme-dekoor .fa-box-open::before,
+body.theme-dekoor .fa-box-archive::before,
+body.theme-dekoor .fa-inbox::before,
+body.theme-dekoor .fa-book-open::before,
+body.theme-dekoor .fa-clipboard-check::before,
+body.theme-dekoor .fa-list-check::before,
+body.theme-dekoor .fa-bolt::before,
+body.theme-dekoor .fa-scissors::before,
+body.theme-dekoor .fa-rocket::before,
+body.theme-dekoor .fa-lock::before,
+body.theme-dekoor .fa-eye::before,
+body.theme-dekoor .fa-eye-slash::before,
+body.theme-dekoor .fa-external-link-alt::before,
+body.theme-dekoor .fa-arrow-up-right-from-square::before,
+body.theme-dekoor .fa-user::before,
+body.theme-dekoor .fa-users::before,
+body.theme-dekoor .fa-store::before,
+body.theme-dekoor .fa-sitemap::before,
+body.theme-dekoor .fa-building::before,
+body.theme-dekoor .fa-industry::before,
+body.theme-dekoor .fa-file-alt::before,
+body.theme-dekoor .fa-file-lines::before,
+body.theme-dekoor .fa-file-pdf::before,
+body.theme-dekoor .fa-file-invoice::before,
+body.theme-dekoor .fa-file-circle-plus::before,
+body.theme-dekoor .fa-database::before,
+body.theme-dekoor .fa-cog::before,
+body.theme-dekoor .fa-screwdriver-wrench::before,
+body.theme-dekoor .fa-truck-fast::before,
+body.theme-dekoor .fa-truck::before,
+body.theme-dekoor .fa-route::before,
+body.theme-dekoor .fa-map-marker-alt::before,
+body.theme-dekoor .fa-location-dot::before,
+body.theme-dekoor .fa-earth-americas::before,
+body.theme-dekoor .fa-tag::before,
+body.theme-dekoor .fa-tags::before,
+body.theme-dekoor .fa-sticky-note::before,
+body.theme-dekoor .fa-spell-check::before,
+body.theme-dekoor .fa-smile::before,
+body.theme-dekoor .fa-keyboard::before,
+body.theme-dekoor .fa-font::before,
+body.theme-dekoor .fa-sign-in-alt::before,
+body.theme-dekoor .fa-sign-out-alt::before,
+body.theme-dekoor .fa-receipt::before,
+body.theme-dekoor .fa-wallet::before,
+body.theme-dekoor .fa-coins::before,
+body.theme-dekoor .fa-dollar-sign::before,
+body.theme-dekoor .fa-hand-holding-dollar::before,
+body.theme-dekoor .fa-cart-shopping::before,
+body.theme-dekoor .fa-shopping-cart::before,
+body.theme-dekoor .fa-play::before,
+body.theme-dekoor .fa-forward::before,
+body.theme-dekoor .fa-phone::before,
+body.theme-dekoor .fa-mobile-alt::before,
+body.theme-dekoor .fa-music::before,
+body.theme-dekoor .fa-headphones::before,
+body.theme-dekoor .fa-headset::before,
+body.theme-dekoor .fa-moon::before,
+body.theme-dekoor .fa-sun::before,
+body.theme-dekoor .fa-circle-half-stroke::before,
+body.theme-dekoor .fa-copy::before,
+body.theme-dekoor .fa-clone::before,
+body.theme-dekoor .fa-expand::before,
+body.theme-dekoor .fa-grip-vertical::before,
+body.theme-dekoor .fa-ellipsis-h::before,
+body.theme-dekoor .fa-bars::before,
+body.theme-dekoor .fa-chart-pie::before,
+body.theme-dekoor .fa-chart-column::before,
+body.theme-dekoor .fa-chart-simple::before,
+body.theme-dekoor .fa-calendar-plus::before,
+body.theme-dekoor .fa-calendar-check::before,
+body.theme-dekoor .fa-bell-slash::before,
+body.theme-dekoor .fa-envelope::before,
+body.theme-dekoor .fa-envelope-open-text::before,
+body.theme-dekoor .fa-heart::before,
+body.theme-dekoor .fa-hand-holding-heart::before,
+body.theme-dekoor .fa-folder-open::before,
+body.theme-dekoor .fa-crown::before,
+body.theme-dekoor .fa-gem::before,
+body.theme-dekoor .fa-ghost::before,
+body.theme-dekoor .fa-flask::before,
+body.theme-dekoor .fa-bullseye::before,
+body.theme-dekoor .fa-ban::before,
+body.theme-dekoor .fa-infinity::before,
+body.theme-dekoor .fa-hand-pointer::before,
+body.theme-dekoor .fa-hand::before,
+body.theme-dekoor .fa-layer-group::before,
+body.theme-dekoor .fa-plug::before,
+body.theme-dekoor .fa-sort-amount-down::before,
+body.theme-dekoor .fa-draw-polygon::before,
+body.theme-dekoor .fa-bezier-curve::before,
+body.theme-dekoor .fa-scroll::before,
+body.theme-dekoor .fa-align-left::before,
+body.theme-dekoor .fa-align-center::before,
+body.theme-dekoor .fa-align-right::before,
+body.theme-dekoor .fa-spinner::before,
+body.theme-dekoor .fa-circle-notch::before,
+body.theme-dekoor .fa-motorcycle::before,
+body.theme-dekoor .fa-vector-square::before {
+    font-family: 'lucide' !important; font-weight: 400 !important; font-style: normal;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; line-height: 1;
+}
+
+body.theme-dekoor .fa-times::before { content: "\e1b2"; }
+body.theme-dekoor .fa-xmark::before { content: "\e1b2"; }
+body.theme-dekoor .fa-times-circle::before { content: "\e088"; }
+body.theme-dekoor .fa-circle-xmark::before { content: "\e088"; }
+body.theme-dekoor .fa-wand-magic-sparkles::before { content: "\e35b"; }
+body.theme-dekoor .fa-magic::before { content: "\e35b"; }
+body.theme-dekoor .fa-plus::before { content: "\e141"; }
+body.theme-dekoor .fa-plus-circle::before { content: "\e086"; }
+body.theme-dekoor .fa-paper-plane::before { content: "\e156"; }
+body.theme-dekoor .fa-check::before { content: "\e070"; }
+body.theme-dekoor .fa-check-circle::before { content: "\e226"; }
+body.theme-dekoor .fa-circle-check::before { content: "\e226"; }
+body.theme-dekoor .fa-check-double::before { content: "\e392"; }
+body.theme-dekoor .fa-save::before { content: "\e151"; }
+body.theme-dekoor .fa-triangle-exclamation::before { content: "\e193"; }
+body.theme-dekoor .fa-exclamation-triangle::before { content: "\e193"; }
+body.theme-dekoor .fa-circle-exclamation::before { content: "\e07b"; }
+body.theme-dekoor .fa-exclamation-circle::before { content: "\e07b"; }
+body.theme-dekoor .fa-trash-alt::before { content: "\e18e"; }
+body.theme-dekoor .fa-trash::before { content: "\e18e"; }
+body.theme-dekoor .fa-trash-can::before { content: "\e18e"; }
+body.theme-dekoor .fa-cloud-arrow-up::before { content: "\e095"; }
+body.theme-dekoor .fa-cloud-upload-alt::before { content: "\e095"; }
+body.theme-dekoor .fa-clock::before { content: "\e08b"; }
+body.theme-dekoor .fa-clock-rotate-left::before { content: "\e1f5"; }
+body.theme-dekoor .fa-history::before { content: "\e1f5"; }
+body.theme-dekoor .fa-stopwatch::before { content: "\e1e0"; }
+body.theme-dekoor .fa-hourglass-half::before { content: "\e296"; }
+body.theme-dekoor .fa-robot::before { content: "\e1bb"; }
+body.theme-dekoor .fa-brain::before { content: "\e3ca"; }
+body.theme-dekoor .fa-image::before { content: "\e0f9"; }
+body.theme-dekoor .fa-images::before { content: "\e5c9"; }
+body.theme-dekoor .fa-photo-film::before { content: "\e5c9"; }
+body.theme-dekoor .fa-file-image::before { content: "\e31d"; }
+body.theme-dekoor .fa-camera::before { content: "\e068"; }
+body.theme-dekoor .fa-camera-retro::before { content: "\e068"; }
+body.theme-dekoor .fa-video::before { content: "\e1a5"; }
+body.theme-dekoor .fa-comments::before { content: "\e412"; }
+body.theme-dekoor .fa-reply::before { content: "\e22a"; }
+body.theme-dekoor .fa-share::before { content: "\e159"; }
+body.theme-dekoor .fa-share-square::before { content: "\e159"; }
+body.theme-dekoor .fa-pencil-alt::before { content: "\e1f9"; }
+body.theme-dekoor .fa-pen::before { content: "\e133"; }
+body.theme-dekoor .fa-edit::before { content: "\e176"; }
+body.theme-dekoor .fa-pen-ruler::before { content: "\e4f6"; }
+body.theme-dekoor .fa-eraser::before { content: "\e28f"; }
+body.theme-dekoor .fa-upload::before { content: "\e19e"; }
+body.theme-dekoor .fa-download::before { content: "\e0b6"; }
+body.theme-dekoor .fa-file-import::before { content: "\e0c9"; }
+body.theme-dekoor .fa-rotate::before { content: "\e149"; }
+body.theme-dekoor .fa-sync-alt::before { content: "\e149"; }
+body.theme-dekoor .fa-rotate-left::before { content: "\e14c"; }
+body.theme-dekoor .fa-rotate-right::before { content: "\e14d"; }
+body.theme-dekoor .fa-redo::before { content: "\e2a0"; }
+body.theme-dekoor .fa-random::before { content: "\e162"; }
+body.theme-dekoor .fa-bullhorn::before { content: "\e235"; }
+body.theme-dekoor .fa-ad::before { content: "\e235"; }
+body.theme-dekoor .fa-circle-info::before { content: "\e0fe"; }
+body.theme-dekoor .fa-info-circle::before { content: "\e0fe"; }
+body.theme-dekoor .fa-circle-question::before { content: "\e082"; }
+body.theme-dekoor .fa-paperclip::before { content: "\e131"; }
+body.theme-dekoor .fa-palette::before { content: "\e1dd"; }
+body.theme-dekoor .fa-paint-brush::before { content: "\e2e7"; }
+body.theme-dekoor .fa-chevron-down::before { content: "\e071"; }
+body.theme-dekoor .fa-chevron-up::before { content: "\e074"; }
+body.theme-dekoor .fa-chevron-right::before { content: "\e073"; }
+body.theme-dekoor .fa-caret-down::before { content: "\e071"; }
+body.theme-dekoor .fa-arrow-down::before { content: "\e046"; }
+body.theme-dekoor .fa-arrow-up::before { content: "\e04e"; }
+body.theme-dekoor .fa-arrow-left::before { content: "\e04c"; }
+body.theme-dekoor .fa-exchange-alt::before { content: "\e24a"; }
+body.theme-dekoor .fa-search::before { content: "\e155"; }
+body.theme-dekoor .fa-magnifying-glass::before { content: "\e155"; }
+body.theme-dekoor .fa-box::before { content: "\e12d"; }
+body.theme-dekoor .fa-box-open::before { content: "\e2cc"; }
+body.theme-dekoor .fa-box-archive::before { content: "\e045"; }
+body.theme-dekoor .fa-inbox::before { content: "\e0fa"; }
+body.theme-dekoor .fa-book-open::before { content: "\e063"; }
+body.theme-dekoor .fa-clipboard-check::before { content: "\e219"; }
+body.theme-dekoor .fa-list-check::before { content: "\e1d0"; }
+body.theme-dekoor .fa-bolt::before { content: "\e1b4"; }
+body.theme-dekoor .fa-scissors::before { content: "\e152"; }
+body.theme-dekoor .fa-rocket::before { content: "\e286"; }
+body.theme-dekoor .fa-lock::before { content: "\e10f"; }
+body.theme-dekoor .fa-eye::before { content: "\e0be"; }
+body.theme-dekoor .fa-eye-slash::before { content: "\e0bf"; }
+body.theme-dekoor .fa-external-link-alt::before { content: "\e0bd"; }
+body.theme-dekoor .fa-arrow-up-right-from-square::before { content: "\e0bd"; }
+body.theme-dekoor .fa-user::before { content: "\e19f"; }
+body.theme-dekoor .fa-users::before { content: "\e1a4"; }
+body.theme-dekoor .fa-store::before { content: "\e3e8"; }
+body.theme-dekoor .fa-sitemap::before { content: "\e129"; }
+body.theme-dekoor .fa-building::before { content: "\e1cc"; }
+body.theme-dekoor .fa-industry::before { content: "\e29f"; }
+body.theme-dekoor .fa-file-alt::before { content: "\e0d0"; }
+body.theme-dekoor .fa-file-lines::before { content: "\e0d0"; }
+body.theme-dekoor .fa-file-pdf::before { content: "\e0d0"; }
+body.theme-dekoor .fa-file-invoice::before { content: "\e0d0"; }
+body.theme-dekoor .fa-file-circle-plus::before { content: "\e0cd"; }
+body.theme-dekoor .fa-database::before { content: "\e0b1"; }
+body.theme-dekoor .fa-cog::before { content: "\e158"; }
+body.theme-dekoor .fa-screwdriver-wrench::before { content: "\e1b1"; }
+body.theme-dekoor .fa-truck-fast::before { content: "\e194"; }
+body.theme-dekoor .fa-truck::before { content: "\e194"; }
+body.theme-dekoor .fa-route::before { content: "\e543"; }
+body.theme-dekoor .fa-map-marker-alt::before { content: "\e115"; }
+body.theme-dekoor .fa-location-dot::before { content: "\e115"; }
+body.theme-dekoor .fa-earth-americas::before { content: "\e1f3"; }
+body.theme-dekoor .fa-tag::before { content: "\e183"; }
+body.theme-dekoor .fa-tags::before { content: "\e360"; }
+body.theme-dekoor .fa-sticky-note::before { content: "\e303"; }
+body.theme-dekoor .fa-spell-check::before { content: "\e49f"; }
+body.theme-dekoor .fa-smile::before { content: "\e168"; }
+body.theme-dekoor .fa-keyboard::before { content: "\e284"; }
+body.theme-dekoor .fa-font::before { content: "\e198"; }
+body.theme-dekoor .fa-sign-in-alt::before { content: "\e111"; }
+body.theme-dekoor .fa-sign-out-alt::before { content: "\e112"; }
+body.theme-dekoor .fa-receipt::before { content: "\e3d7"; }
+body.theme-dekoor .fa-wallet::before { content: "\e204"; }
+body.theme-dekoor .fa-coins::before { content: "\e09b"; }
+body.theme-dekoor .fa-dollar-sign::before { content: "\e0b5"; }
+body.theme-dekoor .fa-hand-holding-dollar::before { content: "\e5bd"; }
+body.theme-dekoor .fa-cart-shopping::before { content: "\e160"; }
+body.theme-dekoor .fa-shopping-cart::before { content: "\e160"; }
+body.theme-dekoor .fa-play::before { content: "\e140"; }
+body.theme-dekoor .fa-forward::before { content: "\e229"; }
+body.theme-dekoor .fa-phone::before { content: "\e137"; }
+body.theme-dekoor .fa-mobile-alt::before { content: "\e167"; }
+body.theme-dekoor .fa-music::before { content: "\e126"; }
+body.theme-dekoor .fa-headphones::before { content: "\e0f4"; }
+body.theme-dekoor .fa-headset::before { content: "\e5c2"; }
+body.theme-dekoor .fa-moon::before { content: "\e122"; }
+body.theme-dekoor .fa-sun::before { content: "\e17c"; }
+body.theme-dekoor .fa-circle-half-stroke::before { content: "\e0a1"; }
+body.theme-dekoor .fa-copy::before { content: "\e0a2"; }
+body.theme-dekoor .fa-clone::before { content: "\e0a2"; }
+body.theme-dekoor .fa-expand::before { content: "\e21a"; }
+body.theme-dekoor .fa-grip-vertical::before { content: "\e0ee"; }
+body.theme-dekoor .fa-ellipsis-h::before { content: "\e0ba"; }
+body.theme-dekoor .fa-bars::before { content: "\e119"; }
+body.theme-dekoor .fa-chart-pie::before { content: "\e06f"; }
+body.theme-dekoor .fa-chart-column::before { content: "\e2a3"; }
+body.theme-dekoor .fa-chart-simple::before { content: "\e06c"; }
+body.theme-dekoor .fa-calendar-plus::before { content: "\e2bc"; }
+body.theme-dekoor .fa-calendar-check::before { content: "\e2b7"; }
+body.theme-dekoor .fa-bell-slash::before { content: "\e05e"; }
+body.theme-dekoor .fa-envelope::before { content: "\e113"; }
+body.theme-dekoor .fa-envelope-open-text::before { content: "\e367"; }
+body.theme-dekoor .fa-heart::before { content: "\e0f5"; }
+body.theme-dekoor .fa-hand-holding-heart::before { content: "\e5be"; }
+body.theme-dekoor .fa-folder-open::before { content: "\e247"; }
+body.theme-dekoor .fa-crown::before { content: "\e1d6"; }
+body.theme-dekoor .fa-gem::before { content: "\e242"; }
+body.theme-dekoor .fa-ghost::before { content: "\e20e"; }
+body.theme-dekoor .fa-flask::before { content: "\e0da"; }
+body.theme-dekoor .fa-bullseye::before { content: "\e184"; }
+body.theme-dekoor .fa-ban::before { content: "\e055"; }
+body.theme-dekoor .fa-infinity::before { content: "\e1e7"; }
+body.theme-dekoor .fa-hand-pointer::before { content: "\e1e8"; }
+body.theme-dekoor .fa-hand::before { content: "\e1d7"; }
+body.theme-dekoor .fa-layer-group::before { content: "\e104"; }
+body.theme-dekoor .fa-plug::before { content: "\e383"; }
+body.theme-dekoor .fa-sort-amount-down::before { content: "\e04b"; }
+body.theme-dekoor .fa-draw-polygon::before { content: "\e530"; }
+body.theme-dekoor .fa-bezier-curve::before { content: "\e38f"; }
+body.theme-dekoor .fa-scroll::before { content: "\e2ed"; }
+body.theme-dekoor .fa-align-left::before { content: "\e041"; }
+body.theme-dekoor .fa-align-center::before { content: "\e03c"; }
+body.theme-dekoor .fa-align-right::before { content: "\e042"; }
+body.theme-dekoor .fa-spinner::before { content: "\e10e"; }
+body.theme-dekoor .fa-circle-notch::before { content: "\e10e"; }
+body.theme-dekoor .fa-motorcycle::before { content: "\e1d2"; }
+body.theme-dekoor .fa-vector-square::before { content: "\e1cb"; }
