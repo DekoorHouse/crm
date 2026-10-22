@@ -171,3 +171,45 @@ body.theme-dekoor .message-bubble.sent .template-button { background: rgba(255, 
 body.theme-dekoor .message-bubble.sent .template-button-url:hover,
 body.theme-dekoor .message-bubble.sent .template-button-phone:hover { background: #fff; }
 body.theme-dekoor .message-bubble.sent .scheduled-badge { color: #6D28D9; border-top-color: rgba(109, 40, 217, .2); }
+
+/* ================= Pulido (captura del 22-oct) ================= */
+
+/* Contadores del encabezado: el JS los muestra con display:inline-block, así que se centran con line-height */
+body.theme-dekoor #traffic-badge,
+body.theme-dekoor #openrouter-badge { line-height: 30px !important; height: 32px; box-sizing: border-box; vertical-align: middle; }
+body.theme-dekoor #traffic-timer { line-height: 32px; vertical-align: middle; }
+
+/* Fila abierta: la hora en gris legible (la regla base la pintaba blanca sobre el durazno) */
+body.theme-dekoor .contact-item.selected .contact-time-label { color: var(--cm-muted); }
+body.theme-dekoor .contact-item.selected .contact-time-label:has(+ .unread-badge) { color: var(--cm-accent); }
+
+/* --- Panel de detalles del cliente --- */
+body.theme-dekoor #contact-details-panel header { border-bottom: 1px solid var(--cm-line) !important; padding: 16px 18px; }
+body.theme-dekoor #contact-details-panel header h3 { font-size: 16px; font-weight: 800; color: var(--cm-ink); }
+body.theme-dekoor #contact-details-panel header button { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: var(--cm-muted); }
+body.theme-dekoor #contact-details-panel header button:hover { background: var(--cm-soft); color: var(--cm-ink); }
+
+/* Pestañas como control segmentado: pista gris, activa en blanco */
+body.theme-dekoor .cdetails-tabs { border-bottom: 0; margin: 12px 14px 4px; padding: 4px; gap: 4px; background: var(--cm-soft); border-radius: 12px; }
+body.theme-dekoor .cdetails-tab { border-bottom: 0; border-radius: 9px; padding: 7px 4px; color: var(--cm-muted); font-size: 11px; font-family: var(--cm-font); }
+body.theme-dekoor .cdetails-tab i { font-size: 15px; }
+body.theme-dekoor .cdetails-tab:hover { color: var(--cm-ink); }
+body.theme-dekoor .cdetails-tab.active { background: #fff; color: var(--cm-ink); box-shadow: 0 1px 3px rgba(20, 49, 63, .12); }
+body.theme-dekoor .cdetails-tab.active i { color: var(--cm-accent); }
+body.theme-dekoor .cdetails-tab-badge { background: var(--cm-accent); }
+
+/* Tarjetas del perfil */
+body.theme-dekoor .cdetails-pane h2 { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; color: var(--cm-ink); }
+body.theme-dekoor .pending-ai-toggle { border-radius: 14px; border-color: var(--cm-line); padding: 12px 14px; font-family: var(--cm-font); }
+body.theme-dekoor .pending-ai-toggle:hover { background: var(--cm-soft); border-color: #D5D9DF; color: var(--cm-ink); }
+body.theme-dekoor .pending-ai-toggle.active { background: var(--cm-accent-soft); border-color: #F6C7AA; color: var(--cm-accent-ink); }
+body.theme-dekoor .andrea-note-box { border: 1px solid var(--cm-line) !important; background: var(--cm-soft) !important; border-radius: 14px !important; padding: 14px !important; }
+body.theme-dekoor .andrea-note-box .fa-robot { color: var(--cm-accent) !important; }
+body.theme-dekoor .andrea-note-box p { color: var(--cm-muted); }
+body.theme-dekoor #andrea-note-input { background: #fff; border-color: var(--cm-line) !important; border-radius: 10px; font-family: var(--cm-font); padding: 8px 10px; }
+body.theme-dekoor #andrea-note-input:focus { border-color: var(--cm-accent) !important; box-shadow: 0 0 0 3px rgba(200, 75, 17, .14); }
+body.theme-dekoor .andrea-note-box .btn-primary { background: var(--cm-accent); border-color: var(--cm-accent); border-radius: 9px !important; }
+body.theme-dekoor .ad-referral-banner { border-radius: 14px; overflow: hidden; border: 1px solid var(--cm-line); }
+
+/* Botones genéricos dentro del chat y del panel */
+body.theme-dekoor #chat-view .btn { border-radius: 10px; font-family: var(--cm-font); }
