@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dekoor-v27';
+const CACHE_NAME = 'dekoor-v28';
 const STATIC_ASSETS = [
     '/sitio/',
     '/sitio/style.css',
@@ -13,7 +13,8 @@ const STATIC_ASSETS = [
 // Install: pre-cache static assets
 self.addEventListener('install', event => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
+        // cache: 'reload' salta la caché HTTP: si no, el SW nuevo podía precachear el CSS/JS viejo
+        caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS.map(u => new Request(u, { cache: 'reload' }))))
     );
     self.skipWaiting();
 });
@@ -28,7 +29,7 @@ self.addEventListener('activate', event => {
     self.clients.claim();
 });
 
-// Fetch: Network first for API/HTML, Cache first for static assets
+// Fetch: Network first for HTML/CSS/JS, Cache first for images/fonts
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
 
@@ -61,19 +62,19 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // CSS, JS: Stale-while-revalidate (fast load + background update)
+    // CSS, JS: Network first (revalidando contra el servidor) con la caché solo como respaldo sin red.
+    // Antes era stale-while-revalidate y el cliente veía la versión anterior hasta su siguiente visita.
     if (url.pathname.match(/\.(css|js)$/)) {
         event.respondWith(
-            caches.match(event.request).then(cached => {
-                const fetchPromise = fetch(event.request).then(response => {
+            fetch(event.request.mode === 'navigate' ? event.request : new Request(event.request, { cache: 'no-cache' }))
+                .then(response => {
                     if (response.ok) {
                         const clone = response.clone();
                         caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
                     }
                     return response;
-                });
-                return cached || fetchPromise;
-            })
+                })
+                .catch(() => caches.match(event.request))
         );
         return;
     }

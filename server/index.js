@@ -332,7 +332,7 @@ app.get('/sitio/coleccion/:id', (req, res, next) => {
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 // Caché HTTP: sin esto cada visita revalida cada recurso contra Render (default max-age=0).
 // Imágenes/fuentes 7 días (los reemplazos de fotos usan nombres nuevos o toleran 7d),
-// CSS/JS 1 hora (el sitio además se actualiza vía CACHE_NAME del service worker).
+// CSS/JS 1 hora, salvo sitio público/referencias que revalidan siempre (no-cache).
 app.use(express.static(path.join(__dirname, '..', 'public'), {
     setHeaders: (res, filePath) => {
         if (filePath.startsWith(path.join(__dirname, '..', 'public', 'imagenes') + path.sep)) {
@@ -342,7 +342,12 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
         if (/\.(webp|jpe?g|png|gif|svg|ico|woff2?|ttf)$/i.test(filePath)) {
             res.setHeader('Cache-Control', 'public, max-age=604800');
         } else if (/\.(css|js)$/i.test(filePath)) {
-            res.setHeader('Cache-Control', 'public, max-age=3600');
+            // Sitio público y referencias: siempre revalidar (ETag → 304 barato) para que los
+            // clientes no vean CSS/JS viejo tras un deploy; el resto conserva 1 hora.
+            const sitioPublico = [path.join(__dirname, '..', 'public', 'sitio') + path.sep,
+                                  path.join(__dirname, '..', 'public', 'referencias') + path.sep]
+                .some(dir => filePath.startsWith(dir));
+            res.setHeader('Cache-Control', sitioPublico ? 'no-cache' : 'public, max-age=3600');
         }
     }
 }));

@@ -633,11 +633,7 @@ if (localStorage.getItem('cookie_consent') === 'rejected') {
 <script src="/sitio/script.js" defer></script>
 
 
-<!-- Service Worker Registration -->
-<script>
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
-}
-</script>
+<!-- Service Worker: registro + auto-actualización -->
+<script src="/sitio/sw-update.js" defer></script>
 </body>
 </html>
