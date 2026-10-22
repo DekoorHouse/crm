@@ -46,7 +46,7 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="/sitio/style.css">
     <style>
@@ -102,21 +102,13 @@
         ]
     }
     </script>
+    <link rel="stylesheet" href="/sitio/premium.css">
 </head>
-<body>
+<body class="premium premium-inner">
 
 <!-- Banner -->
-<div class="ticker-banner">
-    <div class="ticker-track">
-        <span class="ticker-item"><i class="fas fa-truck"></i> ENVÍO GRATIS A TODO MÉXICO</span>
-        <span class="ticker-sep">★</span>
-        <span class="ticker-item"><i class="fas fa-camera"></i> PIDE POR WHATSAPP Y PAGA HASTA VER FOTO DE TU PEDIDO</span>
-        <span class="ticker-sep">★</span>
-        <span class="ticker-item"><i class="fas fa-truck"></i> ENVÍO GRATIS A TODO MÉXICO</span>
-        <span class="ticker-sep">★</span>
-        <span class="ticker-item"><i class="fas fa-camera"></i> PIDE POR WHATSAPP Y PAGA HASTA VER FOTO DE TU PEDIDO</span>
-        <span class="ticker-sep">★</span>
-    </div>
+<div class="ticker-banner pm-announce">
+    <p><span>Envío gratis a todo México</span><span class="pm-dot pm-hide-sm" aria-hidden="true">◆</span><span class="pm-hide-sm">Apruebas tu diseño antes de pagar</span><span class="pm-dot pm-hide-sm" aria-hidden="true">◆</span><span class="pm-hide-sm">Hecho a mano en Durango</span></p>
 </div>
 
 <!-- Navbar -->
@@ -128,12 +120,12 @@
         <div class="nav-links">
             <a href="/sitio/" class="nav-link">Inicio</a>
             <a href="/sitio/catalogo/" class="nav-link active">Catálogo</a>
-            <a href="/sitio/#como-funciona" class="nav-link">Cómo Funciona</a>
+            <a href="/sitio/#como-funciona" class="nav-link">El proceso</a>
             <a href="/referencias/" class="nav-link">Referencias</a>
             <a href="/sitio/#contacto" class="nav-link">Contacto</a>
         </div>
         <div class="nav-actions">
-            <a href="/sitio/carrito/" class="nav-icon-btn cart-btn" aria-label="Carrito de compras"><i class="fas fa-shopping-cart"></i><span class="cart-badge" id="cartBadge" style="display:none;">0</span></a>
+            <a href="/sitio/carrito/" class="nav-icon-btn cart-btn" aria-label="Carrito de compras"><i class="fas fa-bag-shopping"></i><span class="cart-badge" id="cartBadge" style="display:none;">0</span></a>
             <a href="https://wa.me/5216181333519?text=Hola%20Dekoor" target="_blank" rel="noopener" class="nav-icon-btn" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
         </div>
         <button class="hamburger-btn" id="hamburgerBtn" aria-label="Menú">
@@ -145,141 +137,146 @@
 <div id="mobileMenu" class="mobile-menu hidden">
     <div class="mobile-menu-overlay"></div>
     <div class="mobile-menu-panel">
-        <button class="mobile-menu-close">&times;</button>
-        <a href="/sitio/" class="mobile-link"><i class="fas fa-home"></i> Inicio</a>
-        <a href="/sitio/catalogo/" class="mobile-link active"><i class="fas fa-th-large"></i> Catálogo</a>
-        <a href="/referencias/" class="mobile-link"><i class="fas fa-star"></i> Referencias</a>
-        <a href="/sitio/#contacto" class="mobile-link"><i class="fas fa-envelope"></i> Contacto</a>
+        <button class="mobile-menu-close" aria-label="Cerrar menú">&times;</button>
+        <a href="/sitio/" class="mobile-link">Inicio</a>
+        <a href="/sitio/catalogo/" class="mobile-link active">Catálogo</a>
+        <a href="/sitio/#como-funciona" class="mobile-link">El proceso</a>
+        <a href="/referencias/" class="mobile-link">Referencias</a>
+        <a href="/sitio/#contacto" class="mobile-link">Contacto</a>
+        <a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20quiero%20un%20regalo%20personalizado" class="pm-btn pm-btn-dark pm-menu-cta" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> Asesoría gratis</a>
     </div>
 </div>
 
-<main>
-    <div class="container">
-        <div class="catalogo-hero">
-            <nav aria-label="Breadcrumb" style="margin-bottom:1rem;">
-                <ol style="list-style:none;display:flex;gap:6px;font-size:0.85rem;color:var(--text-medium);flex-wrap:wrap;justify-content:center;">
-                    <li><a href="/sitio/" style="color:var(--teal);text-decoration:none;">Inicio</a></li>
-                    <li>/</li>
-                    <li style="color:var(--text-dark);font-weight:600;">Catálogo</li>
+<main class="pm-page">
+    <div class="pm-container">
+        <div class="pm-page-head">
+            <nav aria-label="Breadcrumb" class="pm-breadcrumb">
+                <ol>
+                    <li><a href="/sitio/">Inicio</a></li>
+                    <li aria-hidden="true">/</li>
+                    <li aria-current="page">Catálogo</li>
                 </ol>
             </nav>
-            <h1>Catálogo de regalos personalizados</h1>
-            <p>Elige la categoría de tu regalo. Cada modelo se personaliza con tu foto, nombre o mensaje — y lo pides directo por WhatsApp.</p>
+            <span class="pm-eyebrow">Catálogo</span>
+            <h1 class="pm-title">Catálogo de regalos <em>personalizados</em></h1>
+            <p class="pm-sub">Elige la categoría de tu regalo. Cada modelo se personaliza con tu foto, nombre o mensaje — y lo pides directo por WhatsApp.</p>
         </div>
 
-        <div class="collections-grid-5 catalogo-grid">
-            <a href="/sitio/coleccion/pareja/" class="collection-card-v2" aria-label="Ver modelos para Parejas">
-                <div class="collection-img-v2">
-                    <img src="/sitio/img/lamp-pareja.webp" alt="Lámparas personalizadas para parejas con foto y mensaje" loading="lazy" width="400" height="533">
-                </div>
-                <div class="collection-card-info">
-                    <div class="collection-name">Parejas</div>
-                    <p class="collection-desc">Aniversarios, novios y esposos</p>
-                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $750</span> personalizada</div>
-                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
+        <div class="pm-collections">
+            <a href="/sitio/coleccion/pareja/" class="collection-card-v2 pm-card" aria-label="Ver modelos para Parejas">
+                <div class="pm-card-img"><img src="/sitio/img/lamp-pareja.webp" alt="Lámparas personalizadas para parejas con foto y mensaje" loading="lazy" width="400" height="533"></div>
+                <div class="pm-card-body">
+                    <h2 class="collection-name">Parejas</h2>
+                    <p>Aniversarios, novios y esposos</p>
+                    <span class="pm-card-price"><span data-price="unit" data-price-fmt="from">Desde $750</span></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/familia/" class="collection-card-v2" aria-label="Ver modelos para Familia">
-                <div class="collection-img-v2">
-                    <img src="/sitio/img/lamp-familia2.webp" alt="Lámparas personalizadas con foto familiar" loading="lazy" width="400" height="400">
-                </div>
-                <div class="collection-card-info">
-                    <div class="collection-name">Familia</div>
-                    <p class="collection-desc">Mamá, papá, abuelos e hijos</p>
-                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $750</span> personalizada</div>
-                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
+            <a href="/sitio/coleccion/familia/" class="collection-card-v2 pm-card" aria-label="Ver modelos para Familia">
+                <div class="pm-card-img"><img src="/sitio/img/lamp-familia2.webp" alt="Lámparas personalizadas con foto familiar" loading="lazy" width="400" height="400"></div>
+                <div class="pm-card-body">
+                    <h2 class="collection-name">Familia</h2>
+                    <p>Mamá, papá, abuelos e hijos</p>
+                    <span class="pm-card-price"><span data-price="unit" data-price-fmt="from">Desde $750</span></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/ninos/" class="collection-card-v2" aria-label="Ver modelos para Bebés y Niños">
-                <div class="collection-img-v2">
-                    <img src="/sitio/img/lamp-ariel.webp" alt="Lámparas personalizadas para bebés y niños con su personaje" loading="lazy" width="400" height="533">
-                </div>
-                <div class="collection-card-info">
-                    <div class="collection-name">Bebés y Niños</div>
-                    <p class="collection-desc">Personajes, nombres y primeras fotos</p>
-                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $750</span> personalizada</div>
-                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
+            <a href="/sitio/coleccion/ninos/" class="collection-card-v2 pm-card" aria-label="Ver modelos para Bebés y Niños">
+                <div class="pm-card-img"><img src="/sitio/img/lamp-ariel.webp" alt="Lámparas personalizadas para bebés y niños con su personaje" loading="lazy" width="400" height="533"></div>
+                <div class="pm-card-body">
+                    <h2 class="collection-name">Bebés y Niños</h2>
+                    <p>Personajes, nombres y primeras fotos</p>
+                    <span class="pm-card-price"><span data-price="unit" data-price-fmt="from">Desde $750</span></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/mascotas/" class="collection-card-v2" aria-label="Ver modelos de Mascotas">
-                <div class="collection-img-v2">
-                    <img src="/sitio/img/lamp-mascotas.webp" alt="Lámparas personalizadas con foto de mascotas" loading="lazy" width="400" height="533">
-                </div>
-                <div class="collection-card-info">
-                    <div class="collection-name">Mascotas</div>
-                    <p class="collection-desc">Perros, gatos y compañeros de vida</p>
-                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $750</span> personalizada</div>
-                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
+            <a href="/sitio/coleccion/mascotas/" class="collection-card-v2 pm-card" aria-label="Ver modelos de Mascotas">
+                <div class="pm-card-img"><img src="/sitio/img/lamp-mascotas.webp" alt="Lámparas personalizadas con foto de mascotas" loading="lazy" width="400" height="533"></div>
+                <div class="pm-card-body">
+                    <h2 class="collection-name">Mascotas</h2>
+                    <p>Perros, gatos y compañeros de vida</p>
+                    <span class="pm-card-price"><span data-price="unit" data-price-fmt="from">Desde $750</span></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/graduacion/" class="collection-card-v2" aria-label="Ver modelos de Graduación">
-                <div class="collection-img-v2">
-                    <img src="/sitio/img/col/graduacion/sync-bf22d1bdfc.webp" alt="Lámparas personalizadas de graduación con foto y carrera" loading="lazy" width="400" height="533">
-                </div>
-                <div class="collection-card-info">
-                    <div class="collection-name">Graduación</div>
-                    <p class="collection-desc">Foto, carrera y generación</p>
-                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $750</span> personalizada</div>
-                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
+            <a href="/sitio/coleccion/graduacion/" class="collection-card-v2 pm-card" aria-label="Ver modelos de Graduación">
+                <div class="pm-card-img"><img src="/sitio/img/col/graduacion/sync-bf22d1bdfc.webp" alt="Lámparas personalizadas de graduación con foto y carrera" loading="lazy" width="400" height="533"></div>
+                <div class="pm-card-body">
+                    <h2 class="collection-name">Graduación</h2>
+                    <p>Foto, carrera y generación</p>
+                    <span class="pm-card-price"><span data-price="unit" data-price-fmt="from">Desde $750</span></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/deportes/" class="collection-card-v2" aria-label="Ver modelos de Deportes y Aficiones">
-                <div class="collection-img-v2">
-                    <img src="/sitio/img/col/deportes/sync-267a470ca5.webp" alt="Lámparas personalizadas de deportes y aficiones" loading="lazy" width="400" height="533">
-                </div>
-                <div class="collection-card-info">
-                    <div class="collection-name">Deportes y Aficiones</div>
-                    <p class="collection-desc">Su equipo, su deporte, su pasión</p>
-                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $750</span> personalizada</div>
-                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
+            <a href="/sitio/coleccion/deportes/" class="collection-card-v2 pm-card" aria-label="Ver modelos de Deportes y Aficiones">
+                <div class="pm-card-img"><img src="/sitio/img/col/deportes/sync-267a470ca5.webp" alt="Lámparas personalizadas de deportes y aficiones" loading="lazy" width="400" height="533"></div>
+                <div class="pm-card-body">
+                    <h2 class="collection-name">Deportes y Aficiones</h2>
+                    <p>Su equipo, su deporte, su pasión</p>
+                    <span class="pm-card-price"><span data-price="unit" data-price-fmt="from">Desde $750</span></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/religiosas/" class="collection-card-v2" aria-label="Ver modelos de Religiosas">
-                <div class="collection-img-v2">
-                    <img src="/sitio/img/col/religiosas/69a79735-4829-4261-b957-8f1559f5ff52.webp" alt="Lámparas religiosas personalizadas con vírgenes y santos" loading="lazy" width="400" height="533">
-                </div>
-                <div class="collection-card-info">
-                    <div class="collection-name">Religiosas</div>
-                    <p class="collection-desc">Virgen, santos y mensajes de fe</p>
-                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $750</span> personalizada</div>
-                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
+            <a href="/sitio/coleccion/religiosas/" class="collection-card-v2 pm-card" aria-label="Ver modelos de Religiosas">
+                <div class="pm-card-img"><img src="/sitio/img/col/religiosas/69a79735-4829-4261-b957-8f1559f5ff52.webp" alt="Lámparas religiosas personalizadas con vírgenes y santos" loading="lazy" width="400" height="533"></div>
+                <div class="pm-card-body">
+                    <h2 class="collection-name">Religiosas</h2>
+                    <p>Virgen, santos y mensajes de fe</p>
+                    <span class="pm-card-price"><span data-price="unit" data-price-fmt="from">Desde $750</span></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/empresas/" class="collection-card-v2" aria-label="Ver modelos para Empresas y Profesiones">
-                <div class="collection-img-v2">
-                    <img src="/sitio/img/lamp-empresas.webp" alt="Lámparas con logo para empresas, profesiones y oficios" loading="lazy" width="400" height="533">
-                </div>
-                <div class="collection-card-info">
-                    <div class="collection-name">Empresas y Profesiones</div>
-                    <p class="collection-desc">Logos, doctores, maestras y más oficios</p>
-                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $750</span> personalizada</div>
-                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
+            <a href="/sitio/coleccion/empresas/" class="collection-card-v2 pm-card" aria-label="Ver modelos para Empresas y Profesiones">
+                <div class="pm-card-img"><img src="/sitio/img/lamp-empresas.webp" alt="Lámparas con logo para empresas, profesiones y oficios" loading="lazy" width="400" height="533"></div>
+                <div class="pm-card-body">
+                    <h2 class="collection-name">Empresas y Profesiones</h2>
+                    <p>Logos, doctores, maestras y más oficios</p>
+                    <span class="pm-card-price"><span data-price="unit" data-price-fmt="from">Desde $750</span></span>
                 </div>
             </a>
-            <a href="/sitio/coleccion/memorial/" class="collection-card-v2" aria-label="Ver modelos de Homenajes y Recuerdos">
-                <div class="collection-img-v2">
-                    <img src="/sitio/img/lamp-memorial.webp" alt="Lámparas memorial para homenajes y recuerdos" loading="lazy" width="400" height="533">
-                </div>
-                <div class="collection-card-info">
-                    <div class="collection-name">Homenajes y Recuerdos</div>
-                    <p class="collection-desc">Un recuerdo que siempre brilla</p>
-                    <div class="collection-price"><span data-price="unit" data-price-fmt="from">Desde $750</span> personalizada</div>
-                    <span class="collection-cta">Ver modelos <i class="fas fa-arrow-right"></i></span>
+            <a href="/sitio/coleccion/memorial/" class="collection-card-v2 pm-card" aria-label="Ver modelos de Homenajes y Recuerdos">
+                <div class="pm-card-img"><img src="/sitio/img/lamp-memorial.webp" alt="Lámparas memorial para homenajes y recuerdos" loading="lazy" width="400" height="533"></div>
+                <div class="pm-card-body">
+                    <h2 class="collection-name">Homenajes y Recuerdos</h2>
+                    <p>Un recuerdo que siempre brilla</p>
+                    <span class="pm-card-price"><span data-price="unit" data-price-fmt="from">Desde $750</span></span>
                 </div>
             </a>
         </div>
 
-        <div class="collection-help" style="margin-bottom:3rem;">
-            <div class="collection-help-text">
-                <h3>¿No encuentras tu idea?</h3>
-                <p>Si lo imaginas, lo grabamos. Mándanos tu foto o idea por WhatsApp y te decimos cómo quedaría.</p>
-            </div>
-            <a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20tengo%20una%20idea%20para%20un%20regalo%20personalizado%20y%20quiero%20saber%20si%20la%20pueden%20hacer" class="btn btn-primary btn-lg" target="_blank" rel="noopener">
-                <i class="fab fa-whatsapp"></i> Contar mi idea por WhatsApp
-            </a>
+        <div class="pm-help">
+            <p><strong>¿No encuentras tu idea?</strong> Si lo imaginas, lo grabamos. Mándanos tu foto o idea y te decimos cómo quedaría.</p>
+            <a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20tengo%20una%20idea%20para%20un%20regalo%20personalizado%20y%20quiero%20saber%20si%20la%20pueden%20hacer" class="pm-link" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> Contar mi idea</a>
         </div>
     </div>
 </main>
+
+<footer class="pm-footer pm-footer-compact">
+    <div class="pm-container">
+        <div class="pm-footer-grid">
+            <div class="pm-footer-brand">
+                <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor" class="pm-footer-logo" width="140" height="40" loading="lazy">
+                <p>Lámparas personalizadas con grabado láser, hechas a mano en Durango y enviadas a todo México.</p>
+            </div>
+            <div class="pm-footer-col">
+                <h4>Explorar</h4>
+                <a href="/sitio/catalogo/">Catálogo</a>
+                <a href="/sitio/#como-funciona">El proceso</a>
+                <a href="/referencias/">Referencias</a>
+            </div>
+            <div class="pm-footer-col">
+                <h4>Ayuda</h4>
+                <a href="/sitio/#faq">Preguntas frecuentes</a>
+                <a href="/privacidad/">Aviso de privacidad</a>
+                <a href="/terminos/">Términos y condiciones</a>
+            </div>
+            <div class="pm-footer-col">
+                <h4>Contacto</h4>
+                <a href="https://wa.me/5216181333519" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> WhatsApp</a>
+                <a href="tel:+526181333519"><i class="fas fa-phone"></i> +52 618 133 3519</a>
+                <a href="https://www.instagram.com/dekoor_mx?utm_source=qr&igsh=MXFtYnpiejNvZ3Bleg==" target="_blank" rel="noopener noreferrer"><i class="fab fa-instagram"></i> @dekoor_mx</a>
+                <span><i class="fas fa-location-dot"></i> Durango, Dgo., México</span>
+            </div>
+        </div>
+        <div class="pm-footer-bottom">
+            <p>&copy; 2026 DEKOOR · Regalos personalizados con grabado láser · Durango, México</p>
+        </div>
+    </div>
+</footer>
+
 
 <!-- WhatsApp FAB -->
 <a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20estoy%20viendo%20su%20cat%C3%A1logo" class="whatsapp-fab" target="_blank" rel="noopener" aria-label="Contactar por WhatsApp">
