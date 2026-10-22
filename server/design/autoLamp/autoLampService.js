@@ -797,12 +797,17 @@ const TEMPLATES = {
     // El nombre viene DENTRO del dibujo con su propia letra: Qwen lo cambia ("Cambia el nombre por …", como lo hace
     // el equipo en /imagenes) sobre la referencia, que trae "Matías".
     dino_premium: { file: 'dino-premium-referencia.png', match: /dino\s*premium/i, label: 'Dino premium (plantilla del taller)', rename: true },
+    // UNICORNIO DEL ANUNCIO (Chris, 22-oct-2026): la cabeza de unicornio con nubes y estrellas de los anuncios «Unicornio».
+    // Si NO le mandamos mockup, la imagen del anuncio hace de mockup: Qwen saca ESE unicornio y escribe el nombre del cliente
+    // en la misma cursiva (no se inventa otro unicornio ni se usa uno del banco, DH18416). Con mockup nuestro, va el mockup.
+    unicornio_anuncio: { file: 'unicornio-anuncio.png', match: /unicornio/i, label: 'Unicornio del anuncio', rename: true, fromMockup: true, onlyWithoutMockup: true, oldName: 'Sofía' },
 };
 const templateCache = {};
 // La plantilla se usa solo si el PERSONAJE cuadra: un producto «Dino premium» con «Personaje: flores» (DH18179,
 // la clienta pidió flores para Regina) no lleva el T-Rex; va por el camino normal de la IA.
 TEMPLATES.spiderman.character = /spider|ara[ñn]a/i;
 TEMPLATES.dino_premium.character = /dino|rex|saurio/i;
+TEMPLATES.unicornio_anuncio.character = /unicornio/i;
 const templateFor = lamp => Object.entries(TEMPLATES).find(([, t]) => {
     if (!t.match.test(`${lamp.producto} ${lamp.datos}`)) return false;
     const personaje = lamp.personaje || ((String(lamp.datos || '').match(/personaje\s*:\s*([^|\n]+)/i) || [])[1] || '').trim();
@@ -917,7 +922,10 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         step('Usando la plantilla del taller');
         const tpl = TEMPLATES[plan.template], image = await templateImage(plan.template);
         const nombre = plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '';
-        raster = tpl.rename && nombre
+        raster = tpl.fromMockup && !nombre ? await rasterizeBeta({ buffer: image, url: null }, { prompt: `${MOCKUP_NO_TEXT_PROMPT} ${NO_RING}`, onStep: step })
+            : tpl.fromMockup
+            ? await rasterizeBeta({ buffer: image, url: null }, { prompt: `${MOCKUP_PROMPT.replace('el dibujo y el texto/nombre EXACTAMENTE como están (mismas letras, misma tipografía, misma pose y posición)', `el dibujo EXACTAMENTE como está (misma pose y posición, mismas nubes y estrellas) y el texto CAMBIADO: donde dice «${tpl.oldName}» debe decir «${nombre.replace(/\s*·\s*/g, ' ')}», con la MISMA letra cursiva, el mismo grosor y en el mismo lugar (si es largo, más chico o en dos renglones), y el corazoncito de abajo igual`)} ${NO_RING}`, onStep: step })
+            : tpl.rename && nombre
             ? await rasterizeBeta({ buffer: image, url: null }, { prompt: `Cambia el nombre por ${nombre.replace(/\s*·\s*/g, ' ')}`, onStep: step })
             : { url: null, jobId: null, model: tpl.label, buffer: image };
     } else if (plan.fuente === 'mockup') {
@@ -960,7 +968,8 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     // La del equipo: acomodada como diseño suelto (su aro es parte del logo, no el del acrílico).
     // Del mockup se miden primero sus proporciones: el diseño va del tamaño en que lo vio el cliente (DH18309).
     const proportion = !plan.template && !plan.bank && plan.fuente === 'mockup' && plan.reference ? await mockupProportion(plan.reference) : null;
-    let buffer = cleanTemplate ? downloaded : plan.template || plan.bank ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved, { designShare: proportion?.w }), 2000, { mockup: proportion })
+    let buffer = cleanTemplate ? downloaded : plan.template && TEMPLATES[plan.template].fromMockup ? await fitToLampCircle(await removeRing(engraved))
+        : plan.template || plan.bank ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved, { designShare: proportion?.w }), 2000, { mockup: proportion })
         : plan.fuente === 'propia' ? await fitToLampCircle(engraved, 2000, { loose: true }) : engraved;
     const font = await loadFont();
     const { composeLamp, renderPreview, pictureSizeMm, rdworksPiece, photoOutline } = await composerModule();
@@ -1101,7 +1110,9 @@ async function generate(dh, options = {}) {
         const results = [];
         for (const lamp of lamps) {
             // Personaje con plantilla del taller (Spiderman…): se usa su grabado; la IA solo aporta el nombre.
-            const basePlan = plans[lamp.index] || plans[0], template = beta ? templateFor(lamp) : null;
+            const basePlan = plans[lamp.index] || plans[0];
+            let template = beta ? templateFor(lamp) : null;
+            if (template && TEMPLATES[template].onlyWithoutMockup && (basePlan.fuente === 'mockup' || basePlan.fuente === 'cliente' || basePlan.personalizado || basePlan.textoEnImagen)) template = null;
             const plan = template ? { ...basePlan, template } : { ...basePlan };
             if (NO_OUTLINE_HINT.test(options.note || '')) plan.noOutline = true;
             // Rehacer un diseño de mockup con indicación: si la IA no escribió el cambio, va la indicación tal cual.
@@ -1117,7 +1128,7 @@ async function generate(dh, options = {}) {
             // cliente (o la indicación) lo quiere distinto, si es su foto, si el texto va dentro del dibujo o con
             // «Generar nuevo con IA» (noBank). Un cambio de solo texto conserva el modelo que ya traía (sale primero).
             const useBank = beta && !template && !options.noBank && plan.tipo === 'personaje' && plan.personaje && !plan.personalizado
-                && !plan.textoEnImagen && plan.fuente !== 'cliente';
+                && !plan.textoEnImagen && plan.fuente === 'ilustracion';
             const entries = useBank ? await bankFor(plan.personaje, before?.bankId || null, { adText: await contactAdText(contactId) }).catch(() => []) : [];
             if (entries.length) {
                 const built = [];
