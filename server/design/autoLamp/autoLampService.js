@@ -171,10 +171,9 @@ async function geminiJson(parts) {
     // pedido a la primera (DH18289, 20-oct-2026): se rescata el JSON si se puede y si no se reintenta.
     const parse = data => {
         const candidate = data.candidates?.[0] || {};
-        const text = (candidate.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('').replace(/```json|```/g, '').trim();
-        try { return { json: JSON.parse(text) }; } catch (_) { /* se intenta rescatar */ }
-        const start = text.indexOf('{'), end = text.lastIndexOf('}');
-        if (start >= 0 && end > start) { try { return { json: JSON.parse(text.slice(start, end + 1)) }; } catch (_) { /* nada */ } }
+        const text = (candidate.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
+        const json = jsonFromText(text);
+        if (json) return { json };
         const why = data.promptFeedback?.blockReason ? `bloqueada (${data.promptFeedback.blockReason})`
             : candidate.finishReason && candidate.finishReason !== 'STOP' ? `cortada (${candidate.finishReason})` : text ? 'no era JSON' : 'vacía';
         return { why };
@@ -198,10 +197,52 @@ async function geminiJson(parts) {
             continue;
         }
         lastProblem = `error ${response?.status || 'sin respuesta'}`;
+        // Lo que dijo Google, para el log de Render (DH18366: 503 una y otra vez, sin saber por qué).
+        const detail = response ? (await response.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300) : '';
+        console.warn(`[AUTO-LAMP] ${model}: ${lastProblem}${detail ? ` — ${detail}` : ''}`);
         if (response && ![429, 500, 502, 503, 504].includes(response.status)) break;
         if (attempt < models.length - 1) await new Promise(resolve => setTimeout(resolve, waits[Math.min(attempt, waits.length - 1)]));
     }
+    // Último recurso: el mismo Gemini por OpenRouter (otra ruta, otra cuenta).
+    const viaOpenRouter = await openRouterJson(parts);
+    if (viaOpenRouter.json) return viaOpenRouter.json;
+    if (viaOpenRouter.problem) lastProblem += `; por OpenRouter: ${viaOpenRouter.problem}`;
     throw new Error(`La IA no pudo leer el pedido (${lastProblem}). Intenta de nuevo en unos minutos.`);
+}
+
+// El JSON de una respuesta de la IA, aunque venga con ```json o con texto alrededor; null si no hay.
+function jsonFromText(raw) {
+    const text = String(raw || '').replace(/```json|```/g, '').trim();
+    try { return JSON.parse(text); } catch (_) { /* se intenta rescatar */ }
+    const start = text.indexOf('{'), end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) { try { return JSON.parse(text.slice(start, end + 1)); } catch (_) { /* nada */ } }
+    return null;
+}
+
+// RESPALDO POR OPENROUTER (DH18366, 22-oct-2026): Google directo respondió 503 en todos los intentos, dos veces seguidas.
+// OpenRouter sirve el MISMO gemini-3-flash-preview (es como lee el chat Andrea desde jul-2026), así que el pedido se lee
+// igual. Las partes de Gemini se pasan al formato de OpenAI que usa OpenRouter. Devuelve { json } o { problem }.
+const OPENROUTER_VISION_MODEL = 'google/gemini-3-flash-preview';
+async function openRouterJson(parts) {
+    const key = process.env.OPENROUTER_API_KEY;
+    if (!key) return { problem: 'sin OPENROUTER_API_KEY' };
+    const content = parts.map(p => p.inlineData
+        ? { type: 'image_url', image_url: { url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}` } }
+        : { type: 'text', text: p.text || '' });
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST', signal: AbortSignal.timeout(180000),
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://app.dekoormx.com', 'X-Title': 'Dekoor Diseño IA' },
+        body: JSON.stringify({ model: OPENROUTER_VISION_MODEL, messages: [{ role: 'user', content }], response_format: { type: 'json_object' }, max_tokens: 8192 }),
+    }).catch(error => ({ ok: false, status: error.name === 'TimeoutError' ? 'tardó demasiado' : 'sin respuesta' }));
+    if (!response.ok) {
+        const detail = response.text ? (await response.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300) : '';
+        console.warn(`[AUTO-LAMP] OpenRouter ${OPENROUTER_VISION_MODEL}: error ${response.status}${detail ? ` — ${detail}` : ''}`);
+        return { problem: `error ${response.status}` };
+    }
+    const data = await response.json().catch(() => ({}));
+    const json = jsonFromText(data.choices?.[0]?.message?.content);
+    if (json) { console.log('[AUTO-LAMP] Pedido leído por OpenRouter (Google directo no respondió).'); return { json }; }
+    return { problem: `respuesta ${data.choices?.[0]?.finish_reason || 'vacía'}` };
 }
 
 // ¿Gemini bloquea esta imagen sola? (para quitarla de la lectura del pedido).
@@ -1493,7 +1534,7 @@ async function autoStartBeta() {
     for (const doc of failed.docs) {
         const a = doc.data().autoLamp || {}, dh = doc.data().consecutiveOrderNumber;
         // También cuando Gemini estaba saturado y no pudo leer el pedido (DH18366, 22-oct-2026: error 503).
-        const gpu = /GPU de Qwen no pudo prender|no tiene una GPU disponible|GPU propia|se quedó trabajando sin avanzar|servidor se reinició|no pudo leer el pedido \((error (429|5\d\d)|error sin respuesta)\)/i.test(a.error || '');
+        const gpu = /GPU de Qwen no pudo prender|no tiene una GPU disponible|GPU propia|se quedó trabajando sin avanzar|servidor se reinició|no pudo leer el pedido \((error (429|5\d\d)|error sin respuesta)/i.test(a.error || '');
         const waited = Date.now() - (a.updatedAt?.toMillis?.() || 0) >= 30 * 60 * 1000;
         if (!a.beta || !gpu || !waited || (a.retries || 0) >= 6 || !dh) continue;
         console.log(`[AUTO-LAMP] Reintento ${(a.retries || 0) + 1}/6 de DH${dh} (falló por falta de GPU o con Gemini saturado).`);
