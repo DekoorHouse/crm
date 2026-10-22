@@ -465,12 +465,13 @@ function escapeHtml(text) {
 // --- Mapa de entregas con clustering por ciudad ---
 function loadMapa() {
     var map = L.map('deliveryMap', {
-        scrollWheelZoom: false,
-        attributionControl: false
+        scrollWheelZoom: false
     }).setView([23.6345, -102.5528], 5);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 18
+    // Carto ahora exige API key (devolvía mosaicos "API KEY REQUIRED"); Esri gris claro es libre con atribución
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 16,
+        attribution: '&copy; Esri'
     }).addTo(map);
 
     fetch(API_BASE_URL + '/api/referencias/mapa')

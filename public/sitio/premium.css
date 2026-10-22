@@ -491,12 +491,23 @@ body.premium ::selection { background: var(--accent); color: #fff; }
     align-items: center;
 }
 .premium .pm-process-media { position: relative; }
-.premium .pm-process-media img {
-    width: 100%;
-    aspect-ratio: 4 / 5;
-    object-fit: cover;
-    border-radius: 220px 220px 6px 6px;
+.premium .pm-collage {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    padding-bottom: 2.5rem;
 }
+.premium .pm-collage img {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
+    border-radius: 6px;
+    box-shadow: 0 20px 40px -24px rgba(0, 0, 0, 0.6);
+}
+/* Columna central desfasada: efecto mosaico */
+.premium .pm-collage img:nth-child(3n+2) { transform: translateY(2.5rem); }
+.premium .pm-collage img:first-child { border-top-left-radius: 120px; }
+.premium .pm-collage img:nth-child(3) { border-top-right-radius: 120px; }
 .premium .pm-process-badge {
     position: absolute;
     right: -2rem;
@@ -816,7 +827,7 @@ body.premium ::selection { background: var(--accent); color: #fff; }
 
     .premium .pm-collections { grid-template-columns: repeat(2, 1fr); gap: 2.5rem 1.25rem; }
     .premium .pm-process { grid-template-columns: 1fr; }
-    .premium .pm-process-media { max-width: 420px; margin: 0 auto; width: 100%; }
+    .premium .pm-process-media { max-width: 520px; margin: 0 auto; width: 100%; }
     .premium .pm-deliveries { grid-template-columns: 1fr; }
     .premium .pm-faq { grid-template-columns: 1fr; gap: 2.5rem; }
     .premium .pm-faq-intro { position: static; text-align: center; }
@@ -861,7 +872,11 @@ body.premium ::selection { background: var(--accent); color: #fff; }
     .premium .pm-card-price { font-size: 0.78rem; }
     .premium .pm-help { padding: 1.5rem; margin-top: 3rem; }
 
-    .premium .pm-process-media { max-width: 300px; }
+    .premium .pm-process-media { max-width: none; }
+    .premium .pm-collage { gap: 8px; padding-bottom: 1.75rem; }
+    .premium .pm-collage img:nth-child(3n+2) { transform: translateY(1.75rem); }
+    .premium .pm-collage img:first-child { border-top-left-radius: 70px; }
+    .premium .pm-collage img:nth-child(3) { border-top-right-radius: 70px; }
     .premium .pm-process-badge { width: 100px; height: 100px; right: -0.5rem; bottom: 1.5rem; }
     .premium .pm-process-badge strong { font-size: 1.7rem; }
     .premium .pm-steps li { grid-template-columns: 44px 1fr; }
@@ -1485,3 +1500,7 @@ body.premium ::selection { background: var(--accent); color: #fff; }
     .premium .ref-card-text { font-size: 1.15rem; }
     .premium .pedidos-feed { padding: 0.25rem 1rem; }
 }
+
+/* Atribución del mapa (Esri) discreta */
+.premium .leaflet-control-attribution { background: rgba(251, 248, 243, 0.8) !important; color: var(--muted); font-size: 10px; }
+.premium .leaflet-control-attribution a { color: var(--muted); }
