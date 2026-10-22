@@ -1,6 +1,9 @@
-:HL["/_next/static/chunks/0usy28bqk1a7v.css","style"]
-:HL["/_next/static/media/a343f882a40d2cc9-s.p.0kho-wj7-y-w1.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
-:HL["/_next/static/media/a85fe84266768609-s.p.05b418i5bs~lg.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
-:HL["/_next/static/media/fba5a26ea33df6a3-s.p.0eehd8tgys7nv.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
+:HL["/_next/static/chunks/1cq_42le9dh13.css","style"]
+:HL["/_next/static/media/a343f882a40d2cc9-s.p.1sj6eobyi31rd.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
+:HL["/_next/static/media/a85fe84266768609-s.p.0h6ig86gwutp4.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
+:HL["/_next/static/media/fba5a26ea33df6a3-s.p.18rizl4rsrl42.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 :HL["https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"crm","param":null,"prefetchHints":0,"slots":{"children":{"name":"campanas","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}},"staleTime":300,"buildId":"2sBsajtpTlllmIRaYU0Tm"}
+3:[["children",{"s":"__PAGE__","h":160}]]
+2:[["children",{"s":"campanas","h":96,"c":"$Q3"}]]
+1:[["children",{"s":"crm","h":96,"c":"$Q2"}]]
+0:{"b":"Eu9I3ECm1RfaxzbiOT04O","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
