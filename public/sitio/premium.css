@@ -506,8 +506,7 @@ body.premium ::selection { background: var(--accent); color: #fff; }
 }
 /* Columna central desfasada: efecto mosaico */
 .premium .pm-collage img:nth-child(3n+2) { transform: translateY(2.5rem); }
-.premium .pm-collage img:first-child { border-top-left-radius: 120px; }
-.premium .pm-collage img:nth-child(3) { border-top-right-radius: 120px; }
+
 .premium .pm-process-badge {
     position: absolute;
     right: -2rem;
@@ -875,8 +874,6 @@ body.premium ::selection { background: var(--accent); color: #fff; }
     .premium .pm-process-media { max-width: none; }
     .premium .pm-collage { gap: 8px; padding-bottom: 1.75rem; }
     .premium .pm-collage img:nth-child(3n+2) { transform: translateY(1.75rem); }
-    .premium .pm-collage img:first-child { border-top-left-radius: 70px; }
-    .premium .pm-collage img:nth-child(3) { border-top-right-radius: 70px; }
     .premium .pm-process-badge { width: 100px; height: 100px; right: -0.5rem; bottom: 1.5rem; }
     .premium .pm-process-badge strong { font-size: 1.7rem; }
     .premium .pm-steps li { grid-template-columns: 44px 1fr; }
