@@ -1424,14 +1424,20 @@ async function openDesignBank() {
         const groups = {};
         for (const e of entries) (groups[e.personaje] ||= []).push(e);
         const names = Object.keys(groups);
-        wrap.querySelector('[data-bk="list"]').innerHTML = names.length ? names.map(name => `<div style="margin-bottom:14px">
-            <div style="font-weight:800;font-size:13.5px;margin-bottom:6px">${escapeHtml(name)} <span style="color:#64748b;font-weight:600;font-size:12px">${groups[name].filter(e => e.active).length} modelo(s)</span></div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap">${groups[name].map(e => `<div style="width:130px;text-align:center;font-size:11px;opacity:${e.active ? 1 : .45}">
+        // Una cajita por personaje (sus modelos lado a lado) y las cajitas acomodadas en renglones, no en una columna.
+        const list = wrap.querySelector('[data-bk="list"]');
+        list.style.cssText = 'margin-top:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start';
+        list.innerHTML = names.length ? names.map(name => {
+            const on = groups[name].filter(e => e.active).length, n = groups[name].length;
+            return `<div style="border:1px solid var(--color-border,#e5e7eb);border-radius:10px;padding:8px">
+            <div style="font-weight:800;font-size:13px;margin-bottom:6px">${escapeHtml(name)} <span style="color:${on ? '#15803d' : '#94a3b8'};font-weight:600;font-size:11.5px">${on ? `${on} activo${on > 1 ? 's' : ''}` : 'inactivo'}${n > 1 ? ` · ${n} modelos` : ''}</span></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">${groups[name].map(e => `<div style="width:130px;text-align:center;font-size:11px;opacity:${e.active ? 1 : .45}">
                 <img src="${escapeHtml(e.thumbUrl || '')}" onclick="openImageModal(this.src)" style="width:124px;height:124px;object-fit:contain;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:#fff;cursor:zoom-in">
                 <div style="color:#64748b">${e.sourceDh ? 'DH' + e.sourceDh : ''} · ${e.uses} uso(s)${e.active ? '' : ' · fuera'}</div>
                 <button data-bk="rename" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.personaje)}" style="margin-top:2px;padding:2px 7px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#475569;font-size:11px;cursor:pointer">Renombrar</button>
                 <button data-bk="toggle" data-id="${escapeHtml(e.id)}" data-active="${e.active ? '1' : '0'}" style="margin-top:2px;padding:2px 7px;border-radius:6px;border:1px solid ${e.active ? '#dc2626' : '#16a34a'};background:transparent;color:${e.active ? '#dc2626' : '#15803d'};font-size:11px;cursor:pointer">${e.active ? 'Sacar' : 'Regresar'}</button>
-            </div>`).join('')}</div></div>`).join('')
+            </div>`).join('')}</div></div>`;
+        }).join('')
             : '<i style="color:#64748b;font-size:13px">Todavía no hay dibujos. Se llena solo al subir a Drive lámparas de personaje, o con «Guardar en banco» en la revisión de un diseño.</i>';
     };
     const load = async () => {
