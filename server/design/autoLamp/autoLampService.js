@@ -2267,7 +2267,7 @@ Responde SOLO este JSON: {"opcion": el número de la opción que eligió (1 a ${
 
 // Lista del banco (para la ventana «Banco de diseños»).
 async function listBank() {
-    return (await bankEntries({ all: true })).map(e => ({ id: e.id, personaje: e.personaje, thumbUrl: e.thumbUrl || e.artUrl, estilo: e.estilo || 'trama', active: e.active !== false,
+    return (await bankEntries({ all: true })).map(e => ({ id: e.id, personaje: e.personaje, thumbUrl: e.thumbUrl || e.artUrl, artUrl: e.artUrl || null, estilo: e.estilo || 'trama', active: e.active !== false,
         uses: e.uses || 0, sourceDh: e.sourceDh || null, createdAt: millis(e.createdAt) || null, createdBy: e.createdBy || null }))
         .sort((a, b) => a.personaje.localeCompare(b.personaje, 'es') || (b.createdAt || 0) - (a.createdAt || 0));
 }

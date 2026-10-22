@@ -1405,6 +1405,44 @@ function openDesignBeta(orderId) {
 }
 window.openDesignBeta = openDesignBeta;
 
+// Búsqueda del banco tolerante a errores: sin acentos ni mayúsculas, por pedazo («spider» → «Spider-Man»), junta
+// («spiderman») y con letras de más o de menos («espaiderman», «winie», «pau patrol»). Menor = más parecido;
+// Infinity = no se parece.
+const _bkNorm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function _bkLev(a, b) {
+    if (a === b) return 0;
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+        const cur = [i];
+        for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = cur;
+    }
+    return prev[b.length];
+}
+function _bkScore(name, q) {
+    const n = _bkNorm(name), qq = _bkNorm(q);
+    if (!qq) return 0;
+    if (n.startsWith(qq)) return 0;
+    if (n.includes(qq)) return .2;
+    const nc = n.replace(/ /g, ''), qc = qq.replace(/ /g, '');
+    if (nc.includes(qc)) return .4;
+    // Todo junto con errores («espaiderman» ~ «spiderman»): hasta 1 error por cada 4 letras.
+    const whole = Math.min(_bkLev(qc, nc), _bkLev(qc, nc.slice(0, qc.length)));
+    // Desempate: el nombre completo más parecido primero («minie» → Minnie antes que Minion).
+    if (whole <= Math.floor(qc.length / 4)) return 1 + whole + _bkLev(qc, nc) / 100;
+    // Palabra por palabra: cada palabra buscada se parece a alguna del nombre (o a su comienzo).
+    const words = n.split(' ');
+    let total = 0;
+    for (const t of qq.split(' ')) {
+        const tol = t.length <= 3 ? 0 : t.length <= 5 ? 1 : 2;
+        let best = Infinity;
+        for (const w of words) { const d = Math.min(_bkLev(t, w), _bkLev(t, w.slice(0, t.length))); if (d <= tol && d < best) best = d; }
+        if (best === Infinity) return Infinity;
+        total += best;
+    }
+    return 2 + total;
+}
+
 // BANCO DE DISEÑOS: los dibujos de personaje ya aprobados (sin texto), agrupados por personaje. TODO lo que se ve aquí se
 // usa: un pedido nuevo del mismo personaje lo toma sin IA. Para quitar uno se selecciona (clic; Ctrl+clic para varios)
 // y Supr (o el botecito): va a la PAPELERA de la misma ventana, de donde se puede restaurar (Chris, 22-oct-2026).
@@ -1416,12 +1454,15 @@ async function openDesignBank() {
     wrap.innerHTML = `<div style="background:var(--color-container-bg,#fff);color:var(--color-text,#1e293b);border-radius:14px;max-width:960px;width:100%;max-height:92vh;overflow:auto;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
         <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:1.05rem"><i class="fas fa-book-open" style="color:#7c3aed"></i> Banco de diseños</b>
             <button data-bk="close" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:inherit">&times;</button></div>
-        <div style="font-size:12.5px;color:#64748b;margin-top:4px">Todo lo que está aquí se usa: cuando un pedido es de uno de estos personajes, el Diseño IA toma el dibujo SIN IA y solo le cambia el nombre (con varios modelos, el cliente puede elegir). Para quitar uno: <b>clic</b> para seleccionarlo (<b>Ctrl+clic</b> para varios) y <b>Supr</b>, o su botecito; se va a la papelera de abajo. Doble clic en un dibujo para verlo grande.</div>
+        <div style="font-size:12.5px;color:#64748b;margin-top:4px">Todo lo que está aquí se usa: cuando un pedido es de uno de estos personajes, el Diseño IA toma el dibujo SIN IA y solo le cambia el nombre (con varios modelos, el cliente puede elegir). Para quitar uno: <b>clic</b> para seleccionarlo (<b>Ctrl+clic</b> para varios) y <b>Supr</b>, o su botecito; se va a la papelera de abajo. <b>Doble clic</b> en un dibujo para verlo grande (ahí las <b>flechas</b> pasan de uno a otro e <b>I</b> invierte los colores).</div>
+        <div style="position:relative;margin-top:10px"><i class="fas fa-search" style="position:absolute;left:10px;top:10px;font-size:.85rem;color:#94a3b8"></i>
+            <input data-bk="search" type="search" placeholder="Buscar personaje (aunque esté mal escrito: «espaiderman», «winie», «pau patrol»…)" autocomplete="off" style="width:100%;box-sizing:border-box;padding:7px 9px 7px 30px;border:1px solid var(--color-border,#e5e7eb);border-radius:8px;font-size:13px;background:var(--color-surface,#fff);color:inherit">
+            <div data-bk="count" style="font-size:11.5px;color:#64748b;margin-top:4px"></div></div>
         <div data-bk="list" style="margin-top:12px"><i class="fas fa-spinner fa-spin"></i> Cargando…</div>
         <div data-bk="trash" style="margin-top:16px"></div>
     </div>`;
     document.body.appendChild(wrap);
-    let entries = [], selected = new Set(), trashOpen = false;
+    let entries = [], selected = new Set(), trashOpen = false, query = '', shown = [];
     const tile = e => `<div data-bk="tile" data-id="${escapeHtml(e.id)}" title="${escapeHtml(e.personaje)} · ${e.sourceDh ? 'DH' + e.sourceDh : ''} · ${e.uses} uso(s)" style="position:relative;width:124px;text-align:center;font-size:11px;cursor:pointer">
         <img src="${escapeHtml(e.thumbUrl || '')}" draggable="false" style="width:120px;height:120px;object-fit:contain;border-radius:8px;border:${selected.has(e.id) ? '3px solid #7c3aed' : '1px solid var(--color-border,#e5e7eb)'};background:#fff;box-sizing:border-box;${e.active ? '' : 'opacity:.6'}">
         ${e.active ? `<button data-bk="trash-one" data-id="${escapeHtml(e.id)}" title="Mandar a la papelera" style="position:absolute;top:4px;right:6px;border:none;background:#fff;border-radius:6px;padding:2px 5px;color:#dc2626;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)"><i class="fas fa-trash-can"></i></button>`
@@ -1432,7 +1473,12 @@ async function openDesignBank() {
         const active = entries.filter(e => e.active), trashed = entries.filter(e => !e.active);
         const groups = {};
         for (const e of active) (groups[e.personaje] ||= []).push(e);
-        const names = Object.keys(groups);
+        // Búsqueda: solo los personajes que se parecen a lo escrito, los más parecidos primero.
+        const scores = {};
+        for (const name of Object.keys(groups)) scores[name] = _bkScore(name, query);
+        const names = Object.keys(groups).filter(n => scores[n] < Infinity).sort((a, b) => scores[a] - scores[b]);
+        shown = names.flatMap(n => groups[n]);
+        wrap.querySelector('[data-bk="count"]').textContent = query.trim() ? (names.length ? `${names.length} personaje(s), ${shown.length} dibujo(s)` : '') : `${names.length} personajes · ${active.length} dibujos`;
         // Una cajita por personaje (sus modelos lado a lado), acomodadas en renglones.
         const list = wrap.querySelector('[data-bk="list"]');
         list.style.cssText = 'margin-top:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start';
@@ -1440,7 +1486,7 @@ async function openDesignBank() {
             <div style="font-weight:800;font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px">${escapeHtml(name)}${groups[name].length > 1 ? ` <span style="color:#7c3aed;font-weight:600;font-size:11.5px">${groups[name].length} modelos</span>` : ''}
                 <button data-bk="rename" data-name="${escapeHtml(name)}" title="Cambiar el nombre con el que se busca este personaje" style="margin-left:auto;border:none;background:transparent;color:#64748b;cursor:pointer;font-size:12px"><i class="fas fa-pen"></i></button></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">${groups[name].map(tile).join('')}</div></div>`).join('')
-            : '<i style="color:#64748b;font-size:13px">Todavía no hay dibujos. Se llena solo al subir a Drive lámparas de personaje, o con «Guardar en banco» en la revisión de un diseño.</i>';
+            : query.trim() ? `<i style="color:#64748b;font-size:13px">No encontré nada parecido a «${escapeHtml(query)}».</i>` : '<i style="color:#64748b;font-size:13px">Todavía no hay dibujos. Se llena solo al subir a Drive lámparas de personaje, o con «Guardar en banco» en la revisión de un diseño.</i>';
         wrap.querySelector('[data-bk="trash"]').innerHTML = trashed.length ? `<div style="border-top:1px dashed var(--color-border,#e5e7eb);padding-top:10px">
             <button data-bk="toggle-trash" style="border:none;background:transparent;color:#475569;font-weight:800;font-size:13px;cursor:pointer;padding:0"><i class="fas fa-trash-can"></i> Papelera (${trashed.length}) <i class="fas fa-chevron-${trashOpen ? 'up' : 'down'}" style="font-size:11px"></i></button>
             <div style="font-size:11.5px;color:#64748b;margin-top:2px">Lo que está aquí NO se usa en los pedidos.</div>
@@ -1468,18 +1514,66 @@ async function openDesignBank() {
         await load().catch(() => {});
         if (typeof showToast === 'function') showToast(`${ids.length > 1 ? ids.length + ' dibujos' : 'Dibujo'} en la papelera`, 'success');
     };
+    // VISOR: el dibujo grande; flechas = anterior/siguiente (de lo que se ve con la búsqueda), I = invertir colores
+    // (así se ve como la lámpara prendida). La preferencia de invertido se recuerda.
+    let viewer = null, viewIndex = 0, invert = false;
+    try { invert = localStorage.getItem('dkBankInvert') === '1'; } catch (_) {}
+    const paintViewer = () => {
+        if (!viewer || !shown.length) return;
+        viewIndex = (viewIndex + shown.length) % shown.length;
+        const e = shown[viewIndex], img = viewer.querySelector('[data-bv="img"]');
+        img.src = e.artUrl || e.thumbUrl;
+        img.style.filter = invert ? 'invert(1)' : 'none';
+        viewer.querySelector('[data-bv="name"]').textContent = e.personaje;
+        viewer.querySelector('[data-bv="info"]').textContent = `${viewIndex + 1} de ${shown.length}${e.sourceDh ? ' · DH' + e.sourceDh : ''} · ${e.uses} uso(s)`;
+        viewer.querySelector('[data-bv="invert"]').style.background = invert ? '#7c3aed' : 'transparent';
+    };
+    const openViewer = id => {
+        viewIndex = Math.max(0, shown.findIndex(e => e.id === id));
+        viewer?.remove();
+        viewer = document.createElement('div');
+        viewer.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9100;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;color:#fff;user-select:none';
+        const nav = 'border:none;background:rgba(255,255,255,.12);color:#fff;font-size:26px;width:46px;height:64px;border-radius:10px;cursor:pointer;flex:none';
+        viewer.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;justify-content:center">
+                <b data-bv="name" style="font-size:1.1rem"></b><span data-bv="info" style="font-size:12.5px;opacity:.75"></span>
+                <button data-bv="invert" title="Invertir colores (tecla I): como se ve la lámpara prendida" style="padding:5px 11px;border-radius:8px;border:1px solid #a78bfa;color:#fff;font-weight:700;font-size:12.5px;cursor:pointer"><i class="fas fa-circle-half-stroke"></i> Invertir colores</button>
+                <button data-bv="close" title="Cerrar (Esc)" style="border:none;background:transparent;color:#fff;font-size:24px;cursor:pointer">&times;</button></div>
+            <div style="display:flex;align-items:center;gap:12px;max-width:100%">
+                <button data-bv="prev" title="Anterior (←)" style="${nav}">&#8249;</button>
+                <img data-bv="img" style="width:min(74vw,80vh);height:min(74vw,80vh);flex:none;border-radius:10px;object-fit:contain;background:#fff">
+                <button data-bv="next" title="Siguiente (→)" style="${nav}">&#8250;</button></div>`;
+        viewer.addEventListener('click', ev => {
+            const b = ev.target.closest('[data-bv]'), act = b && b.dataset.bv;
+            if (ev.target === viewer || act === 'close') closeViewer();
+            else if (act === 'prev') { viewIndex--; paintViewer(); }
+            else if (act === 'next') { viewIndex++; paintViewer(); }
+            else if (act === 'invert') toggleInvert();
+        });
+        document.body.appendChild(viewer);
+        paintViewer();
+    };
+    const closeViewer = () => { viewer?.remove(); viewer = null; };
+    const toggleInvert = () => { invert = !invert; try { localStorage.setItem('dkBankInvert', invert ? '1' : '0'); } catch (_) {} paintViewer(); };
+    wrap.querySelector('[data-bk="search"]').addEventListener('input', ev => { query = ev.target.value; selected.clear(); render(); });
     const onKey = ev => {
         if (!document.body.contains(wrap)) return;
+        if (viewer) {
+            if (ev.key === 'ArrowRight') { ev.preventDefault(); viewIndex++; paintViewer(); }
+            else if (ev.key === 'ArrowLeft') { ev.preventDefault(); viewIndex--; paintViewer(); }
+            else if (ev.key === 'Escape') { ev.preventDefault(); closeViewer(); }
+            else if (ev.key === 'i' || ev.key === 'I') { ev.preventDefault(); toggleInvert(); }
+            return;
+        }
         if (document.querySelector('#image-modal.visible') || document.getElementById('_cm_ok')) return;
         if (ev.key === 'Escape') { ev.preventDefault(); close(); }
         else if (ev.key === 'Delete' && selected.size && !/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) { ev.preventDefault(); toTrash([...selected]); }
     };
     document.addEventListener('keydown', onKey);
-    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); };
+    const close = () => { closeViewer(); wrap.remove(); document.removeEventListener('keydown', onKey); };
     load().catch(e => { wrap.querySelector('[data-bk="list"]').textContent = 'No se pudo cargar el banco: ' + (e.message || e); });
     wrap.addEventListener('dblclick', ev => {
         const t = ev.target.closest('[data-bk="tile"]'), e = t && entries.find(x => x.id === t.dataset.id);
-        if (e) openImageModal(e.thumbUrl);
+        if (e && e.active) openViewer(e.id); else if (e) openImageModal(e.artUrl || e.thumbUrl);
     });
     wrap.addEventListener('click', async ev => {
         if (ev.target === wrap) return close();
