@@ -568,7 +568,7 @@ const FIT_GAP = .012;
  * a veces con la base abajo) aunque el prompt diga que no (Chris, 20-oct-2026, DH18239 «Mía Carolina»). Entra el
  * grabado (negro = tinta) y sale igual, sin el aro ni lo que quede afuera de él; si no hay aro, sale tal cual.
  */
-async function removeRing(buffer) {
+async function removeRing(buffer, { designShare = null } = {}) {
     const { data, info } = await sharp(buffer).greyscale().raw().toBuffer({ resolveWithObject: true });
     const w = info.width, h = info.height, inkAt = (x, y) => x >= 0 && x < w && y >= 0 && y < h && data[y * w + x] < 128;
     // Caja de la tinta: el aro marca su ancho; su centro está a medio ancho desde arriba (la base cuelga abajo).
@@ -605,8 +605,36 @@ async function removeRing(buffer) {
     if (!total || hits / total < .7) return buffer;   // no hay aro
     thick.sort((a, b) => a - b);
     const ringWidth = thick[Math.floor(thick.length / 2)];
+    // El aro del ACRÍLICO es lo más de afuera de la lámpara: nada del diseño queda por fuera de él. Si afuera hay dibujo o
+    // letras GRUESOS (no la raya delgada de la base, que se quita abajo), ese círculo es parte del dibujo y no se toca
+    // (DH18309, 22-oct-2026: se borró el contorno del BALÓN y con él la parte de abajo de «Emanuel», que colgaba debajo).
+    // «Grueso» = con tinta a los dos ejes a un poco más del grosor del aro: una raya delgada no pasa en su eje corto.
+    const d = Math.ceil(ringWidth) + 2, outerR = R + d;
+    let totalInk = 0, thickOutside = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (data[y * w + x] >= 128) continue;
+        totalInk++;
+        if (Math.hypot(x - cx, y - cy) <= outerR) continue;
+        if ((inkAt(x - d, y) || inkAt(x + d, y)) && (inkAt(x, y - d) || inkAt(x, y + d))) thickOutside++;
+    }
+    if (thickOutside > Math.max(totalInk * .004, R * R * .002)) {
+        console.log(`[AUTO-LAMP] El círculo de la orilla es parte del dibujo (hay ${thickOutside} px de diseño por fuera): no se borra.`);
+        return buffer;
+    }
     // Todo lo que esté del aro hacia afuera (con un margen) se vuelve blanco.
     const cut = R - ringWidth - Math.max(2, R * .012);
+    // Con las medidas del mockup (mockupProportion): en el mockup el diseño ocupa `designShare` del ancho del acrílico. Si
+    // al quitar este círculo lo de adentro sigue llenándolo casi todo (más que en el mockup), el círculo era el contorno
+    // del dibujo (un balón sin nada por fuera) y no el acrílico: no se borra.
+    if (designShare && designShare < .9) {
+        let ix0 = w, ix1 = -1;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (data[y * w + x] < 128 && Math.hypot(x - cx, y - cy) <= cut) { if (x < ix0) ix0 = x; if (x > ix1) ix1 = x; }
+        const innerShare = ix1 > ix0 ? (ix1 - ix0) / (2 * R) : 0;
+        if (innerShare > designShare + .07) {
+            console.log(`[AUTO-LAMP] El círculo de la orilla es el contorno del dibujo (adentro llena ${Math.round(innerShare * 100)} %; en el mockup el diseño ocupa ${Math.round(designShare * 100)} %): no se borra.`);
+            return buffer;
+        }
+    }
     const out = Buffer.from(data);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (Math.hypot(x - cx, y - cy) > cut) out[y * w + x] = 255;
     // La orilla de arriba de la base (una raya recta larga y delgada abajo del dibujo, DH18276) también se va.
@@ -628,7 +656,36 @@ async function removeRing(buffer) {
     return sharp(out, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
 }
 
-async function fitToLampCircle(buffer, side = 2000, { loose = false } = {}) {
+/**
+ * MEDIDAS DEL MOCKUP (Chris, 22-oct-2026, DH18309): cuánto del círculo de acrílico ocupa el diseño en el mockup que vio el
+ * cliente, y dónde. Gemini da las dos cajas (0–1000 por eje) y se devuelve el diseño en fracciones del DIÁMETRO del
+ * acrílico: { w, h, cx, cy } (cx/cy = cuánto se aleja su centro del centro del círculo). null si no se pudo medir: entonces
+ * se acomoda como antes (lo más grande que cabe).
+ */
+async function mockupProportion(reference) {
+    try {
+        const { buffer } = reference.buffer ? reference : await download(reference.url);
+        const img = await sharp(buffer).rotate().resize(1024, 1024, { fit: 'inside' }).jpeg({ quality: 85 }).toBuffer();
+        const a = await geminiJson([{ text: `Esta foto es un mockup de una lámpara LED: una placa de acrílico REDONDA (sobre una base) con un diseño grabado dentro (dibujo y texto). Dame dos cajas en coordenadas normalizadas 0-1000 de la imagen, en orden [ymin, xmin, ymax, xmax]:
+- "circulo": el círculo de acrílico completo, por su orilla de afuera (sin la base).
+- "diseno": TODO lo grabado junto (dibujo y texto), sin el acrílico, sin su orilla ni la base.
+Responde SOLO este JSON: {"circulo": [ymin, xmin, ymax, xmax], "diseno": [ymin, xmin, ymax, xmax]}` },
+            { inlineData: { mimeType: 'image/jpeg', data: img.toString('base64') } }]);
+        const ok = b => Array.isArray(b) && b.length === 4 && b.every(v => Number.isFinite(Number(v))) && b[2] > b[0] && b[3] > b[1];
+        if (!ok(a.circulo) || !ok(a.diseno)) return null;
+        const [c0, c1, c2, c3] = a.circulo.map(Number), [d0, d1, d2, d3] = a.diseno.map(Number), cw = c3 - c1, ch = c2 - c0;
+        if (cw < 80 || ch < 80) return null;
+        const p = { w: (d3 - d1) / cw, h: (d2 - d0) / ch, cx: ((d1 + d3) / 2 - (c1 + c3) / 2) / cw, cy: ((d0 + d2) / 2 - (c0 + c2) / 2) / ch };
+        // Medidas absurdas (el diseño más grande que el acrílico, o casi nada): no se usan.
+        if (p.w < .2 || p.h < .2 || p.w > 1.05 || p.h > 1.3 || Math.abs(p.cx) > .3 || Math.abs(p.cy) > .35) return null;
+        console.log(`[AUTO-LAMP] Medidas del mockup: el diseño ocupa ${Math.round(p.w * 100)} % × ${Math.round(p.h * 100)} % del acrílico.`);
+        return p;
+    } catch (error) { console.warn('[AUTO-LAMP] No pude medir el mockup:', error.message); return null; }
+}
+
+// mockup: medidas del diseño en el mockup (mockupProportion). Con ellas el diseño va DEL TAMAÑO Y EN EL LUGAR en que el
+// cliente lo vio (Chris, 22-oct-2026, DH18309: «respeta las dimensiones del mockup»), achicado solo si así no cabe entero.
+async function fitToLampCircle(buffer, side = 2000, { loose = false, mockup = null } = {}) {
     const { data, info } = await sharp(buffer).greyscale().raw().toBuffer({ resolveWithObject: true });
     const w = info.width, h = info.height;
     // Caja de lo que tiene tinta (aunque sea un trazo tenue, como el círculo del acrílico) y de lo negro.
@@ -652,7 +709,8 @@ async function fitToLampCircle(buffer, side = 2000, { loose = false } = {}) {
             if (x >= 0 && x < w && y >= 0 && y < h && data[y * w + x] < 250) { ringHits++; break; }
         }
     }
-    let isCircle = !loose && ink.w / ink.h > .9 && ink.w / ink.h < 1.1 && ringHits / 360 > .75;
+    // Con las medidas del mockup no se adivina qué círculo es el acrílico: el diseño se acomoda como lo midió el mockup.
+    let isCircle = !loose && !mockup && ink.w / ink.h > .9 && ink.w / ink.h < 1.1 && ringHits / 360 > .75;
     const R = LAMP_CIRCLE.r * side, cx = LAMP_CIRCLE.cx * side, cy = LAMP_CIRCLE.cy * side;
     // Un DIBUJO redondo (un balón, DH18309) también parece «el aro del acrílico»: si al ponerlo en la línea de corte
     // se saldría parte del trazo (el nombre de abajo lo tapaba la base), se acomoda como diseño suelto (cabe todo).
@@ -706,6 +764,18 @@ async function fitToLampCircle(buffer, side = 2000, { loose = false } = {}) {
         }
         if (!best.range) return buffer;
         scale = best.s; left = cx - box.w * scale / 2 + best.dx; top = (best.range[0] + best.range[1]) / 2;
+        // Del tamaño del mockup (su ancho y alto como fracción del diámetro del acrílico) y en su lugar, si cabe entero;
+        // si no cabe, se queda el acomodo más grande que sí cabe (nunca se corta).
+        if (mockup) {
+            const want = Math.min(mockup.w * 2 * R / box.w, mockup.h * 2 * R / box.h);
+            if (want > 0 && want < best.s) {
+                const dx = mockup.cx * 2 * R, range = topRange(want, dx) || topRange(want, 0);
+                if (range) {
+                    const useDx = topRange(want, dx) ? dx : 0, wantTop = cy + mockup.cy * 2 * R - box.h * want / 2;
+                    scale = want; left = cx - box.w * want / 2 + useDx; top = Math.min(range[1], Math.max(range[0], wantTop));
+                }
+            }
+        }
     }
     const piece = await sharp(buffer).extract({ left: box.x0, top: box.y0, width: box.w, height: box.h })
         .resize(Math.max(1, Math.round(box.w * scale)), Math.max(1, Math.round(box.h * scale)), { kernel: 'lanczos3' }).png().toBuffer();
@@ -888,7 +958,9 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const cleanTemplate = plan.template && !TEMPLATES[plan.template].rename;   // el grabado del taller tal cual (Spiderman)
     // Del mockup: sin el aro del acrílico que el modelo copia (removeRing) y acomodado para llenar el círculo.
     // La del equipo: acomodada como diseño suelto (su aro es parte del logo, no el del acrílico).
-    let buffer = cleanTemplate ? downloaded : plan.template || plan.bank ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved))
+    // Del mockup se miden primero sus proporciones: el diseño va del tamaño en que lo vio el cliente (DH18309).
+    const proportion = !plan.template && !plan.bank && plan.fuente === 'mockup' && plan.reference ? await mockupProportion(plan.reference) : null;
+    let buffer = cleanTemplate ? downloaded : plan.template || plan.bank ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved, { designShare: proportion?.w }), 2000, { mockup: proportion })
         : plan.fuente === 'propia' ? await fitToLampCircle(engraved, 2000, { loose: true }) : engraved;
     const font = await loadFont();
     const { composeLamp, renderPreview, pictureSizeMm, rdworksPiece, photoOutline } = await composerModule();
