@@ -47,7 +47,7 @@ const ESTATUS_COBRABLES = ['Foto enviada', 'Esperando pago', 'Corregido'];
 // Un pedido con el pago validado/registrado o con guía ya no se cobra ni se cancela, aunque su
 // estatus siga diciendo "Foto enviada" (el estatus no siempre se mueve al validar).
 function yaPagadoOEnviado(o) {
-    return !!(o.comprobanteValidadoAt || (o.guiaEnvio && o.guiaEnvio.guia)
+    return !!(o.comprobanteValidadoAt || (o.guiaEnvio && o.guiaEnvio.guia) || o.ventaMercadoLibre === true
         || Number(o.paymentReceivedCents) > 0 || o.paymentReportedComplete === true);
 }
 const LOOKBACK_DAYS = 30;        // ventana de búsqueda de pedidos por DEFAULT (configurable: cobranza_auto.lookbackDays)

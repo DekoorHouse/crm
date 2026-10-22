@@ -296,6 +296,13 @@ async function processReceipt(id, options = {}) {
         await refreshSourceOwners(ocr);
         const failed = !claimed.verifiedProvider && await rejectFailedReceipt(ref, ocr, { processing: true });
         if (failed) return failed;
+        // DH17047 (24-sep-2026): la clienta compró la lámpara en Mercado Libre y mandó la captura de esa
+        // compra; ML la envía a la dirección de su app, pero el sistema le mandó el formulario de datos.
+        // La captura no es un comprobante bancario: se marca el pedido y el equipo la valida en ML.
+        if (!options.manual && ocr.compraMercadoLibre === true) {
+            if (claimed.orderId) await db.collection('pedidos').doc(claimed.orderId).update({ ventaMercadoLibre: true, ventaMercadoLibreAt: stamp(), ventaMercadoLibreOrigen: 'captura' });
+            return await reviewReceipt(ref, 'Captura de una compra en Mercado Libre: valida la venta en Mercado Libre (ellos envían a la dirección de su app).');
+        }
         if (!options.manual && ocr.esComprobante === false) {
             await ref.update({ status: 'ignored', open: false, reason: 'La imagen no es un comprobante de pago.', leaseUntil: null, updatedAt: stamp() });
             return { status: 'ignored' };

@@ -9,7 +9,14 @@ const cents = value => Math.round(Number(value) * 100);
 const terminal = order => /entregad|devol/i.test(order.estatus || '');
 const cancelled = order => /cancel/i.test(order.estatus || '');
 const awaitingPaymentApproval = order => !!order.shippingFormRequestedBeforeApproval && !order.comprobanteValidadoAt;
-const canRequestShippingForm = order => !!order && !order.orderDataPending && !order.totalPending && !terminal(order) && (
+// Venta hecha en Mercado Libre: ML la envía a la dirección que el cliente tiene en su app (DH17047).
+const ventaMercadoLibre = order => !!order && order.ventaMercadoLibre === true;
+// "Ya lo compré en Mercado Libre": compra YA HECHA ahí (no "lo haré por Mercado Libre", una anécdota de otra
+// compra en ML ni "ya pagué por Mercado Libre": muchos le llaman así al link de Mercado Pago, y ese envío lo
+// hacemos nosotros).
+const COMPRA_ML_RE = /(?:\bya (?:lo |la |los |las |se )?(?:compr|ped)\w*|\b(?:hice|realic[eé]) (?:la|el|mi) (?:compra|pedido))[^.?!\n]{0,40}?\b(?:en|por|a trav[eé]s de) (?:el )?mercado ?libre/i;
+const compraEnMercadoLibre = text => COMPRA_ML_RE.test(String(text || ''));
+const canRequestShippingForm = order => !!order && !ventaMercadoLibre(order) && !order.orderDataPending && !order.totalPending && !terminal(order) && (
     (!!order.comprobanteValidadoAt && !cancelled(order)) ||
     (order.paymentReportedComplete === true && !order.paymentFormNeedsAssessment)
 );
@@ -180,4 +187,4 @@ function claimsPayment(text) {
     return /(?:ya\s+(?:valid[aá](?:mos|do)|valid[eé]|confirm[aá](?:mos|do)|verifiqu[eé]|verificamos)|(?:recibimos|recib[ií]|recibido|gracias)[^.!?\n]{0,65})(?:[^.!?\n]{0,65})(?:pago|comprobante|dep[oó]sito|transferencia|anticipo)|(?:pedido|pago)[^.!?\n]{0,35}(?:liquidado|pagado|validado|confirmado)/i.test(text);
 }
 
-module.exports = { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, receiptFolios, receiptKeyMatches, possibleSamePayment, validateReceipt, paymentDecision, claimsPayment, reportedPaymentCents, canRequestShippingForm, awaitingPaymentApproval };
+module.exports = { DAY, ms, hash, cents, terminal, cancelled, receiptKeys, receiptFolios, receiptKeyMatches, possibleSamePayment, validateReceipt, paymentDecision, claimsPayment, reportedPaymentCents, canRequestShippingForm, awaitingPaymentApproval, ventaMercadoLibre, compraEnMercadoLibre };
