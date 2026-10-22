@@ -852,7 +852,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     step('Convirtiendo a mapa de bits');
     const { bitmapSize, toBitmap, pngWithDpi } = await bitmapTools();
     const mm = pictureSizeMm({ width: meta.width, height: meta.height });
-    // FOTO REAL SIN FONDO (DH18366): línea grabada alrededor de las personas para despegarlas del negro de la lámpara.
+    // FOTO REAL SIN FONDO (DH18366): línea grabada (PHOTO_OUTLINE) alrededor de las personas para despegarlas del negro de la lámpara.
     // Se mide en chico (600 px de ancho); si la foto conserva su fondo, photoOutline no hace nada.
     let outline = null;
     if (plan.tipo === 'foto' && plan.fuente === 'cliente' && !plan.noOutline) {
