@@ -85,6 +85,8 @@ export interface CampanaDesglose {
     /** Gasto del anuncio en el rango. null si no hay rango o es orgánico/sin campaña. */
     gasto?: number | null;
     costoPorPedido?: number | null;
+    /** Prendido ahora en Meta (null = no se pudo saber). */
+    activo?: boolean | null;
   }[];
 }
 
@@ -131,6 +133,7 @@ export interface CampanaMensajes {
     gasto: number;
     costoCrm: number | null;
     costoMeta: number | null;
+    activo?: boolean | null;
   }[];
 }
 

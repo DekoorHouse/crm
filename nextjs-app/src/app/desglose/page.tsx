@@ -39,6 +39,19 @@ const DATE_OPTIONS: SelectOption[] = [
 // Naranja desaturado para subrayar los anuncios/campañas que gastaron sin traer pedidos.
 const SIN_PEDIDOS_COLOR = "#d9a066";
 
+// Punto junto al anuncio: verde = prendido ahora en Meta, gris = apagado. Sin dato (Meta no respondió): nada.
+function PuntoActivo({ activo }: { activo?: boolean | null }) {
+  if (activo == null) return null;
+  return (
+    <span
+      className="shrink-0 inline-block w-2 h-2 rounded-full"
+      style={{ background: activo ? "#22c55e" : "#9ca3af" }}
+      title={activo ? "Prendido" : "Apagado"}
+      aria-label={activo ? "Prendido" : "Apagado"}
+    />
+  );
+}
+
 const hoyMx = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
 function rangoPersonalizado(dateFilter: string, desde: string, hasta: string) {
   if (dateFilter !== "personalizado" || !desde || !hasta) return {};
@@ -711,14 +724,17 @@ function TarjetaCampana({
                   ? `Anuncios · ${campana.ads.length}`
                   : `IDs de anuncio sin campaña · ${campana.ads.length}`}
               </p>
-              {(campana.anuncios ?? campana.ads.map((adId) => ({ adId, nombre: null, pedidos: 0, gasto: null, costoPorPedido: null }))).map((a) => (
+              {(campana.anuncios ?? campana.ads.map((adId) => ({ adId, nombre: null, pedidos: 0, gasto: null, costoPorPedido: null, activo: null }))).map((a) => (
                 <div key={a.adId} className="text-xs min-w-0">
                   <div className="flex items-center justify-between gap-2 min-w-0">
-                    <span
-                      className={`truncate ${a.nombre ? "text-on-surface-variant" : "font-mono text-[11px] text-on-surface-variant"}`}
-                      title={a.nombre ? `${a.nombre} · ID ${a.adId}` : a.adId}
-                    >
-                      {a.nombre || a.adId}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <PuntoActivo activo={a.activo} />
+                      <span
+                        className={`truncate ${a.nombre ? "text-on-surface-variant" : "font-mono text-[11px] text-on-surface-variant"}`}
+                        title={a.nombre ? `${a.nombre} · ID ${a.adId}` : a.adId}
+                      >
+                        {a.nombre || a.adId}
+                      </span>
                     </span>
                     {a.pedidos > 0 ? (
                       <span className="shrink-0 font-bold text-on-surface">
@@ -858,11 +874,14 @@ function TarjetaMensajes({
               {campana.anuncios.map((a) => (
                 <div key={a.adId} className="text-xs min-w-0">
                   <div className="flex items-center justify-between gap-2 min-w-0">
-                    <span
-                      className={`truncate ${a.nombre ? "text-on-surface-variant" : "font-mono text-[11px] text-on-surface-variant"}`}
-                      title={a.nombre ? `${a.nombre} · ID ${a.adId}` : a.adId}
-                    >
-                      {a.nombre || a.adId}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <PuntoActivo activo={a.activo} />
+                      <span
+                        className={`truncate ${a.nombre ? "text-on-surface-variant" : "font-mono text-[11px] text-on-surface-variant"}`}
+                        title={a.nombre ? `${a.nombre} · ID ${a.adId}` : a.adId}
+                      >
+                        {a.nombre || a.adId}
+                      </span>
                     </span>
                     {a.crm > 0 ? (
                       <span className="shrink-0 font-bold text-on-surface">

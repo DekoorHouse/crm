@@ -1312,6 +1312,17 @@ router.get('/orders/count', async (req, res) => {
     }
 });
 
+/** Pone `activo` (true/false; null si Meta no respondió) en cada anuncio { adId } de /desglose. */
+async function marcarAnunciosActivos(cuentas, anuncios) {
+    if (!anuncios.length) return;
+    let activos = null;
+    try {
+        const r = cuentas && cuentas.length ? await require('./meta/metaAdsService').getActiveAdIds(cuentas) : null;
+        if (r && !r.error) activos = r.ids;
+    } catch (e) { console.warn('[DESGLOSE] No se pudo leer qué anuncios están prendidos:', e.message); }
+    for (const a of anuncios) a.activo = activos && a.adId ? activos.has(String(a.adId)) : null;
+}
+
 // --- Endpoint GET /api/orders/desglose (Piezas por producto o por campaña dentro del filtro) ---
 // Alimenta /desglose. Agrega del lado del servidor porque el front tendría
 // que paginar de 50 en 50 para llegar al mismo total, y con "este mes" eso son
@@ -1357,6 +1368,8 @@ router.get('/orders/desglose', async (req, res) => {
                 : { porCampana: {}, porAnuncio: {}, total: 0, error: null };
 
             const desglose = agregarPorCampana(pedidos, map, gasto.porCampana, rangoMeta ? gasto.porAnuncio : null, rangoMeta ? gasto.detalle : null);
+            // Punto verde (prendido) / gris (apagado) junto a cada anuncio. Si Meta no responde, activo = null (sin punto).
+            await marcarAnunciosActivos(cuentas, (desglose.campanas || []).flatMap(c => c.anuncios || []));
 
             return res.status(200).json({
                 success: true,
@@ -1462,6 +1475,7 @@ router.get('/orders/desglose-mensajes', async (req, res) => {
                     .sort((a, b) => (b.crm - a.crm) || (b.meta - a.meta) || (b.gasto - a.gasto)),
                 costoMeta: f.meta > 0 ? f.gasto / f.meta : null, costoCrm: f.crm > 0 && f.gasto > 0 ? f.gasto / f.crm : null }))
             .sort((a, b) => Math.max(b.meta, b.crm) - Math.max(a.meta, a.crm));
+        await marcarAnunciosActivos(cuentas, campanas.flatMap(c => c.anuncios || []));
         const totalMeta = campanas.reduce((s, c) => s + c.meta, 0);
         const totalCrm = campanas.reduce((s, c) => s + c.crm, 0);
         const gasto = campanas.reduce((s, c) => s + c.gasto, 0);

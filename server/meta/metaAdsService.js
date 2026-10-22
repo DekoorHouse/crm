@@ -505,6 +505,38 @@ async function getAdSpendForAccounts(accountIds, dateFrom, dateTo) {
 }
 
 /**
+ * IDs de los anuncios PRENDIDOS ahora (effective_status ACTIVE: el anuncio, su conjunto y su campaña
+ * encendidos; IN_PROCESS = se acaba de editar y sigue prendido). Punto verde/gris en /desglose.
+ * Caché de 5 min por juego de cuentas. Devuelve { ids: Set, error } (error si ninguna cuenta respondió).
+ */
+const _activeAdsCache = new Map();
+async function getActiveAdIds(accountIds) {
+    const key = [...new Set(accountIds.map(a => String(a).replace('act_', '')))].sort().join(',');
+    const hit = _activeAdsCache.get(key);
+    if (hit && Date.now() - hit.ts < 5 * 60 * 1000) return hit.value;
+    const ids = new Set();
+    const errors = [];
+    for (const accId of key ? key.split(',') : []) {
+        try {
+            let after = null, safety = 20;
+            do {
+                const params = { fields: 'id', limit: 500,
+                    filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'IN_PROCESS'] }]) };
+                if (after) params.after = after;
+                const data = await metaGet(`${normalizeAccountId(accId)}/ads`, params, accId);
+                for (const ad of (data.data || [])) ids.add(String(ad.id));
+                after = (data.paging && data.paging.next && data.paging.cursors && data.paging.cursors.after) || null;
+            } while (after && --safety > 0);
+        } catch (err) {
+            errors.push(err.response?.data?.error?.message || err.message);
+        }
+    }
+    const value = { ids, error: key && errors.length === key.split(',').length ? errors[0] : null };
+    if (!value.error) _activeAdsCache.set(key, { ts: Date.now(), value });
+    return value;
+}
+
+/**
  * Conversaciones de mensajes que Meta atribuye a cada campaña en el rango (pestaña Mensajes de
  * /desglose). Meta las reporta como la acción "onsite_conversion.messaging_conversation_started_7d"
  * (WhatsApp, Messenger e Instagram juntos); también devuelve el gasto para el costo por mensaje.
@@ -896,7 +928,7 @@ module.exports = {
     // Insights
     getInsights, getInsightsByLevel, getDailySpend,
     // Reporte por region
-    getCampaignSpendForAccounts, getAdSpendForAccounts, getCampaignMessagingForAccounts, getAdMessagingForAccounts, resolveAdsToCampaigns,
+    getCampaignSpendForAccounts, getAdSpendForAccounts, getCampaignMessagingForAccounts, getAdMessagingForAccounts, getActiveAdIds, resolveAdsToCampaigns,
     // Audiences
     searchTargeting, listCustomAudiences,
     // Pages
