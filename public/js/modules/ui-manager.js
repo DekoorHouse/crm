@@ -6392,18 +6392,23 @@ function handleScroll() {
     }
 
     let topVisibleSeparator = null;
+    let nextSeparator = null; // el primero que todavía se ve (debajo del borde superior)
+    const containerRect = messagesContainer.getBoundingClientRect(); // Posición del contenedor
     // Itera desde el último separador hacia arriba
     for (let i = dateSeparators.length - 1; i >= 0; i--) {
         const separator = dateSeparators[i];
         const rect = separator.getBoundingClientRect(); // Posición del separador
-        const containerRect = messagesContainer.getBoundingClientRect(); // Posición del contenedor
 
         // Si el separador está por encima del borde superior visible del contenedor
         if (rect.top < containerRect.top) {
             topVisibleSeparator = separator; // Este es el que debe mostrarse en la cabecera
             break;
         }
+        nextSeparator = separator;
     }
+    // Si el separador real del día siguiente ya llegó a la zona de la cabecera, la flotante se esconde:
+    // si no, se veían dos fechas encimadas ("20 de octubre" con "16 de octubre" abajo, 22-oct-2026).
+    if (nextSeparator && nextSeparator.getBoundingClientRect().top < containerRect.top + 56) topVisibleSeparator = null;
 
     // Actualiza o oculta la cabecera flotante
     if (topVisibleSeparator) {
