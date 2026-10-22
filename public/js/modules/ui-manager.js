@@ -474,7 +474,7 @@ function _dpTabsBar(tab) {
         <button type="submit" class="btn btn-sm" style="background:#6f42c1;color:#fff;border:none;white-space:nowrap"><i class="fas fa-plus"></i> Añadir a Pendientes</button>
     </form>`;
     // Buscador del tablero: filtra las tarjetas de todas las columnas mientras escribes.
-    const search = tab === 'tablero' ? `<div style="position:relative;margin-left:auto;padding-bottom:4px">
+    const search = tab === 'tablero' ? `<button type="button" onclick="openDesignBank()" title="Banco de diseños: los dibujos de personaje ya aprobados que se reusan sin IA (solo cambia el nombre)" style="margin-left:auto;margin-bottom:4px;padding:5px 10px;border-radius:6px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:.85rem;cursor:pointer;white-space:nowrap"><i class="fas fa-book-open"></i> Banco de diseños</button><div style="position:relative;padding-bottom:4px">
         <i class="fas fa-search" style="position:absolute;left:9px;top:9px;font-size:.8rem;color:var(--color-text-light,#94a3b8)"></i>
         <input id="dp-search" type="search" value="${escapeHtml(window._dpSearch || '')}" oninput="window._dpSearch=this.value;_dpApplySearch()" placeholder="Buscar pedido: DH, nombre, personaje…" autocomplete="off" title="Busca por número, cliente, nombres, personaje o nota" style="width:260px;padding:5px 8px 5px 27px;border:1px solid var(--color-border,#e5e7eb);border-radius:6px;font-size:.85rem;background:var(--color-bg,#fff);color:inherit">
     </div>` : '';
@@ -957,6 +957,8 @@ const _DL_CLIENT = {
     changes: ['#d97706', 'fa-pen', 'El cliente pidió un cambio — la IA lo rehízo, revísalo y reenvíaselo'],
     // Pidió un cambio DESPUÉS de aprobar: el archivo ya estaba en Drive (DH18264).
     change_after_approval: ['#dc2626', 'fa-triangle-exclamation', 'El cliente pidió un cambio DESPUÉS de aprobar — ya estaba en Drive: revisa en taller si ya se cortó, y rehazlo con su cambio'],
+    // Banco de diseños: se le mandaron los modelos del personaje para que elija uno.
+    options_sent: ['#7c3aed', 'fa-images', 'Se le mandaron las opciones del banco — esperando a que elija una (elegir = aprobar)'],
 };
 function _dlClientBox(c) {
     const s = c && _DL_CLIENT[c.status]; if (!s) return '';
@@ -964,7 +966,7 @@ function _dlClientBox(c) {
 }
 function _dlClientBadge(c) {
     const s = c && _DL_CLIENT[c.status]; if (!s) return '';
-    const label = { sent: 'Enviado', approved: 'Cliente aprobó', changes: 'Pidió cambio', change_after_approval: 'Cambio tras aprobar' }[c.status];
+    const label = { sent: 'Enviado', options_sent: 'Eligiendo opción', approved: 'Cliente aprobó', changes: 'Pidió cambio', change_after_approval: 'Cambio tras aprobar' }[c.status];
     return `<span title="${escapeHtml(s[2])}" style="display:inline-flex;align-items:center;gap:3px;background:${s[0]}22;color:${s[0]};border:1px solid ${s[0]}66;padding:2px 6px;border-radius:6px;font-size:10.5px;font-weight:800;white-space:nowrap"><i class="fas ${s[1]}"></i>${label}</span>`;
 }
 
@@ -1014,7 +1016,9 @@ function _dlNormalize(al) {
         queued: al.queued ? { at: al.queued.at?._seconds ? al.queued.at._seconds * 1000 : (typeof al.queued.at === 'number' ? al.queued.at : Date.parse(al.queued.at) || null), claimedBy: al.queued.claimedBy || null } : null,
         pairedWith: al.pairedWith || null,
         lamps: lamps.map(l => ({ index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null, template: l.template || null, previewUrl: l.previewUrl || null,
-            clientPreviewUrl: l.clientPreviewUrl || null, projectId: l.projectId || null, brief: l.brief || null, rasterModel: l.rasterModel || null, rasterFallback: l.rasterFallback || null })) };
+            clientPreviewUrl: l.clientPreviewUrl || null, projectId: l.projectId || null, brief: l.brief || null, rasterModel: l.rasterModel || null, rasterFallback: l.rasterFallback || null,
+            hasArt: !!l.artUrl, bankId: l.bankId || null, bankSavedId: l.bankSavedId || null,
+            bankOptions: Array.isArray(l.bankOptions) ? l.bankOptions.map(x => ({ bankId: x.bankId, personaje: x.personaje || '', previewUrl: x.previewUrl || null, thumbUrl: x.thumbUrl || null })) : null })) };
 }
 
 function _dlWatch(o) {
@@ -1038,20 +1042,21 @@ function _dlWatch(o) {
 }
 
 // lamps: índices a rehacer (los demás se conservan); sin ellos, se diseña todo el pedido.
-async function startDesignBeta(orderId, el, note, lamps) {
+// noBank: «Generar nuevo con IA» (no usa el dibujo del banco de diseños).
+async function startDesignBeta(orderId, el, note, lamps, noBank = false) {
     const o = (window._designPendingData || []).find(x => x.id === orderId);
     if (!o) return;
     // Pedido que YA tiene archivo en la carpeta de corte: avisar antes de diseñarlo otra vez.
     if (el && o.svgCorteUrl && !await showConfirmModal(`⚠️ <b>${escapeHtml(o.orderNumber)} ya se subió a Drive</b>${o.svgCorteAt ? ' el ' + new Date(o.svgCorteAt).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''} (<a href="${escapeHtml(o.svgCorteUrl)}" target="_blank" rel="noopener">ver archivo</a>).<br><br>¿Diseñarlo de nuevo con la IA? No se le manda al cliente ni se sube nada sin que lo confirmes.`, { icon: 'warning', confirmText: 'Diseñar de nuevo', cancelText: 'Cancelar' })) return;
     if (el) el.disabled = true;
     try {
-        await _dlCall(_dlDh(o), '?beta=1', { beta: true, note: note || '', ...(lamps && lamps.length ? { lamps } : {}) });
+        await _dlCall(_dlDh(o), '?beta=1', { beta: true, note: note || '', ...(lamps && lamps.length ? { lamps } : {}), ...(noBank ? { noBank: true } : {}) });
         _dlSetLocal(orderId, { ...(o.autoLamp || {}), status: 'working', step: 'Leyendo el pedido y el chat' });
     } catch (e) { if (el) el.disabled = false; alert('No se pudo empezar el diseño IA: ' + (e.message || e)); }
 }
 window.startDesignBeta = startDesignBeta;
 
-const _DL_SOURCE = { mockup: 'Del mockup que ya vio el cliente', cliente: 'Foto/imagen del cliente', ilustracion: 'Ilustración nueva', propia: 'Imagen del equipo (sin IA)' };
+const _DL_SOURCE = { mockup: 'Del mockup que ya vio el cliente', cliente: 'Foto/imagen del cliente', ilustracion: 'Ilustración nueva', propia: 'Imagen del equipo (sin IA)', banco: 'Banco de diseños (sin IA, solo cambia el texto)' };
 
 // Una tarjeta por lámpara: vista Grabado / Previo cliente, lo que entendió la IA y sus acciones.
 // «Ver diseño»: lo que se subió a Drive (hojas para RDWorks con su vista previa y su link).
@@ -1070,6 +1075,22 @@ function _dlDoneBox(a, o) {
     // Reabrir: si hay que corregirlo después de subirlo (se borra el archivo de Drive y vuelve a «Revisar diseño»).
     return `<div style="margin-top:8px;border:1px solid #db277766;background:#db277710;border-radius:8px;padding:8px 10px;font-size:12.5px"><b style="color:#be185d"><i class="fas fa-circle-check"></i> En Drive (SVG Corte)${when ? ' desde el ' + escapeHtml(when) : ''}${a.approvedBy ? ' · ' + escapeHtml(a.approvedBy) : ''}${a.pairedWith ? ` · en la hoja con DH${escapeHtml(String(a.pairedWith))}` : ''}</b><div>${sheets}</div>
         <button data-dl="reopen" style="margin-top:8px;padding:6px 11px;border-radius:8px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;cursor:pointer"><i class="fas fa-rotate-left"></i> Reabrir para corregir</button></div>`;
+}
+
+// Los modelos del banco de diseños de una lámpara (el personaje ya tenía varios dibujos aprobados): cuál está en uso,
+// cambiar a otro y mandarle al cliente todos para que elija.
+function _dlBankOptions(l, done) {
+    const opts = l.bankOptions || [];
+    if (opts.length < 2) return '';
+    return `<div style="margin-top:8px;border:1px solid #7c3aed55;background:#7c3aed0d;border-radius:8px;padding:7px 9px">
+        <b style="font-size:12.5px;color:#6d28d9"><i class="fas fa-book-open"></i> ${opts.length} modelos${opts[0].personaje ? ' de ' + escapeHtml(opts[0].personaje) : ''} en el banco</b>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${opts.map((x, k) => `<div style="text-align:center;font-size:11px;width:96px">
+            ${x.previewUrl ? `<img src="${escapeHtml(x.previewUrl)}" onclick="openImageModal(this.src)" style="width:90px;height:90px;object-fit:contain;border-radius:6px;border:2px solid ${x.bankId === l.bankId ? '#16a34a' : 'var(--color-border,#e5e7eb)'};background:#000;cursor:zoom-in">` : ''}
+            <div style="color:#64748b">Opción ${k + 1}</div>
+            ${x.bankId === l.bankId ? '<b style="color:#16a34a">En uso</b>' : done ? '' : `<button data-dl="bank-choose" data-lamp="${l.index}" data-bank="${escapeHtml(x.bankId)}" style="margin-top:2px;padding:3px 8px;border-radius:6px;border:1px solid #16a34a;background:transparent;color:#15803d;font-weight:700;font-size:11px;cursor:pointer">Usar este</button>`}
+        </div>`).join('')}</div>
+        ${done ? '' : `<button data-dl="send-options" data-lamp="${l.index}" title="Le manda al cliente los ${opts.length} modelos con su nombre («Opción 1», «Opción 2»…) y le pregunta cuál le gusta más; el que elija queda puesto y, si es su única lámpara, se aprueba y sube a Drive" style="margin-top:7px;padding:5px 10px;border-radius:7px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-paper-plane"></i> Mandar opciones al cliente</button>`}
+    </div>`;
 }
 
 function _dlLampCard(l, dh, total, done = false) {
@@ -1092,7 +1113,7 @@ function _dlLampCard(l, dh, total, done = false) {
                 ${b.resumen ? `<div><b>Entendió:</b> ${escapeHtml(b.resumen)}</div>` : ''}
                 <div><b>Texto:</b> ${b.nombre ? escapeHtml(b.nombre) : '<i>sin texto</i>'}${(l.source || b.fuente) === 'mockup' && !l.template ? ' <span style="color:#64748b">(como viene en el mockup)</span>' : ''}${b.textoEnImagen ? ' <span style="color:#7c3aed">(dibujado por la IA dentro de la imagen)</span>' : ''}</div>
                 ${b.referenceUrl ? `<div style="margin-top:5px"><b>${(b.referenceUrls || []).length > 1 ? 'Imágenes usadas' : 'Imagen usada'}:</b><br>${((b.referenceUrls || []).length ? b.referenceUrls : [b.referenceUrl]).map(u => `<img src="${escapeHtml(u)}" onclick="openImageModal(this.src)" style="max-width:110px;max-height:110px;border-radius:6px;cursor:zoom-in;margin:3px 4px 0 0">`).join('')}</div>` : (b.prompt ? `<div><b>Ilustración pedida:</b> ${escapeHtml(b.prompt)}</div>` : '')}
-                ${model}${warn}
+                ${model}${warn}${_dlBankOptions(l, done)}
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
                     ${l.projectId ? `<a href="/editor-v2/?project=${encodeURIComponent(l.projectId)}&dh=${dh}" target="_blank" rel="noopener" style="padding:5px 9px;border-radius:7px;border:1px solid #0ea5e9;color:#0284c7;font-weight:700;font-size:12px;text-decoration:none"><i class="fas fa-pen-ruler"></i> Corregir en el editor</a>` : ''}
                     ${!done ? `<button data-dl="own-image" data-lamp="${l.index}" title="Sube una imagen (mockup, foto o dibujo) y la IA la convierte a grabado igual que si viniera del chat" style="padding:5px 9px;border-radius:7px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-upload"></i> Usar mi imagen</button>
@@ -1101,6 +1122,9 @@ function _dlLampCard(l, dh, total, done = false) {
                     <button data-dl="versions" data-lamp="${l.index}" title="Ver los diseños anteriores de esta lámpara y regresar a uno" style="padding:5px 9px;border-radius:7px;border:1px solid #64748b;background:transparent;color:#475569;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-clock-rotate-left"></i> Versiones</button>` : ''}
                     ${l.projectId && !done ? `<button data-dl="remove-ring" data-lamp="${l.index}" title="Borra la línea circular del contorno (el aro del acrílico) de ESTE diseño, sin regenerarlo; respeta lo corregido en el editor" style="padding:5px 9px;border-radius:7px;border:1px solid #64748b;background:transparent;color:#475569;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-circle-notch"></i> Quitar aro</button>` : ''}
                     ${total > 1 && !done && l.projectId ? `<button data-dl="send-client" data-lamp="${l.index}" title="Le manda al cliente SOLO el previo de esta lámpara (p. ej. la única que pidió cambiar)" style="padding:5px 9px;border-radius:7px;border:1px solid #0d9488;background:transparent;color:#0f766e;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-paper-plane"></i> Mandar esta</button>` : ''}
+                    ${l.bankId && !done ? `<button data-dl="redo-ai" data-lamp="${l.index}" title="No usar el dibujo del banco: la IA hace un dibujo NUEVO de esta lámpara (si se aprueba, entra al banco como otro modelo)" style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-wand-magic-sparkles"></i> Generar nuevo con IA</button>` : ''}
+                    ${!l.bankId && l.hasArt && !l.bankSavedId ? `<button data-dl="bank-save" data-lamp="${l.index}" title="Guarda el dibujo (sin el texto) en el banco de diseños: el próximo pedido de este personaje lo usa sin IA. Los de personaje entran solos al subirse a Drive." style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-book-open"></i> Guardar en banco</button>` : ''}
+                    ${l.bankSavedId ? `<span style="padding:5px 4px;font-size:12px;color:#7c3aed;font-weight:700"><i class="fas fa-book-open"></i> En el banco</span>` : ''}
                     ${total > 1 && !done ? `<button data-dl="redo-one" data-lamp="${l.index}" title="Rehace solo esta lámpara (con la indicación de abajo, si escribiste una)" style="padding:5px 9px;border-radius:7px;border:1px solid #7c3aed;background:transparent;color:#7c3aed;font-weight:700;font-size:12px;cursor:pointer"><i class="fas fa-rotate"></i> Rehacer esta</button>` : ''}
                 </div>
             </div>
@@ -1347,6 +1371,31 @@ function openDesignBeta(orderId) {
                 if (img) img.src = d.previewUrl;
                 card?.querySelectorAll('[data-dl="view-grabado"],[data-dl="view-cliente"]').forEach(b => { const on = b.dataset.dl === 'view-grabado'; b.style.background = on ? '#7c3aed' : 'transparent'; b.style.color = on ? '#fff' : '#7c3aed'; });
                 btn.innerHTML = '<i class="fas fa-check"></i> Aro quitado';
+            } else if (act === 'bank-choose') {
+                const l = lampOf(btn);
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                await _dlCall(dh, '/bank-choose', { lamp: l.index, bankId: btn.dataset.bank });
+                const { autoLamp } = await _dlCall(dh, '');
+                close(); _dlSetLocal(orderId, _dlNormalize(autoLamp)); openDesignBeta(orderId);
+            } else if (act === 'send-options') {
+                const l = lampOf(btn), opts = l.bankOptions || [];
+                const thumbs = opts.map((x, k) => `<div style="display:inline-block;text-align:center;margin:6px 4px 0"><img src="${escapeHtml(x.previewUrl || '')}" style="max-width:110px;border-radius:8px;background:#000"><br><small>Opción ${k + 1}</small></div>`).join('');
+                if (!await showConfirmModal(`¿Mandarle al cliente de ${o.orderNumber} los ${opts.length} modelos${lamps.length > 1 ? ` de «${escapeHtml(l.label || '')}»` : ''} para que elija? Le llegan con su nombre como «Opción 1», «Opción 2»… y se le pregunta cuál le gusta más.${lamps.length > 1 ? '' : ' El que elija se aprueba y se sube solo a Drive.'}<br>${thumbs}`, { icon: 'fa-paper-plane', confirmText: 'Mandar opciones' })) { btn.disabled = false; return; }
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mandando…';
+                await _dlCall(dh, '/send-options', { lamp: l.index });
+                close(); o.boardCol = 'esperando_confirmacion'; _dlSetLocal(orderId, { ...a, client: { status: 'options_sent' } });
+            } else if (act === 'bank-save') {
+                const l = lampOf(btn);
+                const personaje = window.prompt('¿De qué personaje es este dibujo? (así lo busca el banco en los pedidos nuevos)', (l.brief && l.brief.personaje) || '');
+                if (!personaje || !personaje.trim()) { btn.disabled = false; return; }
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando…';
+                const d = await _dlCall(dh, '/bank-save', { lamp: l.index, personaje: personaje.trim() });
+                l.bankSavedId = d.id;
+                btn.outerHTML = `<span style="padding:5px 4px;font-size:12px;color:#7c3aed;font-weight:700"><i class="fas fa-book-open"></i> En el banco (${escapeHtml(d.personaje || personaje)})</span>`;
+            } else if (act === 'redo-ai') {
+                const l = lampOf(btn);
+                if (!await showConfirmModal(`¿Hacer un dibujo NUEVO con la IA para «${escapeHtml(l.label || '')}» en vez de usar el del banco?${note ? `<br>Con la indicación: <b>${escapeHtml(note)}</b>` : ''}<br><br>Si se aprueba, ese dibujo entra al banco como otro modelo del personaje.`, { icon: 'fa-wand-magic-sparkles', confirmText: 'Generar con IA' })) { btn.disabled = false; return; }
+                close(); await startDesignBeta(orderId, null, note, [l.index], true);
             } else if (act === 'redo-one') {
                 const l = lampOf(btn);
                 close(); await startDesignBeta(orderId, null, note, [l.index]);
@@ -1355,6 +1404,66 @@ function openDesignBeta(orderId) {
     });
 }
 window.openDesignBeta = openDesignBeta;
+
+// BANCO DE DISEÑOS: los dibujos de personaje ya aprobados (sin texto), agrupados por personaje. Un pedido nuevo del
+// mismo personaje los usa sin IA; aquí se renombra el personaje o se saca un dibujo del banco.
+async function openDesignBank() {
+    document.getElementById('dl-bank-modal')?.remove();
+    const wrap = document.createElement('div');
+    wrap.id = 'dl-bank-modal';
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px';
+    wrap.innerHTML = `<div style="background:var(--color-container-bg,#fff);color:var(--color-text,#1e293b);border-radius:14px;max-width:900px;width:100%;max-height:92vh;overflow:auto;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:1.05rem"><i class="fas fa-book-open" style="color:#7c3aed"></i> Banco de diseños</b>
+            <button data-bk="close" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:inherit">&times;</button></div>
+        <div style="font-size:12.5px;color:#64748b;margin-top:4px">Cuando un pedido es de un personaje que ya está aquí, el Diseño IA usa este dibujo SIN IA y solo le cambia el nombre. Si hay varios modelos, en la revisión puedes mandarle las opciones al cliente para que elija. Los dibujos de personaje entran solos cuando su lámpara se sube a Drive.</div>
+        <div data-bk="list" style="margin-top:12px"><i class="fas fa-spinner fa-spin"></i> Cargando…</div>
+    </div>`;
+    document.body.appendChild(wrap);
+    const close = () => wrap.remove();
+    const render = entries => {
+        const groups = {};
+        for (const e of entries) (groups[e.personaje] ||= []).push(e);
+        const names = Object.keys(groups);
+        wrap.querySelector('[data-bk="list"]').innerHTML = names.length ? names.map(name => `<div style="margin-bottom:14px">
+            <div style="font-weight:800;font-size:13.5px;margin-bottom:6px">${escapeHtml(name)} <span style="color:#64748b;font-weight:600;font-size:12px">${groups[name].filter(e => e.active).length} modelo(s)</span></div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">${groups[name].map(e => `<div style="width:130px;text-align:center;font-size:11px;opacity:${e.active ? 1 : .45}">
+                <img src="${escapeHtml(e.thumbUrl || '')}" onclick="openImageModal(this.src)" style="width:124px;height:124px;object-fit:contain;border-radius:8px;border:1px solid var(--color-border,#e5e7eb);background:#fff;cursor:zoom-in">
+                <div style="color:#64748b">${e.sourceDh ? 'DH' + e.sourceDh : ''} · ${e.uses} uso(s)${e.active ? '' : ' · fuera'}</div>
+                <button data-bk="rename" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.personaje)}" style="margin-top:2px;padding:2px 7px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#475569;font-size:11px;cursor:pointer">Renombrar</button>
+                <button data-bk="toggle" data-id="${escapeHtml(e.id)}" data-active="${e.active ? '1' : '0'}" style="margin-top:2px;padding:2px 7px;border-radius:6px;border:1px solid ${e.active ? '#dc2626' : '#16a34a'};background:transparent;color:${e.active ? '#dc2626' : '#15803d'};font-size:11px;cursor:pointer">${e.active ? 'Sacar' : 'Regresar'}</button>
+            </div>`).join('')}</div></div>`).join('')
+            : '<i style="color:#64748b;font-size:13px">Todavía no hay dibujos. Se llena solo al subir a Drive lámparas de personaje, o con «Guardar en banco» en la revisión de un diseño.</i>';
+    };
+    const load = async () => {
+        const res = await fetch(`${API_BASE_URL}/api/auto-lamp/bank/list`);
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || d.success === false) throw new Error(d.error || ('HTTP ' + res.status));
+        render(d.entries || []);
+    };
+    const post = async (id, body) => {
+        const res = await fetch(`${API_BASE_URL}/api/auto-lamp/bank/${encodeURIComponent(id)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || d.success === false) throw new Error(d.error || ('HTTP ' + res.status));
+    };
+    load().catch(e => { wrap.querySelector('[data-bk="list"]').textContent = 'No se pudo cargar el banco: ' + (e.message || e); });
+    wrap.addEventListener('click', async ev => {
+        if (ev.target === wrap) return close();
+        const btn = ev.target.closest('[data-bk]'); if (!btn) return;
+        try {
+            if (btn.dataset.bk === 'close') return close();
+            if (btn.dataset.bk === 'rename') {
+                const name = window.prompt('Nombre del personaje (los pedidos nuevos lo buscan con este nombre):', btn.dataset.name || '');
+                if (!name || !name.trim()) return;
+                await post(btn.dataset.id, { personaje: name.trim() }); await load();
+            } else if (btn.dataset.bk === 'toggle') {
+                const active = btn.dataset.active !== '1';
+                if (!active && !await showConfirmModal('¿Sacar este dibujo del banco? Los pedidos nuevos ya no lo usan (puedes regresarlo después).', { icon: 'warning', confirmText: 'Sacar' })) return;
+                await post(btn.dataset.id, { active }); await load();
+            }
+        } catch (e) { alert(e.message || e); }
+    });
+}
+window.openDesignBank = openDesignBank;
 
 // «Subir sola»: la lámpara que espera pareja para la hoja se sube en su propia hoja, sin esperar.
 async function dpBetaUploadAlone(orderId, btn) {

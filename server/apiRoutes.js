@@ -8782,6 +8782,9 @@ router.get('/design-pending', async (req, res) => {
                         index: l.index, label: l.label || '', copies: l.copies || 1, source: l.source || null, template: l.template || null,
                         previewUrl: l.previewUrl || null, clientPreviewUrl: l.clientPreviewUrl || null, projectId: l.projectId || null,
                         brief: l.brief || null, rasterModel: l.rasterModel || null, rasterFallback: l.rasterFallback || null,
+                        // Banco de diseños: si salió del banco, sus otros modelos y si ya se guardó su dibujo.
+                        hasArt: !!l.artUrl, bankId: l.bankId || null, bankSavedId: l.bankSavedId || null,
+                        bankOptions: Array.isArray(l.bankOptions) ? l.bankOptions.map(x => ({ bankId: x.bankId, personaje: x.personaje || '', previewUrl: x.previewUrl || null, thumbUrl: x.thumbUrl || null })) : null,
                     })),
                     updatedAt: tsToMs(p.autoLamp.updatedAt),
                 } : null,
@@ -8810,7 +8813,7 @@ router.get('/design-pending', async (req, res) => {
                     // (Lo que pide el cliente después del envío; el pago validado después NO lo regresa.)
                     const pidioTrasEnvio = Math.max(tsToMs(p.pendienteDisenoAt), tsToMs(p.corregirAt), tsToMs(p.videoRequestedAt),
                         tsToMs(p.productoAgregadoPostPagoAt), tsToMs(p.reenvioAt), tsToMs(p.designForceAt)) || 0;
-                    if (betaClient && betaClient.status === 'sent' && tsToMs(betaClient.sentAt) >= pidioTrasEnvio) return 'esperando_confirmacion';
+                    if (betaClient && ['sent', 'options_sent'].includes(betaClient.status) && tsToMs(betaClient.sentAt) >= pidioTrasEnvio) return 'esperando_confirmacion';
                     if (betaClient && betaClient.status === 'changes') return 'pendientes';
                     if (correccionAbierta(p)) return 'pendientes';
                     // DISEÑO BETA ya en Drive (Chris, 19-oct-2026): sale de Pendientes a su propia columna,

@@ -152,10 +152,28 @@ async function handleReply(contactId, message, contactRef, contactData) {
 
         // Sin texto utilizable (sticker/foto/ubicación/voz sin transcripción) NO va al clasificador:
         // se trata como ambiguo (evita mandarle basura a Gemini y un falso 'approved' sobre nada).
-        let decision = 'unclear', changeSummary = '';
-        if (clientText) {
+        let decision = 'unclear', changeSummary = '', decided = false;
+        // OPCIONES DEL BANCO DE DISEÑOS (Chris, 22-oct-2026): se le mandaron varios modelos del personaje; su respuesta
+        // dice cuál eligió. Elegir uno = aprobarlo (pedido de una lámpara); con un cambio extra, se rehace con ese modelo.
+        const choosing = isBeta(order) && order.autoLamp && order.autoLamp.client && order.autoLamp.client.status === 'options_sent';
+        if (choosing && clientText) {
+            const pick = await require('./autoLamp/autoLampService').pickOptionFromReply(orderId, clientText).catch(e => { console.warn('[design-approval] opciones:', e.message); return { picked: false }; });
+            if (pick.picked && pick.changes) { decision = 'changes'; changeSummary = `Eligió la opción ${pick.option}; además pidió: ${pick.changes}`; decided = true; }
+            else if (pick.picked && pick.single) { decision = 'approved'; decided = true; }
+            else if (pick.picked) {
+                // Pedido de varias lámparas: queda anotada su elección y una persona le manda el diseño completo.
+                await orderRef.update({ 'designApproval.status': 'option_chosen', 'designApproval.unclearRounds': 0 });
+                await contactRef.update({ designApprovalPending: false });
+                await sendAndSave(contactId, contactRef, { text: `¡Listo! Anotamos la opción ${pick.option} 🙌 En seguida te confirmo el diseño completo ✨` });
+                await notifyAdmin(`🖼️ ${dh} — el cliente ELIGIÓ la opción ${pick.option} del banco de diseños ("${clientText}"). Ya quedó puesta en su lámpara: revisa y mándale el diseño completo o apruébalo.`);
+                return;
+            }
+        }
+        if (clientText && !decided) {
             const c = await classifyReply(clientText, designText);
             decision = c.decision; changeSummary = c.changeSummary;
+            // «Me gustan» sin decir cuál: no se aprueba ninguna, se le vuelve a preguntar cuál.
+            if (choosing && decision === 'approved') decision = 'unclear';
         }
         console.log(`[design-approval] ${dh}: cliente dijo "${String(clientText).slice(0, 60)}" -> ${decision}${changeSummary ? ' (' + changeSummary + ')' : ''}`);
 
@@ -236,7 +254,8 @@ async function handleReply(contactId, message, contactRef, contactData) {
             return;
         }
         await sendAndSave(contactId, contactRef, {
-            text: `Solo para confirmar 🙏 respóndeme con un mensaje: ¿el diseño está bien así o te gustaría que cambiemos algo?`,
+            text: choosing ? `Solo para confirmar 🙏 ¿cuál de las opciones te gustó más? Respóndeme con el número de la opción 😊`
+                : `Solo para confirmar 🙏 respóndeme con un mensaje: ¿el diseño está bien así o te gustaría que cambiemos algo?`,
         });
         console.log(`[design-approval] ${dh}: respuesta ambigua (ronda ${rounds}), re-pregunté.`);
     } catch (e) {

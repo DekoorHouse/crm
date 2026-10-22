@@ -10,6 +10,16 @@ router.use(requireApiUser);
 const dhOf = value => { const n = parseInt(String(value).replace(/\D/g, ''), 10); return Number.isSafeInteger(n) && n > 0 ? n : null; };
 const running = new Set();
 
+// BANCO DE DISEÑOS (antes de las rutas /:dh): la lista, y renombrar o sacar un dibujo (body.personaje, body.active).
+router.get('/bank/list', async (req, res) => {
+    try { res.json({ success: true, entries: await service.listBank() }); }
+    catch (error) { res.status(500).json({ success: false, error: error.message || 'No se pudo leer el banco.' }); }
+});
+router.post('/bank/:id', async (req, res) => {
+    try { res.json({ success: true, ...(await service.updateBankEntry(req.params.id, { personaje: req.body?.personaje, active: req.body?.active })) }); }
+    catch (error) { res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo cambiar.' }); }
+});
+
 router.post('/:dh', async (req, res) => {
     const dh = dhOf(req.params.dh);
     if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
@@ -23,7 +33,8 @@ router.post('/:dh', async (req, res) => {
     const auth = {};
     if (req.headers.authorization) auth.Authorization = req.headers.authorization;
     if (req.headers.cookie) auth.Cookie = req.headers.cookie;
-    service.generate(dh, { beta, auth, note: beta ? String(req.body?.note || '').trim() : '', lamps: Array.isArray(req.body?.lamps) ? req.body.lamps.map(Number).filter(Number.isInteger) : null }).catch(error => console.warn(`[AUTO-LAMP] DH${dh}:`, error.message)).finally(() => running.delete(dh));
+    // noBank: «Generar nuevo con IA» (no usa el dibujo del banco de diseños aunque el personaje ya tenga).
+    service.generate(dh, { beta, auth, noBank: req.body?.noBank === true, note: beta ? String(req.body?.note || '').trim() : '', lamps: Array.isArray(req.body?.lamps) ? req.body.lamps.map(Number).filter(Number.isInteger) : null }).catch(error => console.warn(`[AUTO-LAMP] DH${dh}:`, error.message)).finally(() => running.delete(dh));
     res.status(202).json({ success: true, status: 'working' });
 });
 
@@ -137,6 +148,32 @@ router.post('/:dh/send-client', async (req, res) => {
     const only = Array.isArray(req.body?.lamps) && req.body.lamps.length ? req.body.lamps.map(Number).filter(Number.isInteger) : null;
     try { res.json({ success: true, ...(await service.sendToClient(dh, { auth, actor: req.apiAuth, only })) }); }
     catch (error) { console.warn(`[AUTO-LAMP] mandar previo DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo mandar al cliente.' }); }
+});
+
+// Banco de una lámpara: guardar su dibujo (body.lamp, body.personaje), cambiarla a otro de sus modelos (body.bankId) y
+// mandarle al cliente sus modelos para que elija.
+router.post('/:dh/bank-save', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    try { res.json({ success: true, ...(await service.saveToBank(dh, Number(req.body?.lamp ?? 0) || 0, { personaje: String(req.body?.personaje || ''), actor: req.apiAuth })) }); }
+    catch (error) { res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo guardar en el banco.' }); }
+});
+router.post('/:dh/bank-choose', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    if (running.has(dh)) return res.status(409).json({ success: false, error: 'Todavía se está generando este diseño.' });
+    try { res.json({ success: true, ...(await service.chooseBankOption(dh, Number(req.body?.lamp ?? 0) || 0, String(req.body?.bankId || ''))) }); }
+    catch (error) { res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudo cambiar de modelo.' }); }
+});
+router.post('/:dh/send-options', async (req, res) => {
+    const dh = dhOf(req.params.dh);
+    if (!dh) return res.status(400).json({ success: false, error: 'Número de pedido no válido.' });
+    if (running.has(dh)) return res.status(409).json({ success: false, error: 'Todavía se está generando este diseño.' });
+    const auth = {};
+    if (req.headers.authorization) auth.Authorization = req.headers.authorization;
+    if (req.headers.cookie) auth.Cookie = req.headers.cookie;
+    try { res.json({ success: true, ...(await service.sendOptionsToClient(dh, Number(req.body?.lamp ?? 0) || 0, { auth, actor: req.apiAuth })) }); }
+    catch (error) { console.warn(`[AUTO-LAMP] mandar opciones DH${dh}:`, error.message); res.status(error.status || 500).json({ success: false, error: error.message || 'No se pudieron mandar las opciones.' }); }
 });
 
 // Vista «Grabado» de una lámpara desde la versión actual del proyecto (lo corregido en el editor). No manda nada.

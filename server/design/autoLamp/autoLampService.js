@@ -267,7 +267,7 @@ async function imagePart(url) {
  * y decide el diseño de CADA lámpara. note: indicación del equipo o cambio que pidió el cliente; con
  * `previous` (lo ya diseñado) también dice qué lámparas hay que rehacer ("cambia").
  */
-async function designBriefOrder({ order, lamps, history, clientImages, sentImages, note, previous = [] }) {
+async function designBriefOrder({ order, lamps, history, clientImages, sentImages, note, previous = [], bankNames = [] }) {
     const client = clientImages.slice(-6), sent = sentImages.slice(-10);
     const lampList = lamps.map(l => `L${l.index}: ${l.producto || 'Lámpara'} — datos: "${l.datos || '(sin datos)'}"${l.copies > 1 ? ` — cantidad ${l.copies} (iguales)` : ''}`).join('\n');
     const prevList = previous.length ? previous.map(p => `L${p.index}: ya diseñada (${p.brief?.resumen || p.label || ''})`).join('\n') : '';
@@ -289,11 +289,13 @@ Para CADA lámpara decide:
 - "textoEnImagen": true SOLO si la INDICACIÓN (o el cliente) pide que la IA integre/escriba el texto DENTRO de la imagen, todo junto como un solo diseño; entonces el texto de "nombre" lo dibuja el modelo de imágenes y el sistema no agrega otro. false en cualquier otro caso.
 - "textoCambia": SOLO para fuente "mockup": true si el texto final es DISTINTO del que se ve en el mockup (el cliente pidió agregar o cambiar algo del texto después de verlo); false si el mockup ya trae exactamente el texto final.
 - "tipo": "foto", "personaje" o "especial".
+- "personaje": SOLO si tipo es "personaje": el nombre corto del personaje (ej. "Stitch", "Spiderman", "Unicornio", "Caballo"). ${bankNames.length ? `Si es uno de los que ya tenemos en el BANCO de diseños (${bankNames.map(n => `"${n}"`).join(', ')}), escribe EXACTAMENTE ese nombre.` : ''} "" si no es personaje.
+- "personalizado": true si el cliente (o la INDICACIÓN) pide el personaje DISTINTO a como es normalmente o cambiar algo del DIBUJO (otra pose, ropa, accesorios, junto con otra cosa, hecho a partir de su foto, "otro modelo"); false si es el personaje tal cual (cambiar solo el nombre, la fecha o la frase NO cuenta).
 - "estilo": "plano" si el diseño es de siluetas y rellenos SÓLIDOS (tipo vector o calcomanía, sin sombreado: p. ej. un unicornio con estrellas y nubes en negro sólido); "trama" si es un dibujo con sombreado, textura o mucho detalle, o una foto (p. ej. un T-Rex grabado con puntitos, un luchador, una familia). En un mockup prendido IGNORA el brillo/resplandor de la luz: juzga el dibujo.
 - "resumen": una línea para el equipo con lo que entendiste de ESA lámpara.
 - "advertencias": dudas que no puedes resolver de ESA lámpara (ej. "la foto es muy oscura", "no queda claro el nombre", "no encontré el mockup de esta lámpara"); [] si nada.
 - "cambia": ${prevList ? 'true si por la INDICACIÓN/CAMBIO hay que rehacer ESTA lámpara; false si se queda como está.' : 'true.'}
-Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "textoEnImagen": false, "textoCambia": false, "tipo": "...", "estilo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
+Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "textoEnImagen": false, "textoCambia": false, "tipo": "...", "personaje": "", "personalizado": false, "estilo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
     const kinds = new Map();   // parte de imagen -> { prefix C|N, catalog } (Gemini no acepta campos extra en las partes)
     for (const [prefix, list] of [['C', client], ['N', sent]]) {
         for (const [i, image] of list.entries()) {
@@ -343,6 +345,9 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
         return {
             fuente, reference, references,
             tipo: ['foto', 'personaje', 'especial'].includes(row.tipo) ? row.tipo : 'especial',
+            // Para el BANCO de diseños: qué personaje es y si el cliente lo quiere distinto (entonces no sirve el del banco).
+            personaje: row.tipo === 'personaje' ? String(row.personaje || '').trim().slice(0, 60) : '',
+            personalizado: row.personalizado === true,
             // Frases largas también (DH18288 se cortó a 80 letras): renglones con " · ".
             nombre: String(row.nombre || '').trim().slice(0, 400),
             prompt: String(row.prompt || '').trim().slice(0, 1500),
@@ -828,6 +833,11 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         // rehacía todo y metía la escena en un rectángulo con pedazos de la foto).
         step('Modificando el diseño con la IA');
         raster = await rasterizeBeta({ url: plan.editFrom }, { prompt: `Edita esta imagen de grabado: ${plan.editNote}. Mantén EXACTAMENTE el mismo dibujo, pose, tamaño y posición; cambia SOLO eso. Solo blanco y negro: el diseño en BLANCO sobre fondo NEGRO, sin colores, sin rectángulos, cuadros ni marcos.${plan.nombre && !(plan.fuente === 'mockup' && !plan.textoCambia) ? ` ${NO_TEXT}` : ''}`, estilo: plan.estilo, onStep: step });
+    } else if (plan.bank) {
+        // BANCO DE DISEÑOS (Chris, 22-oct-2026): el dibujo de este personaje ya se hizo y se aprobó en otro pedido;
+        // se usa tal cual (sin IA) y solo cambia el texto.
+        step('Usando el diseño del banco');
+        raster = { url: null, jobId: null, model: 'Banco de diseños (sin IA)', buffer: (await download(plan.bank.artUrl)).buffer };
     } else if (plan.fuente === 'propia') {
         // IMAGEN DEL EQUIPO (Chris, 20-oct-2026, DH18183 KATSEYE): ya viene lista en negro sobre blanco; sin IA.
         step('Usando la imagen del equipo');
@@ -873,11 +883,12 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const downloaded = raster.buffer || (await download(raster.url)).buffer;
     // Grabado listo (negro sobre blanco); el del mockup además se reacomoda para llenar el círculo.
     // La imagen del equipo ya es negro sobre blanco (no se adivina la polaridad: un logo con aro la confunde).
-    const engraved = plan.fuente === 'propia' ? await sharp(downloaded).flatten({ background: '#ffffff' }).greyscale().png().toBuffer() : await engravePolarity(downloaded);
+    // El del banco ya es el dibujo final (negro sobre blanco, acomodado en el círculo).
+    const engraved = plan.fuente === 'propia' || plan.bank ? await sharp(downloaded).flatten({ background: '#ffffff' }).greyscale().png().toBuffer() : await engravePolarity(downloaded);
     const cleanTemplate = plan.template && !TEMPLATES[plan.template].rename;   // el grabado del taller tal cual (Spiderman)
     // Del mockup: sin el aro del acrílico que el modelo copia (removeRing) y acomodado para llenar el círculo.
     // La del equipo: acomodada como diseño suelto (su aro es parte del logo, no el del acrílico).
-    let buffer = cleanTemplate ? downloaded : plan.template ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved))
+    let buffer = cleanTemplate ? downloaded : plan.template || plan.bank ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved))
         : plan.fuente === 'propia' ? await fitToLampCircle(engraved, 2000, { loose: true }) : engraved;
     const font = await loadFont();
     const { composeLamp, renderPreview, pictureSizeMm, rdworksPiece, photoOutline } = await composerModule();
@@ -888,6 +899,11 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const engraveName = plan.template && TEMPLATES[plan.template].rename ? ''
         : plan.template ? (plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '')
         : plan.fuente === 'mockup' && !plan.textoCambia ? '' : plan.textoEnImagen ? '' : plan.nombre;
+    const folder = `${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}`;
+    // El DIBUJO sin texto (antes de recorrerlo para el texto): lo que se guarda en el banco de diseños si se aprueba.
+    // Solo cuando el texto va aparte; si el dibujo trae el nombre del cliente no sirve para otro pedido.
+    const artUrl = plan.bank ? plan.bank.artUrl
+        : engraveName && !plan.template && !plan.textoEnImagen ? await saveFile(`${folder}/dibujo-${Date.now().toString(36)}.png`, await sharp(buffer).greyscale().png().toBuffer(), 'image/png').catch(() => null) : null;
     // En la plantilla el nombre va en el hueco que deja el dibujo (arriba a la izquierda), no abajo.
     let nameSlot = plan.template && engraveName ? await freeNameSlot(buffer, engraveName, font) : null;
     // El texto nunca encima de un rostro (Chris, 21-oct-2026): se ubican las caras y el armado las esquiva.
@@ -927,7 +943,6 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     const { document, faceOverlap } = composeLamp({ image: { dataUrl, width: size.width, height: size.height, pixelated: true }, name: engraveName, font, title, nameSlot, avoid, outline });
     if (faceOverlap) plan.advertencias = [...(plan.advertencias || []), 'el texto no cupo sin tocar un rostro: acomódalo en el editor'];
 
-    const folder = `${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}`;
     const imageHash = crypto.createHash('sha256').update(dataUrl).digest('hex');
     const imageUrl = await saveFile(`editor-v2/images/${ACTOR.uid}/${imageHash}`, png, 'image/png');
     // Cuánto del marco se graba en el diseño original: sirve para notar después si se recortó en el editor.
@@ -940,9 +955,10 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         createdAt: now(), createdBy: ACTOR.uid, updatedAt: now(), updatedBy: ACTOR.uid, orderNumber: Number(dh), lampIndex: lamp.index,
     });
     return {
-        index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.fuente, textChanged: !!plan.textoCambia, template: plan.template || null, estilo: plan.estilo || 'trama',
+        index: lamp.index, label: lamp.label, copies: lamp.copies, status: 'ready', source: plan.bank ? 'banco' : plan.fuente, textChanged: !plan.bank && !!plan.textoCambia,
+        artUrl: artUrl || null, bankId: plan.bank?.id || null, template: plan.template || null, estilo: plan.estilo || 'trama',
         brief: { tipo: plan.tipo || null, fuente: plan.fuente, estilo: plan.estilo || 'trama', nombre: plan.nombre || '', prompt: plan.prompt || '', resumen: plan.resumen || '',
-            advertencias: plan.advertencias || [], textoEnImagen: !!plan.textoEnImagen, referenceUrl: plan.reference?.url || null, referenceUrls: (plan.references || []).map(r => r.url).filter(Boolean) },
+            advertencias: plan.advertencias || [], textoEnImagen: !!plan.textoEnImagen, personaje: plan.bank?.personaje || plan.personaje || '', personalizado: !!plan.personalizado, referenceUrl: plan.reference?.url || null, referenceUrls: (plan.references || []).map(r => r.url).filter(Boolean) },
         projectId: project.id, projectRevision: 1, previewUrl, previewProjectId: project.id, name: engraveName, inkShare, photoOutline: !!outline,
         rasterUrl: raster.url, rasterJobId: raster.jobId || null, rasterModel: raster.model || null, ...(raster.fallback ? { rasterFallback: raster.fallback } : {}),
         durationMs: Date.now() - started, changed: true,
@@ -988,7 +1004,7 @@ async function generate(dh, options = {}) {
         let plans;
         if (beta) {
             const briefInput = { order, lamps, history: await chatHistory(contactId), clientImages: await customerImages(contactId),
-                sentImages: await ourImages(contactId), note: options.note, previous: partial ? previous : [] };
+                sentImages: await ourImages(contactId), note: options.note, previous: partial ? previous : [], bankNames: await bankCharacters().catch(() => []) };
             plans = await designBriefOrder(briefInput);
             // Lámparas que se quedaron sin imagen NI descripción (la IA se confundió, DH18186): se le pregunta otra
             // vez SOLO por ellas; si sigue sin encontrarla, se ilustra con su personaje y queda como duda (no se
@@ -1023,8 +1039,26 @@ async function generate(dh, options = {}) {
             const before = previous.find(p => p.index === lamp.index);
             const redo = !partial || !before || (Array.isArray(options.lamps) && options.lamps.length ? options.lamps.includes(lamp.index) : plan.cambia);
             if (!redo) { results.push({ ...before, changed: false }); continue; }
-            if (!plan.template && plan.fuente === 'ilustracion' && !plan.prompt) throw Object.assign(new Error(`La IA no encontró imagen ni descripción para ${lamp.label}.`), { status: 422 });
             const prefix = lamps.length > 1 ? `Lámpara ${lamp.index + 1} de ${lamps.length} · ` : '';
+            // BANCO: el personaje ya tiene diseño(s) aprobados en otros pedidos -> sin IA, solo cambia el texto. Con
+            // varios modelos se arma uno por modelo (máx. BANK_MAX_OPTIONS) para que el cliente elija. No aplica si el
+            // cliente (o la indicación) lo quiere distinto, si es su foto, si el texto va dentro del dibujo o con
+            // «Generar nuevo con IA» (noBank). Un cambio de solo texto conserva el modelo que ya traía (sale primero).
+            const useBank = beta && !template && !options.noBank && plan.tipo === 'personaje' && plan.personaje && !plan.personalizado
+                && !plan.textoEnImagen && plan.fuente !== 'cliente';
+            const entries = useBank ? await bankFor(plan.personaje, before?.bankId || null).catch(() => []) : [];
+            if (entries.length) {
+                const built = [];
+                for (const [k, entry] of entries.entries()) {
+                    const tag = entries.length > 1 ? `Modelo ${k + 1} de ${entries.length} del banco · ` : '';
+                    built.push(await buildLamp(dh, lamp, { ...plan, bank: entry, estilo: entry.estilo || plan.estilo, textoCambia: false, reference: null, references: [],
+                        resumen: `${plan.resumen || ''} Dibujo del banco de diseños («${entry.personaje}», hecho para DH${entry.sourceDh}).`.trim() },
+                    { beta, onStep: text => setStatus(ref, { status: 'working', step: prefix + tag + text }).catch(() => {}) }));
+                }
+                results.push({ ...built[0], bankOptions: built.length > 1 ? built.map((b, k) => bankOption(b, entries[k])) : null });
+                continue;
+            }
+            if (!plan.template && plan.fuente === 'ilustracion' && !plan.prompt) throw Object.assign(new Error(`La IA no encontró imagen ni descripción para ${lamp.label}.`), { status: 422 });
             results.push(await buildLamp(dh, lamp, plan, { beta, onStep: text => setStatus(ref, { status: 'working', step: prefix + text }).catch(() => {}) }));
         }
         // Modo mockup: TODAS salen de un mockup que ya vio el cliente y el pedido está pagado -> directo a corte.
@@ -1755,6 +1789,7 @@ async function approve(dh, { svg = null, actor = null, force = false, alone = fa
             });
             if (!partner) {
                 try { await require('../designPending').recomputeForContact(orderDoc.data().contactId || orderDoc.data().telefono); } catch (_) {}
+                bankAfterUpload(dh);
                 return { queued: true, driveUrls: files.map(f => f.url), driveUrl: files[0]?.url || null };
             }
             // 3) Hoja compartida: la que esperaba arriba, esta abajo.
@@ -1765,9 +1800,11 @@ async function approve(dh, { svg = null, actor = null, force = false, alone = fa
             files.push(shared);
             await partner.ref.update(uploadedFields([...(partner.data.autoLamp.queuedFiles || []), shared], { pairedWith: dh, actor: { email: `junto con DH${dh}` }, previewUrl: partner.data.autoLamp.previewUrl, order: partner.data }));
             try { await require('../designPending').recomputeForContact(partner.data.contactId || partner.data.telefono); } catch (_) {}
+            bankAfterUpload(partner.dh);
         }
         await ref.update(uploadedFields(files, { actor, svg, previous, pairedWith: partner?.dh || null, previewUrl: autoLamp.previewUrl, order: (await ref.get()).data() }));
         try { await require('../designPending').recomputeForContact(orderDoc.data().contactId || orderDoc.data().telefono); } catch (_) {}
+        bankAfterUpload(dh);
         // Lo que había antes quedó REEMPLAZADO: a la papelera de Drive (las hojas compartidas no; se avisa).
         if (previous) {
             const { trashed, kept } = await trashReplaced(dh, previous.files);
@@ -2006,5 +2043,176 @@ async function reject(dh, { reason = '', actor = null } = {}) {
         'autoLamp.rejectReason': String(reason).slice(0, 500), 'autoLamp.rejectedBy': actor?.email || actor?.uid || null, 'autoLamp.updatedAt': now() });
 }
 
-module.exports = { generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
+// --- BANCO DE DISEÑOS (Chris, 22-oct-2026) ---------------------------------------------------------------------
+// «Cuando un cliente pida una lámpara de Stitch, esa plantilla ya se quede para un nuevo pedido del personaje»: el
+// DIBUJO (sin texto) de cada lámpara de personaje que se sube a Drive queda en design_bank. Un pedido nuevo del mismo
+// personaje lo usa sin IA y solo cambia el texto; si el personaje tiene varios modelos se arma uno por modelo y se le
+// pueden mandar al cliente las opciones para que elija. Interruptor del guardado automático:
+// crm_settings/general.designBankAutoSaveActive (false = apagado).
+const BANK = () => db.collection('design_bank');
+const BANK_MAX_OPTIONS = 3;
+const bankKey = name => String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const millis = t => t?.toMillis?.() || 0;
+
+async function bankEntries({ all = false } = {}) {
+    const snap = all ? await BANK().get() : await BANK().where('active', '==', true).get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+// Los personajes que ya tienen dibujo (la IA los nombra igual al leer un pedido nuevo).
+async function bankCharacters() { return [...new Set((await bankEntries()).map(e => e.personaje).filter(Boolean))].slice(0, 100); }
+// Los modelos de un personaje: primero `prefer` (el que ya traía la lámpara), luego los más usados y los más nuevos.
+async function bankFor(personaje, prefer = null) {
+    const key = bankKey(personaje);
+    if (!key) return [];
+    return (await bankEntries()).filter(e => e.key === key)
+        .sort((a, b) => (b.id === prefer) - (a.id === prefer) || (b.uses || 0) - (a.uses || 0) || millis(b.createdAt) - millis(a.createdAt))
+        .slice(0, BANK_MAX_OPTIONS);
+}
+const bankOption = (built, entry) => ({ bankId: entry.id, personaje: entry.personaje, thumbUrl: entry.thumbUrl || null, projectId: built.projectId, projectRevision: built.projectRevision,
+    previewUrl: built.previewUrl, inkShare: built.inkShare ?? null, name: built.name || '', estilo: built.estilo || 'trama', artUrl: built.artUrl || null });
+
+// Guarda en el banco el dibujo (sin texto) de una lámpara. personaje: el que diga el equipo; si no, el que entendió la IA.
+async function saveToBank(dh, lampIndex, { personaje = '', actor = null } = {}) {
+    const orderDoc = await findOrder(dh);
+    const lamp = lampsOf(orderDoc.data().autoLamp).find(l => l.index === Number(lampIndex));
+    if (!lamp) throw Object.assign(new Error(`El pedido no tiene la lámpara ${Number(lampIndex) + 1}.`), { status: 404 });
+    if (lamp.bankId) throw Object.assign(new Error('Este dibujo ya salió del banco.'), { status: 409 });
+    if (!lamp.artUrl) throw Object.assign(new Error('Esta lámpara no tiene guardado su dibujo sin texto (se hizo antes del banco o el texto va dentro del dibujo): rehazla para poder guardarla.'), { status: 422 });
+    const name = String(personaje || lamp.brief?.personaje || '').trim().slice(0, 60);
+    const key = bankKey(name);
+    if (!key) throw Object.assign(new Error('Escribe de qué personaje es el dibujo.'), { status: 400 });
+    const dup = await BANK().where('sourceArtUrl', '==', lamp.artUrl).limit(1).get();
+    if (!dup.empty) {
+        const entry = dup.docs[0];
+        await entry.ref.update({ active: true, key, personaje: name });
+        await updateLamp(orderDoc.ref, lamp.index, { bankSavedId: entry.id });
+        return { id: entry.id, personaje: name, existing: true };
+    }
+    // Copia propia del dibujo (no depende de los archivos del pedido) + miniatura para la lista del banco.
+    const { buffer } = await download(lamp.artUrl);
+    const slug = `${key.replace(/ /g, '-')}-${Date.now().toString(36)}`;
+    const artUrl = await saveFile(`design-bank/${slug}.png`, await sharp(buffer).greyscale().png().toBuffer(), 'image/png');
+    const thumbUrl = await saveFile(`design-bank/${slug}-mini.png`, await sharp(buffer).resize(360, 360, { fit: 'inside' }).png().toBuffer(), 'image/png');
+    const doc = await BANK().add({ key, personaje: name, artUrl, thumbUrl, sourceArtUrl: lamp.artUrl, estilo: lamp.estilo || lamp.brief?.estilo || 'trama',
+        sourceDh: Number(dh), sourceLamp: lamp.index, uses: 0, active: true, createdAt: now(), createdBy: actor?.email || actor?.uid || null });
+    await updateLamp(orderDoc.ref, lamp.index, { bankSavedId: doc.id });
+    return { id: doc.id, personaje: name };
+}
+
+// Al subir a Drive: el dibujo de banco que se usó suma un uso (sale primero la próxima vez) y los dibujos NUEVOS de
+// personaje (tal cual, no a gusto del cliente ni de su foto) entran al banco. Nunca tumba la subida.
+async function bankAfterUpload(dh) {
+    try {
+        const settings = (await db.collection('crm_settings').doc('general').get()).data() || {};
+        const order = (await findOrder(dh)).data();
+        for (const lamp of lampsOf(order.autoLamp)) {
+            if (lamp.bankId) { await BANK().doc(lamp.bankId).update({ uses: admin.firestore.FieldValue.increment(1), lastUsedAt: now(), lastUsedDh: Number(dh) }).catch(() => {}); continue; }
+            const b = lamp.brief || {};
+            if (settings.designBankAutoSaveActive === false || lamp.bankSavedId || !lamp.artUrl || b.tipo !== 'personaje' || !b.personaje || b.personalizado || ['cliente', 'propia'].includes(lamp.source)) continue;
+            await saveToBank(dh, lamp.index, { actor: { email: 'automático (subido a Drive)' } })
+                .catch(error => console.warn(`[AUTO-LAMP] banco DH${dh} L${lamp.index + 1}:`, error.message));
+        }
+    } catch (error) { console.warn(`[AUTO-LAMP] banco DH${dh}:`, error.message); }
+}
+
+// Cambia la lámpara al modelo `bankId` de sus opciones (ya armado, con su proyecto del editor).
+async function chooseBankOption(dh, lampIndex, bankId) {
+    const orderDoc = await findOrder(dh);
+    const autoLamp = orderDoc.data().autoLamp || {};
+    if (autoLamp.status !== 'ready') throw Object.assign(new Error('Solo se puede cambiar de modelo un diseño listo para revisar.'), { status: 409 });
+    const lamp = lampsOf(autoLamp).find(l => l.index === Number(lampIndex));
+    const option = (lamp?.bankOptions || []).find(o => o.bankId === bankId);
+    if (!option) throw Object.assign(new Error('Ese modelo no es de esta lámpara.'), { status: 404 });
+    await updateLamp(orderDoc.ref, lamp.index, { projectId: option.projectId, projectRevision: option.projectRevision, previewUrl: option.previewUrl, previewRevision: null, previewProjectId: option.projectId,
+        inkShare: option.inkShare, name: option.name, estilo: option.estilo, artUrl: option.artUrl, bankId: option.bankId, clientPreviewUrl: null, clientPreviewRevision: null });
+    if (lamp.index === 0) await orderDoc.ref.update({ 'autoLamp.projectId': option.projectId, 'autoLamp.previewUrl': option.previewUrl }).catch(() => {});
+    return option;
+}
+
+/**
+ * Le manda al cliente los modelos del banco de UNA lámpara («Opción 1», «Opción 2»…) para que elija; su respuesta la
+ * lee pickOptionFromReply (designApproval). Solo cuando una persona aprieta el botón.
+ */
+async function sendOptionsToClient(dh, lampIndex, { auth = {}, actor = null } = {}) {
+    if (!auth.Authorization && !auth.Cookie && process.env.WORKER_API_KEY) auth = { 'x-worker-key': process.env.WORKER_API_KEY };
+    const orderDoc = await findOrder(dh);
+    const order = orderDoc.data(), autoLamp = order.autoLamp, lamps = lampsOf(autoLamp);
+    if (!autoLamp || autoLamp.status !== 'ready') throw Object.assign(new Error('Solo se puede mandar un diseño listo para revisar.'), { status: 409 });
+    const lamp = lamps.find(l => l.index === Number(lampIndex));
+    const options = lamp?.bankOptions || [];
+    if (options.length < 2) throw Object.assign(new Error('Esta lámpara no tiene varios modelos del banco.'), { status: 409 });
+    const contactId = String(order.contactId || order.telefono || '');
+    if (!contactId) throw Object.assign(new Error('El pedido no tiene contacto.'), { status: 422 });
+    const ensureJpeg = require('../../mockups/mockupsService').ensureJpeg;
+    const { renderClientPreview } = await composerModule();
+    const font = await loadFont();
+    const urls = [];
+    for (const [k, option] of options.entries()) {
+        const { document } = await projectDocument(option.projectId);
+        const { raw, width, height } = renderClientPreview(document, font);
+        const png = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
+        urls.push(await ensureJpeg(await saveFile(`${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}/opcion-${k + 1}-${Date.now().toString(36)}.png`, png, 'image/png')));
+    }
+    const rounds = Number(autoLamp.client?.rounds) || 0;
+    const who = lamps.length > 1 ? `*Lámpara de ${String(lamp.label || '').split(' · ').pop() || `lámpara ${lamp.index + 1}`}*\n` : '';
+    const personaje = lamp.brief?.personaje || options[0].personaje || '';
+    await postMessage(contactId, auth, { text: `${who}${rounds ? '' : '¡Hola! 😊 '}Tenemos ${options.length} modelos${personaje ? ` de ${personaje}` : ''} para tu lámpara ✨ Te los comparto:` });
+    for (const [k, url] of urls.entries()) await postMessage(contactId, auth, { text: `Opción ${k + 1}`, fileUrl: url, fileType: 'image/jpeg' });
+    await postMessage(contactId, auth, { text: '¿Cuál te gusta más? Respóndeme con el número de la opción 😊' });
+    const designText = lamps.map(l => `${l.label}${l.brief?.nombre ? ` (texto: ${l.brief.nombre})` : ''}`).join(' | ');
+    await orderDoc.ref.update({
+        designApproval: { status: 'pending', source: 'auto-lamp-beta', sentAt: now(), captureUrl: urls[0], designText: `${designText} — se le mandaron ${options.length} opciones para elegir`, unclearRounds: 0,
+            sentBy: actor?.email || actor?.uid || null },
+        'autoLamp.client': { status: 'options_sent', sentAt: now(), previewUrls: urls, lampsSent: [lamp.index], optionsLamp: lamp.index, optionIds: options.map(o => o.bankId),
+            revisions: { ...(autoLamp.client?.revisions || {}) }, rounds: rounds + 1, auto: !actor || !!actor.auto },
+        'autoLamp.autoSendHeld': admin.firestore.FieldValue.delete(),
+        disenoBoardCol: 'esperando_confirmacion', disenoBoardColAt: admin.firestore.Timestamp.now(),
+    });
+    await db.collection('contacts_whatsapp').doc(contactId).update({ designApprovalPending: true, designApprovalOrderId: orderDoc.id, botActive: true });
+    return { previewUrls: urls };
+}
+
+/**
+ * Respuesta del cliente a las opciones: ¿cuál eligió? Si eligió, la lámpara se cambia a ese modelo y queda como lo
+ * que vio (su «sí» sube esa versión). Devuelve { picked, option, changes, single, question }.
+ */
+async function pickOptionFromReply(orderId, clientText) {
+    const ref = db.collection('pedidos').doc(String(orderId));
+    const order = (await ref.get()).data() || {};
+    const client = order.autoLamp?.client || {}, ids = client.optionIds || [];
+    if (client.status !== 'options_sent' || !ids.length) return { picked: false };
+    const answer = await geminiJson([{ text: `Le mandamos al cliente ${ids.length} opciones de diseño para su lámpara («Opción 1» … «Opción ${ids.length}», en ese orden) y le preguntamos cuál le gusta más. Su respuesta: "${String(clientText).slice(0, 500)}".
+Responde SOLO este JSON: {"opcion": el número de la opción que eligió (1 a ${ids.length}; «la primera» = 1, «la última» = ${ids.length}) o 0 si no eligió ninguna con claridad, "cambios": "lo que pide cambiar ADEMÁS de elegir (p. ej. otro nombre u otra fecha)" o "", "pregunta": true si solo está preguntando algo}` }]).catch(() => ({}));
+    const n = Number(answer.opcion);
+    if (!(n >= 1 && n <= ids.length)) return { picked: false, question: answer.pregunta === true };
+    const lampIndex = client.optionsLamp;
+    const option = await chooseBankOption(order.consecutiveOrderNumber, lampIndex, ids[n - 1]);
+    const revision = (await db.collection('editor_v2_projects').doc(option.projectId).get()).data()?.revision || 1;
+    await ref.update({ 'autoLamp.client.revisions': { ...(client.revisions || {}), [lampIndex]: revision }, 'autoLamp.client.chosen': n });
+    return { picked: true, option: n, changes: String(answer.cambios || '').trim(), single: lampsOf(order.autoLamp).length === 1 };
+}
+
+// Lista del banco (para la ventana «Banco de diseños»).
+async function listBank() {
+    return (await bankEntries({ all: true })).map(e => ({ id: e.id, personaje: e.personaje, thumbUrl: e.thumbUrl || e.artUrl, estilo: e.estilo || 'trama', active: e.active !== false,
+        uses: e.uses || 0, sourceDh: e.sourceDh || null, createdAt: millis(e.createdAt) || null, createdBy: e.createdBy || null }))
+        .sort((a, b) => a.personaje.localeCompare(b.personaje, 'es') || (b.createdAt || 0) - (a.createdAt || 0));
+}
+// Renombrar el personaje de un dibujo o sacarlo/regresarlo al banco.
+async function updateBankEntry(id, { personaje, active } = {}) {
+    const ref = BANK().doc(String(id));
+    if (!(await ref.get()).exists) throw Object.assign(new Error('Ese dibujo no está en el banco.'), { status: 404 });
+    const patch = {};
+    if (personaje !== undefined) {
+        const name = String(personaje).trim().slice(0, 60);
+        if (!bankKey(name)) throw Object.assign(new Error('El personaje no puede quedar vacío.'), { status: 400 });
+        Object.assign(patch, { personaje: name, key: bankKey(name) });
+    }
+    if (active !== undefined) patch.active = !!active;
+    await ref.update({ ...patch, updatedAt: now() });
+    return { id, ...patch };
+}
+
+module.exports = { buildLamp, saveToBank, bankAfterUpload, chooseBankOption, sendOptionsToClient, pickOptionFromReply, listBank, updateBankEntry, bankFor, bankCharacters,
+    generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
     pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage, runPendingRedos, sideTextLayout, editLamp, lampVersions, restoreVersion, autoStartBeta };
