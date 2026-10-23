@@ -193,3 +193,11 @@ test('después de "Atendido" por el mismo motivo, una nueva promesa no vuelve a 
     expect(mockDb.read('contacts_whatsapp/customer').needsAttention).toBe(false);
     expect(mockDb.read('contacts_whatsapp/customer').mediaRequestPending).toBe(true);
 });
+
+test('DH18485: «en cuanto quede lista te mando la foto» es el aviso de la foto terminada, no un adjunto prometido', async () => {
+    mockDb.seed('pedidos/current', { contactId: 'customer', estatus: 'Sin estatus', createdAt: new Date() });
+    const result = await protectMediaReply({ contactId: 'customer', text: '¡Claro que sí! 🥰 Ten por seguro que en cuanto quede lista te mando la foto por aquí mismo ✨💡\n\n¡Quedo atento! 🦖🎁' });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain('Cuando tu pedido esté terminado, recibirás la foto');
+    expect(mockDb.read('contacts_whatsapp/customer').needsAttention).not.toBe(true);
+});

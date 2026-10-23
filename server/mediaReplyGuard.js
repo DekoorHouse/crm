@@ -7,9 +7,12 @@ const MEDIA = /\b(?:foto|imagen|video|diseno|previo|captura|archivo|adjunto)s?\b
 function productionPhotoNotice(text) {
     const value = normalize(text);
     return /\b(?:foto|imagen)s?\b/.test(value)
-        && /\b(?:producto|pedido|trabajo)\s+(?:terminado|personalizado)\b|\b(?:cuando|en cuanto)\s+este\s+(?:terminado|listo)\b|\ben cuanto\b.{0,100}\b(?:ajuste|correccion)\b/.test(value)
+        // DH18485 (23-oct-2026): «en cuanto quede lista te mando la foto» no entraba (solo «esté terminado/listo»)
+        // y se tomó como un adjunto prometido: se quitó la frase y el chat se fue a Atender.
+        && /\b(?:producto|pedido|trabajo)\s+(?:terminado|personalizado)\b|\b(?:cuando|en cuanto|apenas|tan pronto como)\s+(?:(?:la|lo|las|los)\s+)?(?:este|esten|quede|queden|tengamos)\s+(?:terminad|list)[oa]s?\b|\ben cuanto\b.{0,100}\b(?:ajuste|correccion)\b/.test(value)
         && /\bte\s+(?:enviaremos|mandaremos|compartiremos|enviare|mandare)\b|\b(?:cuando|en cuanto)\b.{0,180}\bte\s+(?:envio|mando|comparto)\b/.test(value)
-        && !/\b(?:aqui|ahora|adjunto)\b|\[/.test(value);
+        // «por aquí (mismo)» es el canal (este chat), no «aquí te mando»: no descarta el aviso.
+        && !/\b(?:aqui|ahora|adjunto)\b|\[/.test(value.replace(/\bpor\s+aqui(?:\s+mismo)?\b/g, ''));
 }
 
 const productionClaim = text => /\b(?:esta|estan|entro|entraron|paso|pasaron)\s+(?:ya\s+)?(?:en|a)\s+fabricacion\b|\b(?:arrancamos|iniciamos|comenzamos)\s+(?:la\s+)?fabricacion\b/.test(normalize(text));
