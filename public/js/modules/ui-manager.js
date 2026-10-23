@@ -1360,7 +1360,7 @@ function openDesignBeta(orderId) {
                     input.click();
                 });
                 if (!file) { btn.disabled = false; return; }
-                const nombre = window.prompt('Texto que el sistema pone APARTE, con nuestra fuente, abajo.\nDéjalo VACÍO si tu imagen ya trae el nombre (p. ej. un mockup con el nombre):', (l && l.brief && l.brief.nombre) || '');
+                const nombre = window.prompt('Nombre de la lámpara.\nSi tu imagen YA TRAE este nombre, se respeta tal cual (su diseño y su letra) y no se agrega otro.\nSi no lo trae, el sistema lo pone aparte con nuestra fuente. Déjalo vacío si no lleva nombre:', (l && l.brief && l.brief.nombre) || '');
                 if (nombre === null) { btn.disabled = false; return; }
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo…';
                 const form = new FormData();

@@ -137,6 +137,17 @@ async function readEngravedText(raster) {
         return String(a.texto || '').trim();
     } catch (_) { return ''; }
 }
+// «USAR MI IMAGEN» CON EL NOMBRE YA PUESTO (Chris, 23-oct-2026, DH18436 «Renata»): si la imagen del equipo ya trae el
+// nombre, se respeta TAL CUAL (diseño, letra, tamaño y lugar) y no se agrega otro aparte. Cuenta como «ya lo trae» si el
+// texto que se lee en la imagen contiene el nombre (sin acentos, mayúsculas ni espacios) o si no se dio nombre. Devuelve el
+// texto leído, o '' si la imagen no trae el nombre (entonces sigue como antes).
+async function nameAlreadyIn(buffer, nombre) {
+    const written = await readEngravedText({ buffer });
+    if (!written) return '';
+    const loose = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9ñ]/g, '');
+    return !nombre || (loose(nombre) && loose(written).includes(loose(nombre))) ? written : '';
+}
+
 // ¿Dice lo mismo? Sin contar espacios, cambios de renglón ni « · ». Mayúsculas, puntos, letras y ACENTOS sí cuentan: un
 // acento de más («Willíam», DH18365) es un nombre mal grabado. Si la lectura no ve un acento que sí está, solo se avisa de más.
 function sameEngravedText(read, wanted) {
@@ -948,7 +959,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         // EDITA su propia imagen anterior con el cambio pedido; no se regenera desde la imagen original (eso
         // rehacía todo y metía la escena en un rectángulo con pedazos de la foto).
         step('Modificando el diseño con la IA');
-        raster = await rasterizeBeta({ url: plan.editFrom }, { prompt: `Edita esta imagen de grabado: ${plan.editNote}. Mantén EXACTAMENTE el mismo dibujo, pose, tamaño y posición; cambia SOLO eso. Solo blanco y negro: el diseño en BLANCO sobre fondo NEGRO, sin colores, sin rectángulos, cuadros ni marcos.${plan.nombre && !(plan.fuente === 'mockup' && (!plan.textoCambia || plan.nameInImage)) ? ` ${NO_TEXT}` : ''}`, estilo: plan.estilo, onStep: step });
+        raster = await rasterizeBeta({ url: plan.editFrom }, { prompt: `Edita esta imagen de grabado: ${plan.editNote}. Mantén EXACTAMENTE el mismo dibujo, pose, tamaño y posición; cambia SOLO eso. Solo blanco y negro: el diseño en BLANCO sobre fondo NEGRO, sin colores, sin rectángulos, cuadros ni marcos.${plan.nombre && !plan.nameInImage && !(plan.fuente === 'mockup' && !plan.textoCambia) ? ` ${NO_TEXT}` : ''}`, estilo: plan.estilo, onStep: step });
     } else if (plan.bank) {
         // BANCO DE DISEÑOS (Chris, 22-oct-2026): el dibujo de este personaje ya se hizo y se aprobó en otro pedido;
         // se usa tal cual (sin IA) y solo cambia el texto.
@@ -990,6 +1001,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         // La foto trae VARIAS lámparas: se saca SOLO la de este nombre (DH18284), no la primera que vea el modelo.
         const which = plan.cual ? `La foto muestra VARIAS lámparas: trabaja SOLO con la lámpara que dice «${plan.cual}» e ignora por completo las demás. ` : '';
         const base = which + (plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT);
+        let renamedOk = false;   // Qwen ya escribió el nombre nuevo con la letra del mockup (abajo)
         const prompt = plan.prompt ? `${base} ÚNICO CAMBIO que SÍ debes hacer al dibujo (todo lo demás igual que en el mockup): ${plan.prompt}.` : base;
         // NOMBRE NUEVO CON LA LETRA DEL MOCKUP (Chris, 23-oct-2026, DH18412 unicornio «Armando.M»): si el texto cambió, Qwen
         // escribe el nombre nuevo EN LUGAR del viejo, con la misma tipografía, tamaño y lugar (como se hace con Dino premium),
@@ -1001,16 +1013,16 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
             const wanted = plan.nombre.replace(/\s*·\s*/g, ' / ');
             const renamed = await rasterizeBeta(plan.reference, { prompt: `${which}${MOCKUP_PROMPT} ÚNICO CAMBIO: el texto grabado debe decir EXACTAMENTE «${wanted}» (mismas letras, mayúsculas, puntos y acentos; «/» es un cambio de renglón) en lugar del texto que trae el mockup, con la MISMA tipografía, grosor, tamaño y lugar que el texto original. No agregues ni dejes ningún otro texto.${plan.prompt ? ` Además, en el dibujo: ${plan.prompt}.` : ''}`, estilo: plan.estilo, onStep: step }).catch(error => { console.warn(`[AUTO-LAMP] DH${dh}: no se pudo cambiar el nombre en el mockup:`, error.message); return null; });
             const read = renamed ? await readEngravedText(renamed) : '';
-            if (renamed && sameEngravedText(read, plan.nombre)) { raster = renamed; plan.nameInImage = true; }
+            if (renamed && sameEngravedText(read, plan.nombre)) { raster = renamed; renamedOk = true; plan.nameInImage = true; }
             else {
                 if (renamed) console.warn(`[AUTO-LAMP] DH${dh}: el nombre con la letra del mockup salió «${read}» y debía ser «${plan.nombre}»: va con la letra de siempre.`);
                 plan.advertencias = [...(plan.advertencias || []), 'el nombre nuevo no salió bien con la letra del mockup: va con la letra de siempre; revisa'];
             }
         }
-        if (!plan.nameInImage) raster = await rasterizeBeta(plan.reference, { prompt, estilo: plan.estilo, onStep: step });
+        if (!renamedOk) raster = await rasterizeBeta(plan.reference, { prompt, estilo: plan.estilo, onStep: step });
         // Texto cambiado: el del mockup se debe ir (va el nuevo aparte). Qwen a veces lo deja y salía DOS veces
         // (DH18305): se revisa y, si sigue, se pide otra vez con más insistencia; si aún así queda, se avisa.
-        if (plan.textoCambia && !plan.nameInImage) {
+        if (plan.textoCambia && !renamedOk) {
             const hasText = async r => {
                 const img = await sharp(r.buffer || (await download(r.url)).buffer).resize(768, 768, { fit: 'inside' }).jpeg({ quality: 80 }).toBuffer();
                 const a = await geminiJson([{ text: 'Mira esta imagen. ¿Tiene letras, palabras, nombres, frases o números escritos (texto legible, aunque sea parcial)? Responde SOLO este JSON: {"texto": true|false}' },
@@ -1026,7 +1038,9 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     } else if (beta) {
         step(plan.reference ? 'Convirtiendo la imagen del cliente a grabado' : 'Ilustrando con el estudio de imágenes');
         // Foto del cliente o ilustración: el nombre lo pone el armado, así que la imagen va SIN letras.
-        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? plan.prompt : '', estilo: plan.estilo, noText: !!plan.nombre, textInImage: plan.textoEnImagen ? plan.nombre : '', extraReferences: (plan.references || []).slice(1), onStep: step });
+        // La imagen ya trae el nombre (Usar mi imagen, DH18436): NO se borra; se pide conservarlo exactamente.
+        const keepName = plan.nameInImage ? 'Conserva el nombre/texto EXACTAMENTE como está en la imagen: mismas letras, misma tipografía, mismo tamaño y mismo lugar.' : '';
+        raster = await rasterizeBeta(plan.reference, { description: plan.prompt, extra: plan.reference ? [plan.prompt, keepName].filter(Boolean).join(' ') : '', estilo: plan.estilo, noText: !!plan.nombre && !plan.nameInImage, textInImage: plan.textoEnImagen ? plan.nombre : '', extraReferences: (plan.references || []).slice(1), onStep: step });
     } else {
         step('Convirtiendo a grabado');
         raster = await rasterize(plan.reference);
@@ -1052,7 +1066,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     // Plantilla a la que Qwen ya le escribió el nombre (Dino premium): no se le pone otro encima.
     const engraveName = plan.template && TEMPLATES[plan.template].rename ? ''
         : plan.template ? (plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '')
-        : plan.fuente === 'mockup' && (!plan.textoCambia || plan.nameInImage) ? '' : plan.textoEnImagen ? '' : plan.nombre;
+        : plan.nameInImage || (plan.fuente === 'mockup' && !plan.textoCambia) ? '' : plan.textoEnImagen ? '' : plan.nombre;
     const folder = `${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}`;
     // El DIBUJO sin texto (antes de recorrerlo para el texto): lo que se guarda en el banco de diseños si se aprueba.
     // Solo cuando el texto va aparte; si el dibujo trae el nombre del cliente no sirve para otro pedido.
@@ -1276,8 +1290,10 @@ async function buildFromImage(dh, buffer, { lampIndex = 0, nombre = '', estilo, 
     try {
         const png = await sharp(buffer).png().toBuffer();
         const referenceUrl = await saveFile(`${STORAGE_DIR}/DH${dh}/L${lamp.index + 1}/imagen-equipo-${Date.now().toString(36)}.png`, png, 'image/png');
-        const plan = { fuente: 'propia', imageBuffer: png, reference: { url: referenceUrl }, nombre, estilo, tipo: 'especial', prompt: '', advertencias: [],
-            resumen: `Diseño con la imagen del equipo, sin IA${actor?.email ? ` (${actor.email})` : ''}.` };
+        // Si ya trae el nombre, no se le pone otro encima con nuestra letra.
+        const yaTrae = await nameAlreadyIn(png, nombre).catch(() => '');
+        const plan = { fuente: 'propia', imageBuffer: png, reference: { url: referenceUrl }, nombre: nombre || yaTrae, nameInImage: !!yaTrae, estilo, tipo: 'especial', prompt: '', advertencias: [],
+            resumen: `Diseño con la imagen del equipo, sin IA${yaTrae ? ', con el nombre como viene en la imagen' : ''}${actor?.email ? ` (${actor.email})` : ''}.` };
         const built = await buildLamp(dh, lamp, plan, { beta: true, onStep: text => setStatus(ref, { status: 'working', step: text }).catch(() => {}) });
         const lamps = [...others, built].sort((a, b) => a.index - b.index), first = lamps[0];
         await setStatus(ref, { status: 'ready', step: 'Listo para revisar', mode: 'client', lamps, error: admin.firestore.FieldValue.delete(),
@@ -1388,10 +1404,13 @@ Responde SOLO este JSON: {"tipo": "mockup" si es una foto o render de una lámpa
         const tipo = ['mockup', 'foto', 'dibujo'].includes(kind.tipo) ? kind.tipo : 'foto';
         // Foto real: siempre con degradado en trama (no la vuelve sólida el nombre del modelo, DH18197).
         const style = estilo || (tipo === 'foto' ? 'trama' : FLAT_MODELS.test(`${lamp.producto || ''} ${lamp.datos || ''} ${lamp.label || ''}`) ? 'plano' : kind.estilo === 'plano' ? 'plano' : 'trama');
+        // Si la imagen ya trae el nombre (Renata, DH18436), se conserva tal cual: diseño, letra y lugar.
+        const yaTrae = await nameAlreadyIn(png, nombre).catch(() => '');
         const plan = {
-            fuente: tipo === 'mockup' ? 'mockup' : 'cliente', reference: { buffer: png, url: referenceUrl }, references: [], nombre, estilo: style, tipo: tipo === 'foto' ? 'foto' : 'especial', prompt: '', advertencias: [],
-            // Del mockup: si se dio un texto, se quita el del mockup y va el nuestro aparte (si no, el del mockup tal cual).
-            textoCambia: tipo === 'mockup' && !!nombre,
+            fuente: tipo === 'mockup' ? 'mockup' : 'cliente', reference: { buffer: png, url: referenceUrl }, references: [], nombre: nombre || yaTrae, estilo: style, tipo: tipo === 'foto' ? 'foto' : 'especial', prompt: '', advertencias: [],
+            nameInImage: !!yaTrae,
+            // Del mockup: si se dio OTRO texto, se cambia por el nuevo con la misma letra (si no, el del mockup tal cual).
+            textoCambia: tipo === 'mockup' && !!nombre && !yaTrae,
             resumen: `Imagen subida por el equipo${actor?.email ? ` (${actor.email})` : ''}: ${tipo === 'mockup' ? 'mockup de lámpara, se sacó el dibujo' : tipo === 'foto' ? 'foto convertida a grabado' : 'dibujo convertido a grabado'} con IA.`,
         };
         const built = await buildLamp(dh, lamp, plan, { beta: true, onStep: text => setStatus(ref, { status: 'working', step: text }).catch(() => {}) });
