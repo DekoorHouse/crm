@@ -70,3 +70,12 @@ test('el nombre va en los mismos renglones que en el mockup (DH18387)', () => {
     expect(linesFromMockup(layouts, 'José Luis')).toBeNull();          // otro nombre: no se toca
     expect(linesFromMockup([['José Andrés']], 'José Andrés')).toBeNull();   // en el mockup iba en un renglón
 });
+
+test('el nombre que escribió Qwen solo vale si dice exactamente lo pedido (DH18412)', () => {
+    const { sameEngravedText } = require('../server/design/autoLamp/autoLampService');
+    expect(sameEngravedText('Armando.M', 'Armando.M')).toBe(true);
+    expect(sameEngravedText('José Andrés', 'José · Andrés')).toBe(true);    // renglones y acentos no cuentan
+    expect(sameEngravedText('Armando M', 'Armando.M')).toBe(false);          // falta el punto
+    expect(sameEngravedText('ARMANDO.M', 'Armando.M')).toBe(false);          // mayúsculas sí cuentan
+    expect(sameEngravedText('', 'Armando.M')).toBe(false);
+});
