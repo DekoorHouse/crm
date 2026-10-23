@@ -22,14 +22,18 @@ function storageService(bucket) {
     };
 }
 
-async function uploadDrive(name, bytes) {
+// thumbnail (PNG, opcional): la miniatura que Drive muestra en la carpeta. Drive no genera la suya para muchas de estas
+// hojas (llevan una imagen de 1663×3250 incrustada) y la carpeta se veía con puros iconos (Chris, 23-oct-2026). El Apps
+// Script la guarda con el servicio avanzado de Drive; uno sin actualizar la ignora y la subida sigue igual.
+async function uploadDrive(name, bytes, { thumbnail = null } = {}) {
     // Same authorized folder as the previous worker; secrets never enter logs or API responses.
     const fallback = JSON.parse(fs.readFileSync(path.join(__dirname, '../../.claude/skills/svg-corte/drive-webapp.json'), 'utf8'));
     const response = await fetch(process.env.SVG_CUT_DRIVE_URL || fallback.url, {
         method: 'POST', redirect: 'follow', signal: AbortSignal.timeout(90000),
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
             secret: process.env.SVG_CUT_DRIVE_SECRET || fallback.secret,
-            name, mimeType: 'image/svg+xml', b64: bytes.toString('base64')
+            name, mimeType: 'image/svg+xml', b64: bytes.toString('base64'),
+            ...(thumbnail ? { thumbnail: thumbnail.toString('base64') } : {})
         })
     });
     let data;

@@ -1882,10 +1882,14 @@ async function uploadSheet(folder, stamp, suffix, svgText, driveName) {
     const { Resvg } = require('@resvg/resvg-js');
     const bytes = Buffer.from(svgText);
     const storageUrl = await saveFile(`${folder}/aprobado-${stamp}${suffix}.svg`, bytes, 'image/svg+xml');
-    let preview = null;
-    try { preview = await saveFile(`${folder}/aprobado-${stamp}${suffix}.png`, new Resvg(svgText, { fitTo: { mode: 'width', value: 1400 }, background: '#ffffff' }).render().asPng(), 'image/png'); }
-    catch (_) { /* sin vista previa de la hoja */ }
-    const upload = await uploadDrive(driveName, bytes);
+    let preview = null, png = null;
+    try {
+        png = new Resvg(svgText, { fitTo: { mode: 'width', value: 1400 }, background: '#ffffff' }).render().asPng();
+        preview = await saveFile(`${folder}/aprobado-${stamp}${suffix}.png`, png, 'image/png');
+    } catch (_) { /* sin vista previa de la hoja */ }
+    // La misma vista va como miniatura de Drive (Drive no la saca solo de estas hojas). Chica: Drive acepta hasta 2 MB.
+    const thumbnail = png ? await sharp(png).resize({ width: 800 }).png({ compressionLevel: 9 }).toBuffer().catch(() => null) : null;
+    const upload = await uploadDrive(driveName, bytes, { thumbnail });
     return { name: upload.name, url: upload.webViewLink, svg: storageUrl, preview };
 }
 
