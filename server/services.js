@@ -4648,6 +4648,10 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const pedidoAbierto = ordersSnap.docs.some(d => {
                     const o = d.data();
                     if (contactData.activePurchaseSessionId && o.purchaseSessionId !== contactData.activePurchaseSessionId) return false;
+                    // DH12364 (23-oct-2026): sus pedidos de abril y junio siguen en "Pagado" sin guía (son de antes de
+                    // que se guardaran las guías; hay ~6,600 así) y contaban como abiertos: pagó el anticipo de $600 de
+                    // dos lámparas nuevas y no se registró nada. Un pedido de hace más de 45 días ya no está en curso.
+                    if (require('./payments/paymentPolicy').ms(o.createdAt) < Date.now() - 45 * 24 * 3600000) return false;
                     return !/^(cancelado|entregado|devoluci[oó]n|enviado)$/i.test(String(o.estatus || '').trim()) && !(o.guiaEnvio && o.guiaEnvio.guia);
                 });
                 // Mismo candado de cobertura que /registrar: sin cobertura vigente no se registra.
