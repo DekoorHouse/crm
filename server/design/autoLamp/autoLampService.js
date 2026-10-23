@@ -1822,6 +1822,16 @@ async function changeAfterApproval(orderId, clientText = '') {
         // reopen no toca lo del cliente: se vuelve a marcar el cambio para que generate pueda rehacerlo.
         if (cancel.ok) await ref.update({ 'autoLamp.client': { ...(autoLamp.client || {}), status: 'change_after_approval', answeredAt: now(), text: String(clientText).slice(0, 300) } });
     }
+    // EN COLA CON HOJAS YA SUBIDAS (DH18514): con 3 lámparas, Sofy y Yenny ya estaban en Drive y solo Isabella esperaba
+    // pareja. Al pedir el cambio solo salía Isabella de la cola, y al aprobarlo otra vez se subía TODO de nuevo: la hoja de
+    // Sofy y Yenny quedó DOS veces en SVG Corte. Ahora esas hojas también se cancelan (son solo de este pedido) y el pedido
+    // regresa a revisión para subirse completo una sola vez.
+    if (wasQueued && Array.isArray(autoLamp.queuedFiles) && autoLamp.queuedFiles.length && order.consecutiveOrderNumber) {
+        const r = await trashReplaced(order.consecutiveOrderNumber, autoLamp.queuedFiles).catch(error => ({ trashed: [], kept: [error.message] }));
+        await ref.update({ 'autoLamp.status': 'ready', 'autoLamp.queuedFiles': admin.firestore.FieldValue.delete(), 'autoLamp.driveUrls': admin.firestore.FieldValue.delete(),
+            'autoLamp.driveUrl': admin.firestore.FieldValue.delete(), 'autoLamp.updatedAt': now() });
+        cancel = { ok: !r.kept.length, queued: true, trashed: r.trashed, error: r.kept.join(' ; ') };
+    }
     if (cancel?.ok) {
         await ref.update({ 'autoLamp.pendingRedo': { note: `El cliente pidió este cambio: ${clientText}`.slice(0, 500), at: Date.now() },
             'autoLamp.step': 'Corte cancelado: esperando a que el cliente termine de escribir para rehacer' }).catch(() => {});
@@ -1832,7 +1842,9 @@ async function changeAfterApproval(orderId, clientText = '') {
     const guia = order.guiaEnvio && order.guiaEnvio.guia;
     const links = (autoLamp.driveUrls && autoLamp.driveUrls.length ? autoLamp.driveUrls : [order.svgCorteUrl]).filter(Boolean).join(' ');
     await notifyAdmin(`✏️ ${dh} — el cliente pidió un CAMBIO después de aprobar el diseño de la IA (BETA): "${String(clientText).slice(0, 200)}".\n`
-        + (wasQueued ? `• Su lámpara estaba EN COLA esperando pareja: se sacó de la cola y NO se subió${links ? ` (lo que ya estaba en Drive: ${links})` : ''}\n`
+        + (cancel?.queued ? (cancel.ok ? `• Su lámpara estaba EN COLA esperando pareja: se sacó de la cola y ❌ se CANCELARON sus hojas que ya estaban en Drive (${cancel.trashed.join(', ')}); el pedido se rehace y se sube completo una sola vez\n`
+                : `• Su lámpara estaba EN COLA: se sacó de la cola, pero ⚠️ NO se pudieron quitar de Drive sus hojas ya subidas (${cancel.error}): bórralas a mano para no cortarlas dos veces\n`)
+            : wasQueued ? `• Su lámpara estaba EN COLA esperando pareja: se sacó de la cola y NO se subió${links ? ` (lo que ya estaba en Drive: ${links})` : ''}\n`
             : cancel?.ok ? `• ❌ CORTE CANCELADO: el archivo que estaba en Drive (SVG Corte)${hace} se mandó a la papelera y el diseño se rehace solo con el cambio (${links || 'sin link'})\n`
             : cancel ? `• ⚠️ NO se pudo cancelar el corte (${cancel.error}): el archivo sigue en Drive (SVG Corte)${hace}: ${links || '(sin link)'} — sácalo a mano\n`
             : `• El archivo se subió a Drive (SVG Corte)${hace}: ${links || '(sin link)'}\n`)
