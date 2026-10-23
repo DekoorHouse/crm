@@ -186,7 +186,16 @@ async function markUsed() { await stateRef().set({ lastUsedAt: new Date().toISOS
 // Revisión periódica: apaga pods olvidados fuera de horario, los que no pudieron arrancar y limpia pods que ya no existen.
 async function reconcile() {
     const data = (await stateRef().get()).data() || {};
-    if (!data.podId) return;
+    if (!data.podId) {
+        // 23-oct-2026: el encendido de las 8:45 chocó con «There are no instances currently available» en las dos
+        // nubes y nadie lo volvió a intentar; en Imágenes había que picarle a mano hasta que hubiera GPU. Dentro del
+        // horario, si el último intento falló por falta de GPU, se vuelve a pedir en cada revisión (cada 10 min).
+        const sinGpu = /no instances currently available|no longer any instances|not enough|insufficient/i.test(data.lastErrorDetail || '');
+        if (inSchedule() && data.status === 'off' && sinGpu && Date.now() - Date.parse(data.updatedAt || 0) > 5 * 60 * 1000) {
+            await startPod('reintento automático: no había GPU').catch(err => console.warn('[QWEN] Sigue sin GPU disponible:', err.message));
+        }
+        return;
+    }
     let pod = null;
     try { pod = await runpod('GET', `/pods/${data.podId}`); }
     catch (err) { if (![400, 404].includes(err.runpodStatus)) throw err; }
