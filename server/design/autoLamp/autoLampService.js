@@ -1568,10 +1568,8 @@ async function sendToClient(dh, { auth = {}, actor = null, only = null } = {}) {
         await postMessage(contactId, auth, { text: `*Lámpara de ${who}*\n${again ? againText(CLIENT_MESSAGE_AGAIN, rounds) : CLIENT_MESSAGE}`, fileUrl: images[0].url, fileType: 'image/jpeg' });
     } else {
         await postMessage(contactId, auth, { text: again ? againText(MULTI_INTRO_AGAIN, rounds) : MULTI_INTRO });
-        for (const { lamp, url } of images) {
-            const caption = `${again ? 'Diseño corregido' : `Diseño ${lamp.index + 1} de ${lamps.length}`}: ${lamp.label}`;
-            await postMessage(contactId, auth, { text: caption, fileUrl: url, fileType: 'image/jpeg' });
-        }
+        // Las fotos van SIN pie de foto (Chris, 23-oct-2026): solo el saludo y la pregunta, aparte.
+        for (const { url } of images) await postMessage(contactId, auth, { fileUrl: url, fileType: 'image/jpeg' });
         await postMessage(contactId, auth, { text: MULTI_QUESTION });
     }
     const designText = lamps.map(l => `${l.label}${l.brief?.nombre ? ` (texto: ${l.brief.nombre})` : ''}`).join(' | ');
