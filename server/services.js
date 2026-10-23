@@ -4681,7 +4681,20 @@ async function processAutoReplyAIInner(contactId, message, contactRef, passedCon
                 const history = messagesSnapshot.docs.map(d => d.data());
                 const receipt = history.find(m => m.from === contactId && (m.type === 'image' || (m.type === 'document' && /pdf/i.test(m.fileType || ''))));
                 const lastReply = history.find(m => m.from !== contactId);
-                const receiptPresent = !!receipt && paymentPolicy.ms(receipt.timestamp) > paymentPolicy.ms(lastReply?.timestamp);
+                let receiptPresent = !!receipt && paymentPolicy.ms(receipt.timestamp) > paymentPolicy.ms(lastReply?.timestamp);
+                // DH17890 (23-oct-2026): mandó la FOTO para una lámpara nueva («me podrías hacer una lámpara con esta
+                // foto?») y, como había una compra sin registrar, se le contestó «¡Gracias por tu comprobante!». Una
+                // imagen solo cuenta como comprobante si el lector no la descartó (se espera su lectura unos segundos).
+                if (receiptPresent && receipt.id) {
+                    const receiptRef = db.collection('payment_receipts').doc(paymentPolicy.hash(contactId + '|' + receipt.id));
+                    let lectura = null;
+                    for (let i = 0; i < 4 && lectura === null; i++) {
+                        const ocr = (await receiptRef.get()).data()?.ocr;
+                        if (ocr) lectura = ocr.esComprobante === false ? false : true;
+                        else await new Promise(r => setTimeout(r, 4000));
+                    }
+                    if (lectura === false) receiptPresent = false;
+                }
                 // Registrar primero impide usar el pago de un pedido anterior mientras se crea el nuevo.
                 const turn = await paymentConversation.preparePaymentTurn(contactId, {
                     register: registrationNeeded ? () => ensureRegistration() : null,
