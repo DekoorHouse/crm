@@ -391,6 +391,14 @@ function _dpSuscribir() {
             // Empujado a mano desde la sección Mockup con el botón "A Diseño".
             db.collection('pedidos').where('designForce', '==', true).limit(200)
                 .onSnapshot(señal('designForce'), err('designForce')),
+            // ENTRADAS A PENDIENTES QUE NO SE OÍAN (Chris, 23-oct-2026): el cliente pide algo nuevo de un pedido
+            // (pendienteDisenoAt se refresca en cada petición) y el anticipo con su comprobante en revisión.
+            // NO se escucha autoLamp: mientras el Diseño IA genera se actualiza cada pocos segundos y cada refresco
+            // lee ~2 mil pedidos; su propio modal ya se pone al día solo.
+            db.collection('pedidos').orderBy('pendienteDisenoAt', 'desc').limit(60)
+                .onSnapshot(señal('petición'), err('petición')),
+            db.collection('pedidos').where('paymentProductionStatus', '==', 'review').limit(100)
+                .onSnapshot(señal('anticipo'), err('anticipo')),
         ];
         console.log('[DISEÑO] Actualización en vivo activa.');
     } catch (e) {
@@ -419,9 +427,13 @@ function _dpRefetchDebounced(origen) {
 function _dpOcupado() {
     if (_dpGuardando > 0) return true;                                       // movimiento a medio guardar
     if (document.getElementById('design-review-overlay')) return true;        // modal "Revisar"
+    if (document.getElementById('dl-beta-modal')) return true;               // modal del Diseño IA (se quita al cerrarlo)
     if (document.querySelector('.dp-card-ghost, .dp-card-drag')) return true; // arrastre en curso
+    // La conversación (chat-envios-modal) abierta desde la tarjeta: no se repinta hasta que se cierre (Chris, 23-oct-2026);
+    // al cerrarla, _dpReintentarPendiente aplica lo que se juntó. Se mira el estilo CALCULADO: el modal se esconde con
+    // display:none y una clase o un estilo heredado no lo engañan.
     const modales = ['chat-envios-modal', 'image-modal'];
-    if (modales.some(id => { const m = document.getElementById(id); return m && m.style.display !== 'none' && !m.classList.contains('hidden'); })) return true;
+    if (modales.some(id => { const m = document.getElementById(id); return m && !m.classList.contains('hidden') && getComputedStyle(m).display !== 'none'; })) return true;
     const cont = document.getElementById('design-pending-container');
     const a = document.activeElement;
     if (cont && a && a !== document.body && cont.contains(a)) return true;
@@ -2287,7 +2299,10 @@ async function changeDesignPendingStatus(orderId, newStatus, el) {
         });
         const d = await res.json();
         if (!res.ok || !d.success) throw new Error(d.message || ('HTTP ' + res.status));
-        renderDesignPendingView(true);   // silencioso: sin parpadeo y preservando el scroll
+        // Silencioso: sin parpadeo y preservando el scroll. Si el cambio se hizo desde la conversación abierta, el tablero
+        // espera a que se cierre (mismo candado que la actualización en vivo).
+        if (_dpOcupado()) { _dpRefetchPendiente = true; _dpReintentarPendiente(); }
+        else renderDesignPendingView(true);
     } catch (e) {
         if (el) el.disabled = false;
         alert('No se pudo cambiar el estatus: ' + (e.message || e));
