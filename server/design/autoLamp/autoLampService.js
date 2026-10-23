@@ -1811,6 +1811,21 @@ async function changeAfterApproval(orderId, clientText = '') {
     // Si su lámpara esperaba pareja para la hoja, sale de la cola (todavía no se sube nada).
     const wasQueued = !!autoLamp.queued && !autoLamp.queued.claimedBy;
     if (wasQueued) await leaveQueue(ref).catch(() => {});
+    // CANCELAR EL CORTE DE INMEDIATO (Chris, 23-oct-2026, DH18514): si el diseño ya estaba en Drive (SVG Corte), se hace lo
+    // mismo que «Reabrir para corregir» —sus archivos a la papelera, fuera las marcas de corte, de regreso a revisión— para
+    // que en taller nadie corte la versión vieja. Una hoja compartida con otro pedido solo se borra si ese otro también
+    // regresa (reopen lo decide y avisa). Después el diseño se rehace solo con el cambio (pendingRedo → runPendingRedos).
+    let cancel = null;
+    if (!wasQueued && autoLamp.status === 'approved' && order.svgCorteBy === 'auto-lamp-beta' && order.consecutiveOrderNumber) {
+        cancel = await reopen(order.consecutiveOrderNumber, { actor: { email: 'el cliente pidió un cambio' } })
+            .then(r => ({ ok: true, ...r })).catch(error => ({ ok: false, error: error.message }));
+        // reopen no toca lo del cliente: se vuelve a marcar el cambio para que generate pueda rehacerlo.
+        if (cancel.ok) await ref.update({ 'autoLamp.client': { ...(autoLamp.client || {}), status: 'change_after_approval', answeredAt: now(), text: String(clientText).slice(0, 300) } });
+    }
+    if (cancel?.ok) {
+        await ref.update({ 'autoLamp.pendingRedo': { note: `El cliente pidió este cambio: ${clientText}`.slice(0, 500), at: Date.now() },
+            'autoLamp.step': 'Corte cancelado: esperando a que el cliente termine de escribir para rehacer' }).catch(() => {});
+    }
     const dh = order.consecutiveOrderNumber ? `DH${order.consecutiveOrderNumber}` : orderId;
     const subido = order.svgCorteAt?.toMillis ? Math.round((Date.now() - order.svgCorteAt.toMillis()) / 60000) : null;
     const hace = subido == null ? '' : subido < 90 ? ` hace ${subido} min` : ` hace ${Math.round(subido / 60)} h`;
@@ -1818,6 +1833,8 @@ async function changeAfterApproval(orderId, clientText = '') {
     const links = (autoLamp.driveUrls && autoLamp.driveUrls.length ? autoLamp.driveUrls : [order.svgCorteUrl]).filter(Boolean).join(' ');
     await notifyAdmin(`✏️ ${dh} — el cliente pidió un CAMBIO después de aprobar el diseño de la IA (BETA): "${String(clientText).slice(0, 200)}".\n`
         + (wasQueued ? `• Su lámpara estaba EN COLA esperando pareja: se sacó de la cola y NO se subió${links ? ` (lo que ya estaba en Drive: ${links})` : ''}\n`
+            : cancel?.ok ? `• ❌ CORTE CANCELADO: el archivo que estaba en Drive (SVG Corte)${hace} se mandó a la papelera y el diseño se rehace solo con el cambio (${links || 'sin link'})\n`
+            : cancel ? `• ⚠️ NO se pudo cancelar el corte (${cancel.error}): el archivo sigue en Drive (SVG Corte)${hace}: ${links || '(sin link)'} — sácalo a mano\n`
             : `• El archivo se subió a Drive (SVG Corte)${hace}: ${links || '(sin link)'}\n`)
         + `• Estatus: ${order.estatus || '—'}${guia ? ` · YA TIENE GUÍA ${guia}` : ' · sin guía'}\n`
         + `👉 Revisa en taller si ya se cortó/grabó. Si no, sácalo de la fila de corte y corrígelo. Al cliente ya se le dijo que lo vamos a checar; el pedido regresó a Pendientes de Diseño y la IA quedó pausada en su chat.`);
