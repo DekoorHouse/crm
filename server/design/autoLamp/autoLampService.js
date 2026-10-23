@@ -1187,10 +1187,10 @@ async function generate(dh, options = {}) {
             const basePlan = plans[lamp.index] || plans[0];
             let template = beta ? templateFor(lamp) : null;
             if (template && TEMPLATES[template].onlyWithoutMockup && (basePlan.fuente === 'mockup' || basePlan.fuente === 'cliente' || basePlan.personalizado || basePlan.textoEnImagen)) template = null;
-            // CON MOCKUP, EL MOCKUP (Chris, 23-oct-2026, DH18365): si ya le mandamos al cliente un mockup de esta lámpara, va ESE
-            // tal cual (dibujo, nombre, letra y renglones), no la plantilla del taller: con la de Dino premium salió «Willíam
-            // Paul» en un renglón y el mockup decía «William / Paul». La foto del catálogo no es un mockup suyo: ahí sí plantilla.
-            if (template && basePlan.fuente === 'mockup' && !basePlan.reference?.catalog) template = null;
+            // PLANTILLA AUNQUE HAYA MOCKUP (Chris, 23-oct-2026, DH18464): el DIBUJO sale de la plantilla del taller (el T-Rex limpio
+            // de Dino premium, Spiderman); del mockup solo se toma el NOMBRE tal cual (letras y renglones: plan.nombre con « · »).
+            // Por un rato (DH18365) con mockup se usaba el mockup entero; lo que se queda de ese cambio es el nombre con sus
+            // renglones y la revisión letra por letra (acentos incluidos) del nombre que escribe Qwen en la plantilla.
             const plan = template ? { ...basePlan, template } : { ...basePlan };
             if (NO_OUTLINE_HINT.test(options.note || '')) plan.noOutline = true;
             if (TEXT_APART.test(options.note || '')) plan.textApart = true;   // el equipo pidió el nombre aparte: no se reescribe en el mockup
