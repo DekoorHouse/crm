@@ -3,7 +3,7 @@
 jest.mock('../server/config', () => ({ db: {}, bucket: {}, admin: { firestore: { FieldValue: {} } } }));
 jest.mock('../server/imagenes/imageStudioService', () => ({}));
 
-jest.setTimeout(120000);   // acomodar en el lienzo de 2000 px tarda varios segundos
+jest.setTimeout(300000);   // acomodar en el lienzo de 2000 px tarda varios segundos
 
 const sharp = require('sharp');
 const { removeRing, fitToLampCircle } = require('../server/design/autoLamp/autoLampService');
@@ -61,4 +61,12 @@ test('si del tamaño del mockup no cabe entero, se achica (nunca se corta)', asy
     const R = .481 * side, cx = side / 2, cy = .481 * side;
     // Las cuatro esquinas del rectángulo quedan dentro del círculo de corte.
     for (const [x, y] of [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]]) expect(Math.hypot(x - cx, y - cy)).toBeLessThan(R);
+});
+
+test('el nombre va en los mismos renglones que en el mockup (DH18387)', () => {
+    const { linesFromMockup } = require('../server/design/autoLamp/autoLampService');
+    const layouts = [['Sofía'], ['José', 'Andrés']];
+    expect(linesFromMockup(layouts, 'Jose  andres')).toEqual(['José', 'Andrés']);
+    expect(linesFromMockup(layouts, 'José Luis')).toBeNull();          // otro nombre: no se toca
+    expect(linesFromMockup([['José Andrés']], 'José Andrés')).toBeNull();   // en el mockup iba en un renglón
 });

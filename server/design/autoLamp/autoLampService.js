@@ -106,6 +106,28 @@ function orderLamps(order) {
     });
 }
 
+// RENGLONES DEL MOCKUP (Chris, 23-oct-2026, DH18387): el nombre va en los mismos renglones en que lo vio el cliente
+// («José» arriba y «Andrés» abajo, no «José Andrés» en uno). Fuente: lo que leyó la visión de cada mockup guardado
+// (mockup_previews[orderId].previews[].layout). Esa lectura está hecha para la infinito (izquierdo/derecho/fecha): en una
+// lámpara de UN nombre solo se le cree cuando todo quedó en «izquierdo» y «derecho» vacío (con algo en los dos, reparte
+// las palabras entre los huecos, DH14299), igual que el corte automático (svgAuto.renglonesDelMockup).
+async function mockupNameLayouts(orderId) {
+    try {
+        const doc = await db.collection('mockup_previews').doc(String(orderId)).get();
+        const previews = doc.exists && Array.isArray(doc.data().previews) ? doc.data().previews : [];
+        return previews.map(p => p && p.layout).filter(l => l && Array.isArray(l.izquierdo) && l.izquierdo.filter(Boolean).length
+            && !(l.derecho || []).filter(Boolean).length).map(l => l.izquierdo.map(s => String(s).trim()).filter(Boolean)).reverse();   // el más nuevo primero
+    } catch (_) { return []; }
+}
+// Los renglones del mockup cuyo texto es EXACTAMENTE este nombre (sin contar acentos, mayúsculas ni espacios), si van en
+// más de uno; null si ningún mockup lo trae así.
+function linesFromMockup(layouts, name) {
+    const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const target = norm(name);
+    const found = (layouts || []).find(lines => lines.length > 1 && norm(lines.join(' ')) === target);
+    return found || null;
+}
+
 // Las lámparas ya diseñadas (los pedidos de antes de oct-2026 guardaban UNA sola en la raíz de autoLamp).
 function lampsOf(autoLamp) {
     if (!autoLamp) return [];
@@ -285,7 +307,7 @@ Para CADA lámpara decide:
 - "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre), o si la imagen es una C marcada «modelo del CATÁLOGO» de ese personaje (es la foto de muestra de la lámpara, con un nombre de ejemplo que NO es el del cliente); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
 - "imagen": la imagen elegida ("N2", "C0"…), o VARIAS separadas por coma si hay que JUNTAR fotos en una sola escena (ej. "C1,C2" para unir a dos personas que vienen en fotos distintas; máximo 4), o "" si es ilustración desde cero. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
 - "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "" SALVO que haya que CAMBIAR algo del dibujo (por la INDICACIÓN o porque el cliente lo pidió: «que tenga solo dos pies», «sin la corona», «con los ojos abiertos»): entonces escribe SOLO ese cambio, claro y concreto. NUNCA pidas escribir el nombre ni ningún texto en la imagen: el nombre lo agrega el sistema aparte (si la imagen trae letras, pide quitarlas). ÚNICA excepción: "textoEnImagen" true.
-- "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. NUNCA pongas marcadores o huecos como "(Fecha de fallecimiento)", "XX/XX" o "[nombre]": si el cliente pidió un dato que todavía no da, déjalo FUERA del texto y anótalo en "advertencias". Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana").
+- "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. NUNCA pongas marcadores o huecos como "(Fecha de fallecimiento)", "XX/XX" o "[nombre]": si el cliente pidió un dato que todavía no da, déjalo FUERA del texto y anótalo en "advertencias". Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana"). RENGLONES DEL MOCKUP: si ya le mandamos un MOCKUP de esa lámpara (aunque luego se arme con una plantilla del taller), escribe el texto partido EXACTAMENTE en los mismos renglones en que se ve en el mockup, con " · " entre renglón y renglón (ej. "José · Andrés" si en el mockup va José arriba y Andrés abajo); no los juntes en uno.
 - "textoEnImagen": true SOLO si la INDICACIÓN (o el cliente) pide que la IA integre/escriba el texto DENTRO de la imagen, todo junto como un solo diseño; entonces el texto de "nombre" lo dibuja el modelo de imágenes y el sistema no agrega otro. false en cualquier otro caso.
 - "textoCambia": SOLO para fuente "mockup": true si el texto final es DISTINTO del que se ve en el mockup (el cliente pidió agregar o cambiar algo del texto después de verlo); false si el mockup ya trae exactamente el texto final.
 - "tipo": "foto", "personaje" o "especial".
@@ -1107,6 +1129,7 @@ async function generate(dh, options = {}) {
             const { name, datos } = orderName(order);
             plans = [{ fuente: 'cliente', reference: await pickReference(await customerImages(contactId), datos), nombre: name, prompt: '', advertencias: [] }];
         }
+        const mockupLayouts = beta ? await mockupNameLayouts(orderDoc.id) : [];
         const results = [];
         for (const lamp of lamps) {
             // Personaje con plantilla del taller (Spiderman…): se usa su grabado; la IA solo aporta el nombre.
@@ -1115,6 +1138,8 @@ async function generate(dh, options = {}) {
             if (template && TEMPLATES[template].onlyWithoutMockup && (basePlan.fuente === 'mockup' || basePlan.fuente === 'cliente' || basePlan.personalizado || basePlan.textoEnImagen)) template = null;
             const plan = template ? { ...basePlan, template } : { ...basePlan };
             if (NO_OUTLINE_HINT.test(options.note || '')) plan.noOutline = true;
+            // Los renglones del nombre como en el mockup que vio el cliente (DH18387: «José» arriba y «Andrés» abajo).
+            if (plan.nombre && !/·|\n/.test(plan.nombre)) { const lines = linesFromMockup(mockupLayouts, plan.nombre); if (lines) plan.nombre = lines.join(' · '); }
             // Rehacer un diseño de mockup con indicación: si la IA no escribió el cambio, va la indicación tal cual.
             // Solo si la indicación es de ESTA lámpara (pedido de una, o «Rehacer esta»): con «Rehacer todo» decide la IA.
             const noteIsForThis = lamps.length === 1 || (Array.isArray(options.lamps) && options.lamps.includes(lamp.index));
@@ -2318,6 +2343,6 @@ async function updateBankEntry(id, { personaje, active, adMatch } = {}) {
     return { id, ...patch };
 }
 
-module.exports = { buildLamp, saveToBank, bankAfterUpload, chooseBankOption, sendOptionsToClient, pickOptionFromReply, listBank, updateBankEntry, bankFor, bankCharacters,
+module.exports = { linesFromMockup, buildLamp, saveToBank, bankAfterUpload, chooseBankOption, sendOptionsToClient, pickOptionFromReply, listBank, updateBankEntry, bankFor, bankCharacters,
     generate, status, approve, reject, markInterrupted, teamPreview, alreadyUploaded, freeNameSlot, templateFor, clientPreview, engravePolarity, fitToLampCircle, sendToClient, handleBetaDecision, changeAfterApproval, orderName, orderLamps, lampsOf,
     pickReference, customerImages, ourImages, designBriefOrder, chatHistory, rdworksSheetsFor, uploadQueuedAlone, flushStaleQueue, leaveQueue, reopen, removeRing, removeRingFromLamp, buildFromImage, runPendingRedos, sideTextLayout, editLamp, lampVersions, restoreVersion, autoStartBeta };
