@@ -304,12 +304,13 @@ ${history || '(sin mensajes)'}
 Abajo van las imágenes. Las del CLIENTE se llaman C0, C1…; las que mandamos NOSOTROS se llaman N0, N1… (entre las nuestras puede haber MOCKUPS: imágenes de la lámpara terminada o prendida con el diseño y el nombre que ya le enseñamos al cliente; también hay datos de pago, catálogo, etc.).
 OJO: el cliente puede cambiar de opinión varias veces (pedir otro personaje y luego regresar al primero). Las lámparas que hay que diseñar son SOLO las de la lista de arriba (lo que quedó registrado): un mockup de una opción que el cliente DESCARTÓ no se usa para nada. Busca el mockup que corresponda al PERSONAJE de cada lámpara aunque sea de antes.
 Para CADA lámpara decide:
-- "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre), o si la imagen es una C marcada «modelo del CATÁLOGO» de ese personaje (es la foto de muestra de la lámpara, con un nombre de ejemplo que NO es el del cliente); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero.
+- "fuente": "mockup" si entre las imágenes N hay un mockup de ESA lámpara (mismo personaje/diseño y nombre), o si la imagen es una C marcada «modelo del CATÁLOGO» de ese personaje (es la foto de muestra de la lámpara, con un nombre de ejemplo que NO es el del cliente); "cliente" si hay que grabar una foto/imagen que mandó el cliente; "ilustracion" si no hay imagen que sirva y hay que dibujarla desde cero. LO QUE VIO EL CLIENTE MANDA: si entre las imágenes N hay un mockup con el nombre de esa lámpara, su fuente es "mockup" SIEMPRE, aunque los datos del pedido digan "Especial: diferentes dinosaurios", "variados" u otra nota: esa nota ya quedó resuelta en los mockups que le mandamos y que aprobó. NUNCA inventes otro personaje, modelo o especie si ya hay mockup de esa lámpara. Una misma imagen N puede mostrar VARIAS lámparas (una por nombre): entonces esa imagen sirve para cada una de ellas.
 - "imagen": la imagen elegida ("N2", "C0"…), o VARIAS separadas por coma si hay que JUNTAR fotos en una sola escena (ej. "C1,C2" para unir a dos personas que vienen en fotos distintas; máximo 4), o "" si es ilustración desde cero. NUNCA comprobantes de pago, capturas de transferencias, datos bancarios, tickets ni capturas de chat. Un mockup solo vale para la lámpara cuyo nombre/diseño coincide.
 - "prompt": si es ilustración, describe en español la ilustración a generar (personaje, pose, estilo), SIN texto ni letras. Si es foto del cliente, qué conservar o ajustar (ej. "solo las dos personas, sin el fondo") o "". Si es mockup, "" SALVO que haya que CAMBIAR algo del dibujo (por la INDICACIÓN o porque el cliente lo pidió: «que tenga solo dos pies», «sin la corona», «con los ojos abiertos»): entonces escribe SOLO ese cambio, claro y concreto. NUNCA pidas escribir el nombre ni ningún texto en la imagen: el nombre lo agrega el sistema aparte (si la imagen trae letras, pide quitarlas). ÚNICA excepción: "textoEnImagen" true.
 - "nombre": el texto FINAL a grabar (nombre(s), apellidos, fecha, frase) con lo ÚLTIMO que pidió el cliente: si después del mockup o de registrar el pedido escribió algo como "el apellido es…", "agrégale…", "ponle también…", "mejor que diga…", eso CAMBIA o SE SUMA al texto. Cada nombre y apellido con inicial mayúscula y sus acentos (ej. "Domínguez Quintana"). "" si no lleva texto. NUNCA pongas marcadores o huecos como "(Fecha de fallecimiento)", "XX/XX" o "[nombre]": si el cliente pidió un dato que todavía no da, déjalo FUERA del texto y anótalo en "advertencias". Si es largo, pártelo en renglones con " · " (ej. "Victor Emilio · Domínguez Quintana"). RENGLONES DEL MOCKUP: si ya le mandamos un MOCKUP de esa lámpara (aunque luego se arme con una plantilla del taller), escribe el texto partido EXACTAMENTE en los mismos renglones en que se ve en el mockup, con " · " entre renglón y renglón (ej. "José · Andrés" si en el mockup va José arriba y Andrés abajo); no los juntes en uno.
 - "textoEnImagen": true SOLO si la INDICACIÓN (o el cliente) pide que la IA integre/escriba el texto DENTRO de la imagen, todo junto como un solo diseño; entonces el texto de "nombre" lo dibuja el modelo de imágenes y el sistema no agrega otro. false en cualquier otro caso.
 - "textoCambia": SOLO para fuente "mockup": true si el texto final es DISTINTO del que se ve en el mockup (el cliente pidió agregar o cambiar algo del texto después de verlo); false si el mockup ya trae exactamente el texto final.
+- "cual": SOLO para fuente "mockup" cuando la imagen elegida muestra VARIAS lámparas: el nombre tal cual se lee en la lámpara de esa imagen que corresponde a ESTA lámpara (ej. "Mateo"); "" si la imagen muestra una sola lámpara.
 - "tipo": "foto", "personaje" o "especial".
 - "personaje": SOLO si tipo es "personaje": el nombre corto del personaje (ej. "Stitch", "Spiderman", "Unicornio", "Caballo"). ${bankNames.length ? `Si es uno de los que ya tenemos en el BANCO de diseños (${bankNames.map(n => `"${n}"`).join(', ')}), escribe EXACTAMENTE ese nombre.` : ''} "" si no es personaje.
 - "personalizado": true si el cliente (o la INDICACIÓN) pide el personaje DISTINTO a como es normalmente o cambiar algo del DIBUJO (otra pose, ropa, accesorios, junto con otra cosa, hecho a partir de su foto, "otro modelo"); false si es el personaje tal cual (cambiar solo el nombre, la fecha o la frase NO cuenta).
@@ -317,7 +318,7 @@ Para CADA lámpara decide:
 - "resumen": una línea para el equipo con lo que entendiste de ESA lámpara.
 - "advertencias": dudas que no puedes resolver de ESA lámpara (ej. "la foto es muy oscura", "no queda claro el nombre", "no encontré el mockup de esta lámpara"); [] si nada.
 - "cambia": ${prevList ? 'true si por la INDICACIÓN/CAMBIO hay que rehacer ESTA lámpara; false si se queda como está.' : 'true.'}
-Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "textoEnImagen": false, "textoCambia": false, "tipo": "...", "personaje": "", "personalizado": false, "estilo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
+Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen": "...", "prompt": "...", "nombre": "...", "textoEnImagen": false, "textoCambia": false, "cual": "", "tipo": "...", "personaje": "", "personalizado": false, "estilo": "...", "resumen": "...", "advertencias": [], "cambia": true}]}` }];
     const kinds = new Map();   // parte de imagen -> { prefix C|N, catalog } (Gemini no acepta campos extra en las partes)
     for (const [prefix, list] of [['C', client], ['N', sent]]) {
         for (const [i, image] of list.entries()) {
@@ -380,6 +381,8 @@ Responde SOLO este JSON: {"lamparas": [{"lampara": 0, "fuente": "...", "imagen":
             // Pedido en la indicación («sin texto», «nombre aparte»…, DH18309 balón): la IA hace SOLO el dibujo y el
             // nombre lo pone el sistema con nuestra fuente (editable en el editor).
             textoCambia: fuente === 'mockup' && (row.textoCambia === true || !!reference?.catalog || TEXT_APART.test(note || '')),
+            // Mockup con VARIAS lámparas en la misma foto (DH18284: 4 Dino premium): cuál de ellas es esta.
+            cual: fuente === 'mockup' ? String(row.cual || '').trim().slice(0, 80) : '',
             // La frase dibujada por el modelo como parte de la imagen (Chris, DH18288): sin texto aparte del armado.
             textoEnImagen: fuente !== 'mockup' && !!String(row.nombre || '').trim() && (row.textoEnImagen === true || TEXT_IN_IMAGE.test(note || '')),
             // Solo blanco y negro (sin degradado ni trama) si la IA lo ve así, si la indicación lo pide o si es un modelo
@@ -684,11 +687,11 @@ async function removeRing(buffer, { designShare = null } = {}) {
  * acrílico: { w, h, cx, cy } (cx/cy = cuánto se aleja su centro del centro del círculo). null si no se pudo medir: entonces
  * se acomoda como antes (lo más grande que cabe).
  */
-async function mockupProportion(reference) {
+async function mockupProportion(reference, cual = '') {
     try {
         const { buffer } = reference.buffer ? reference : await download(reference.url);
         const img = await sharp(buffer).rotate().resize(1024, 1024, { fit: 'inside' }).jpeg({ quality: 85 }).toBuffer();
-        const a = await geminiJson([{ text: `Esta foto es un mockup de una lámpara LED: una placa de acrílico REDONDA (sobre una base) con un diseño grabado dentro (dibujo y texto). Dame dos cajas en coordenadas normalizadas 0-1000 de la imagen, en orden [ymin, xmin, ymax, xmax]:
+        const a = await geminiJson([{ text: `Esta foto es un mockup de una lámpara LED: una placa de acrílico REDONDA (sobre una base) con un diseño grabado dentro (dibujo y texto).${cual ? ` Si la foto muestra VARIAS lámparas, mide SOLO la que dice «${cual}».` : ''} Dame dos cajas en coordenadas normalizadas 0-1000 de la imagen, en orden [ymin, xmin, ymax, xmax]:
 - "circulo": el círculo de acrílico completo, por su orilla de afuera (sin la base).
 - "diseno": TODO lo grabado junto (dibujo y texto), sin el acrílico, sin su orilla ni la base.
 Responde SOLO este JSON: {"circulo": [ymin, xmin, ymax, xmax], "diseno": [ymin, xmin, ymax, xmax]}` },
@@ -954,7 +957,9 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         step('Convirtiendo el mockup a grabado');
         // Un CAMBIO al dibujo del mockup («solo dos pies», DH18249) va junto: antes se pedía copiarlo tal cual y el
         // cambio nunca le llegaba al modelo.
-        const base = plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT;
+        // La foto trae VARIAS lámparas: se saca SOLO la de este nombre (DH18284), no la primera que vea el modelo.
+        const which = plan.cual ? `La foto muestra VARIAS lámparas: trabaja SOLO con la lámpara que dice «${plan.cual}» e ignora por completo las demás. ` : '';
+        const base = which + (plan.textoCambia ? MOCKUP_NO_TEXT_PROMPT : MOCKUP_PROMPT);
         const prompt = plan.prompt ? `${base} ÚNICO CAMBIO que SÍ debes hacer al dibujo (todo lo demás igual que en el mockup): ${plan.prompt}.` : base;
         raster = await rasterizeBeta(plan.reference, { prompt, estilo: plan.estilo, onStep: step });
         // Texto cambiado: el del mockup se debe ir (va el nuevo aparte). Qwen a veces lo deja y salía DOS veces
@@ -989,7 +994,7 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
     // Del mockup: sin el aro del acrílico que el modelo copia (removeRing) y acomodado para llenar el círculo.
     // La del equipo: acomodada como diseño suelto (su aro es parte del logo, no el del acrílico).
     // Del mockup se miden primero sus proporciones: el diseño va del tamaño en que lo vio el cliente (DH18309).
-    const proportion = !plan.template && !plan.bank && plan.fuente === 'mockup' && plan.reference ? await mockupProportion(plan.reference) : null;
+    const proportion = !plan.template && !plan.bank && plan.fuente === 'mockup' && plan.reference ? await mockupProportion(plan.reference, plan.cual || '') : null;
     let buffer = cleanTemplate ? downloaded : plan.template && TEMPLATES[plan.template].fromMockup ? await fitToLampCircle(await removeRing(engraved))
         : plan.template || plan.bank ? engraved : plan.fuente === 'mockup' ? await fitToLampCircle(await removeRing(engraved, { designShare: proportion?.w }), 2000, { mockup: proportion })
         : plan.fuente === 'propia' ? await fitToLampCircle(engraved, 2000, { loose: true }) : engraved;
