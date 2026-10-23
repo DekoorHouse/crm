@@ -201,3 +201,8 @@ test('DH18485: «en cuanto quede lista te mando la foto» es el aviso de la foto
     expect(result.text).toContain('Cuando tu pedido esté terminado, recibirás la foto');
     expect(mockDb.read('contacts_whatsapp/customer').needsAttention).not.toBe(true);
 });
+
+test('DH18521: «la tenemos lista para fabricar» no es un diseño prometido', () => {
+    expect(unsupportedMediaClaim('La de **Gina** con el unicornio la tenemos lista para fabricar, y para la de **Alina** podemos hacerle el diseño del conejo sin problema 🐰💖')).toBe(false);
+    expect(unsupportedMediaClaim('Ya tenemos listo tu diseño.')).toBe(true);
+});

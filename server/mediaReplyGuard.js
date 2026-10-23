@@ -72,7 +72,9 @@ function unsupportedMediaClaim(text, fileUrl) {
             // Pronombre que retoma la foto en la oración anterior.
             return /\bte (?:la|lo) (?:envio|mando|comparto|adjunto)\b/.test(sentence) && !/\bno\s+te\b/.test(sentence);
         }
-        const affirmative = sentence.replace(/\b(?:no|nunca)\s+(?:(?:te|le|les)\s+)?(?:(?:lo|la)\s+)?(?:tengo|tenemos|envio|mando|comparto|adjunto|enviare|mandare)\b/g, 'negado');
+        // DH18521 (23-oct-2026): «la tenemos lista para fabricar» habla del pedido, no de un archivo listo para mandar.
+        const affirmative = sentence.replace(/\b(?:no|nunca)\s+(?:(?:te|le|les)\s+)?(?:(?:lo|la)\s+)?(?:tengo|tenemos|envio|mando|comparto|adjunto|enviare|mandare)\b/g, 'negado')
+            .replace(/\blist[oa]s?\s+para\s+(?:fabricar|fabricarse|produccion|producir|empezar|iniciar|trabajar|registrar|enviar(?:se)?\s+a\s+fabricacion)\b/g, 'pendiente');
         return /\b(?:aqui|ahi)\s+(?:(?:te|le|les|lo|la)\s+){0,2}(?:tienes?|esta|va|mando|envio|comparto|dejo|adjunto)\b/.test(affirmative)
             || /\b(?:te|le|les)\s+(?:(?:lo|la)\s+)?(?:mando|envio|comparto|adjunto|enviare|mandare|enviaremos|mandaremos|compartire|compartiremos)\b/.test(affirmative)
             || /\b(?:te|le|les)\s+(?:voy|vamos)\s+a\s+(?:enviar|mandar|compartir)\b/.test(affirmative)
