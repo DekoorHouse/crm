@@ -79,3 +79,9 @@ test('el nombre que escribió Qwen solo vale si dice exactamente lo pedido (DH18
     expect(sameEngravedText('ARMANDO.M', 'Armando.M')).toBe(false);          // mayúsculas sí cuentan
     expect(sameEngravedText('', 'Armando.M')).toBe(false);
 });
+
+test('un acento de más en el nombre grabado no pasa (DH18365)', () => {
+    const { sameEngravedText } = require('../server/design/autoLamp/autoLampService');
+    expect(sameEngravedText('Willíam Paul', 'William · Paul')).toBe(false);
+    expect(sameEngravedText('William Paul', 'William · Paul')).toBe(true);
+});

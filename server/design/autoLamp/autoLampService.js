@@ -137,10 +137,10 @@ async function readEngravedText(raster) {
         return String(a.texto || '').trim();
     } catch (_) { return ''; }
 }
-// ¿Dice lo mismo? Sin contar espacios, cambios de renglón ni « · ». Mayúsculas, puntos y letras sí cuentan; los acentos
-// no, porque la lectura a veces no los ve.
+// ¿Dice lo mismo? Sin contar espacios, cambios de renglón ni « · ». Mayúsculas, puntos, letras y ACENTOS sí cuentan: un
+// acento de más («Willíam», DH18365) es un nombre mal grabado. Si la lectura no ve un acento que sí está, solo se avisa de más.
 function sameEngravedText(read, wanted) {
-    const key = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[\s·/]+/g, '');
+    const key = t => String(t || '').normalize('NFC').replace(/[\s·/]+/g, '');
     return !!key(read) && key(read) === key(wanted);
 }
 
@@ -963,12 +963,26 @@ async function buildLamp(dh, lamp, plan, { beta, onStep }) {
         step('Usando la plantilla del taller');
         const tpl = TEMPLATES[plan.template], image = await templateImage(plan.template);
         const nombre = plan.nombre || (lamp.datos.match(/nombres?\s*:\s*([^|\n]+)/i) || [])[1]?.trim() || '';
-        raster = tpl.fromMockup && !nombre ? await rasterizeBeta({ buffer: image, url: null }, { prompt: `${MOCKUP_NO_TEXT_PROMPT} ${NO_RING}`, onStep: step })
+        // El nombre va con sus renglones (« / »): «William · Paul» se pedía como «William Paul» y salía en uno (DH18365).
+        const written = nombre.replace(/\s*·\s*/g, ' / '), exact = '(exactamente esas letras, mayúsculas y acentos, sin agregar ninguno; « / » es un cambio de renglón)';
+        const make = () => tpl.fromMockup && !nombre ? rasterizeBeta({ buffer: image, url: null }, { prompt: `${MOCKUP_NO_TEXT_PROMPT} ${NO_RING}`, onStep: step })
             : tpl.fromMockup
-            ? await rasterizeBeta({ buffer: image, url: null }, { prompt: `${MOCKUP_PROMPT.replace('el dibujo y el texto/nombre EXACTAMENTE como están (mismas letras, misma tipografía, misma pose y posición)', `el dibujo EXACTAMENTE como está (misma pose y posición, mismas nubes y estrellas) y el texto CAMBIADO: donde dice «${tpl.oldName}» debe decir «${nombre.replace(/\s*·\s*/g, ' ')}», con la MISMA letra cursiva, el mismo grosor y en el mismo lugar (si es largo, más chico o en dos renglones), y el corazoncito de abajo igual`)} ${NO_RING}`, onStep: step })
+            ? rasterizeBeta({ buffer: image, url: null }, { prompt: `${MOCKUP_PROMPT.replace('el dibujo y el texto/nombre EXACTAMENTE como están (mismas letras, misma tipografía, misma pose y posición)', `el dibujo EXACTAMENTE como está (misma pose y posición, mismas nubes y estrellas) y el texto CAMBIADO: donde dice «${tpl.oldName}» debe decir «${written}» ${exact}, con la MISMA letra cursiva, el mismo grosor y en el mismo lugar (si es largo, más chico), y el corazoncito de abajo igual`)} ${NO_RING}`, onStep: step })
             : tpl.rename && nombre
-            ? await rasterizeBeta({ buffer: image, url: null }, { prompt: `Cambia el nombre por ${nombre.replace(/\s*·\s*/g, ' ')}`, onStep: step })
-            : { url: null, jobId: null, model: tpl.label, buffer: image };
+            ? rasterizeBeta({ buffer: image, url: null }, { prompt: `Cambia el nombre por «${written}» ${exact}, con la misma tipografía y en el mismo lugar`, onStep: step })
+            : Promise.resolve({ url: null, jobId: null, model: tpl.label, buffer: image });
+        raster = await make();
+        // Lo que escribió Qwen se lee: si no dice EXACTAMENTE el nombre (DH18365: «Willíam»), se pide otra vez; si sigue mal,
+        // se avisa (con dudas no se manda ni se sube solo).
+        if (nombre && (tpl.rename || tpl.fromMockup)) {
+            const read = await readEngravedText(raster);
+            if (!sameEngravedText(read, nombre)) {
+                step('El nombre salió distinto: se pide otra vez');
+                const again = await make().catch(() => null), readAgain = again ? await readEngravedText(again) : '';
+                if (again && sameEngravedText(readAgain, nombre)) raster = again;
+                else plan.advertencias = [...(plan.advertencias || []), `el nombre salió «${readAgain || read || '¿?'}» y debe decir «${nombre.replace(/\s*·\s*/g, ' ')}»: corrígelo antes de aprobar`];
+            }
+        }
     } else if (plan.fuente === 'mockup') {
         step('Convirtiendo el mockup a grabado');
         // Un CAMBIO al dibujo del mockup («solo dos pies», DH18249) va junto: antes se pedía copiarlo tal cual y el
@@ -1173,6 +1187,10 @@ async function generate(dh, options = {}) {
             const basePlan = plans[lamp.index] || plans[0];
             let template = beta ? templateFor(lamp) : null;
             if (template && TEMPLATES[template].onlyWithoutMockup && (basePlan.fuente === 'mockup' || basePlan.fuente === 'cliente' || basePlan.personalizado || basePlan.textoEnImagen)) template = null;
+            // CON MOCKUP, EL MOCKUP (Chris, 23-oct-2026, DH18365): si ya le mandamos al cliente un mockup de esta lámpara, va ESE
+            // tal cual (dibujo, nombre, letra y renglones), no la plantilla del taller: con la de Dino premium salió «Willíam
+            // Paul» en un renglón y el mockup decía «William / Paul». La foto del catálogo no es un mockup suyo: ahí sí plantilla.
+            if (template && basePlan.fuente === 'mockup' && !basePlan.reference?.catalog) template = null;
             const plan = template ? { ...basePlan, template } : { ...basePlan };
             if (NO_OUTLINE_HINT.test(options.note || '')) plan.noOutline = true;
             if (TEXT_APART.test(options.note || '')) plan.textApart = true;   // el equipo pidió el nombre aparte: no se reescribe en el mockup
