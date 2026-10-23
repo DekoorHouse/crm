@@ -424,16 +424,36 @@ function _dpRefetchDebounced(origen) {
 // NO repintar si hay un modal abierto, si se está arrastrando una tarjeta o si el diseñador está
 // escribiendo una nota: el repintado rehace el innerHTML y le borraría la nota a medias, le cortaría
 // el arrastre o le cerraría el modal encima.
+// El chat abierto desde el tablero recorre la lista con ← →. Se guarda también QUÉ pedido es: si el tablero se pone al día
+// mientras tanto (en otra pestaña o ventana) la lista cambia, y la posición se vuelve a buscar por pedido, no por número.
+function _dpChatAt(i) {
+    window._designChatIndex = i;
+    const o = (window._designShownOrders || [])[i];
+    window._designChatOrderId = o ? o.id : null;
+}
+function _dpSyncChatIndex() {
+    if (!window._designChatActive || !window._designChatOrderId) return;
+    const i = (window._designShownOrders || []).findIndex(o => o.id === window._designChatOrderId);
+    if (i >= 0) window._designChatIndex = i;
+}
+
 function _dpOcupado() {
     if (_dpGuardando > 0) return true;                                       // movimiento a medio guardar
-    if (document.getElementById('design-review-overlay')) return true;        // modal "Revisar"
-    if (document.getElementById('dl-beta-modal')) return true;               // modal del Diseño IA (se quita al cerrarlo)
     if (document.querySelector('.dp-card-ghost, .dp-card-drag')) return true; // arrastre en curso
-    // La conversación (chat-envios-modal) abierta desde la tarjeta: no se repinta hasta que se cierre (Chris, 23-oct-2026);
-    // al cerrarla, _dpReintentarPendiente aplica lo que se juntó. Se mira el estilo CALCULADO: el modal se esconde con
-    // display:none y una clase o un estilo heredado no lo engañan.
-    const modales = ['chat-envios-modal', 'image-modal'];
-    if (modales.some(id => { const m = document.getElementById(id); return m && !m.classList.contains('hidden') && getComputedStyle(m).display !== 'none'; })) return true;
+    // EN OTRA PESTAÑA O VENTANA (Chris, 23-oct-2026): nadie está viendo el tablero, así que se pone al día aunque haya
+    // una conversación o un modal abierto (viven en <body>, fuera del tablero: el repintado no los cierra ni los toca) y
+    // al regresar ya aparecen los pedidos nuevos en «Pendientes». Lo que sí se respeta aun así es lo que se perdería: un
+    // movimiento a medio guardar, un arrastre (arriba) y una nota a medio escribir (abajo).
+    const fuera = document.hidden || !document.hasFocus();
+    if (!fuera) {
+        if (document.getElementById('design-review-overlay')) return true;    // modal "Revisar"
+        if (document.getElementById('dl-beta-modal')) return true;           // modal del Diseño IA (se quita al cerrarlo)
+        // La conversación (chat-envios-modal) abierta desde la tarjeta: no se repinta hasta que se cierre (Chris,
+        // 23-oct-2026); al cerrarla, _dpReintentarPendiente aplica lo que se juntó. Se mira el estilo CALCULADO: el modal
+        // se esconde con display:none y una clase o un estilo heredado no lo engañan.
+        const modales = ['chat-envios-modal', 'image-modal'];
+        if (modales.some(id => { const m = document.getElementById(id); return m && !m.classList.contains('hidden') && getComputedStyle(m).display !== 'none'; })) return true;
+    }
     const cont = document.getElementById('design-pending-container');
     const a = document.activeElement;
     if (cont && a && a !== document.body && cont.contains(a)) return true;
@@ -454,6 +474,16 @@ function _dpReintentarPendiente() {
         _dpRefetchSilencioso('pendiente');
     }, 2500);
 }
+
+// Al irse a otra pestaña o ventana, lo que esperaba (p. ej. por la conversación abierta) se aplica ya, sin esperar la
+// siguiente vuelta de _dpReintentarPendiente (en segundo plano el navegador frena los timers).
+function _dpAlSalir() {
+    if (!_dpRefetchPendiente || !document.getElementById('design-pending-container') || _dpOcupado()) return;
+    _dpRefetchPendiente = false;
+    _dpRefetchSilencioso('pestaña fuera');
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) _dpAlSalir(); });
+window.addEventListener('blur', () => setTimeout(_dpAlSalir, 300));
 
 // Refresca sin el "Cargando…" y conservando el scroll (el de la página y el de cada columna: eso ya lo
 // hace _paintDesignBoard). Parpadea el punto "En vivo" para que se note que la lista se movió sola.
@@ -682,6 +712,7 @@ function _paintDesignBoard() {
     byCol.esperando_confirmacion = byCol.esperando_confirmacion.map((o, i) => [o, i])
         .sort(([a, i], [b, j]) => (!!b.confirmacion - !!a.confirmacion) || (confMs(b) - confMs(a)) || (i - j)).map(([o]) => o);
     window._designShownOrders = DP_BOARD_COLS.flatMap(([k]) => byCol[k]);   // orden plano para ← →
+    _dpSyncChatIndex();
     const checkedSet = _dpVisualChecks();
     const cols = DP_BOARD_COLS.map(([key, label, color]) => {
         const cards = byCol[key].map(o => dpBoardCard(o, checkedSet)).join('');
@@ -759,6 +790,7 @@ function _dpUpdateColCounts() {
         cards.forEach(c => { const o = (window._designPendingData || []).find(x => x.id === c.getAttribute('data-order')); if (o) flat.push(o); });
     });
     window._designShownOrders = flat;
+    _dpSyncChatIndex();
 }
 
 // Aviso corto que no interrumpe (a diferencia de alert()): se pone arriba del tablero y se va solo.
@@ -1698,7 +1730,7 @@ async function openDesignPendingChat(orderId) {
     const o = idx >= 0 ? list[idx] : null;
     if (!o || !o.contactId) return;
     await openChatEnviosModal(String(o.contactId));   // openChatEnviosModal pone _designChatActive=false...
-    window._designChatIndex = idx;
+    _dpChatAt(idx);
     window._designChatActive = true;                  // ...y aquí lo reactivamos para navegar.
     designChatUpdateToolbar();
 }
@@ -1712,7 +1744,7 @@ async function _designChatNavigate(dir) {
     if (i < 0 || i > list.length - 1) return;   // sin dar la vuelta: se detiene en los extremos
     const o = list[i];
     if (!o || !o.contactId) return;
-    window._designChatIndex = i;
+    _dpChatAt(i);
     try { await handleSelectContact(String(o.contactId)); } catch (e) { console.warn('[diseño] nav chat:', e); }
     designChatUpdateToolbar();
 }
@@ -1848,7 +1880,7 @@ async function designModalAction(kind) {
     const newList = window._designShownOrders || [];
     if (!newList.length) { closeChatEnviosModal(); return; }
     const nextIdx = Math.min(idx, newList.length - 1);
-    window._designChatIndex = nextIdx;
+    _dpChatAt(nextIdx);
     const next = newList[nextIdx];
     if (next && next.contactId) { try { await handleSelectContact(String(next.contactId)); } catch (_) {} }
     designChatUpdateToolbar();
@@ -1919,6 +1951,7 @@ function _paintDesignPending() {
 
     // Lista visible en orden (para navegar el chat con las flechas ← →).
     window._designShownOrders = shown;
+    _dpSyncChatIndex();
 
     const checkedSet = _dpVisualChecks();   // marcas visuales guardadas (localStorage), para restaurarlas
     const rows = shown.map((o, i) => {
